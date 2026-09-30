@@ -52,6 +52,7 @@ describe('conversation visual hierarchy', () => {
       const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
       const pane = rect('#pane-chat')
       const messagesList = document.querySelector<HTMLElement>('.messages-list')
+      const conversationScroll = document.querySelector<HTMLElement>('.conversation-scroll')
       const user = rect('[data-message-id="msg-user-hierarchy"]')
       const trace = rect('[data-message-id="msg-assistant-check"]')
       const todoPanel = rect('.conversation-todos-host .plugin-panel')
@@ -76,6 +77,7 @@ describe('conversation visual hierarchy', () => {
       if (
         !pane ||
         !messagesList ||
+        !conversationScroll ||
         !user ||
         !trace ||
         !todoPanel ||
@@ -105,9 +107,13 @@ describe('conversation visual hierarchy', () => {
       const baseLineHeight = getComputedStyle(document.body).lineHeight
       const messagesListRect = messagesList.getBoundingClientRect()
       const messagesListContentCenter = messagesListRect.left + messagesList.clientWidth / 2
+      const topFadeStyle = getComputedStyle(conversationScroll, '::before')
       return {
         paneWidth: pane.width,
         messagesListScrollbarGutter: messagesList.offsetWidth - messagesList.clientWidth,
+        topFadeHeight: topFadeStyle.height,
+        topFadeBackground: topFadeStyle.backgroundImage,
+        topFadePointerEvents: topFadeStyle.pointerEvents,
         userWidth: user.width,
         traceWidth: trace.width,
         todoWidth: todoPanel.width,
@@ -168,6 +174,9 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonCenterDelta).toBeLessThanOrEqual(1)
     expect(layout.composerBottomGap).toBeGreaterThanOrEqual(11)
     expect(layout.composerBottomGap).toBeLessThanOrEqual(13)
+    expect(layout.topFadeHeight).toBe('32px')
+    expect(layout.topFadeBackground).toContain('linear-gradient')
+    expect(layout.topFadePointerEvents).toBe('none')
     expect(layout.reasoningBorderWidth).toBe('0px')
     expect(layout.doneToolHeight).toBeLessThan(36)
     expect(layout.answerFontSize).toBe('16px')
