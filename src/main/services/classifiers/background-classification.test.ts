@@ -12,6 +12,7 @@ import {
   askClassifierBatch,
   askClassifierChoice,
   askModelChoice,
+  judgeWithReasoning,
   backgroundChoicePrompt,
   backgroundClassifierQuestion,
   parseChoiceWord,
@@ -315,5 +316,90 @@ describe('askClassifierChoice', () => {
     mock.restoreAll()
     mock.method(globalThis, 'fetch', async () => new Response('bad gateway', { status: 502 }))
     assert.equal(await askBackgroundChoice(QUESTION, 'x', 1_000), null)
+  })
+})
+
+describe('judgeWithReasoning', () => {
+  const parse = (text: string): 'yes' | 'no' | null => parseChoiceWord(['yes', 'no'], text)
+  const detailOf = (text: string): string => text.split('\n').slice(1).join(' ')
+  const failing = (): Promise<string> => Promise.reject(new Error('No model available'))
+
+  it("uses the classifier's verdict with the model's reasoning", async () => {
+    const judged = await judgeWithReasoning(
+      async () => 'no' as const,
+      async () => 'yes\nit fixes the bug',
+      parse,
+      detailOf,
+    )
+    assert.deepEqual(judged, { verdict: 'no', detail: 'it fixes the bug', source: 'classifier' })
+  })
+
+  it('keeps the classifier verdict without reasoning when the model fails or answers off-format', async () => {
+    assert.deepEqual(
+      await judgeWithReasoning(async () => 'yes' as const, failing, parse, detailOf),
+      {
+        verdict: 'yes',
+        detail: '',
+        source: 'classifier',
+      },
+    )
+    assert.deepEqual(
+      await judgeWithReasoning(
+        async () => 'yes' as const,
+        async () => 'hmm\nno idea',
+        parse,
+        detailOf,
+      ),
+      { verdict: 'yes', detail: '', source: 'classifier' },
+    )
+  })
+
+  it('falls back to the model verdict, and its errors, when no classifier answers', async () => {
+    assert.deepEqual(
+      await judgeWithReasoning(
+        async () => null,
+        async () => 'no\nmissing tests',
+        parse,
+        detailOf,
+      ),
+      { verdict: 'no', detail: 'missing tests', source: 'model' },
+    )
+    await assert.rejects(
+      judgeWithReasoning(async () => null, failing, parse, detailOf),
+      /No model available/,
+    )
+    await assert.rejects(
+      judgeWithReasoning(
+        async () => null,
+        async () => 'hmm',
+        parse,
+        detailOf,
+      ),
+      /returned no verdict/,
+    )
+  })
+
+  it('asks the classifier and the model at the same time', async () => {
+    const order: string[] = []
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const judged = judgeWithReasoning(
+      async () => {
+        order.push('classifier:start')
+        await gate
+        return 'yes' as const
+      },
+      async () => {
+        order.push('model:start')
+        release()
+        return 'yes\nok'
+      },
+      parse,
+      detailOf,
+    )
+    await judged
+    assert.deepEqual(order, ['classifier:start', 'model:start'])
   })
 })

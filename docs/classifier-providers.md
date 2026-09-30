@@ -71,14 +71,24 @@ connection can be chosen, SemIf included. The choice is its own `backgroundClass
 choice naming a removed connection reads as none, and removing the chosen connection clears it.
 Choosing makes no inference call. It is asked:
 
-| Question                        | When                                        | Classifier request                                                                                            | If it fails                                           |
-| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Roadmap complexity and category | A roadmap prompt is saved                   | One `choice` question on the prompt; the connection's own timeout                                             | Small-tasks model, then the chat model (see below)    |
-| Issue coverage                  | The issue-import picker checks open issues  | One request per issue, one `none` / `partial` / `likely` question per roadmap item; 30 s per call and overall | The small-tasks model, asked about every pair at once |
-| Follow-up suggestions           | A turn ends and a bubble slot is still free | One request on the exchange, one yes/no question per preset; 15 s                                             | The small-tasks model's pick                          |
+| Question                        | When                                                | Classifier request                                                                                                       | If it fails                                                                                                        |
+| ------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Roadmap complexity and category | A roadmap prompt is saved                           | One `choice` question on the prompt; the connection's own timeout                                                        | Small-tasks model, then the chat model (see below)                                                                 |
+| Issue coverage                  | The issue-import picker checks open issues          | One request per issue, one `none` / `partial` / `likely` question per roadmap item; 30 s per call and overall            | The small-tasks model, asked about every pair at once                                                              |
+| Follow-up suggestions           | A turn ends and a bubble slot is still free         | One request on the exchange, one yes/no question per preset; 15 s                                                        | The small-tasks model's pick                                                                                       |
+| Fit check                       | The pane's fit check on an item with a pinned issue | One `unlikely` / `partial` / `likely` question on the issue and prompt; 30 s                                             | The small-tasks model, asked at the same time, gives the reasoning; its verdict is used when no classifier answers |
+| Roadmap review                  | Bulk and deep resolution reviews                    | One `open` / `partial` / `likely` / `resolved` question on the item, its issues and commit history; 45 s bulk, 60 s deep | As for fit check                                                                                                   |
 
-A hosted classifier receives that text — roadmap prompts, the issues being imported, and **each
-finished turn's user message, assistant reply and tool names** — with known saved keys redacted.
+A hosted classifier receives that text — roadmap prompts and notes, pinned, linked and imported
+issues, the commit history a review reads, and **each finished turn's user message, assistant reply
+and tool names** — with known saved keys redacted.
+
+Fit check and roadmap review return a verdict and the model's reasoning. The classifier and the
+small-tasks model are asked at the same time: the classifier's verdict wins when it answers, and
+the model's bullets are shown beside it. When the classifier answers and the model fails or answers
+off-format, the verdict stands without reasoning. When no classifier answers, both behave exactly
+as before, errors included. Verdicts are listed least hopeful first, so a tie goes to `unlikely` or
+`open`: a `resolved` verdict invites marking the item done.
 
 Coverage verdicts are read from the probabilities with ties going to `none`, because a `likely`
 match disables importing the issue. Each issue keeps its strongest match, the likelier one on a

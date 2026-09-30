@@ -251,3 +251,42 @@ export async function askBackgroundChoice<T extends string>(
     (await askModelChoice(question, state, timeoutMs))
   )
 }
+
+/** A verdict with the reasoning shown beside it, and which backend chose the verdict. */
+export interface ReasonedVerdict<T extends string> {
+  verdict: T
+  /** The model's reasoning; empty when only the classifier answered. */
+  detail: string
+  source: 'classifier' | 'model'
+}
+
+type ModelOutcome = { ok: true; text: string } | { ok: false; error: unknown }
+
+/**
+ * Verdict-and-reasoning judgements (fit check, roadmap review). The classifier
+ * and the model are asked at the same time. The classifier's verdict wins when
+ * it answers; the reasoning is always the model's, since a classifier returns
+ * none. When the classifier answers and the model fails or answers off-format,
+ * the verdict stands without reasoning. When no classifier answers, the model's
+ * own verdict is used and its failure is rethrown, exactly as before.
+ */
+export async function judgeWithReasoning<T extends string>(
+  classify: () => Promise<T | null>,
+  model: () => Promise<string>,
+  parse: (text: string) => T | null,
+  detailOf: (text: string) => string,
+): Promise<ReasonedVerdict<T>> {
+  const [classified, outcome] = await Promise.all([
+    classify(),
+    model().then(
+      (text): ModelOutcome => ({ ok: true, text }),
+      (error: unknown): ModelOutcome => ({ ok: false, error }),
+    ),
+  ])
+  const modelVerdict = outcome.ok ? parse(outcome.text) : null
+  const detail = outcome.ok && modelVerdict ? detailOf(outcome.text) : ''
+  if (classified) return { verdict: classified, detail, source: 'classifier' }
+  if (!outcome.ok) throw outcome.error
+  if (!modelVerdict) throw new Error('The model returned no verdict — try again.')
+  return { verdict: modelVerdict, detail, source: 'model' }
+}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ClassifierQuestion } from '@copse/llm/classifiers/types.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { contextOverflowAdvice, isContextOverflowMessage } from '@shared/context-window-advice.ts'
@@ -27,12 +28,19 @@ import {
   setPendingBulkRun,
   type RoadmapReviewCheckpoint,
 } from './roadmap-review-state.ts'
+import {
+  askClassifierBatch,
+  judgeWithReasoning,
+  likeliestChoice,
+} from './classifiers/background-classification.ts'
 
 /**
  * Roadmap review (issue #556 follow-up): on demand, judge whether each backlog
  * item has been resolved using GitHub issue state (pinned + cross-linked issues),
- * commits, and the small-tasks model. Advisory only — verdicts are stamped on
- * notes for display but never auto-change status.
+ * commits, and the small-tasks model. The classifier chosen for background
+ * questions gives the verdict when it answers; the model, asked at the same
+ * time, gives the reasoning. Advisory only — verdicts are stamped on notes for
+ * display but never auto-change status.
  *
  * Bulk review (◎) scopes commits since the last *acknowledged* backlog review
  * (see completeRoadmapReview). Deep single-item review uses the item's full
@@ -189,7 +197,8 @@ export function reviewSectionChars(
   }
 }
 
-function reviewPrompt(
+/** The evidence a verdict is judged from, shared by the model prompt and the classifier. */
+function reviewEvidence(
   note: { body: string; status: string | null; fields: Record<string, string> },
   pinned: GhIssueSummary | null,
   linked: RoadmapReviewIssueEvidence[],
@@ -200,6 +209,26 @@ function reviewPrompt(
   const notesField = note.fields['notes'] ?? ''
   const commitLabel =
     depth === 'deep' ? 'COMMITS (since item was created)' : 'RECENT COMMITS (since last review)'
+  return (
+    `ROADMAP STATUS: ${note.status ?? 'ready'}\n` +
+    `PROMPT:\n${note.body.slice(0, sections.prompt)}\n` +
+    (notesField ? `\nNOTES:\n${notesField.slice(0, sections.notes)}\n` : '') +
+    (pinned
+      ? `\nPINNED ISSUE #${String(pinned.number)} [${issueState(pinned)}]: ${pinned.title}\n${pinned.body.slice(0, sections.issue)}\n`
+      : '\nPINNED ISSUE: (none)\n') +
+    formatIssueBlock('LINKED ISSUES', linked) +
+    `\n${commitLabel}:\n${commits.slice(0, sections.commits)}\n`
+  )
+}
+
+function reviewPrompt(
+  note: { body: string; status: string | null; fields: Record<string, string> },
+  pinned: GhIssueSummary | null,
+  linked: RoadmapReviewIssueEvidence[],
+  commits: string,
+  depth: RoadmapReviewDepth,
+  sections: ReviewSectionChars,
+): string {
   const intro =
     depth === 'deep'
       ? 'This is a DEEP single-item resolution review with a longer commit history than ' +
@@ -212,15 +241,46 @@ function reviewPrompt(
     'history, and the item prompt/notes. First line: exactly one word — resolved, ' +
     'likely, partial, or open. Then up to six short bullet points explaining your ' +
     'reasoning and what to verify. Judge only from the evidence given.\n\n' +
-    `ROADMAP STATUS: ${note.status ?? 'ready'}\n` +
-    `PROMPT:\n${note.body.slice(0, sections.prompt)}\n` +
-    (notesField ? `\nNOTES:\n${notesField.slice(0, sections.notes)}\n` : '') +
-    (pinned
-      ? `\nPINNED ISSUE #${String(pinned.number)} [${issueState(pinned)}]: ${pinned.title}\n${pinned.body.slice(0, sections.issue)}\n`
-      : '\nPINNED ISSUE: (none)\n') +
-    formatIssueBlock('LINKED ISSUES', linked) +
-    `\n${commitLabel}:\n${commits.slice(0, sections.commits)}\n`
+    reviewEvidence(note, pinned, linked, commits, depth, sections)
   )
+}
+
+/**
+ * The review verdicts, least resolved first: a classifier tie goes to the
+ * earlier one, since a resolved verdict invites marking the item done.
+ */
+const REVIEW_BY_CAUTION = [
+  'open',
+  'partial',
+  'likely',
+  'resolved',
+] as const satisfies readonly RoadmapReviewVerdict[]
+
+const REVIEW_QUESTION: ClassifierQuestion = {
+  type: 'choice',
+  instructions:
+    'Has the ROADMAP ITEM in this text been resolved in this codebase? Use the pinned ' +
+    'GitHub issue (if any), other linked issues, the commit history, and the item ' +
+    'prompt/notes. A closed issue is evidence, not proof: issues are also closed as ' +
+    'duplicates or not planned. Judge only from the evidence given.',
+  options: {
+    open: 'the work the prompt describes has not been done',
+    partial: 'some of the work is done and meaningful work remains',
+    likely: 'the evidence suggests the work is done, but it is not conclusive',
+    resolved: 'the evidence shows the work is done',
+  },
+}
+
+/** The review verdict from the chosen classifier connection, or null when none answers. */
+export async function classifyRoadmapReview(
+  evidence: string,
+  timeoutMs: number,
+  ask: typeof askClassifierBatch = askClassifierBatch,
+): Promise<RoadmapReviewVerdict | null> {
+  const results = await ask([{ state: evidence, questions: { review: REVIEW_QUESTION } }], {
+    timeoutMs,
+  })
+  return likeliestChoice(REVIEW_BY_CAUTION, results?.[0]?.answers['review'])?.choice ?? null
 }
 
 interface ReviewPromptInput {
@@ -461,40 +521,49 @@ export async function reviewRoadmapItem(
   // A closed GitHub issue is evidence, not proof of implementation: issues can
   // be closed as duplicates, not planned, or invalid. Keep the state in the
   // model prompt instead of enabling bulk mark/archive from that signal alone.
-  const route = await resolveSmallTasksRoute()
-  if (!route) {
-    throw new Error('No model available for the roadmap review — configure a small-tasks model.')
-  }
-
-  const { model } = route
-  // The configured small-tasks model, which is what the provider above resolves
-  // to unless it could not be built and fell back to the chat model. A window
-  // read from the wrong model of the two is what the retry inside
-  // completeReviewPrompt exists to absorb.
-  const contextWindow = await resolveContextWindow(model)
   const timeout = depth === 'deep' ? DEEP_REVIEW_TIMEOUT_MS : BULK_REVIEW_TIMEOUT_MS
-  const { text, usage } = await completeReviewPrompt(
-    route.provider,
-    { note, pinned, linked, commits, depth },
-    model,
-    contextWindow,
-    timeout,
+  const evidence = reviewEvidence(note, pinned, linked, commits, depth, SECTION_CEILINGS[depth])
+  const { verdict, detail } = await judgeWithReasoning(
+    () => classifyRoadmapReview(evidence, timeout),
+    async () => {
+      const route = await resolveSmallTasksRoute()
+      if (!route) {
+        throw new Error(
+          'No model available for the roadmap review — configure a small-tasks model.',
+        )
+      }
+      const { model } = route
+      // The configured small-tasks model, which is what the provider above resolves
+      // to unless it could not be built and fell back to the chat model. A window
+      // read from the wrong model of the two is what the retry inside
+      // completeReviewPrompt exists to absorb.
+      const contextWindow = await resolveContextWindow(model)
+      const { text, usage } = await completeReviewPrompt(
+        route.provider,
+        { note, pinned, linked, commits, depth },
+        model,
+        contextWindow,
+        timeout,
+      )
+      if (usage.inputTokens || usage.outputTokens) {
+        recordUsageEvent({
+          model,
+          source: 'small-tasks',
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        })
+      }
+      return text
+    },
+    parseReviewVerdict,
+    (text) =>
+      formatReviewDetail(text, depth) || text.trim().slice(0, depth === 'deep' ? 1200 : 600),
   )
-  if (usage.inputTokens || usage.outputTokens) {
-    recordUsageEvent({
-      model,
-      source: 'small-tasks',
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-    })
-  }
-  const verdict = parseReviewVerdict(text)
-  if (!verdict) throw new Error('The model returned no verdict — try again.')
-  const detail =
-    formatReviewDetail(text, depth) || text.trim().slice(0, depth === 'deep' ? 1200 : 600)
 
   const fresh = getKnowledgeNote(id)
-  if (fresh && fresh.body === note.body && fresh.fields['issue'] === issueRef) {
+  // `issueRef` defaults an absent pin to '', so compare the fresh note the same
+  // way; otherwise an item without a pinned issue never keeps its verdict.
+  if (fresh && fresh.body === note.body && (fresh.fields['issue'] ?? '') === issueRef) {
     stampReview(id, fresh, verdict, detail, depth, bulkRunId)
   }
 
