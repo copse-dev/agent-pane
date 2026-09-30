@@ -1,3 +1,19 @@
+# Explainer animation style exploration
+
+Open `index.html` for six explainer directions (problem → action → result each) and two animated
+samples: `scene-paper-desk.html` and `scene-isometric-mailroom.html`. Rendered output is in `out/`.
+
+Every frame is a pure function of time (`runtime.js`), so a scene autoplays in a browser and can
+also be rendered deterministically: `window.__seek(t)` draws time `t`. Add `?t=6.3` to freeze a
+scene at one moment, or `?loop=0` to play once.
+
+## Rendering to MP4
+
+`capture.mjs` isn't kept in the repo (the repo linter only covers TypeScript and plain browser JS
+under `prototypes/`). This is the script used; it needs `playwright` and `ffmpeg` available, and
+the scene path, output directory and optional `--stills=t1,t2` as arguments.
+
+```js
 // Usage: node capture.mjs <scene.html> <out-dir> [fps=30] [--stills=t1,t2,...]
 // Renders each frame deterministically via window.__seek(t), then (without --stills) runs ffmpeg.
 import { chromium } from 'playwright'
@@ -70,3 +86,4 @@ if (stills) {
   rmSync(frames, { recursive: true, force: true })
 }
 await browser.close()
+```
