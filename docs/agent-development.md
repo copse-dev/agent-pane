@@ -290,7 +290,10 @@ one commit on the live head that only adds or updates PNGs under `tests/e2e/scre
 pushes with the release App token so CI runs on the new head, and CI skips e2e there because the
 commit only changes screenshots. `decline-screenshots` passes the check and commits nothing, for
 unrelated drift or references that belong in another PR. A refused label is removed with a comment
-saying why. The decision belongs to the head it was made on, so any push starts a new review.
+saying why. To commit only some candidates, tick their checkboxes in the evidence comment and then
+the last "Commit the ticked screenshots" box: `.github/workflows/screenshot-review-selection.yml`
+(an `issue_comment` edit by a write-access user) advances the PR branch by one commit holding just
+those PNGs, records the decision, and unticks the box with a comment if it refuses. The decision belongs to the head it was made on, so any push starts a new review.
 Adding a label also re-runs CI on that head. After an accept, the fast-forward supersedes that run;
 after a decline it is a repeat, and the publisher keeps the decision when the run lands. Promotion
 and merge-back PRs from `main` or `release` pass the check without a decision.
