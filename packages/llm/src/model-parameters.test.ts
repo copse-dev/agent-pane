@@ -38,7 +38,12 @@ describe('isReasoningLevel', () => {
 
 describe('modelParameterSupport', () => {
   it('offers the full effort ladder and no sampling on the models that removed it', () => {
-    for (const model of ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5']) {
+    for (const model of [
+      'claude-opus-5',
+      'claude-opus-4-8',
+      'claude-sonnet-5-5',
+      'claude-sonnet-5',
+    ]) {
       const support = modelParameterSupport(model)
       assert.deepEqual([...support.sampling], [], model)
       assert.equal(support.reasoningWire, 'anthropic-effort', model)

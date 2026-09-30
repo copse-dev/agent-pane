@@ -35,6 +35,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,
