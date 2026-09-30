@@ -48,6 +48,12 @@ export interface GuestScrollTracker {
    * moved while nothing watched it.
    */
   setEnabled(enabled: boolean): void
+  /**
+   * The guest has (or lost) keyboard/pointer focus. Guest-only input such as PageDown or a
+   * scrollbar drag never reaches the host, so while the guest is focused polling does not idle
+   * out; it settles into the normal idle stop once focus leaves.
+   */
+  setGuestFocused(focused: boolean): void
   dispose(): void
 }
 
@@ -79,6 +85,7 @@ export function trackGuestScroll(options: {
   let disposed = false
   let enabled = false
   let polling = false
+  let guestFocused = false
   let inFlight = false
   let idleTimer: number | null = null
   let interval: number | null = null
@@ -104,12 +111,12 @@ export function trackGuestScroll(options: {
     idleTimer = timer.setTimeout(() => {
       idleTimer = null
       polling = false
-      if (strokeDepth === 0) stopPolling()
+      if (strokeDepth === 0 && !guestFocused) stopPolling()
     }, IDLE_STOP_MS)
   }
 
   function poll(): void {
-    if (disposed || !enabled || inFlight || (!polling && strokeDepth === 0)) return
+    if (disposed || !enabled || inFlight || (!polling && strokeDepth === 0 && !guestFocused)) return
     inFlight = true
     void options
       .fetchPosition()
@@ -147,7 +154,7 @@ export function trackGuestScroll(options: {
   }
   const onPointerUp = (): void => {
     strokeDepth = Math.max(0, strokeDepth - 1)
-    if (strokeDepth === 0 && !polling) stopPolling()
+    if (strokeDepth === 0 && !polling && !guestFocused) stopPolling()
   }
 
   const start = (refreshLayout = false): void => {
@@ -184,6 +191,11 @@ export function trackGuestScroll(options: {
       if (disposed || next === enabled) return
       if (next) start(true)
       else stop()
+    },
+    setGuestFocused(focused: boolean): void {
+      if (disposed || focused === guestFocused) return
+      guestFocused = focused
+      if (focused) wake()
     },
     dispose(): void {
       if (enabled) stop()

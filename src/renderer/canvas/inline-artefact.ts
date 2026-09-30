@@ -264,6 +264,22 @@ export function createInlineArtefact(
           layer.setScrollOffset(position.x, position.y)
         },
       })
+      // Guest-only scrolling (PageDown, scrollbar) never reaches the host; track while focused.
+      const scroll = annotationScroll
+      stage.addEventListener(
+        'focus',
+        () => {
+          scroll.setGuestFocused(true)
+        },
+        true,
+      )
+      stage.addEventListener(
+        'blur',
+        () => {
+          scroll.setGuestFocused(false)
+        },
+        true,
+      )
     }
     annotate.setAttribute('aria-pressed', String(annotation.toggle()))
     // Enabling reads the guest's current offsets straight away, so the first

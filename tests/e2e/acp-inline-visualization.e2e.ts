@@ -383,7 +383,10 @@ describe('ACP inline visualization reference', () => {
     await browser.execute(async () => {
       const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
         executeJavaScript?: (source: string) => Promise<unknown>
+        focus?: () => void
       } | null
+      // Guest-only scrolling (PageDown, scrollbar) is preceded by guest focus.
+      webview?.focus?.()
       await webview?.executeJavaScript?.(
         'document.documentElement.style.height = "2000px"; window.scrollTo(0, 240)',
       )

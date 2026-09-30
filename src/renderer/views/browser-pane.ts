@@ -1324,6 +1324,23 @@ export function mountBrowserPane(
             layer.setScrollOffset(position.x, position.y)
           },
         })
+        // Keyboard (PageDown) and scrollbar scrolling happen inside the guest and
+        // never reach the host, so track for as long as the guest holds focus.
+        const scroll = tab.annotationScroll
+        webviewHost.addEventListener(
+          'focus',
+          () => {
+            scroll.setGuestFocused(true)
+          },
+          true,
+        )
+        webviewHost.addEventListener(
+          'blur',
+          () => {
+            scroll.setGuestFocused(false)
+          },
+          true,
+        )
       }
       return tab.annotation
     }

@@ -356,4 +356,48 @@ describe('SCROLL_TRACK_INTERVAL_MS', () => {
   it('is a human-scale polling cadence', () => {
     assert.equal(SCROLL_TRACK_INTERVAL_MS, 80)
   })
+
+  it('keeps polling past the idle stop while the guest is focused, for guest-only scrolling', async () => {
+    const timers = fakeTimer()
+    const { target } = wheelTarget()
+    const positions: GuestScrollPosition[] = []
+    let current: GuestScrollPosition = { x: 0, y: 0 }
+    let calls = 0
+    const tracker = trackGuestScroll({
+      wheelTarget: target,
+      fetchPosition: () => {
+        calls += 1
+        return Promise.resolve(current)
+      },
+      onScroll: (p) => {
+        positions.push(p)
+      },
+      timer: timers,
+    })
+    try {
+      await flush()
+      timers.runTimeouts() // creation read goes idle
+      tracker.setGuestFocused(true)
+      await flush()
+      timers.runTimeouts() // idle timeout must not stop polling while focused
+
+      // PageDown inside the guest: no wheel or pointer event reaches the host.
+      current = { x: 0, y: 600 }
+      timers.fireInterval()
+      await flush()
+      assert.deepEqual(positions.at(-1), { x: 0, y: 600 })
+
+      // Once focus leaves and the idle stop fires, the tracker goes quiet again.
+      tracker.setGuestFocused(false)
+      timers.runTimeouts()
+      const settled = calls
+      current = { x: 0, y: 900 }
+      timers.fireInterval()
+      await flush()
+      assert.equal(calls, settled, 'unfocused idle tracker makes no guest IPC calls')
+    } finally {
+      tracker.dispose()
+      target.remove()
+    }
+  })
 })
