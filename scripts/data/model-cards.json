@@ -38,6 +38,15 @@
       "asOf": "2026-09-02"
     },
     {
+      "modelId": "claude-opus-5-5",
+      "publisher": "Anthropic",
+      "kind": "system-card",
+      "title": "Claude Opus 5.5 system card",
+      "url": "https://www.anthropic.com/claude-opus-5-5-system-card",
+      "source": "Listed on Anthropic's system-cards hub (https://www.anthropic.com/system-cards); the stable slug redirects to the vendor-published 'Claude Opus 5.5 System Card.pdf' on www-cdn.anthropic.com. Verified 2026-09-30.",
+      "asOf": "2026-09-30"
+    },
+    {
       "modelId": "claude-opus-5",
       "publisher": "Anthropic",
       "kind": "system-card",

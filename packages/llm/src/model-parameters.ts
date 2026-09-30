@@ -188,9 +188,12 @@ const CLAUDE_EFFORT_WITH_SAMPLING = [
 
 /**
  * Thinking is always on for these — an explicit `thinking: { type: 'disabled' }`
- * is rejected — so `off` is not offered.
+ * is rejected — so `off` is not offered. The 5.5 models are listed by full id
+ * because Opus 5 and Sonnet 5, which share their prefixes, still accept it.
  */
 const CLAUDE_THINKING_ALWAYS_ON = [
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
   'claude-fable-5',
   'claude-mythos-5',
   'claude-mythos-preview',

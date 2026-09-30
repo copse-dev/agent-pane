@@ -39,6 +39,7 @@ describe('isReasoningLevel', () => {
 describe('modelParameterSupport', () => {
   it('offers the full effort ladder and no sampling on the models that removed it', () => {
     for (const model of [
+      'claude-opus-5-5',
       'claude-opus-5',
       'claude-opus-4-8',
       'claude-sonnet-5-5',
@@ -64,8 +65,14 @@ describe('modelParameterSupport', () => {
   })
 
   it('omits "off" for models whose thinking cannot be disabled', () => {
-    assert.equal(modelParameterSupport('claude-fable-5').reasoning.includes('off'), false)
-    assert.equal(modelParameterSupport('claude-opus-5').reasoning.includes('off'), true)
+    // Opus 5.5 and Sonnet 5.5 400 on `thinking: { type: 'disabled' }` although
+    // their `claude-opus-5` / `claude-sonnet-5` prefixes still accept it.
+    for (const model of ['claude-fable-5', 'claude-opus-5-5', 'claude-sonnet-5-5']) {
+      assert.equal(modelParameterSupport(model).reasoning.includes('off'), false, model)
+    }
+    for (const model of ['claude-opus-5', 'claude-sonnet-5']) {
+      assert.equal(modelParameterSupport(model).reasoning.includes('off'), true, model)
+    }
   })
 
   it('falls back to a thinking budget on pre-effort Claude models', () => {

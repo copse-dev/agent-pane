@@ -59,6 +59,13 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     kind: 'system-card',
     asOf: '2026-09-02',
   },
+  'claude-opus-5-5': {
+    url: 'https://www.anthropic.com/claude-opus-5-5-system-card',
+    title: 'Claude Opus 5.5 system card',
+    publisher: 'Anthropic',
+    kind: 'system-card',
+    asOf: '2026-09-30',
+  },
   'claude-sonnet-4-6': {
     url: 'https://www.anthropic.com/claude-sonnet-4-6-system-card',
     title: 'Claude Sonnet 4.6 system card',
