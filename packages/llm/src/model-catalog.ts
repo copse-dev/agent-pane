@@ -167,25 +167,6 @@ export function operatorInstructionPlacement(model: string): OperatorInstruction
   return 'leading-system'
 }
 
-export type ModelFamily = 'claude' | 'gpt' | 'other'
-
-/**
- * Coarse vendor family of a stored model selection, for callers that adapt
- * wording (not transport) per family. Routed selections unwrap like
- * `isOpus5Model`; local and external-agent namespaces are `other` even when
- * their model name starts with `gpt`/`claude`, and `gpt-oss-*` (open weights,
- * not an OpenAI-hosted reasoning model) is `other`. This is the one place to
- * swap if a shared capability table replaces prefix matching.
- */
-export function modelFamily(model: string): ModelFamily {
-  const selection = parseModelSelection(model)
-  if (!CLOUD_ROUTED.has(selection.namespace)) return 'other'
-  const id = selection.modelId
-  if (id.startsWith('claude')) return 'claude'
-  if (id.startsWith('gpt-') && !id.startsWith('gpt-oss-')) return 'gpt'
-  return 'other'
-}
-
 /**
  * Whether `model` resolves to the Claude Opus 5 family.
  *

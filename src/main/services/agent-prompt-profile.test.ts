@@ -17,8 +17,15 @@ import { SECTION_PROFILES } from './agent-prompt-sections.ts'
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
 
 describe('resolvePromptProfile', () => {
-  it('maps OpenAI GPT selections, however routed, to the gpt profile', () => {
-    for (const model of ['gpt-5.5', 'gpt-5-mini', 'openrouter:openai/gpt-5', 'my-proxy:gpt-5.5']) {
+  it('maps GPT reasoning selections, however routed, to the gpt profile', () => {
+    for (const model of [
+      'gpt-5.5',
+      'gpt-5-mini',
+      'gpt-6-astra',
+      'gpt-6.1-sol',
+      'openrouter:openai/gpt-5',
+      'my-proxy:gpt-5.5',
+    ]) {
       assert.equal(resolvePromptProfile(model), 'gpt', model)
     }
   })
@@ -28,6 +35,8 @@ describe('resolvePromptProfile', () => {
       'claude-sonnet-5-5',
       'claude-opus-5',
       'openrouter:anthropic/claude-opus-5',
+      'gpt-4o',
+      'o3',
       'lmstudio:gpt-5-distill-q4',
       'acp:codex#gpt-5.5',
       'gpt-oss-120b',

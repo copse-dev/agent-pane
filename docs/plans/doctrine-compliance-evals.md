@@ -79,10 +79,12 @@ enumerated tool-list prose on the three-task subset.
 
 ## Prompt profiles and the GPT investigation (2026-09)
 
-`resolvePromptProfile(model)` (`agent-prompt-profile.ts`, backed by `modelFamily` in
-`packages/llm/src/model-catalog.ts`) picks `default` or `gpt`; `SECTION_PROFILES` in
-`agent-prompt-sections.ts` says which profiles include each section. Non-GPT models, an
-absent model, local/ACP namespaces and `gpt-oss-*` stay on `default`. The prompt is a pure
+`resolvePromptProfile(model)` (`agent-prompt-profile.ts`, keyed on the canonical family
+from the shared table in `packages/llm/src/model-families.ts`) picks `default` or `gpt`;
+`SECTION_PROFILES` in `agent-prompt-sections.ts` says which profiles include each section.
+Only the GPT reasoning families (`gpt-5`, `gpt-6-astra`, `gpt-6.1-sol`) get `gpt`; other
+models, an absent model, local/ACP namespaces, `gpt-4o`, the o-series and `gpt-oss-*` stay on
+`default`. The prompt is a pure
 function of (mode, profile), so it does not vary turn to turn within a thread (the Opus 5
 blocks in `agent-system-prompt.ts` are the separate, older per-model exception).
 
