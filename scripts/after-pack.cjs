@@ -17,12 +17,14 @@ module.exports = async function afterPack(context) {
     { join },
     { Arch },
     { repairVersionedMacosFrameworks },
+    { pruneForeignMacosPayloads },
   ] = await Promise.all([
     import('node:child_process'),
     import('node:fs'),
     import('node:path'),
     import('electron-builder'),
     import('./lib/repair-macos-frameworks.mts'),
+    import('./lib/prune-macos-foreign-payloads.mts'),
   ])
 
   const targetArch =
@@ -77,6 +79,7 @@ module.exports = async function afterPack(context) {
     join(resources, 'node_modules', '@napi-rs', `keyring-darwin-${unusedKeyringPackageArch}`),
     { recursive: true, force: true },
   )
+  pruneForeignMacosPayloads(join(resources, 'node_modules'), keyringPackageArch)
 
   if (archs.length === 1) return
 
