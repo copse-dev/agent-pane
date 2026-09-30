@@ -90,6 +90,11 @@ test('managed rows jump to their thread and stop by handle; shared rows stay rea
   open()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
+  assert.equal(
+    document.activeElement,
+    document.querySelector('[aria-label="Close process manager"]'),
+    'opening the process manager gives keyboard focus to its close control',
+  )
   assert.equal(document.querySelector('tr[data-pid="1"] .process-manager-actions-button'), null)
   const actions = document.querySelector<HTMLButtonElement>(
     'tr[data-pid="42"] .process-manager-actions-button',
@@ -315,5 +320,66 @@ test('processes group under their thread, expanded by default, with shared proce
   )
   assert.equal(refreshed?.getAttribute('aria-expanded'), 'false', 'collapse survives refresh')
   assert.ok(document.activeElement === refreshed, 'refresh keeps focus on the group toggle')
+  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
+})
+
+test('a chip menu never stops a run other than the one it was opened on', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const store = createStore({
+    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
+    activeProjectId: 'project-a',
+    threads: [thread('thread-a')],
+  })
+  let activeRunThreadIds = ['thread-a']
+  const aborted: string[] = []
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      abort: async (threadId) => {
+        aborted.push(threadId)
+      },
+    },
+    processManager: {
+      ...base.processManager,
+      snapshot: async () => ({ sampledAt: Date.now(), activeRunThreadIds, processes: [] }),
+    },
+  }
+  mountProcessManagerDialog(api, store)()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const openChipMenu = (): void => {
+    document
+      .querySelector('.process-manager-activity-item')
+      ?.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  }
+  const refresh = async (): Promise<void> => {
+    t.mock.timers.tick(1_000)
+    await Promise.resolve()
+  }
+
+  // The run finishes while its menu is open.
+  openChipMenu()
+  activeRunThreadIds = []
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, [])
+
+  // The run finishes and a new one starts in the same thread.
+  activeRunThreadIds = ['thread-a']
+  await refresh()
+  openChipMenu()
+  activeRunThreadIds = []
+  await refresh()
+  activeRunThreadIds = ['thread-a']
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, [])
+
+  // The run the menu was opened on is still going.
+  openChipMenu()
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, ['thread-a'])
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })

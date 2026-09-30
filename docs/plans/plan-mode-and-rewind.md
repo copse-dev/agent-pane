@@ -92,7 +92,7 @@ messages):
   approval.json          # only after approve
 ```
 
-Minimum fields (zod in [`plan-schema.ts`](../../src/shared/threads/plan-schema.ts);
+Minimum fields (zod in [`plan-schema.ts`](../../packages/thread-store/src/plan-schema.ts);
 JSON Schema mirror [`schemas/copse-plan.schema.json`](../../schemas/copse-plan.schema.json)):
 
 - `planId`, `revision`, `threadId`, `createdAt`, `updatedAt`
@@ -102,16 +102,10 @@ JSON Schema mirror [`schemas/copse-plan.schema.json`](../../schemas/copse-plan.s
 - `approvedAt` / `approvedRevision` / `executionProfileId` when approved
 - content hash (sha256 of body) for integrity at approval time
 
-**The step shape is deliberately minimal today and should not stay that way past P1.**
-`planStepSchema` is `{ id, label }`, while the todo layer separately carries status, an
-executable acceptance `check`, and a binary `assignedModel`
-(`packages/agent/src/wire-types.ts:31`). Nothing relates the two, so an approved plan cannot
-show per-step progress; there are no dependency edges, so nothing can establish that two steps
-are independent and safe to run concurrently under #869; and there is no effort tier for the
-model classifier (#557) to size a step against. [#1570](https://github.com/copse-dev/agent-pane/issues/1570)
-proposes adding those fields as optional while this plan is still fixtures-only — after
-writers and stored plans exist it becomes a migration. Evidence:
-[`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-03.
+Structured steps keep `id` and `label` as their only required fields. Optional `dependsOn`,
+`effort` (`low | medium | high`), `todoId`, and `expectedOutput` metadata lets a future writer
+relate approved work to execution progress, express dependency edges, size routing, and name an
+observable result without changing execution behavior. Existing P1 fixtures remain valid.
 
 Spine events use `type: "plan"` with
 `action: create | revise | comment | approve | abandon` (see

@@ -34,6 +34,7 @@ import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { AutomationPermission } from '@shared/types'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
@@ -206,6 +207,22 @@ export interface TerminalPermissionOptions {
 }
 
 /**
+ * Whether a shell command authorized for `executionRoot` runs inside the local
+ * project sandbox. `reported` is the caller's view of local containment (this
+ * session's sandbox by default, or an ACP agent's own seatbelt); it says
+ * nothing about a command the spawn sends to an SSH host, which runs there with
+ * no sandbox at all. Such a command is judged exactly as on a platform without
+ * one — ambiguity and opaque scripts prompt, auto-approval and replay leases
+ * stay off — whatever `reported` claims.
+ */
+function commandRunsSandboxed(
+  executionRoot: string | null,
+  reported = isProjectSandboxEnabled(),
+): boolean {
+  return reported && !spawnRunsOnSshTarget(executionRoot)
+}
+
+/**
  * Offer "always allow `<binary>` in trusted projects" on an escalation to run a
  * command outside the sandbox, when a single eligible binary is resolvable (see
  * offerableTrustedCommand). Ticking it appends that basename to the trusted
@@ -231,7 +248,7 @@ function autoApproveShell(
   command: string,
   scope: 'sandbox' | 'external',
   executionRoot?: string | null,
-  sandboxEnabled = isProjectSandboxEnabled(),
+  sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
 ): boolean {
   const decision = resolveAutoApproval(command, executionRoot, sandboxEnabled)
   if (decision.action !== 'auto-approve') return false
@@ -308,6 +325,11 @@ async function resolveReadOutsideProject(
   workspaceRoot: string | null,
   signal?: AbortSignal,
 ): Promise<boolean | null> {
+  // The analysis judges paths against this machine's home and root; on an SSH
+  // workspace the command reads the remote account's files, which those
+  // boundaries say nothing about. Leave it to the caller's ordinary prompt, and
+  // never let a thread grant made for local paths cover it.
+  if (spawnRunsOnSshTarget(workspaceRoot)) return null
   const analysis = analyzeReadOutsideProject(command, workspaceRoot)
   if (!analysis.eligible) return null
 
@@ -1168,8 +1190,8 @@ export async function ensureShellCommandPermitted(
       command,
       [
         holders.length > 0
-          ? `sandbox network access is temporarily widened for ${holders.join(', ')}`
-          : 'sandbox network access is temporarily widened for another process',
+          ? `The sandbox network allowlist is temporarily widened for ${holders.join(', ')}; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.`
+          : 'The sandbox network allowlist is temporarily widened for another process; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.',
       ],
       false,
       'shell-network-scope-overlap',
@@ -1206,7 +1228,8 @@ export async function ensureShellCommandPermitted(
         ? false
         : (opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true))
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
-  const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
+  // False on an SSH workspace whatever the local sandbox or caller reports.
+  const sandboxEnabled = commandRunsSandboxed(workspaceRoot, opts.sandboxEnabled)
   const classification = sandboxEnabled || guardedYolo ? null : await classifyShellScope(command)
   if (classification) {
     recordDecision({

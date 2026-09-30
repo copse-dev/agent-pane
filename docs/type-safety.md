@@ -3,7 +3,7 @@
 The hard-won conventions for keeping the codebase type-honest. AGENTS.md links here rather than
 inlining all of it; this is the full reference.
 
-## The three gates
+## The static gates
 
 The static checks that keep the codebase honest run together under **`npm run check:local`**;
 **`npm run check`** composes that gate with the complete unit/component suite. CI runs the same
@@ -12,6 +12,12 @@ checks in its required jobs:
 - **`tsc`** (`npm run typecheck`) — both tsconfig projects (`tsconfig.node.json`,
   `tsconfig.web.json`), on `strict` plus the extra flags (`noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, …).
+- **Type coverage** (`npm run type-coverage`) — `type-coverage --strict` measures expressions whose
+  type escapes to `any` or cannot be determined. The Node and renderer projects have separate
+  measured floors of 99.90% and 99.92%; the gate prevents either baseline from regressing while
+  allowing follow-up work to ratchet each threshold upward. This complements `tsc`: a program can
+  compile successfully while dependency declarations or unchecked inference still introduce
+  implicit `any`.
 - **ESLint** (`npm run lint`) — flat config in `eslint.config.mjs`, on `typescript-eslint`'s
   `strictTypeChecked`, with no suppression baseline — see
   [The suppression baseline is empty](#the-suppression-baseline-is-empty--keep-it-that-way).
@@ -24,6 +30,20 @@ or the complete `npm run check` are also required locally. For a fast inner loop
 same tools the gates invoke.
 
 ## Write code the linter never has to flag
+
+### Keep non-switch union branches exhaustive
+
+The switch exhaustiveness lint rule covers `switch`, but it cannot protect an
+implicit final fallback in an `if` / `else if` chain over a discriminated
+union. Prefer an exhaustive switch for those mappings and end its default with
+`assertNever(value, context)` from `@copse/std/assert-never.ts`. Adding a union
+member then fails type-checking, and invalid runtime data produces a contextual
+error instead of silently taking an implicit fallback. Do not suppress
+`no-unnecessary-condition` to force a final always-true discriminant check.
+
+Do not add `ts-pattern` solely for exhaustiveness. The existing switch rule
+and the small shared helper cover the current needs without adding a runtime
+dependency; reconsider only if nested-shape matching becomes common.
 
 ### Minimise `as` casts
 

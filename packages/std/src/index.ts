@@ -2,6 +2,7 @@
 // granular subpaths (`@copse/std/unknown-value.ts`, …); the barrel exists so a
 // standalone consumer has one obvious import.
 export * from './array-utils.ts'
+export * from './assert-never.ts'
 export * from './errors.ts'
 export * from './member-of.ts'
 export * from './nullish.ts'

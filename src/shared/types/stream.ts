@@ -1,5 +1,5 @@
 import type { ToolCallUpdateChunk } from '@copse/agent/wire-types.ts'
-import type { MachineMessageOrigin, ThreadReviewReport } from './thread.ts'
+import type { MachineMessageOrigin, ThreadReviewReport, TranscriptAttachment } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { CanvasArtefactReference } from './canvas.ts'
 import type { TodoItem } from './todo.ts'
@@ -42,7 +42,14 @@ export type StreamChunk =
       artefact: CanvasArtefactReference
     }
   /** A host-native continuation began without a human submit. */
-  | { type: 'machine_turn_start'; content: UserContent; origin: MachineMessageOrigin }
+  | {
+      type: 'machine_turn_start'
+      content: UserContent
+      origin: MachineMessageOrigin
+      attachments?: TranscriptAttachment[]
+      startingCommit?: string
+      dirty?: boolean
+    }
   /**
    * Patch an existing external ACP tool call. ACP agents may send the title and
    * raw input on the initial `tool_call`, then replace input/output/status in

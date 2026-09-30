@@ -3,6 +3,7 @@ import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
+import { isAnyDialogOpen } from './views/dialog-shell.ts'
 
 type KeyboardShortcutEvent = Pick<
   KeyboardEvent,
@@ -96,6 +97,9 @@ export function handlePanelShortcut(
 
 export function registerPanelKeyboardShortcuts(store: AppStore, api: ApiClient): void {
   document.addEventListener('keydown', (e) => {
+    // Dialog controls and native Escape/Enter behavior take precedence over
+    // shortcuts that belong to the workspace behind the dialog.
+    if (isAnyDialogOpen()) return
     // New thread fires even from the composer, so it's checked before the
     // typing-target guard that the panel chords skip on.
     if (matchNewThreadShortcut(e)) {

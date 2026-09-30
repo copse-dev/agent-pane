@@ -42,6 +42,19 @@ describe('extra-providers-store', () => {
     assert.equal(acme.prefix, 'acme:')
   })
 
+  it('persists a custom provider Responses API selection', async () => {
+    await saveExtraProvider({
+      label: 'Acme AI',
+      baseUrl: 'https://api.acme.example/v1',
+      apiStyle: 'responses',
+    })
+    assert.equal(getResolvedExtraProvider('acme')?.apiStyle, 'responses')
+    assert.equal(
+      getSetting<Array<{ slug: string; apiStyle?: string }>>('extraProviders', [])[0]?.apiStyle,
+      'responses',
+    )
+  })
+
   it('disambiguates a second provider on the same host instead of clobbering', async () => {
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })

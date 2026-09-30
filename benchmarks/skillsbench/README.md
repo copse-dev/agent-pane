@@ -5,6 +5,11 @@ verifier lifecycle. It pins SkillsBench tag `v1.1` at
 `b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af` and BenchFlow `0.6.3`. The checked descriptor retains
 all 87 active tasks and all 14 upstream exclusions.
 
+Copse additionally predeclares study exclusions in the descriptor without rewriting the upstream
+roster. The v1.1 study excludes `data-to-d3` because its reference `solve.sh` fetches d3 while both
+agent trials and oracles run without network access. Requesting a study-excluded task fails before
+either kind of trial launches; solution dependencies are not staged into the task image.
+
 The spike replaces only BenchFlow's agent/ACP composition plane. BenchFlow still builds the task
 image, injects the official skill bundle for the two skill arms, executes the official verifier,
 and writes its native result and trajectory artifacts. Copse runs on the worker host and forwards
@@ -57,3 +62,16 @@ Each capsule contains the complete BenchFlow rollout plus `manifest.json`, inclu
 reward, release and task revisions, task digest, profile/content hash, reasoning policy and
 checkpoint summary, full skill-bundle inventory and digest, model, tokens, tool/skill-read counts,
 elapsed time, and Copse source commit.
+
+## Minimum-work policy
+
+Before aggregation, `minimum-work-v1` voids a trial with fewer than 1,000 input tokens or no tool
+calls. The capsule retains the verifier's raw reward as `verifierReward`, but exposes a null
+`officialReward` for a void trial so it cannot silently count as a scored failure. Its `status`,
+`voidReason`, and complete `trialPolicy` travel with the capsule, and the fetch workflow reports the
+void count in both `trial-summary.jsonl` and the Actions summary.
+
+The 1,000-token boundary was declared in response to the 982-input-token `dialogue-parser` trial
+from run 30225392613: it made two calls, ended without a runner or verifier error, and remains
+unexplained. This policy distinguishes that missing trial from a genuine zero reward without
+retroactively changing the threshold after viewing a new cohort.
