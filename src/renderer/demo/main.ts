@@ -1,3 +1,6 @@
+import { mountProductAnnouncements } from '../views/product-announcement-dialog.ts'
+import { openSettingsDialog } from '../views/settings-dialog.ts'
+import { DEMO_PRODUCT_ANNOUNCEMENTS } from './announcement-fixtures.ts'
 import './demo.css'
 import { createDemoApi } from './demo-api.ts'
 import { selectDemoScenario } from './scenarios.ts'
@@ -34,7 +37,16 @@ if (scenario.staticSite) document.documentElement.dataset['demoStaticSite'] = sc
 if (autoplay) document.documentElement.dataset['demoAutoplay'] = 'on'
 if (embedded) document.documentElement.dataset['demoEmbedded'] = 'on'
 
-void import('../main.ts').then(() => {
+void import('../main.ts').then(async (main) => {
+  await main.rendererReady
+  if (scenario.id.startsWith('product-announcements')) {
+    await mountProductAnnouncements(
+      window.api.settings,
+      DEMO_PRODUCT_ANNOUNCEMENTS,
+      openSettingsDialog,
+    )
+    document.documentElement.dataset['announcementsReady'] = 'true'
+  }
   const trace = scenario.trace
   if (!autoplay || !trace) return
   void startAutoplay(document, {

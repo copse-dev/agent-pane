@@ -1308,6 +1308,65 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'product-announcements-fresh',
+    label: 'Product announcements — fresh',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-update',
+    label: 'Product announcements — update',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-seen',
+    label: 'Product announcements — seen',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released', 'demo-announcements-ready'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'update-prompt-changelog',
     label: 'Update prompt listing every missed release',
     project: project('demo-update-prompt-changelog-project'),
