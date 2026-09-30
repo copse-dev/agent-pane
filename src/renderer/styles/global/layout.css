@@ -620,7 +620,10 @@
   color: var(--accent);
 }
 .chat-pr-status.is-merged {
-  color: var(--success);
+  color: var(--pr-merged);
+}
+.chat-pr-status.is-closed {
+  color: var(--pr-closed);
 }
 .chat-attention-bell {
   flex-shrink: 0;
