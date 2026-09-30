@@ -25,10 +25,21 @@ export type PlanStatus = (typeof PLAN_STATUSES)[number]
 
 export const planStatusSchema = z.enum(PLAN_STATUSES)
 
+export const PLAN_STEP_EFFORTS = ['low', 'medium', 'high'] as const
+export type PlanStepEffort = (typeof PLAN_STEP_EFFORTS)[number]
+
 /** Structured step inside a plan revision (optional). */
 export const planStepSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
+  /** Other plan-step ids that must be complete before this step can start. */
+  dependsOn: z.array(z.string().min(1)).optional(),
+  /** Coarse sizing input for later model routing; it does not select a model. */
+  effort: z.enum(PLAN_STEP_EFFORTS).optional(),
+  /** Todo that records execution progress for this approved-plan step. */
+  todoId: z.string().min(1).optional(),
+  /** Observable artifact or behavior that discharges the step. */
+  expectedOutput: z.string().min(1).optional(),
 })
 export type PlanStep = z.infer<typeof planStepSchema>
 

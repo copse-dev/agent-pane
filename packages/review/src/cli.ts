@@ -122,6 +122,7 @@ never the exit code.
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
   --post-review <forge>   post the findings as one review on the pull request:
                           ${FORGES.join(' | ')}; needs --repo and --pr
+  --feedback-label <name> add this label after a posted review has findings
   --post-summary <forge>  also keep a risk-and-overview summary at the bottom of the pull
                           request's description, replaced in place on every run
   --summary-only          write the summary and nothing else: no Stage 0, no review, nothing
@@ -466,6 +467,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         sarif: { type: 'string' },
         events: { type: 'string' },
         'post-review': { type: 'string' },
+        'feedback-label': { type: 'string' },
         'read-pr': { type: 'string' },
         'image-host': { type: 'string', multiple: true },
         'post-summary': { type: 'string' },
@@ -516,6 +518,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let scratchParent: string | undefined
   let lenses
   let forgeTarget: Omit<ForgeTarget, 'headCommit'> | null
+  let feedbackLabel: string | undefined
   let pullRequest: PullRequestRef | null
   let importedStage0: Stage0Report | null = null
   let trustedPreparation: TrustedPreparation | undefined
@@ -547,6 +550,10 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         throw new Error(`--summary-only cannot be used with --${conflict}`)
     }
     forgeTarget = resolveForgeTarget(values, io.env)
+    if (values['feedback-label'] !== undefined) {
+      feedbackLabel = values['feedback-label'].trim()
+      if (feedbackLabel.length === 0) throw new Error('--feedback-label must not be empty')
+    }
     pullRequest = resolvePullRequestRef(values, io.env)
     if (values['stage0-json'] !== undefined)
       importedStage0 = await importStage0(values['stage0-json'])
@@ -865,9 +872,16 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             // and not a finding its stacked sibling already carries.
             skipWhenEmpty: true,
             skipRaisedElsewhere: true,
+            ...(feedbackLabel === undefined ? {} : { feedbackLabel }),
           },
         )
         const where = `${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)}`
+        if (posted.feedbackLabelError !== undefined) {
+          postError = posted.feedbackLabelError
+          io.stderr(
+            `copse-review: the feedback label could not be added to ${where}: ${posted.feedbackLabelError}\n`,
+          )
+        }
         const repeated = posted.repeatedElsewhere
           ? `; ${String(posted.repeatedElsewhere)} finding(s) already raised on another open pull request`
           : ''

@@ -6,6 +6,12 @@ import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
+import {
+  ADVISOR_MODEL_SETTING_ID,
+  ADVISOR_STRATEGY_PLUGIN_ID,
+  ADVISOR_STRATEGY_TOOL_NAME,
+  DEFAULT_ADVISOR_MODEL_ID,
+} from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
@@ -176,24 +182,24 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
     settings: [],
   },
   {
-    id: 'copse.advisor-strategy',
+    id: ADVISOR_STRATEGY_PLUGIN_ID,
     trust: 'first-party',
     stability: 'experimental',
     name: 'Advisor strategy',
     version: '0.3.1',
     description:
-      'Pairs a second model with the executor to review strategy before long or risky work starts.',
+      'Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.',
     enabled: true,
-    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
+    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
     settings: [
       {
-        id: 'maxReviewCycles',
-        kind: 'number',
-        title: 'Max review cycles',
+        id: ADVISOR_MODEL_SETTING_ID,
+        kind: 'model',
+        title: 'Advisor model',
         description:
-          'How many times a failing review may buy the agent another turn. `0` turns retries off.',
-        default: 2,
-        value: 2,
+          'How to choose the model the advisor consults — re-derived from your configured providers each time it is called. A model assigned to the “advisor” role still takes precedence.',
+        default: DEFAULT_ADVISOR_MODEL_ID,
+        value: DEFAULT_ADVISOR_MODEL_ID,
       },
     ],
   },
@@ -572,6 +578,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe,
@@ -1254,6 +1261,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe,
     },
     appRun: {

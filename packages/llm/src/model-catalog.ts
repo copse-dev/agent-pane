@@ -33,19 +33,22 @@ export type CloudModelProvider = 'anthropic' | 'openai'
  * Cloud model ids this app ships. Each id must exist verbatim as a key in
  * LiteLLM's catalog so the sync script can resolve it.
  */
-export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
+export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-5-5'
 
 export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
   'claude-fable-5-1',
   'claude-fable-5',
   'claude-sonnet-5',
+  'claude-sonnet-4-6',
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
+  'gpt-6.1-sol',
   'gpt-6-astra',
   'gpt-5.5',
   'gpt-5',
@@ -84,12 +87,15 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-fable-5-1': 'Claude Fable 5.1',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-opus-5-5': 'Claude Opus 5.5',
   'claude-opus-5': 'Claude Opus 5',
   'claude-opus-4-8': 'Claude Opus 4.8',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
   'gpt-5.6-sol': 'GPT-5.6 Sol',
   'gpt-5.6-terra': 'GPT-5.6 Terra',
   'gpt-5.6-luna': 'GPT-5.6 Luna',
+  'gpt-6.1-sol': 'GPT-6.1 Sol',
   'gpt-6-astra': 'GPT-6 Astra',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5': 'GPT-5',
@@ -127,7 +133,7 @@ export function anthropicMaxOutputTokens(model: string): number {
  *
  * Anything absent from this list must keep current-turn operator instructions
  * in the leading system prompt; sending a mid-conversation system message to a
- * model that doesn't support it is a 400. Notably `claude-sonnet-4-6` — the
+ * model that doesn't support it is a 400. Notably `claude-sonnet-5-5` — the
  * default cloud model — does not support it, so leading-system placement is the
  * common path, not an edge case.
  */

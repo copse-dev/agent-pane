@@ -3,7 +3,11 @@ import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
-import { attachAutomationController, type AutomationControllerApi } from './automations.ts'
+import {
+  attachAutomationController,
+  AUTOMATION_START_RETRY_MS,
+  type AutomationControllerApi,
+} from './automations.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 function tick(): Promise<void> {
@@ -67,6 +71,7 @@ function controllerApi(loaded: Thread[]): {
       },
     },
     automations: {
+      canStart: () => Promise.resolve({ allowed: true }),
       onTriggered(handler) {
         triggerHandler = handler
         return () => {
@@ -161,6 +166,63 @@ test('a persisted trigger missed during startup begins when its project is loade
   detach()
 })
 
+test('a retryable admission denial starts after verification recovers', async (context): Promise<void> => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const created = automationThread()
+  const store = createStore({
+    activeProjectId: 'project-a',
+    workspaceRoot: '/repo',
+    threads: [created],
+  })
+  const harness = controllerApi([])
+  let admissionChecks = 0
+  harness.api.automations.canStart = (): ReturnType<
+    AutomationControllerApi['automations']['canStart']
+  > => {
+    admissionChecks += 1
+    if (admissionChecks <= 2) {
+      return Promise.resolve({
+        allowed: false,
+        retryable: true,
+        reason: 'GitHub verification is unavailable.',
+      })
+    }
+    return Promise.resolve({ allowed: true })
+  }
+  const detach = attachAutomationController(store, harness.api)
+  // Let the initial admission probe settle before advancing the retry timer.
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(harness.runs.length, 0)
+  assert.equal(store.getState().threads[0]?.draftPrompt, created.draftPrompt)
+  assert.equal(
+    store.getState().threads[0]?.messages[0]?.content,
+    'GitHub verification is unavailable.',
+  )
+  context.mock.timers.tick(AUTOMATION_START_RETRY_MS)
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(admissionChecks, 2)
+  assert.equal(harness.runs.length, 0)
+  context.mock.timers.tick(AUTOMATION_START_RETRY_MS)
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(admissionChecks, 4)
+  assert.equal(harness.runs.length, 1)
+  assert.equal(store.getState().threads[0]?.draftPrompt, undefined)
+  assert.equal(
+    store.getState().threads[0]?.messages.filter((message) => message.role === 'error').length,
+    1,
+  )
+  detach()
+})
+
 test('a checkout failure preserves the scheduled prompt as a draft', async (context) => {
   context.mock.method(console, 'error', () => {})
   const created = automationThread()
@@ -180,6 +242,7 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
     },
     automations: {
       onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
     },
     threads: {
       loadProject: () => Promise.resolve([]),
@@ -230,7 +293,10 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
         ),
       run: () => Promise.resolve(),
     },
-    automations: { onTriggered: () => () => {} },
+    automations: {
+      onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
+    },
     threads: { loadProject: () => Promise.resolve([]) },
   }
   const detach = attachAutomationController(store, api)
