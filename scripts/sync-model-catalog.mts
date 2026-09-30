@@ -17,7 +17,7 @@
 
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { firstPartyProviderOf } from '../packages/llm/src/model-families.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
 import { writeGeneratedFile } from './lib/generated-file.mts'
 
 const LITELLM_URL =
