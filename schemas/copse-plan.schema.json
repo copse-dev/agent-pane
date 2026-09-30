@@ -8,6 +8,26 @@
       "type": "string",
       "enum": ["draft", "approved", "superseded", "abandoned"]
     },
+    "planStepEffort": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "planStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "effort": { "$ref": "#/$defs/planStepEffort" },
+        "todoId": { "type": "string", "minLength": 1 },
+        "expectedOutput": { "type": "string", "minLength": 1 }
+      }
+    },
     "planMeta": {
       "type": "object",
       "additionalProperties": false,
