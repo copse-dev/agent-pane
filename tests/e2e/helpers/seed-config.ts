@@ -547,6 +547,8 @@ export function seedEmptyProject(
      * the prototype steering hook). Ships off, like the other experimental packs.
      */
     mcpUiCanvasEnabled?: boolean
+    /** Opt into the experimental CI investigator pack. */
+    ciInvestigatorEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -624,6 +626,7 @@ export function seedEmptyProject(
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
+  if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
@@ -1382,15 +1385,23 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
 export function seedPrPanelChatFixture(
   workspaceRoot: string,
-  options?: { worktreeMode?: 'always' | 'never' },
+  options?: { worktreeMode?: 'always' | 'never'; roadmapPlansEnabled?: boolean },
 ): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
+    projects: [
+      {
+        id: projectId,
+        path: workspaceRoot,
+        name: 'workspace',
+        ...(options?.worktreeMode ? { worktreeMode: options.worktreeMode } : {}),
+      },
+    ],
     activeProjectId: projectId,
+    pluginDisabled: pluginDisabledSeed(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
     [`threads:${projectId}`]: [
       {
         id: threadId,

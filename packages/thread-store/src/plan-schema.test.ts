@@ -111,6 +111,72 @@ describe('plan-schema fixtures validate', () => {
       null,
     )
   })
+
+  it('preserves optional execution metadata on structured steps', () => {
+    const plan = parsePlanRevisionRecord({
+      planId: 'p',
+      revision: 1,
+      threadId: 't',
+      title: 'Ship the change',
+      body: '# Ship the change',
+      steps: [
+        {
+          id: 'verify',
+          label: 'Verify behavior',
+          dependsOn: ['implement'],
+          effort: 'medium',
+          todoId: 'todo-verify',
+          expectedOutput: 'A passing focused acceptance test',
+        },
+      ],
+      status: 'draft',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    assert.deepEqual(plan?.steps?.[0], {
+      id: 'verify',
+      label: 'Verify behavior',
+      dependsOn: ['implement'],
+      effort: 'medium',
+      todoId: 'todo-verify',
+      expectedOutput: 'A passing focused acceptance test',
+    })
+  })
+
+  it('rejects invalid step effort and empty execution metadata', () => {
+    const base = {
+      planId: 'p',
+      revision: 1,
+      threadId: 't',
+      title: 'Plan',
+      body: '# Plan',
+      status: 'draft',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    assert.equal(
+      parsePlanRevisionRecord({
+        ...base,
+        steps: [{ id: 'x', label: 'X', effort: 'enormous' }],
+      }),
+      null,
+    )
+    assert.equal(
+      parsePlanRevisionRecord({
+        ...base,
+        steps: [{ id: 'x', label: 'X', dependsOn: [''] }],
+      }),
+      null,
+    )
+    assert.equal(
+      parsePlanRevisionRecord({
+        ...base,
+        steps: [{ id: 'x', label: 'X', todoId: '', expectedOutput: '' }],
+      }),
+      null,
+    )
+  })
 })
 
 describe('plan spine lifecycle lines', () => {

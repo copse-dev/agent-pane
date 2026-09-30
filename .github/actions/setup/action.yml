@@ -110,6 +110,7 @@ runs:
           echo "path=$path"
           echo "source=$source"
         } >> "$GITHUB_OUTPUT"
+        echo "npm_config_store_dir=$path" >> "$GITHUB_ENV"
 
     - name: Restore pnpm content-addressed store
       uses: actions/cache@v4

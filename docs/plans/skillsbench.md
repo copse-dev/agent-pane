@@ -125,6 +125,16 @@ Hash the entire mounted skill bundle, not only `SKILL.md`. Skills may include sc
 assets, or other files that materially change the trial. Record every `read_skill` path and the hash
 of the bytes returned so the trajectory proves which version the model actually saw.
 
+### Offline eligibility decision (#1309)
+
+Exclude tasks whose own upstream `solve.sh` requires egress; do not stage solution dependencies.
+Staging them would change what the benchmark measures and make results incomparable with upstream.
+The pinned dataset descriptor declares this policy set before any cohort runs. For v1.1 it contains
+`data-to-d3`, whose reference solution runs `npm install d3@6.7.0` and aborts under the same
+no-network policy applied to agent trials. The runner rejects a requested study exclusion before
+launching either an oracle or an agent. Oracle eligibility still detects unrelated infrastructure
+incompatibilities, but cannot redefine this predeclared egress set after outcomes are inspected.
+
 ## Implementation slices
 
 ### Slice 1 — compatibility and deterministic conformance
