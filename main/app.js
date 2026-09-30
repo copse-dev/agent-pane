@@ -37042,6 +37042,37 @@ var init_demo_scenarios = __esm({
         }
       },
       {
+        id: "balanced-model-label",
+        label: "Balanced model rule label",
+        project: project("demo-balanced-model-label-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:balanced"
+        },
+        threads: [
+          {
+            id: "demo-balanced-model-label-thread",
+            title: "Balanced model label",
+            status: "idle",
+            model: "auto:balanced",
+            messages: [
+              {
+                id: "demo-balanced-model-label-user",
+                role: "user",
+                content: "Keep this conversation on the balanced model rule.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         id: "footer-compact",
         label: "Responsive composer footer",
         project: project("demo-footer-project"),
@@ -53954,7 +53985,11 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
     }
   }
   let blockedMakers = parseBlockedModelMakers(null);
