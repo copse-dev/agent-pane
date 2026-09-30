@@ -743,8 +743,14 @@
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
   padding-block: var(--spacing-lg);
-  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
+}
+/* Concise results are the transcript's compact summary, so they do not need
+   the full reading-view breathing room. The base message padding still keeps
+   adjacent results legible without creating blank bands between them. */
+.msg-concise.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
+  margin-block: 0;
+  padding-block: var(--spacing-xs);
 }
 /* Keep the same reading rhythm while text streams and when tools share its
    message. Constrain prose inside the existing chat column so inserting a tool
