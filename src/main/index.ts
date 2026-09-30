@@ -940,6 +940,8 @@ app
                 forgetHistory: (pid, tid) => {
                   agentDispatcher.forgetHistory(pid, tid)
                 },
+                withExclusiveHistory: (pid, tid, op) =>
+                  agentDispatcher.withExclusiveHistory(pid, tid, op),
               }),
             ),
           ),

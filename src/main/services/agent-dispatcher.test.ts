@@ -420,6 +420,47 @@ describe('AgentDispatcher', () => {
     assert.equal(idle, true)
   })
 
+  it('fences an out-of-turn history edit behind a running turn instead of racing its commit', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let disk: LLMMessage[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => disk,
+        saveHistory: async (_p, _t, messages) => {
+          disk = messages
+        },
+        run: async (_threadId, userContent: UserContent, priorMessages) => {
+          await gate
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(request())
+    await settle()
+    const edit = dispatcher.withExclusiveHistory('project-1', 'thread-1', async () => {
+      disk = [...disk, { role: 'assistant', content: 'review' }]
+    })
+    await settle()
+    // The edit has not read or written while the turn owns the thread.
+    assert.deepEqual(disk, [])
+
+    release()
+    await Promise.all([dispatch, edit])
+    assert.deepEqual(disk, [
+      { role: 'user', content: 'continue' },
+      { role: 'assistant', content: 'review' },
+    ])
+  })
+
   it('waits for machine bookkeeping that began before the deletion fence', async () => {
     let releaseEpoch!: () => void
     const epochGate = new Promise<void>((resolve) => {

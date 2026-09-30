@@ -264,6 +264,38 @@ export class AgentDispatcher {
     return this.active.has(dispatchKey(projectId, threadId))
   }
 
+  /**
+   * Run a history read-modify-write (a review or container-run exchange written
+   * outside a turn) while holding the thread's dispatch slot. Waits for any turn
+   * or earlier edit to release first, so the dispatcher's full-snapshot commit
+   * cannot overwrite the edit and the edit cannot overwrite that commit. A
+   * dispatch that arrives during the edit is refused as busy, like any other
+   * overlap; machine wakes wait for it.
+   */
+  async withExclusiveHistory<T>(
+    projectId: string,
+    threadId: string,
+    op: () => Promise<T>,
+  ): Promise<T> {
+    const key = dispatchKey(projectId, threadId)
+    for (;;) {
+      const active = this.active.get(key)
+      if (!active) break
+      try {
+        await active
+      } catch {
+        // A failed turn still releases the slot.
+      }
+    }
+    const running = op()
+    this.active.set(key, running)
+    try {
+      return await running
+    } finally {
+      if (this.active.get(key) === running) this.active.delete(key)
+    }
+  }
+
   /** Permanently fence a deleted id so queued machine wakes cannot reclaim it. */
   beginThreadDeletion(projectId: string, threadId: string): void {
     this.deleting.add(dispatchKey(projectId, threadId))
