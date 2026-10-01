@@ -127,7 +127,8 @@
     "files": [
       "dist/**/*",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      "!dist/renderer/mermaid-frame.js"
     ],
     "asarUnpack": [
       "**/node_modules/node-pty/**/*",
@@ -150,6 +151,9 @@
       "icon": "assets/icons/app.icns",
       "category": "public.app-category.developer-tools",
       "minimumSystemVersion": "26.0",
+      "electronLanguages": [
+        "en"
+      ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {

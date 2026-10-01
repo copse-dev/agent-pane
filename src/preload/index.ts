@@ -255,6 +255,7 @@ const api: ApiClient = {
   agent: {
     run: (projectId: string, threadId: string, prompt: string) =>
       ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
       threadId: string,
@@ -738,6 +739,8 @@ const api: ApiClient = {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
+    backfillPrRefs: (projectId: string, threadIds: string[]) =>
+      ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (

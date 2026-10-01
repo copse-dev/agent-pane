@@ -361,6 +361,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(await ensureToolPermitted({ toolName: 'write_file', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'run_shell', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'str_replace', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'apply_patch', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'read_file', args: {} }), true)
     })
   })

@@ -132,6 +132,40 @@ async function previewMaxLuminance(title: string): Promise<number> {
   }, title)
 }
 
+/**
+ * Rightmost text pixel in the preview, as a fraction of its width. The probe's
+ * one-line paragraph ends about a third of the way across a 1280px layout, which
+ * a transcript card then shrank to unreadable text (#3240). Laid out at the
+ * narrower preview viewport, the same line reaches well past the middle.
+ */
+async function previewTextRightEdge(title: string): Promise<number> {
+  return browser.execute((expectedTitle) => {
+    const card = Array.from(document.querySelectorAll('.canvas-preview-card')).find(
+      (candidate) =>
+        candidate.querySelector('.canvas-preview-title')?.textContent === expectedTitle,
+    )
+    const image = card?.querySelector<HTMLImageElement>('.canvas-preview-image')
+    if (!image?.complete || !image.naturalWidth) throw new Error('canvas preview is not ready')
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('2D canvas context unavailable')
+    context.drawImage(image, 0, 0)
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+    let right = 0
+    for (let index = 0; index < data.length; index += 4) {
+      const value =
+        0.2126 * (data[index] ?? 0) +
+        0.7152 * (data[index + 1] ?? 0) +
+        0.0722 * (data[index + 2] ?? 0)
+      const x = (index / 4) % canvas.width
+      if (value > 150 && x > right) right = x
+    }
+    return right / canvas.width
+  }, title)
+}
+
 async function resolvedBodyBackgroundPixel(): Promise<number[]> {
   return browser.execute(() => {
     const canvas = document.createElement('canvas')
@@ -346,6 +380,9 @@ describe('canvas background parity', () => {
     // The headless mirror gives the transparent document the host text colour
     // too, so the thumbnail shows light text rather than black on dark.
     expect(await previewMaxLuminance(TITLE)).toBeGreaterThan(150)
+    // The thumbnail reflows at a reading-column width instead of the agent
+    // tab's 1280px desktop viewport, so its text stays legible in the card.
+    expect(await previewTextRightEdge(TITLE)).toBeGreaterThan(0.5)
     await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png', TITLE)
 
     await browser.execute((title) => {

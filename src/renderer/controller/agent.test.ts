@@ -868,6 +868,11 @@ test('machine turn start adds an attributed prompt and marks the thread running'
     type: 'machine_turn_start',
     content: 'Continue after the background task',
     origin: { kind: 'machine', operationId: 'background-17' },
+    attachments: [
+      { kind: 'shell', label: 'Run · git rebase --continue', content: 'Rebase complete' },
+    ],
+    startingCommit: 'a'.repeat(40),
+    dirty: true,
   })
 
   assert.equal(requireThread(store, 't1').status, 'running')
@@ -878,6 +883,11 @@ test('machine turn start adds an attributed prompt and marks the thread running'
     kind: 'machine',
     operationId: 'background-17',
   })
+  assert.deepEqual(at(messages(), 0).attachments, [
+    { kind: 'shell', label: 'Run · git rebase --continue', content: 'Rebase complete' },
+  ])
+  assert.equal(at(messages(), 0).startingCommit, 'a'.repeat(40))
+  assert.equal(at(messages(), 0).dirty, true)
 })
 
 test('done does not alert between queued turns', () => {
