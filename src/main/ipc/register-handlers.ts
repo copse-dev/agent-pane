@@ -85,6 +85,7 @@ import {
 } from './ipc-guards.ts'
 import {
   inspectThreadCheckoutAttachment,
+  inspectThreadExecutionContext,
   reattachThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -2676,7 +2677,15 @@ export function registerAllHandlers(
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const [projectId, threadId, inspectOnly] = parseIpcArgs(
+      z.tuple([zProjectId, zThreadId, z.boolean().optional()]),
+      rawArgs,
+    )
+    if (inspectOnly) {
+      const { root } = await inspectThreadExecutionContext(projectId, threadId)
+      ensureWorkingTreeWatched(root)
+      return getGitStatus(root)
+    }
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {

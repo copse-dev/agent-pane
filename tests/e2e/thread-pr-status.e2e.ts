@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
@@ -18,6 +19,7 @@ describe('thread GitHub PR status icon', () => {
       process.cwd(),
     ))
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -28,13 +30,21 @@ describe('thread GitHub PR status icon', () => {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      openThreadTitle,
+    )
 
-    const openIcon = await $('.chat-row.selected .chat-pr-status')
+    const openIcon = await $('.thread-project-manager .chat-row.selected .chat-pr-status')
     await openIcon.waitForExist({ timeout: 15_000 })
     await expect(openIcon).toHaveElementClass('is-open')
     await expect(openIcon.$('svg[data-icon="git-pull-request"]')).toExist()
     await expect(openIcon).toHaveAttribute('aria-label', expect.stringMatching(/#42.*open/i))
+
+    const mergedIcon = $('.thread-project-manager')
+      .$(`.chat-row*=${mergedThreadTitle}`)
+      .$('.chat-pr-status')
+    await mergedIcon.waitForExist({ timeout: 15_000 })
+    await expect(mergedIcon).toHaveElementClass('is-merged')
 
     const labels = await browser.execute(
       (openTitle, mergedTitle, plainTitle) => {

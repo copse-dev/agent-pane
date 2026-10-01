@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 
@@ -45,6 +46,7 @@ describe('project quarantine and orphan recovery', () => {
       ],
     })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {

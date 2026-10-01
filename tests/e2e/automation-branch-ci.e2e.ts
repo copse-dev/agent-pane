@@ -1,4 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
@@ -53,7 +54,10 @@ describe('branch CI automation editor', function () {
 
   it('shows a paused branch trigger and the editable CI form', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $(`.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`).click()
+    await openProjectManager()
+    await $(
+      `.thread-project-manager .project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`,
+    ).click()
     await $('.context-menu-item=Automations').click()
     const dialog = $('#automation-dialog')
     await expect(dialog).toBeDisplayed()

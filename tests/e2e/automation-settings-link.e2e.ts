@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -96,6 +97,7 @@ describe('automation setup links', function () {
       },
     })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {

@@ -931,7 +931,7 @@
         "api": "git.status",
         "args": [
           2,
-          2
+          3
         ]
       },
       "git:working-file-diff": {

@@ -117,7 +117,9 @@ describe('balanced new-thread default with subscription ACP agents', function ()
 
   it('settles on Claude ACP instead of flicking to the paid OpenRouter Sol route', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').waitForClickable({ timeout: 30_000 })
+    await $('.thread-browser [aria-label="New thread"]').click()
+    await expect($('.thread-browser-row.selected .chat-title')).toHaveText('New Thread')
 
     const trigger = $('.model-picker-trigger[aria-label="Chat model"]')
     await browser.waitUntil(async () => (await trigger.getText()).includes('Claude Opus 5'), {
@@ -127,6 +129,7 @@ describe('balanced new-thread default with subscription ACP agents', function ()
     // Re-check after the asynchronous OpenRouter catalog and plan-usage calls
     // have both had time to settle: this is the reported Opus -> paid Sol flick.
     await browser.pause(1_000)
+    await expect($('.thread-browser-row.selected .chat-title')).toHaveText('New Thread')
     assert.ok((await trigger.getText()).includes('Claude Opus 5'))
 
     await trigger.click()

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
@@ -12,6 +13,7 @@ describe('Open remote folder — add host inline', () => {
     seedEmptyProject(process.cwd(), 'e2e-remote-folder-add-host')
     seedSshWorkspaceSettings({ hosts: false })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -21,7 +23,7 @@ describe('Open remote folder — add host inline', () => {
   it('shows an inline add-host form when no SSH hosts are configured', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const addProjectButton = await $('.projects-add-btn')
+    const addProjectButton = await $('.thread-project-manager .projects-add-btn')
     await expect(addProjectButton).toHaveAttribute(
       'data-tooltip',
       'New project, open a folder, or connect remotely',

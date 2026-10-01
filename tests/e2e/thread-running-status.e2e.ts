@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -18,6 +19,7 @@ describe('thread running status dots', () => {
     resetUserData()
     ;({ runningThreadTitle, idleThreadTitle } = seedThreadRunningStatusFixture(process.cwd()))
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -29,9 +31,11 @@ describe('thread running status dots', () => {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      runningThreadTitle,
+    )
 
-    const seededUnreadRow = await $(`.chat-row*=${idleThreadTitle}`)
+    const seededUnreadRow = await $('.thread-project-manager').$(`.chat-row*=${idleThreadTitle}`)
     await expect(seededUnreadRow).toHaveElementClass('is-unread')
     await expect(seededUnreadRow.$('.chat-unread-dot')).toHaveAttribute(
       'aria-label',
@@ -40,10 +44,14 @@ describe('thread running status dots', () => {
     await saveElementScreenshot('#pane-projects', 'thread-unread-completion-dot.png')
 
     await seededUnreadRow.click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      idleThreadTitle,
+    )
     await seededUnreadRow.$('.chat-unread-dot').waitForExist({ reverse: true, timeout: 5_000 })
-    await $(`.chat-row*=${runningThreadTitle}`).click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
+    await $('.thread-project-manager').$(`.chat-row*=${runningThreadTitle}`).click()
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      runningThreadTitle,
+    )
 
     // Persisted `running` is cleared on load (resumePendingQueues), so hold a
     // live normal request to put the selected thread into a real running state.
@@ -66,7 +74,7 @@ describe('thread running status dots', () => {
     await $('.submit-btn').click()
     await scenario.waitForHold('refactor-status')
 
-    const runningRow = await $('.chat-row.is-running')
+    const runningRow = await $('.thread-project-manager .chat-row.is-running')
     await runningRow.waitForExist({ timeout: 15_000 })
     await expect(runningRow.$('.chat-title')).toHaveText(runningThreadTitle)
     await expect(runningRow.$('.chat-running-status')).toExist()
@@ -108,12 +116,14 @@ describe('thread running status dots', () => {
 
     await saveElementScreenshot('#pane-projects', 'thread-running-status-dots.png')
 
-    const idleRow = await $(`.chat-row*=${idleThreadTitle}`)
+    const idleRow = await $('.thread-project-manager').$(`.chat-row*=${idleThreadTitle}`)
     await idleRow.click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      idleThreadTitle,
+    )
 
     await scenario.release('refactor-status')
-    const unreadRow = await $(`.chat-row*=${runningThreadTitle}`)
+    const unreadRow = await $('.thread-project-manager').$(`.chat-row*=${runningThreadTitle}`)
     await unreadRow.$('.chat-unread-dot').waitForExist({ timeout: 15_000 })
     await expect(unreadRow).toHaveElementClass('is-unread')
     await expect(unreadRow.$('.chat-unread-dot')).toHaveAttribute(
@@ -122,9 +132,9 @@ describe('thread running status dots', () => {
     )
 
     const unreadPlacement = await browser.execute((titleText) => {
-      const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
-        (candidate) => candidate.querySelector('.chat-title')?.textContent === titleText,
-      )
+      const row = [
+        ...document.querySelectorAll<HTMLElement>('.thread-project-manager .chat-row'),
+      ].find((candidate) => candidate.querySelector('.chat-title')?.textContent === titleText)
       const title = row?.querySelector<HTMLElement>('.chat-title')
       const dot = row?.querySelector<HTMLElement>('.chat-unread-dot')
       if (!row || !title || !dot) return null
@@ -141,7 +151,9 @@ describe('thread running status dots', () => {
     await expect(unreadPlacement?.dotInGutter).toBe(true)
 
     await unreadRow.click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      runningThreadTitle,
+    )
     await unreadRow.$('.chat-unread-dot').waitForExist({ reverse: true, timeout: 5_000 })
     await waitForAgentIdle()
     await scenario.assertComplete()

@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
 
@@ -18,6 +19,7 @@ describe('multiple main windows', function () {
       windowBounds: { width: 1280, height: 800 },
     })
     await browser.reloadSession()
+    await openProjectManager()
     await $('#app').waitForExist({ timeout: 30_000 })
   })
 
@@ -47,6 +49,7 @@ describe('multiple main windows', function () {
     if (!secondaryHandle) throw new Error('Secondary window handle unavailable')
 
     await browser.switchToWindow(secondaryHandle)
+    await openProjectManager()
     await $('#app').waitForDisplayed({ timeout: 30_000 })
     await $('#pane-projects').waitForExist({ timeout: 30_000 })
     await $('#pane-chat').waitForExist({ timeout: 30_000 })
@@ -80,6 +83,7 @@ describe('multiple main windows', function () {
     const selections: Array<{ handle: string; project: string }> = []
     for (const handle of handles) {
       await browser.switchToWindow(handle)
+      await openProjectManager()
       await $('#app').waitForDisplayed({ timeout: 30_000 })
       selections.push({
         handle,

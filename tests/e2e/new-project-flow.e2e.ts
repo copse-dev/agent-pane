@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
@@ -156,9 +157,10 @@ describe('new project flow', () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'existing-proj', { pluginDisabled: [] })
     await browser.reloadSession()
+    await openProjectManager()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const addBtn = await $('.projects-add-btn')
+    const addBtn = await $('.thread-project-manager .projects-add-btn')
     await addBtn.waitForDisplayed({ timeout: 10_000 })
     await addBtn.click()
 

@@ -1,0 +1,295 @@
+.thread-browser,
+.thread-project-manager,
+.thread-project-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.thread-browser[hidden],
+.thread-project-manager[hidden] {
+  display: none;
+}
+.thread-browser-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 20px 16px 12px;
+}
+.thread-browser-heading h2 {
+  margin: 0;
+  font-size: calc(23px * var(--ui-scale));
+  font-weight: 400;
+}
+.thread-browser-total {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.thread-browser-heading .projects-add-btn {
+  margin-left: auto;
+  align-self: center;
+}
+.thread-browser-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 16px 15px;
+}
+.thread-browser-summary button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.thread-browser-summary button::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.thread-browser-summary .thread-attention-filter {
+  color: var(--warning);
+}
+.thread-browser-summary button[aria-pressed='true'] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.thread-browser-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 16px 10px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+.thread-browser-search:focus-within {
+  border-color: var(--accent);
+}
+.thread-browser-search-input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-size-sm);
+}
+.thread-browser-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 0 16px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.thread-browser-controls select {
+  min-width: 0;
+  max-width: 50%;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  background-color: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding-block: 4px;
+  padding-left: 0;
+}
+.thread-browser-sort {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.thread-browser-sort select {
+  max-width: 100%;
+}
+.thread-browser-sort-direction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--text-secondary);
+}
+.thread-browser-sort-direction[data-direction='ascending'] svg {
+  transform: rotate(180deg);
+}
+.thread-browser-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+.thread-browser-group {
+  margin-top: 9px;
+}
+.thread-browser-group-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px 9px;
+}
+.thread-browser-group-heading {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: left;
+}
+.thread-browser-group-label {
+  text-transform: uppercase;
+  letter-spacing: 0.065em;
+  font-weight: 600;
+}
+.thread-browser-group-count,
+.thread-browser-group-context {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+.thread-browser-group-context {
+  margin-left: auto;
+}
+.thread-browser-chevron {
+  width: 18px;
+  height: 11px;
+  flex-shrink: 0;
+}
+.thread-browser-group-heading[aria-expanded='false'] .thread-browser-chevron {
+  transform: rotate(-90deg);
+}
+.thread-work-filter {
+  margin-left: 8px;
+  padding: 0;
+  font-size: var(--font-size-2xs);
+  color: var(--text-muted);
+}
+.thread-work-filter[aria-pressed='true'] {
+  color: var(--accent);
+}
+.thread-browser .thread-browser-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.thread-browser-row-content {
+  min-width: 0;
+}
+.thread-browser-title-line,
+.thread-browser-subtitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.thread-browser-row .chat-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread-browser-row.selected .chat-title {
+  font-weight: 600;
+}
+.thread-browser-age,
+.thread-browser-work {
+  flex-shrink: 0;
+  font-size: var(--font-size-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+.thread-browser-subtitle {
+  margin-top: 6px;
+  gap: 5px;
+  font-size: var(--font-size-2xs);
+  font-weight: normal;
+  color: var(--text-muted);
+}
+.thread-browser-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-browser-work {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.thread-browser-work[hidden] {
+  display: none;
+}
+.thread-browser-work svg {
+  align-self: center;
+  width: 12px;
+  height: 12px;
+}
+.thread-browser-project {
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-browser-glyph {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--text-muted);
+}
+.thread-browser-row[data-state='waiting'] .thread-browser-glyph {
+  color: var(--warning);
+}
+.thread-browser-row[data-state='error'] .thread-browser-glyph {
+  color: var(--danger);
+}
+.thread-browser-section-empty {
+  margin: 4px 16px 10px 44px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+.thread-browser-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 16px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-2xs);
+  color: var(--text-muted);
+}
+.thread-browser-manage,
+.thread-browser-back,
+.thread-browser-footer button,
+.thread-browser-reset {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  padding: 6px 8px;
+}
+.thread-browser-back {
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.thread-browser-footer button {
+  padding-inline: 0;
+}
+.thread-browser button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

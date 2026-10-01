@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -140,6 +141,7 @@ describe('command palette and sidebar thread filter', () => {
   })
 
   it('filters the sidebar thread list from the header search toggle', async () => {
+    await openProjectManager()
     // Reveal the filter input and narrow to the login thread.
     const toggle = await $('.projects-search-btn')
     await toggle.click()

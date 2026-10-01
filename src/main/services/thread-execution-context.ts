@@ -138,6 +138,23 @@ export function resolveThreadExecutionContext(
   return pending
 }
 
+export function inspectThreadExecutionContext(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadExecutionContextDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext> {
+  return resolveThreadExecutionContextUncached(projectId, threadId, {
+    getProjectRoot: dependencies.getProjectRoot,
+    getThreadMeta: dependencies.getThreadMeta,
+    validateWorktree: dependencies.validateWorktree ?? validateThreadWorktree,
+    restoreWorktree: ({ worktree }) => {
+      if (worktree.retiredAt !== undefined)
+        return Promise.reject(new Error('Thread worktree is retired'))
+      return Promise.resolve(worktree)
+    },
+  })
+}
+
 /**
  * Resolve a terminal root through the ordinary strict path first. A detached
  * checkout gets one narrower fallback so the user can repair a rebase,

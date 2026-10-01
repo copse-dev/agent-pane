@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -23,6 +24,7 @@ describe('SSH settings section', () => {
     // to the project menu without clicking Save.
     seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -32,13 +34,13 @@ describe('SSH settings section', () => {
   it('shows SSH workspace host CRUD and enable toggle under Settings → SSH', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const addProjectButton = $('.projects-add-btn')
+    const addProjectButton = $('.thread-project-manager .projects-add-btn')
     await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
     await addProjectButton.click()
     await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
     await browser.keys('Escape')
 
-    await $('[aria-label="Settings"]').click()
+    await $('.thread-project-manager [aria-label="Settings"]').click()
 
     const navBtn = $('.settings-nav-btn[data-section="ssh"]')
     await expect(navBtn).toBeDisplayed()

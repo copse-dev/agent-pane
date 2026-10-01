@@ -18,7 +18,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
-import { mountProjectsPane } from './views/projects-pane.ts'
+import { mountThreadSidebar } from './views/thread-sidebar.ts'
 import { mountConversation } from './views/conversation.ts'
 import { mountFileTree } from './views/file-tree.ts'
 import { mountInputBar } from './views/input-bar.ts'
@@ -92,7 +92,11 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
-import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts'
+import {
+  mountActivityPanel,
+  openActivityPanel,
+  type ActivitySources,
+} from './views/activity-panel.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
@@ -234,6 +238,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let threadActivitySources: ActivitySources
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 let openProcessManager: (() => void) | null = null
@@ -256,6 +261,7 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   const approvalRequests = mountApprovalDialog(api, store)
   const askUserRequests = mountAskUserDialog(api, store)
+  threadActivitySources = { approvals: approvalRequests, questions: askUserRequests }
   // A clicked notification about a thread opens it here (main picks the window).
   mountAlertThreadNavigation(store, api)
   mountSshPromptDialog(api)
@@ -589,7 +595,7 @@ function mountFullLayout(): void {
   // of the layout, but mount the editor-backed panes only once it resolves — the
   // editor library is no longer part of the initial app.js.
   const monacoReady = loadMonaco()
-  mountProjectsPane(requireElement('pane-projects'), store, api)
+  mountThreadSidebar(requireElement('pane-projects'), store, api, threadActivitySources)
   const inputRoot = requireElement('input-bar')
   const inputBar = mountInputBar(inputRoot, store, api, {
     portraitPanelHost: requireElement('pane-chat'),

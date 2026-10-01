@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 
@@ -12,6 +13,7 @@ describe('SSH status chrome without lightning emoji', () => {
     seedEmptyProject(process.cwd(), 'e2e-ssh-titlebar-target', { sshHost: 'dev' })
     seedSshWorkspaceSettings({ hosts: true })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {

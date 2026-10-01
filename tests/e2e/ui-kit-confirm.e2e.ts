@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -100,7 +101,7 @@ async function openDeleteThreadConfirm(): Promise<void> {
 }
 
 async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
-  await $('[aria-label="Settings"]').click()
+  await $('.thread-project-manager [aria-label="Settings"]').click()
   await $('.settings-nav-btn[data-section="appearance"]').click()
   await $('select[name="theme"]').waitForDisplayed({ timeout: 30_000 })
   await browser.execute((next) => {
@@ -171,8 +172,11 @@ describe('UI kit confirm dialog', () => {
     })
     seedE2eViewport()
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Delete candidate')
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      'Delete candidate',
+    )
   })
 
   after(() => {
