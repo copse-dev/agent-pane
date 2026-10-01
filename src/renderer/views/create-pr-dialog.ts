@@ -19,7 +19,8 @@ export interface CreatePrChoice {
  * The description arrives asynchronously (`bodyPromise`): the model writes it
  * while the dialog is open, so the wait overlaps with the user reading the
  * dialog instead of following their confirmation. Anything they type wins — a
- * suggestion that lands late never overwrites an edit in progress.
+ * suggestion that lands late never overwrites an edit in progress. Confirming
+ * before it arrives waits for that same proposal, unless the user wrote a body.
  *
  * Resolves with the choice, or null when cancelled.
  */
@@ -69,19 +70,18 @@ export function openCreatePrDialog(opts: {
   bodyInput.addEventListener('input', () => {
     bodyIsUsers = true
   })
-  if (opts.bodyPromise) {
+  let bodyPending = !!opts.bodyPromise
+  const bodyReady = opts.bodyPromise
+    ?.catch(() => null)
+    .then((suggested) => {
+      bodyPending = false
+      bodyInput.classList.remove('is-pending')
+      bodyInput.placeholder = 'Optional'
+      if (!bodyIsUsers && suggested) bodyInput.value = suggested
+      return suggested
+    })
+  if (bodyReady) {
     bodyInput.classList.add('is-pending')
-    void opts.bodyPromise
-      .then((suggested) => {
-        bodyInput.classList.remove('is-pending')
-        bodyInput.placeholder = 'Optional'
-        if (bodyIsUsers || !suggested) return
-        bodyInput.value = suggested
-      })
-      .catch(() => {
-        bodyInput.classList.remove('is-pending')
-        bodyInput.placeholder = 'Optional'
-      })
   }
 
   const draftInput = el('input', {
@@ -124,8 +124,9 @@ export function openCreatePrDialog(opts: {
   // no model, and the IPC guard rejects an empty title with a raw validation
   // error. Gate the button on the trimmed value instead, so the only way to
   // press Create is with something `gh` will accept.
+  let submitting = false
   const syncCreateEnabled = (): void => {
-    createBtn.disabled = titleInput.value.trim().length === 0
+    createBtn.disabled = submitting || titleInput.value.trim().length === 0
   }
   syncCreateEnabled()
   titleInput.addEventListener('input', syncCreateEnabled)
@@ -199,12 +200,23 @@ export function openCreatePrDialog(opts: {
       const title = titleInput.value.trim()
       // Belt and braces with the disabled state: a synthetic click on a
       // disabled button still must not publish a PR with no title.
-      if (!title) return
-      finish({ title, body: bodyInput.value.trim(), draft: draftInput.checked })
+      if (!title || submitting || settled) return
+      const choice = { title, body: bodyInput.value.trim(), draft: draftInput.checked }
+      if (!bodyPending || bodyIsUsers) {
+        finish(choice)
+        return
+      }
+      submitting = true
+      syncCreateEnabled()
+      titleInput.disabled = true
+      bodyInput.disabled = true
+      draftInput.disabled = true
+      createBtn.textContent = 'Waiting for description…'
+      void bodyReady?.then((suggested) => {
+        finish({ ...choice, body: suggested?.trim() ?? '' })
+      })
     })
     // Enter in the title advances to the description rather than submitting.
-    // Submitting here would publish whatever the description field happened to
-    // hold — quite possibly nothing, because the proposal is still in flight.
     titleInput.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return
       e.preventDefault()
