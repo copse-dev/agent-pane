@@ -2,13 +2,16 @@
 .roadmap-filter {
   display: flex;
   flex: 1;
-  min-width: 120px;
+  /* Wide enough for the placeholder plus the Filter toggle; any narrower and
+     the header wraps the whole group onto its own row instead of squeezing the
+     input to "Search r…" beside the title and action buttons. */
+  min-width: 200px;
   max-width: 320px;
   gap: 4px;
 }
 .roadmap-search-input {
   flex: 1;
-  min-width: 80px;
+  min-width: 130px;
 }
 .roadmap-filter-toggle {
   flex: none;
