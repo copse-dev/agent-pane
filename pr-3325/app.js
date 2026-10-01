@@ -629,13 +629,215 @@ var init_model_selection = __esm({
   }
 });
 
+// packages/llm/src/model-families.ts
+function hasModelIdPrefix(id, prefix) {
+  return id === prefix || id.startsWith(prefix) && BOUNDARY.test(id.slice(prefix.length));
+}
+function findFamily(modelId) {
+  let best;
+  for (const entry of FAMILIES) {
+    if (!hasModelIdPrefix(modelId, entry.match)) continue;
+    if (best === void 0 || entry.match.length > best.match.length) best = entry;
+  }
+  return best;
+}
+function withFeatures(features) {
+  return { ...NO_FEATURES, ...features };
+}
+function nonFirstPartyTransport(namespace) {
+  switch (namespace) {
+    case "openrouter":
+    case "extra-provider":
+      return "openai-compatible";
+    case "lmstudio":
+      return "local";
+    case "acp":
+    case "remote-agent":
+    case "plugin-model":
+    case "auto":
+      return "host-routed";
+    case "cloud":
+      return "unknown";
+  }
+}
+function routeGated(features, firstParty) {
+  if (firstParty) return features;
+  return {
+    ...features,
+    supportsStrictTools: false,
+    supportsVerbosity: false,
+    supportsParallelToolCallsControl: false,
+    supportsServerCompaction: false
+  };
+}
+function resolveModelFamily(model) {
+  const selection2 = typeof model === "string" ? parseModelSelection(model) : model;
+  const { namespace } = selection2;
+  if (!CLOUD_ROUTED.has(namespace)) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: nonFirstPartyTransport(namespace),
+      provider: null,
+      family: null,
+      known: false
+    };
+  }
+  const direct = namespace === "cloud";
+  const entry = findFamily(selection2.modelId);
+  if (entry !== void 0) {
+    return {
+      ...routeGated(withFeatures(entry.features), direct),
+      namespace,
+      transport: direct ? entry.transport : "openai-compatible",
+      provider: direct ? entry.provider : null,
+      family: entry.match,
+      known: true
+    };
+  }
+  const fallback = FIRST_PARTY_FALLBACKS.find(
+    (candidate) => selection2.modelId.startsWith(candidate.prefix)
+  );
+  if (direct && fallback !== void 0) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: fallback.transport,
+      provider: fallback.provider,
+      family: null,
+      known: false
+    };
+  }
+  return {
+    ...NO_FEATURES,
+    namespace,
+    transport: direct ? "unknown" : "openai-compatible",
+    provider: null,
+    family: null,
+    known: false
+  };
+}
+function firstPartyProviderOf(model) {
+  return resolveModelFamily(model).provider;
+}
+var NO_FEATURES, GPT_REASONING_FEATURES, O_SERIES_FEATURES, CLAUDE_MID_SYSTEM, FAMILIES, FIRST_PARTY_FALLBACKS, BOUNDARY, CLOUD_ROUTED;
+var init_model_families = __esm({
+  "packages/llm/src/model-families.ts"() {
+    init_model_selection();
+    NO_FEATURES = {
+      supportsStrictTools: false,
+      supportsVerbosity: false,
+      supportsParallelToolCallsControl: false,
+      supportsServerCompaction: false,
+      prefersApplyPatch: false,
+      acceptsDeveloperRole: false,
+      acceptsMidConversationSystem: false
+    };
+    GPT_REASONING_FEATURES = {
+      supportsStrictTools: true,
+      supportsVerbosity: true,
+      supportsParallelToolCallsControl: true,
+      // Documented for these families: OpenAI's Compaction guide shows server-side
+      // `context_management` on gpt-5.x and gpt-6-astra with `store: false`. If an
+      // endpoint refuses it anyway, `ResponsesProvider` falls back to client-side trim.
+      supportsServerCompaction: true,
+      prefersApplyPatch: true,
+      acceptsDeveloperRole: true
+    };
+    O_SERIES_FEATURES = {
+      supportsStrictTools: true,
+      acceptsDeveloperRole: true
+    };
+    CLAUDE_MID_SYSTEM = { acceptsMidConversationSystem: true };
+    FAMILIES = [
+      // Anthropic. Mid-conversation `system` messages: Opus 5 / 4.8, Fable 5, Mythos 5.
+      // `claude-sonnet-5-5` — the default model — does not take one, so leading-system
+      // placement is the common path, not an edge case.
+      {
+        match: "claude-opus-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-opus-4-8",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-opus-4-7", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-haiku-4-5", provider: "anthropic", transport: "anthropic" },
+      {
+        match: "claude-fable-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-mythos-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-mythos-preview", provider: "anthropic", transport: "anthropic" },
+      // OpenAI, Responses API.
+      {
+        match: "gpt-5",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6-astra",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6.1-sol",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      { match: "o1", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o3", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o4", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      // OpenAI, Chat Completions: non-reasoning models gain nothing from Responses.
+      {
+        match: "gpt-4o",
+        provider: "openai",
+        transport: "openai-chat",
+        features: {
+          supportsStrictTools: true,
+          supportsParallelToolCallsControl: true,
+          acceptsDeveloperRole: true
+        }
+      },
+      // Open-weights models OpenAI publishes. Not a first-party API model — it is
+      // reached through aggregators or local servers, never `developer`-role aware —
+      // and the entry exists to stop the broad `gpt-` fallback claiming its features.
+      { match: "gpt-oss", provider: "openai", transport: "openai-chat" }
+    ];
+    FIRST_PARTY_FALLBACKS = [
+      { prefix: "claude-", provider: "anthropic", transport: "anthropic" },
+      { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
+    ];
+    BOUNDARY = /^[-.:@]/;
+    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+  }
+});
+
 // packages/llm/src/model-catalog.ts
 function getModelInfo(model) {
   return MODEL_CATALOG[model] ?? null;
 }
 function inferCloudModelProvider(model) {
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
+  const { provider } = resolveModelFamily(model);
+  if (provider !== null) return provider;
   throw new Error(`Unknown cloud model provider for '${model}'`);
 }
 function cloudModelDisplayLabel(model) {
@@ -647,7 +849,7 @@ var init_model_catalog = __esm({
   "packages/llm/src/model-catalog.ts"() {
     init_model_catalog_generated();
     init_model_label();
-    init_model_selection();
+    init_model_families();
     DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
@@ -714,6 +916,9 @@ function isEmptyModelParameters(params) {
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
 }
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
+}
 function claudeSupport(modelId) {
   const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
   if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
@@ -743,7 +948,7 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
       reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
@@ -752,7 +957,7 @@ function openAiSupport(modelId) {
       temperatureMax: 2
     };
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: "openai-effort",
@@ -784,8 +989,9 @@ function modelParameterSupport(model) {
     };
   }
   if (selection2.namespace === "cloud") {
-    if (selection2.modelId.startsWith("claude")) return claudeSupport(selection2.modelId);
-    if (selection2.modelId.startsWith("gpt")) return openAiSupport(selection2.modelId);
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
     return {
       reasoning: [],
       reasoningWire: "none",
@@ -879,6 +1085,7 @@ var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_C
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
+    init_model_families();
     init_model_selection();
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -21898,6 +22105,16 @@ var init_trace_player = __esm({
   }
 });
 
+// packages/llm/src/model-capabilities.ts
+var init_model_capabilities = __esm({
+  "packages/llm/src/model-capabilities.ts"() {
+    init_model_catalog();
+    init_model_families();
+    init_model_parameters();
+    init_model_selection();
+  }
+});
+
 // packages/agent/src/token-estimate.ts
 var CHARS_PER_TOKEN;
 var init_token_estimate = __esm({
@@ -23794,6 +24011,60 @@ var init_review_reports = __esm({
   }
 });
 
+// src/shared/patch/apply-patch.ts
+function normalizePatchPath(raw) {
+  return raw.trim().replace(/^(?:\.\/)+/, "");
+}
+function summarizePatch(patchText) {
+  const summaries = [];
+  let current = null;
+  for (const raw of patchText.split(/\r?\n/)) {
+    const trimmed2 = raw.trim();
+    if (trimmed2.startsWith(ADD)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(ADD.length)),
+        op: "add",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(DELETE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(DELETE.length)),
+        op: "delete",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(UPDATE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(UPDATE.length)),
+        op: "update",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (current !== null && raw.trimEnd().startsWith(MOVE)) {
+      current.op = "move";
+      current.movePath = normalizePatchPath(raw.trimEnd().slice(MOVE.length));
+    } else if (current !== null && raw.startsWith("+")) {
+      current.additions += 1;
+    } else if (current !== null && raw.startsWith("-") && current.op !== "add") {
+      current.deletions += 1;
+    }
+  }
+  return summaries.filter((summary) => summary.path !== "");
+}
+var ADD, DELETE, UPDATE, MOVE;
+var init_apply_patch = __esm({
+  "src/shared/patch/apply-patch.ts"() {
+    ADD = "*** Add File: ";
+    DELETE = "*** Delete File: ";
+    UPDATE = "*** Update File: ";
+    MOVE = "*** Move to: ";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical2 = CANONICAL_WORDS.get(word);
@@ -23878,14 +24149,17 @@ function tenseFromStatus(status) {
   return status === "running" ? "running" : "done";
 }
 function parseMcp(name) {
-  if (!name.startsWith(MCP_PREFIX)) return null;
-  const rest = name.slice(MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return null;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
 }
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[name];
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
@@ -23902,8 +24176,14 @@ function stringArg(args, key) {
 function fileEditPath(args) {
   return stringArg(args, "path");
 }
+function getApplyPatchFiles(tc2) {
+  const input2 = stringArg(tc2.args, "input");
+  return input2 === null ? [] : summarizePatch(input2);
+}
 function getToolEditPath(tc2) {
-  const key = FILE_EDIT_PATH_ARG[tc2.name];
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
   return stringArg(tc2.args, key);
 }
@@ -23931,40 +24211,53 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  if (tc2.name === "write_file" || tc2.name === "str_replace") {
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
   }
-  if (tc2.name === "delete_file") {
+  if (name === "apply_patch") {
+    const files = getApplyPatchFiles(tc2);
+    if (files.length === 1) {
+      const only = files[0]?.path ?? "";
+      return tense === "running" ? `Patching ${only}` : `Patched ${only}`;
+    }
+    if (files.length > 1) {
+      return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
+    }
+  }
+  if (name === "delete_file") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
-  if (tc2.name === "rename_file") {
+  if (name === "rename_file") {
     const from = stringArg(tc2.args, "from");
     const to = stringArg(tc2.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
   }
-  if (tc2.name === "make_directory") {
+  if (name === "make_directory") {
     const path = fileEditPath(tc2.args);
     if (path) {
       return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
     }
   }
-  if (tc2.name === "task") {
+  if (name === "task") {
     const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
   }
-  if (tc2.name === "run_shell" || tc2.kind === "execute") {
+  if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (tc2.title) return tc2.title;
+    if (title) return title;
   }
-  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
-  return getToolDisplayName(tc2.name, tense);
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
   const builtIn = TOOL_TO_GROUP.get(name);
@@ -24053,13 +24346,17 @@ function summarizeToolTurn(toolCalls, items) {
   } else {
     base = `Used ${String(n2)} tools`;
   }
-  if (failed > 0 && status !== "running") {
+  if (failed > 0) {
     return `${base} \xB7 ${String(failed)} failed`;
   }
   return base;
 }
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
   const subagents = [];
   const proposals = [];
   const regular = [];
@@ -24070,14 +24367,18 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
       toolCalls: regular
     });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
   } else {
     result.push(...grouped);
   }
@@ -24101,31 +24402,26 @@ function summarizeToolRun(run2) {
     parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
   }
   parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
   return parts.join(" \xB7 ");
 }
 function summarizeToolRunStep(step, children) {
   const polished = step.summary?.trim();
   if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
   const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== "running") {
-    return `${polished} \xB7 ${String(failed)} failed`;
-  }
-  return polished;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
 }
 function buildToolRunDisplayItems(run2, opts) {
   if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const children = run2.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls);
-    return {
-      type: "step",
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls
-    };
-  });
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
   return [
     {
       type: "rollup",
@@ -24133,12 +24429,14 @@ function buildToolRunDisplayItems(run2, opts) {
       label: summarizeToolRun(run2),
       children,
       toolCalls: run2.toolCalls
-    }
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
   ];
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
     init_thread_proposal2();
@@ -24182,6 +24480,7 @@ var init_tool_display = __esm({
       get_ci_failure_logs: { running: "Fetching CI failure logs", done: "Fetched CI failure logs" },
       write_file: { running: "Writing file", done: "Wrote file" },
       str_replace: { running: "Replacing in file", done: "Replaced in file" },
+      apply_patch: { running: "Applying patch", done: "Applied patch" },
       delete_file: { running: "Deleting file", done: "Deleted file" },
       rename_file: { running: "Renaming file", done: "Renamed file" },
       make_directory: { running: "Creating directory", done: "Created directory" },
@@ -24247,7 +24546,14 @@ var init_tool_display = __esm({
         label: { running: "Checking git", done: "Checked git" }
       },
       writing: {
-        tools: ["write_file", "str_replace", "delete_file", "rename_file", "make_directory"],
+        tools: [
+          "write_file",
+          "str_replace",
+          "apply_patch",
+          "delete_file",
+          "rename_file",
+          "make_directory"
+        ],
         label: { running: "Editing files", done: "Edited files" }
       },
       shell: {
@@ -24267,7 +24573,6 @@ var init_tool_display = __esm({
       search: "searching",
       fetch: "web"
     };
-    MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
     RUN_ROLLUP_KEY = "run";
@@ -24625,7 +24930,11 @@ function attachThreadHydration(store2, api2) {
   hydrateActive();
   const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
     const state = store2.getState();
-    if (state.activeProjectId !== projectId || refs.length === 0) return;
+    if (refs.length === 0) return;
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
+      return;
+    }
     const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
     if (!state.threads.some((t2) => byThread.has(t2.id))) return;
     store2.setState({
@@ -24652,6 +24961,7 @@ var init_thread_hydration = __esm({
     init_perf();
     init_thread_helpers();
     init_artefact_previews();
+    init_projects();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
@@ -24748,7 +25058,7 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
@@ -24797,7 +25107,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
   );
   if (!queued) {
     void run2;
@@ -34030,30 +34340,35 @@ function openRemoteFolderDialog(api2) {
   );
   const draft = emptySshHostDraft();
   const idInput = el("input", {
+    type: "text",
     name: "remoteFolderHostId",
     class: "remote-folder-host-id",
     placeholder: "my-server",
     "aria-label": "Host id"
   });
   const labelInput = el("input", {
+    type: "text",
     name: "remoteFolderHostLabel",
     class: "remote-folder-host-label",
     placeholder: "Production",
     "aria-label": "Host label"
   });
   const hostInput = el("input", {
+    type: "text",
     name: "remoteFolderHostHost",
     class: "remote-folder-host-host",
     placeholder: "example.com or ~/.ssh/config alias",
     "aria-label": "Hostname"
   });
   const userInput = el("input", {
+    type: "text",
     name: "remoteFolderHostUser",
     class: "remote-folder-host-user",
     placeholder: "ubuntu",
     "aria-label": "SSH user"
   });
   const portInput = el("input", {
+    type: "text",
     name: "remoteFolderHostPort",
     class: "remote-folder-host-port",
     placeholder: "22",
@@ -34061,6 +34376,7 @@ function openRemoteFolderDialog(api2) {
     "aria-label": "SSH port"
   });
   const identityInput = el("input", {
+    type: "text",
     name: "remoteFolderHostIdentity",
     class: "remote-folder-host-identity",
     placeholder: "~/.ssh/id_ed25519",
@@ -34430,6 +34746,20 @@ function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
+}
+function applyCachedSidebarPrRefs(projectId, refs) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return false;
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
+  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    })
+  );
+  return true;
 }
 function isProjectSwitchInFlight(store2, projectId) {
   const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
@@ -35285,7 +35615,10 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     dismiss();
   };
   const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
+    if (e3.key !== "Escape") return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    dismiss();
   };
   const dialog2 = withinDialog?.closest("dialog");
   (dialog2 ?? document.body).append(menu);
@@ -35365,15 +35698,167 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
-  if (!src) return;
+function expandableImageSource(image) {
+  const authoredSrc = image.getAttribute("src");
+  const authoredSrcset = image.getAttribute("srcset");
+  if (!authoredSrc?.trim() && !authoredSrcset?.trim()) return "";
+  return image.currentSrc || image.src;
+}
+function imageTitle(item) {
+  return item.alt.trim() || "Expanded attachment";
+}
+function openImageGalleryViewer(items, initialIndex, returnFocus2) {
+  let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  const viewer = el("div", {
+    class: "image-expand-viewer",
+    role: "group",
+    "aria-roledescription": "carousel",
+    tabindex: "-1"
+  });
+  const stage = el("div", { class: "image-expand-stage" });
+  const imageEl = el("img", { class: "image-expand-image", alt: "" });
+  attachImageCopyMenu(imageEl);
+  const previousButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-prev",
+      "aria-label": "Previous image"
+    },
+    arrowLeftIcon("ui-icon ui-icon-sm")
+  );
+  const nextButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-next",
+      "aria-label": "Next image"
+    },
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  const previousZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-prev" },
+    previousButton
+  );
+  const nextZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-next" },
+    nextButton
+  );
+  stage.append(imageEl, previousZone, nextZone);
+  const thumbnailButtons = items.map((item, index) => {
+    const thumbnail2 = el("img", {
+      class: "image-expand-thumbnail-image",
+      src: item.src,
+      alt: "",
+      loading: "lazy"
+    });
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "image-expand-thumbnail",
+        "aria-label": "Show image " + String(index + 1) + " of " + String(items.length),
+        "aria-selected": "false",
+        role: "tab"
+      },
+      thumbnail2
+    );
+    button.addEventListener("click", () => {
+      currentIndex = index;
+      render();
+    });
+    return button;
+  });
+  const thumbnailStrip = el(
+    "div",
+    { class: "image-expand-thumbnails", role: "tablist", "aria-label": "Attached images" },
+    ...thumbnailButtons
+  );
+  const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  viewer.append(counter, stage, footer);
+  const render = () => {
+    const item = items[currentIndex];
+    if (!item) return;
+    const label = imageTitle(item);
+    imageEl.src = item.src;
+    imageEl.alt = label;
+    imageEl.dataset["imageIndex"] = String(currentIndex);
+    imageEl.setAttribute(
+      "aria-label",
+      label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    viewer.setAttribute(
+      "aria-label",
+      "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    counter.textContent = String(currentIndex + 1) + " / " + String(items.length);
+    previousButton.disabled = currentIndex === 0;
+    nextButton.disabled = currentIndex === items.length - 1;
+    previousButton.setAttribute("aria-disabled", String(previousButton.disabled));
+    nextButton.setAttribute("aria-disabled", String(nextButton.disabled));
+    for (const [index, button] of thumbnailButtons.entries()) {
+      const selected = index === currentIndex;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    }
+    thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  const move = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+    currentIndex = nextIndex;
+    render();
+  };
+  previousButton.addEventListener("click", () => {
+    move(currentIndex - 1);
+  });
+  nextButton.addEventListener("click", () => {
+    move(currentIndex + 1);
+  });
+  viewer.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex - 1);
+      viewer.focus({ preventScroll: true });
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex + 1);
+      viewer.focus({ preventScroll: true });
+    }
+  });
+  render();
+  const initialItem = items[currentIndex];
+  if (!initialItem) return;
+  const session = openAttachmentPreview({
+    kind: "image-gallery",
+    title: "Attached images \xB7 " + String(items.length),
+    ariaLabel: "Image preview: " + imageTitle(initialItem),
+    content: viewer,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
+    onClose: () => {
+      imageEl.removeAttribute("src");
+      for (const button of thumbnailButtons) {
+        button.querySelector("img")?.removeAttribute("src");
+      }
+    }
+  });
+  queueMicrotask(() => {
+    if (session.isActive()) viewer.focus({ preventScroll: true });
+  });
+}
+function openSingleImage(src, alt, returnFocus2) {
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
   attachImageCopyMenu(imageEl);
   openAttachmentPreview({
     kind: "image",
     title: alt,
-    ariaLabel: `Image preview: ${alt}`,
+    ariaLabel: "Image preview: " + alt,
     content: imageEl,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
@@ -35382,26 +35867,52 @@ function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
     }
   });
 }
-function attachImageExpand(img, alt) {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
+  if (!src) return;
+  openSingleImage(src, alt, returnFocus2);
+}
+function openImageGallery(items, initialIndex = 0, returnFocus2) {
+  const usableItems = [];
+  let usableIndex = 0;
+  for (const [index, item] of items.entries()) {
+    if (item.src.length === 0) continue;
+    if (index < initialIndex) usableIndex += 1;
+    usableItems.push(item);
+  }
+  if (usableItems.length === 0) return;
+  if (usableItems.length === 1) {
+    const item = usableItems[0];
+    if (item) openSingleImage(item.src, item.alt, returnFocus2);
+    return;
+  }
+  openImageGalleryViewer(usableItems, usableIndex, returnFocus2);
+}
+function attachImageExpand(img, alt, gallery, galleryIndex) {
   if (img.dataset["imageExpand"] === "true") return;
   img.dataset["imageExpand"] = "true";
   attachImageCopyMenu(img);
   img.classList.add("image-expandable");
   img.setAttribute("role", "button");
   img.setAttribute("tabindex", "0");
-  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
+  img.setAttribute("aria-label", alt ? "Expand " + alt : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    const src = img.currentSrc || img.src;
-    openImageExpand(src, label, () => {
+    const src = expandableImageSource(img);
+    if (!src) return;
+    const focusTarget = () => {
       if (img.isConnected) return img;
       for (const candidate of document.querySelectorAll("img.image-expandable")) {
-        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+        if (candidate.getAttribute("aria-label") === "Expand " + label && expandableImageSource(candidate) === src) {
           return candidate;
         }
       }
       return null;
-    });
+    };
+    if (gallery && gallery.length > 1) {
+      openImageGallery(gallery, galleryIndex ?? 0, focusTarget);
+      return;
+    }
+    openImageExpand(src, label, focusTarget);
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -35419,6 +35930,7 @@ var init_image_expand = __esm({
   "src/renderer/attachments/image-expand.ts"() {
     init_context_menu();
     init_helpers();
+    init_icons();
     init_toast();
     init_attachment_preview();
   }
@@ -36197,7 +36709,15 @@ function conciseThreadMessages(model, live) {
         role: "assistant",
         model,
         content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-audit-${model}`,
+            name: "workspace_edit_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: FIXED_TIME + 3e3
       }
     ]
@@ -36737,6 +37257,37 @@ var init_demo_scenarios = __esm({
           error: null,
           continuedFrom: null
         }
+      },
+      {
+        id: "balanced-model-label",
+        label: "Balanced model rule label",
+        project: project("demo-balanced-model-label-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:balanced"
+        },
+        threads: [
+          {
+            id: "demo-balanced-model-label-thread",
+            title: "Balanced model label",
+            status: "idle",
+            model: "auto:balanced",
+            messages: [
+              {
+                id: "demo-balanced-model-label-user",
+                role: "user",
+                content: "Keep this conversation on the balanced model rule.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       },
       {
         id: "footer-compact",
@@ -37625,9 +38176,7 @@ function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
   if (colon > 0) return model.slice(0, colon);
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
-  return void 0;
+  return firstPartyProviderOf(model) ?? void 0;
 }
 function stringArg2(args, key) {
   if (!isRecord(args)) return void 0;
@@ -37888,6 +38437,7 @@ function createDemoApi(scenario, options = {}) {
         emitChunk(threadId, { type: "done", stopReason: "end_turn" });
         return resolvedVoid();
       },
+      runMachine: () => resolved("completed"),
       describeImages: () => resolved({ text: "Demo image description." }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -38065,6 +38615,7 @@ function createDemoApi(scenario, options = {}) {
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => void 0,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
@@ -38619,6 +39170,7 @@ var init_demo_api = __esm({
     init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
+    init_model_capabilities();
     init_token_estimate();
     init_files();
     init_unknown_value3();
@@ -39433,6 +39985,12 @@ var init_apple_development = __esm({
   }
 });
 
+// src/shared/types/machine-dispatch.ts
+var init_machine_dispatch = __esm({
+  "src/shared/types/machine-dispatch.ts"() {
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -39454,6 +40012,7 @@ var init_types = __esm({
     init_guarded_yolo();
     init_automations();
     init_apple_development();
+    init_machine_dispatch();
   }
 });
 
@@ -53260,11 +53819,9 @@ function dataPolicyForModelPath(modelId, providers = [], opts = {}) {
     const bySlug = dataPolicyForProvider({ id: slug2 });
     if (bySlug) return { policy: bySlug, local: false };
   }
-  if (id.startsWith("claude")) {
-    return { policy: dataPolicyForProvider({ id: "anthropic" }), local: false };
-  }
-  if (id.startsWith("gpt")) {
-    return { policy: dataPolicyForProvider({ id: "openai" }), local: false };
+  const firstParty = firstPartyProviderOf(id);
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false };
   }
   if (id.toLowerCase().includes("grok")) {
     return {
@@ -53288,6 +53845,7 @@ function isNoTrainingModelPath(modelId, opts = {}) {
 var POLICIES_BY_SLUG, POLICIES_BY_HOST;
 var init_data_policies = __esm({
   "packages/llm/src/data-policies.ts"() {
+    init_model_families();
     init_provider_metadata2();
     POLICIES_BY_SLUG = /* @__PURE__ */ new Map();
     POLICIES_BY_HOST = /* @__PURE__ */ new Map();
@@ -53642,7 +54200,11 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
     }
   }
   let blockedMakers = parseBlockedModelMakers(null);
@@ -53759,6 +54321,13 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e3) {
+  if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
+  if (e3.key.length !== 1) return false;
+  if (e3.key === " ") return false;
+  const code = e3.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
 function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
   if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
   return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
@@ -54176,20 +54745,35 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   filter.addEventListener("input", () => {
     renderMenu(cachedOptions);
   });
-  menu.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e3) {
+    if (!open2 || e3.isComposing) return false;
     if (e3.key === "ArrowDown") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(1);
-    } else if (e3.key === "ArrowUp") {
+      return true;
+    }
+    if (e3.key === "ArrowUp") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(-1);
-    } else if (e3.key === "Enter" && (e3.target === filter || e3.target instanceof HTMLElement && e3.target.matches(".model-picker-option"))) {
+      return true;
+    }
+    if (e3.key === "Enter" && enterAppliesHighlight(e3.target)) {
       e3.preventDefault();
+      e3.stopPropagation();
       if (view === "group") {
         if (activeValue !== null) selectGroupValue(activeValue);
       } else selectOption(activeValue);
-    } else if (e3.key === "Escape") {
+      return true;
+    }
+    if (e3.key === "Escape") {
       e3.preventDefault();
       e3.stopPropagation();
       if (view === "group") {
@@ -54200,35 +54784,68 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         setOpen(false);
         if (!recentMode) trigger.focus();
       }
-    } else if (e3.key === "ArrowLeft" && view === "group") {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "group") {
       e3.preventDefault();
       e3.stopPropagation();
       activeValue = null;
       setView(homeView);
-    } else if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("all");
-    } else if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("recent");
+      return true;
     }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value = e3.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value += e3.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e3) => {
+    handleOpenMenuKeydown(e3);
   });
   cleanups.push(
     on(document, "click", (e3) => {
       if (!open2) return;
       if (!(e3.target instanceof Node) || !wrap.contains(e3.target)) setOpen(false);
     }),
-    on(document, "keydown", (e3) => {
-      const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
-      if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-        e3.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (e3.key === "Escape" && open2) setOpen(false);
-    })
+    on(
+      document,
+      "keydown",
+      (e3) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e3.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e3.target instanceof Node && menu.contains(e3.target)) return;
+        handleOpenMenuKeydown(e3);
+      },
+      { capture: true }
+    )
   );
   const removalObserver = new MutationObserver(() => {
     if (document.contains(wrap)) return;
@@ -57870,13 +58487,14 @@ function createModelRoutingSection(api2, options = {}) {
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
   if (!trimmed2) return "";
-  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+  if (trimmed2.includes(":") || firstPartyProviderOf(trimmed2) !== null) {
     return trimmed2;
   }
   return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
+    init_model_capabilities();
     init_preferred_models();
     init_array_utils2();
     init_lm_studio_defaults();
@@ -70223,9 +70841,16 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
+  const prBackfillRequested = /* @__PURE__ */ new Map();
+  const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
+  const prBackfillRetryTimers = /* @__PURE__ */ new Set();
+  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
+  let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
+  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
+  let orphanScanGeneration = 0;
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
@@ -70444,8 +71069,20 @@ function mountProjectsPane(root, store2, api2) {
     }
     return section;
   }
+  function refreshOrphansIfProjectSetChanged() {
+    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
+    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
+      return;
+    }
+    knownProjectIds = nextIds;
+    refreshOrphans();
+  }
   function refreshOrphans() {
-    void listOrphanProjects(api2).then((next) => {
+    const generation = ++orphanScanGeneration;
+    void listOrphanProjects(api2).then((scanned) => {
+      if (generation !== orphanScanGeneration) return;
+      const known = new Set(store2.getState().projects.map((project2) => project2.id));
+      const next = scanned.filter((orphan) => !known.has(orphan.id));
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
         return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
@@ -70453,6 +71090,7 @@ function mountProjectsPane(root, store2, api2) {
       orphans = next;
       if (changed) render();
     }).catch((err2) => {
+      if (generation !== orphanScanGeneration) return;
       showErrorToast("Could not scan recoverable threads", err2);
     });
   }
@@ -70676,7 +71314,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
     clear(list);
+    const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
@@ -70816,6 +71457,9 @@ function mountProjectsPane(root, store2, api2) {
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
         chatRow.append(chatPrStatus(prRollup));
+      }
+      if (thread.prRefs === void 0) {
+        prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
       }
       if (canMutate) {
         const del = el(
@@ -71274,6 +71918,66 @@ function mountProjectsPane(root, store2, api2) {
       else list.append(renderProjectEntry(node2.project));
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
+      const rowThreads = new Map(
+        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+      );
+      const observer = new IntersectionObserver((entries2) => {
+        if (prBackfillObserver !== observer) return;
+        const pending = /* @__PURE__ */ new Map();
+        for (const entry of entries2) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          const thread = rowThreads.get(entry.target);
+          if (!thread) continue;
+          const requested = prBackfillRequested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
+          prBackfillRequested.set(thread.projectId, requested);
+          if (requested.has(thread.threadId)) continue;
+          requested.add(thread.threadId);
+          const rows = pending.get(thread.projectId) ?? [];
+          rows.push({ threadId: thread.threadId, row: entry.target });
+          pending.set(thread.projectId, rows);
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId);
+          for (let i2 = 0; i2 < rows.length; i2 += 10) {
+            const batch = rows.slice(i2, i2 + 10);
+            const threadIds = batch.map(({ threadId }) => threadId);
+            void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
+              for (const threadId of threadIds) {
+                prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`);
+              }
+            }).catch((err2) => {
+              let attempt = 1;
+              for (const threadId of threadIds) {
+                const key = `${projectId}\0${threadId}`;
+                const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
+                prBackfillRetryAttempts.set(key, nextAttempt);
+                attempt = Math.max(attempt, nextAttempt);
+              }
+              const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
+              const timer = setTimeout(() => {
+                prBackfillRetryTimers.delete(timer);
+                for (const { threadId } of batch) requested?.delete(threadId);
+                const currentObserver = prBackfillObserver;
+                if (!currentObserver) return;
+                for (const { threadId } of batch) {
+                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
+                  if (row2?.isConnected) currentObserver.observe(row2);
+                }
+              }, delay);
+              prBackfillRetryTimers.add(timer);
+              console.warn("[threads] visible PR-ref backfill failed:", err2);
+            });
+          }
+        }
+      });
+      prBackfillObserver = observer;
+      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -71293,15 +71997,21 @@ function mountProjectsPane(root, store2, api2) {
     }),
     store2.on("attention_changed", render),
     store2.on("attention_changed", syncActivityButton),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store2.on("projects_changed", refreshOrphans)
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store2.on("projects_changed", refreshOrphansIfProjectSetChanged)
   ];
   render();
   refreshOrphans();
   return () => {
     contentFilter.cancel();
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
+    prBackfillRetryTimers.clear();
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
+    prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
     renamingGroup = null;
@@ -78592,6 +79302,11 @@ function statusLabel(status) {
       return "Review";
   }
 }
+function skippedReviewReason(summary) {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, "");
+  if (!reason) return "No review ran.";
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+}
 function shouldCollapseCleanReview(review) {
   return review.status === "done" && review.issuesFound === false;
 }
@@ -78610,6 +79325,11 @@ function appendReviewHeader(panel, review, onRetry) {
   if (review.status === "error" && onRetry) {
     header.append(createRetryButton(onRetry));
   }
+  if (review.status === "skipped") {
+    header.append(
+      el("span", { class: "review-panel-skipped-summary" }, skippedReviewReason(review.summary))
+    );
+  }
   panel.append(header);
 }
 function createReviewCardEl(review, api2, onRetry) {
@@ -78620,7 +79340,7 @@ function createReviewCardEl(review, api2, onRetry) {
     ...review.issuesFound !== void 0 ? { "data-issues-found": review.issuesFound ? "true" : "false" } : {}
   });
   appendReviewHeader(panel, review, onRetry);
-  if (review.status === "running") return panel;
+  if (review.status === "running" || review.status === "skipped") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
   const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
 
@@ -78887,12 +79607,16 @@ function messageModel(msg) {
 function isConciseMessage(msg) {
   return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
 }
-function isConciseWorkingMessage(msg) {
+function isConciseStepsMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
 }
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
   msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+  msgEl.classList.toggle("msg-concise-steps", enabled && isConciseStepsMessage(msg));
 }
 function isConciseThread(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
@@ -80741,6 +81465,42 @@ function statusIcon3(status) {
   if (status === "interrupted") return minusIcon("ui-icon ui-icon-sm");
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
+function createPatchFilesSection(tc2) {
+  if (tc2.name !== "apply_patch") return null;
+  const files = getApplyPatchFiles(tc2);
+  if (files.length === 0) return null;
+  return el(
+    "ul",
+    { class: "tool-patch-files", "aria-label": "Files in patch" },
+    ...files.map((file2) => {
+      const target = file2.movePath ?? file2.path;
+      return el(
+        "li",
+        {},
+        el(
+          "button",
+          {
+            type: "button",
+            class: "tool-patch-file",
+            "data-op": file2.op,
+            "data-edit-path": target,
+            "data-tooltip": "View changes"
+          },
+          el("span", { class: "tool-patch-op" }, PATCH_OP_LABEL[file2.op]),
+          el(
+            "span",
+            { class: "tool-patch-path" },
+            file2.movePath === void 0 ? file2.path : `${file2.path} \u2192 ${file2.movePath}`
+          ),
+          ...file2.op === "delete" ? [] : [
+            el("span", { class: "tool-stat tool-stat-add" }, `+${String(file2.additions)}`),
+            el("span", { class: "tool-stat tool-stat-del" }, `-${String(file2.deletions)}`)
+          ]
+        )
+      );
+    })
+  );
+}
 function createToolArgsSection(args) {
   const rendered = renderToolArgs(args);
   if (!rendered.trim()) return null;
@@ -80862,6 +81622,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const buildBody2 = () => {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc2)),
       ...appendIfPresent(argsSection),
       ...userInterruption(tc2) !== void 0 ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
@@ -81385,6 +82146,10 @@ function createGroupToolCard(item) {
   }
   return card;
 }
+function rollupHeaderCount(item) {
+  const only = item.children.length === 1 ? item.children[0] : void 0;
+  return only?.type === "group" && only.toolCalls.length === item.toolCalls.length ? item.toolCalls.length : void 0;
+}
 function createRollupToolCard(item, api2, threadId, store2) {
   const status = cardStatus2(item.toolCalls);
   const card = el("details", {
@@ -81393,7 +82158,7 @@ function createRollupToolCard(item, api2, threadId, store2) {
     "data-status": status,
     "data-tool-count": String(item.toolCalls.length)
   });
-  const count = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+  const count = rollupHeaderCount(item);
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
     const childCard = createToolCard(child, api2, threadId, store2);
@@ -81431,7 +82196,7 @@ function createToolCard(item, api2, threadId, store2) {
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
 }
 function toolCardKey(item) {
-  if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "rollup") return "r:activity";
   if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
@@ -81555,8 +82320,10 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
       card.dataset["stepMessageId"] = item.messageId;
+    } else {
+      card.dataset["rollupKey"] = item.key;
     }
-    const count = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
     replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
     let body = Array.from(card.children).find(
       (node2) => node2 instanceof HTMLElement && node2.classList.contains("tool-rollup-body")
@@ -81578,16 +82345,17 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
 }
 function createMessageImages(images) {
   const wrap = el("div", { class: "message-images" });
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: "Attached image" }));
+  images.forEach((dataUrl, index) => {
     const img = el("img", {
       class: "message-image",
       src: dataUrl,
       alt: "Attached image",
       loading: "lazy"
     });
-    attachImageExpand(img, "Attached image");
+    attachImageExpand(img, "Attached image", gallery, index);
     wrap.append(img);
-  }
+  });
   return wrap;
 }
 function acpResourceLabel(uri, title) {
@@ -81600,7 +82368,7 @@ function acpResourceLabel(uri, title) {
     return tail;
   }
 }
-function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls) {
+function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls, imageGallery) {
   if (block.type === "text") return null;
   if (block.type === "image") {
     const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
@@ -81625,7 +82393,7 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
       alt: label2,
       loading: "lazy"
     });
-    attachImageExpand(img, label2);
+    attachImageExpand(img, label2, imageGallery?.items, imageGallery?.index);
     return img;
   }
   if (block.type === "audio") {
@@ -81684,8 +82452,13 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
   );
 }
 function createAcpContentBlocks(blocks, context, workspaceRoot) {
+  const images = context === "message" ? blocks.flatMap(
+    (block) => block.type === "image" ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : "Agent image" }] : []
+  ) : [];
+  let imageIndex = 0;
   const nodes = blocks.flatMap((block) => {
-    const node2 = createAcpContentBlock(block, context, workspaceRoot);
+    const gallery = context === "message" && block.type === "image" ? { items: images, index: imageIndex++ } : void 0;
+    const node2 = createAcpContentBlock(block, context, workspaceRoot, void 0, gallery);
     return node2 ? [node2] : [];
   });
   if (nodes.length === 0) return null;
@@ -81999,16 +82772,8 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? "",
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot
-      )
-    );
+  if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
+    body.append(buildReasoningEl(msg.reasoning ?? "", false, msg.reasoningBlocks, workspaceRoot));
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -82037,6 +82802,9 @@ function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   }
   if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
+}
+function hasReasoningContent(reasoning, blocks) {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -82137,10 +82905,9 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
+function buildReasoningEl(reasoning, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
-    class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
-    open: open2
+    class: `message-reasoning${live ? " message-reasoning-live" : ""}`
   });
   const summary = el(
     "summary",
@@ -82191,12 +82958,12 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
@@ -82205,7 +82972,6 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
       renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
-  if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
 function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
@@ -82217,7 +82983,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(reasoning ?? "", live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
     if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
@@ -82229,25 +82995,27 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
   });
 }
 function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
+  let anchorTrail = card.querySelector(
+    ":scope > .tool-rollup-body > .message-reasoning"
+  );
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
+    if (!details && anchorTrail && step.messageId === run2.anchorId) {
+      details = anchorTrail;
+      anchorTrail = null;
+      body.prepend(details);
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? "",
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot
-      );
+      details = buildReasoningEl(step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
       body.prepend(details);
       continue;
     }
@@ -82256,6 +83024,7 @@ function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
       renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
+  anchorTrail?.remove();
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -82348,7 +83117,7 @@ function mountConversation(root, store2, api2) {
     store2.emit("code_block_run_requested", { id, command, projectId, threadId });
   });
   list.addEventListener("click", (e3) => {
-    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats") : null;
+    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats, .tool-patch-file") : null;
     const path = statsBtn?.dataset["editPath"];
     if (!path) return;
     e3.preventDefault();
@@ -82810,7 +83579,11 @@ function mountConversation(root, store2, api2) {
     const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && [
+      ...list.querySelectorAll(
+        ".msg:not(.msg-concise) .message-reasoning.message-reasoning-live"
+      )
+    ].some((details) => !details.parentElement?.closest("details:not([open]), [hidden]"))) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
@@ -82924,6 +83697,8 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (item.type === "rollup" || item.type === "step") {
+      card.open = false;
     } else if (failed) {
       card.open = true;
       autoOpenedDisclosures.add(key);
@@ -82985,7 +83760,12 @@ function mountConversation(root, store2, api2) {
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
     if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run2, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
@@ -83910,7 +84690,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -83989,6 +84769,7 @@ var init_conversation = __esm({
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     markedTranscripts = /* @__PURE__ */ new WeakSet();
+    PATCH_OP_LABEL = { add: "Added", update: "Edited", delete: "Deleted", move: "Moved" };
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -94975,9 +95756,12 @@ var init_read_terminal = __esm({
 // src/renderer/controller/code-block-runs.ts
 async function sendCodeBlockRunResult(store2, api2, result) {
   const { projectId, threadId, shell: shell3 } = result;
-  if (store2.getState().activeProjectId !== projectId) return false;
+  const completion = result.completion;
+  if (completion && result.exitCode !== 0) return false;
+  const targetIsCurrent = () => getThreadProjectId(store2, threadId) === projectId && (completion !== void 0 || store2.getState().activeProjectId === projectId);
+  if (!targetIsCurrent()) return false;
   await ensureThreadMessages(projectId, threadId);
-  if (store2.getState().activeProjectId !== projectId) return false;
+  if (!targetIsCurrent()) return false;
   const thread = getThreadById(store2, threadId);
   if (!thread || needsHydration(thread)) return false;
   const readTerminalEnabled = await api2.settings.get(READ_TERMINAL_ENABLED_SETTING).catch(() => false);
@@ -94987,7 +95771,7 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     api2.git.promptState(projectId, threadId)
   ]);
   if (branchResult.status === "rejected") return false;
-  if (store2.getState().activeProjectId !== projectId) return false;
+  if (!targetIsCurrent()) return false;
   const currentBranch = branchResult.value;
   const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
   const current = getThreadById(store2, threadId);
@@ -94996,32 +95780,61 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     isolatedWorktree: current.worktree !== void 0
   }))
     return false;
+  const messageText = completion?.prompt ?? "";
   const content = buildTextWithAttachments(
-    "",
+    messageText,
     [],
     [{ label: `Shell: ${shell3.label}`, content: shell3.content }]
   );
   const workingBrief = nextWorkingBrief(current.workingBrief, content);
-  if (workingBrief && workingBrief !== current.workingBrief) {
-    setThreadWorkingBrief(store2, threadId, workingBrief);
-  }
+  const workingBriefChanged = workingBrief !== void 0 && workingBrief !== current.workingBrief;
   const payload = {
     content,
     invokedSkills: [],
     priorTodos: current.todos ?? [],
     ...workingBrief !== void 0 ? { workingBrief } : {}
   };
+  const shellAttachment = { kind: "shell", label: shell3.label, content: shell3.content };
+  const messageMeta = {
+    ...promptState ? {
+      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+      dirty: promptState.dirty
+    } : {}
+  };
+  if (completion) {
+    const machineResult = await api2.agent.runMachine({
+      projectId,
+      threadId,
+      operationId: completion.operationId,
+      turnTreeId: completion.turnTreeId,
+      payload: JSON.stringify(refreshAgentRunPayload(store2, threadId, payload)),
+      display: {
+        content: messageText,
+        attachments: [shellAttachment],
+        ...messageMeta
+      }
+    });
+    if (machineResult === "completed" || machineResult === "duplicate") {
+      if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
+      return true;
+    }
+    addMessage(
+      store2,
+      threadId,
+      "error",
+      machineResult === "budget-exhausted" ? "Git recovery completed, but the automatic follow-up did not start because this turn reached its auto-continuation budget. Send a message to continue." : "Git recovery completed, but the thread advanced before the automatic follow-up could start. Send a message to continue."
+    );
+    return false;
+  }
+  if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
   const messageId = addMessage(
     store2,
     threadId,
     "user",
-    "",
+    messageText,
     void 0,
-    [{ kind: "shell", label: shell3.label, content: shell3.content }],
-    promptState ? {
-      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
-      dirty: promptState.dirty
-    } : void 0
+    [shellAttachment],
+    messageMeta
   );
   const queued = { messageId, payload, createdAt: Date.now() };
   if (getThreadById(store2, threadId)?.status === "running") {
@@ -95880,6 +96693,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let status = null;
   let detached = null;
   let reattaching = false;
+  const recoveryRuns = /* @__PURE__ */ new Map();
   let refreshTimer = null;
   let branchToCopy = null;
   let branches = [];
@@ -95996,13 +96810,14 @@ function mountFooterBranchStatus(host, store2, api2) {
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
-    reattachButton.disabled = reattaching;
+    const recoveryRunning = activeRecoveryRunId() !== null;
+    reattachButton.disabled = reattaching || recoveryRunning;
     if (current.uncommittedPick) {
       reattachButton.setAttribute(
         "aria-label",
         `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`
       );
-      reattachButton.textContent = "Commit and continue";
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Commit and continue";
       return;
     }
     if (current.recovery === "bisect") {
@@ -96010,7 +96825,7 @@ function mountFooterBranchStatus(host, store2, api2) {
         "aria-label",
         `Reset the bisect and return to ${current.branch} in a terminal`
       );
-      reattachButton.textContent = "Reset bisect";
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Reset bisect";
       return;
     }
     if (current.recovery) {
@@ -96018,7 +96833,7 @@ function mountFooterBranchStatus(host, store2, api2) {
         "aria-label",
         `Continue the ${current.recovery} on ${current.branch} in a terminal`
       );
-      reattachButton.textContent = `Continue ${current.recovery}`;
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : `Continue ${current.recovery}`;
       return;
     }
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
@@ -96026,6 +96841,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
+  }
+  function recoveryKey(projectId, threadId) {
+    return `${projectId}\0${threadId}`;
+  }
+  function activeRecoveryRunId() {
+    const owner = getActiveThreadOwner(store2);
+    return owner ? recoveryRuns.get(recoveryKey(owner.projectId, owner.threadId)) ?? null : null;
   }
   async function readDetachedAttachment(owner) {
     try {
@@ -96039,9 +96861,23 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || reattaching) return;
+    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return;
     if (current.recovery) {
-      store2.emit("request_terminal_command", recoveryCommand(current, current.recovery));
+      const runId = globalThis.crypto.randomUUID();
+      recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
+      renderReattach();
+      store2.emit("code_block_run_requested", {
+        id: runId,
+        command: recoveryCommand(current, current.recovery),
+        projectId: owner.projectId,
+        threadId: owner.threadId,
+        completion: {
+          type: "continue",
+          prompt: "Continue after the Git recovery command completed.",
+          operationId: `git-recovery:${runId}`,
+          turnTreeId: getThreadById(store2, owner.threadId)?.currentEpoch ?? owner.threadId
+        }
+      });
       return;
     }
     reattaching = true;
@@ -96332,6 +97168,18 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   });
   const unsubs = [
+    store2.on("code_block_run_finished", (result) => {
+      const key = recoveryKey(result.projectId, result.threadId);
+      if (result.id !== recoveryRuns.get(key)) return;
+      recoveryRuns.delete(key);
+      if (result.exitCode !== 0) {
+        showErrorToast(
+          "Could not continue the Git operation",
+          new Error(result.output.trim() || "The recovery command failed")
+        );
+      }
+      refreshNow();
+    }),
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
@@ -96755,9 +97603,7 @@ function threadHasExportableContent(thread) {
 function providerFromModelId(modelId) {
   const colon = modelId.indexOf(":");
   if (colon > 0) return modelId.slice(0, colon);
-  if (modelId.startsWith("claude")) return "anthropic";
-  if (modelId.startsWith("gpt")) return "openai";
-  return "unknown";
+  return firstPartyProviderOf(modelId) ?? "unknown";
 }
 function providersFromUsage(usage) {
   const models = usage.byModel ? Object.keys(usage.byModel) : [];
@@ -96821,6 +97667,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
+    init_model_families();
     THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
@@ -111203,7 +112050,8 @@ ${output2}` : "Terminal output: (none)"
         tabId: tab.id,
         label: `${tab.label} \xB7 exit ${exitLabel}`,
         content
-      }
+      },
+      ...request.completion ? { completion: request.completion } : {}
     });
   }
   function publishMeta(tab) {
@@ -113580,6 +114428,27 @@ function collectLinkedPrs(store2) {
   }
   return refs;
 }
+function indexThreadLinks(store2) {
+  const links = /* @__PURE__ */ new Map();
+  for (const thread of store2.getState().threads) {
+    for (const ref of thread.prRefs ?? []) {
+      const key = githubPrKey(ref);
+      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
+    }
+  }
+  const activeThread = getActiveThread(store2);
+  if (activeThread) {
+    for (const message2 of activeThread.messages) {
+      for (const ref of extractGithubPrUrls(message2.content)) {
+        const key = githubPrKey(ref);
+        if (!links.has(key)) {
+          links.set(key, { threadId: activeThread.id, title: activeThread.title });
+        }
+      }
+    }
+  }
+  return links;
+}
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
@@ -113636,6 +114505,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
+  let threadLinks = indexThreadLinks(store2);
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -113991,18 +114861,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       void api2.shell.openExternal(prUrl);
     });
     const agent = agentLinks.get(githubPrKey(selectedPr));
-    const openThreadBtn = agent ? el(
+    const producingThread = threadLinks.get(githubPrKey(selectedPr));
+    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
+    const openThreadBtn = producingThreadId ? el(
       "button",
       {
         type: "button",
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
+        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
       },
-      el("span", {}, `Open ${agentProviderLabel(agent.provider)} agent thread`)
+      el(
+        "span",
+        {},
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+      )
     ) : null;
-    if (openThreadBtn && agent) {
+    if (openThreadBtn && producingThreadId) {
       openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, agent.threadId);
+        switchThread(store2, producingThreadId);
       });
     }
     const newThreadBtn = el(
@@ -114393,6 +115269,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
     }
     const gen = ++agentLinksGen;
+    threadLinks = indexThreadLinks(store2);
     ghStatus = await api2.gh.status();
     const entries2 = await api2.gh.agentPrLinks().catch(() => []);
     if (gen !== agentLinksGen) return;
@@ -114500,6 +115377,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
+      threadLinks = indexThreadLinks(store2);
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -114512,9 +115390,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }),
     store2.on("threads_changed", () => {
       if (!prsModeActive(store2)) return;
+      threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
+      if (selectedPr && prDetails) renderMeta();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -137580,6 +138460,7 @@ function mountProcessManagerDialog(api2, store2) {
     status.textContent = "Loading processes\u2026";
     updated.textContent = "";
     open2();
+    closeButton.focus({ preventScroll: true });
     void refresh();
     timer = setInterval(() => void refresh(), 1e3);
   };
@@ -137944,9 +138825,11 @@ function startAgentController(store2, api2) {
           "user",
           userContentToText(chunk.content),
           void 0,
-          void 0,
+          chunk.attachments,
           {
-            origin: chunk.origin
+            origin: chunk.origin,
+            ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
+            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {}
           }
         );
         break;
@@ -139905,6 +140788,7 @@ function handlePanelShortcut(store2, api2, action) {
 }
 function registerPanelKeyboardShortcuts(store2, api2) {
   document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
@@ -139922,6 +140806,7 @@ var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
     init_thread_helpers();
     init_panels();
+    init_dialog_shell();
   }
 });
 
@@ -148831,6 +149716,12 @@ function updateFilesPane() {
 function registerKeyboardShortcuts() {
   document.addEventListener("keydown", (e3) => {
     const meta3 = e3.ctrlKey || e3.metaKey;
+    if (meta3 && e3.key === "w") {
+      e3.preventDefault();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
+      return;
+    }
+    if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
       openNewThread(store);
@@ -148869,10 +149760,6 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       if (uiScaleAction === "reset") void resetUiScale(store, api);
       else void bumpUiScale(store, api, uiScaleAction === "in" ? 1 : -1);
-    }
-    if (meta3 && e3.key === "w") {
-      e3.preventDefault();
-      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e3.key === "Escape") {
       if (isCommandPaletteOpen()) {
