@@ -6,9 +6,9 @@
  * something different: for each component whose licence is more than
  * attribution — copyleft, file-level copyleft, a dual licence Copse must elect
  * between — how Copse meets it. That record is only true while it matches the
- * shipped set, and it rots silently: an entry quotes a version that has since
- * been bumped, a new MPL package arrives in a bundle with no entry, a "not
- * shipped" claim stops being true. {@link findNoticeProblems} catches each.
+ * shipped set, and it rots silently: a new MPL package arrives in a bundle with
+ * no entry, a "not shipped" claim stops being true. {@link findNoticeProblems}
+ * catches each.
  *
  * The file's machine-readable conventions:
  *
@@ -17,9 +17,9 @@
  *   are not linted.
  * - A `## Not shipped: …` heading lists, in parentheses, the packages it claims
  *   are absent: `(sharp, @img/sharp-libvips-*)`. A trailing `*` is a prefix.
- * - Every `Version X is bundled` / `Version X is shipped` in an entry is
- *   checked against the shipped versions. If an entry quotes versions, it must
- *   cover every version of that package that ships.
+ * - An entry does not quote the version that ships. The generated report
+ *   lists every component as `name@version`; a version copied into this file
+ *   by hand goes stale on the next Dependabot bump.
  * - An entry for a dual-licensed (`OR`) component must say `Copse elects the
  *   <SPDX-ID> option`, and that ID must be one of the expression's options.
  */
@@ -57,8 +57,6 @@ export interface NoticeEntry {
   heading: string
   /** The package the entry is about, from the heading's parentheses. */
   packageName: string
-  /** The version the entry says ships, if it quotes one. */
-  version: string | null
   body: string
 }
 
@@ -76,7 +74,7 @@ export interface ParsedNotices {
 const HEADING_RE = /^## (.+?)\s*$/gm
 const TRAILING_PARENS_RE = /\(([^()]+)\)$/
 const NOT_SHIPPED_RE = /^Not shipped:/i
-const VERSION_RE = /\bVersion (\d+\.\d+\.\d+[\w.+-]*) is (?:bundled|shipped)\b/
+const QUOTED_VERSION_RE = /\bv?\d+\.\d+\.\d+(?:[-+][\w.+-]*)?\b/
 const PACKAGE_NAME_RE = /^(?:@[\w.-]+\/)?[\w.-]+\*?$/
 const ELECTION_RE = /\belects\s+(?:the\s+)?[*_`]*([\w.+-]+)[*_`]*(?:\s+option)?\b/i
 
@@ -98,7 +96,7 @@ export function parseNotices(markdown: string): ParsedNotices {
       return
     }
     for (const packageName of names) {
-      entries.push({ heading, packageName, version: VERSION_RE.exec(body)?.[1] ?? null, body })
+      entries.push({ heading, packageName, body })
     }
   })
   return { entries, notShipped }
@@ -168,12 +166,6 @@ function electedLicenseId(body: string): string | null {
 
 function hasLicenseChoice(expression: string): boolean {
   return /(?:^|[\s(])OR(?=$|[\s)])/i.test(expression)
-}
-
-function quotedVersions(body: string): string[] {
-  return [...body.matchAll(new RegExp(VERSION_RE.source, 'g'))].flatMap((match) =>
-    match[1] === undefined ? [] : [match[1]],
-  )
 }
 
 /** True when the licence asks for more than attribution, or offers a choice. */
@@ -257,25 +249,17 @@ export function findNoticeProblems(
   }
 
   for (const entry of notices.entries) {
-    const shipped = byName.get(entry.packageName) ?? []
-    if (shipped.length === 0) {
-      if (options.complete) {
-        problems.push({
-          subject: entry.packageName,
-          problem: `has an entry ("## ${entry.heading}") but no longer ships`,
-        })
-      }
-      continue
-    }
-    const quoted = [...new Set(quotedVersions(entry.body))]
-    const shippedVersions = [...new Set(shipped.map((component) => component.version))]
-    const quotedVersionsDiffer =
-      shippedVersions.some((version) => !quoted.includes(version)) ||
-      quoted.some((version) => !shippedVersions.includes(version))
-    if (quoted.length > 0 && quotedVersionsDiffer) {
+    const quoted = QUOTED_VERSION_RE.exec(entry.body)?.[0]
+    if (quoted !== undefined) {
       problems.push({
         subject: entry.packageName,
-        problem: `entry says ${quoted.length === 1 ? 'version' : 'versions'} ${quoted.join(', ')}, but ${shippedVersions.join(', ')} ${shippedVersions.length === 1 ? 'ships' : 'ship'}`,
+        problem: `entry quotes version ${quoted}; drop it, the generated licence report lists the shipped version`,
+      })
+    }
+    if (options.complete && !byName.has(entry.packageName)) {
+      problems.push({
+        subject: entry.packageName,
+        problem: `has an entry ("## ${entry.heading}") but no longer ships`,
       })
     }
   }
