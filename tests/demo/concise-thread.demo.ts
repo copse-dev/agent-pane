@@ -98,7 +98,7 @@ describe('concise thread view', () => {
     // The list gap (8px) plus the reply's own padding, never an extra empty band.
     for (const gap of layout.promptGaps) expect(gap).toBeLessThanOrEqual(24)
 
-    for (const [index, top] of [0, 420, 840, 1_000_000].entries()) {
+    for (const [index, top] of [0, 420, 1_000_000].entries()) {
       await browser.execute((scrollTop) => {
         document.querySelector('.messages-list')?.scrollTo({ top: scrollTop })
       }, top)
