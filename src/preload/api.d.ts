@@ -830,6 +830,10 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
+    /** Explicit, read-only browsing of the public ACP registry. Never starts agents. */
+    browseRegistry: (
+      refresh?: boolean,
+    ) => Promise<import('@shared/acp-registry.ts').AcpRegistryListing>
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**

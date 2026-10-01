@@ -352,6 +352,31 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
     note: 'Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`.',
   },
+  {
+    id: 'github-copilot-cli',
+    title: 'GitHub Copilot CLI',
+    command: 'copilot',
+    args: ['--acp', '--stdio'],
+    envHints: ['COPILOT_GITHUB_TOKEN'],
+    install: 'npm install -g @github/copilot',
+    // Manual catalog entry: npm distribution alone does not qualify an agent
+    // for automatic install, registration, upgrades, or model probes.
+    sandbox: {
+      // GitHub's documented auth/API endpoints. BYOK and GHE data-residency
+      // endpoints require an explicit per-agent override; no registry grants.
+      allowedDomains: ['github.com', 'api.github.com', '*.githubcopilot.com'],
+      homeDirs: ['.copilot', '.cache/copilot', 'Library/Caches/copilot'],
+      // No extra system scratch or keychain grant; retain Copse's own TMPDIR.
+    },
+    setup: 'copilot login',
+    reauth: 'copilot login',
+    docsUrl: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server',
+    note:
+      'Manual setup; ACP is in public preview. npm installation requires Node.js 22+. ' +
+      'Sign in with `copilot login` or set `COPILOT_GITHUB_TOKEN`. GitHub-hosted models ' +
+      'use your Copilot plan and usage limits; BYOK is billed by your model provider ' +
+      'and needs a custom sandbox endpoint.',
+  },
 ]
 
 /**

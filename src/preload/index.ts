@@ -1052,6 +1052,7 @@ const api: ApiClient = {
       ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
+    browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
