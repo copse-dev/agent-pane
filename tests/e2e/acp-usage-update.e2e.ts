@@ -21,9 +21,14 @@ describe('ACP usage_update context wheel', () => {
 
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
-    await expect(wheel.$('.context-wheel-label')).toHaveText('40%')
-    await expect(wheel).toHaveAttribute('aria-label', 'Context 40% used, 80.0k of 200.0k tokens')
-    await expect($('.footer-usage')).toHaveText('829 tokens')
+    await expect(wheel.$('.context-wheel-label')).not.toExist()
+    // Agent-reported figure: the track is dashed.
+    await expect(wheel).toHaveElementClass('is-reported')
+    // The aria-label also carries the usage line, replacing the removed counter's label.
+    await expect(wheel).toHaveAttribute(
+      'aria-label',
+      /^Context 40% used, 80\.0k of 200\.0k tokens; Usage: 829 tokens/,
+    )
 
     await browser.pause(500)
     await wheel.moveTo()
@@ -34,6 +39,7 @@ describe('ACP usage_update context wheel', () => {
     )
     await expect(popover.$('.context-wheel-popover-note')).toHaveText('Reported by ACP agent')
     await expect(popover.$$('.context-wheel-popover-row')).toBeElementsArrayOfSize(0)
+    await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 829 tokens')
 
     await saveAppScreenshot('acp-usage-update-context.png')
   })

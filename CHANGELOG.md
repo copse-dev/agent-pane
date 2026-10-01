@@ -8,6 +8,14 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- The footer's context ring and token counter are now one control. The ring is
+  the only thing left in the footer: the percentage and the `N tokens` text are
+  gone, and one hover shows the context breakdown, token usage, cache and cost,
+  and each subagent run with its status and tokens. The ring turns amber from
+  80% of the context window and red from 95%, and has a dashed track when the
+  figure is reported by an ACP agent rather than measured by Copse. The footer
+  now needs less width before it collapses into its compact layout.
+
 ## 0.1.0-beta.12
 
 This is the first published release since 0.1.0-beta.8. Betas 9, 10, and 11
@@ -46,6 +54,8 @@ were cut but never published, so their notes are included below.
 - Chromium- and macOS-provided menu and dialog text in the Mac app is now in
   English for every user, matching Copse's English-only interface. This keeps
   the installed app within its size budget.
+
+## 0.1.0-beta.11
 
 - The update prompt now lists what changed in every release since the one you
   are running, newest first, instead of only naming the new version. Skipping a

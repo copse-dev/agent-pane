@@ -1,0 +1,1072 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse · Combined context + usage</title>
+    <style>
+      @font-face {
+        font-family: 'Pliant';
+        src: url('../../assets/fonts/Pliant-Variable.ttf');
+        font-weight: 100 900;
+      }
+      :root {
+        color-scheme: dark;
+        --bg-base: #1e1e1e;
+        --bg-elevated: #252526;
+        --bg-muted: #2d2d2d;
+        --text-primary: #d4d4d4;
+        --text-secondary: #a6a6a6;
+        --text-muted: #808080;
+        --border: #414141;
+        --border-subtle: #333333;
+        --accent: #ff9fcf;
+        --ok: #68d391;
+        --warn: #f6ad55;
+        --danger: #f14c4c;
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+        --radius: 6px;
+        --font-size-xs: 11px;
+        --c-system: #6aa3ff;
+        --c-tools: #4fd1c5;
+        --c-mcp: #b794f4;
+        --c-skills: #f6ad55;
+        --c-history: #a0aec0;
+        --c-message: #68d391;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg-base: #fafaf7;
+        --bg-elevated: #fffefa;
+        --bg-muted: #f0efec;
+        --text-primary: #252b27;
+        --text-secondary: #5e6661;
+        --text-muted: #6f7773;
+        --border: #d4d8d2;
+        --border-subtle: #e4e7e1;
+        --accent: #c2417d;
+        --ok: #2f855a;
+        --warn: #b7791f;
+        --danger: #c53030;
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg-base);
+        color: var(--text-primary);
+        font:
+          13px/1.4 'Pliant',
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        min-height: 100vh;
+      }
+      .shell {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 28px 20px 40px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--text-secondary);
+        margin: 0 0 18px;
+        max-width: 62ch;
+      }
+
+      /* ── Mode switcher ─────────────────────────────────────────── */
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 22px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .group-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin-right: 2px;
+      }
+      .seg {
+        font: inherit;
+        font-size: 12px;
+        color: var(--text-secondary);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 11px;
+        cursor: pointer;
+      }
+      .seg:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .seg:hover {
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+      }
+      .seg[aria-pressed='true'] {
+        color: var(--text-primary);
+        background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+        border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .mode-desc {
+        margin: 0 0 18px;
+        padding: 8px 12px;
+        border-left: 2px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 12px;
+        min-height: 3.2em;
+      }
+
+      /* ── Fake app stage ────────────────────────────────────────── */
+      .stage {
+        border: 1px solid var(--border-subtle);
+        border-radius: 10px;
+        padding: 14px;
+        padding-top: 120px;
+        background: color-mix(in srgb, var(--bg-elevated) 50%, var(--bg-base));
+        position: relative;
+      }
+      .composer {
+        background: var(--bg-base);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: visible;
+      }
+      .composer-body {
+        padding: 12px 14px;
+        color: var(--text-muted);
+        min-height: 54px;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 12px 8px;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        position: relative;
+      }
+      .footer .chip {
+        color: var(--text-secondary);
+      }
+      .footer .spacer {
+        flex: 1;
+      }
+
+      /* ── The combined trigger ──────────────────────────────────── */
+      .usage-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        cursor: help;
+        border-radius: 4px;
+        padding: 1px 2px;
+        position: relative;
+        outline: none;
+      }
+      .usage-trigger:hover,
+      .usage-trigger:focus-visible,
+      .usage-trigger.is-open {
+        color: var(--text-secondary);
+      }
+      .usage-trigger:focus-visible {
+        outline: 1px solid var(--accent);
+      }
+      .ring-track {
+        stroke: var(--border);
+      }
+      .ring-fill {
+        stroke: var(--text-secondary);
+        transition: stroke-dasharray 0.2s ease;
+      }
+      .ring-fill.is-warn {
+        stroke: var(--warn);
+      }
+      .ring-fill.is-danger {
+        stroke: var(--danger);
+      }
+      /* ACP: the ring is the agent's own figure — dashed track says "reported". */
+      .usage-trigger.is-acp .ring-track {
+        stroke-dasharray: 2 2.2;
+      }
+
+      /* ── The combined popover ──────────────────────────────────── */
+      .popover {
+        position: absolute;
+        right: 12px;
+        bottom: calc(100% + 6px);
+        width: 318px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+        padding: 10px 12px 9px;
+        font-size: var(--font-size-xs);
+        color: var(--text-primary);
+        pointer-events: none;
+        z-index: 10;
+      }
+      .popover[hidden] {
+        display: none;
+      }
+      .pop-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 7px;
+        white-space: nowrap;
+      }
+      .pop-head .grow {
+        flex: 1;
+      }
+      .mode-chip {
+        font-weight: 500;
+        font-size: 10px;
+        letter-spacing: 0.02em;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+      }
+      .mode-chip.is-acp {
+        border-color: color-mix(in srgb, var(--c-mcp) 60%, var(--border));
+        color: var(--c-mcp);
+      }
+      .stackbar {
+        display: flex;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: var(--border-subtle);
+        margin-bottom: 7px;
+      }
+      .stackbar i {
+        display: block;
+        height: 100%;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0;
+        white-space: nowrap;
+      }
+      .row .name {
+        flex: 1;
+      }
+      .row .val {
+        color: var(--text-muted);
+        margin-left: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .row .sw {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .divider {
+        border-top: 1px solid var(--border);
+        margin: 7px 0 6px;
+      }
+      .section {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        color: var(--text-muted);
+        margin-bottom: 2px;
+        white-space: nowrap;
+      }
+      .section b {
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+      .section .grow {
+        flex: 1;
+      }
+      .sub .name {
+        color: var(--text-secondary);
+      }
+      .sub {
+        align-items: flex-start;
+      }
+      .sub .dot {
+        margin-top: 5px;
+      }
+      .sub .meta {
+        display: block;
+        color: var(--text-muted);
+        font-size: 10px;
+      }
+      .sub .stack {
+        flex: 1;
+        min-width: 0;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: var(--text-muted);
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.run {
+        background: var(--accent);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .verdicts {
+        display: flex;
+        gap: 4px;
+        margin-top: 1px;
+      }
+      .pill {
+        font-size: 10px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+      }
+      .pill.sandbox {
+        border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
+      }
+      .pill.external {
+        border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+      }
+      .note {
+        color: var(--text-muted);
+        margin-top: 6px;
+        white-space: normal;
+        line-height: 1.35;
+      }
+      .empty {
+        color: var(--text-muted);
+        font-style: italic;
+      }
+      .pop-hint {
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px dashed var(--border-subtle);
+        color: var(--text-muted);
+        font-size: 10px;
+      }
+
+      .legend {
+        margin-top: 22px;
+        color: var(--text-muted);
+        font-size: 12px;
+        max-width: 70ch;
+      }
+      .legend code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+      .legend ul {
+        padding-left: 18px;
+        margin: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <h1>Combined context + usage</h1>
+      <p class="lede">
+        One footer control instead of two: the context ring and the token counter folded into just
+        the ring, with a single hover that holds everything — context split, in/out, cache, cost,
+        subagents and classifiers. Layout only; all numbers are mock data.
+      </p>
+
+      <div class="controls">
+        <div class="group" id="modes"><span class="group-label">Mode</span></div>
+        <div class="group" id="models"><span class="group-label">Model</span></div>
+        <div class="group">
+          <span class="group-label">Theme</span>
+          <button class="seg" data-theme-btn="dark" aria-pressed="true">Dark</button>
+          <button class="seg" data-theme-btn="light" aria-pressed="false">Light</button>
+        </div>
+        <label class="check"> <input type="checkbox" id="pin" checked /> Keep popover open </label>
+      </div>
+      <p class="mode-desc" id="mode-desc"></p>
+
+      <div class="stage" id="stage">
+        <div class="composer">
+          <div class="composer-body">Ask Copse to do something…</div>
+          <div class="footer">
+            <span class="chip" id="model-chip"></span>
+            <span class="chip">⎇ main</span>
+            <span class="spacer"></span>
+            <span
+              class="usage-trigger"
+              id="trigger"
+              tabindex="0"
+              role="note"
+              aria-label="Context and token usage"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" id="ring"></svg>
+            </span>
+            <div class="popover" id="popover" role="tooltip" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        What changes from today:
+        <ul>
+          <li>
+            <code>.context-wheel</code> and <code>.footer-usage</code> collapse into one anchor, so
+            there is one hover target and one popover instead of two that cannot both be read.
+          </li>
+          <li>
+            Sections the mode can't supply are dropped, not zeroed — ACP has no part-by-part context
+            split; a thread with no subagent runs shows no subagent block.
+          </li>
+          <li>
+            Dashed ring track = the figure is reported by an external (ACP) agent rather than
+            measured by Copse.
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const SEG_COLOR = {
+        system: 'var(--c-system)',
+        tools: 'var(--c-tools)',
+        mcp: 'var(--c-mcp)',
+        skills: 'var(--c-skills)',
+        history: 'var(--c-history)',
+        message: 'var(--c-message)',
+      }
+
+      const fmt = (n) =>
+        n >= 1e6
+          ? `${+(n / 1e6).toFixed(1)}M`
+          : n >= 1000
+            ? `${(n / 1000).toFixed(1)}k`
+            : String(Math.round(n))
+      const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0)
+
+      /** Mock scenarios. `breakdown` null = the mode can't split context by part. */
+      const MODES = [
+        {
+          id: 'fresh',
+          label: 'Regular · new thread',
+          desc: 'Pre-send estimate. The ring is split by context part (multi-arc), the counter is prefixed ~ and there is no cost yet.',
+          model: 'Claude Sonnet 5.5',
+          kind: 'regular',
+          ring: 'breakdown',
+          used: 9200,
+          window: 200000,
+          tokens: '~9.2k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['mcp', 'MCP', 1400],
+            ['skills', 'Skills', 900],
+            ['message', 'Draft message', 1000],
+          ],
+          usage: { estimated: true, input: 9200, output: 0 },
+          note: 'Estimate before send. Measured usage replaces it after the first reply.',
+        },
+        {
+          id: 'mid',
+          label: 'Regular · mid-thread',
+          desc: 'A running API-provider thread. Measured fill ring; the hover keeps the part-by-part breakdown and adds in/out, cache and cost.',
+          model: 'Claude Sonnet 5.5',
+          kind: 'regular',
+          ring: 'fill',
+          used: 136000,
+          window: 200000,
+          tokens: '17.7k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['mcp', 'MCP', 1400],
+            ['skills', 'Skills', 900],
+            ['history', 'History', 119600],
+            ['message', 'Latest message', 8200],
+          ],
+          usage: {
+            input: 14200,
+            output: 3500,
+            cacheRead: 121000,
+            cacheWrite: 8400,
+            cost: '$0.42',
+          },
+        },
+        {
+          id: 'limit',
+          label: 'Regular · near limit',
+          desc: 'At 80% or more the ring fill turns amber, the only signal left now the % is out of the field.',
+          model: 'Claude Sonnet 5.5',
+          kind: 'regular',
+          ring: 'fill',
+          used: 172000,
+          window: 200000,
+          tokens: '22.9k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['mcp', 'MCP', 1400],
+            ['skills', 'Skills', 900],
+            ['history', 'History', 151200],
+            ['message', 'Latest message', 12600],
+          ],
+          usage: {
+            input: 18400,
+            output: 4500,
+            cacheRead: 240000,
+            cacheWrite: 9800,
+            cost: '$0.71',
+          },
+          note: 'Near the context limit — consider compacting.',
+        },
+        {
+          id: 'full',
+          label: 'Regular · at limit',
+          desc: 'At 95% or more the ring fill turns red: the next send may overflow the window.',
+          model: 'Claude Sonnet 5.5',
+          kind: 'regular',
+          ring: 'fill',
+          used: 191000,
+          window: 200000,
+          tokens: '25.3k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['mcp', 'MCP', 1400],
+            ['skills', 'Skills', 900],
+            ['history', 'History', 171600],
+            ['message', 'Latest message', 11200],
+          ],
+          usage: {
+            input: 20300,
+            output: 5000,
+            cacheRead: 262000,
+            cacheWrite: 10400,
+            cost: '$0.83',
+          },
+          note: 'Context nearly full — compact or start a new thread.',
+        },
+        {
+          id: 'orchestrated',
+          label: 'Regular · subagents + classifiers',
+          desc: 'The full hover. The headline excludes subagent runs; whole-thread accounting, delegated work and classifier calls sit below labelled scopes.',
+          model: 'Claude Sonnet 5.5',
+          kind: 'regular',
+          ring: 'fill',
+          used: 108000,
+          window: 200000,
+          tokens: '31.4k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['mcp', 'MCP', 1400],
+            ['skills', 'Skills', 900],
+            ['history', 'History', 90100],
+            ['message', 'Latest message', 9700],
+          ],
+          usage: {
+            input: 24600,
+            output: 6800,
+            threadLabel: 'Whole thread',
+            cacheRead: 188000,
+            cacheWrite: 12100,
+            cost: '$1.37',
+          },
+          subagents: [
+            {
+              name: 'explore · repo layout',
+              model: 'Haiku 4.5',
+              status: 'ok',
+              inTok: 21800,
+              outTok: 3100,
+              secs: 42,
+            },
+            {
+              name: 'general · migrate tests',
+              model: 'Sonnet 5.5',
+              status: 'run',
+              inTok: 19500,
+              outTok: 3600,
+              secs: 118,
+            },
+            {
+              name: 'review · diff pass',
+              model: 'Sonnet 5.5',
+              status: 'ok',
+              inTok: 4800,
+              outTok: 1500,
+              secs: 27,
+            },
+          ],
+          classifiers: [
+            {
+              name: 'Shell guard',
+              engine: 'Kev 4B · local',
+              calls: 18,
+              verdicts: [
+                ['sandbox', 15],
+                ['external', 3],
+              ],
+              latency: '0.9s avg',
+              cost: 'free',
+            },
+            {
+              name: 'Prompt-injection screen',
+              engine: 'Winnow 12B · local',
+              calls: 6,
+              verdicts: [['safe', 6]],
+              latency: '1.4s avg',
+              cost: 'free',
+            },
+          ],
+        },
+        {
+          id: 'acp-claude',
+          label: 'ACP · Claude Code',
+          desc: 'External agent over ACP. Context and usage are the agent’s own figures, so there is no part-by-part split and cost is plan usage. Subagents are reported by the agent; Copse classifiers still gate shell commands.',
+          model: 'Claude Code (ACP)',
+          kind: 'acp',
+          agent: 'Claude Code',
+          ring: 'fill',
+          used: 82000,
+          window: 200000,
+          tokens: '12.3k tokens',
+          breakdown: null,
+          usage: { input: 9400, output: 2900, cost: 'Plan usage · Max' },
+          subagents: [
+            {
+              name: 'Task · find call sites',
+              model: 'agent-reported',
+              status: 'ok',
+              inTok: 6100,
+              outTok: 900,
+              secs: 19,
+            },
+            {
+              name: 'Task · write tests',
+              model: 'agent-reported',
+              status: 'run',
+              inTok: 3300,
+              outTok: 700,
+              secs: 64,
+            },
+          ],
+          classifiers: [
+            {
+              name: 'Shell guard',
+              engine: 'Kev 4B · local',
+              calls: 4,
+              verdicts: [
+                ['sandbox', 3],
+                ['external', 1],
+              ],
+              latency: '0.8s avg',
+              cost: 'free',
+            },
+          ],
+          note: 'Reported by Claude Code. Copse can’t split context by part for ACP agents.',
+        },
+        {
+          id: 'acp-codex',
+          label: 'ACP · Codex',
+          desc: 'A thinner ACP agent: totals only, no subagents, and the agent reports no cost. Absent sections say so once instead of rendering empty rows.',
+          model: 'Codex (ACP)',
+          kind: 'acp',
+          agent: 'Codex',
+          ring: 'fill',
+          used: 58000,
+          window: 258000,
+          tokens: '8.1k tokens',
+          breakdown: null,
+          usage: { input: 6700, output: 1400, cost: 'ChatGPT plan' },
+          subagents: [],
+          classifiers: [],
+          note: 'Reported by Codex. No subagent or classifier activity this thread.',
+        },
+        {
+          id: 'local',
+          label: 'Regular · local model',
+          desc: 'The state in the screenshot: a small local window, 68% full. Cost collapses to a “free” note.',
+          model: 'qwen3-coder · LM Studio',
+          kind: 'regular',
+          ring: 'fill',
+          used: 17700,
+          window: 26000,
+          tokens: '17.7k tokens',
+          breakdown: [
+            ['system', 'System prompt', 3100],
+            ['tools', 'Tools', 2800],
+            ['skills', 'Skills', 900],
+            ['history', 'History', 8400],
+            ['message', 'Latest message', 2500],
+          ],
+          usage: { input: 14100, output: 3600, cost: null, free: 'Free: local model' },
+          classifiers: [
+            {
+              name: 'Shell guard',
+              engine: 'Kev 4B · local',
+              calls: 7,
+              verdicts: [['sandbox', 7]],
+              latency: '1.1s avg',
+              cost: 'free',
+            },
+          ],
+        },
+      ]
+
+      /** Primary-model profiles: window, price scale, which cache rows the provider reports. */
+      const MODEL_PROFILES = [
+        {
+          id: 'sonnet',
+          label: 'Sonnet 5.5',
+          name: 'Claude Sonnet 5.5',
+          window: 200000,
+          price: 1,
+          cacheWrite: true,
+        },
+        {
+          id: 'opus',
+          label: 'Opus 5.5',
+          name: 'Claude Opus 5.5',
+          window: 200000,
+          price: 1.8,
+          cacheWrite: true,
+        },
+        {
+          id: 'haiku',
+          label: 'Haiku 4.5',
+          name: 'Claude Haiku 4.5',
+          window: 200000,
+          price: 0.3,
+          cacheWrite: true,
+        },
+        { id: 'gpt', label: 'GPT', name: 'GPT-5.5', window: 400000, price: 0.9, cacheWrite: false },
+        {
+          id: 'gemini',
+          label: 'Gemini',
+          name: 'Gemini 3 Pro',
+          window: 1000000,
+          price: 0.6,
+          cacheWrite: false,
+        },
+        {
+          id: 'local',
+          label: 'Local (LM Studio)',
+          name: 'qwen3-coder · LM Studio',
+          window: 26000,
+          price: 0,
+          cacheWrite: false,
+        },
+      ]
+      let modelId = 'sonnet'
+
+      /** Re-skin a regular scenario for the chosen primary model. ACP modes keep their agent. */
+      function adapt(m) {
+        if (m.kind !== 'regular') return m
+        const prof = MODEL_PROFILES.find((x) => x.id === modelId)
+        if (m.id === 'local') return m
+        const out = { ...m, model: prof.name, window: prof.window }
+        const usage = { ...m.usage }
+        if (prof.price === 0) {
+          // Local: nothing billed, no provider cache accounting.
+          delete usage.cacheRead
+          delete usage.cacheWrite
+          usage.cost = null
+          usage.free = 'Free: local model'
+        } else {
+          if (usage.cost) {
+            const n = parseFloat(usage.cost.replace('$', '')) * prof.price
+            usage.cost = `$${n.toFixed(2)}`
+          }
+          if (!prof.cacheWrite) delete usage.cacheWrite
+        }
+        out.usage = usage
+        return out
+      }
+
+      const $ = (id) => document.getElementById(id)
+      const SVG = 'http://www.w3.org/2000/svg'
+      const R = 6
+      /** Fill ratio at which the ring turns amber (compaction is close). */
+      const WARN_RATIO = 0.8
+      /** Fill ratio at which it turns red (the next send may overflow). */
+      const DANGER_RATIO = 0.95
+      const C = 2 * Math.PI * R
+
+      function circle(attrs) {
+        const c = document.createElementNS(SVG, 'circle')
+        const base = { cx: 8, cy: 8, r: R, fill: 'none', 'stroke-width': 2 }
+        for (const [k, v] of Object.entries({ ...base, ...attrs })) c.setAttribute(k, String(v))
+        return c
+      }
+
+      function drawRing(m) {
+        const svg = $('ring')
+        svg.replaceChildren()
+        const track = circle({})
+        track.classList.add('ring-track')
+        svg.append(track)
+        const g = document.createElementNS(SVG, 'g')
+        g.setAttribute('transform', 'rotate(-90 8 8)')
+        svg.append(g)
+        if (m.ring === 'breakdown' && m.breakdown) {
+          const denom = Math.max(m.window, m.used, 1)
+          let offset = 0
+          for (const [key, , tokens] of m.breakdown) {
+            const len = (tokens / denom) * C
+            if (len <= 0) continue
+            g.append(
+              circle({
+                stroke: SEG_COLOR[key],
+                'stroke-dasharray': `${len} ${C}`,
+                'stroke-dashoffset': -offset,
+              }),
+            )
+            offset += len
+          }
+        } else {
+          const ratio = Math.min(1, m.used / m.window)
+          const fill = circle({ 'stroke-dasharray': `${ratio * C} ${C}` })
+          fill.classList.add('ring-fill')
+          if (ratio >= DANGER_RATIO) fill.classList.add('is-danger')
+          else if (ratio >= WARN_RATIO) fill.classList.add('is-warn')
+          g.append(fill)
+        }
+      }
+
+      const h = (tag, cls, text) => {
+        const e = document.createElement(tag)
+        if (cls) e.className = cls
+        if (text !== undefined) e.textContent = text
+        return e
+      }
+      const row = (name, val, cls = '') => {
+        const r = h('div', `row ${cls}`.trim())
+        r.append(h('span', 'name', name), h('span', 'val', val))
+        return r
+      }
+
+      function renderPopover(m) {
+        const p = $('popover')
+        p.replaceChildren()
+        const pct = pctOf(m.used, m.window)
+        const approx = m.usage.estimated ? '~' : ''
+
+        // Header: context headline + mode chip
+        const head = h('div', 'pop-head')
+        head.append(h('span', '', `Context · ${fmt(m.used)} / ${fmt(m.window)} (${pct}%)`))
+        head.append(h('span', 'grow'))
+        head.append(
+          h(
+            'span',
+            `mode-chip${m.kind === 'acp' ? ' is-acp' : ''}`,
+            m.kind === 'acp' ? `ACP · ${m.agent}` : 'Regular',
+          ),
+        )
+        p.append(head)
+
+        // Context split (regular only)
+        if (m.breakdown) {
+          const bar = h('div', 'stackbar')
+          for (const [key, , tokens] of m.breakdown) {
+            const seg = document.createElement('i')
+            seg.style.width = `${(tokens / Math.max(m.window, m.used)) * 100}%`
+            seg.style.background = SEG_COLOR[key]
+            bar.append(seg)
+          }
+          p.append(bar)
+          for (const [key, label, tokens] of m.breakdown) {
+            const r = h('div', 'row')
+            const sw = h('span', 'sw')
+            sw.style.background = SEG_COLOR[key]
+            r.append(
+              sw,
+              h('span', 'name', label),
+              h('span', 'val', `${fmt(tokens)} · ${pctOf(tokens, m.window)}%`),
+            )
+            p.append(r)
+          }
+        } else {
+          p.append(h('div', 'row empty', 'No part-by-part split from this agent'))
+        }
+
+        // Usage
+        p.append(h('div', 'divider'))
+        const hasSubs = m.subagents && m.subagents.length > 0
+        const sec = h('div', 'section')
+        sec.append(h('b', '', 'Usage'), h('span', 'grow'))
+        sec.append(h('span', '', hasSubs ? 'excluding subagents' : m.tokens))
+        p.append(sec)
+        p.append(row('Input', `${approx}${fmt(m.usage.input)}`))
+        p.append(row('Output', `${approx}${fmt(m.usage.output)}`))
+        if (m.usage.cacheRead && !hasSubs) p.append(row('Cache read', fmt(m.usage.cacheRead)))
+        if (m.usage.cacheWrite && !hasSubs) p.append(row('Cache write', fmt(m.usage.cacheWrite)))
+        if (m.usage.cost && !hasSubs) p.append(row('Cost', m.usage.cost))
+
+        // Whole-thread block when subagents exist (matches today's tooltip scoping)
+        if (hasSubs && m.usage.threadLabel) {
+          p.append(h('div', 'divider'))
+          const ws = h('div', 'section')
+          ws.append(h('b', '', m.usage.threadLabel))
+          p.append(ws)
+          if (m.usage.cacheRead) p.append(row('Cache read', fmt(m.usage.cacheRead)))
+          if (m.usage.cacheWrite) p.append(row('Cache write', fmt(m.usage.cacheWrite)))
+          if (m.usage.cost) p.append(row('Cost', m.usage.cost))
+        } else if (hasSubs && m.usage.cost) {
+          p.append(row('Cost', m.usage.cost))
+        }
+
+        // Subagents
+        if (hasSubs) {
+          p.append(h('div', 'divider'))
+          const tIn = m.subagents.reduce((a, s) => a + s.inTok, 0)
+          const tOut = m.subagents.reduce((a, s) => a + s.outTok, 0)
+          const ss = h('div', 'section')
+          ss.append(h('b', '', 'Subagents'), h('span', 'grow'))
+          ss.append(h('span', '', `${m.subagents.length} runs · ${fmt(tIn)} in / ${fmt(tOut)} out`))
+          p.append(ss)
+          for (const s of m.subagents) {
+            const r = h('div', 'row sub')
+            r.append(h('span', `dot ${s.status}`))
+            const stack = h('span', 'stack')
+            stack.append(h('span', 'name', s.name))
+            stack.append(
+              h('span', 'meta', `${s.model} · ${s.secs}s${s.status === 'run' ? ' · running' : ''}`),
+            )
+            r.append(stack, h('span', 'val', `${fmt(s.inTok)} in / ${fmt(s.outTok)} out`))
+            p.append(r)
+          }
+        }
+
+        // Classifiers
+        if (m.classifiers && m.classifiers.length > 0) {
+          p.append(h('div', 'divider'))
+          const total = m.classifiers.reduce((a, c) => a + c.calls, 0)
+          const cs = h('div', 'section')
+          cs.append(h('b', '', 'Classifiers'), h('span', 'grow'), h('span', '', `${total} calls`))
+          p.append(cs)
+          for (const c of m.classifiers) {
+            const r = h('div', 'row sub')
+            const stack = h('span', 'stack')
+            stack.append(h('span', 'name', c.name))
+            stack.append(h('span', 'meta', `${c.engine} · ${c.latency}`))
+            const vs = h('span', 'verdicts')
+            for (const [v, n] of c.verdicts) vs.append(h('span', `pill ${v}`, `${n} ${v}`))
+            stack.append(vs)
+            r.append(stack, h('span', 'val', `${c.calls} calls · ${c.cost}`))
+            p.append(r)
+          }
+        }
+
+        if (m.usage.free) p.append(h('div', 'note', m.usage.free))
+        if (m.note) p.append(h('div', 'note', m.note))
+        p.append(h('div', 'pop-hint', 'Hover or focus the counter · same anchor as today’s wheel'))
+      }
+
+      let pinned = true
+      let hovering = false
+      function syncOpen() {
+        const open = pinned || hovering
+        $('popover').hidden = false
+        $('popover').hidden = !open
+        // Reserve room for the popover so it never covers the controls above.
+        $('stage').style.paddingTop = `${$('popover').offsetHeight + 40}px`
+        $('trigger').classList.toggle('is-open', open)
+      }
+
+      let currentId = 'orchestrated'
+      function select(id) {
+        currentId = id
+        const m = adapt(MODES.find((x) => x.id === id))
+        for (const b of document.querySelectorAll('[data-mode]'))
+          b.setAttribute('aria-pressed', String(b.dataset.mode === id))
+        $('mode-desc').textContent = m.desc
+        $('model-chip').textContent = m.model
+        for (const b of document.querySelectorAll('[data-model]')) {
+          b.disabled = m.kind === 'acp' || m.id === 'local'
+          b.setAttribute('aria-pressed', String(b.dataset.model === modelId && !b.disabled))
+        }
+        $('trigger').setAttribute(
+          'aria-label',
+          `Context ${pctOf(m.used, m.window)}% used, ${m.tokens}`,
+        )
+        $('trigger').classList.toggle('is-acp', m.kind === 'acp')
+        drawRing(m)
+        renderPopover(m)
+        syncOpen()
+        history.replaceState(null, '', `#${id}`)
+      }
+
+      const modes = $('modes')
+      for (const m of MODES) {
+        const b = h('button', 'seg', m.label)
+        b.dataset.mode = m.id
+        b.addEventListener('click', () => select(m.id))
+        modes.append(b)
+      }
+      for (const p of MODEL_PROFILES) {
+        const b = h('button', 'seg', p.label)
+        b.dataset.model = p.id
+        b.addEventListener('click', () => {
+          modelId = p.id
+          select(currentId)
+        })
+        $('models').append(b)
+      }
+      for (const b of document.querySelectorAll('[data-theme-btn]')) {
+        b.addEventListener('click', () => {
+          document.documentElement.dataset.theme = b.dataset.themeBtn
+          for (const o of document.querySelectorAll('[data-theme-btn]'))
+            o.setAttribute('aria-pressed', String(o === b))
+        })
+      }
+      $('pin').addEventListener('change', (e) => {
+        pinned = e.target.checked
+        syncOpen()
+      })
+      const t = $('trigger')
+      t.addEventListener('mouseenter', () => ((hovering = true), syncOpen()))
+      t.addEventListener('mouseleave', () => ((hovering = false), syncOpen()))
+      t.addEventListener('focusin', () => ((hovering = true), syncOpen()))
+      t.addEventListener('focusout', () => ((hovering = false), syncOpen()))
+
+      const initial = MODES.find((m) => `#${m.id}` === location.hash)?.id ?? 'orchestrated'
+      select(initial)
+      syncOpen()
+    </script>
+  </body>
+</html>
