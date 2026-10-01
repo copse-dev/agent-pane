@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
 import { at } from '@shared/array-utils.ts'
 import { DEFAULT_SAFETY_MODEL, lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
@@ -204,7 +205,7 @@ export function createModelRoutingSection(
 function canonicalRoleSelection(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''
-  if (trimmed.includes(':') || trimmed.startsWith('claude-') || trimmed.startsWith('gpt-')) {
+  if (trimmed.includes(':') || firstPartyProviderOf(trimmed) !== null) {
     return trimmed
   }
   return lmStudioChatModelValue(trimmed)

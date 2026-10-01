@@ -28,6 +28,48 @@ through `node_modules` without tsconfig or esbuild aliases. Runtime dependencies
 - **Leaf helpers come from `@copse/std`** (`at`, `errorMessage`, `isRecord`), the
   shared home for the utilities that used to be vendored here as `internal-utils.ts`.
 
+## Model capabilities: one lookup, not id-prefix checks
+
+Never decide behaviour from a model id string (`model.startsWith('gpt')`). Ask
+`modelCapabilities(selection)` (`model-capabilities.ts`); a test
+(`scripts/model-id-routing.test.ts`, part of `pnpm test`) fails when a literal
+`startsWith('gpt…')`, `includes('claude…')` or `/^gpt…/` appears in shipped source
+outside the capability modules. For just the provider, use
+`firstPartyProviderOf(selection)`.
+
+It takes the **stored selection** (`claude-opus-5`, `openrouter:openai/gpt-5`,
+`lmstudio:…`), not a bare id, and returns a readonly record:
+
+| Field                                                                                                      | Meaning                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `transport`                                                                                                | `anthropic`, `openai-responses`, `openai-chat`, `openai-compatible` (OpenRouter / extra providers), `local` (LM Studio), `host-routed` (`acp:`, `remote-agent:`, `plugin-model:`, `auto:`), or `unknown` (an unprefixed id nothing claims) |
+| `provider`                                                                                                 | `anthropic` / `openai` for a direct first-party route, else `null`                                                                                                                                                                         |
+| `family`, `known`                                                                                          | canonical family key (`gpt-5`, `claude-opus-5`) and whether a table entry matched                                                                                                                                                          |
+| `supportsStrictTools`, `supportsVerbosity`, `supportsParallelToolCallsControl`, `supportsServerCompaction` | **API flags**: may the request to _this route_ carry the field. Only ever true on a direct first-party route                                                                                                                               |
+| `prefersApplyPatch`, `acceptsDeveloperRole`, `acceptsMidConversationSystem`                                | **lineage flags**: how the _model_ behaves wherever it is served, so they follow the vendor-stripped id through OpenRouter and extra providers                                                                                             |
+| `parameters`                                                                                               | `modelParameterSupport(selection)` — reasoning levels and sampling knobs. Still the source of truth; not a second table                                                                                                                    |
+| `contextWindow`                                                                                            | from the generated catalog, including dated snapshots of a catalogued model; `null` when unknown                                                                                                                                           |
+
+**Where the data lives.** `model-families.ts` is a leaf module (so `model-catalog.ts` and
+`model-parameters.ts` can use it without an import cycle) holding the `FAMILIES`
+table and the resolver. An entry matches on an id _boundary_ — the id itself or
+the entry followed by `-`, `.`, `:` or `@` — so `gpt-5.6-sol-2026-07-01`, `gpt-5-mini` and
+`claude-opus-5:beta` resolve to their family while `gpt-50` and `o1x-turbo` do not;
+the longest entry wins, which is how `gpt-oss` opts out of `gpt-5`-era features.
+
+**Unknown models are conservative.** An id matching no entry gets `known: false`
+and every optional flag off. A bare `gpt-…`/`claude-…` id still reaches its
+provider (the user's key for it is the only place it can go) but on that provider's
+conservative transport (`gpt-7-x` → chat completions, nothing optional). Never widen
+a flag because an id "looks like" a family.
+
+**Adding a model or capability.** A new model in an existing family needs nothing.
+A new family is one `FAMILIES` entry plus a row in `model-capabilities.test.ts`. A new
+capability is a field on `ModelFeatures`, a value per family, and the code that reads
+it — flip it to `true` only for families you verified; a missing capability costs a
+feature, a wrong one is a 400. `supportsServerCompaction` is off everywhere until the
+thread that consumes it verifies families.
+
 ## Imports: granular subpaths, not the barrel
 
 `index.ts` is the full public API (`exports["."]`, bare `@copse/llm`), but app

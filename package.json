@@ -1,6 +1,6 @@
 {
   "name": "copse-panel",
-  "version": "0.1.0-beta.11",
+  "version": "0.1.0-beta.12",
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Jonathan Kingston",
@@ -127,7 +127,8 @@
     "files": [
       "dist/**/*",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      "!dist/renderer/mermaid-frame.js"
     ],
     "asarUnpack": [
       "**/node_modules/node-pty/**/*",
@@ -150,6 +151,9 @@
       "icon": "assets/icons/app.icns",
       "category": "public.app-category.developer-tools",
       "minimumSystemVersion": "26.0",
+      "electronLanguages": [
+        "en"
+      ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
@@ -238,7 +242,7 @@
     "bonjour-service": "^1.4.4",
     "c8": "^12.0.0",
     "ddg-search": "^2026.2.16",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.16",
     "electron": "^44.4.3",
     "electron-builder": "^26.16.1",
     "electron-chromedriver": "^44.4.2",
