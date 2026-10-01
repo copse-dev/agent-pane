@@ -10,6 +10,28 @@ async function screenshot(name: string): Promise<void> {
   await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
 }
 
+async function expectComposerVisible(id: 'message' | 'new-message'): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((inputId) => {
+        const input = document.getElementById(inputId)
+        const button = input?.closest('form')?.querySelector('button[type="submit"]')
+        const header = document.querySelector('.topbar')
+        if (!input || !button || !header || document.activeElement !== input) return false
+        const top = window.visualViewport?.offsetTop ?? 0
+        const bottom = top + (window.visualViewport?.height ?? window.innerHeight)
+        const headerRect = header.getBoundingClientRect()
+        return (
+          headerRect.top >= top - 1 &&
+          headerRect.bottom <= bottom &&
+          input.getBoundingClientRect().top >= headerRect.bottom &&
+          button.getBoundingClientRect().bottom <= bottom
+        )
+      }, id),
+    { timeoutMsg: 'Focused composer, submission button, and header must fit in the viewport' },
+  )
+}
+
 describe('Mobile Companion at phone width', () => {
   it('uses desktop foundations for readable pairing, activity, and output in both themes', async () => {
     await browser.setWindowSize(390, 844)
@@ -110,6 +132,8 @@ describe('Mobile Companion at phone width', () => {
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
       )
       expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
+      await expect($('.topbar #back svg')).toExist()
+      await expectComposerVisible('message')
       await screenshot(`mobile-companion-thread-${theme}.png`)
       await expect($('#composer')).toBeDisplayed()
       await expect($('#stop')).toBeDisplayed()
@@ -132,19 +156,33 @@ describe('Mobile Companion at phone width', () => {
       await expect($('.answer')).toHaveValue('Focused tests')
       await $('.attention > .ui-btn-primary').click()
       await expect($('.attention')).not.toExist()
-      await $('#message').setValue('Please run those tests and report back.')
-      await $('#send').scrollIntoView()
+      await $('#message').setValue('Please run those **tests** and report back.')
+      await expectComposerVisible('message')
       await screenshot(`mobile-companion-compose-${theme}.png`)
       await $('#send').click()
       await expect($('#message')).toHaveValue('')
+      await expectComposerVisible('message')
       await expect($('#messages')).toHaveText(
         expect.stringContaining('Please run those tests and report back.'),
       )
+      await expect($('#messages .message-content strong')).toHaveText('tests')
       await $('#stop').click()
       await expect($('#stop')).not.toBeDisplayed()
       await expect($('#send')).toHaveText('Send')
+      await $('#message').setValue('Keep this draft through history')
+      const historyLength = await browser.execute(() => history.length)
+      await browser.back()
+      await expect($('#activity')).toBeDisplayed()
+      await expect($('#back')).not.toBeDisplayed()
+      await browser.forward()
+      await expect($('#thread')).toBeDisplayed()
+      await expect($('#message')).toHaveValue('Keep this draft through history')
+      await expectComposerVisible('message')
+      expect(await browser.execute(() => history.length)).toBe(historyLength)
       await $('#back').click()
+      await expect($('#activity')).toBeDisplayed()
       await $('#new-chat').click()
+      await expectComposerVisible('new-message')
       await $('#new-message').setValue('Start a fresh release review.')
       await screenshot(`mobile-companion-new-chat-${theme}.png`)
       await $('#new-chat-form button').click()

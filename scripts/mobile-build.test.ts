@@ -16,6 +16,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     dom = new JSDOM(await readFile(join(output, 'index.html'), 'utf8'), {
       url: 'https://192.168.1.41:4000',
       runScripts: 'outside-only',
+      pretendToBeVisual: true,
     })
     const { window } = dom
     const viewport = new window.EventTarget()
