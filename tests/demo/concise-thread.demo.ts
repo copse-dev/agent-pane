@@ -106,6 +106,47 @@ describe('concise thread view', () => {
     }
   })
 
+  it('opens only the running turn in the full view when its activity row is clicked', async () => {
+    await browser.url('/?scenario=concise-thread-multi-working')
+    await $('.msg-concise-working').waitForExist()
+    const row = $('.agent-activity')
+    await row.waitForDisplayed()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+
+    const cards = () =>
+      browser.execute(() => {
+        const visible = (node: Element): boolean =>
+          node instanceof HTMLElement && node.checkVisibility()
+        const turns: { cards: number; reasoning: number }[] = []
+        for (const node of document.querySelectorAll('.messages-list > .msg')) {
+          if (node.classList.contains('msg-user')) turns.push({ cards: 0, reasoning: 0 })
+          const turn = turns.at(-1)
+          if (!turn) continue
+          turn.cards += [...node.querySelectorAll(':scope > .tool-card, :scope .tool-card')].filter(
+            visible,
+          ).length
+          turn.reasoning += [...node.querySelectorAll('.message-reasoning')].filter(visible).length
+        }
+        return turns
+      })
+
+    const before = await cards()
+    expect(before.every((turn) => turn.cards === 0 && turn.reasoning === 0)).toBe(true)
+    await saveAppScreenshot('concise-thread-running-collapsed.png')
+
+    await row.click()
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
+    const open = await cards()
+    // The live turn is last; it shows its steps again while earlier turns stay concise.
+    expect(open.at(-1)?.cards).toBeGreaterThan(0)
+    expect(open.slice(0, -1).every((turn) => turn.cards === 0 && turn.reasoning === 0)).toBe(true)
+    await saveAppScreenshot('concise-thread-running-expanded.png')
+
+    await row.click()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    expect((await cards()).every((turn) => turn.cards === 0 && turn.reasoning === 0)).toBe(true)
+  })
+
   it('keeps the full transcript for a model below the gate', async () => {
     await browser.url('/?scenario=concise-thread-full')
     await $('.msg-assistant .tool-card').waitForExist()
