@@ -208,6 +208,31 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('never nests :has() inside :has(), which drops the whole rule', () => {
+    // Chromium treats a nested :has() as an invalid selector and discards the
+    // entire rule, so the concise view's empty-bubble collapse silently never
+    // applied. Flatten `:has(> a:has(> b))` to `:has(> a > b)` instead.
+    for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
+      const css = read(file)
+      let depth = 0
+      const stack: boolean[] = []
+      for (let i = 0; i < css.length; i++) {
+        if (css.startsWith(':has(', i)) {
+          assert.ok(!stack.includes(true), `${file}: nested :has() near offset ${String(i)}`)
+          stack.push(true)
+          i += ':has('.length - 1
+          depth++
+        } else if (css[i] === '(') {
+          stack.push(false)
+          depth++
+        } else if (css[i] === ')' && depth > 0) {
+          stack.pop()
+          depth--
+        }
+      }
+    }
+  })
+
   it('themes scrollbars from the active surface tokens', () => {
     const css = read('base.css')
     assert.ok(
