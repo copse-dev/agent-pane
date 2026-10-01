@@ -1,9 +1,12 @@
 # Animated explanations in a thread
 
-In **Settings → Customise → Plugins**, enable **Canvas and explainers**, expand its
-settings and turn on **Animated explainers (experimental)**. This separate setting
-defaults to off, including for people who already use Canvas. It takes effect without
-restarting Copse. Then ask in an ordinary conversation:
+In **Settings → Experimental → Animated explainers**, choose **Open explainer
+settings…**. This opens **Canvas and explainers** with its plugin settings expanded.
+Enable the plugin and turn on **Animated explainers (experimental)**. You can also
+find these controls under **Customise → Plugins** or by searching Settings for
+“Animated explainers”. The explainer setting defaults to off, including for people
+who already use Canvas. It takes effect without restarting Copse. Then ask in an
+ordinary conversation:
 
 > Explain how we find the code behind a question.
 
