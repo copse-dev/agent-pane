@@ -161,7 +161,8 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     assert.equal(window.history.state.mobileView, 'thread')
     input.value = 'Keep this draft'
     const back = window.document.querySelector<HTMLButtonElement>('#back')
-    assert.ok(back?.querySelector('svg[aria-hidden="true"]'))
+    assert.ok(back)
+    assert.ok(back.querySelector('svg[aria-hidden="true"]'))
     assert.equal(back.textContent?.trim(), 'Activity')
     assert.ok(back.closest('.topbar'), 'Activity navigation lives in the fixed header')
     assert.equal(back.hidden, false)

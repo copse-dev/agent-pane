@@ -53,6 +53,7 @@ describe('Mobile Companion at phone width', () => {
       await browser.execute(async () => {
         await fetch('/mobile-fixture/reset')
         localStorage.removeItem('copse-mobile-token')
+        history.replaceState({ mobileView: 'activity' }, '')
       })
       await browser.refresh()
       await expect($('html')).toHaveAttribute('data-theme', theme)
