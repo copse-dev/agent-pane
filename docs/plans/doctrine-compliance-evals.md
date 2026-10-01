@@ -105,8 +105,8 @@ Inventory of steering that could be redundant for native-reasoning models (hypot
 | "Lead with the outcome", "readable over terse" | `workingStyle`                                                   | Untested whether GPT over-narrates; a tool-call preamble is also untested |
 
 To measure (needs `OPENAI_API_KEY` and, for the control, `ANTHROPIC_API_KEY`; `--sections`
-adds one omit arm per section, and the report already gives solve rate and tokens per solve;
-tool-call count and nudge frequency are read from the JSONL traces):
+adds one omit arm per section, and the report gives solve rate, tokens per solve, mean tool
+calls per attempt and mean output tokens per attempt):
 
 ```bash
 pnpm run eval:doctrine -- --provider openai --repeats 5 --sections tools,openEnded,workingStyle
@@ -114,8 +114,14 @@ pnpm run eval:doctrine -- --provider anthropic --repeats 5 --sections tools,open
 ```
 
 Only remove a profile from `SECTION_PROFILES` when the omit arm matches or beats `full` on
-solve rate across repeats, and record the table here in the same PR. Todo/forced-planning
-arms need harness support that does not exist yet.
+solve rate across repeats, and record the table here in the same PR.
+
+Not measurable yet: steering-nudge frequency and the todo / forced-planning hypotheses. The
+harness runs `runAgentLoop` with `adaptiveExtensions: false` and without the app's hook
+registry, where those turn-start steering hooks live, so no arm can switch them on or count
+them. Wiring that in touches loop steering, so it must follow
+`docs/plans/hooks-and-feature-packs.md`; do it when a measured GPT result makes it worth it.
+A tool-call preamble arm would be a prompt-text addition and does not need that wiring.
 
 ## Follow-on use of the evidence
 
