@@ -2178,10 +2178,15 @@ export function registerAllHandlers(
     const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
     const result = await getPluginInstallService().commit(token)
     const service = getPluginService()
+    const { pluginId } = result.record
+    // The review the user just confirmed is the consent, so a first install
+    // enables exactly what it showed. An update keeps the user's own toggle;
+    // the registry still holds the previous revision until the refresh below.
+    const enable =
+      result.record.previousPin === undefined ||
+      (service.registry.has(pluginId) && service.registry.isEnabled(pluginId))
     await service.refreshInstalledPlugins()
-    if (service.hasUserPlugin(result.record.pluginId)) {
-      await service.setEnabled(result.record.pluginId, false)
-    }
+    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, enable)
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)
@@ -2209,9 +2214,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
     const service = getPluginService()
+    // Rolling back returns to a revision the user already reviewed, so the
+    // plugin is only paused for the switch and keeps the user's toggle after it.
+    const wasEnabled = service.registry.has(pluginId) && service.registry.isEnabled(pluginId)
     if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
     const result = await getPluginInstallService().rollback(pluginId)
     await service.refreshInstalledPlugins()
+    if (wasEnabled && service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, true)
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)

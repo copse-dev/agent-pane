@@ -179,15 +179,25 @@ below now covers the pinned unsigned subset.
 - The first installable tier is portable skills and MCP. Marketplace packages
   requesting Copse tools, runtimes, hooks, models, prompt/UI contributions,
   permissions, settings, storage, or capabilities are rejected.
-- Before activation, Settings shows the revision, content hash, skill paths, MCP
-  transports/targets, adaptation warnings, and unsigned provenance. A confirmed
-  package is stored under `~/.copse/plugins/.managed/payloads/`, linked into the
-  ordinary plugin root, recorded as human-readable JSON, and left disabled.
+- Before activation, Settings shows the skills by name, each MCP server's
+  transport and target, warnings the user can act on (a skipped server, a
+  malformed manifest), unsigned provenance, and — folded behind the short
+  revision — the full revision and content hash. Routine legacy-format
+  adaptation is not a warning. Claude Code's `http` MCP transport is
+  Streamable HTTP and adapts as such.
+- That review is the consent. A confirmed first install is stored under
+  `~/.copse/plugins/.managed/payloads/`, linked into the ordinary plugin root,
+  recorded as human-readable JSON, and **enabled**: asking again on a separate
+  toggle for exactly what the dialog just listed was friction without new
+  information. The plugin's ordinary toggle turns it off. (Superseded: the first
+  cut installed disabled and made enablement a second consent step.)
 - Discovery re-hashes managed payloads before registration. A changed payload,
   mismatched activation link, or corrupt record fails closed before skills or
   MCP servers can register.
 - Updates use the same fetch → validate → review → atomic switch path and retain
-  one previous pin. Rollback and revision changes leave the plugin disabled.
+  one previous pin. Updates and rollbacks keep the user's enabled/disabled
+  choice: an update's own review is its consent, and a rollback returns to a
+  revision that was reviewed when it was installed.
   Uninstall removes managed payloads and metadata; deleting `PLUGIN_DATA` is a
   separate explicit choice, and thread history is untouched.
 - There is no startup catalogue fetch, update timer, silent permission expansion,

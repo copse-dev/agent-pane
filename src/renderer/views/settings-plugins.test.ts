@@ -88,7 +88,7 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
         mcpServerCount: 1,
         skills: ['skills/payments/SKILL.md', 'skills/refunds/SKILL.md'],
         mcpServers: [{ name: 'stripe', transport: 'stdio' as const, target: 'npx @stripe/mcp' }],
-        warnings: ['Adapted a Claude package to the portable plugin format.'],
+        warnings: ['Skipped MCP server "legacy": Copse runs local commands and HTTP URLs only.'],
         provenance: 'unsigned' as const,
         operation: 'install' as const,
       })
@@ -110,7 +110,6 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
         installedAt: '2026-10-01T12:00:00.000Z',
         updatedAt: '2026-10-01T12:00:00.000Z',
         provenance: 'unsigned',
-        enabled: false,
       }
       installs = [record]
       return Promise.resolve({ record })
@@ -341,7 +340,7 @@ describe('settings → plugins list', () => {
     assert.match(list.textContent, /No plugins installed\./)
   })
 
-  it('reviews the exact pinned package before committing an install disabled', async () => {
+  it('reviews the exact pinned package by component before installing it', async () => {
     await openPlugins({ plugins: [] }, spy)
     const fieldset = pluginsFieldset()
     fieldset.querySelector<HTMLButtonElement>('#plugins-browse-tab')?.click()
@@ -365,12 +364,37 @@ describe('settings → plugins list', () => {
     assert.equal(spy.lastPreparedCatalogId, 'https://github.com/stripe/ai#providers/claude/plugin')
     const dialog = document.querySelector<HTMLDialogElement>('#confirm-dialog')
     assert.ok(dialog)
-    assert.match(dialog.textContent, /97b2164821c378f246c3903852057b36a8bd0296/)
-    assert.match(dialog.textContent, /sha256:a{64}/)
-    assert.match(dialog.textContent, /Unsigned package/)
-    assert.match(dialog.textContent, /install this pinned package disabled/i)
-    assert.match(dialog.textContent, /skills\/payments\/SKILL\.md/)
-    assert.match(dialog.textContent, /stripe \(stdio\): npx @stripe\/mcp/)
+    const review = dialog.querySelector<HTMLElement>('.plugin-install-review-dialog')
+    assert.ok(review)
+    assert.match(review.textContent, /Unsigned package from Stripe/)
+    // Skills read by name; the path stays available on hover.
+    const skills = [...review.querySelectorAll<HTMLElement>('.plugin-chip')]
+    assert.deepEqual(
+      skills.map((chip) => chip.textContent),
+      ['payments', 'refunds'],
+    )
+    assert.equal(skills[0]?.title, 'skills/payments/SKILL.md')
+    const headings = [...review.querySelectorAll('.plugin-install-review-heading')]
+    assert.deepEqual(
+      headings.map((heading) => heading.textContent),
+      ['2 skills', '1 MCP server'],
+    )
+    const server = review.querySelector('.plugin-install-review-servers li')
+    assert.equal(server?.textContent, 'stripeLocal commandnpx @stripe/mcp')
+    assert.deepEqual(
+      [...review.querySelectorAll('.plugin-install-review-warnings li')].map(
+        (li) => li.textContent,
+      ),
+      ['Skipped MCP server "legacy": Copse runs local commands and HTTP URLs only.'],
+    )
+    // The exact pin is still part of the review, folded behind its short form.
+    const pin = review.querySelector<HTMLDetailsElement>('details.plugin-install-review-pin')
+    assert.ok(pin)
+    assert.equal(pin.open, false)
+    assert.equal(pin.querySelector('summary')?.textContent, 'Pinned to 97b2164')
+    assert.match(pin.textContent, /97b2164821c378f246c3903852057b36a8bd0296/)
+    assert.match(pin.textContent, /sha256:a{64}/)
+    assert.equal(dialog.querySelector('.confirm-dialog-confirm')?.textContent, 'Install')
 
     clickActiveConfirmDialogConfirm()
     await new Promise((resolve) => setTimeout(resolve, 0))

@@ -19,7 +19,6 @@ export interface PluginInstallRecord {
   installedAt: string
   updatedAt: string
   provenance: 'unsigned'
-  enabled: false
   previousPin?: PluginInstallPin
 }
 

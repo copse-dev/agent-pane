@@ -107,11 +107,11 @@ A pinned catalogue entry can install when its validated package contains only
 portable skills and MCP servers. Copse downloads the exact Git commit only after
 the user chooses **Review install**, extracts the listed package with bounded
 archive handling, rejects symlinks/traversal and Copse executable contributions,
-then presents the content hash, skill paths, MCP commands or URLs, warnings, and
-unsigned status. Confirmation writes an immutable content-addressed payload and
-human-readable install record under `~/.copse/plugins/.managed/`; the plugin is
-registered disabled so enablement remains the separate component-consent
-boundary.
+then presents the skills by name, MCP commands or URLs, actionable warnings,
+unsigned status, and (folded) the exact revision and content hash. That review
+is the consent: confirmation writes an immutable content-addressed payload and
+human-readable install record under `~/.copse/plugins/.managed/` and enables the
+plugin. Updates and rollbacks keep whatever enabled state the user last chose.
 
 Managed updates repeat the download, validation, and review path before an atomic
 revision switch. The previous pin is retained for rollback. Discovery re-hashes
@@ -430,8 +430,9 @@ disable is pinned by
   shared `PluginRegistry` singleton, and the Settings plugin list UI landed in P3
   (`src/main/services/plugins/plugin-service.ts` + `src/renderer/views/settings-dialog.ts`).
   Host disk discovery loads Agent Plugin packages from `~/.copse/plugins/` (or
-  `COPSE_PLUGINS_DIR`) into that registry. Newly discovered packages start
-  disabled; their portable skills and MCP servers activate only after enablement.
+  `COPSE_PLUGINS_DIR`) into that registry. A package dropped there by hand starts
+  disabled, since nothing reviewed it; its portable skills and MCP servers
+  activate only after enablement. A catalogue install is enabled by its review.
 
 ## Related
 

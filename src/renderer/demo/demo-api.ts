@@ -1251,7 +1251,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setSetting: () => resolved({ plugins: [] }),
       addSource: () => resolved({ plugins: [] }),
       listInstalls: emptyArray,
-      prepareInstall: unsupported,
+      prepareInstall: () =>
+        scenario.pluginInstallReview ? resolved(scenario.pluginInstallReview) : unsupported(),
       cancelInstall: resolvedVoid,
       commitInstall: unsupported,
       uninstall: unsupported,

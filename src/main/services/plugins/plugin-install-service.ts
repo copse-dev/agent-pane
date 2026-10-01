@@ -46,7 +46,6 @@ const recordSchema = z.strictObject({
   installedAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   provenance: z.literal('unsigned'),
-  enabled: z.literal(false),
   previousPin: z
     .strictObject({
       contentHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
@@ -84,9 +83,11 @@ const legacyStdioSchema = z
   })
   .loose()
 
+// Claude Code's `.mcp.json` names Streamable HTTP `http`; Copse and Agent
+// Plugins call the same transport `streamable-http`.
 const legacyHttpSchema = z
   .object({
-    type: z.enum(['streamable-http', 'sse']).optional(),
+    type: z.enum(['http', 'streamable-http', 'sse']).optional(),
     url: z.string().min(1),
     headers: z.record(z.string(), z.string()).optional(),
   })
@@ -282,10 +283,8 @@ async function readLegacyManifest(
       warnings.push(`Ignored malformed legacy manifest ${relativePath}.`)
       return { manifest: null, warnings }
     }
-    warnings.push(`Adapted ${relativePath} to Agent Plugins v1.0.0.`)
     return { manifest, warnings }
   }
-  warnings.push('Created an Agent Plugins manifest from catalogue metadata.')
   return { manifest: null, warnings }
 }
 
@@ -309,7 +308,7 @@ function translateLegacyMcpEntry(raw: unknown): Record<string, unknown> | null {
   const http = legacyHttpSchema.safeParse(raw)
   if (http.success) {
     return {
-      type: http.data.type ?? 'streamable-http',
+      type: http.data.type === 'sse' ? 'sse' : 'streamable-http',
       url: replaceLegacyRoot(http.data.url),
       headers: Object.fromEntries(
         Object.entries(http.data.headers ?? {}).map(([key, value]) => [
@@ -345,7 +344,9 @@ async function adaptLegacyMcp(
   for (const [name, server] of Object.entries(parsed.mcpServers)) {
     const translated = translateLegacyMcpEntry(server)
     if (translated === null) {
-      warnings.push(`Skipped unsupported MCP server ${JSON.stringify(name)}.`)
+      warnings.push(
+        `Skipped MCP server ${JSON.stringify(name)}: Copse runs local commands and HTTP URLs only.`,
+      )
       continue
     }
     servers.push([name, translated])
@@ -359,7 +360,6 @@ async function adaptLegacyMcp(
       2,
     )}\n`,
   )
-  warnings.push('Adapted a legacy MCP configuration to Agent Plugins v1.0.0.')
 }
 
 async function normalizePackage(
@@ -453,7 +453,6 @@ async function readRecords(root: string): Promise<PluginInstallRecord[]> {
         installedAt: decoded.installedAt,
         updatedAt: decoded.updatedAt,
         provenance: decoded.provenance,
-        enabled: decoded.enabled,
         ...(decoded.previousPin === undefined
           ? {}
           : {
@@ -629,7 +628,6 @@ export function createPluginInstallService(
           installedAt: previous?.installedAt ?? timestamp,
           updatedAt: timestamp,
           provenance: 'unsigned',
-          enabled: false,
           ...(previous
             ? {
                 previousPin: {

@@ -27,6 +27,16 @@ function cursorArchive(skillText: string, pluginName = 'pstack'): Promise<Uint8A
   )
 }
 
+function claudeArchive(mcpServers: Record<string, unknown>): Promise<Uint8Array> {
+  return createZipArchive(
+    Object.entries({
+      'plugins-revision/pstack/.claude-plugin/plugin.json': JSON.stringify({ name: 'pstack' }),
+      'plugins-revision/pstack/.mcp.json': JSON.stringify({ mcpServers }),
+      'plugins-revision/pstack/skills/review/SKILL.md': '# review',
+    }).map(([path, body]) => ({ path, data: utf8(body), modifiedAt: MODIFIED })),
+  )
+}
+
 function portableArchive(extension: unknown): Promise<Uint8Array> {
   return createZipArchive(
     Object.entries({
@@ -74,7 +84,7 @@ describe('catalogue plugin installation lifecycle', () => {
     })
   }
 
-  it('reviews before writing, then installs a pinned legacy package disabled', async () => {
+  it('reviews before writing, then installs the exact pinned legacy package', async () => {
     const service = serviceWith([await cursorArchive('# review v1')])
     const review = await service.prepare(CATALOG_ID)
     assert.equal(review.pluginId, 'pstack')
@@ -85,12 +95,12 @@ describe('catalogue plugin installation lifecycle', () => {
     assert.equal(review.provenance, 'unsigned')
     assert.equal(review.operation, 'install')
     assert.match(review.contentHash, /^sha256:[a-f0-9]{64}$/)
-    assert.ok(review.warnings.some((warning) => warning.includes('Adapted')))
+    // Adapting a Claude/Cursor manifest is routine plumbing, not something to warn about.
+    assert.deepEqual(review.warnings, [])
     assert.equal(existsSync(join(root, 'pstack')), false)
     assert.deepEqual(await service.records(), [])
 
     const { record } = await service.commit(review.token)
-    assert.equal(record.enabled, false)
     assert.equal(record.source.revision.length, 40)
     assert.equal((await fsp.lstat(join(root, 'pstack'))).isSymbolicLink(), true)
     const discovery = await discoverUserPlugins(root)
@@ -103,6 +113,29 @@ describe('catalogue plugin installation lifecycle', () => {
       readFileSync(join(root, 'pstack', 'skills', 'review', 'SKILL.md'), 'utf8'),
       '# review v1',
     )
+  })
+
+  it("adapts Claude Code's `http` MCP transport to Streamable HTTP", async () => {
+    const service = serviceWith([
+      await claudeArchive({
+        figma: {
+          type: 'http',
+          url: 'https://mcp.figma.com/mcp',
+          headers: { 'X-Figma-Plugin-Bundle': 'figma_prod@2_2_120' },
+          _meta: { ideToolIconPath: './icon.svg' },
+        },
+        legacy: { type: 'sse', url: 'https://example.com/sse' },
+        unknown: { type: 'websocket', url: 'wss://example.com' },
+      }),
+    ])
+    const review = await service.prepare(CATALOG_ID)
+    assert.deepEqual(review.mcpServers, [
+      { name: 'figma', transport: 'streamable-http', target: 'https://mcp.figma.com/mcp' },
+      { name: 'legacy', transport: 'sse', target: 'https://example.com/sse' },
+    ])
+    assert.deepEqual(review.warnings, [
+      'Skipped MCP server "unknown": Copse runs local commands and HTTP URLs only.',
+    ])
   })
 
   it('cancels staging without registering or recording the package', async () => {

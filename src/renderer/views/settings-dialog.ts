@@ -501,6 +501,27 @@ export function openAutomationSettings(scheduleId?: string): void {
   openSettingsDialog('customise')
 }
 
+function countLabel(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`
+}
+
+/** `skills/figma-use/SKILL.md` → `figma-use`; a root `SKILL.md` is the plugin's own. */
+function installReviewSkillName(path: string, pluginId: string): string {
+  const parts = path.split('/')
+  if (parts.at(-1) !== 'SKILL.md') return path
+  return parts.at(-2) ?? pluginId
+}
+
+function installReviewSection(heading: string, body: HTMLElement): HTMLElement {
+  const section = document.createElement('section')
+  section.className = 'plugin-install-review-section'
+  const title = document.createElement('div')
+  title.className = 'plugin-install-review-heading'
+  title.textContent = heading
+  section.append(title, body)
+  return section
+}
+
 export function closeSettingsDialog(): void {
   if (!overlayEl || !overlayEl.open) return
   overlayEl.close()
@@ -3328,42 +3349,57 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   function installReviewDetail(review: PluginInstallReview): HTMLElement {
     const detail = document.createElement('div')
     detail.className = 'plugin-install-review-dialog'
-    const summary = document.createElement('p')
-    summary.textContent =
-      'Copse will install this pinned package disabled. You can enable its skills and MCP servers after installation.'
-    const values: Array<[string, string]> = [
-      ['Publisher', review.publisher],
-      ['Revision', review.revision],
-      ['Content', review.contentHash],
-      ['Skills', String(review.skillCount)],
-      ['MCP servers', String(review.mcpServerCount)],
-      ['Verification', 'Unsigned package'],
-    ]
-    const list = document.createElement('dl')
-    list.className = 'plugin-source-details plugin-install-review-details'
-    for (const [label, value] of values) {
-      const term = document.createElement('dt')
-      term.textContent = label
-      const description = document.createElement('dd')
-      description.textContent = value
-      list.append(term, description)
+    if (review.description) {
+      const description = document.createElement('div')
+      description.className = 'plugin-install-review-description'
+      description.textContent = review.description
+      detail.append(description)
     }
-    detail.append(summary, list)
+    const provenance = document.createElement('div')
+    provenance.className = 'plugin-install-review-provenance'
+    provenance.textContent = `Unsigned package from ${review.publisher}`
+    detail.append(provenance)
+
+    // What the plugin will add is the decision, so it leads: skills by name (a
+    // path's directory is the skill's name) and MCP servers by where they run.
     if (review.skills.length > 0) {
-      const skills = document.createElement('p')
-      skills.className = 'plugin-install-review-components'
-      skills.textContent = `Skills: ${review.skills.join(', ')}`
-      detail.append(skills)
+      const chips = document.createElement('div')
+      chips.className = 'plugin-chips'
+      for (const path of review.skills) {
+        const chip = document.createElement('span')
+        chip.className = 'plugin-chip'
+        chip.textContent = installReviewSkillName(path, review.pluginId)
+        chip.title = path
+        chips.append(chip)
+      }
+      detail.append(installReviewSection(countLabel(review.skills.length, 'skill'), chips))
     }
     if (review.mcpServers.length > 0) {
       const servers = document.createElement('ul')
-      servers.className = 'plugin-install-review-components'
+      servers.className = 'plugin-install-review-servers'
       for (const server of review.mcpServers) {
         const item = document.createElement('li')
-        item.textContent = `${server.name} (${server.transport}): ${server.target}`
+        const name = document.createElement('span')
+        name.className = 'plugin-install-review-server-name'
+        name.textContent = server.name
+        const transport = document.createElement('span')
+        transport.className = 'plugin-install-review-server-transport'
+        transport.textContent =
+          server.transport === 'stdio'
+            ? 'Local command'
+            : server.transport === 'sse'
+              ? 'Legacy SSE'
+              : 'HTTP'
+        const target = document.createElement('code')
+        target.className = 'plugin-install-review-server-target'
+        target.textContent =
+          server.transport === 'stdio' ? server.target : server.target.replace(/^https?:\/\//, '')
+        item.append(name, transport, target)
         servers.append(item)
       }
-      detail.append(servers)
+      detail.append(
+        installReviewSection(countLabel(review.mcpServers.length, 'MCP server'), servers),
+      )
     }
     if (review.warnings.length > 0) {
       const warnings = document.createElement('ul')
@@ -3375,6 +3411,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
       detail.append(warnings)
     }
+
+    // The pin is what makes the review exact, but it is evidence, not the
+    // decision: one click away rather than two wrapped lines of hex.
+    const pin = document.createElement('details')
+    pin.className = 'plugin-install-review-pin'
+    const pinSummary = document.createElement('summary')
+    pinSummary.className = 'settings-disclosure-summary'
+    const pinLabel = document.createElement('span')
+    pinLabel.textContent = `Pinned to ${review.revision.slice(0, 7)}`
+    pinSummary.append(pinLabel, chevronDownIcon('ui-icon settings-disclosure-chevron'))
+    const list = document.createElement('dl')
+    list.className = 'plugin-source-details'
+    const pinDetails: Array<[string, string]> = [
+      ['Revision', review.revision],
+      ['Content', review.contentHash],
+    ]
+    for (const [label, value] of pinDetails) {
+      const term = document.createElement('dt')
+      term.textContent = label
+      const description = document.createElement('dd')
+      description.textContent = value
+      list.append(term, description)
+    }
+    pin.append(pinSummary, list)
+    detail.append(pin)
     return detail
   }
 
@@ -3384,7 +3445,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const confirmed = await showConfirmDialog({
         message: `${review.operation === 'update' ? 'Update' : 'Install'} ${review.name}?`,
         detail: installReviewDetail(review),
-        confirmLabel: review.operation === 'update' ? 'Install update' : 'Install disabled',
+        confirmLabel: review.operation === 'update' ? 'Update' : 'Install',
         confirmPendingLabel: 'Installing…',
         onConfirm: async () => {
           await api.plugins.commitInstall(review.token)
@@ -3407,7 +3468,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!previous) return
     const confirmed = await showConfirmDialog({
       message: `Roll back ${record.name}?`,
-      detail: `Copse will switch to revision ${previous.revision.slice(0, 12)} and leave the plugin disabled for review.`,
+      detail: `Copse will switch back to revision ${previous.revision.slice(0, 7)}.`,
       confirmLabel: 'Roll back',
       onConfirm: async () => {
         await api.plugins.rollback(record.pluginId)
@@ -3609,7 +3670,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       review.className = 'plugin-source-review plugin-managed-review'
       const status = document.createElement('div')
       status.className = 'plugin-source-status'
-      status.textContent = 'Installed from the Copse catalogue · disabled after revision changes'
+      status.textContent = 'Installed from the Copse catalogue'
       const detailList = document.createElement('dl')
       detailList.className = 'plugin-source-details'
       const details: Array<[string, string]> = [
