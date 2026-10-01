@@ -43,11 +43,12 @@ import {
   type PluginCapabilityDecl,
   type RegisteredPlugin,
 } from './plugin-manifest.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID, ANIMATED_EXPLAINERS_SETTING_ID } from '../canvas-settings.ts'
 import { explainerSteeringHook } from '../explainer-steering.ts'
 import { canvasPrototypeSteeringHook } from '../hooks/turn-start-hooks.ts'
 
 /** Stable plugin id — the manifest name + the grouping key across contributions. */
-export const MCP_UI_CANVAS_PLUGIN_ID = 'copse.mcp-ui-canvas'
+export { MCP_UI_CANVAS_PLUGIN_ID } from '../canvas-settings.ts'
 
 /** The capability name the host read sites consult via `isCapabilityActive`. */
 export const MCP_UI_CANVAS_CAPABILITY = 'mcp-ui-canvas'
@@ -71,9 +72,19 @@ export const mcpUiCanvasPlugin: RegisteredPlugin = definePlugin(
   {
     name: MCP_UI_CANVAS_PLUGIN_ID,
     description:
-      'Renders self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ships a bundled canvas server with a `render_html_artefact` tool for demos, charts, and small interactive UIs, and turns explanation requests into captioned animations embedded in the conversation.',
+      'Create interactive demos, charts and small apps in Canvas. Optionally turn explanation requests into captioned animations in your chat.',
     trust: 'first-party',
     stability: 'experimental',
+    settings: {
+      [ANIMATED_EXPLAINERS_SETTING_ID]: {
+        kind: 'boolean',
+        title: 'Animated explainers (experimental)',
+        description:
+          'Ask “explain X” in a chat. Copse chooses a style, writes the captions and checks the animation before sharing it. Silent playback; creation can take a few minutes. Off by default.',
+        default: false,
+      },
+    },
+    storage: { namespace: MCP_UI_CANVAS_PLUGIN_ID },
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
   },
   {

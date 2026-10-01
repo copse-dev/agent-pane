@@ -1,3 +1,4 @@
+import { areAnimatedExplainersEnabled } from './canvas-settings.ts'
 import type { BlockingHook } from './hooks/canonical-events.ts'
 
 const EXPLAINER_TOOL = 'render_explainer'
@@ -38,7 +39,8 @@ No editor, HTML file, dev server or external site is needed. No speech service o
 export const explainerSteeringHook: BlockingHook<'turnStart'> = {
   id: 'explainer-steering',
   event: 'turnStart',
-  run(payload) {
+  run(payload, context) {
+    if (!areAnimatedExplainersEnabled(context.resolvePluginSetting)) return undefined
     if (!shouldSteerExplainer(payload.userText)) return undefined
     const tool = payload.toolNames?.find(
       (name) => name === EXPLAINER_TOOL || name.endsWith(`__${EXPLAINER_TOOL}`),

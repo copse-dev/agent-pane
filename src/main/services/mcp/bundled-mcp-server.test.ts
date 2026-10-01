@@ -29,7 +29,7 @@ describe('bundled MCP servers', () => {
   })
 
   it('exposes the canvas server with a render_html_artefact tool', async () => {
-    servers = await createBundledMcpServers()
+    servers = await createBundledMcpServers({ animatedExplainersEnabled: true })
     const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
     assert.ok(canvas, 'canvas server should be present')
 
@@ -40,6 +40,25 @@ describe('bundled MCP servers', () => {
     )
     assert.ok(tools.some((t) => t.name === 'preview_explainer'))
     assert.ok(tools.some((t) => t.name === 'render_explainer'))
+  })
+
+  it('keeps explainer tools unavailable unless explicitly opted in', async () => {
+    const defaults = await createBundledMcpServers()
+    try {
+      const canvas = defaults.find((s) => s.name === CANVAS_SERVER_NAME)
+      assert.ok(canvas)
+      const { tools } = await canvas.client.listTools()
+      assert.deepEqual(
+        tools.map((tool) => tool.name),
+        ['render_html_artefact'],
+      )
+      for (const name of ['preview_explainer', 'render_explainer']) {
+        const result = await canvas.client.callTool({ name, arguments: {} })
+        assert.equal(result.isError, true)
+      }
+    } finally {
+      await Promise.allSettled(defaults.flatMap((s) => [s.client.close(), s.server.close()]))
+    }
   })
 
   it('returns a text/html UI resource the host can extract', async () => {

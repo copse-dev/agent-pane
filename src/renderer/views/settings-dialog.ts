@@ -153,6 +153,7 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
 function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSummary): string {
   const raw = plugin.name || plugin.id
   if (plugin.trust !== 'first-party') return raw
+  if (plugin.id === 'copse.mcp-ui-canvas') return 'Canvas and explainers'
   const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
   return stripped ? humanizeIdentifier(stripped) : raw
 }

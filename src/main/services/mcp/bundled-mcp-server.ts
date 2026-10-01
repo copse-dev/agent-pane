@@ -77,7 +77,11 @@ export interface BundledMcpServer {
   client: Client
 }
 
-function buildCanvasServer(): { name: string; server: McpServer } {
+interface BundledMcpOptions {
+  animatedExplainersEnabled?: boolean
+}
+
+function buildCanvasServer(options: BundledMcpOptions): { name: string; server: McpServer } {
   const server = new McpServer({ name: CANVAS_SERVER_NAME, version: '0.1.0' }, { capabilities: {} })
 
   server.registerTool(
@@ -151,6 +155,8 @@ function buildCanvasServer(): { name: string; server: McpServer } {
       }
     },
   )
+
+  if (options.animatedExplainersEnabled !== true) return { name: CANVAS_SERVER_NAME, server }
 
   const previews = createExplainerPreviews()
   server.registerTool(
@@ -228,9 +234,9 @@ function buildCanvasServer(): { name: string; server: McpServer } {
 }
 
 /** Factories for every bundled server, so callers connect them uniformly. */
-const BUNDLED_SERVER_FACTORIES: ReadonlyArray<() => { name: string; server: McpServer }> = [
-  buildCanvasServer,
-]
+const BUNDLED_SERVER_FACTORIES: ReadonlyArray<
+  (options: BundledMcpOptions) => { name: string; server: McpServer }
+> = [buildCanvasServer]
 
 /**
  * Instantiate the bundled servers and connect each to its own in-memory client.
@@ -238,10 +244,12 @@ const BUNDLED_SERVER_FACTORIES: ReadonlyArray<() => { name: string; server: McpS
  * the client. Returns [] on any wiring failure so a bundled-server bug can't take
  * down the rest of MCP loading.
  */
-export async function createBundledMcpServers(): Promise<BundledMcpServer[]> {
+export async function createBundledMcpServers(
+  options: BundledMcpOptions = {},
+): Promise<BundledMcpServer[]> {
   const out: BundledMcpServer[] = []
   for (const factory of BUNDLED_SERVER_FACTORIES) {
-    const { name, server } = factory()
+    const { name, server } = factory(options)
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     try {

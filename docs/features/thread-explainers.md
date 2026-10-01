@@ -1,7 +1,9 @@
 # Animated explanations in a thread
 
-With the experimental **MCP-UI canvas** plugin enabled, ask Copse in an ordinary
-conversation:
+In **Settings → Customise → Plugins**, enable **Canvas and explainers**, expand its
+settings and turn on **Animated explainers (experimental)**. This separate setting
+defaults to off, including for people who already use Canvas. It takes effect without
+restarting Copse. Then ask in an ordinary conversation:
 
 > Explain how we find the code behind a question.
 
@@ -69,8 +71,10 @@ callers that already use them.
 
 ## Integration and boundaries
 
-- The Canvas plugin owns turn-start guidance and the bundled MCP server. Disabling
-  it removes both from future work, while stored cards remain playable.
+- The Canvas plugin owns turn-start guidance and the bundled MCP server. Both the
+  plugin and its animated-explainers setting must be on to offer explainer tools
+  and guidance. Turning off just the setting removes these live while preserving
+  HTML Canvas tools. Stored cards remain playable.
 - Guidance is executor-neutral and names only tools offered this turn. Explicit
   requests for text only abstain. Revision requests use the conversation and tool
   descriptions rather than a broad “make it simpler” intent matcher.
@@ -107,6 +111,8 @@ ownership and ACP publication.
 
 The Electron specs `thread-explainer.e2e.ts` and `thread-explainer-scenes.e2e.ts`
 cover existing playback, values, revisions and persistence.
+`settings-explainers.e2e.ts` covers default-off behaviour for existing Canvas users,
+live tool registration and revocation, persistence, and the experimental settings UI.
 `thread-explainer-drawing.e2e.ts` covers the shared player with original drawings,
 preview strips, syntax/timeout/static/random failures, isolation, deterministic
 seeking, narrow layout, revisions and reload, and saves native screenshots.

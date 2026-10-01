@@ -5,7 +5,13 @@ import {
   shouldSteerExplainer,
   explainerSteeringHook,
 } from './explainer-steering.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID, ANIMATED_EXPLAINERS_SETTING_ID } from './canvas-settings.ts'
 import { createFirstPartyPluginRegistry } from './plugins/first-party-plugins.ts'
+
+const enabledContext = {
+  resolvePluginSetting: (id: string, key: string): boolean =>
+    id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID,
+}
 
 it('recognises natural explanation requests while preserving explicit text-only choices', () => {
   for (const value of [
@@ -43,14 +49,14 @@ it('offers executor-neutral instructions only when the exact tool is available',
 it('abstains with an unavailable tool and names the offered tool for both executors', async () => {
   for (const executor of ['local', 'acp'] as const) {
     const payload = { userText: 'explain parallel search', priorTodos: [], executor }
-    assert.equal(await explainerSteeringHook.run(payload, {}), undefined)
+    assert.equal(await explainerSteeringHook.run(payload, enabledContext), undefined)
     assert.equal(
-      await explainerSteeringHook.run({ ...payload, toolNames: ['write_file'] }, {}),
+      await explainerSteeringHook.run({ ...payload, toolNames: ['write_file'] }, enabledContext),
       undefined,
     )
     const result = await explainerSteeringHook.run(
       { ...payload, toolNames: ['mcp__copse-canvas__render_explainer'] },
-      {},
+      enabledContext,
     )
     assert.match(result?.injectContext ?? '', /mcp__copse-canvas__render_explainer/)
   }
@@ -73,4 +79,28 @@ it('steers original drawings through transition review and token-only publicatio
   assert.match(prompt, /140/)
   assert.match(prompt, /300/)
   assert.equal(buildExplainerSteeringPrompt(render).includes(preview), false)
+})
+
+it('requires explicit opt-in even when an executor offers explainer tools', async () => {
+  const payload = {
+    userText: 'explain caching',
+    priorTodos: [],
+    executor: 'acp' as const,
+    toolNames: ['mcp__copse-canvas__render_explainer'],
+  }
+  assert.equal(await explainerSteeringHook.run(payload, {}), undefined)
+  for (const value of [undefined, null, false, 'true', 1]) {
+    assert.equal(
+      await explainerSteeringHook.run(payload, { resolvePluginSetting: () => value }),
+      undefined,
+    )
+  }
+  assert.ok((await explainerSteeringHook.run(payload, enabledContext))?.injectContext)
+  assert.equal(
+    await explainerSteeringHook.run(
+      { ...payload, userText: 'explain caching in plain text' },
+      enabledContext,
+    ),
+    undefined,
+  )
 })

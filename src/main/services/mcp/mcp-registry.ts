@@ -1,3 +1,5 @@
+import { areAnimatedExplainersEnabled } from '@copse/agent/canvas-settings.ts'
+import { readPluginSettingValue } from '../plugins/plugin-settings-read.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -550,7 +552,9 @@ async function connectBundledServers(
   isCurrent: () => boolean,
 ): Promise<McpServerStatus[]> {
   if (!getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
-  const bundled = await createBundledMcpServers()
+  const bundled = await createBundledMcpServers({
+    animatedExplainersEnabled: areAnimatedExplainersEnabled(readPluginSettingValue),
+  })
   const statuses: McpServerStatus[] = []
   for (const [index, { name, client }] of bundled.entries()) {
     let tracked = false

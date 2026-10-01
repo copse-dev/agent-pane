@@ -64,6 +64,9 @@ describe('composed explainer scenes', () => {
       rightPanelPosition: 'side',
     })
     await browser.reloadSession()
+    await browser.execute(async () => {
+      await window.api.plugins.setSetting('copse.mcp-ui-canvas', 'animatedExplainers', true)
+    })
   })
   after(() => resetUserData())
   it('previews real frames, publishes the reviewed story and preserves causal state', async function () {

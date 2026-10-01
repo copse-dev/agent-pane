@@ -95,6 +95,9 @@ describe('original drawings in the thread player', function () {
       rightPanelPosition: 'side',
     })
     await browser.reloadSession()
+    await browser.execute(async () => {
+      await window.api.plugins.setSetting('copse.mcp-ui-canvas', 'animatedExplainers', true)
+    })
     await waitForPromptReady()
   })
   after(() => resetUserData())
