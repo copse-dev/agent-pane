@@ -227,6 +227,13 @@
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
 }
+.ssh-host-form label input:not([type]),
+.ssh-host-form label input[type='text'] {
+  width: 100%;
+  max-width: 360px;
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-md);
+}
 .ssh-import-config {
   margin: var(--spacing-sm) 0;
 }

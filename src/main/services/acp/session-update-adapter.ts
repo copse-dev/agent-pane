@@ -60,6 +60,7 @@ const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
   // File mutations.
   write_file: 'edit',
   str_replace: 'edit',
+  apply_patch: 'edit',
   make_directory: 'edit',
   delete_file: 'delete',
   rename_file: 'move',
