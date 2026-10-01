@@ -43,7 +43,10 @@ describe('edit thread prototype', () => {
     await expect($('#result-count')).toHaveText('3')
     await expect($('[data-text="1"]')).toBeDisabled()
     await $('#review').click()
-    await expect($('#thread-eyebrow')).toHaveText('Edit thread · 2 of 2 · Review')
+    // The eyebrow is styled uppercase and WebDriver returns the rendered text.
+    await expect($('#thread-eyebrow')).toHaveText(
+      expect.stringMatching(/edit thread · 2 of 2 · review/i),
+    )
     await expect($('[data-text="0"]')).toHaveAttribute('readonly')
     expect(await $$('.preview-message').length).toBe(3)
     await expect($('#history-preview')).not.toHaveText(expect.stringContaining('Fuse.js'))
