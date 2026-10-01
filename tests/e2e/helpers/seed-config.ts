@@ -884,6 +884,42 @@ export function seedMemoryNotes(
  * cap; this persisted transcript keeps the visual proof small and focused on
  * the copy a user sees in the ordinary tool card.
  */
+/** Where the app keeps project-keyed knowledge (OKF memories) under this run's profile. */
+export function e2eKnowledgeDir(): string {
+  return join(copseDataRoot(), 'knowledge')
+}
+
+/**
+ * Two persisted projects with an idle thread in the first and the OKF memory
+ * tools enabled — for checking that a turn writes to its own project's stores
+ * after the window switches to the other project.
+ */
+export function seedTwoProjectStoresFixture(input: {
+  readonly a: { readonly id: string; readonly path: string; readonly name: string }
+  readonly b: { readonly id: string; readonly path: string; readonly name: string }
+  readonly threadId: string
+}): void {
+  const createdAt = Date.UTC(2026, 9, 1, 12)
+  writeSeedConfig({
+    projects: [input.a, input.b],
+    activeProjectId: input.a.id,
+    expandedProjectId: input.a.id,
+    activeThreadId: input.threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${input.a.id}`]: [
+      {
+        id: input.threadId,
+        title: 'Record a project convention',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
+  })
+}
+
 export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
   const projectId = 'e2e-memory-recall-truncation-project'
   const threadId = 'e2e-memory-recall-truncation-thread'
