@@ -619,6 +619,21 @@
 .chat-pr-status.is-open {
   color: var(--accent);
 }
+.chat-pr-status {
+  position: relative;
+}
+/* Failing checks on an open PR: a small --pr-closed dot on the same glyph. */
+.chat-pr-status.has-ci-failure::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pr-closed);
+  box-shadow: 0 0 0 1.5px var(--bg-base);
+}
 .chat-pr-status.is-merged {
   color: var(--pr-merged);
 }
