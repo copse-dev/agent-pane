@@ -783,7 +783,7 @@ wherever the trick is copied. Spec: `modern-css.test.ts`.
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
-Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+Two remotes ending in the same leaf (e.g. `/srv/app` and `/home/ubuntu/app`) must stay
 visually distinct. Display re-derives from `project.path` so older basename-only stored
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
