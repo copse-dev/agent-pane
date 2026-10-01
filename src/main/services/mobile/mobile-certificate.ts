@@ -8,24 +8,13 @@ import {
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { copseDataRoot } from '../storage/copse-paths.ts'
+import { der, derInteger, positiveSerial } from './der.ts'
 
 // The certificate profile is deliberately small. All DER values below have one
 // fixed shape; no untrusted ASN.1 is decoded or re-encoded here.
-function der(tag: number, ...parts: Buffer[]): Buffer {
-  const value = Buffer.concat(parts)
-  const length =
-    value.length < 128
-      ? Buffer.from([value.length])
-      : value.length < 256
-        ? Buffer.from([0x81, value.length])
-        : Buffer.from([0x82, value.length >> 8, value.length & 0xff])
-  return Buffer.concat([Buffer.from([tag]), length, value])
-}
-
 const sequence = (...parts: Buffer[]): Buffer => der(0x30, ...parts)
 const oid = (...bytes: number[]): Buffer => der(0x06, Buffer.from(bytes))
-const integer = (value: Buffer): Buffer =>
-  der(0x02, ...((value[0] ?? 0) & 0x80 ? [Buffer.from([0])] : []), value)
+const integer = derInteger
 const bool = (): Buffer => der(0x01, Buffer.from([0xff]))
 const octets = (value: Buffer): Buffer => der(0x04, value)
 const utf8 = (value: string): Buffer => der(0x0c, Buffer.from(value, 'utf8'))
@@ -87,7 +76,7 @@ function certificate(input: {
   extensions: Buffer[]
 }): string {
   const now = Date.now()
-  const serial = randomBytes(16)
+  const serial = positiveSerial(() => randomBytes(16))
   const tbs = sequence(
     der(0xa0, integer(Buffer.from([2]))),
     integer(serial),

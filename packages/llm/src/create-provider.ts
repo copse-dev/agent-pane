@@ -13,7 +13,7 @@ import {
   resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
-import { usesResponsesApi } from './openai-responses-models.ts'
+import { modelCapabilities } from './model-capabilities.ts'
 import type { Tool } from 'openai/resources/responses/responses'
 import type { ServiceTier } from './service-tier.ts'
 import type { ExtraProvider } from './extra-providers.ts'
@@ -90,13 +90,13 @@ function openAiResponsesProvider(
 }
 
 // `model` is the user's selected model (from settings). It both picks the
-// provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
+// provider family (`modelCapabilities(model).provider`) and is passed through as
 // the model id. Falls back to whichever key is present; mock only when
 // COPSE_PANEL_MOCK_LLM=1 (tests / dev). `promptCacheKey` is a stable per-thread
 // hint forwarded to OpenAI's `prompt_cache_key` to raise cache hit rates (#584).
 //
-// Reasoning-capable OpenAI models go over the Responses API (see
-// openai-responses-models.ts); `forceChatCompletions` pins them back to
+// Reasoning-capable OpenAI models go over the Responses API (`transport` in
+// model-capabilities.ts); `forceChatCompletions` pins them back to
 // /v1/chat/completions, mirroring llm's `-o chat_completions 1` escape hatch.
 export function createProvider(
   model?: string,
@@ -129,13 +129,14 @@ export function createProvider(
   }
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
   const openAiApiKey = keys.openAiApiKey ?? process.env['OPENAI_API_KEY']
-  if (m.startsWith('gpt')) {
+  const capabilities = modelCapabilities(m)
+  if (capabilities.provider === 'openai') {
     if (!openAiApiKey) {
       throw new Error(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    if (usesResponsesApi(m) && !forceChatCompletions) {
+    if (capabilities.transport === 'openai-responses' && !forceChatCompletions) {
       return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, {
         ...tierOpt,
         ...tunedOpts(m),
@@ -149,7 +150,7 @@ export function createProvider(
       ...OPENAI_STORE_OPT_OUT,
     })
   }
-  if (m.startsWith('claude')) {
+  if (capabilities.provider === 'anthropic') {
     if (!anthropicApiKey) {
       throw new Error(
         'Anthropic is not configured. Add ANTHROPIC_API_KEY in Settings or choose an OpenAI or LM Studio model.',
@@ -166,7 +167,7 @@ export function createProvider(
   }
   if (openAiApiKey) {
     const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
-    if (usesResponsesApi(id) && !forceChatCompletions) {
+    if (modelCapabilities(id).transport === 'openai-responses' && !forceChatCompletions) {
       return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, {
         ...tierOpt,
         ...tunedOpts(id),

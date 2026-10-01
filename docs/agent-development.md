@@ -14,10 +14,13 @@ Before implementation, record a short brief in the owning issue or task:
 - the smallest validation that can establish the outcome, plus required broader gates.
 
 Use the [product definition of done](product-definition-of-done-audit.md#definition-of-done).
-At handoff, state what changed, the exact checks and results (or immutable run links), independent
-review evidence when it exists, and anything unverified. Link remaining work instead of closing an
-issue based only on a related implementation. The PR template asks for the same evidence; do not
-paste an entire task transcript into it.
+At handoff, state what changed, the final source SHA, the exact checks and results (or immutable run
+links), independent review evidence when it exists, and anything unverified. For a visible change,
+record the focused visual-review result rather than treating screenshot generation as review. Replace
+stale draft or intermediate validation notes with the final-head result, while retaining unresolved
+failures under remaining work. Link remaining work instead of closing an issue based only on a
+related implementation. The PR template asks for the same evidence; do not paste an entire task
+transcript into it.
 
 Keep a small active queue with an accountable owner for each commitment. Historical plans remain
 design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) is tracked in
@@ -139,6 +142,14 @@ Known environment behavior:
   ```bash
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
+
+## Per-model behaviour
+
+Do not branch on a model id string (`startsWith('gpt')`). Ask `modelCapabilities(selection)` from
+`@copse/llm/model-capabilities.ts` for the transport, provider and per-model feature flags;
+`scripts/model-id-routing.test.ts` fails on new prefix routing elsewhere. Unknown models get
+conservative defaults. Field meanings, the matching rules and how to add a family are in the
+[`@copse/llm` README](../packages/llm/README.md#model-capabilities-one-lookup-not-id-prefix-checks).
 
 ## Model-free agent runs
 
@@ -287,7 +298,10 @@ one commit on the live head that only adds or updates PNGs under `tests/e2e/scre
 pushes with the release App token so CI runs on the new head, and CI skips e2e there because the
 commit only changes screenshots. `decline-screenshots` passes the check and commits nothing, for
 unrelated drift or references that belong in another PR. A refused label is removed with a comment
-saying why. The decision belongs to the head it was made on, so any push starts a new review.
+saying why. To commit only some candidates, tick their checkboxes in the evidence comment and then
+the last "Commit the ticked screenshots" box: `.github/workflows/screenshot-review-selection.yml`
+(an `issue_comment` edit by a write-access user) advances the PR branch by one commit holding just
+those PNGs, records the decision, and unticks the box with a comment if it refuses. The decision belongs to the head it was made on, so any push starts a new review.
 Adding a label also re-runs CI on that head. After an accept, the fast-forward supersedes that run;
 after a decline it is a repeat, and the publisher keeps the decision when the run lands. Promotion
 and merge-back PRs from `main` or `release` pass the check without a decision.

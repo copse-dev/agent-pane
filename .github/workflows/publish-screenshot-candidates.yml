@@ -143,6 +143,10 @@ jobs:
             if (matches.length === 1) {
               core.setOutput('has-artifact', 'true');
               core.setOutput('artifact-id', String(matches[0].id));
+              const expiresAt = matches[0].expires_at;
+              if (typeof expiresAt === 'string' && !Number.isNaN(Date.parse(expiresAt))) {
+                core.setOutput('artifact-expires-at', new Date(expiresAt).toISOString());
+              }
               // The comment previews screenshots this PR touches first: the
               // reference PNGs it changes and the e2e specs it changes. Only
               // names and paths leave here; the candidate step re-validates
@@ -531,6 +535,7 @@ jobs:
           PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
           EXPECTED_HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
           ARTIFACT_ID: ${{ steps.discover.outputs.artifact-id }}
+          ARTIFACT_EXPIRES_AT: ${{ steps.discover.outputs.artifact-expires-at }}
           COMPARE_BRANCH: ${{ steps.discover.outputs.compare-branch }}
           COMPARE_PUSHED: ${{ steps.compare.outputs.pushed }}
           COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
@@ -556,7 +561,7 @@ jobs:
             // under the comment. Names are re-checked here because they reach
             // markdown and HTML; anything unexpected drops the whole table.
             const previewLimit = 20;
-            const previewTable = () => {
+            const parseEntries = () => {
               const commit = process.env.COMPARE_COMMIT || '';
               if (!compareUrl || !/^[0-9a-f]{40}$/.test(commit)) return [];
               let entries;
@@ -579,9 +584,16 @@ jobs:
               ) {
                 return [];
               }
+              return entries;
+            };
+            const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+            const candidateEntries = parseEntries();
+            const previewTable = () => {
+              const commit = process.env.COMPARE_COMMIT || '';
+              const entries = candidateEntries;
+              if (entries.length === 0) return [];
               // Screenshots this PR touches lead; unrelated changes (usually
               // rendering drift) fill whatever rows remain.
-              const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
               const touched = entries.filter((entry) => entry.focus === true).sort(byName);
               const others = entries.filter((entry) => entry.focus !== true).sort(byName);
               const shownTouched = touched.slice(0, previewLimit);
@@ -666,6 +678,28 @@ jobs:
             // The blocking gate's state for this head, from the gate step.
             // screenshot-review-labels.yml rewrites the text between the
             // markers when a label records a decision.
+            // Per-screenshot alternative to `accept-screenshots`: a maintainer
+            // ticks names, then the last box; screenshot-review-selection.yml
+            // commits only those. The hidden marker pins the list to this head.
+            const selectionLimit = 100;
+            const selection =
+              acceptable && candidateEntries.length > 0
+                ? [
+                    `<!-- copse-screenshot-selection:${sha12} -->`,
+                    'Or commit only some: tick the screenshots to keep, then tick the last box. ' +
+                      'The others are not committed.',
+                    '',
+                    ...[...candidateEntries]
+                      .sort(byName)
+                      .slice(0, selectionLimit)
+                      .map((entry) => `- [ ] \`${entry.name}\`${entry.new ? ' *(new)*' : ''}`),
+                    ...(candidateEntries.length > selectionLimit
+                      ? [`…and ${candidateEntries.length - selectionLimit} more, which only the labels can commit.`]
+                      : []),
+                    '- [ ] **Commit the ticked screenshots**',
+                    '',
+                  ]
+                : [];
             const decision = (process.env.REVIEW_DECISION || '').replace(/[<>`]/g, '');
             const reviewState = decision
               ? [`**Reviewed:** ${decision}.`]
@@ -681,6 +715,7 @@ jobs:
                     '- `decline-screenshots` passes the check and commits nothing. Use it for unrelated drift, or for ' +
                       'references that belong in another PR.',
                     '',
+                    ...selection,
                     'Committing reviewed PNGs yourself also works: a screenshot-only commit re-runs CI without e2e. ' +
                       'Any push starts a new review.',
                   ]
@@ -693,6 +728,14 @@ jobs:
               const artifactUrl = `${process.env.RUN_URL}/artifacts/${process.env.ARTIFACT_ID}`;
               const artifactLink =
                 `[the screenshot artifact](${artifactUrl}) from [CI run ${process.env.RUN_ID}](${process.env.RUN_URL})`;
+              const expiryValue = process.env.ARTIFACT_EXPIRES_AT || '';
+              const expiryTime = Date.parse(expiryValue);
+              const expiry = Number.isNaN(expiryTime)
+                ? 'Artifact expiry is governed by repository retention;'
+                : `The artifact expires at \`${new Date(expiryTime)
+                    .toISOString()
+                    .replace('T', ' ')
+                    .replace(/\.\d{3}Z$/, ' UTC')}\`;`;
               body = [
                 marker,
                 '### Screenshot evidence',
@@ -720,7 +763,7 @@ jobs:
                       `Changed reference candidates for \`${sha12}\` are in ${artifactLink}.`,
                       'To accept them, download the artifact and commit the intended PNGs to the PR branch.',
                     ]),
-                'The artifact is retained for 14 days; its presence does not mean the visual changes have been accepted.',
+                `${expiry} its presence does not mean the visual changes have been accepted.`,
                 '',
                 refreshGuidance,
                 'Do not refresh references merely to absorb unrelated rendering drift.',
