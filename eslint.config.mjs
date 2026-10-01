@@ -44,6 +44,9 @@ export default ts.config(
       '.portable/',
       '.pr-validation/',
       '.tmp/',
+      // Downloaded browser/driver caches (wdio.demo.conf.ts fetches Chrome for Testing
+      // into .cache/wdio-demo/). ESLint does not read .gitignore, so list them here.
+      '.cache/',
       // Generated benchmark outputs, private research scripts and downloaded model caches.
       // The maintained benchmark harnesses under benchmarks/ are linted separately below.
       'bench-results/',
