@@ -131,6 +131,10 @@ export const rememberTool = defineTool({
       ? memories.find((note) => note.id === id)
       : memories.find((note) => note.title === cleanTitle)
     if (id && !existing) return `No memory with id "${id}" exists in this project; nothing saved.`
+    // An id update renames the note, so the new title must not collide with another memory's.
+    if (id && memories.some((note) => note.id !== id && note.title === cleanTitle)) {
+      return `Not saved: another memory is already titled "${cleanTitle}". Pick a different title.`
+    }
     if (existing && expectedRevision !== undefined && noteRevision(existing) !== expectedRevision) {
       return (
         `Not saved: memory "${existing.title}" is at revision ${String(noteRevision(existing))}, ` +
@@ -203,6 +207,9 @@ export const recallTool = defineTool({
     }
     const offset = decodeCursor(cursor)
     if (offset === null) return 'Invalid cursor; omit it to start from the first memory.'
+    if (offset >= memories.length) {
+      return `Cursor is past the end; there are only ${String(memories.length)} ${memories.length === 1 ? 'memory' : 'memories'}. Omit the cursor to start over.`
+    }
     const pageSize = Math.min(limit ?? DEFAULT_RECALL_LIMIT, MAX_RECALL_LIMIT)
     const page = memories.slice(offset, offset + pageSize)
     const total = memories.length

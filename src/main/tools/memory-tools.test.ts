@@ -200,5 +200,28 @@ describe('memory-tools', () => {
       assert.doesNotMatch(p2, /Next cursor/)
       assert.match(await run(recallTool, { cursor: 'x' }), /Invalid cursor/)
     })
+
+    it('reports a cursor past the end instead of an empty page', async () => {
+      for (const n of ['a', 'b', 'c']) await run(rememberTool, { title: n, content: n })
+      const out = await run(recallTool, { cursor: 'm:99' })
+      assert.match(out, /past the end; there are only 3 memories/)
+      assert.doesNotMatch(out, /showing/)
+      assert.match(await run(recallTool, { cursor: 'm:3' }), /past the end/)
+    })
+
+    it('rejects an id update that would rename onto another memory title', async () => {
+      await run(rememberTool, { title: 'A', content: 'a' })
+      const b = await run(rememberTool, { title: 'B', content: 'b' })
+      const idB = /id (\S+),/.exec(b)?.[1]
+      assert.ok(idB)
+      const out = await run(rememberTool, { id: idB, title: 'A', content: 'b2' })
+      assert.match(out, /already titled "A"/)
+      const notes = loadKnowledgeNotes(MEMORY_TYPE)
+      assert.deepEqual(notes.map((n) => n.title).sort(), ['A', 'B'])
+      assert.equal(notes.find((n) => n.title === 'B')?.body.trim(), 'b')
+      // Renaming to its own title, or to a free one, still works.
+      assert.match(await run(rememberTool, { id: idB, title: 'B', content: 'b3' }), /revision 2/)
+      assert.match(await run(rememberTool, { id: idB, title: 'C', content: 'b4' }), /revision 3/)
+    })
   })
 })
