@@ -72,6 +72,10 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "plugin-install-review",
+    "label": "Plugin catalogue install review"
+  },
+  {
     "id": "automation-permissions",
     "label": "Automation permission preferences"
   },

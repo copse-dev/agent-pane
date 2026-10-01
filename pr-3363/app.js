@@ -37816,6 +37816,62 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "plugin-install-review",
+        label: "Plugin catalogue install review",
+        project: project("demo-plugin-install-review-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-plugin-install-review-thread",
+            title: "Plugin install review",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        // The Figma package as reviewed at its pinned catalogue revision.
+        pluginInstallReview: {
+          token: "demo-plugin-install-review",
+          catalogId: "https://github.com/figma/mcp-server-guide#",
+          pluginId: "figma",
+          name: "figma",
+          description: "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code.",
+          publisher: "figma",
+          contentHash: "sha256:3e8e1e7aecedae788bc34903a3708818d3f161ea381583084e971a2804c298a3",
+          revision: "172920731eedf414e9b22ae60017d9a5b6c9f81f",
+          skillCount: 14,
+          mcpServerCount: 1,
+          skills: [
+            "skills/figma-code-connect/SKILL.md",
+            "skills/figma-create-new-file/SKILL.md",
+            "skills/figma-design-to-code/SKILL.md",
+            "skills/figma-generate-design/SKILL.md",
+            "skills/figma-generate-diagram/SKILL.md",
+            "skills/figma-generate-library/SKILL.md",
+            "skills/figma-generative-plugins/SKILL.md",
+            "skills/figma-implement-motion/SKILL.md",
+            "skills/figma-shaders/SKILL.md",
+            "skills/figma-swiftui/SKILL.md",
+            "skills/figma-use-figjam/SKILL.md",
+            "skills/figma-use-motion/SKILL.md",
+            "skills/figma-use-slides/SKILL.md",
+            "skills/figma-use/SKILL.md"
+          ],
+          mcpServers: [
+            { name: "figma", transport: "streamable-http", target: "https://mcp.figma.com/mcp" }
+          ],
+          warnings: [],
+          provenance: "unsigned",
+          operation: "install"
+        }
+      },
+      {
         id: "automation-permissions",
         label: "Automation permission preferences",
         project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
@@ -38960,7 +39016,7 @@ function createDemoApi(scenario, options = {}) {
       setSetting: () => resolved({ plugins: [] }),
       addSource: () => resolved({ plugins: [] }),
       listInstalls: emptyArray,
-      prepareInstall: unsupported,
+      prepareInstall: () => scenario.pluginInstallReview ? resolved(scenario.pluginInstallReview) : unsupported(),
       cancelInstall: resolvedVoid,
       commitInstall: unsupported,
       uninstall: unsupported,
@@ -72280,6 +72336,23 @@ function openAutomationSettings(scheduleId) {
   };
   openSettingsDialog("customise");
 }
+function countLabel(count, noun) {
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+function installReviewSkillName(path, pluginId) {
+  const parts = path.split("/");
+  if (parts.at(-1) !== "SKILL.md") return path;
+  return parts.at(-2) ?? pluginId;
+}
+function installReviewSection(heading, body) {
+  const section = document.createElement("section");
+  section.className = "plugin-install-review-section";
+  const title = document.createElement("div");
+  title.className = "plugin-install-review-heading";
+  title.textContent = heading;
+  section.append(title, body);
+  return section;
+}
 function closeSettingsDialog() {
   if (!overlayEl || !overlayEl.open) return;
   overlayEl.close();
@@ -74652,41 +74725,48 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   function installReviewDetail(review) {
     const detail = document.createElement("div");
     detail.className = "plugin-install-review-dialog";
-    const summary = document.createElement("p");
-    summary.textContent = "Copse will install this pinned package disabled. You can enable its skills and MCP servers after installation.";
-    const values = [
-      ["Publisher", review.publisher],
-      ["Revision", review.revision],
-      ["Content", review.contentHash],
-      ["Skills", String(review.skillCount)],
-      ["MCP servers", String(review.mcpServerCount)],
-      ["Verification", "Unsigned package"]
-    ];
-    const list = document.createElement("dl");
-    list.className = "plugin-source-details plugin-install-review-details";
-    for (const [label, value] of values) {
-      const term = document.createElement("dt");
-      term.textContent = label;
-      const description = document.createElement("dd");
-      description.textContent = value;
-      list.append(term, description);
+    if (review.description) {
+      const description = document.createElement("div");
+      description.className = "plugin-install-review-description";
+      description.textContent = review.description;
+      detail.append(description);
     }
-    detail.append(summary, list);
+    const provenance = document.createElement("div");
+    provenance.className = "plugin-install-review-provenance";
+    provenance.textContent = `Unsigned package from ${review.publisher}`;
+    detail.append(provenance);
     if (review.skills.length > 0) {
-      const skills = document.createElement("p");
-      skills.className = "plugin-install-review-components";
-      skills.textContent = `Skills: ${review.skills.join(", ")}`;
-      detail.append(skills);
+      const chips = document.createElement("div");
+      chips.className = "plugin-chips";
+      for (const path of review.skills) {
+        const chip2 = document.createElement("span");
+        chip2.className = "plugin-chip";
+        chip2.textContent = installReviewSkillName(path, review.pluginId);
+        chip2.title = path;
+        chips.append(chip2);
+      }
+      detail.append(installReviewSection(countLabel(review.skills.length, "skill"), chips));
     }
     if (review.mcpServers.length > 0) {
       const servers = document.createElement("ul");
-      servers.className = "plugin-install-review-components";
+      servers.className = "plugin-install-review-servers";
       for (const server of review.mcpServers) {
         const item = document.createElement("li");
-        item.textContent = `${server.name} (${server.transport}): ${server.target}`;
+        const name = document.createElement("span");
+        name.className = "plugin-install-review-server-name";
+        name.textContent = server.name;
+        const transport = document.createElement("span");
+        transport.className = "plugin-install-review-server-transport";
+        transport.textContent = server.transport === "stdio" ? "Local command" : server.transport === "sse" ? "Legacy SSE" : "HTTP";
+        const target = document.createElement("code");
+        target.className = "plugin-install-review-server-target";
+        target.textContent = server.transport === "stdio" ? server.target : server.target.replace(/^https?:\/\//, "");
+        item.append(name, transport, target);
         servers.append(item);
       }
-      detail.append(servers);
+      detail.append(
+        installReviewSection(countLabel(review.mcpServers.length, "MCP server"), servers)
+      );
     }
     if (review.warnings.length > 0) {
       const warnings = document.createElement("ul");
@@ -74698,6 +74778,28 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       }
       detail.append(warnings);
     }
+    const pin = document.createElement("details");
+    pin.className = "plugin-install-review-pin";
+    const pinSummary = document.createElement("summary");
+    pinSummary.className = "settings-disclosure-summary";
+    const pinLabel = document.createElement("span");
+    pinLabel.textContent = `Pinned to ${review.revision.slice(0, 7)}`;
+    pinSummary.append(pinLabel, chevronDownIcon("ui-icon settings-disclosure-chevron"));
+    const list = document.createElement("dl");
+    list.className = "plugin-source-details";
+    const pinDetails = [
+      ["Revision", review.revision],
+      ["Content", review.contentHash]
+    ];
+    for (const [label, value] of pinDetails) {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    }
+    pin.append(pinSummary, list);
+    detail.append(pin);
     return detail;
   }
   async function reviewCatalogInstall(catalogId) {
@@ -74706,7 +74808,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       const confirmed = await showConfirmDialog({
         message: `${review.operation === "update" ? "Update" : "Install"} ${review.name}?`,
         detail: installReviewDetail(review),
-        confirmLabel: review.operation === "update" ? "Install update" : "Install disabled",
+        confirmLabel: review.operation === "update" ? "Update" : "Install",
         confirmPendingLabel: "Installing\u2026",
         onConfirm: async () => {
           await api2.plugins.commitInstall(review.token);
@@ -74728,7 +74830,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (!previous) return;
     const confirmed = await showConfirmDialog({
       message: `Roll back ${record2.name}?`,
-      detail: `Copse will switch to revision ${previous.revision.slice(0, 12)} and leave the plugin disabled for review.`,
+      detail: `Copse will switch back to revision ${previous.revision.slice(0, 7)}.`,
       confirmLabel: "Roll back",
       onConfirm: async () => {
         await api2.plugins.rollback(record2.pluginId);
@@ -74876,7 +74978,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       review.className = "plugin-source-review plugin-managed-review";
       const status = document.createElement("div");
       status.className = "plugin-source-status";
-      status.textContent = "Installed from the Copse catalogue \xB7 disabled after revision changes";
+      status.textContent = "Installed from the Copse catalogue";
       const detailList = document.createElement("dl");
       detailList.className = "plugin-source-details";
       const details = [
@@ -78922,12 +79024,12 @@ function mountProjectsPane(root, store2, api2) {
   }
   function orphanSubtitle(orphan) {
     const count = orphan.threadCount;
-    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const countLabel2 = `${String(count)} thread${count === 1 ? "" : "s"}`;
     const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
-    if (extra.length === 0) return countLabel;
+    if (extra.length === 0) return countLabel2;
     const shown = extra.slice(0, 2).join(" \xB7 ");
     const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
-    return `${countLabel} \xB7 ${shown}${more}`;
+    return `${countLabel2} \xB7 ${shown}${more}`;
   }
   function orphanRecoverDetail(orphan) {
     const lines = [

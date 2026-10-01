@@ -8990,16 +8990,80 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-xs);
   word-break: break-word;
 }
-.plugin-install-review-dialog > p {
-  margin-top: 0;
+#confirm-dialog:has(.plugin-install-review-dialog) {
+  max-width: 560px;
 }
-.plugin-install-review-details dd {
+.plugin-install-review-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  white-space: normal;
+}
+.plugin-install-review-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.plugin-install-review-provenance {
+  margin-top: calc(-1 * var(--spacing-sm));
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-install-review-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.plugin-install-review-heading {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.plugin-install-review-servers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-servers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.plugin-install-review-server-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.plugin-install-review-server-transport {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.plugin-install-review-server-target {
+  min-width: 0;
+  font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
 }
 .plugin-install-review-warnings {
-  margin-bottom: 0;
+  margin: 0;
   padding-left: var(--spacing-lg);
   color: var(--warning);
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-pin {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+.plugin-install-review-pin > .settings-disclosure-summary {
+  margin-inline: calc(-1 * var(--spacing-sm));
+}
+.plugin-install-review-pin[open] > .settings-disclosure-summary {
+  margin-bottom: var(--spacing-xs);
 }
 .plugin-uninstall-data-choice {
   display: flex;
