@@ -4462,17 +4462,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (m) appendMessageEl(thread.id, m.id, true)
     }
     // Batched tail work for the whole window, in the order the per-message path
-    // would have left things in: labels and actions reflect the final DOM, and
-    // the view lands at the bottom before the chrome is inserted around it.
+    // would have left things in: labels, actions, and chrome must be in place
+    // before measuring the bottom. Reattaching an unchanged activity row does
+    // not trigger setActivity's scroll correction on a switch between live threads.
     syncModelLabels()
     syncUserActions()
     syncAcpResourceReferences(list, api, store)
+    finishThreadChrome(thread)
     if (preservedScrollTop === null) {
       scrollToBottom(true)
     } else {
       setScrollTopProgrammatically(preservedScrollTop)
+      updateScrollButton()
     }
-    finishThreadChrome(thread)
     if (thread.status === 'running') cancelThreadCompaction(thread.id)
     else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
       scheduleThreadCompaction(thread.id)
