@@ -4,9 +4,9 @@ import { el } from '../dom/helpers.ts'
 import {
   checkIcon,
   closeIcon,
-  handIcon,
   messageQuestionIcon,
   runningStatusIcon,
+  shieldIcon,
   warningIcon,
 } from '../dom/icons.ts'
 import { switchProjectThread } from '../controller/projects.ts'
@@ -94,7 +94,7 @@ function stateGlyph(state: ActivityRowState): SVGSVGElement {
   const className = 'ui-icon ui-icon-sm activity-glyph'
   switch (state) {
     case 'needs-approval':
-      return handIcon(className)
+      return shieldIcon(className)
     case 'needs-answer':
       return messageQuestionIcon(className)
     case 'working':
