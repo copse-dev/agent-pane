@@ -908,6 +908,35 @@ describe('parent screenshot evidence comment', () => {
     assert.ok(end < body.indexOf(COMPARE_URL), 'the decision request leads the comment')
   })
 
+  it('lists each candidate as a checkbox pinned to the head, ending with the trigger box', async () => {
+    const body = (await publish({ REVIEW_PENDING: 'true' })).bodies[0] ?? ''
+    const start = body.indexOf('<!-- copse-screenshot-review-state -->')
+    const block = body.slice(start, body.indexOf('<!-- /copse-screenshot-review-state -->'))
+    assert.match(block, /<!-- copse-screenshot-selection:[0-9a-f]{12} -->/)
+    const lines = block.split('\n')
+    assert.ok(
+      lines.some((line) => /^- \[ \] `[A-Za-z0-9._-]+\.png`/.test(line)),
+      block,
+    )
+    assert.equal(
+      lines.filter((line) => line === '- [ ] **Commit the ticked screenshots**').length,
+      1,
+    )
+    for (const env of [
+      { COMPARE_PUSHED: '' },
+      { COMPARE_COMMIT: '' },
+      { CANDIDATE_NAMES: 'not json' },
+    ]) {
+      const without = (await publish({ REVIEW_PENDING: 'true', ...env })).bodies[0] ?? ''
+      assert.doesNotMatch(
+        without,
+        /copse-screenshot-selection|Commit the ticked/,
+        JSON.stringify(env),
+      )
+    }
+    assert.doesNotMatch((await publish()).bodies[0] ?? '', /Commit the ticked/)
+  })
+
   it('offers accept only when there is a compare commit to fast-forward to', async () => {
     for (const env of [{ COMPARE_PUSHED: '' }, { COMPARE_COMMIT: '' }]) {
       const body = (await publish({ REVIEW_PENDING: 'true', ...env })).bodies[0] ?? ''
