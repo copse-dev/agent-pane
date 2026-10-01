@@ -4,7 +4,7 @@
   <title>Explainer</title>
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
+    content="default-src 'none'; script-src 'unsafe-inline'; worker-src blob:; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
   />
   <style>
     * {
@@ -86,6 +86,24 @@
     p {
       line-height: 1.5;
     }
+    #error {
+      margin: 0;
+      padding: 8px 16px;
+      color: #ffd2c8;
+    }
+    #caption {
+      display: none;
+      flex-shrink: 0;
+      margin: 0;
+      padding: 6px 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    @media (max-width: 600px) {
+      #caption {
+        display: block;
+      }
+    }
     #style {
       font-size: 12px;
       color: #b5c6bd;
@@ -118,6 +136,7 @@
       role="img"
       aria-label="Animated explanation; written transcript below"
     ></canvas>
+    <p id="caption"></p>
     <nav aria-label="Playback">
       <button id="play" type="button">Play</button
       ><input
@@ -130,6 +149,7 @@
         value="0"
       /><output id="time">0:00 / 0:18</output><span id="style"></span>
     </nav>
+    <p id="error" role="status" hidden></p>
     <details>
       <summary>Read the narration</summary>
       <ol id="transcript"></ol>
@@ -1413,6 +1433,9 @@
     })(typeof window !== 'undefined' ? window : globalThis)
   </script>
   <script>
+    __COPSE_EXPLAINER_DRAWING_RUNTIME__
+  </script>
+  <script>
     'use strict'
     const story = JSON.parse(document.getElementById('story').textContent)
     const canvas = document.getElementById('scene'),
@@ -1424,9 +1447,8 @@
       'aria-label',
       story.title + ' — animated explanation; written transcript below',
     )
-    document.getElementById('style').textContent = Explainer.STYLES.find(
-      (s) => s.id === story.style,
-    ).name
+    document.getElementById('style').textContent =
+      story.drawing?.styleName || Explainer.STYLES.find((s) => s.id === story.style).name
     for (const beat of story.beats) {
       const li = document.createElement('li'),
         strong = document.createElement('strong')
@@ -1439,27 +1461,75 @@
     let position = 0,
       playing = false,
       last = 0,
-      frame = 0
+      frame = 0,
+      pending = null,
+      queued = false,
+      failure = null
     const clock = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
     function draw() {
-      Explainer.render(canvas, story, position)
+      let start = 0,
+        beatIndex = 0
+      while (
+        beatIndex < story.beatDurations.length - 1 &&
+        position >= start + story.beatDurations[beatIndex]
+      ) {
+        start += story.beatDurations[beatIndex++]
+      }
+      const caption = document.getElementById('caption')
+      if (caption.textContent !== story.beats[beatIndex].caption)
+        caption.textContent = story.beats[beatIndex].caption
       seek.value = position
       time.textContent = clock(position) + ' / ' + clock(story.duration)
       play.textContent = playing ? 'Pause' : position >= story.duration ? 'Replay' : 'Play'
       play.setAttribute('aria-pressed', String(playing))
+      if (failure) return Promise.reject(failure)
+      if (!story.drawing) {
+        Explainer.render(canvas, story, position)
+        return Promise.resolve()
+      }
+      if (pending) {
+        queued = true
+        return pending
+      }
+      pending = CreativeExplainer.render(canvas, story, position)
+        .catch((error) => {
+          failure = error
+          playing = false
+          cancelAnimationFrame(frame)
+          const message = document.getElementById('error')
+          message.textContent = 'This drawing could not play. Ask for a revised explanation.'
+          message.hidden = false
+          canvas.dataset.error = String(error).slice(0, 500)
+          play.textContent = 'Unavailable'
+          play.disabled = true
+          seek.disabled = true
+          throw error
+        })
+        .finally(() => {
+          pending = null
+          if (queued && !failure) {
+            queued = false
+            return draw()
+          }
+        })
+      return pending
     }
-    function tick(now) {
+    async function tick(now) {
       if (!playing) return
       position = Math.min(story.duration, position + (now - last) / 1000)
       last = now
       if (position >= story.duration) playing = false
-      draw()
+      try {
+        await draw()
+      } catch {
+        return
+      }
       if (playing) frame = requestAnimationFrame(tick)
     }
     function pause() {
       playing = false
       cancelAnimationFrame(frame)
-      draw()
+      draw().catch(() => {})
     }
     play.addEventListener('click', () => {
       if (playing) {
@@ -1470,16 +1540,31 @@
       playing = true
       last = performance.now()
       draw()
-      frame = requestAnimationFrame(tick)
+        .then(() => {
+          if (playing) frame = requestAnimationFrame(tick)
+        })
+        .catch(() => {})
     })
     seek.addEventListener('input', () => {
       position = Number(seek.value)
       last = performance.now()
-      draw()
+      draw().catch(() => {})
     })
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) pause()
     })
-    draw()
+    window.addEventListener('pagehide', () => {
+      playing = false
+      cancelAnimationFrame(frame)
+      if (story.drawing) CreativeExplainer.dispose(canvas)
+    })
+    window.renderFrame = (seconds) => {
+      playing = false
+      cancelAnimationFrame(frame)
+      position = Math.max(0, Math.min(story.duration, Number(seconds) || 0))
+      return draw()
+    }
+    window.explainerReady = draw()
+    window.explainerReady.catch(() => {})
   </script>
 </html>

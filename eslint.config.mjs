@@ -479,6 +479,30 @@ export default ts.config(
     },
   },
   {
+    // Shipped Canvas worker runtime is plain browser JavaScript, embedded in
+    // self-contained artefacts rather than compiled by a TypeScript project.
+    files: ['assets/explainers/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        globalThis: 'readonly',
+        self: 'readonly',
+        OffscreenCanvas: 'readonly',
+        ImageBitmap: 'readonly',
+        Worker: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
+    },
+  },
+  {
     // Static-site scripts: plain browser JS served as-is, with no TS project to
     // type-check against. Demo sites are copied next to the browser build.
     files: [

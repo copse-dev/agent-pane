@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { createHash, randomUUID } from 'node:crypto'
 import { sceneObject, explainerScene, validateScenes } from './explainer-scenes.ts'
 
-/** Bounded story data, never model-authored HTML or executable code. */
+/** Narration stays inert; optional drawing code runs only in a disposable browser worker. */
 export const explainerInput = {
   project: z.string().trim().min(1).max(40).describe('Project or subject name.'),
   title: z.string().trim().min(1).max(75),
@@ -12,7 +12,7 @@ export const explainerInput = {
     .enum(['review', 'parallel', 'context', 'routing', 'sequence'])
     .default('sequence')
     .describe(
-      'Legacy only; ignored when scenes are provided. For new explanations use objects and scenes. review shows exactly three edits (two accepted, one reverted); parallel shows three workers searching then gathering reports; context removes older output; routing shows device, cloud and tool destinations; sequence is a neutral three-step process. Only use a mechanism whose actions match the narration.',
+      'Legacy only; ignored for custom drawings and composed scenes. Prefer beats plus drawing for new explanations. review shows exactly three edits (two accepted, one reverted); parallel shows three workers searching then gathering reports; context removes older output; routing shows device, cloud and tool destinations; sequence is a neutral three-step process. Only use a mechanism whose actions match the narration.',
     ),
   style: z
     .enum([
@@ -29,7 +29,7 @@ export const explainerInput = {
     ])
     .default('auto')
     .describe(
-      'Choose a style for the subject: paper for review; mailroom for parallel investigation; travel for capacity; folded for routes; comic or felt for approachable sequences; kinetic for a single strong contrast; workshop for assembly. Signal is abstract: use only when specifically requested. auto chooses a concrete default from the mechanism.',
+      'Compatibility styles for objects/scenes or legacy stories; ignored for drawing, which supplies its own styleName. Paper for review; mailroom for parallel investigation; travel for capacity; folded for routes; comic or felt for approachable sequences; kinetic for a single strong contrast; workshop for assembly. Signal is abstract: use only when specifically requested. auto chooses a concrete default from the mechanism.',
     ),
   audience: z.enum(['users', 'engineers', 'both']).default('both'),
   duration: z
@@ -58,10 +58,43 @@ export const explainerInput = {
           ),
       }),
     )
-    .length(3)
+    .min(3)
+    .max(6)
     .optional()
     .describe(
-      'Legacy only. Starting problem, action/mechanism, and observable result. Write the narration yourself from this thread and inspected project evidence.',
+      'With drawing: 3–6 narration beats, each with a short title and caption of at most 140 characters. The player allocates readable timings. Legacy stories use exactly three beats.',
+    ),
+  drawing: z
+    .object({
+      styleName: z.string().trim().min(1).max(60),
+      direction: z
+        .string()
+        .trim()
+        .min(1)
+        .max(300)
+        .describe(
+          'At most 300 characters: your art direction and how its motion explains the subject.',
+        ),
+      background: z
+        .string()
+        .regex(/^#[0-9a-f]{6}$/i)
+        .default('#171c22'),
+      ink: z
+        .string()
+        .regex(/^#[0-9a-f]{6}$/i)
+        .default('#eef1f0'),
+      code: z
+        .string()
+        .trim()
+        .min(1)
+        .max(24_000)
+        .describe(
+          'JavaScript function BODY for (ctx, frame, helpers). Draw original Canvas 2D art in 1280×480. frame: {time,duration,index,progress,start,end,width,height}; index is the current beat, progress 0–1. helpers: clamp(v), ease(v), mix(a,b,p), text(value,x,y,size=28,color="#fff",align="left"), rect(x,y,w,h,color,radius=0), circle(x,y,r,color), line(x1,y1,x2,y2,color,width=2). Use local functions and Canvas freely. Derive all state from frame; no randomness, clocks, asynchronous work, DOM, imports or network. Do not draw the title, narration, controls or progress bar; Copse supplies those.',
+        ),
+    })
+    .optional()
+    .describe(
+      'Preferred for new explanations: invent your own visual language, not a preset plot. Supply beats and drawing together. No HTML or separate files.',
     ),
   objects: z
     .array(sceneObject)
@@ -69,7 +102,7 @@ export const explainerInput = {
     .max(10)
     .optional()
     .describe(
-      'New explainers: persistent objects with IDs, positions and file contents. Use invisible destinations for copy/merge. Workspace objects are large backdrops; place their documents in front. Keep labels at most 24 characters.',
+      'Compatibility scene format: persistent objects with IDs, positions and file contents. Use invisible destinations for copy/merge. Workspace objects are large backdrops; place their documents in front. Keep labels at most 24 characters.',
     ),
   scenes: z
     .array(explainerScene)
@@ -77,7 +110,7 @@ export const explainerInput = {
     .max(6)
     .optional()
     .describe(
-      'New explainers: 4–6 scenes pairing one factual claim with actions that demonstrate it. State persists across scenes. Narration at most 140 characters per scene. Use copy/edit/apply/discard/merge to show cause and effect, not just highlights.',
+      'Compatibility scene format: 4–6 scenes pairing one factual claim with actions that demonstrate it. State persists across scenes. Narration at most 140 characters per scene. Use copy/edit/apply/discard/merge to show cause and effect, not just highlights.',
     ),
   source: z
     .string()
@@ -91,6 +124,20 @@ export const explainerInput = {
 
 const explainerSchema = z.object(explainerInput)
 
+/** Publication can use only the preview ID, avoiding a second copy of the drawing program. */
+export const explainerPublishInput = {
+  ...z
+    .object({
+      ...explainerInput,
+      pattern: explainerInput.pattern.unwrap(),
+      style: explainerInput.style.unwrap(),
+      audience: explainerInput.audience.unwrap(),
+      duration: explainerInput.duration.unwrap(),
+    })
+    .partial().shape,
+  previewId: z.uuid().optional(),
+}
+
 const DEFAULT_STYLES = {
   review: 'paper',
   parallel: 'mailroom',
@@ -103,18 +150,23 @@ type ParsedExplainer = z.output<typeof explainerSchema>
 type PreparedExplainer = Omit<ParsedExplainer, 'beats' | 'style'> & {
   beats: Array<{ title: string; caption: string }>
   style: Exclude<ParsedExplainer['style'], 'auto'>
-  version: 1 | 2
+  version: 1 | 2 | 3
   beatDurations: number[]
   captionSize: number
 }
 
 export function prepareExplainer(input: unknown): PreparedExplainer {
   const story = explainerSchema.parse(input)
-  if (story.scenes && story.objects) validateScenes(story.objects, story.scenes)
+  if (story.drawing) {
+    if (story.scenes || story.objects || !story.beats)
+      throw new Error('Custom drawing needs beats and drawing, without objects or scenes.')
+    if (story.beats.some((beat) => beat.caption.length > 140))
+      throw new Error('Custom drawing captions must be at most 140 characters.')
+  } else if (story.scenes && story.objects) validateScenes(story.objects, story.scenes)
   else if (story.scenes || story.objects) throw new Error('Provide both objects and scenes.')
-  else if (!story.beats || !story.labels)
+  else if (!story.beats || story.beats.length !== 3 || !story.labels)
     throw new Error(
-      'New explanations need objects and 4–6 scenes. Legacy stories need three beats and labels.',
+      'Provide beats plus drawing, or objects plus 4–6 scenes. Legacy stories need three beats and labels.',
     )
   const beats = story.scenes ?? story.beats ?? []
   const weights = beats.map((beat) => Math.max(4, beat.caption.split(/\s+/).length / 2.5 + 1))
@@ -123,7 +175,7 @@ export function prepareExplainer(input: unknown): PreparedExplainer {
   return {
     ...story,
     beats,
-    version: story.scenes ? 2 : 1,
+    version: story.drawing ? 3 : story.scenes ? 2 : 1,
     style:
       story.style === 'auto'
         ? story.scenes
@@ -138,21 +190,33 @@ export function prepareExplainer(input: unknown): PreparedExplainer {
 
 /** A preview token refers to the exact HTML inspected, never a mutable title. */
 export function createExplainerPreviews(): {
-  record(html: string): string
+  record(html: string, story?: PreparedExplainer): string
+  get(id: string | undefined): { html: string; story: PreparedExplainer }
   assertReviewed(id: string | undefined, html: string): void
 } {
-  const entries = new Map<string, { hash: string; at: number }>()
+  const entries = new Map<
+    string,
+    { hash: string; at: number; html: string; story: PreparedExplainer | undefined }
+  >()
   const hash = (html: string): string => createHash('sha256').update(html).digest('hex')
   return {
-    record(html: string): string {
+    record(html: string, story?: PreparedExplainer): string {
       for (const [key, value] of entries) if (Date.now() - value.at > 600_000) entries.delete(key)
       while (entries.size >= 24) {
         const oldest = entries.keys().next().value
         if (oldest !== undefined) entries.delete(oldest)
       }
       const id = randomUUID()
-      entries.set(id, { hash: hash(html), at: Date.now() })
+      entries.set(id, { hash: hash(html), at: Date.now(), html, story })
       return id
+    },
+    get(id): { html: string; story: PreparedExplainer } {
+      const entry = id ? entries.get(id) : undefined
+      if (!entry?.story || Date.now() - entry.at > 600_000)
+        throw new Error(
+          'This preview expired or is unavailable. Preview the explanation again before publishing.',
+        )
+      return { html: entry.html, story: entry.story }
     },
     assertReviewed(id: string | undefined, html: string): void {
       const entry = id ? entries.get(id) : undefined
@@ -165,9 +229,11 @@ export function createExplainerPreviews(): {
 }
 
 /** Escaping '<' also prevents user text from terminating the inert JSON script. */
-export function buildExplainerHtml(template: string, input: unknown): string {
+export function buildExplainerHtml(template: string, input: unknown, drawingRuntime = ''): string {
   const json = JSON.stringify(prepareExplainer(input)).replaceAll('<', '\\u003c')
-  return template.replace('__COPSE_EXPLAINER_STORY__', () => json)
+  return template
+    .replace('__COPSE_EXPLAINER_DRAWING_RUNTIME__', () => drawingRuntime)
+    .replace('__COPSE_EXPLAINER_STORY__', () => json)
 }
 
 export async function renderExplainerHtml(input: unknown): Promise<string> {
@@ -180,7 +246,8 @@ export async function renderExplainerHtml(input: unknown): Promise<string> {
     } catch {
       continue
     }
-    return buildExplainerHtml(template, input)
+    const runtime = await readFile(join(__dirname, directory, 'drawing.js'), 'utf8')
+    return buildExplainerHtml(template, input, runtime)
   }
   throw new Error('The bundled explainer player is missing. Rebuild Copse before retrying.')
 }

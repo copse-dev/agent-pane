@@ -56,13 +56,18 @@ it('abstains with an unavailable tool and names the offered tool for both execut
   }
 })
 
-it('steers scene composition and actual preview only when the preview tool is offered', () => {
+it('steers original drawings through transition review and token-only publication', () => {
   const preview = 'mcp__copse-canvas__preview_explainer'
   const render = 'mcp__copse-canvas__render_explainer'
   const prompt = buildExplainerSteeringPrompt(render, preview)
-  assert.match(prompt, /4–6 scenes/)
-  assert.match(prompt, /actual returned scene images/)
-  assert.match(prompt, /identical story/)
+  assert.match(prompt, /3–6 beats/)
+  assert.match(prompt, /drawing.code/)
+  assert.match(prompt, /grounding only/)
+  assert.match(prompt, /mid-transition and outcome/)
+  assert.match(prompt, /only previewId/)
+  assert.match(prompt, /Publish the finished explainer automatically/)
+  assert.match(prompt, /unless they explicitly requested a review step/)
+  assert.match(prompt, /do not rebuild/)
   assert.match(prompt, /140/)
   assert.match(prompt, /300/)
   assert.equal(buildExplainerSteeringPrompt(render).includes(preview), false)

@@ -4,7 +4,13 @@ import { readFile } from 'node:fs/promises'
 import { JSDOM, VirtualConsole } from 'jsdom'
 import { z } from 'zod'
 import { reviewSceneStory, worktreeSceneStory } from '../../../tests/fixtures/explainer-scenes.ts'
-import { createExplainerPreviews, buildExplainerHtml, prepareExplainer } from './explainer.ts'
+import { drawingStory } from '../../../tests/fixtures/explainer-drawing.ts'
+import {
+  createExplainerPreviews,
+  buildExplainerHtml,
+  prepareExplainer,
+  explainerPublishInput,
+} from './explainer.ts'
 
 const story = {
   project: 'Copse',
@@ -51,7 +57,8 @@ describe('thread explainer', () => {
   })
 
   it('keeps narration inert even with script terminators and replacement tokens', () => {
-    const caption = '</script><script>window.compromised=true</script> $& $`'
+    const caption =
+      '</script><script>window.compromised=true</script> $& $` __COPSE_EXPLAINER_DRAWING_RUNTIME__'
     const html = buildExplainerHtml(
       '<script type="application/json">__COPSE_EXPLAINER_STORY__</script>',
       {
@@ -62,6 +69,7 @@ describe('thread explainer', () => {
     assert.equal((html.match(/<script/g) ?? []).length, 1)
     assert.match(html, /\\u003c\/script>/)
     assert.match(html, /\$&/)
+    assert.match(html, /__COPSE_EXPLAINER_DRAWING_RUNTIME__/)
   })
 
   it('runs all nine styles and five mechanisms without script errors', async () => {
@@ -189,6 +197,53 @@ it('requires an exact preview and bounds retained previews', () => {
   assert.throws(() => {
     previews.assertReviewed(token, 'original')
   })
+})
+
+it('prepares original drawings without requiring preset objects or plots', () => {
+  const prepared = prepareExplainer(drawingStory)
+  assert.equal(prepared.version, 3)
+  assert.equal(prepared.drawing?.styleName, 'Reservoir cutaway')
+  assert.equal(prepared.beats.length, 4)
+  assert.equal(prepared.objects, undefined)
+  for (const value of [
+    { ...drawingStory, beats: undefined },
+    { ...drawingStory, objects: reviewSceneStory.objects },
+    { ...drawingStory, drawing: { ...drawingStory.drawing, code: 'x'.repeat(24_001) } },
+    {
+      ...drawingStory,
+      drawing: { ...drawingStory.drawing, background: 'url(https://example.com)' },
+    },
+    { ...drawingStory, beats: drawingStory.beats.map((b) => ({ ...b, caption: 'x'.repeat(141) })) },
+    { ...story, beats: drawingStory.beats },
+  ])
+    assert.throws(() => prepareExplainer(value))
+})
+
+it('keeps generated drawing code inert until the worker receives it', () => {
+  const code = '</script><script>window.compromised=true</script>'
+  const html = buildExplainerHtml(
+    '<script type="application/json">__COPSE_EXPLAINER_STORY__</script>',
+    {
+      ...drawingStory,
+      drawing: { ...drawingStory.drawing, code },
+    },
+  )
+  assert.equal((html.match(/<script/g) ?? []).length, 1)
+  assert.match(html, /\\u003c\/script>/)
+})
+
+it('publishes the retained preview without requiring the code again', () => {
+  const parsed = z
+    .object(explainerPublishInput)
+    .parse({ previewId: 'd28ecf32-93dd-44bb-a01c-9b5fbd73dd20' })
+  assert.deepEqual(Object.keys(parsed), ['previewId'])
+  const previews = createExplainerPreviews()
+  const story = prepareExplainer(drawingStory)
+  const id = previews.record('reviewed HTML', story)
+  assert.deepEqual(previews.get(id), { html: 'reviewed HTML', story })
+  assert.throws(() => previews.get(undefined))
+  for (let i = 0; i < 24; i++) previews.record(String(i), story)
+  assert.throws(() => previews.get(id))
 })
 
 it('preserves causal state across styles, replays and backwards seeks', async () => {

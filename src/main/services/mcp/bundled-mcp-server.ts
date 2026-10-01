@@ -3,6 +3,7 @@ import { captureExplainerPreview } from '../explainer-preview.ts'
 import {
   createExplainerPreviews,
   explainerInput,
+  explainerPublishInput,
   prepareExplainer,
   renderExplainerHtml,
 } from '../explainer.ts'
@@ -157,20 +158,22 @@ function buildCanvasServer(): { name: string; server: McpServer } {
     {
       title: 'Preview animated explanation',
       description:
-        'Build an explanation from persistent objects and 4–6 scenes. Each scene pairs a short caption (MAX 140 characters) with visible actions: copy, edit, apply, discard, merge, move, appear, connect or highlight. Returns actual rendered scene frames and a previewId; inspect them for factual meaning, overlap and readability before publishing with render_explainer. Style changes appearance without changing object state. Objects have IDs and positions on a 10–90 coordinate grid. Use separate scenes for dependent actions. Source note MAX 300 characters. No separate editor or extra key.',
+        'Preview an original animated explanation. Prefer beats plus drawing: invent the art direction and Canvas drawing function; Copse supplies the player, timings, title, captions, transcript and inline sizing. No HTML, files, browser tools or extra key. Returns one image strip per beat, with early movement, mid-transition and outcome frames, plus a previewId. Checks runtime, changing artwork and repeatable seeking. Inspect every strip for clarity, text collisions and factual meaning; revise and preview again when needed. Publish with render_explainer using only previewId. Existing objects/scenes and legacy stories remain supported.',
       inputSchema: explainerInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async (input) => {
+    async (input, extra) => {
       try {
         const html = await renderExplainerHtml(input)
-        const images = await captureExplainerPreview(html)
-        const previewId = previews.record(html)
+        const images = await captureExplainerPreview(html, extra.signal)
+        extra.signal.throwIfAborted()
+        const story = prepareExplainer(input)
+        const previewId = previews.record(html, story)
         return {
           content: [
             {
               type: 'text',
-              text: `Preview ID: ${previewId}. These are actual end-of-scene frames, in order. Inspect every frame: readable text, separated objects, unchanged originals after discard, independent copies, honest merge conflicts. If anything is wrong, revise and preview again. Otherwise publish this exact input with previewId using render_explainer. Nothing is embedded yet.`,
+              text: `Preview ID: ${previewId}. ${story.drawing ? 'Each image is one beat: early movement, mid-transition, then outcome from left to right. Runtime, changing artwork and repeatable seeking checks passed.' : 'These are actual end-of-scene frames, in order.'} Inspect every frame for readable labels, overlaps, continuity and factual meaning. Does the visible change prove the narration? If anything is wrong, revise and preview again. Otherwise call render_explainer with only this previewId; the exact reviewed artifact is retained. Nothing is embedded yet.`,
             },
             ...images.map((data) => ({ type: 'image' as const, data, mimeType: 'image/png' })),
           ],
@@ -186,20 +189,20 @@ function buildCanvasServer(): { name: string; server: McpServer } {
     {
       title: 'Create animated explanation',
       description:
-        'Publish a captioned animation directly in this conversation. For new explanations, compose objects and 4–6 scenes, call preview_explainer, inspect its scene frames, then pass the identical story here with previewId. Modified stories need a new preview. Captions MAX 140 characters, source MAX 300 characters. For follow-ups revise the scenes/style and preview again; earlier cards remain. Silent playback and transcript; no spoken voice or MP4 export. Legacy three-beat stories remain supported.',
-      inputSchema: {
-        ...explainerInput,
-        previewId: z.uuid().optional().describe('ID from preview_explainer for this exact story.'),
-      },
+        'Publish the exact reviewed animation inline in this conversation. Review the preview yourself and publish automatically; do not ask for user review or approval unless they explicitly requested that step. After inspecting preview_explainer images, send only previewId; do not repeat the drawing code. Changes require a new preview. Follow-ups create a revised card and retain earlier cards. Shared Play/Pause/Replay, seeking, captions, transcript and saved playback. Silent; no speech service or MP4 export. Complete story arguments remain accepted for compatibility, with a matching previewId for composed or custom drawings.',
+      inputSchema: explainerPublishInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (input) => {
       try {
-        const html = await renderExplainerHtml(input)
-        if (input.scenes) previews.assertReviewed(input.previewId, html)
-        const story = prepareExplainer(input)
+        const reviewed = Object.keys(input).every((key) => key === 'previewId')
+          ? previews.get(input.previewId)
+          : undefined
+        const story = reviewed?.story ?? prepareExplainer(input)
+        const html = reviewed?.html ?? (await renderExplainerHtml(input))
+        if (!reviewed && story.version !== 1) previews.assertReviewed(input.previewId, html)
         const slug =
-          input.title
+          story.title
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '') || 'explainer'
@@ -211,7 +214,7 @@ function buildCanvasServer(): { name: string; server: McpServer } {
             { type: 'resource', resource: { uri, mimeType: 'text/html', text: html } },
             {
               type: 'text',
-              text: `Created “${input.title}” as a playable, captioned explainer in the conversation. Narration: ${story.beats.map((beat) => beat.caption).join(' ')} Grounding: ${input.source}`,
+              text: `Created “${story.title}” as a playable, captioned explainer in the conversation. Narration: ${story.beats.map((beat) => beat.caption).join(' ')} Grounding: ${story.source}`,
             },
           ],
         }

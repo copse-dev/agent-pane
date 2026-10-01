@@ -5,69 +5,95 @@ conversation:
 
 > Explain how we find the code behind a question.
 
-The thread's selected model reads relevant project context, writes four to six short
-scenes, and chooses objects, actions and a visual style. It calls `preview_explainer`
-to inspect actual rendered frames, then `render_explainer` to publish that story. Copse
-embeds a playable animation in its assistant reply. No separate editor, storyboard
-form, hosting service, or additional provider key is involved.
+The thread's selected model reads relevant project context, writes three to six short
+narration beats, and invents an appropriate visual style and drawing. It calls
+`preview_explainer` to inspect actual rendered frames, then `render_explainer` with
+only the returned preview ID. Copse embeds the exact reviewed animation in its reply.
+No separate editor, storyboard form, hosting service, or additional provider key is
+involved.
 
-Ask “make it simpler”, “focus on the engineering details”, or “try paper” to revise
-it. Each render has a unique Canvas identity, so a new version preserves earlier
-cards. The player has play/pause, seeking, replay, and a written narration transcript.
-Playback starts on request and pauses when the document is hidden. Captions are
-complete without audio. Spoken narration and MP4 export are not part of this
-native increment.
+The agent performs the preview and quality review itself and publishes automatically.
+It asks the user to review a draft only when the user explicitly requests that step.
 
-## Visual vocabulary
+Ask “make it simpler”, “focus on the engineering details”, or “try another style” to
+revise it. Every render has a unique Canvas identity, preserving earlier cards. The
+shared player provides play/pause, seeking, replay, and a written narration transcript.
+Playback starts on request and pauses when the document is hidden. Narrow cards have
+an additional readable caption below the picture. Silent narration is the default;
+spoken narration and product MP4 export are outside this increment.
 
-The existing styles are paper desk, isometric mailroom, editorial comic, felt
-stop-motion, travel poster, kinetic print, miniature workshop, folded paper and
-signal lab. The model chooses an appropriate style independently of the actions;
-`auto` defaults composed scenes to paper. Signal lab requires an explicit choice.
+## Original drawings
 
-Objects persist between scenes. Copy reveals an independent file with the same
-contents; edit changes one file; apply moves a proposal into the saved file; discard
-removes only the proposal; merge shows a conflict if the illustrated values differ.
-Appear, move, connect and highlight support other explanations. Actions in one scene
-run together, so dependent actions require separate scenes. Labels and displayed
-values stay short; captions provide complete silent narration.
+The preferred input is `beats` plus `drawing`. The model supplies a style name,
+art direction, background and ink colours, and a Canvas drawing function body. It
+receives `ctx`, `frame` and `helpers`; Copse supplies the player and composition.
+The drawing area is 1280 × 480 inside a 1280 × 720 frame. Titles, captions and progress
+live outside the drawing area, so models need not implement these repeatedly.
 
-This is a bounded illustration vocabulary. Its merge action compares short displayed
-values, not real Git patches: the agent must ground the illustrated example and explain
-any simplification. A source note distinguishes verified behavior from a conceptual
-example. Existing three-beat stories and their five legacy mechanisms still render.
+`frame` provides absolute `time`, total `duration`, zero-based beat `index`, beat
+`progress`, `start`, `end`, `width` and `height`. Derive all state from these values
+so seeking produces the same picture in either direction. Standard Canvas methods
+are available, along with `helpers.text`, `rect`, `circle`, `line`, `clamp`, `ease`
+and `mix`; the tool schema documents their signatures. No DOM, Node, network assets,
+random values, clocks or asynchronous drawing are needed.
 
-## Integration
+Earlier paper, felt, print and miniature studies provide grounding for readable
+labels, recognisable objects and consequential motion. They do not restrict the
+model to named styles or templates. Source notes distinguish verified project
+behaviour from illustrative examples. Preview checks cannot establish factual
+correctness or comprehension; the model must inspect and revise its work.
 
-- The Canvas plugin owns the explainer turn-start guidance and the bundled MCP
-  server. Disabling it removes both from future work, while stored cards remain.
-- Guidance is executor-neutral and only names a tool actually offered this turn.
-  Explicit requests for text only abstain. Follow-ups use the existing conversation
-  and tool description rather than a broad “make it simpler” intent matcher.
-- The bundled tool validates bounded story data and renders a shipped, self-contained
-  HTML player. Model text is serialized into inert JSON and rendered as text.
-  No model-authored script runs, and no network assets are needed.
-- Preview renders the shipped player in an isolated Electron window and returns one
-  PNG per scene to the model. Publishing composed scenes requires a ten-minute token
-  for the exact previewed HTML. Changed stories must be previewed again. This enforces
-  preview generation; the model remains responsible for interpreting the frames.
+## Compatibility
+
+The older objects/scenes vocabulary still supports paper desk, isometric mailroom,
+editorial comic, felt stop-motion, travel poster, kinetic print, miniature workshop,
+folded paper and signal lab. Signal lab requires an explicit choice. Objects persist
+between scenes; copy, edit, apply, discard and merge demonstrate changes to short
+illustrative values. Its merge action is not a real Git merge. Existing three-beat
+legacy stories also remain playable. These paths are retained for saved cards and
+callers that already use them.
+
+## Integration and boundaries
+
+- The Canvas plugin owns turn-start guidance and the bundled MCP server. Disabling
+  it removes both from future work, while stored cards remain playable.
+- Guidance is executor-neutral and names only tools offered this turn. Explicit
+  requests for text only abstain. Revision requests use the conversation and tool
+  descriptions rather than a broad “make it simpler” intent matcher.
+- Story fields are bounded and serialized as inert JSON. Generated drawing code
+  runs in a dedicated worker with an OffscreenCanvas, separated from the player DOM
+  and Node. Each frame has a two-second watchdog; failure terminates the worker and
+  shows an unavailable state without freezing the chat.
+- Self-contained Canvas artefacts permit blob workers under their inherited CSP;
+  remote workers, external scripts and eval remain disallowed. The drawing player
+  additionally denies all connections. Preview uses the same secured data URL as
+  the inline player, an isolated in-memory session, and a network request deny rule.
+- Preview returns one strip per beat with early, middle and outcome frames. It
+  requires visible movement within at least one beat and checks repeatable seeking, but these are
+  smoke checks rather than a guarantee of animation quality. The whole preview has
+  a twenty-second timeout and responds to tool cancellation.
+- Publishing custom drawings or composed scenes requires a ten-minute token for the
+  exact previewed HTML. A bounded cache retains that HTML and narration so publishing
+  needs only `previewId`, avoiding another code-generation pass. Changed stories need
+  a fresh preview. This enforces preview generation, not the model's visual judgment.
 - Existing Canvas ownership, sandboxed webviews, previews and persistence are reused.
-  A per-run reference queue inserts the card at completion, once the reply has stopped
-  streaming. The ACP bridge explicitly rebinds that queue per turn.
-- The standalone Explainer Studio remains a development harness for the same visual
-  vocabulary. The end-user flow is the conversation.
+  Per-run references insert the card once the reply stops streaming; the ACP bridge
+  rebinds that queue per turn. Published cards do not depend on the preview cache.
 
 ## Validation
 
-Focused tests cover story bounds, escaping, narration timing, every style/mechanism
-combination, causal ordering, independent contents, conflict states, exact-preview
-matching, plugin disable behavior, tool availability, concurrent ownership and
-ACP bridge publication. `tests/e2e/thread-explainer.e2e.ts` drives the real Electron
-UI with a scripted model tool call, checks changed animation frames and visible
-controls, creates a second style, reloads the session, and saves a screenshot.
-`tests/e2e/thread-explainer-scenes.e2e.ts` additionally captures real preview images,
-publishes two composed stories, checks final file values, and verifies persistence.
+Unit tests cover story bounds, inert serialization, narration timing, legacy
+styles/mechanisms, causal ordering, preview matching, preview-only publication,
+cancellation forwarding, plugin disable behaviour, tool availability, concurrent
+ownership and ACP publication.
 
-Scripted model calls prove integration. They do not establish how reliably a live
-model grounds narration, chooses a style or follows revision requests; that needs
-separate live-model evaluation before promoting this experimental feature.
+The Electron specs `thread-explainer.e2e.ts` and `thread-explainer-scenes.e2e.ts`
+cover existing playback, values, revisions and persistence.
+`thread-explainer-drawing.e2e.ts` covers the shared player with original drawings,
+preview strips, syntax/timeout/static/random failures, isolation, deterministic
+seeking, narrow layout, revisions and reload, and saves native screenshots.
+
+Scripted calls establish integration, not live-model quality. Use separate real-ACP
+runs with ordinary prompts, unrelated project fixtures and a follow-up revision to
+assess grounding, visual clarity, style choice and generation latency before
+promoting this experimental feature beyond a limited alpha.
