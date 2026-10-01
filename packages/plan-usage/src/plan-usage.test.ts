@@ -478,6 +478,34 @@ describe('fetchClaudePlanUsageFromCandidates', () => {
 })
 
 describe('fetchCodexPlanUsage', () => {
+  it('parses model_usage availability and the chatpass pool', async () => {
+    const result = await fetchCodexPlanUsage(
+      { accessToken: 'tok' },
+      {
+        fetch: jsonFetch({
+          plan_type: 'pro',
+          rate_limit: { primary_window: { used_percent: 100, limit_window_seconds: 604_800 } },
+          model_usage: {
+            'GPT-6-Astra': { available: true },
+            'gpt-6-luna': { available: false },
+            broken: { available: 'yes' },
+          },
+          chatpass: { windows: [{ used_percent: 0, limit_window_seconds: 604_800 }] },
+        }),
+        now: () => 1_783_000_000_000,
+      },
+    )
+    assert.equal(result.status, 'ok')
+    assert.deepEqual(result.usage.modelAvailability, { 'gpt-6-astra': true, 'gpt-6-luna': false })
+    assert.deepEqual(
+      result.usage.windows.map((w) => [w.id, w.usedPercent]),
+      [
+        ['primary', 100],
+        ['chatpass_0', 0],
+      ],
+    )
+  })
+
   it('parses primary/secondary windows and plan_type', async () => {
     const result = await fetchCodexPlanUsage(
       { accessToken: 'tok', accountId: 'acct' },
