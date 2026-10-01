@@ -6,6 +6,7 @@ import {
   bellIcon,
   chevronRightIcon,
   closeIcon,
+  gitMergeIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
   plusIcon,
@@ -134,7 +135,7 @@ function runningStatus(label: string): SVGSVGElement {
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
 function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
   const label = describeThreadPrStatus(rollup)
-  const icon = gitPullRequestIcon('ui-icon ui-icon-sm')
+  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
