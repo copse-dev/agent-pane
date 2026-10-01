@@ -1,4 +1,3 @@
-import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
@@ -6,7 +5,6 @@ import {
   bellIcon,
   chevronRightIcon,
   closeIcon,
-  gitPullRequestIcon,
   moreHorizontalIcon,
   plusIcon,
   runningStatusIcon,
@@ -15,51 +13,30 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { OrphanProjectStore, Project, ProjectGroup } from '@shared/types'
-import {
-  archiveThread,
-  deleteThread,
-  openNewThread,
-  setThreadTitle,
-} from '@shared/store/thread-helpers.ts'
-import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
-import {
-  describeThreadPrStatus,
-  normalizePrLifecycleState,
-  summarizeThreadPrStatus,
-  type PrLifecycleState,
-  type ThreadPrRollup,
-} from '@shared/git/thread-pr-status.ts'
+import type { Project, ProjectGroup } from '@shared/types'
+import { openNewThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import {
   addProject,
   addRemoteProject,
   createNewProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
-  dismissOrphanProject,
-  listOrphanProjects,
   paginateSidebarThreads,
   projectDisplayName,
-  removeProject,
-  recoverOrphanProject,
-  relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
-import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
-import { ipcErrorMessage } from '../ipc-error-message.ts'
-import { showConfirmDialog } from './confirm-dialog.ts'
-import { showErrorToast, showToast } from './toast.ts'
-import { forkThread } from '../controller/fork-thread.ts'
+import { openAutomationDialog } from './automation-dialog.ts'
+import { showErrorToast } from './toast.ts'
 import {
   createThreadFilter,
   filterText,
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
-import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
+import type { SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
@@ -86,9 +63,20 @@ import {
   type DropIntent,
   type SidebarDragPayload,
 } from './projects-drag.ts'
-
-/** Re-fetch PR lifecycle when a cache entry is older than this. */
-const PR_STATUS_CACHE_TTL_MS = 60_000
+import {
+  chatPrStatus,
+  createPrBackfill,
+  createPrStatusTracker,
+  type PrBackfillRow,
+} from './thread-pr-chips.ts'
+import { createRecoverableThreads, renderMissingNotice } from './recoverable-threads.ts'
+import {
+  automationMenuEntries,
+  deleteProjectThread,
+  projectMenuEntries,
+  showProjectMenu,
+  threadMenuEntries,
+} from './sidebar-actions.ts'
 
 const ICON_SIZE = '16'
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -129,23 +117,6 @@ function runningStatus(label: string): SVGSVGElement {
   svg.setAttribute('data-tooltip', label)
   svg.removeAttribute('aria-hidden')
   return svg
-}
-
-/** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
-  const label = describeThreadPrStatus(rollup)
-  const icon = gitPullRequestIcon('ui-icon ui-icon-sm')
-  icon.setAttribute('aria-hidden', 'true')
-  return el(
-    'span',
-    {
-      class: `chat-pr-status is-${rollup.kind}`,
-      role: 'img',
-      'aria-label': label,
-      'data-tooltip': label,
-    },
-    icon,
-  )
 }
 
 function settingsIcon(className = 'titlebar-btn-icon'): SVGSVGElement {
@@ -190,64 +161,6 @@ function automationSetupBtn(
     open()
   })
   return btn
-}
-
-/** One schedule's run/setup actions, addressed the way the sidebar groups are. */
-interface AutomationMenuTarget {
-  project: Project
-  scheduleName: string
-  scheduleId: string
-}
-
-/**
- * Fire a schedule immediately through the same IPC the editor's Run-now
- * button uses. The outcome surfaces as a toast: this runs from a menu that
- * has already closed, so unlike the editor there is no inline status element
- * to write into. A coalesced run says why, as the editor's status line does.
- */
-function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
-  void api.automations
-    .runNow(target.project.id, target.scheduleId)
-    .then((event) => {
-      showToast(
-        event.disposition === 'started'
-          ? `Started “${target.scheduleName}”.`
-          : event.coalescedReason === 'worktree-limit'
-            ? `“${target.scheduleName}” has reached its live worktree limit.`
-            : `“${target.scheduleName}” is already pending or running.`,
-      )
-    })
-    .catch((error: unknown) => {
-      showErrorToast(
-        `Could not run “${target.scheduleName}”`,
-        ipcErrorMessage(error, 'The run could not start'),
-      )
-    })
-}
-
-/**
- * One schedule's shared right-click actions, rendered on the sidebar's
- * schedule headings. "Run now" is the editor's Run-now button, reached
- * without opening the dialog.
- */
-function automationMenuEntries(
-  api: ApiClient,
-  target: AutomationMenuTarget,
-  openSetup: () => void,
-): ContextMenuEntry[] {
-  return [
-    { heading: target.scheduleName },
-    {
-      label: 'Run now',
-      onSelect: (): void => {
-        startRunNow(api, target)
-      },
-    },
-    {
-      label: 'Automation setup…',
-      onSelect: openSetup,
-    },
-  ]
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -443,11 +356,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
-  const prBackfillRequested = new Map<string, Set<string>>()
-  const prBackfillRetryAttempts = new Map<string, number>()
-  const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
-  let prBackfillRowsByKey = new Map<string, Element>()
-  let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
   // every schedule regardless of which project it belongs to. Expansion is
@@ -457,12 +365,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // open on their own when the active thread is one of theirs).
   let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
-  let orphans: OrphanProjectStore[] = []
-  // Project selection and expansion also emit `projects_changed`, but only a
-  // change to the project ids can alter which thread stores are orphaned.
-  let knownProjectIds = new Set(store.getState().projects.map((project) => project.id))
-  let orphanScanGeneration = 0
-
   // Inline rename state survives `render()` (which rebuilds the chat list).
   let renaming: { threadId: string; draft: string } | null = null
   // Same, for a group header being renamed inline.
@@ -478,12 +380,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    */
   let activeDrag: SidebarDragPayload | null = null
 
-  // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
-  // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
-  // revalidation runs, and lifecycle changes re-render without blocking first paint.
-  const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
-  const prFetchInFlight = new Set<string>()
-  let prStatusGeneration = 0
+  const prStatus = createPrStatusTracker(api, () => {
+    render()
+  })
+  const prBackfill = createPrBackfill(api)
+  const recoverable = createRecoverableThreads(store, api, () => {
+    render()
+  })
 
   function beginThreadRename(threadId: string, currentTitle: string): void {
     renaming = { threadId, draft: currentTitle || 'New Thread' }
@@ -506,275 +409,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     } else {
       render()
     }
-  }
-
-  /**
-   * Branch the whole conversation into a new thread. Only the active project's
-   * threads are in memory (and only its store dir is the fork IPC's subject), so
-   * a background project's row switches to it first.
-   */
-  function forkProjectThread(projectId: string, threadId: string): void {
-    if (projectId !== store.getState().activeProjectId) return
-    void forkThread(store, api, threadId).then((result) => {
-      if (!result) {
-        showToast('That thread has no messages to fork.', { variant: 'error' })
-        return
-      }
-      showToast('Forked into a new thread.')
-    })
-  }
-
-  function archiveProjectThread(projectId: string, threadId: string): void {
-    // Only the active project's in-memory thread list is mutable here; other
-    // projects' rows are cache-backed until switched.
-    if (projectId !== store.getState().activeProjectId) return
-    archiveThread(store, threadId)
-  }
-
-  function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
-    return prLifecycleCache.get(key)?.state
-  }
-
-  function hasFreshPrLifecycle(key: string): boolean {
-    const entry = prLifecycleCache.get(key)
-    return entry !== undefined && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS
-  }
-
-  function ensurePrLifecycles(refs: GithubPrRef[]): void {
-    const stale = refs.filter((ref) => {
-      const key = githubPrKey(ref)
-      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key)
-    })
-    if (stale.length === 0) return
-    const generation = prStatusGeneration
-    for (const ref of stale) {
-      const key = githubPrKey(ref)
-      let lifecycleChanged = false
-      prFetchInFlight.add(key)
-      void api.gh
-        .prDetails(ref.owner, ref.repo, ref.number)
-        .then((details) => {
-          if (generation !== prStatusGeneration) return
-          const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
-          lifecycleChanged = prLifecycleCache.get(key)?.state !== state
-          prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
-        })
-        .catch(() => {
-          if (generation !== prStatusGeneration) return
-          const cached = prLifecycleCache.get(key)
-          prLifecycleCache.set(key, {
-            state: cached?.state ?? 'unknown',
-            fetchedAt: Date.now(),
-          })
-        })
-        .finally(() => {
-          if (generation !== prStatusGeneration) return
-          prFetchInFlight.delete(key)
-          if (lifecycleChanged) render()
-        })
-    }
-  }
-
-  function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
-    const refs = sidebarPrRefs(thread)
-    if (refs.length === 0) return null
-    ensurePrLifecycles(refs)
-    const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
-    return summarizeThreadPrStatus(states, refs)
-  }
-
-  // The quarantine notice shown when a project's folder could not be opened
-  // (#997). Its threads are still on disk under ~/.copse/workspace/<id>/; the
-  // action re-points the project at a folder (local) or retries the open (SSH).
-  function renderMissingNotice(project: Project): HTMLElement {
-    const wrap = el('div', { class: 'project-missing-notice' })
-    wrap.append(
-      el(
-        'div',
-        { class: 'project-missing-text' },
-        'This folder could not be opened. Its threads are safe — ' +
-          (project.sshHost
-            ? 'retry once the host is reachable.'
-            : 'relocate the project to restore them.'),
-      ),
-    )
-    const action = project.sshHost
-      ? el('button', { type: 'button', class: 'project-missing-btn' }, 'Retry')
-      : el('button', { type: 'button', class: 'project-missing-btn' }, 'Relocate…')
-    action.addEventListener('click', () => {
-      if (project.sshHost) {
-        switchProject(store, api, project.id)
-        return
-      }
-      void relocateProject(store, api, project.id).catch((err: unknown) => {
-        showErrorToast('Could not relocate project', err)
-      })
-    })
-    wrap.append(action)
-    return wrap
-  }
-
-  // Orphaned thread stores (dirs with threads but no project entry) surfaced so
-  // they can be re-attached instead of recovered by hand (#997).
-  function orphanPrimaryLabel(orphan: OrphanProjectStore): string {
-    const lead = orphan.sampleTitles[0]?.trim()
-    if (lead) return lead
-    const count = orphan.threadCount
-    return `${String(count)} thread${count === 1 ? '' : 's'}`
-  }
-
-  function orphanSubtitle(orphan: OrphanProjectStore): string {
-    const count = orphan.threadCount
-    const countLabel = `${String(count)} thread${count === 1 ? '' : 's'}`
-    const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0)
-    if (extra.length === 0) return countLabel
-    const shown = extra.slice(0, 2).join(' · ')
-    const more =
-      orphan.threadCount > orphan.sampleTitles.length
-        ? ` · +${String(orphan.threadCount - orphan.sampleTitles.length)} more`
-        : ''
-    return `${countLabel} · ${shown}${more}`
-  }
-
-  function orphanRecoverDetail(orphan: OrphanProjectStore): string {
-    const lines: string[] = [
-      'Choose the folder this conversation belonged to. Copse will attach the saved threads to that project.',
-    ]
-    if (orphan.sampleTitles.length > 0) {
-      lines.push('')
-      lines.push('Threads in this store:')
-      for (const title of orphan.sampleTitles) {
-        lines.push(`• ${title}`)
-      }
-      if (orphan.threadCount > orphan.sampleTitles.length) {
-        lines.push(`• …and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`)
-      }
-    } else {
-      lines.push('')
-      lines.push(
-        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? '' : 's'}.`,
-      )
-    }
-    lines.push('')
-    lines.push(`Store id: ${orphan.id}`)
-    return lines.join('\n')
-  }
-
-  function renderOrphansSection(): HTMLElement {
-    const section = el('div', { class: 'orphans-section' })
-    section.append(
-      el(
-        'div',
-        { class: 'orphans-heading' },
-        warningIcon('ui-icon ui-icon-sm'),
-        el('span', {}, 'Recoverable threads'),
-      ),
-      el(
-        'p',
-        { class: 'orphans-hint' },
-        'Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk).',
-      ),
-    )
-    for (const orphan of orphans) {
-      const primary = orphanPrimaryLabel(orphan)
-      const subtitle = orphanSubtitle(orphan)
-      const row = el(
-        'div',
-        {
-          class: 'orphan-row',
-          title: `Store ${orphan.id}`,
-          'data-orphan-id': orphan.id,
-        },
-        el(
-          'div',
-          { class: 'orphan-copy' },
-          el('span', { class: 'orphan-name' }, primary),
-          el('span', { class: 'orphan-meta' }, subtitle),
-        ),
-      )
-      const actions = el('div', { class: 'orphan-actions' })
-      const dismissBtn = el(
-        'button',
-        { type: 'button', class: 'orphan-dismiss-btn', title: 'Hide this store from the list' },
-        'Dismiss',
-      )
-      dismissBtn.addEventListener('click', () => {
-        void dismissOrphanProject(api, orphan.id)
-          .then(() => {
-            orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            render()
-            showToast('Recoverable threads hidden. They remain on disk.')
-          })
-          .catch((err: unknown) => {
-            showErrorToast('Could not dismiss recoverable threads', err)
-          })
-      })
-      const recoverBtn = el('button', { type: 'button', class: 'orphan-recover-btn' }, 'Recover…')
-      recoverBtn.addEventListener('click', () => {
-        void recoverOrphanProject(store, api, orphan.id, () =>
-          showConfirmDialog({
-            message: `Recover “${primary}”?`,
-            detail: orphanRecoverDetail(orphan),
-            confirmLabel: 'Choose folder…',
-            cancelLabel: 'Cancel',
-          }),
-        )
-          .then((recovered) => {
-            if (!recovered) return
-            orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            render()
-          })
-          .catch((err: unknown) => {
-            showErrorToast('Could not recover threads', err)
-          })
-      })
-      actions.append(dismissBtn, recoverBtn)
-      row.append(actions)
-      section.append(row)
-    }
-    return section
-  }
-
-  function refreshOrphansIfProjectSetChanged(): void {
-    const nextIds = new Set(store.getState().projects.map((project) => project.id))
-    if (
-      nextIds.size === knownProjectIds.size &&
-      [...nextIds].every((id) => knownProjectIds.has(id))
-    ) {
-      return
-    }
-    knownProjectIds = nextIds
-    refreshOrphans()
-  }
-
-  function refreshOrphans(): void {
-    const generation = ++orphanScanGeneration
-    void listOrphanProjects(api)
-      .then((scanned) => {
-        if (generation !== orphanScanGeneration) return
-        // Recovery can emit before its new project id reaches main-process
-        // config. Exclude ids already known to the renderer from that stale scan.
-        const known = new Set(store.getState().projects.map((project) => project.id))
-        const next = scanned.filter((orphan) => !known.has(orphan.id))
-        const changed =
-          next.length !== orphans.length ||
-          next.some((o, i) => {
-            const prev = orphans[i]
-            return (
-              !prev ||
-              o.id !== prev.id ||
-              o.threadCount !== prev.threadCount ||
-              o.updatedAt !== prev.updatedAt ||
-              o.sampleTitles.join('\0') !== prev.sampleTitles.join('\0')
-            )
-          })
-        orphans = next
-        if (changed) render()
-      })
-      .catch((err: unknown) => {
-        if (generation !== orphanScanGeneration) return
-        showErrorToast('Could not scan recoverable threads', err)
-      })
   }
 
   const DROP_CLASSES = ['drop-before', 'drop-after', 'drop-into'] as const
@@ -1049,15 +683,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(): void {
-    prBackfillObserver?.disconnect()
-    prBackfillObserver = null
     clear(list)
-    const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
+    const prBackfillRows: PrBackfillRow[] = []
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
 
-    if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
+    if (projects.length === 0 && projectGroups.length === 0 && recoverable.count === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
       return
     }
@@ -1078,7 +710,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
       const canMutate = project.id === activeProjectId
       const allowRename = (options.allowRename ?? true) && canMutate
-      const scheduleId = thread.automation?.scheduleId
       const renameState =
         allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null
       let title: HTMLElement
@@ -1136,60 +767,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       chatRow.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showContextMenu(e.clientX, e.clientY, [
-          ...(canMutate
-            ? [
-                ...(allowRename
-                  ? [
-                      {
-                        label: 'Rename',
-                        onSelect: (): void => {
-                          beginThreadRename(thread.id, displayTitle)
-                        },
-                      },
-                    ]
-                  : []),
-                {
-                  label: 'Fork',
-                  onSelect: (): void => {
-                    forkProjectThread(project.id, thread.id)
-                  },
-                },
-                {
-                  label: 'Archive',
-                  onSelect: (): void => {
-                    archiveProjectThread(project.id, thread.id)
-                  },
-                },
-              ]
-            : []),
-          // A schedule with a single run has no heading of its own, and a
-          // historical run is several rows below the one that does, so every
-          // automation row carries the way out to its setup. Opens directly
-          // against this run's own project — same as the project menu's
-          // "Automations" entry — rather than switching the active project
-          // just to reach the editor.
-          ...(scheduleId
-            ? [
-                {
-                  label: 'Run now',
-                  onSelect: (): void => {
-                    startRunNow(api, {
-                      project,
-                      scheduleName: thread.automation?.scheduleName ?? thread.title,
-                      scheduleId,
-                    })
-                  },
-                },
-                {
-                  label: 'Automation setup…',
-                  onSelect: (): void => {
-                    openAutomationDialog(store, api, { projectId: project.id, scheduleId })
-                  },
-                },
-              ]
-            : []),
-        ])
+        showContextMenu(
+          e.clientX,
+          e.clientY,
+          threadMenuEntries(store, api, {
+            project,
+            thread,
+            allowRename,
+            onRename: () => {
+              beginThreadRename(thread.id, displayTitle)
+            },
+          }),
+        )
       })
 
       if (thread.status === 'running') {
@@ -1212,7 +801,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chatRow.append(attentionBell('This thread needs your attention'))
       }
 
-      const prRollup = rollupForThread(thread)
+      const prRollup = prStatus.rollup(thread)
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(chatPrStatus(prRollup))
@@ -1230,10 +819,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         )
         del.addEventListener('click', (e) => {
           e.stopPropagation()
-          if (getSidebarThreads(store, project.id).length > 1) {
-            void api.agent.clearHistory(project.id, thread.id)
-            deleteThread(store, thread.id)
-          }
+          deleteProjectThread(store, api, project.id, thread.id)
         })
         chatRow.append(del)
       }
@@ -1517,19 +1103,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
         switchProject(store, api, project.id)
       })
-      const projectMenuEntries: ContextMenuEntry[] = [
-        {
-          label: 'Remove from sidebar',
-          onSelect: (): void => {
-            void removeProject(store, api, project.id)
-          },
-        },
+      const projectEntries: ContextMenuEntry[] = [
+        ...projectMenuEntries(store, api, project),
         ...groupMenuEntries(project, projectGroups),
       ]
       projectRow.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showContextMenu(e.clientX, e.clientY, projectMenuEntries)
+        showContextMenu(e.clientX, e.clientY, projectEntries)
       })
       const menuButton = el(
         'button',
@@ -1544,73 +1125,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
       menuButton.addEventListener('click', () => {
         menuButton.disabled = true
-        const state = store.getState()
-        void Promise.all([
-          api.plugins.list(),
-          api.appRun
-            .detect({
-              projectId: project.id,
-              ...(state.activeProjectId === project.id && state.activeThreadId
-                ? { threadId: state.activeThreadId }
-                : {}),
-            })
-            .catch(() => false),
-        ])
-          .then(([result, appDetected]) => {
-            if (!menuButton.isConnected) return
-            const rect = menuButton.getBoundingClientRect()
-            const entries: ContextMenuEntry[] = []
-            if (appDetected) {
-              entries.push({
-                label: 'Run app…',
-                onSelect: (): void => {
-                  if (store.getState().activeProjectId === project.id) {
-                    openAppRunDialog(store, api, project.id)
-                    return
-                  }
-                  const unsubscribe = store.on('workspace_changed', () => {
-                    if (store.getState().activeProjectId === project.id) {
-                      unsubscribe()
-                      openAppRunDialog(store, api, project.id)
-                    } else if (!isProjectSwitchInFlight(store, project.id)) {
-                      unsubscribe()
-                    }
-                  })
-                  switchProject(store, api, project.id)
-                },
-              })
-            }
-            if (result.plugins.some(hasAutomationDialog)) {
-              entries.push(
-                {
-                  label: 'Automations',
-                  onSelect: (): void => {
-                    openAutomationDialog(store, api, { projectId: project.id })
-                  },
-                },
-                {
-                  label: 'New automation…',
-                  disabled: project.missing === true,
-                  onSelect: (): void => {
-                    openAutomationDialog(store, api, { projectId: project.id, createNew: true })
-                  },
-                },
-              )
-            }
-            showContextMenu(rect.left, rect.bottom, [...entries, ...projectMenuEntries])
-          })
-          .catch((error: unknown) => {
-            showErrorToast('Could not load project menu', error)
-          })
-          .finally(() => {
-            menuButton.disabled = false
-          })
+        void showProjectMenu(store, api, project, menuButton, projectEntries).finally(() => {
+          menuButton.disabled = false
+        })
       })
       const projectLine = el('div', { class: 'project-line' }, projectRow, menuButton)
       entry.append(projectLine)
 
       if (isExpanded && project.missing) {
-        entry.append(renderMissingNotice(project))
+        entry.append(renderMissingNotice(store, api, project))
         return entry
       }
 
@@ -1765,71 +1288,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       else list.append(renderProjectEntry(node.project))
     }
 
-    if (orphans.length > 0) list.append(renderOrphansSection())
+    const recoverableSection = recoverable.section()
+    if (recoverableSection) list.append(recoverableSection)
 
-    prBackfillRowsByKey = new Map(
-      prBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
-    )
-    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
-      const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
-        prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
-      )
-      const observer = new IntersectionObserver((entries) => {
-        if (prBackfillObserver !== observer) return
-        const pending = new Map<string, Array<{ threadId: string; row: Element }>>()
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          observer.unobserve(entry.target)
-          const thread = rowThreads.get(entry.target)
-          if (!thread) continue
-          const requested = prBackfillRequested.get(thread.projectId) ?? new Set<string>()
-          prBackfillRequested.set(thread.projectId, requested)
-          if (requested.has(thread.threadId)) continue
-          requested.add(thread.threadId)
-          const rows = pending.get(thread.projectId) ?? []
-          rows.push({ threadId: thread.threadId, row: entry.target })
-          pending.set(thread.projectId, rows)
-        }
-        for (const [projectId, rows] of pending) {
-          const requested = prBackfillRequested.get(projectId)
-          for (let i = 0; i < rows.length; i += 10) {
-            const batch = rows.slice(i, i + 10)
-            const threadIds = batch.map(({ threadId }) => threadId)
-            void api.threads
-              .backfillPrRefs(projectId, threadIds)
-              .then(() => {
-                for (const threadId of threadIds) {
-                  prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`)
-                }
-              })
-              .catch((err: unknown) => {
-                let attempt = 1
-                for (const threadId of threadIds) {
-                  const key = `${projectId}\0${threadId}`
-                  const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1
-                  prBackfillRetryAttempts.set(key, nextAttempt)
-                  attempt = Math.max(attempt, nextAttempt)
-                }
-                const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
-                const timer = setTimeout(() => {
-                  prBackfillRetryTimers.delete(timer)
-                  for (const { threadId } of batch) requested?.delete(threadId)
-                  const currentObserver = prBackfillObserver
-                  if (!currentObserver) return
-                  for (const { threadId } of batch) {
-                    const row = prBackfillRowsByKey.get(`${projectId}\0${threadId}`)
-                    if (row?.isConnected) currentObserver.observe(row)
-                  }
-                }, delay)
-                prBackfillRetryTimers.add(timer)
-                console.warn('[threads] visible PR-ref backfill failed:', err)
-              })
-          }
-        }
-      })
-      prBackfillObserver = observer
-      for (const { row } of prBackfillRows) observer.observe(row)
-    }
+    prBackfill.observe(prBackfillRows)
   }
 
   const unsubs = [
@@ -1847,29 +1309,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       else if (threadFilter) contentFilter.search(threadFilter)
       // Drop cached PR lifecycles when the workspace changes so we don't paint
       // another project's GitHub state onto the new sidebar.
-      prStatusGeneration += 1
-      prLifecycleCache.clear()
-      prFetchInFlight.clear()
+      prStatus.reset()
       render()
     }),
     store.on('attention_changed', render),
     store.on('attention_changed', syncActivityButton),
-    // Switches emit `projects_changed` twice; neither changes which stores are
-    // orphaned. Re-scan only when a project is added, removed, or recovered.
-    store.on('projects_changed', refreshOrphansIfProjectSetChanged),
   ]
 
   render()
-  refreshOrphans()
   return () => {
     contentFilter.cancel()
-    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
-    prBackfillRetryTimers.clear()
-    prBackfillObserver?.disconnect()
-    prBackfillObserver = null
-    prBackfillRowsByKey.clear()
-    prStatusGeneration += 1
-    orphanScanGeneration += 1
+    prBackfill.dispose()
+    prStatus.reset()
+    recoverable.dispose()
     dismissContextMenu()
     renaming = null
     renamingGroup = null

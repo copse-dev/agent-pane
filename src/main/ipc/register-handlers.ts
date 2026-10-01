@@ -2681,9 +2681,12 @@ export function registerAllHandlers(
       z.tuple([zProjectId, zThreadId, z.boolean().optional()]),
       rawArgs,
     )
+    // Inspect-only reads come from the thread browser, which checks every
+    // listed thread. Arming a watcher for each would evict the watch-only
+    // roots the Changes pane relies on and feed the 5s reconcile heartbeat
+    // back into another full sweep, so these reads stay unwatched.
     if (inspectOnly) {
       const { root } = await inspectThreadExecutionContext(projectId, threadId)
-      ensureWorkingTreeWatched(root)
       return getGitStatus(root)
     }
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))

@@ -6,7 +6,7 @@ export interface LayoutState {
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
-  projectsPaneWidth: 354,
+  projectsPaneWidth: 300,
   filesPaneWidth: 480,
   filesPaneHeight: 360,
   fileTreeWidth: 200,

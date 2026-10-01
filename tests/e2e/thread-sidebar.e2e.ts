@@ -174,7 +174,7 @@ describe('default thread sidebar with real Git status', function () {
     ).toBeDisplayed()
     await expect($('.thread-browser-columns')).not.toBeExisting()
     const paneWidth = await $('.thread-browser').getSize('width')
-    assert.equal(paneWidth, 354)
+    assert.equal(paneWidth, 300)
     await assertTextAlignment()
     await saveAppScreenshot('thread-sidebar-activity-dark.png')
     await $('.thread-work-filter').click()
@@ -243,5 +243,54 @@ describe('default thread sidebar with real Git status', function () {
       'data-thread-id',
       'sidebar-dirty-thread',
     )
+  })
+
+  it('manages threads, projects and automations without opening Projects', async () => {
+    const menuLabels = async (): Promise<string[]> =>
+      browser.execute(() =>
+        Array.from(document.querySelectorAll('.context-menu-item'), (item) => item.textContent),
+      )
+    await $('[aria-label="Find threads"]').setValue('')
+    await $('[aria-label="Filter by project"]').selectByAttribute('value', '')
+
+    const dirtyRow = $('.thread-browser [data-thread-id="sidebar-dirty-thread"]')
+    await dirtyRow.click({ button: 'right' })
+    await $('.context-menu').waitForDisplayed()
+    assert.deepEqual(await menuLabels(), ['Rename', 'Fork', 'Archive', 'Delete'])
+    await saveAppScreenshot('thread-sidebar-row-menu.png')
+    await $('.context-menu-item=Rename').click()
+    const rename = $('.thread-browser .chat-title-rename')
+    await expect(rename).toBeFocused()
+    await rename.setValue('Renamed from the sidebar')
+    await browser.keys('Enter')
+    await expect(dirtyRow.$('.chat-title')).toHaveText('Renamed from the sidebar')
+
+    await $('.thread-browser [data-thread-id="sidebar-earlier-thread"]').click({ button: 'right' })
+    await $('.context-menu').waitForDisplayed()
+    assert.deepEqual(await menuLabels(), ['Open thread'])
+    await browser.keys('Escape')
+
+    await $('.thread-browser-more').click()
+    await $('.context-menu').waitForDisplayed()
+    const moreLabels = await menuLabels()
+    for (const label of ['New project', 'Open folder', 'New automation…', 'Activity'])
+      assert.ok(moreLabels.includes(label), `More menu offers ${label}`)
+    await browser.keys('Escape')
+
+    await expect($('.thread-browser-project-menu')).not.toBeDisplayed()
+    await $('[aria-label="Filter by project"]').selectByAttribute('value', 'sidebar-dirty')
+    await expect($('.thread-browser-project-menu')).toHaveAttribute(
+      'aria-label',
+      'Project menu for Uncommitted project',
+    )
+    await $('.thread-browser-project-menu').click()
+    await $('.context-menu').waitForDisplayed()
+    assert.ok((await menuLabels()).includes('Remove from sidebar'))
+    await saveAppScreenshot('thread-sidebar-project-menu.png')
+    await browser.keys('Escape')
+
+    await dirtyRow.click({ button: 'right' })
+    await $('.context-menu-item=Archive').click()
+    await expect(dirtyRow).not.toBeExisting()
   })
 })

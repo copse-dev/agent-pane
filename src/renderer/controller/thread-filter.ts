@@ -1,6 +1,6 @@
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import type { Message, Thread } from '@shared/types'
+import type { Message } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 /**
@@ -64,10 +64,26 @@ interface PromptIndexEntry {
    * saved change to a thread (a new request, an edit, a truncation) moves
    * `updatedAt`, which is what invalidates the entry.
    */
-  updatedAt: number
+  updatedAt: number | undefined
   lastPromptAt: number | undefined
   prompts: string[]
   size: number
+}
+
+/** The thread fields a request scan reads; live threads and sidebar metadata both fit. */
+export interface FilterableThread {
+  readonly id: string
+  readonly title: string
+  readonly updatedAt?: number
+  readonly lastPromptAt?: number
+  readonly archivedAt?: number
+  readonly messages?: readonly Message[]
+  readonly messagesLoaded?: boolean
+}
+
+export interface FilterCandidate {
+  readonly projectId: string
+  readonly thread: FilterableThread
 }
 
 /**
@@ -79,6 +95,12 @@ export function createThreadFilter(
   store: AppStore,
   api: ApiClient,
   changed: () => void,
+  /**
+   * Threads to scan, newest first. Omitted, the active project's threads are
+   * scanned and a project switch abandons the scan; the thread browser passes
+   * every listed project instead.
+   */
+  candidates?: () => readonly FilterCandidate[],
 ): ThreadFilter {
   const matches = new Set<string>()
   const promptIndex = new Map<string, PromptIndexEntry>()
@@ -107,7 +129,7 @@ export function createThreadFilter(
     }
   }
 
-  const savedPrompts = async (projectId: string, thread: Thread): Promise<string[]> => {
+  const savedPrompts = async (projectId: string, thread: FilterableThread): Promise<string[]> => {
     const key = `${projectId}/${thread.id}`
     const cached = promptIndex.get(key)
     if (
@@ -151,15 +173,23 @@ export function createThreadFilter(
     cancel()
     const query = filterText(rawQuery)
     const { activeProjectId, threads } = store.getState()
-    if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return
+    if (query.length < MIN_REQUEST_QUERY_LENGTH) return
+    if (!candidates && !activeProjectId) return
     const current = generation
     const isCurrent = (): boolean =>
-      current === generation && store.getState().activeProjectId === activeProjectId
-    const candidates = sortThreadsNewestFirst(threads).filter(
-      (thread) =>
+      current === generation &&
+      (candidates !== undefined || store.getState().activeProjectId === activeProjectId)
+    const scanned: readonly FilterCandidate[] =
+      candidates?.() ??
+      sortThreadsNewestFirst(threads).map((thread) => ({
+        projectId: activeProjectId ?? '',
+        thread,
+      }))
+    const pendingScan = scanned.filter(
+      ({ thread }) =>
         thread.archivedAt == null && !filterText(thread.title || 'New Thread').includes(query),
     )
-    if (candidates.length === 0) return
+    if (pendingScan.length === 0) return
     waiting = true
     // Keep the initial title filter immediate and avoid disk reads during typing.
     timer = setTimeout(() => {
@@ -170,16 +200,15 @@ export function createThreadFilter(
       // Chaining prevents rapid query changes from piling up transcript reads.
       scan = scan
         .then(async () => {
-          for (const thread of candidates) {
+          for (const { projectId, thread } of pendingScan) {
             if (!isCurrent()) return
             try {
               // Live messages may have arrived before a lazy transcript is loaded.
               const matched =
-                residentRequestMatches(thread.messages, query) ||
-                (thread.messagesLoaded === false &&
-                  (await savedPrompts(activeProjectId, thread)).some((prompt) =>
-                    prompt.includes(query),
-                  ))
+                residentRequestMatches(thread.messages ?? [], query) ||
+                // Compacted sidebar metadata carries no transcript at all.
+                ((thread.messagesLoaded === false || thread.messages === undefined) &&
+                  (await savedPrompts(projectId, thread)).some((prompt) => prompt.includes(query)))
               if (!isCurrent()) return
               if (matched) {
                 matches.add(thread.id)

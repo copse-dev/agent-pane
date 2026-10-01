@@ -46,14 +46,32 @@ describe('project quarantine and orphan recovery', () => {
       ],
     })
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
     resetUserData()
   })
 
+  it('surfaces the missing project and recoverable threads in the default thread view', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const notice = $('.thread-browser .thread-browser-notice[data-project-id="missing"]')
+    await notice.waitForDisplayed({ timeout: 15_000 })
+    await expect(notice.$('.thread-browser-notice-heading')).toHaveText('Moved project')
+    await expect(notice.$('.project-missing-btn')).toHaveText('Relocate…')
+    const orphanSection = $('.thread-browser .orphans-section')
+    await orphanSection.waitForDisplayed({ timeout: 15_000 })
+    await expect(orphanSection.$('.orphan-name')).toHaveText('Recovered planning notes')
+    await expect(orphanSection.$('.orphan-recover-btn')).toHaveText('Recover…')
+    const titleFits = await browser.execute(() => {
+      const title = document.querySelector<HTMLElement>('.thread-browser .orphan-name')
+      return title !== null && title.scrollWidth <= title.clientWidth
+    })
+    assert.equal(titleFits, true, 'the recoverable thread title should not be truncated')
+    await saveElementScreenshot('#pane-projects', 'thread-sidebar-recovery.png')
+  })
+
   it('shows preserved missing projects and recoverable orphan threads', async () => {
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const missingRow = await $('.project-row.missing')
     await missingRow.waitForDisplayed({ timeout: 15_000 })
@@ -61,14 +79,14 @@ describe('project quarantine and orphan recovery', () => {
     assert.match((await missingRow.getAttribute('title')) ?? '', /folder missing/i)
 
     await missingRow.click()
-    const notice = await $('.project-missing-notice')
+    const notice = await $('.thread-project-manager .project-missing-notice')
     await notice.waitForDisplayed({ timeout: 10_000 })
     await expect(notice.$('.project-missing-text')).toHaveText(
       'This folder could not be opened. Its threads are safe — relocate the project to restore them.',
     )
     await expect(notice.$('.project-missing-btn')).toHaveText('Relocate…')
 
-    const orphanSection = await $('.orphans-section')
+    const orphanSection = await $('.thread-project-manager .orphans-section')
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
     await expect(orphanSection.$('.orphans-heading')).toHaveText('Recoverable threads')
     await expect(orphanSection.$('.orphan-name')).toHaveText('Recovered planning notes')
@@ -76,7 +94,7 @@ describe('project quarantine and orphan recovery', () => {
     await expect(orphanSection.$('.orphan-recover-btn')).toHaveText('Recover…')
     await expect(orphanSection.$('.orphan-dismiss-btn')).toHaveText('Dismiss')
     const titleFits = await browser.execute(() => {
-      const title = document.querySelector<HTMLElement>('.orphan-name')
+      const title = document.querySelector<HTMLElement>('.thread-project-manager .orphan-name')
       return title !== null && title.scrollWidth <= title.clientWidth
     })
     assert.equal(titleFits, true, 'the recoverable thread title should not be truncated')
@@ -100,7 +118,7 @@ describe('project quarantine and orphan recovery', () => {
 
   it('dismisses a recoverable orphan row from the sidebar', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const orphanSection = await $('.orphans-section')
+    const orphanSection = await $('.thread-project-manager .orphans-section')
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
     await orphanSection.$('.orphan-dismiss-btn').click()
     await browser.waitUntil(async () => !(await orphanSection.isExisting()), {

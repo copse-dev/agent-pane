@@ -280,7 +280,6 @@ describe('runStage0', () => {
       'package.json': JSON.stringify({
         name: 'read-only-store-fixture',
         private: true,
-        packageManager: 'pnpm@10.34.5',
       }),
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n",
       'check.cjs': CHECK_SCRIPT,
@@ -308,11 +307,7 @@ describe('runStage0', () => {
           readOnlyPaths: [],
         },
       })
-      assert.equal(
-        report.preparation.head?.status,
-        'passed',
-        report.preparation.head?.output ?? 'Head preparation did not run',
-      )
+      assert.equal(report.preparation.head?.status, 'passed')
       assert.match(report.preparation.head.output, /Stage 0 offline dependency install/)
       await assert.rejects(access(join(versionedStore, 'projects')), { code: 'ENOENT' })
     } finally {

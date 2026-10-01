@@ -25,9 +25,39 @@
   color: var(--text-muted);
   font-size: var(--font-size-xs);
 }
-.thread-browser-heading .projects-add-btn {
+.thread-browser-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
   align-self: center;
+}
+.thread-browser-heading-actions .projects-add-btn {
+  margin-left: 0;
+}
+.thread-browser-more,
+.thread-browser-project-menu {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
+  padding: 0;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.thread-browser-more:hover,
+.thread-browser-project-menu:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.thread-browser-project-menu[hidden] {
+  display: none;
+}
+.thread-browser-project-menu:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .thread-browser-summary {
   display: flex;
@@ -52,6 +82,10 @@
 }
 .thread-browser-summary .thread-attention-filter {
   color: var(--warning);
+}
+/* Zero waiting threads is the calm state; only a real count takes the warning colour. */
+.thread-browser-summary .thread-attention-filter.is-empty {
+  color: var(--text-secondary);
 }
 .thread-browser-summary button[aria-pressed='true'] {
   text-decoration: underline;
@@ -100,6 +134,16 @@
   border-radius: 4px;
   padding-block: 4px;
   padding-left: 0;
+}
+.thread-browser-scope {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 55%;
+}
+.thread-browser-controls .thread-browser-scope select {
+  max-width: 100%;
 }
 .thread-browser-sort {
   display: flex;
@@ -292,4 +336,44 @@
 .thread-browser button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+.thread-browser-title-line .chat-pr-status {
+  margin-left: 0;
+  align-self: center;
+}
+.thread-browser .thread-browser-row.is-renaming {
+  cursor: default;
+}
+.thread-browser-row.is-renaming .chat-title-rename {
+  width: 100%;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+/* Quarantined projects and orphaned stores sit above the activity groups so
+   recoverable threads are visible without opening Projects. */
+.thread-browser-notice {
+  margin-top: 9px;
+  padding: 12px 16px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.thread-browser-notice-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-sm);
+  color: var(--warning, #d29922);
+}
+.thread-browser-notice-heading .ui-icon {
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.thread-browser-notice .project-missing-notice {
+  padding: 6px 0 8px 28px;
+}
+.thread-browser .orphans-section {
+  margin-top: 9px;
+  padding: 12px 16px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
 }

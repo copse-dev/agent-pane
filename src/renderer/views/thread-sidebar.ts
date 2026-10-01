@@ -1,7 +1,9 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openNewThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import { el } from '../dom/helpers.ts'
+import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
+import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
   arrowDownIcon,
   checkIcon,
@@ -9,6 +11,7 @@ import {
   fileTextIcon,
   handIcon,
   messageQuestionIcon,
+  moreHorizontalIcon,
   plusIcon,
   runningStatusIcon,
   searchIcon,
@@ -20,18 +23,36 @@ import {
   threadEntryKey,
   type ThreadBrowserEntry,
 } from '../controller/thread-browser.ts'
-import { filterText } from '../controller/thread-filter.ts'
+import { createThreadFilter, filterText } from '../controller/thread-filter.ts'
 import {
+  addProject,
+  addRemoteProject,
+  createNewProject,
   isProjectSwitchInFlight,
   projectDisplayName,
   switchProjectThread,
 } from '../controller/projects.ts'
+import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import { mountProjectsPane } from './projects-pane.ts'
-import type { ActivitySources } from './activity-panel.ts'
+import { openActivityPanel, type ActivitySources } from './activity-panel.ts'
+import { openAutomationDialog } from './automation-dialog.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { showErrorToast } from './toast.ts'
+import {
+  chatPrStatus,
+  createPrBackfill,
+  createPrStatusTracker,
+  type PrBackfillRow,
+} from './thread-pr-chips.ts'
+import { createRecoverableThreads, renderMissingNotice } from './recoverable-threads.ts'
+import { projectMenuEntries, showProjectMenu, threadMenuEntries } from './sidebar-actions.ts'
 
 type ThreadGroup = 'needs-you' | 'working' | 'changes' | 'threads'
 type SortColumn = 'activity' | 'updated' | 'title' | 'work'
+
+/** Coalesce working-tree events before re-reading the checkouts they name. */
+const WORKING_TREE_EVENT_DELAY_MS = 1000
 
 export function mountThreadSidebar(
   root: HTMLElement,
@@ -49,6 +70,7 @@ export function mountThreadSidebar(
   let disposed = false
   let frame: number | undefined
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  const changedRoots = new Set<string>()
   let selectedProject = ''
   let query = ''
   let onlyWork = false
@@ -57,9 +79,24 @@ export function mountThreadSidebar(
   let sort: SortColumn = 'activity'
   let ascending = false
   let limit = 40
+  let sshWorkspaceEnabled = false
+  // Inline rename state survives `render()`, which rebuilds every row.
+  let renaming: { key: string; threadId: string; draft: string } | null = null
   const collapsed = new Set<string>()
   const timings = trackRunTimings(store, Date.now)
   const data = createThreadBrowserData(store, api, scheduleRender)
+  const prStatus = createPrStatusTracker(api, scheduleRender)
+  const prBackfill = createPrBackfill(api)
+  const recoverable = createRecoverableThreads(store, api, scheduleRender)
+  // Matches the search against saved requests in every listed project, not
+  // just titles; the active project's resident messages are read in place.
+  const requestFilter = createThreadFilter(store, api, scheduleRender, () =>
+    data
+      .entries()
+      .filter((entry) => !selectedProject || entry.project.id === selectedProject)
+      .sort((left, right) => (right.thread.updatedAt ?? 0) - (left.thread.updatedAt ?? 0))
+      .map((entry) => ({ projectId: entry.project.id, thread: entry.thread })),
+  )
 
   function showProjects(): void {
     pane.hidden = true
@@ -74,10 +111,23 @@ export function mountThreadSidebar(
     projectsPane.hidden = true
     pane.hidden = false
     data.refresh()
+    // Recovering or dismissing a store there does not change the project set.
+    recoverable.refresh()
     render()
   })
   const manage = el('button', { type: 'button', class: 'thread-browser-manage' }, 'Projects')
   manage.addEventListener('click', showProjects)
+
+  function clearFilters(): void {
+    query = ''
+    search.value = ''
+    requestFilter.cancel()
+    selectedProject = ''
+    onlyWork = false
+    onlyAttention = false
+    onlyWorking = false
+  }
+
   const newThread = el(
     'button',
     { type: 'button', 'aria-label': 'New thread', class: 'projects-add-btn' },
@@ -89,34 +139,98 @@ export function mountThreadSidebar(
     if (targetProjectId && isProjectSwitchInFlight(store, targetProjectId)) return
     if (!store.getState().activeProjectId) showProjects()
     else {
-      query = ''
-      search.value = ''
-      selectedProject = ''
-      onlyWork = false
-      onlyAttention = false
-      onlyWorking = false
-      workToggle.setAttribute('aria-pressed', 'false')
-      attentionToggle.setAttribute('aria-pressed', 'false')
+      clearFilters()
       openNewThread(store)
     }
   })
+  const more = el(
+    'button',
+    {
+      type: 'button',
+      class: 'thread-browser-more',
+      'aria-label': 'More actions',
+      'aria-haspopup': 'menu',
+      'data-tooltip': 'Add a project, automations and activity',
+    },
+    moreHorizontalIcon('ui-icon ui-icon-sm'),
+  )
+  more.addEventListener('click', () => {
+    const rect = more.getBoundingClientRect()
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: 'New project',
+        onSelect: (): void => {
+          void createNewProject(store, api)
+        },
+      },
+      {
+        label: 'Open folder',
+        onSelect: (): void => {
+          void addProject(store, api)
+        },
+      },
+      ...(sshWorkspaceEnabled
+        ? [
+            {
+              label: 'Open remote project',
+              onSelect: (): void => {
+                void addRemoteProject(store, api).catch((err: unknown) => {
+                  showErrorToast('Could not open remote folder', err)
+                })
+              },
+            },
+          ]
+        : []),
+      {
+        label: 'New automation…',
+        disabled: !store.getState().activeProjectId,
+        onSelect: (): void => {
+          openAutomationDialog(store, api, { createNew: true })
+        },
+      },
+      {
+        label: 'Activity',
+        onSelect: (): void => {
+          openActivityPanel()
+        },
+      },
+    ])
+  })
+  const syncRemoteOpenAvailability = (): void => {
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      sshWorkspaceEnabled = enabled
+    })
+  }
+  syncRemoteOpenAvailability()
+
   const totalCount = el('span', { class: 'thread-browser-total' })
   const header = el(
     'div',
     { class: 'thread-browser-heading' },
     el('h2', {}, 'Threads'),
     totalCount,
-    newThread,
+    el('span', { class: 'thread-browser-heading-actions' }, more, newThread),
   )
   const search = el('input', {
     type: 'search',
     class: 'thread-browser-search-input',
     'aria-label': 'Find threads',
-    placeholder: 'Search threads…',
+    placeholder: 'Search titles and requests…',
+    spellcheck: 'false',
+    autocomplete: 'off',
   })
   search.addEventListener('input', () => {
     query = filterText(search.value.trim())
+    requestFilter.search(query)
     limit = 40
+    render()
+  })
+  search.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !search.value) return
+    event.stopPropagation()
+    search.value = ''
+    query = ''
+    requestFilter.cancel()
     render()
   })
   const sortSelect = el(
@@ -138,7 +252,31 @@ export function mountThreadSidebar(
   projectSelect.addEventListener('change', () => {
     selectedProject = projectSelect.value
     limit = 40
+    if (query) requestFilter.search(query)
     render()
+  })
+  const projectMenu = el(
+    'button',
+    {
+      type: 'button',
+      class: 'thread-browser-project-menu',
+      'aria-haspopup': 'menu',
+    },
+    moreHorizontalIcon('ui-icon ui-icon-sm'),
+  )
+  projectMenu.addEventListener('click', () => {
+    const project = store.getState().projects.find((item) => item.id === selectedProject)
+    if (!project) return
+    projectMenu.disabled = true
+    void showProjectMenu(
+      store,
+      api,
+      project,
+      projectMenu,
+      projectMenuEntries(store, api, project),
+    ).finally(() => {
+      projectMenu.disabled = !selectedProject
+    })
   })
   const workToggle = el(
     'button',
@@ -152,7 +290,6 @@ export function mountThreadSidebar(
   )
   workToggle.addEventListener('click', () => {
     onlyWork = !onlyWork
-    workToggle.setAttribute('aria-pressed', String(onlyWork))
     limit = 40
     render()
   })
@@ -164,7 +301,6 @@ export function mountThreadSidebar(
   attentionToggle.addEventListener('click', () => {
     onlyAttention = !onlyAttention
     onlyWorking = false
-    attentionToggle.setAttribute('aria-pressed', String(onlyAttention))
     render()
   })
   const workingToggle = el('button', {
@@ -192,6 +328,7 @@ export function mountThreadSidebar(
   )
   refresh.addEventListener('click', () => {
     data.refresh()
+    recoverable.refresh()
     render()
   })
   const settings = el(
@@ -209,7 +346,7 @@ export function mountThreadSidebar(
     el(
       'div',
       { class: 'thread-browser-controls' },
-      projectSelect,
+      el('div', { class: 'thread-browser-scope' }, projectSelect, projectMenu),
       el('div', { class: 'thread-browser-sort' }, sortDirection, sortSelect),
     ),
     list,
@@ -223,6 +360,59 @@ export function mountThreadSidebar(
       frame = undefined
       if (!disposed) render()
     })
+  }
+
+  function beginRename(entry: ThreadBrowserEntry): void {
+    renaming = {
+      key: threadEntryKey(entry),
+      threadId: entry.thread.id,
+      draft: entry.thread.title || 'New thread',
+    }
+    render()
+    const input = list.querySelector<HTMLInputElement>('.chat-title-rename')
+    input?.focus()
+    input?.select()
+  }
+
+  function finishRename(save: boolean): void {
+    if (!renaming) return
+    const { threadId, draft, key } = renaming
+    renaming = null
+    const next = draft.trim()
+    if (save && next) {
+      setThreadTitle(store, threadId, next)
+      maybeRenameThreadBranch(store, api, threadId)
+    } else render()
+    for (const row of list.querySelectorAll<HTMLElement>('[data-entry-key]')) {
+      if (row.dataset['entryKey'] === key) row.focus()
+    }
+  }
+
+  function renderNotices(): HTMLElement[] {
+    const nodes: HTMLElement[] = []
+    const missing = store
+      .getState()
+      .projects.filter(
+        (project) => project.missing && (!selectedProject || project.id === selectedProject),
+      )
+    for (const project of missing) {
+      nodes.push(
+        el(
+          'section',
+          { class: 'thread-browser-notice', 'data-project-id': project.id },
+          el(
+            'div',
+            { class: 'thread-browser-notice-heading' },
+            warningIcon('ui-icon ui-icon-sm'),
+            el('span', {}, projectDisplayName(project)),
+          ),
+          renderMissingNotice(store, api, project),
+        ),
+      )
+    }
+    const recovery = recoverable.section()
+    if (recovery) nodes.push(recovery)
+    return nodes
   }
 
   function render(): void {
@@ -240,6 +430,17 @@ export function mountThreadSidebar(
     if (!state.projects.some((project) => project.id === selectedProject)) selectedProject = ''
     projectSelect.replaceChildren(...projectOptions)
     projectSelect.value = selectedProject
+    const scopedProject = state.projects.find((project) => project.id === selectedProject)
+    // Only a chosen project has a menu; with all projects listed the control would be inert.
+    projectMenu.hidden = !scopedProject
+    projectMenu.disabled = !scopedProject
+    projectMenu.setAttribute(
+      'aria-label',
+      scopedProject
+        ? `Project menu for ${projectDisplayName(scopedProject)}`
+        : 'Project menu (choose a project first)',
+    )
+    projectMenu.title = scopedProject ? 'Project menu' : 'Choose a project to manage it'
     const waiting = new Map<string, number>()
     for (const request of [...sources.approvals.pending(), ...sources.questions.pending()]) {
       if (request.threadId)
@@ -263,7 +464,8 @@ export function mountThreadSidebar(
         (!query ||
           filterText(
             `${entry.thread.title} ${projectDisplayName(entry.project)} ${entry.thread.gitBranch ?? ''}`,
-          ).includes(query)) &&
+          ).includes(query) ||
+          requestFilter.matches.has(entry.thread.id)) &&
         (!onlyAttention || waiting.has(entry.thread.id)) &&
         (!onlyWorking || (entry.thread.status === 'running' && !waiting.has(entry.thread.id))),
     )
@@ -321,7 +523,9 @@ export function mountThreadSidebar(
       `Reverse sort order, currently ${ascending ? 'ascending' : 'descending'}`,
     )
     totalCount.textContent = String(all.length)
-    attentionToggle.textContent = `${String(all.filter((entry) => waiting.has(entry.thread.id)).length)} need you`
+    const waitingCount = all.filter((entry) => waiting.has(entry.thread.id)).length
+    attentionToggle.textContent = `${String(waitingCount)} need you`
+    attentionToggle.classList.toggle('is-empty', waitingCount === 0)
     attentionToggle.setAttribute('aria-pressed', String(onlyAttention))
     workingToggle.textContent = `${String(all.filter((entry) => groupFor(entry) === 'working').length)} working`
     workingToggle.setAttribute('aria-pressed', String(onlyWorking))
@@ -334,9 +538,28 @@ export function mountThreadSidebar(
     const unknown = scoped.filter((entry) => data.summary(entry) == null).length
     workToggle.title =
       'Includes staged, unstaged and untracked work. Threads sharing a checkout share its changes.'
-    status.textContent = `${String(matching.length)} ${matching.length === 1 ? 'thread' : 'threads'}${data.pending() ? ' · Checking…' : data.failed() ? ' · Some projects unavailable' : unknown > 0 && onlyWork ? ` · ${String(unknown)} unavailable` : ''}`
+    const searching = Boolean(query) && (requestFilter.pending || requestFilter.waiting)
+    status.textContent = `${String(matching.length)} ${matching.length === 1 ? 'thread' : 'threads'}${
+      searching
+        ? ' · Searching requests…'
+        : data.pending()
+          ? ' · Checking…'
+          : data.failed()
+            ? ' · Some projects unavailable'
+            : query && requestFilter.failed
+              ? ' · Some requests could not be searched'
+              : unknown > 0 && onlyWork
+                ? ` · ${String(unknown)} unavailable`
+                : ''
+    }`
+    // Rebuilding the list would drop keyboard focus; note what had it.
+    const active = document.activeElement
     const focusKey =
-      document.activeElement?.closest<HTMLElement>('[data-entry-key]')?.dataset['entryKey']
+      active instanceof HTMLElement && list.contains(active)
+        ? (active.closest<HTMLElement>('[data-entry-key]')?.dataset['entryKey'] ??
+          active.closest<HTMLElement>('[data-group-heading]')?.dataset['groupHeading'] ??
+          (active === workToggle ? 'work-toggle' : undefined))
+        : undefined
     const groups = new Map<
       ThreadGroup,
       { label: string; context: string; rows: ThreadBrowserEntry[] }
@@ -352,7 +575,8 @@ export function mountThreadSidebar(
     for (const entry of matching) {
       groups.get(groupFor(entry))?.rows.push(entry)
     }
-    const nodes: HTMLElement[] = []
+    const nodes: HTMLElement[] = renderNotices()
+    const backfillRows: PrBackfillRow[] = []
     let remaining = limit
     for (const [key, group] of groups) {
       if (group.rows.length === 0 && key !== 'changes') continue
@@ -363,6 +587,7 @@ export function mountThreadSidebar(
         {
           type: 'button',
           class: 'thread-browser-group-heading',
+          'data-group-heading': key,
           'aria-expanded': String(!collapsed.has(collapseKey)),
         },
         chevronDownIcon('ui-icon thread-browser-chevron'),
@@ -379,8 +604,13 @@ export function mountThreadSidebar(
       if (key === 'changes') headingRow.append(workToggle)
       section.append(headingRow)
       if (!collapsed.has(collapseKey)) {
-        for (const entry of group.rows.slice(0, remaining))
-          section.append(renderRow(entry, waiting.get(entry.thread.id)))
+        for (const entry of group.rows.slice(0, remaining)) {
+          const row = renderRow(entry, waiting.get(entry.thread.id))
+          if (entry.thread.prRefs === undefined) {
+            backfillRows.push({ row, projectId: entry.project.id, threadId: entry.thread.id })
+          }
+          section.append(row)
+        }
         remaining = Math.max(0, remaining - group.rows.length)
         if (key === 'changes' && group.rows.length === 0 && !onlyWork) {
           section.append(
@@ -403,7 +633,7 @@ export function mountThreadSidebar(
         el(
           'div',
           { class: 'sidebar-empty' },
-          data.pending()
+          data.pending() || searching
             ? 'Checking threads…'
             : onlyWork && unknown > 0
               ? 'No confirmed uncommitted work. Some checkouts could not be checked.'
@@ -420,39 +650,75 @@ export function mountThreadSidebar(
           showProjects()
           return
         }
-        query = ''
-        search.value = ''
-        selectedProject = ''
-        onlyWork = false
-        onlyAttention = false
-        onlyWorking = false
-        workToggle.setAttribute('aria-pressed', 'false')
-        attentionToggle.setAttribute('aria-pressed', 'false')
+        clearFilters()
         render()
       })
       nodes.push(reset)
     }
     if (matching.length > limit) {
-      const more = el('button', { type: 'button', class: 'chats-show-more' }, 'Show more')
-      more.addEventListener('click', () => {
+      const showMore = el('button', { type: 'button', class: 'chats-show-more' }, 'Show more')
+      showMore.addEventListener('click', () => {
         limit += 40
         render()
       })
-      nodes.push(more)
+      nodes.push(showMore)
     }
     list.replaceChildren(...nodes)
-    if (focusKey) {
-      for (const row of list.querySelectorAll<HTMLElement>('[data-entry-key]')) {
-        if (row.dataset['entryKey'] === focusKey) row.focus()
+    prBackfill.observe(backfillRows)
+    if (focusKey === 'work-toggle') workToggle.focus()
+    else if (focusKey) {
+      for (const node of list.querySelectorAll<HTMLElement>(
+        '[data-entry-key], [data-group-heading]',
+      )) {
+        if (node.dataset['entryKey'] === focusKey || node.dataset['groupHeading'] === focusKey) {
+          node.focus()
+          break
+        }
       }
     }
   }
 
+  function renderRenameRow(entry: ThreadBrowserEntry, draft: string): HTMLElement {
+    const input = el('input', {
+      type: 'text',
+      class: 'chat-title-rename',
+      'aria-label': 'Rename thread',
+    })
+    input.value = draft
+    input.addEventListener('input', () => {
+      if (renaming) renaming.draft = input.value
+    })
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        finishRename(true)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        finishRename(false)
+      }
+    })
+    bindRenameBlur(input, () => {
+      if (renaming?.key !== threadEntryKey(entry)) return
+      finishRename(true)
+    })
+    return el(
+      'div',
+      {
+        class: 'chat-row thread-browser-row is-renaming',
+        'data-thread-id': entry.thread.id,
+      },
+      checkIcon('ui-icon thread-browser-glyph'),
+      el('span', { class: 'thread-browser-row-content' }, input),
+    )
+  }
+
   function renderRow(entry: ThreadBrowserEntry, waitingSince: number | undefined): HTMLElement {
     const { thread, project } = entry
-    const selected =
-      store.getState().activeProjectId === project.id &&
-      store.getState().activeThreadId === thread.id
+    if (renaming?.key === threadEntryKey(entry)) return renderRenameRow(entry, renaming.draft)
+    const state = store.getState()
+    const isActiveProject = state.activeProjectId === project.id
+    const selected = isActiveProject && state.activeThreadId === thread.id
     const row = el('button', {
       type: 'button',
       class: `chat-row thread-browser-row${selected ? ' selected' : ''}`,
@@ -531,12 +797,19 @@ export function mountThreadSidebar(
             ? warningIcon
             : checkIcon
     row.dataset['state'] = waitingSince !== undefined ? 'waiting' : thread.status
+    const titleLine = el('span', { class: 'thread-browser-title-line' }, title)
+    const prRollup = prStatus.rollup(thread)
+    if (prRollup) {
+      row.classList.add('has-pr-status')
+      titleLine.append(chatPrStatus(prRollup))
+    }
+    titleLine.append(age)
     row.append(
       glyph('ui-icon thread-browser-glyph'),
       el(
         'span',
         { class: 'thread-browser-row-content' },
-        el('span', { class: 'thread-browser-title-line' }, title, age),
+        titleLine,
         el(
           'span',
           { class: 'thread-browser-subtitle' },
@@ -550,28 +823,56 @@ export function mountThreadSidebar(
         ),
       ),
     )
-    row.addEventListener('click', () => {
+    const open = (): void => {
       switchProjectThread(store, api, project.id, thread.id)
+    }
+    row.addEventListener('click', open)
+    if (isActiveProject) {
+      title.addEventListener('dblclick', (event) => {
+        event.stopPropagation()
+        beginRename(entry)
+      })
+    }
+    row.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const entries: ContextMenuEntry[] = threadMenuEntries(store, api, {
+        project,
+        thread,
+        allowRename: true,
+        allowDelete: true,
+        onRename: () => {
+          beginRename(entry)
+        },
+        onOpen: open,
+      })
+      showContextMenu(event.clientX, event.clientY, entries)
     })
     return row
   }
 
-  const refreshSoon = (): void => {
+  // Main reports which checkout changed. Only threads on that checkout are
+  // re-read; everything else keeps its last status until it ages out.
+  const workingTreeChanged = (changedRoot: string): void => {
+    changedRoots.add(changedRoot)
     if (refreshTimer !== undefined) return
     refreshTimer = setTimeout(() => {
       refreshTimer = undefined
-      data.inspect(data.entries(), true)
+      const roots = [...changedRoots]
+      changedRoots.clear()
+      for (const item of roots) data.invalidateRoot(item)
       scheduleRender()
-    }, 1000)
+    }, WORKING_TREE_EVENT_DELAY_MS)
   }
   const unsubs = [
     store.on('projects_changed', scheduleRender),
     store.on('threads_changed', scheduleRender),
     store.on('workspace_changed', scheduleRender),
     store.on('thread_status_changed', scheduleRender),
+    store.on('settings_changed', syncRemoteOpenAvailability),
     sources.approvals.onChange(scheduleRender),
     sources.questions.onChange(scheduleRender),
-    api.git.onWorkingTreeChanged(refreshSoon),
+    api.git.onWorkingTreeChanged(workingTreeChanged),
   ]
   const ageTimer = setInterval(scheduleRender, 30_000)
   render()
@@ -582,6 +883,11 @@ export function mountThreadSidebar(
     clearInterval(ageTimer)
     data.dispose()
     timings.dispose()
+    requestFilter.cancel()
+    prBackfill.dispose()
+    prStatus.reset()
+    recoverable.dispose()
+    dismissContextMenu()
     disposeProjects?.()
     for (const unsub of unsubs) unsub()
     root.replaceChildren()
