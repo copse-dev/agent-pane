@@ -31,7 +31,9 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       value: (callback: () => void) => window.setTimeout(callback, 0),
     })
     Object.defineProperty(window, 'cancelAnimationFrame', {
-      value: (id: number) => window.clearTimeout(id),
+      value: (id: number) => {
+        window.clearTimeout(id)
+      },
     })
     const scrolls: number[] = []
     Object.defineProperty(window, 'scrollBy', {
@@ -167,18 +169,18 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     assert.ok(back.closest('.topbar'), 'Activity navigation lives in the fixed header')
     assert.equal(back.hidden, false)
     assert.equal(window.document.querySelector('.session-label'), null)
-    const goBack = new Promise((resolve) =>
-      window.addEventListener('popstate', resolve, { once: true }),
-    )
+    const goBack = new Promise((resolve) => {
+      window.addEventListener('popstate', resolve, { once: true })
+    })
     back.click()
     await goBack
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(window.document.getElementById('activity')?.hidden, false)
     assert.equal(window.document.getElementById('thread')?.hidden, true)
     assert.equal(back.hidden, true, 'Activity does not show a redundant back button')
-    const goForward = new Promise((resolve) =>
-      window.addEventListener('popstate', resolve, { once: true }),
-    )
+    const goForward = new Promise((resolve) => {
+      window.addEventListener('popstate', resolve, { once: true })
+    })
     window.history.forward()
     await goForward
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -186,9 +188,9 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     assert.equal(back.hidden, false)
     assert.equal(input.value, 'Keep this draft')
     assert.equal(window.history.length, 2, 'Forward restores without pushing another entry')
-    const backAgain = new Promise((resolve) =>
-      window.addEventListener('popstate', resolve, { once: true }),
-    )
+    const backAgain = new Promise((resolve) => {
+      window.addEventListener('popstate', resolve, { once: true })
+    })
     window.history.back()
     await backAgain
     await new Promise((resolve) => setTimeout(resolve, 0))
