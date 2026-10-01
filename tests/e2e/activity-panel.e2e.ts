@@ -163,6 +163,7 @@ describe('Activity panel', function () {
     await expect(needsRow).toHaveAttribute('data-state', 'needs-approval')
     await expect(needsRow.$('.activity-thread')).toHaveText('Refactor auth')
     await expect(needsRow.$('.activity-state')).toHaveText('Approval')
+    await expect(needsRow.$('.activity-glyph')).toHaveAttribute('data-icon', 'shield')
     await expect(needsRow.$('.activity-want-code')).toHaveText(AUTH_COMMAND)
     await expect(needsRow.$('.activity-project')).toHaveText('workspace')
     const workingRow = $(rowSelector('working', AUDIT_THREAD))
