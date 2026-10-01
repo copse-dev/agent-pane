@@ -280,7 +280,12 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
       //    by token, and it never had to be switched off to prove that.
       assert.equal(probe['noAuth'], 'HTTP/1.1 407 Proxy Authentication Required')
       assert.equal(probe['withRecoveredToken'], undefined)
-      // 3. The worker itself still reached the model through the proxy.
+      // 3. The worker verified its own protection rather than assuming it.
+      assert.ok(
+        logs.some((l) => l.includes('token isolation: on')),
+        logs.filter((l) => l.includes('token isolation')).join('\n'),
+      )
+      // 4. The worker itself still reached the model through the proxy.
       assert.ok(model.requests >= 2)
       assert.ok(record.egress.some((e) => e.event === 'connect'))
     } finally {

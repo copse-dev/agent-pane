@@ -12,7 +12,7 @@ import { encodeWorkerPhase } from './worker-events.ts'
  * deferral mode before it could reach a handler.
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { threadContainerRunSpecSchema, type ThreadContainerRunSpec as Spec } from './run-spec.ts'
@@ -283,6 +283,18 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
   return message && typeof message.content === 'string' ? message.content.trim() : ''
 }
 
+/**
+ * A non-dumpable process's /proc files belong to root, whoever runs it. The
+ * directory itself does not (the kernel exempts it), so ask about `environ`.
+ */
+function procSelfIsRootOwned(): boolean {
+  try {
+    return statSync('/proc/self/environ').uid === 0
+  } catch {
+    return false
+  }
+}
+
 async function main(): Promise<void> {
   // The home is a directory on the run's volume that does not exist until
   // the worker makes it (decision A9); private to the worker, as a home is.
@@ -340,6 +352,15 @@ async function main(): Promise<void> {
   // guest has no route out. (A child can still read this process's initial
   // environment from /proc — same uid — which is the residual A7 records.)
   const agentProxyUrl = egressProxy ? guestEgressProxyUrl(egressToken) : null
+  if (egressToken) {
+    // The execute-only node makes this process non-dumpable, which the kernel
+    // shows as a root-owned /proc/self/environ. A runtime that does not enforce that
+    // (a user-space kernel, an extra capability) leaves the token readable to
+    // same-uid shell commands, as it was before; say so in the run's log.
+    say(
+      `[worker] token isolation: ${procSelfIsRootOwned() ? 'on (worker is non-dumpable)' : 'OFF (worker is dumpable; shell commands can read its environment)'}\n`,
+    )
+  }
   for (const name of [
     'HTTPS_PROXY',
     'HTTP_PROXY',
