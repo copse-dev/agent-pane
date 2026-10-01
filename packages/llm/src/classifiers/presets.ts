@@ -16,6 +16,19 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
     },
   },
   {
+    id: 'liquid',
+    label: 'Liquid / d1',
+    model: 'd1:free',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      baseUrl: 'https://api.liquid.ai/decisions/v1',
+      auth: 'bearer',
+      apiKeyEnv: 'LIQUID_API_KEY',
+    },
+  },
+  {
     id: 'kev',
     label: 'Kev (local)',
     model: 'kev-latest',
