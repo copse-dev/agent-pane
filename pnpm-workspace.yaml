@@ -30,9 +30,6 @@ overrides:
   '@hono/node-server': 2.0.11
   '@xmldom/xmldom@0.8': 0.8.15
   adm-zip: ^0.6.1
-  # GHSA-c475-qrg2-pj4r: only 6.2.1 is patched, and get-uri (via @wdio/cli)
-  # still asks for ^5. It uses only Client.access/list/lastMod/downloadTo/close,
-  # unchanged in 6.x.
   basic-ftp: 6.2.1
   brace-expansion: 5.0.12
   minimatch: 10.2.5
