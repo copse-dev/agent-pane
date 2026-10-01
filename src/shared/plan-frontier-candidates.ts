@@ -66,9 +66,7 @@ export function planAcpFrontierCandidates(
       // Match bundled prices by the same identity before consulting live prices.
       const info =
         getModelInfo(resolved) ??
-        Object.entries(MODEL_CATALOG).find(
-          ([id]) => resolveIntellectModelId(id) === resolved,
-        )?.[1]
+        Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved)?.[1]
       const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved)
       if (!score || price === undefined) continue
       candidates.push({
