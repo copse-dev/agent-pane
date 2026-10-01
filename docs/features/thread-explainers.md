@@ -5,8 +5,9 @@ conversation:
 
 > Explain how we find the code behind a question.
 
-The thread's selected model reads relevant project context, writes three narration
-beats, chooses a visual mechanism and style, and calls `render_explainer`. Copse
+The thread's selected model reads relevant project context, writes four to six short
+scenes, and chooses objects, actions and a visual style. It calls `preview_explainer`
+to inspect actual rendered frames, then `render_explainer` to publish that story. Copse
 embeds a playable animation in its assistant reply. No separate editor, storyboard
 form, hosting service, or additional provider key is involved.
 
@@ -21,17 +22,20 @@ native increment.
 
 The existing styles are paper desk, isometric mailroom, editorial comic, felt
 stop-motion, travel poster, kinetic print, miniature workshop, folded paper and
-signal lab. Automatic defaults favour concrete objects: paper for review, mailroom
-for parallel investigation, travel for limited capacity, folded paper for routing,
-and comic for a generic sequence. Signal lab requires an explicit choice.
+signal lab. The model chooses an appropriate style independently of the actions;
+`auto` defaults composed scenes to paper. Signal lab requires an explicit choice.
 
-The five mechanisms have literal meanings. Review shows three edits with two
-accepted and one reverted; parallel shows three workers searching and gathering
-reports; context removes older output; routing follows device, cloud and tool
-stops. The agent should choose the neutral sequence when these actions do not
-match the evidence. This is a bounded library, not an arbitrary animation model.
-The storyboard must supply project-specific narration and labels. A source note
-distinguishes verified behavior from a conceptual example.
+Objects persist between scenes. Copy reveals an independent file with the same
+contents; edit changes one file; apply moves a proposal into the saved file; discard
+removes only the proposal; merge shows a conflict if the illustrated values differ.
+Appear, move, connect and highlight support other explanations. Actions in one scene
+run together, so dependent actions require separate scenes. Labels and displayed
+values stay short; captions provide complete silent narration.
+
+This is a bounded illustration vocabulary. Its merge action compares short displayed
+values, not real Git patches: the agent must ground the illustrated example and explain
+any simplification. A source note distinguishes verified behavior from a conceptual
+example. Existing three-beat stories and their five legacy mechanisms still render.
 
 ## Integration
 
@@ -43,6 +47,10 @@ distinguishes verified behavior from a conceptual example.
 - The bundled tool validates bounded story data and renders a shipped, self-contained
   HTML player. Model text is serialized into inert JSON and rendered as text.
   No model-authored script runs, and no network assets are needed.
+- Preview renders the shipped player in an isolated Electron window and returns one
+  PNG per scene to the model. Publishing composed scenes requires a ten-minute token
+  for the exact previewed HTML. Changed stories must be previewed again. This enforces
+  preview generation; the model remains responsible for interpreting the frames.
 - Existing Canvas ownership, sandboxed webviews, previews and persistence are reused.
   A per-run reference queue inserts the card at completion, once the reply has stopped
   streaming. The ACP bridge explicitly rebinds that queue per turn.
@@ -52,10 +60,13 @@ distinguishes verified behavior from a conceptual example.
 ## Validation
 
 Focused tests cover story bounds, escaping, narration timing, every style/mechanism
-combination, plugin disable behavior, tool availability, concurrent ownership and
+combination, causal ordering, independent contents, conflict states, exact-preview
+matching, plugin disable behavior, tool availability, concurrent ownership and
 ACP bridge publication. `tests/e2e/thread-explainer.e2e.ts` drives the real Electron
 UI with a scripted model tool call, checks changed animation frames and visible
 controls, creates a second style, reloads the session, and saves a screenshot.
+`tests/e2e/thread-explainer-scenes.e2e.ts` additionally captures real preview images,
+publishes two composed stories, checks final file values, and verifies persistence.
 
 Scripted model calls prove integration. They do not establish how reliably a live
 model grounds narration, chooses a style or follows revision requests; that needs

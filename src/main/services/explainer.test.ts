@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { JSDOM, VirtualConsole } from 'jsdom'
-import { buildExplainerHtml, prepareExplainer } from './explainer.ts'
+import { z } from 'zod'
+import { reviewSceneStory, worktreeSceneStory } from '../../../tests/fixtures/explainer-scenes.ts'
+import { createExplainerPreviews, buildExplainerHtml, prepareExplainer } from './explainer.ts'
 
 const story = {
   project: 'Copse',
@@ -118,4 +120,160 @@ describe('thread explainer', () => {
       }
     }
   })
+})
+
+const stateSchema = z.object({
+  objects: z.array(
+    z.object({
+      id: z.string(),
+      content: z.string(),
+      visible: z.boolean(),
+      conflict: z.boolean().optional(),
+      choices: z.array(z.string()).optional(),
+    }),
+  ),
+})
+
+it('validates scene references, lifetime and simultaneous dependencies', () => {
+  assert.equal(prepareExplainer(reviewSceneStory).version, 2)
+  assert.equal(prepareExplainer(worktreeSceneStory).beats.length, 6)
+  const scene = (actions: unknown[]): { title: string; caption: string; actions: unknown[] } => ({
+    title: 'Check',
+    caption: 'Check the changed state.',
+    actions,
+  })
+  for (const actions of [
+    [{ type: 'edit', target: 'missing', content: 'x' }],
+    [{ type: 'apply', from: 'bad', to: 'file' }],
+    [{ type: 'copy', from: 'file', to: 'file' }],
+    [{ type: 'copy', from: 'file', to: 'good' }],
+    [
+      { type: 'copy', from: 'file', to: 'bad' },
+      { type: 'edit', target: 'file', content: 'Changed' },
+    ],
+    [{ type: 'merge', from: ['file', 'file'], to: 'bad' }],
+    [{ type: 'discard', target: 'good', to: 'file' }],
+  ])
+    assert.throws(() =>
+      prepareExplainer({
+        ...reviewSceneStory,
+        scenes: Array.from({ length: 4 }, () => scene(actions)),
+      }),
+    )
+  assert.throws(() =>
+    prepareExplainer({
+      ...reviewSceneStory,
+      objects: [...reviewSceneStory.objects, reviewSceneStory.objects[0]],
+    }),
+  )
+  assert.throws(() => prepareExplainer({ ...reviewSceneStory, scenes: undefined }))
+  assert.throws(() =>
+    prepareExplainer({
+      ...reviewSceneStory,
+      scenes: reviewSceneStory.scenes.map((v) => ({ ...v, caption: 'x'.repeat(141) })),
+    }),
+  )
+})
+
+it('requires an exact preview and bounds retained previews', () => {
+  const previews = createExplainerPreviews()
+  const token = previews.record('original')
+  previews.assertReviewed(token, 'original')
+  assert.throws(() => {
+    previews.assertReviewed(undefined, 'original')
+  })
+  assert.throws(() => {
+    previews.assertReviewed(token, 'changed')
+  })
+  for (let i = 0; i < 24; i++) previews.record(String(i))
+  assert.throws(() => {
+    previews.assertReviewed(token, 'original')
+  })
+})
+
+it('preserves causal state across styles, replays and backwards seeks', async () => {
+  const template = await readFile('assets/explainers/player.html', 'utf8')
+  for (const style of [
+    'paper',
+    'mailroom',
+    'comic',
+    'felt',
+    'travel',
+    'kinetic',
+    'workshop',
+    'folded',
+    'signal',
+  ]) {
+    for (const input of [reviewSceneStory, worktreeSceneStory]) {
+      const story = prepareExplainer({ ...input, style })
+      const errors: string[] = []
+      const virtualConsole = new VirtualConsole()
+      virtualConsole.on('jsdomError', (error) => errors.push(error.message))
+      const dom = new JSDOM(buildExplainerHtml(template, { ...input, style }), {
+        runScripts: 'dangerously',
+        virtualConsole,
+        beforeParse(window): void {
+          Object.defineProperty(window.HTMLCanvasElement.prototype, 'getContext', {
+            value: (): object =>
+              new Proxy(
+                {},
+                {
+                  get(_target, key): unknown {
+                    if (key === 'measureText')
+                      return (s: string): { width: number } => ({ width: s.length * 10 })
+                    return (...args: unknown[]): void => {
+                      for (const a of args) if (typeof a === 'number') assert.ok(Number.isFinite(a))
+                    }
+                  },
+                  set(): boolean {
+                    return true
+                  },
+                },
+              ),
+          })
+        },
+      })
+      const state = (time: number): z.output<typeof stateSchema> => {
+        const value: unknown = dom.window.eval(
+          `SceneExplainer.stateAt(JSON.parse(document.getElementById('story').textContent), ${String(time)})`,
+        )
+        return stateSchema.parse(value)
+      }
+      const seek = dom.window.document.querySelector('input')
+      assert.ok(seek)
+      const times = [
+        0,
+        story.duration * 0.35,
+        story.duration,
+        story.duration * 0.7,
+        0,
+        story.duration,
+      ]
+      for (const t of times) {
+        seek.value = String(t)
+        seek.dispatchEvent(new dom.window.Event('input'))
+      }
+      const final = state(story.duration)
+      if (input === reviewSceneStory) {
+        assert.equal(final.objects.find((o) => o.id === 'file')?.content, 'Welcome')
+        assert.equal(final.objects.find((o) => o.id === 'bad')?.visible, false)
+        assert.equal(state(0).objects.find((o) => o.id === 'file')?.content, 'Hello')
+      } else {
+        assert.equal(final.objects.find((o) => o.id === 'base')?.content, 'theme: grey')
+        assert.equal(final.objects.find((o) => o.id === 'a')?.content, 'theme: blue')
+        assert.equal(final.objects.find((o) => o.id === 'b')?.content, 'theme: coral')
+        assert.equal(final.objects.find((o) => o.id === 'result')?.conflict, true)
+        assert.deepEqual(final.objects.find((o) => o.id === 'result')?.choices, [
+          'theme: blue',
+          'theme: coral',
+        ])
+      }
+      assert.deepEqual(errors, [], `${style}/${story.title}`)
+      assert.equal(
+        dom.window.document.querySelectorAll('#transcript li').length,
+        input.scenes.length,
+      )
+      dom.window.close()
+    }
+  }
 })

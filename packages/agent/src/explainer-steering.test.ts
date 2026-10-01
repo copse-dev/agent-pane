@@ -55,3 +55,15 @@ it('abstains with an unavailable tool and names the offered tool for both execut
     assert.match(result?.injectContext ?? '', /mcp__copse-canvas__render_explainer/)
   }
 })
+
+it('steers scene composition and actual preview only when the preview tool is offered', () => {
+  const preview = 'mcp__copse-canvas__preview_explainer'
+  const render = 'mcp__copse-canvas__render_explainer'
+  const prompt = buildExplainerSteeringPrompt(render, preview)
+  assert.match(prompt, /4–6 scenes/)
+  assert.match(prompt, /actual returned scene images/)
+  assert.match(prompt, /identical story/)
+  assert.match(prompt, /140/)
+  assert.match(prompt, /300/)
+  assert.equal(buildExplainerSteeringPrompt(render).includes(preview), false)
+})

@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { explainerInput, renderExplainerHtml } from '../explainer.ts'
+import { captureExplainerPreview } from '../explainer-preview.ts'
+import {
+  createExplainerPreviews,
+  explainerInput,
+  prepareExplainer,
+  renderExplainerHtml,
+} from '../explainer.ts'
 /**
  * Bundled, in-process MCP server(s) that ship with Copse so features "just work"
  * with zero user configuration — no subprocess, port, or network. Each server is
@@ -7,8 +13,8 @@ import { explainerInput, renderExplainerHtml } from '../explainer.ts'
  * registry exactly like an external server, so its tool results flow through the
  * same flatten / UI-resource extraction path.
  *
- * This hosts the experimental canvas: `render_html_artefact` and `render_explainer`, which
- * return a `text/html` MCP-UI resource for the host to render as a sandboxed
+ * This hosts the experimental canvas: `preview_explainer` returns scene images;
+ * `render_html_artefact` and `render_explainer` return a `text/html` MCP-UI resource for the host to render as a sandboxed
  * artefact. Gated by the `copse.mcp-ui-canvas` first-party plugin's `mcp-ui-canvas`
  * capability (the connect site in `mcp-registry.ts` reads
  * `isCapabilityActive('mcp-ui-canvas')`).
@@ -145,18 +151,53 @@ function buildCanvasServer(): { name: string; server: McpServer } {
     },
   )
 
+  const previews = createExplainerPreviews()
   server.registerTool(
-    'render_explainer',
+    'preview_explainer',
     {
-      title: 'Create animated explanation',
+      title: 'Preview animated explanation',
       description:
-        'Turn an explanation into a captioned animation embedded directly in this conversation. Write three narration beats from the thread/project evidence, choose concrete objects and a style, then call this tool. No editor or extra API key. For follow-ups like “simpler”, “shorter” or “try paper”, revise the narration/style and call again. Each call preserves the previous card. Silent captions, playback and transcript; no spoken voice or MP4 export.',
+        'Build an explanation from persistent objects and 4–6 scenes. Each scene pairs a short caption (MAX 140 characters) with visible actions: copy, edit, apply, discard, merge, move, appear, connect or highlight. Returns actual rendered scene frames and a previewId; inspect them for factual meaning, overlap and readability before publishing with render_explainer. Style changes appearance without changing object state. Objects have IDs and positions on a 10–90 coordinate grid. Use separate scenes for dependent actions. Source note MAX 300 characters. No separate editor or extra key.',
       inputSchema: explainerInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (input) => {
       try {
         const html = await renderExplainerHtml(input)
+        const images = await captureExplainerPreview(html)
+        const previewId = previews.record(html)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Preview ID: ${previewId}. These are actual end-of-scene frames, in order. Inspect every frame: readable text, separated objects, unchanged originals after discard, independent copies, honest merge conflicts. If anything is wrong, revise and preview again. Otherwise publish this exact input with previewId using render_explainer. Nothing is embedded yet.`,
+            },
+            ...images.map((data) => ({ type: 'image' as const, data, mimeType: 'image/png' })),
+          ],
+        }
+      } catch (err) {
+        return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
+      }
+    },
+  )
+
+  server.registerTool(
+    'render_explainer',
+    {
+      title: 'Create animated explanation',
+      description:
+        'Publish a captioned animation directly in this conversation. For new explanations, compose objects and 4–6 scenes, call preview_explainer, inspect its scene frames, then pass the identical story here with previewId. Modified stories need a new preview. Captions MAX 140 characters, source MAX 300 characters. For follow-ups revise the scenes/style and preview again; earlier cards remain. Silent playback and transcript; no spoken voice or MP4 export. Legacy three-beat stories remain supported.',
+      inputSchema: {
+        ...explainerInput,
+        previewId: z.uuid().optional().describe('ID from preview_explainer for this exact story.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (input) => {
+      try {
+        const html = await renderExplainerHtml(input)
+        if (input.scenes) previews.assertReviewed(input.previewId, html)
+        const story = prepareExplainer(input)
         const slug =
           input.title
             .toLowerCase()
@@ -170,7 +211,7 @@ function buildCanvasServer(): { name: string; server: McpServer } {
             { type: 'resource', resource: { uri, mimeType: 'text/html', text: html } },
             {
               type: 'text',
-              text: `Created “${input.title}” as a playable, captioned explainer in the conversation. Narration: ${input.beats.map((beat) => beat.caption).join(' ')} Grounding: ${input.source}`,
+              text: `Created “${input.title}” as a playable, captioned explainer in the conversation. Narration: ${story.beats.map((beat) => beat.caption).join(' ')} Grounding: ${input.source}`,
             },
           ],
         }

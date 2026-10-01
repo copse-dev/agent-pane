@@ -28,6 +28,8 @@ describe('bundled MCP servers', () => {
       tools.some((t) => t.name === 'render_html_artefact'),
       'render_html_artefact tool should be registered',
     )
+    assert.ok(tools.some((t) => t.name === 'preview_explainer'))
+    assert.ok(tools.some((t) => t.name === 'render_explainer'))
   })
 
   it('returns a text/html UI resource the host can extract', async () => {
