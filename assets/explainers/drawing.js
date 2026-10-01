@@ -8,6 +8,7 @@
       v = clamp(v)
       return v * v * (3 - 2 * v)
     }
+    const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
     self.onmessage = ({ data }) => {
       try {
         const canvas = new OffscreenCanvas(1280, 480)
@@ -24,6 +25,117 @@
             ctx.fillStyle = color
             ctx.fillText(String(value), x, y)
             ctx.restore()
+          },
+          // Measure ink bounds, not a guessed baseline offset. Coordinates stay
+          // local to the caller's transform so labels travel with their objects.
+          textBox(value, x, y, w, h, options = {}) {
+            const {
+              size = 28,
+              minSize = Math.min(26, size),
+              padding = 8,
+              color = '#ffffff',
+              align = 'center',
+              verticalAlign = 'middle',
+              maxLines = 2,
+              lineHeight = 1.2,
+              weight = 600,
+              font = 'sans-serif',
+            } = options
+            if (
+              ![x, y, w, h, size, minSize, padding, maxLines, lineHeight].every(Number.isFinite) ||
+              minSize <= 0 ||
+              size < minSize ||
+              size > 256 ||
+              padding < 0 ||
+              w <= padding * 2 ||
+              h <= padding * 2 ||
+              !Number.isInteger(maxLines) ||
+              maxLines < 1 ||
+              lineHeight < 1 ||
+              !['left', 'center', 'right'].includes(align) ||
+              !['top', 'middle', 'bottom'].includes(verticalAlign)
+            )
+              throw new Error('textBox needs valid bounds, padding, size (1–256) and alignment.')
+            const label = String(value).trim()
+            if (!label) return
+            ctx.save()
+            try {
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'alphabetic'
+              const width = w - padding * 2
+              const fits = (text) => {
+                const m = ctx.measureText(text)
+                return (
+                  Math.max(m.width, m.actualBoundingBoxLeft + m.actualBoundingBoxRight) <= width
+                )
+              }
+              for (
+                let current = size;
+                current >= minSize;
+                current = Math.max(minSize, current - 1)
+              ) {
+                ctx.font = `${weight} ${current}px ${font}`
+                const lines = []
+                for (const paragraph of label.split('\n')) {
+                  let line = ''
+                  for (const word of paragraph.trim().split(/\s+/)) {
+                    const next = line ? line + ' ' + word : word
+                    if (fits(next)) {
+                      line = next
+                      continue
+                    }
+                    if (line) {
+                      lines.push(line)
+                      line = ''
+                    }
+                    for (const { segment } of graphemes.segment(word)) {
+                      if (line && !fits(line + segment)) {
+                        lines.push(line)
+                        line = ''
+                      }
+                      line += segment
+                    }
+                  }
+                  lines.push(line)
+                }
+                const metrics = lines.map((line) => ctx.measureText(line || 'Mg'))
+                const ascent = Math.max(...metrics.map((m) => m.actualBoundingBoxAscent))
+                const descent = Math.max(...metrics.map((m) => m.actualBoundingBoxDescent))
+                const step = Math.max(current * lineHeight, ascent + descent)
+                const firstAscent = metrics[0].actualBoundingBoxAscent
+                const height =
+                  firstAscent + (lines.length - 1) * step + metrics.at(-1).actualBoundingBoxDescent
+                if (lines.length <= maxLines && height <= h - padding * 2 && lines.every(fits)) {
+                  const spare = h - padding * 2 - height
+                  const top =
+                    y +
+                    padding +
+                    (verticalAlign === 'middle'
+                      ? spare / 2
+                      : verticalAlign === 'bottom'
+                        ? spare
+                        : 0)
+                  ctx.fillStyle = color
+                  lines.forEach((line, i) => {
+                    const m = metrics[i]
+                    const inkWidth = m.actualBoundingBoxLeft + m.actualBoundingBoxRight
+                    const spareX = width - inkWidth
+                    const left =
+                      x +
+                      padding +
+                      (align === 'center' ? spareX / 2 : align === 'right' ? spareX : 0)
+                    ctx.fillText(line, left + m.actualBoundingBoxLeft, top + firstAscent + i * step)
+                  })
+                  return
+                }
+                if (current === minSize) break
+              }
+              throw new Error(
+                `textBox cannot fit "${label.slice(0, 60)}" in ${w}×${h} at ${minSize}px. Enlarge the box, shorten the label or allow more lines.`,
+              )
+            } finally {
+              ctx.restore()
+            }
           },
           rect(x, y, w, h, color, radius = 0) {
             ctx.save()

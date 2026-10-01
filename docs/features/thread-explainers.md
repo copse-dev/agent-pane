@@ -33,9 +33,23 @@ live outside the drawing area, so models need not implement these repeatedly.
 `frame` provides absolute `time`, total `duration`, zero-based beat `index`, beat
 `progress`, `start`, `end`, `width` and `height`. Derive all state from these values
 so seeking produces the same picture in either direction. Standard Canvas methods
-are available, along with `helpers.text`, `rect`, `circle`, `line`, `clamp`, `ease`
+are available, along with `helpers.textBox`, `text`, `rect`, `circle`, `line`, `clamp`, `ease`
 and `mix`; the tool schema documents their signatures. No DOM, Node, network assets,
 random values, clocks or asynchronous drawing are needed.
+
+Use `textBox(label, x, y, width, height, options)` for text inside cards, buttons
+and badges. It measures the visible glyph bounds, centres them horizontally and
+vertically, and wraps within eight-pixel padding. Options include `align`
+(left/center/right), `verticalAlign` (top/middle/bottom), `padding`, `size`,
+`minSize`, `maxLines`, `lineHeight`, `color`, `weight` and `font`. Defaults are
+28px text, a 26px minimum (or the requested size if smaller), and two lines. It
+fits down to the minimum and reports overflow to the previewing agent instead of
+clipping or dropping words. The agent should enlarge the box or shorten the label.
+Reserve icon space by passing the text's portion of the box. Both drawing and
+text use the caller's current transform, keeping labels attached during movement.
+The original `text` helper remains compatible: its y coordinate is the middle
+baseline, not an alphabetic baseline requiring an added offset. These are layout
+primitives; colours, shapes, composition and motion remain the agent's choice.
 
 Earlier paper, felt, print and miniature studies provide grounding for readable
 labels, recognisable objects and consequential motion. They do not restrict the
@@ -81,6 +95,10 @@ callers that already use them.
   rebinds that queue per turn. Published cards do not depend on the preview cache.
 
 ## Validation
+
+Builds parse the copied player scripts before bundling. The fast syntax gate also
+parses fixture modules and their embedded drawing bodies before the longer static
+checks. Artwork is not executed during these syntax checks.
 
 Unit tests cover story bounds, inert serialization, narration timing, legacy
 styles/mechanisms, causal ordering, preview matching, preview-only publication,

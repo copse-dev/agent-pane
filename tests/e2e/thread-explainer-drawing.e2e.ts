@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { ToolCall } from '../../src/shared/types/index.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 import { browser, $ } from '@wdio/globals'
-import { drawingStory } from '../fixtures/explainer-drawing.ts'
+import { drawingStory, textAlignmentStory } from '../fixtures/explainer-drawing.ts'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
@@ -107,6 +107,14 @@ describe('original drawings in the thread player', function () {
       { code: 'helpers.rect(100,100,100,100,"#ffffff");', message: /did not change/i },
       { code: 'helpers.rect(frame.index*80,100,100,100,"#ffffff");', message: /did not change/i },
       { code: 'helpers.rect(Math.random()*600,100,100,100,"#ffffff");', message: /deterministic/i },
+      {
+        code: 'helpers.textBox("Unreadable label",20,20,50,30);',
+        message: /textBox cannot fit.*Enlarge the box/i,
+      },
+      {
+        code: 'helpers.textBox("Label",20,20,50,30,{padding:30});',
+        message: /textBox needs valid bounds/i,
+      },
     ]) {
       await turn('Check this animation draft.', 'mcp__copse-canvas__preview_explainer', {
         ...drawingStory,
@@ -265,5 +273,41 @@ if(!blocked)throw new Error('Drawing network policy is missing');
       )
       await guest('window.renderFrame(story.duration)', index)
     }
+  })
+
+  it('centres real glyphs, wraps without clipping and keeps transformed labels attached', async () => {
+    await turn('Check text alignment.', 'mcp__copse-canvas__preview_explainer', textAlignmentStory)
+    const preview = await lastCall()
+    assert.equal(preview?.status, 'done', preview?.result)
+    assert.equal(preview?.images?.length, 3)
+    const previewId = preview?.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
+    assert.ok(previewId)
+    await turn('Publish the checked layout.', 'mcp__copse-canvas__render_explainer', { previewId })
+    assert.equal((await lastCall())?.status, 'done')
+    const index = 2
+    await browser.waitUntil(
+      async () => {
+        try {
+          return (await guest('Boolean(window.explainerReady)', index)) === true
+        } catch {
+          return false
+        }
+      },
+      { timeout: 30_000 },
+    )
+    await guest('window.explainerReady', index)
+    assert.equal(
+      await guest(
+        `(async()=>{
+      await renderFrame(2);const first=document.querySelector('#scene').toDataURL();
+      await renderFrame(6);const moved=document.querySelector('#scene').toDataURL();
+      await renderFrame(2);return first!==moved && first===document.querySelector('#scene').toDataURL();
+    })()`,
+        index,
+      ),
+      true,
+    )
+    await capture(index, 'explainer-text-alignment')
+    await assertNoErrorToasts('text alignment')
   })
 })

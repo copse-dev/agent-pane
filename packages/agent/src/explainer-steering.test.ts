@@ -63,6 +63,8 @@ it('steers original drawings through transition review and token-only publicatio
   assert.match(prompt, /3–6 beats/)
   assert.match(prompt, /drawing.code/)
   assert.match(prompt, /grounding only/)
+  assert.match(prompt, /helpers.textBox/)
+  assert.match(prompt, /enlarge the box or shorten the label/)
   assert.match(prompt, /mid-transition and outcome/)
   assert.match(prompt, /only previewId/)
   assert.match(prompt, /Publish the finished explainer automatically/)
