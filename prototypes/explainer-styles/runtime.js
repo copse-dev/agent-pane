@@ -33,7 +33,9 @@
     }
     window.__seek = seek
     window.__duration = duration
-    if (params.has('t')) return seek(parseFloat(params.get('t')))
+    // A malformed ?t= (e.g. `?t=` or `?t=oops`) falls back to normal playback.
+    const frozen = parseFloat(params.get('t'))
+    if (Number.isFinite(frozen)) return seek(frozen)
     const hold = 1.2
     const t0 = window.performance.now()
     const tick = (now) => {
