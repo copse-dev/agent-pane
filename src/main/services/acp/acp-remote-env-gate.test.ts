@@ -9,6 +9,7 @@ import {
   remoteAcpAuthRequiredHint,
   resetRemoteAcpEnvDecisionsForTests,
 } from './acp-remote-env-gate.ts'
+import { acpSshTarget } from './acp-ssh-transport.ts'
 
 const REMOTE_ROOT = '/remote/project'
 
@@ -160,7 +161,7 @@ describe('remoteAcpAuthRequiredHint', () => {
 
   it('rewrites a remote "Authentication required" into remote-side remedies', () => {
     const err = new Error('Authentication required')
-    const hint = remoteAcpAuthRequiredHint(err, REMOTE_ROOT, 'claude-acp')
+    const hint = remoteAcpAuthRequiredHint(err, acpSshTarget(REMOTE_ROOT), 'claude-acp')
     assert.ok(hint)
     assert.match(hint.message, /dev/)
     assert.match(hint.message, /Settings → ACP agents/)
@@ -169,15 +170,27 @@ describe('remoteAcpAuthRequiredHint', () => {
 
   it('matches the agent-reported authentication_failed error kind too', () => {
     const err = new Error('ACP error -32603: Internal error {"errorKind":"authentication_failed"}')
-    assert.ok(remoteAcpAuthRequiredHint(err, REMOTE_ROOT, 'claude-acp'))
+    assert.ok(remoteAcpAuthRequiredHint(err, acpSshTarget(REMOTE_ROOT), 'claude-acp'))
   })
 
   it('leaves local auth failures alone — the default message is right there', () => {
     const err = new Error('Authentication required')
-    assert.equal(remoteAcpAuthRequiredHint(err, '/some/local/path', 'claude-acp'), null)
+    assert.equal(remoteAcpAuthRequiredHint(err, null, 'claude-acp'), null)
+  })
+
+  it("keeps the turn's placement when ACP-over-SSH is toggled after the spawn", async () => {
+    const err = new Error('Authentication required')
+    const target = acpSshTarget(REMOTE_ROOT)
+    await setSetting('acpOverSshEnabled', false)
+    assert.match(remoteAcpAuthRequiredHint(err, target, 'claude-acp')?.message ?? '', /dev/)
+    await setSetting('acpOverSshEnabled', true)
+    assert.equal(remoteAcpAuthRequiredHint(err, null, 'claude-acp'), null)
   })
 
   it('leaves non-auth failures alone', () => {
-    assert.equal(remoteAcpAuthRequiredHint(new Error('boom'), REMOTE_ROOT, 'claude-acp'), null)
+    assert.equal(
+      remoteAcpAuthRequiredHint(new Error('boom'), acpSshTarget(REMOTE_ROOT), 'claude-acp'),
+      null,
+    )
   })
 })

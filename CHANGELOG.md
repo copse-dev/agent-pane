@@ -8,13 +8,55 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
-## 0.1.0-beta.11
+## 0.1.0-beta.12
+
+This is the first published release since 0.1.0-beta.8. Betas 9, 10, and 11
+were cut but never published, so their notes are included below.
+
+- Agents connected over SSH are now treated as unsandboxed, whatever the local
+  sandbox state. Shell commands in an SSH workspace, and ACP agents running on
+  an SSH host, used to be judged as if the local macOS sandbox contained them,
+  so some ambiguous commands could run on the remote host without a prompt.
+  They now prompt, as they would anywhere else without a sandbox. Remote ACP
+  agents are no longer offered Copse's local tool bridge, and the approval for
+  installing an agent's adapter on the SSH host now installs a pinned version.
+  Both SSH features are opt-in and stay off by default.
+- Claude Sonnet 5.5 is available and is now the default model for direct
+  Anthropic API keys. Claude Sonnet 5 and Sonnet 4.6 remain selectable.
+- Agents on every provider can now use `apply_patch`, which adds, updates,
+  deletes, and moves several files in one call. The whole patch is checked
+  before anything is written. `str_replace` and `write_file` are unchanged.
+- Conversations on OpenAI's Responses API keep each request a byte-stable
+  prefix of the next, so automatic prompt caching applies on later turns
+  instead of being invalidated.
+- A message with several images opens a gallery with thumbnails, a count, and
+  arrow-key navigation, from either your attachments or the agent's reply.
+- The Browser pane can download an HTML canvas as one self-contained `.html`
+  file.
+- When a Git recovery action succeeds, such as finishing an interrupted rebase
+  or "Commit and continue" after a signing failure, it runs in the background
+  and the agent's turn continues automatically.
+- The model picker keeps arrow keys, Enter, and Escape working while it is
+  open, and typing from Recent switches to All models and starts a search.
+- Escape and Enter in an open dialog act on that dialog, even while an agent is
+  running, instead of stopping the agent or triggering workspace shortcuts.
+- The Automations panel shows when a schedule skipped its run because its
+  worktree limit was full, and edits to that limit save reliably.
+- Pull requests in the PR pane link back to the thread that produced them.
+- Chromium- and macOS-provided menu and dialog text in the Mac app is now in
+  English for every user, matching Copse's English-only interface. This keeps
+  the installed app within its size budget.
 
 - The update prompt now lists what changed in every release since the one you
   are running, newest first, instead of only naming the new version. Skipping a
   few weekly betas no longer means missing their notes; an "All release notes"
   link opens the full history. Stable installations list stable releases only.
   If the release notes cannot be fetched, the prompt still offers the update.
+
+- A skipped post-turn review now renders as one compact transcript annotation.
+  It keeps the reason visible when a below-threshold diff or declined spend
+  prompt would otherwise leave no explanation, without restoring a full review
+  body. Completed and failed reviews are unchanged.
 
 - Tool calls that miss a numeric bound no longer fail. A model that asks
   `find_files` for `max_results: 2000` against a schema capped at 200 — a
