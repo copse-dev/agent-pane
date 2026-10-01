@@ -380,6 +380,7 @@ export function cursorGenericToolName(toolName: string): string {
       return 'Read'
     case 'write_file':
     case 'str_replace':
+    case 'apply_patch':
     case 'rename_file':
     case 'make_directory':
       return 'Write'

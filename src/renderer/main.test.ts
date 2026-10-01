@@ -58,4 +58,16 @@ describe('destructive shortcuts defer to an open dialog', () => {
     assert.ok(block, 'could not find the find-in-chat handler')
     assert.match(block, /if \(isAnyDialogOpen\(\)\) return/)
   })
+
+  it('lets an open dialog own Escape and Enter', () => {
+    const handler = src.slice(src.indexOf('function registerKeyboardShortcuts'))
+    const dialogGuard = handler.indexOf('if (isAnyDialogOpen()) return')
+    const escapeStop = handler.indexOf("handleStopShortcut?.('Escape')")
+    const enterStop = handler.indexOf("handleStopShortcut?.('Enter')")
+    assert.ok(dialogGuard >= 0, 'the global shortcut handler must defer to dialogs')
+    assert.ok(escapeStop >= 0, 'the global Escape stop shortcut must remain present')
+    assert.ok(enterStop >= 0, 'the global Enter stop shortcut must remain present')
+    assert.ok(dialogGuard < escapeStop, 'dialog guard must run before Escape stop handling')
+    assert.ok(dialogGuard < enterStop, 'dialog guard must run before Enter stop handling')
+  })
 })

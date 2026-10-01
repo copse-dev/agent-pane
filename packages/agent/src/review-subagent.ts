@@ -12,6 +12,7 @@ import { z } from 'zod'
 export const EDIT_TOOL_NAMES = [
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',

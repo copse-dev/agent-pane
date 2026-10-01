@@ -75,9 +75,13 @@ describe('concise thread model gate', () => {
     assert.equal(isConciseMessage(message({ role: 'user', model: CAPABLE })), false)
   })
 
-  it('treats a concise bubble with tool calls as working, unless its turn failed', () => {
+  it('treats a concise bubble with a running tool as working', () => {
     const working = message({ model: CAPABLE, toolCalls: [tool()] })
-    assert.equal(isConciseWorkingMessage(working), true)
+    assert.equal(
+      isConciseWorkingMessage({ ...working, toolCalls: [tool({ status: 'running' })] }),
+      true,
+    )
+    assert.equal(isConciseWorkingMessage(working), false)
     assert.equal(isConciseWorkingMessage(message({ model: CAPABLE })), false)
     assert.equal(isConciseWorkingMessage({ ...working, turnOutcome: failedOutcome() }), false)
     assert.equal(isConciseWorkingMessage(message({ model: MODEST, toolCalls: [tool()] })), false)
@@ -85,8 +89,11 @@ describe('concise thread model gate', () => {
 
   it('toggles the stylesheet classes on the bubble', () => {
     const el = document.createElement('div')
+    const running = message({ model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
+    syncConciseMessageClasses(el, running, true)
+    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-working', 'msg-concise-steps'])
     syncConciseMessageClasses(el, message({ model: CAPABLE, toolCalls: [tool()] }), true)
-    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-working'])
+    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-steps'])
     syncConciseMessageClasses(el, message({ model: CAPABLE }), true)
     assert.deepEqual([...el.classList], ['msg-concise'])
     syncConciseMessageClasses(el, message({ model: MODEST }), true)

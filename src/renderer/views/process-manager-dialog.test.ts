@@ -90,6 +90,11 @@ test('managed rows jump to their thread and stop by handle; shared rows stay rea
   open()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
+  assert.equal(
+    document.activeElement,
+    document.querySelector('[aria-label="Close process manager"]'),
+    'opening the process manager gives keyboard focus to its close control',
+  )
   assert.equal(document.querySelector('tr[data-pid="1"] .process-manager-actions-button'), null)
   const actions = document.querySelector<HTMLButtonElement>(
     'tr[data-pid="42"] .process-manager-actions-button',

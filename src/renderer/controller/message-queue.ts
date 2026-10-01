@@ -156,7 +156,7 @@ function setMessageHookOrigin(
   store.setState({ threads })
 }
 
-function refreshPayload(
+export function refreshAgentRunPayload(
   store: AppStore,
   threadId: string,
   { reviewContext: _stale, ...payload }: AgentRunPayload,
@@ -244,7 +244,7 @@ export function dispatchAgentRun(
   const run = api.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshPayload(store, threadId, payload)),
+    JSON.stringify(refreshAgentRunPayload(store, threadId, payload)),
   )
   if (!queued) {
     void run

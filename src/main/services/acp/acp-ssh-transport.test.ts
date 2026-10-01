@@ -32,7 +32,9 @@ import {
   remoteNpmInstallScript,
   remoteVersionManagerSearchScript,
   formatRemoteAcpInstallApproval,
+  remoteAcpInstallSpec,
 } from './acp-ssh-transport.ts'
+import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 
 const REMOTE_ROOT = '/remote/project'
 
@@ -304,8 +306,13 @@ describe('every catalog agent, not just Claude', () => {
         // Opted in, so the remote installer will run npm for it — the package
         // must come from the catalog, never from the agent's command name.
         assert.ok(known.installPackage, 'autoInstall requires an explicit installPackage')
-        const script = remoteNpmInstallScript(known.installPackage, '/opt/node/bin')
-        assert.ok(script.includes(known.installPackage))
+        // A remote install has no Socket Firewall in front of npm, so it only
+        // ever fetches the version the container image pins and reviews.
+        const spec = remoteAcpInstallSpec(known)
+        assert.ok(spec, `${known.id}: a remote auto-install needs a pinned version`)
+        assert.equal(spec, `${known.installPackage}@${containerAcpAgent(known.id)?.version ?? ''}`)
+        const script = remoteNpmInstallScript(spec, '/opt/node/bin')
+        assert.ok(script.includes(spec))
         assert.ok(script.includes('--ignore-scripts'), 'lifecycle scripts stay disabled')
         // Never `fnm use`/`nvm use`: the host's default Node is not ours to change.
         assert.ok(!/\b(fnm|nvm|asdf|volta)\b/.test(script), 'no version-manager mutation')
@@ -320,6 +327,23 @@ describe('every catalog agent, not just Claude', () => {
       }
     })
   }
+})
+
+describe('remoteAcpInstallSpec', () => {
+  it('pins the package to the version the container image bakes', () => {
+    const pinned = containerAcpAgent('claude-acp')
+    assert.ok(pinned)
+    assert.equal(
+      remoteAcpInstallSpec({ id: 'claude-acp', installPackage: pinned.npmPackage }),
+      `${pinned.npmPackage}@${pinned.version}`,
+    )
+  })
+
+  it('refuses a package with no pin, or one that is not the pinned package', () => {
+    assert.equal(remoteAcpInstallSpec({ id: 'claude-acp' }), null)
+    assert.equal(remoteAcpInstallSpec({ id: 'no-such-agent', installPackage: 'some-pkg' }), null)
+    assert.equal(remoteAcpInstallSpec({ id: 'claude-acp', installPackage: 'other-pkg' }), null)
+  })
 })
 
 describe('approved env forwarding (stdin preamble)', () => {
