@@ -1,10 +1,21 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import { setApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { rememberAcpPermission } from './acp-permission-grants.ts'
+import { acpSessionFingerprint } from './acp-session-pool.ts'
+import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
+import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
   acpErrorMessage,
@@ -16,12 +27,15 @@ import {
   probeAcpAgentForSettings,
   permissionResponseFor,
   mergeAcpPermissionAbortSignals,
+  resolveAcpRunContainment,
+  respondToPermissionForTest,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   shouldAutoApproveSandboxedCodexCodeMode,
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
+import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
 
 const ALLOW_ONCE: PermissionOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' }
 const ALLOW_ALWAYS: PermissionOption = {
@@ -654,4 +668,320 @@ describe('ACP on SSH workspaces', () => {
       (err: unknown) => err instanceof Error && err.message !== ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
   })
+})
+
+/**
+ * ACP over SSH spawns the agent on the remote host, where the local seatbelt
+ * never applies. Every decision that relaxes because "the agent is sandboxed"
+ * must therefore stay strict for a remote agent, even on a machine whose local
+ * project sandbox is active (docs/shell-permissions.md, "SSH workspaces").
+ */
+describe('remote ACP agents are never treated as sandboxed', () => {
+  const REMOTE_ROOT = '/remote/project'
+  const LOCAL_ROOT = '/tmp/copse-local-acp-project'
+  let prompts: string[] = []
+
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    await setSetting('acpOverSshEnabled', true)
+    // No local model classifier in unit tests: the gate's own policy decides.
+    await setSetting('safetyClassifierEnabled', false)
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [
+      { id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' },
+      { id: 'p-local', path: LOCAL_ROOT },
+    ])
+    setWorkspaceRootForTest(REMOTE_ROOT)
+    prompts = []
+    setApprovalHandler((req) => {
+      prompts.push(req.title)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+  })
+
+  afterEach(async () => {
+    setApprovalHandler(null)
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+    await setSetting('acpOverSshEnabled', false)
+    await setSetting('safetyClassifierEnabled', true)
+  })
+
+  // What the turn resolves on a machine whose local sandbox IS active.
+  const remote = (): ReturnType<typeof resolveAcpRunContainment> =>
+    resolveAcpRunContainment({ cwd: REMOTE_ROOT, localSandbox: true, unattendedContainer: false })
+  const local = (): ReturnType<typeof resolveAcpRunContainment> =>
+    resolveAcpRunContainment({ cwd: LOCAL_ROOT, localSandbox: true, unattendedContainer: false })
+
+  it('resolves an SSH-hosted agent as unsandboxed and uncontained', () => {
+    assert.deepEqual(remote(), { sandboxed: false, contained: false, remote: true })
+    assert.deepEqual(local(), { sandboxed: true, contained: false, remote: false })
+    // Nor does an unattended-container flag make a remote agent contained.
+    assert.deepEqual(
+      resolveAcpRunContainment({
+        cwd: REMOTE_ROOT,
+        localSandbox: false,
+        unattendedContainer: true,
+      }),
+      { sandboxed: false, contained: false, remote: true },
+    )
+  })
+
+  it('keeps the turn on one placement when ACP-over-SSH is toggled mid-turn', async () => {
+    // The turn resolves its SSH target once, while the setting is on…
+    const target = acpSshTarget(REMOTE_ROOT)
+    assert.equal(target?.hostId, 'dev')
+    // …and the setting is switched off before the session is spawned.
+    await setSetting('acpOverSshEnabled', false)
+    assert.equal(acpSshTarget(REMOTE_ROOT), null)
+    const config = { command: 'agent', cwd: REMOTE_ROOT, sshTarget: target }
+    // Spawn, pool and containment all keep the turn's answer: remote.
+    assert.deepEqual(spawnConfigSshTarget(config), target)
+    assert.deepEqual(
+      resolveAcpRunContainment({
+        cwd: REMOTE_ROOT,
+        sshTarget: target,
+        localSandbox: true,
+        unattendedContainer: false,
+      }),
+      { sandboxed: false, contained: false, remote: true },
+    )
+
+    // The reverse: resolved local while off, switched on before the spawn.
+    await setSetting('acpOverSshEnabled', true)
+    const localConfig = { command: 'agent', cwd: REMOTE_ROOT, sshTarget: null }
+    assert.equal(spawnConfigSshTarget(localConfig), null)
+    assert.deepEqual(
+      resolveAcpRunContainment({
+        cwd: REMOTE_ROOT,
+        sshTarget: null,
+        localSandbox: true,
+        unattendedContainer: false,
+      }),
+      { sandboxed: true, contained: false, remote: false },
+    )
+    // A pooled session never serves a turn placed elsewhere.
+    assert.notEqual(acpSessionFingerprint(config), acpSessionFingerprint(localConfig))
+  })
+
+  it('keeps a Claude preset in its own prompting mode instead of acceptEdits', () => {
+    const claude: AcpAgentConfig = {
+      id: 'claude-acp',
+      title: 'Claude',
+      command: 'claude-agent-acp',
+      enabled: true,
+    }
+    assert.equal(resolveAcpPermissionMode(claude, remote().sandboxed), undefined)
+    assert.equal(resolveAcpPermissionMode(claude, local().sandboxed), 'acceptEdits')
+  })
+
+  async function answer(
+    posture: ReturnType<typeof resolveAcpRunContainment>,
+    agentId: string,
+    req: RequestPermissionRequest,
+    root: string,
+  ): Promise<{ prompted: boolean; approved: boolean }> {
+    const before = prompts.length
+    const response = await runWithThreadExecutionContext(
+      {
+        projectId: posture.remote ? 'p1' : 'p-local',
+        threadId: posture.remote ? 't-remote' : 't-local',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        respondToPermissionForTest({ id: agentId, title: 'Agent', ...posture }, req, root, root),
+    )
+    return {
+      prompted: prompts.length > before,
+      approved:
+        response.outcome.outcome === 'selected' &&
+        response.outcome.optionId === ALLOW_ONCE.optionId,
+    }
+  }
+
+  it('prompts for read and search requests', async () => {
+    for (const kind of ['read', 'search'] as const) {
+      const req = permissionRequest({ kind, title: `${kind} src/index.ts` })
+      assert.deepEqual(await answer(remote(), 'gemini', req, REMOTE_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+      assert.deepEqual(await answer(local(), 'gemini', req, LOCAL_ROOT), {
+        prompted: false,
+        approved: true,
+      })
+    }
+  })
+
+  it('prompts for an opaque Codex code-mode cell', async () => {
+    const cell: RequestPermissionRequest = {
+      ...permissionRequest({ kind: 'execute' }),
+      _meta: { codex: { params: { itemId: 'exec-1' } } },
+    }
+    assert.deepEqual(await answer(remote(), 'codex-acp', cell, REMOTE_ROOT), {
+      prompted: true,
+      approved: false,
+    })
+    assert.deepEqual(await answer(local(), 'codex-acp', cell, LOCAL_ROOT), {
+      prompted: false,
+      approved: true,
+    })
+  })
+
+  it('gates ambiguous commands and opaque interpreter scripts as unsandboxed', async () => {
+    for (const command of ['gh api repos/octo/app/issues', "python3 - <<'EOF'\nprint('hi')\nEOF"]) {
+      const req = permissionRequest({ kind: 'execute', rawInput: { command } })
+      assert.deepEqual(
+        await answer(remote(), 'gemini', req, REMOTE_ROOT),
+        { prompted: true, approved: false },
+        `${command} must prompt when the agent runs on an SSH host`,
+      )
+      assert.deepEqual(
+        await answer(local(), 'gemini', req, LOCAL_ROOT),
+        { prompted: false, approved: true },
+        `${command} auto-runs inside the local sandbox`,
+      )
+    }
+  })
+
+  it('does not let a local "always allow" cover the same agent over SSH', async () => {
+    storageSet('acp-remembered-grants', [])
+    await rememberAcpPermission('gemini', 'read')
+    try {
+      const req = permissionRequest({ kind: 'read', title: 'read ~/.ssh/config' })
+      assert.deepEqual(await answer(remote(), 'gemini', req, REMOTE_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
+  it('scopes a remembered SSH grant to the host it was given on', async () => {
+    storageSet('acp-remembered-grants', [])
+    await rememberAcpPermission('gemini', 'read', { kind: 'remote', hostId: 'dev' })
+    const req = permissionRequest({ kind: 'read', title: 'read ~/.ssh/config' })
+    const onHost = async (hostId?: string): Promise<boolean> => {
+      const before = prompts.length
+      await respondToPermissionForTest(
+        {
+          id: 'gemini',
+          title: 'Agent',
+          ...remote(),
+          ...(hostId !== undefined ? { remoteHostId: hostId } : {}),
+        },
+        req,
+        REMOTE_ROOT,
+        REMOTE_ROOT,
+      )
+      return prompts.length > before
+    }
+    try {
+      assert.equal(await onHost('dev'), false, 'the host that was granted reuses it')
+      assert.equal(await onHost('prod'), true, 'another host asks again')
+      assert.equal(await onHost(), true, 'an unknown host fails closed')
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
+  it('does not waive a prompt for a title that claims a bridged native tool', async () => {
+    // Remote agents are never offered the bridge, so nothing would re-gate it.
+    const req = permissionRequest({ kind: 'other', title: 'copse-semantic_search' })
+    assert.deepEqual(await answer(remote(), 'gemini', req, REMOTE_ROOT), {
+      prompted: true,
+      approved: false,
+    })
+    assert.deepEqual(await answer(local(), 'gemini', req, LOCAL_ROOT), {
+      prompted: false,
+      approved: true,
+    })
+  })
+})
+
+describe('worktree-backup auto-approval of ACP edits', () => {
+  // The backup only protects files on this machine; a remote (ACP-over-SSH)
+  // agent edits the SSH host's checkout, which that backup cannot restore.
+  let repo = ''
+  let prompts = 0
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(() => {
+    setGitAvailableForTest(true)
+    repo = mkdtempSync(join(tmpdir(), 'copse-acp-backup-'))
+    restoreWorkspace = setWorkspaceRootForTest(repo)
+    const git = (...args: string[]): void => {
+      execFileSync('git', args, { cwd: repo, stdio: 'ignore' })
+    }
+    git('init', '-q')
+    git(
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'user.name=T',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'base',
+    )
+    prompts = 0
+    setApprovalHandler(() => {
+      prompts++
+      return Promise.resolve({ approved: false, remember: false })
+    })
+  })
+
+  afterEach(() => {
+    setApprovalHandler(null)
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  async function answer(
+    remote: boolean,
+    kind: 'edit' | 'delete' | 'move',
+  ): Promise<{ prompted: boolean; approved: boolean }> {
+    const before = prompts
+    const thread = {
+      projectId: 'p-backup',
+      threadId: `t-${kind}-${String(remote)}`,
+      projectRoot: repo,
+      root: repo,
+      checkoutMode: 'shared' as const,
+      branch: null,
+    }
+    const response = await runWithThreadExecutionContext(thread, () =>
+      respondToPermissionForTest(
+        { id: 'gemini', title: 'Agent', sandboxed: !remote, contained: false, remote },
+        permissionRequest({ kind, title: `${kind} src/index.ts` }),
+        repo,
+        repo,
+      ),
+    )
+    return {
+      prompted: prompts > before,
+      approved:
+        response.outcome.outcome === 'selected' &&
+        response.outcome.optionId === ALLOW_ONCE.optionId,
+    }
+  }
+
+  for (const kind of ['edit', 'delete', 'move'] as const) {
+    it(`auto-approves a local ${kind} but prompts for a remote one`, async () => {
+      assert.deepEqual(await answer(false, kind), { prompted: false, approved: true })
+      assert.deepEqual(await answer(true, kind), { prompted: true, approved: false })
+    })
+  }
 })

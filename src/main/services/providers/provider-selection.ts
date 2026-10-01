@@ -1,4 +1,5 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -89,8 +90,7 @@ export function normalizeRoleModelSelection(model: string): string {
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
     extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
-    value.startsWith('claude-') ||
-    value.startsWith('gpt-')
+    firstPartyProviderOf(value) !== null
   ) {
     return value
   }
@@ -402,12 +402,14 @@ export async function describeProvider(
       params,
     }
   }
-  if (model.startsWith('claude'))
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty === 'anthropic') {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }
-  if (model.startsWith('gpt')) {
+  }
+  if (firstParty === 'openai') {
     return { kind: 'openai', model, apiKeySlug: 'openai', params, ...openAiTransport() }
   }
-  // An id neither prefix claims goes to whichever cloud provider has a key,
+  // An id no first-party family claims goes to whichever cloud provider has a key,
   // Anthropic first — the order `createProvider` has always used.
   if (storedOrEnvApiKey('anthropic')) {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }

@@ -28,6 +28,7 @@
 // mappers own the wire.
 
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
+import { firstPartyProviderOf, hasModelIdPrefix } from './model-families.ts'
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 
@@ -230,6 +231,12 @@ function matchesFamily(modelId: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => modelId.startsWith(prefix))
 }
 
+// OpenAI ladders match on an id boundary like the routing table does, so the
+// transport and the parameters cannot disagree about which family an id is in.
+function matchesOpenAiFamily(modelId: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix))
+}
+
 function claudeSupport(modelId: string): ModelParameterSupport {
   const withoutOff = (ladder: readonly ReasoningLevel[]): readonly ReasoningLevel[] =>
     matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON)
@@ -265,7 +272,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
 }
 
 function openAiSupport(modelId: string): ModelParameterSupport {
-  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
       reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: 'openai-effort',
@@ -274,7 +281,7 @@ function openAiSupport(modelId: string): ModelParameterSupport {
       temperatureMax: 2,
     }
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: 'openai-effort',
@@ -316,8 +323,9 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     }
   }
   if (selection.namespace === 'cloud') {
-    if (selection.modelId.startsWith('claude')) return claudeSupport(selection.modelId)
-    if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
+    const provider = firstPartyProviderOf(selection)
+    if (provider === 'anthropic') return claudeSupport(selection.modelId)
+    if (provider === 'openai') return openAiSupport(selection.modelId)
     // An unrecognised bare id is routed by whichever key is configured, so we
     // cannot say what it takes. Offer sampling only — the safe intersection.
     return {

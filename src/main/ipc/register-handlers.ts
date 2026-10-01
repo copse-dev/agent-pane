@@ -1787,20 +1787,20 @@ export function registerAllHandlers(
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    // Archived threads are hidden from every renderer surface (sidebar and
-    // `@`-catalog both filter them), so folding their history into the store
-    // only grew the heap. They stay on disk and in the whole-history readers.
-    // Threads written before `prRefs` existed have no cached PR links, and a
-    // metadata-only load has no transcript to scrape — so their sidebar chips
-    // would be missing. Fill them in behind the load: fire-and-forget, low
-    // concurrency, one pass per project ever (the result is recorded on each
-    // thread's metadata), pushing batches so the chips appear without a relaunch.
-    void backfillThreadPrRefs(id, (refs) => {
-      if (!win.isDestroyed()) win.webContents.send('threads:pr-refs', id, refs)
-    }).catch((err: unknown) => {
-      console.warn('[threads] PR-ref backfill failed:', err)
-    })
+    // Archived threads stay on disk but are hidden from renderer surfaces.
+    // The sidebar loads metadata only; legacy PR links are filled on demand
+    // when their rows enter the visible viewport.
     return loadProjectThreadMetas(id, { includeArchived: false })
+  })
+  ipcMain.handle('threads:backfill-pr-refs', async (event, projectId: unknown, ids: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, threadIds] = parseIpcArgs(z.tuple([zProjectId, z.array(zThreadId).min(1).max(10)]), [
+      projectId,
+      ids,
+    ])
+    await backfillThreadPrRefs(id, threadIds, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr-refs', id, refs)
+    })
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.

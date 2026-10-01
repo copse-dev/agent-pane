@@ -17,6 +17,7 @@
 
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
 import { writeGeneratedFile } from './lib/generated-file.mts'
 
 const LITELLM_URL =
@@ -83,8 +84,8 @@ interface ResolvedEntry {
 }
 
 function expectedProviderFor(model: string): 'anthropic' | 'openai' {
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
+  const provider = firstPartyProviderOf(model)
+  if (provider !== null) return provider
   throw new Error(
     `[sync-model-catalog] Unknown provider family for tracked model '${model}'. Update expectedProviderFor() to teach the script how to validate it.`,
   )
