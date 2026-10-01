@@ -640,6 +640,13 @@
           1
         ]
       },
+      "deep-links:ready": {
+        "api": "deepLinks.ready",
+        "args": [
+          0,
+          0
+        ]
+      },
       "diff:approve": {
         "api": "diff.approve",
         "args": [
@@ -2382,6 +2389,13 @@
       },
       "container:run-changed": {
         "api": "container.onRunChanged",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "deep-links:open-thread": {
+        "api": "deepLinks.onOpenThread",
         "args": [
           1,
           1
