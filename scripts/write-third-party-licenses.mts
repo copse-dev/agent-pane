@@ -13,8 +13,13 @@
  * electron-builder retains Electron's `LICENSES.chromium.html` beside the
  * packaged runtime. It is deliberately not duplicated in this directory.
  */
-import { copyFileSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  findNoticeProblems,
+  formatNoticeProblems,
+  parseNotices,
+} from './lib/third-party-notices.mts'
 import {
   THIRD_PARTY_LICENSE_JSON,
   THIRD_PARTY_LICENSE_TEXT,
@@ -86,6 +91,18 @@ export function collectLicenseReport(
         '\nAdd the missing text to LICENSE_OVERRIDES (scripts/third-party-vendored.mts), ' +
         'or keep the package out of the app.',
     )
+  }
+  // THIRD_PARTY_NOTICES.md records how Copse meets each non-attribution licence;
+  // this is the one place the complete shipped set exists, bundles included.
+  // Vendored components (fonts, gortex's Go modules) are covered by prose
+  // sections, not per-package entries.
+  const noticeProblems = findNoticeProblems(
+    parseNotices(readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8')),
+    components.filter((component) => component.shippedAs.some((how) => how !== 'vendored')),
+    { complete: true },
+  )
+  if (noticeProblems.length > 0) {
+    throw new Error(`[licenses] ${formatNoticeProblems(noticeProblems)}`)
   }
   return buildLicenseReport(components)
 }

@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedReviewInlineFixture, writeSeedConfig } from './helpers/seed-config.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -148,5 +149,80 @@ describe('post-turn review follow-up note (#2506)', () => {
     expect(state.noteText).toBe('Follow-up turn not started: the run was cancelled.')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-followup-note.png'))
+  })
+})
+
+// A skipped review has no verdict, but its persisted summary can be the only
+// explanation for a below-threshold diff or declined spend prompt. Keep that
+// explanation in one quiet annotation line instead of dropping it or restoring
+// a full review body.
+describe('skipped post-turn review explanation', () => {
+  before(async () => {
+    resetUserData()
+    const projectId = 'e2e-review-skipped-project'
+    const threadId = 'e2e-review-skipped-thread'
+    const now = Date.now()
+    writeSeedConfig({
+      projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: projectId,
+      activeThreadId: threadId,
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'Skipped review explanation',
+          status: 'idle',
+          messages: [
+            {
+              id: 'msg-user-skipped-review',
+              role: 'user',
+              content: 'Make the small copy edit.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'msg-assistant-skipped-review',
+              role: 'assistant',
+              content: 'Updated the label.',
+              toolCalls: [],
+              review: {
+                status: 'skipped',
+                summary: 'Review skipped — spending on Claude Sonnet was not approved.',
+              },
+              createdAt: now + 1,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 1,
+        },
+      ],
+    })
+    await browser.reloadSession()
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('shows why the review was skipped without restoring a full review body', async () => {
+    const selector = '[data-review-card][data-status="skipped"]'
+    await $(selector).waitForExist({ timeout: 30_000 })
+
+    const state = await browser.execute(() => {
+      const card = document.querySelector('[data-review-card][data-status="skipped"]')
+      const message = document.querySelector('[data-message-id="msg-assistant-skipped-review"]')
+      return {
+        anchoredAfterMessage: message?.nextElementSibling === card,
+        title: card?.querySelector('.review-panel-title')?.textContent ?? null,
+        reason: card?.querySelector('.review-panel-skipped-summary')?.textContent ?? null,
+        hasFullBody: card?.querySelector('.review-panel-body') !== null,
+      }
+    })
+
+    expect(state.anchoredAfterMessage).toBe(true)
+    expect(state.title).toBe('Review skipped')
+    expect(state.reason).toBe('Spending on Claude Sonnet was not approved.')
+    expect(state.hasFullBody).toBe(false)
+    await saveElementScreenshot(selector, 'review-skipped-explanation.png')
   })
 })

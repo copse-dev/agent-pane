@@ -30,7 +30,6 @@ function tc(id: string, name: string, status: ToolCall['status'] = 'done'): Tool
 function rollupChildren(
   items: ReturnType<typeof buildToolCallDisplayItems>,
 ): ReturnType<typeof buildToolCallDisplayItems> {
-  assert.equal(items.length, 1)
   assert.equal(items[0]?.type, 'rollup')
   return items[0].children
 }
@@ -40,6 +39,13 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
     assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')
     assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read page')
+    assert.equal(
+      getToolCallLabel({
+        ...tc('startup', 'mcp__copse__startup', 'error'),
+        title: 'mcp.copse.startup',
+      }),
+      'copse startup',
+    )
   })
 
   it('labels worktree preparation tools and groups them by effect', () => {
@@ -71,6 +77,27 @@ describe('tool-display', () => {
     assert.equal(getToolEditPath(write), 'README.md')
     assert.equal(getToolEditPath(tc('2', 'run_shell')), null)
     assert.equal(getToolEditPath(tc('3', 'read_file')), null)
+  })
+
+  it('labels apply_patch by file count and deep-links its first file', () => {
+    const input = (...files: string[]): string =>
+      [
+        '*** Begin Patch',
+        ...files.map((f) => `*** Update File: ${f}\n-a\n+b`),
+        '*** End Patch',
+      ].join('\n')
+    const one = { ...tc('1', 'apply_patch'), args: { input: input('src/a.ts') } }
+    assert.equal(getToolCallLabel(one), 'Patched src/a.ts')
+    assert.equal(getToolCallLabel({ ...one, status: 'running' }), 'Patching src/a.ts')
+    assert.equal(getToolEditPath(one), 'src/a.ts')
+    const many = { ...tc('2', 'apply_patch'), args: { input: input('a.ts', 'b.ts', 'c.ts') } }
+    assert.equal(getToolCallLabel(many), 'Patched 3 files')
+    assert.equal(getToolCallLabel({ ...many, status: 'running' }), 'Patching 3 files')
+    assert.equal(getToolEditPath(many), 'a.ts')
+    // Still streaming: no patch text yet, so fall back to the generic name.
+    const pending = { ...tc('3', 'apply_patch'), args: {}, status: 'running' as const }
+    assert.equal(getToolCallLabel(pending), 'Applying patch')
+    assert.equal(getToolEditPath(pending), null)
   })
 
   it('labels and deep-links file deletions', () => {
@@ -259,38 +286,121 @@ describe('tool-display', () => {
     assert.equal(items[0].label, 'Used 3 tools · 1 failed')
   })
 
-  it('lists failed tools outside their success group inside the rollup', () => {
+  it('keeps failed tools beside the collapsed successes', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'read_file'),
       tc('2', 'read_file', 'error'),
       tc('3', 'list_dir'),
     ])
+    assert.equal(items.length, 2)
     const children = rollupChildren(items)
-    assert.equal(children.length, 2)
+    assert.equal(children.length, 1)
     assert.equal(children[0]?.type, 'group')
-    assert.equal(children[1]?.type, 'individual')
-    assert.equal(children[0].toolCalls.length, 2)
-    assert.ok(children[0].toolCalls.every((t) => t.status !== 'error'))
-    assert.equal(children[1].toolCall.id, '2')
-    assert.equal(children[1].label, 'Read file')
+    assert.deepEqual(
+      children[0].toolCalls.map((call) => call.id),
+      ['1', '3'],
+    )
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '2')
+    assert.equal(items[1].label, 'Read file')
   })
 
-  it('collapses repeated failures into a single error group', () => {
+  it('keeps user-interrupted calls inside the rollup and only failures beside it', () => {
+    const done = tc('1', 'read_file')
+    const interrupted = tc('2', 'read_file', 'error')
+    const failed = tc('3', 'list_dir', 'error')
+    const isInterrupted = (call: ToolCall): boolean => call === interrupted
+    const items = buildToolCallDisplayItems([done, interrupted, failed], { isInterrupted })
+    assert.equal(items.length, 2)
+    const inside = (children: ReturnType<typeof buildToolCallDisplayItems>): string[] =>
+      children.flatMap((child) =>
+        child.type === 'individual' ? [child.toolCall.id] : child.toolCalls.map((call) => call.id),
+      )
+    assert.deepEqual(inside(rollupChildren(items)), ['1', '2'])
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '3')
+
+    // A cross-message run applies the same split: steps keep the interrupted
+    // call, and the genuine failure sits beside the run.
+    const run = deriveToolRuns([
+      { id: 'a', role: 'assistant', content: '', toolCalls: [done, interrupted] },
+      { id: 'b', role: 'assistant', content: '', toolCalls: [failed] },
+    ])[0]
+    assert.ok(run)
+    assert.equal(run.steps.length, 2)
+    const runItems = buildToolRunDisplayItems(run, { isInterrupted })
+    assert.equal(runItems.length, 2)
+    assert.equal(runItems[0]?.type, 'rollup')
+    assert.equal(runItems[0].key, RUN_ROLLUP_KEY)
+    const [first, second] = runItems[0].children
+    assert.equal(first?.type, 'step')
+    assert.deepEqual(inside(first.children), ['1', '2'])
+    assert.equal(second?.type, 'step')
+    assert.equal(second.children.length, 0)
+    assert.equal(runItems[1]?.type, 'individual')
+    assert.equal(runItems[1].toolCall.id, '3')
+  })
+
+  it('groups repeated failures with no empty rollup above them when every call failed', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__mdn__get_compat', 'error'),
       tc('2', 'mcp__mdn__get_compat', 'error'),
       tc('3', 'mcp__mdn__get_compat', 'error'),
     ])
-    assert.equal(items[0]?.type, 'rollup')
-    assert.equal(items[0].label, 'mdn · 3 failed')
-    const children = rollupChildren(items)
-    assert.equal(children[0]?.type, 'group')
-    assert.equal(children[0].label, 'mdn')
-    assert.equal(children[0].toolCalls.length, 3)
-    assert.equal(aggregateToolStatus(children[0].toolCalls), 'error')
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[0].label, 'mdn')
+    assert.equal(items[0].toolCalls.length, 3)
+    assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
   })
 
-  it('separates successful and failed calls into distinct groups', () => {
+  it('shows distinct failures as their own cards when every call failed', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__docs__startup', 'error'),
+      tc('2', 'mcp__issue_tracker__startup', 'error'),
+    ])
+    assert.deepEqual(
+      items.map((item) => item.type),
+      ['individual', 'individual'],
+    )
+  })
+
+  it('keeps a forced rollup for nested reasoning even when every call failed', () => {
+    const items = buildToolCallDisplayItems(
+      [tc('1', 'read_file', 'error'), tc('2', 'list_dir', 'error')],
+      { forceRollup: true },
+    )
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(rollupChildren(items).length, 0)
+    assert.equal(items.length, 2)
+    assert.equal(items[1]?.type, 'group')
+    assert.equal(items[1].toolCalls.length, 2)
+  })
+
+  it('keeps the rollup when the only quiet call is one the user interrupted', () => {
+    const interrupted = tc('1', 'read_file', 'error')
+    const failed = tc('2', 'list_dir', 'error')
+    const items = buildToolCallDisplayItems([interrupted, failed], {
+      isInterrupted: (call) => call === interrupted,
+    })
+    assert.equal(items[0]?.type, 'rollup')
+    assert.deepEqual(
+      rollupChildren(items).map((child) => child.type === 'individual' && child.toolCall.id),
+      ['1'],
+    )
+  })
+
+  it('keeps failures visible while another tool is running', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'read_file', 'error'),
+      tc('2', 'read_file', 'running'),
+    ])
+    assert.equal(items[0]?.label, 'Using 2 tools · 1 failed')
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.status, 'error')
+  })
+
+  it('keeps successes grouped inside the rollup and failures in their own group beside it', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__mdn__get_compat', 'error'),
       tc('2', 'mcp__mdn__get_compat', 'error'),
@@ -298,16 +408,16 @@ describe('tool-display', () => {
       tc('4', 'mcp__mdn__get_compat'),
     ])
     const children = rollupChildren(items)
-    assert.equal(children.length, 2)
+    assert.equal(children.length, 1)
     assert.equal(children[0]?.type, 'group')
-    assert.equal(children[1]?.type, 'group')
-    // Error group emitted at the position of the first failed call.
-    assert.equal(aggregateToolStatus(children[0].toolCalls), 'error')
+    assert.equal(aggregateToolStatus(children[0].toolCalls), 'done')
     assert.equal(children[0].toolCalls.length, 2)
-    assert.equal(aggregateToolStatus(children[1].toolCalls), 'done')
-    assert.equal(children[1].toolCalls.length, 2)
+    assert.equal(items.length, 2)
+    assert.equal(items[1]?.type, 'group')
+    assert.equal(aggregateToolStatus(items[1].toolCalls), 'error')
+    assert.equal(items[1].toolCalls.length, 2)
     // Distinct keys so expansion state and DOM ids never collide.
-    assert.notEqual(children[0].key, children[1].key)
+    assert.notEqual(children[0].key, items[1].key)
   })
 
   it('groups git tools together', () => {
@@ -387,13 +497,76 @@ describe('tool-display', () => {
 
   it('humanizes MCP and ACP tool names without their server prefix', () => {
     assert.equal(getToolDisplayName('mcp__github__create_issue'), 'Create issue')
-    assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run shell')
+    assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Ran command')
+    assert.equal(getToolDisplayName('mcp.copse.run_shell', 'running'), 'Running command')
+    assert.equal(getToolDisplayName('mcp.copse.custom_tool'), 'Custom tool')
+    assert.equal(getToolDisplayName('mcp.docs.startup'), 'docs startup')
+  })
+
+  it('formats raw ACP titles like native Copse tools in every status', () => {
+    const statuses: ToolCall['status'][] = ['running', 'done', 'error']
+    for (const prefix of ['mcp.copse.', 'mcp__copse__']) {
+      for (const name of ['run_shell', 'read_file', 'git_status', 'search_code', 'write_file']) {
+        for (const status of statuses) {
+          const native = tc('wrapped', name, status)
+          const wrapped = { ...native, name: `${prefix}${name}`, title: `${prefix}${name}` }
+          assert.equal(getToolCallLabel(wrapped), getToolCallLabel(native))
+          assert.equal(getToolGroupKey(wrapped.name), getToolGroupKey(native.name))
+        }
+      }
+      const shell = {
+        ...tc('shell', `${prefix}run_shell`, 'error'),
+        title: `${prefix}run_shell`,
+        args: { command: 'cd /workspace && pnpm test' },
+      }
+      assert.equal(getToolCallLabel(shell), 'pnpm test')
+      const edit = {
+        ...tc('edit', `${prefix}write_file`),
+        title: `${prefix}write_file`,
+        args: { path: 'src/app.ts', content: 'export {}' },
+      }
+      assert.equal(getToolCallLabel(edit), 'Edited src/app.ts')
+      assert.equal(getToolEditPath(edit), 'src/app.ts')
+    }
+  })
+
+  it('normalizes identifier titles without replacing descriptive ACP titles', () => {
+    assert.equal(
+      getToolCallLabel({ ...tc('1', 'run_shell'), title: 'mcp.copse.run_shell' }),
+      'Ran command',
+    )
+    assert.equal(
+      getToolCallLabel({ ...tc('2', 'mcp__copse__git_status'), title: 'Check the release branch' }),
+      'Check the release branch',
+    )
+    assert.equal(
+      getToolCallLabel({ ...tc('3', 'mcp__copse__read_file'), title: 'MCP: tool' }),
+      'Read file',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...tc('4', 'shell'),
+        kind: 'execute',
+        title: 'mcp.copse.run_shell --help',
+      }),
+      'mcp.copse.run_shell --help',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...tc('5', 'mcp__github__run_shell'),
+        title: 'mcp.github.run_shell',
+        args: { command: 'pnpm test' },
+      }),
+      'Run shell',
+    )
   })
 
   it('sentence-cases humanized tool names and keeps acronyms canonical', () => {
     assert.equal(getToolDisplayName('mcp__copse__gh_pr_create'), 'GitHub PR create')
     assert.equal(getToolDisplayName('gh_pr_files'), 'GitHub PR files')
-    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Get CI failure logs')
+    assert.equal(getToolDisplayName('mcp__github__get_ci_failure_logs'), 'Get CI failure logs')
+    // A Copse-prefixed name is the native tool, so it takes the curated label.
+    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Fetched CI failure logs')
     assert.equal(getToolDisplayName('resolve_url'), 'Resolve URL')
     assert.equal(getToolDisplayName('get_thread_id'), 'Get thread ID')
   })
@@ -565,6 +738,12 @@ describe('tool-display: cross-message runs', () => {
     // No polish yet on the second step — the canned category label stands in.
     assert.equal(second?.type, 'step')
     assert.equal(second.label, 'Read files')
+    // The failure the label counts stays visible beside the run, not in its step.
+    assert.equal(first.children.length, 1)
+    assert.equal(first.children[0]?.type, 'group')
+    assert.ok(first.children[0].toolCalls.every((call) => call.status !== 'error'))
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, 'a1-err')
   })
 
   it('names a reasoning-only step even though it ran nothing', () => {

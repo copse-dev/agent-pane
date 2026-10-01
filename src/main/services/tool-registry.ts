@@ -111,8 +111,18 @@ export class ToolRegistry {
     this.tools.delete(name)
   }
 
+  /**
+   * Tools in a fixed order, sorted by name. `tools` sits ahead of the whole
+   * conversation in the request, so anything that reorders it re-prefills the
+   * thread. Insertion order is not stable: settings toggles unregister and
+   * re-register tools, and MCP servers connect late, so the same set of tools
+   * would otherwise serialize differently from one turn to the next.
+   */
   toLLMTools(): LLMTool[] {
-    return Array.from(this.tools.values()).map((t) => ({
+    const ordered = Array.from(this.tools.values()).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    )
+    return ordered.map((t) => ({
       name: t.name,
       description: t.description,
       parameters:

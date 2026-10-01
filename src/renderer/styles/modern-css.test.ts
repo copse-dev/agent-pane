@@ -182,6 +182,32 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('keeps concise results dense and removes transcript rules', () => {
+    const css = read('conversation.css')
+    const assistantResult = css.match(
+      /\.msg-assistant:has\(\.message-text:not\(:empty\)\):not\(:has\(\.tool-card\)\)\s*\{[^}]*\}/,
+    )?.[0]
+    assert.ok(assistantResult, 'assistant result spacing rule must remain explicit')
+    assert.doesNotMatch(assistantResult, /border-top:/, 'assistant results must not paint a rule')
+
+    assert.ok(
+      declares(
+        css,
+        '.msg-concise.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card))',
+        /padding-block:\s*var\(--spacing-xs\)/,
+      ),
+      'concise assistant results must use compact block padding',
+    )
+    assert.ok(
+      declares(
+        css,
+        '.msg-concise.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card))',
+        /margin-block:\s*0/,
+      ),
+      'concise assistant results must not add outer vertical margins',
+    )
+  })
+
   it('themes scrollbars from the active surface tokens', () => {
     const css = read('base.css')
     assert.ok(
