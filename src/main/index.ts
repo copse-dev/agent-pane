@@ -129,7 +129,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { suggestFollowUps } from './services/follow-up-service.ts'
+import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -161,6 +161,7 @@ import {
   lmStudioDownloadSchema,
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
+  machineAgentRunSchema,
   parseIpcArgs,
   zGitBranchName,
   zProjectId,
@@ -803,6 +804,28 @@ app
       },
     )
 
+    ipcMain.handle('agent:run-machine', async (event, requestArg: unknown) => {
+      assertMainFrameSender(event, win)
+      assertPrimaryMainWindow(event.sender)
+      const request = parseIpcArgs(machineAgentRunSchema, [requestArg])
+      const result = await agentDispatcher.dispatchMachine({
+        projectId: request.projectId,
+        threadId: request.threadId,
+        operationId: request.operationId,
+        turnTreeId: request.turnTreeId,
+        payload: parseAgentRunPayload(request.payload),
+        display: request.display,
+      })
+      if (result === 'completed') {
+        await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(
+          (error: unknown) => {
+            console.warn('[worktree] Could not park PR-backed checkout:', error)
+          },
+        )
+      }
+      return result
+    })
+
     ipcMain.handle('agent:describe-images', async (event, ...rawArgs: unknown[]) => {
       assertMainFrameSender(event, win)
       const [projectId, threadId, model, userPrompt, images] = parseIpcArgs(
@@ -994,7 +1017,9 @@ app
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        return suggestFollowUps(parsed.data, root)
+        const thread = await getProjectThread(projectId, threadId)
+        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+        return suggestFollowUps(parsed.data, root, executor)
       },
     )
 

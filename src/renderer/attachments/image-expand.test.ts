@@ -1,7 +1,12 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachImageCopyMenu, attachImageExpand, openImageExpand } from './image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  openImageExpand,
+  openImageGallery,
+} from './image-expand.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 import { patchPreviewDialog } from './preview-dialog.test-support.ts'
@@ -96,6 +101,117 @@ describe('image expand lightbox', () => {
     )
     assert.ok(qs(document, '.attachment-preview-dialog'))
     img.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+  })
+
+  it('navigates a multi-image gallery with arrows, thumbnails, and keyboard input', () => {
+    const second = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const third =
+      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4='
+    openImageGallery(
+      [
+        { src: PNG, alt: 'first' },
+        { src: second, alt: 'second' },
+        { src: third, alt: 'third' },
+      ],
+      0,
+    )
+
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    const viewer = qsRequired(dialog, '.image-expand-viewer')
+    const image = qsRequired<HTMLImageElement>(viewer, '.image-expand-image')
+    const next = qsRequired<HTMLButtonElement>(viewer, '.image-expand-nav-next')
+    const previous = qsRequired<HTMLButtonElement>(viewer, '.image-expand-nav-prev')
+    const thumbnails = viewer.querySelectorAll<HTMLButtonElement>('.image-expand-thumbnail')
+
+    assert.equal(thumbnails.length, 3)
+    assert.equal(image.dataset['imageIndex'], '0')
+    assert.equal(thumbnails[0]?.getAttribute('aria-selected'), 'true')
+    assert.equal(previous.disabled, true)
+    assert.equal(next.disabled, false)
+
+    next.click()
+    assert.equal(image.dataset['imageIndex'], '1')
+    assert.equal(thumbnails[1]?.getAttribute('aria-selected'), 'true')
+
+    next.focus()
+    next.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    assert.equal(image.dataset['imageIndex'], '2')
+    assert.equal(document.activeElement, viewer)
+
+    viewer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    )
+    assert.equal(image.dataset['imageIndex'], '1')
+
+    thumbnails[0].click()
+    assert.equal(image.dataset['imageIndex'], '0')
+    dialog.close()
+  })
+
+  it('opens the clicked image after unusable gallery entries are removed', () => {
+    const second =
+      'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22/%3E'
+    const third =
+      'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%222%22/%3E'
+    const img = document.createElement('img')
+    img.src = second
+    document.body.append(img)
+    attachImageExpand(
+      img,
+      'second',
+      [
+        { src: PNG, alt: 'first' },
+        { src: '', alt: 'unusable' },
+        { src: second, alt: 'second' },
+        { src: third, alt: 'third' },
+      ],
+      2,
+    )
+
+    mouseClick(img)
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    const expanded = qsRequired<HTMLImageElement>(dialog, '.image-expand-image')
+    assert.equal(expanded.src, second)
+    assert.equal(expanded.dataset['imageIndex'], '1')
+    assert.equal(qsRequired(dialog, '.image-expand-counter').textContent, '2 / 3')
+    assert.equal(dialog.querySelectorAll('.image-expand-thumbnail').length, 3)
+    dialog.close()
+  })
+
+  it('does not substitute a gallery neighbor for an empty clicked image', () => {
+    const existing = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    existing?.close()
+    const img = document.createElement('img')
+    img.setAttribute('src', '')
+    // Browsers resolve an explicitly empty src property to the document URL.
+    // The authored attribute, rather than that resolved fallback, determines
+    // whether the clicked gallery item is usable.
+    Object.defineProperty(img, 'src', {
+      configurable: true,
+      get: () => document.baseURI,
+    })
+    Object.defineProperty(img, 'currentSrc', {
+      configurable: true,
+      get: () => document.baseURI,
+    })
+    document.body.append(img)
+    attachImageExpand(
+      img,
+      'unusable',
+      [
+        { src: PNG, alt: 'first' },
+        { src: '', alt: 'unusable' },
+        { src: 'data:image/svg+xml;base64,PHN2Zy8+', alt: 'third' },
+      ],
+      1,
+    )
+
+    mouseClick(img)
+    const dialog = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    assert.equal(dialog?.open ?? false, false)
+    img.remove()
   })
 
   it('openImageExpand is a no-op for an empty src', () => {

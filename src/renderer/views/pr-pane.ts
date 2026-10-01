@@ -96,6 +96,30 @@ function collectLinkedPrs(store: AppStore): PrRef[] {
   return refs
 }
 
+export function indexThreadLinks(
+  store: AppStore,
+): Map<string, { threadId: string; title: string }> {
+  const links = new Map<string, { threadId: string; title: string }>()
+  for (const thread of store.getState().threads) {
+    for (const ref of thread.prRefs ?? []) {
+      const key = githubPrKey(ref)
+      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title })
+    }
+  }
+  const activeThread = getActiveThread(store)
+  if (activeThread) {
+    for (const message of activeThread.messages) {
+      for (const ref of extractGithubPrUrls(message.content)) {
+        const key = githubPrKey(ref)
+        if (!links.has(key)) {
+          links.set(key, { threadId: activeThread.id, title: activeThread.title })
+        }
+      }
+    }
+  }
+  return links
+}
+
 export function mountPrPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -164,6 +188,7 @@ export function mountPrPane(
   let ghStatus: GhCliStatus | null = null
   // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
   let agentLinks = new Map<string, RemoteAgentPrIndexEntry>()
+  let threadLinks = indexThreadLinks(store)
   // Invalidates an in-flight agentPrLinks fetch across a refresh / workspace
   // switch, so a late resolve can't repopulate the map for the wrong workspace.
   let agentLinksGen = 0
@@ -632,20 +657,30 @@ export function mountPrPane(
     // When this PR was opened by an agent we launched, offer a jump back to the
     // chat thread that owns it (issue #690 reverse index).
     const agent = agentLinks.get(githubPrKey(selectedPr))
-    const openThreadBtn = agent
+    const producingThread = threadLinks.get(githubPrKey(selectedPr))
+    const producingThreadId = agent?.threadId ?? producingThread?.threadId
+    const openThreadBtn = producingThreadId
       ? el(
           'button',
           {
             type: 'button',
             class: 'ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn',
-            'data-tooltip': `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`,
+            'data-tooltip': agent
+              ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
+              : 'Go to the thread that opened this pull request',
           },
-          el('span', {}, `Open ${agentProviderLabel(agent.provider)} agent thread`),
+          el(
+            'span',
+            {},
+            agent
+              ? `Open ${agentProviderLabel(agent.provider)} agent thread`
+              : 'Open producing thread',
+          ),
         )
       : null
-    if (openThreadBtn && agent) {
+    if (openThreadBtn && producingThreadId) {
       openThreadBtn.addEventListener('click', () => {
-        switchThread(store, agent.threadId)
+        switchThread(store, producingThreadId)
       })
     }
 
@@ -1076,6 +1111,7 @@ export function mountPrPane(
     }
 
     const gen = ++agentLinksGen
+    threadLinks = indexThreadLinks(store)
     ghStatus = await api.gh.status()
     // Agent ownership is local (no gh needed), so load it regardless of gh auth.
     const entries = await api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[])
@@ -1201,6 +1237,7 @@ export function mountPrPane(
       workspacePrs = []
       prList = []
       agentLinks = new Map()
+      threadLinks = indexThreadLinks(store)
       agentLinksGen++
       titleGen++
       titleInFlight.clear()
@@ -1216,9 +1253,11 @@ export function mountPrPane(
     }),
     store.on('threads_changed', () => {
       if (!prsModeActive(store)) return
+      threadLinks = indexThreadLinks(store)
       linkedRefs = collectLinkedPrs(store)
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
+      if (selectedPr && prDetails) renderMeta()
       // A run that just finished may have recorded a new agent↔PR link; pick it
       // up so the badge appears without waiting for a manual refresh. Guard the
       // async result against a workspace switch that lands while it's in flight.

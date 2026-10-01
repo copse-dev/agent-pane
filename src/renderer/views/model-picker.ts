@@ -4,6 +4,20 @@ import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 
+/**
+ * A single printable character meant as type-to-filter, not a chord or named
+ * control key. Space is excluded so it does not open the catalog by accident.
+ */
+function isTypeToFilterKey(e: KeyboardEvent): boolean {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false
+  if (e.key.length !== 1) return false
+  if (e.key === ' ') return false
+  // Control glyphs (Delete, Escape, …) report length 1 in some environments;
+  // reject non-printable code points.
+  const code = e.key.codePointAt(0)
+  return code !== undefined && code >= 0x20
+}
+
 export interface ModelPickerOptions {
   /** Field pickers use form-control chrome and open below; the composer stays compact. */
   variant?: 'compact' | 'field'
@@ -583,24 +597,45 @@ export function mountModelPicker(
   filter.addEventListener('input', () => {
     renderMenu(cachedOptions)
   })
-  menu.addEventListener('keydown', (e) => {
-    if (e.isComposing) return
+
+  function enterAppliesHighlight(target: EventTarget | null): boolean {
+    if (target === filter || target === menu || target === list) return true
+    if (!(target instanceof HTMLElement)) return false
+    if (target.matches('.model-picker-option')) return true
+    // Document capture: focus left the menu (composer, etc.) — still apply.
+    return !menu.contains(target)
+  }
+
+  /**
+   * Shared open-menu key handling. Bound on the menu for in-tree focus, and on
+   * document (capture) so arrows / Enter / Escape still work when focus has
+   * left the menu. Type-to-filter from recent (or a focused option) jumps to
+   * All models and seeds the search box.
+   */
+  function handleOpenMenuKeydown(e: KeyboardEvent): boolean {
+    if (!open || e.isComposing) return false
+
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      e.stopPropagation()
       moveActive(1)
-    } else if (e.key === 'ArrowUp') {
+      return true
+    }
+    if (e.key === 'ArrowUp') {
       e.preventDefault()
+      e.stopPropagation()
       moveActive(-1)
-    } else if (
-      e.key === 'Enter' &&
-      (e.target === filter ||
-        (e.target instanceof HTMLElement && e.target.matches('.model-picker-option')))
-    ) {
+      return true
+    }
+    if (e.key === 'Enter' && enterAppliesHighlight(e.target)) {
       e.preventDefault()
+      e.stopPropagation()
       if (view === 'group') {
         if (activeValue !== null) selectGroupValue(activeValue)
       } else selectOption(activeValue)
-    } else if (e.key === 'Escape') {
+      return true
+    }
+    if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       if (view === 'group') {
@@ -611,20 +646,54 @@ export function mountModelPicker(
         setOpen(false)
         if (!recentMode) trigger.focus()
       }
-    } else if (e.key === 'ArrowLeft' && view === 'group') {
+      return true
+    }
+    if (e.key === 'ArrowLeft' && view === 'group') {
       e.preventDefault()
       e.stopPropagation()
       activeValue = null
       setView(homeView)
-    } else if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
+      return true
+    }
+    if (e.key === 'ArrowRight' && view === 'recent' && recentMode) {
       e.preventDefault()
       e.stopPropagation()
       setView('all')
-    } else if (e.key === 'ArrowLeft' && view === 'all' && recentMode) {
+      return true
+    }
+    if (e.key === 'ArrowLeft' && view === 'all' && recentMode) {
       e.preventDefault()
       e.stopPropagation()
       setView('recent')
+      return true
     }
+
+    // Typing while the recent list (or an option) is focused opens All models
+    // with that character as the filter. Skip when the filter already has focus
+    // — the input receives the character itself.
+    if (recentMode && view === 'recent' && isTypeToFilterKey(e) && e.target !== filter) {
+      e.preventDefault()
+      e.stopPropagation()
+      // Seed before setView so the first render already filters; setView('all')
+      // does not clear the query (only non-all views do).
+      filter.value = e.key
+      setView('all')
+      return true
+    }
+    if (view === 'all' && isTypeToFilterKey(e) && e.target !== filter) {
+      e.preventDefault()
+      e.stopPropagation()
+      filter.value += e.key
+      filter.focus()
+      renderMenu(cachedOptions)
+      return true
+    }
+
+    return false
+  }
+
+  menu.addEventListener('keydown', (e) => {
+    handleOpenMenuKeydown(e)
   })
 
   cleanups.push(
@@ -632,20 +701,29 @@ export function mountModelPicker(
       if (!open) return
       if (!(e.target instanceof Node) || !wrap.contains(e.target)) setOpen(false)
     }),
-    on(document, 'keydown', (e) => {
-      const isOpenShortcut =
-        pickerOpts.enableShortcut === true &&
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        !e.altKey &&
-        (e.key === 'm' || e.key === 'M')
-      if (isOpenShortcut && !document.querySelector('dialog[open]')) {
-        e.preventDefault()
-        setOpen(true)
-        return
-      }
-      if (e.key === 'Escape' && open) setOpen(false)
-    }),
+    on(
+      document,
+      'keydown',
+      (e) => {
+        const isOpenShortcut =
+          pickerOpts.enableShortcut === true &&
+          (e.ctrlKey || e.metaKey) &&
+          e.shiftKey &&
+          !e.altKey &&
+          (e.key === 'm' || e.key === 'M')
+        if (isOpenShortcut && !document.querySelector('dialog[open]')) {
+          e.preventDefault()
+          setOpen(true)
+          return
+        }
+        if (!open) return
+        // In-menu focus is handled by the menu listener; this capture path is
+        // only for keys that would otherwise go to the composer or page.
+        if (e.target instanceof Node && menu.contains(e.target)) return
+        handleOpenMenuKeydown(e)
+      },
+      { capture: true },
+    ),
   )
 
   // Surfaces often remount by clearing a host (`innerHTML = ''` / `clear()`),

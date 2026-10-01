@@ -200,6 +200,7 @@ export function mountTerminalsPane(
         label: `${tab.label} · exit ${exitLabel}`,
         content,
       },
+      ...(request.completion ? { completion: request.completion } : {}),
     })
   }
 
