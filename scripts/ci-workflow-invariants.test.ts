@@ -868,11 +868,23 @@ describe('release-bump.yml workflow invariants', () => {
   })
 
   it('keeps one release in flight and skips an empty week', () => {
-    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
     const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
     const bump = workflow.indexOf('node scripts/release-bump.mts')
     assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
     assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('cuts past an unpublished version only on an explicit dispatch, carrying its notes', () => {
+    // A version whose release run failed can never be published, so a gate
+    // with no way past it would stop the weekly train for good. The schedule
+    // still skips; only a person naming the next version cuts past it, and the
+    // abandoned version's notes move into the new section rather than vanish.
+    const gate = workflow.slice(
+      workflow.indexOf('gh release view "v$current"'),
+      workflow.indexOf('node scripts/release-bump.mts'),
+    )
+    assert.match(gate, /if \[ -z "\$REQUESTED_VERSION" \]; then[\s\S]*?exit 0\n/)
+    assert.match(gate, /args\+=\(--carry-forward\)/)
   })
 
   it('passes the dispatch version through the environment, not the script text', () => {
@@ -930,6 +942,22 @@ describe('release-mac.yml workflow invariants', () => {
   it('packages on a runner that can run an LSMinimumSystemVersion 26.0 build', () => {
     assert.match(workflow, /^ {4}runs-on: macos-26$/m)
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
+  })
+
+  it('opens an issue when any release job fails', () => {
+    // Without it a failed build is silent: nothing publishes and the weekly bump
+    // skips while the version stays unpublished.
+    const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
+    assert.match(
+      report,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+    )
+    assert.match(report, /^ {6}issues: write$/m)
+    assert.doesNotMatch(report, /contents: write/)
+    assert.match(report, /gh issue create --repo "\$GITHUB_REPOSITORY"/)
+    // The dispatch tag reaches the script through the environment only.
+    assert.match(report, /TAG: \$\{\{ inputs\.tag \|\| github\.ref_name \}\}/)
+    assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
   })
 
   it('bounds the signed package verification step', () => {
