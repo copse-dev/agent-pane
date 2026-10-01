@@ -36,6 +36,8 @@ const ALLOWED_UNLINKED: Record<string, string> = {
 // or deleting them; this list is for real non-shipping boundaries and every
 // entry needs a reason.
 const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
+  'packages/llm/src/request-prefix-diff.ts':
+    'request-prefix comparison for the golden prefix-stability test and offline cache diagnosis',
   'packages/review/src/fake-container-engine.ts': 'test fixture for the review package',
   'packages/review/src/test-repo.ts': 'test repository fixture for the review package',
   'src/main/services/acp/acp-behavior-matrix.ts': 'manual ACP behavior-probe report formatter',

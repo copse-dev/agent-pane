@@ -432,7 +432,15 @@ function conciseThreadMessages(model: string, live: boolean): Thread['messages']
             model,
             content:
               'Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.',
-            toolCalls: [],
+            toolCalls: [
+              {
+                id: `concise-audit-${model}`,
+                name: 'workspace_edit_audit',
+                args: {},
+                status: 'done' as const,
+                result: 'Audit complete.',
+              },
+            ],
             createdAt: FIXED_TIME + 3_000,
           },
         ]),
@@ -752,6 +760,37 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       error: null,
       continuedFrom: null,
     },
+  },
+  {
+    id: 'balanced-model-label',
+    label: 'Balanced model rule label',
+    project: project('demo-balanced-model-label-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:balanced',
+    },
+    threads: [
+      {
+        id: 'demo-balanced-model-label-thread',
+        title: 'Balanced model label',
+        status: 'idle',
+        model: 'auto:balanced',
+        messages: [
+          {
+            id: 'demo-balanced-model-label-user',
+            role: 'user',
+            content: 'Keep this conversation on the balanced model rule.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
   },
   {
     id: 'footer-compact',

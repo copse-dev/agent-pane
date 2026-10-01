@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
+import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   createThread,
   markThreadRead,
@@ -172,6 +173,25 @@ export function getSidebarThreads(store: AppStore, projectId: string): SidebarTh
   const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
   return list.filter((t) => t.archivedAt == null)
+}
+
+/** Apply PR-link discovery to sidebar rows retained from a previously active project. */
+export function applyCachedSidebarPrRefs(
+  projectId: string,
+  refs: readonly { threadId: string; prRefs: GithubPrRef[] }[],
+): boolean {
+  const cached = threadCache.get(projectId)
+  if (!cached) return false
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]))
+  if (!cached.some((thread) => byThread.has(thread.id))) return false
+  threadCache.set(
+    projectId,
+    cached.map((thread) => {
+      const prRefs = byThread.get(thread.id)
+      return prRefs ? { ...thread, prRefs } : thread
+    }),
+  )
+  return true
 }
 
 export function isProjectSwitchInFlight(store: AppStore, projectId: string): boolean {

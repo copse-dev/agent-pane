@@ -16,6 +16,7 @@ export const SANDBOX_TOOLS = new Set([
   'read_skill',
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',

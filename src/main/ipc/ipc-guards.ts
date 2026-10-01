@@ -6,6 +6,7 @@ import {
 } from '@shared/follow-ups/types.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
+import type { MachineAgentRunRequest } from '@shared/types/machine-dispatch.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
@@ -201,6 +202,56 @@ export function assertFsWriteContent(content: string): void {
 const STORAGE_KEY = z.enum(RENDERER_STORAGE_KEYS)
 
 export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
+
+const transcriptAttachmentSchema = z.object({
+  kind: z.enum(['paste', 'file', 'thread', 'shell', 'video', 'archive']),
+  label: z.string().max(1_024),
+  content: z.string().max(1_000_000).optional(),
+  path: z.string().max(16_384).optional(),
+})
+
+const machineAgentRunInputSchema = z.object({
+  projectId: zProjectId,
+  threadId: zThreadId,
+  operationId: z.string().min(1).max(256),
+  turnTreeId: z.string().min(1).max(256),
+  payload: z.string().min(1).max(2_000_000),
+  display: z.object({
+    content: z.string().max(100_000),
+    attachments: z.array(transcriptAttachmentSchema).max(10).optional(),
+    startingCommit: z
+      .string()
+      .regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
+      .optional(),
+    dirty: z.boolean().optional(),
+  }),
+})
+
+export const machineAgentRunSchema: z.ZodType<MachineAgentRunRequest> =
+  machineAgentRunInputSchema.transform((request): MachineAgentRunRequest => ({
+    projectId: request.projectId,
+    threadId: request.threadId,
+    operationId: request.operationId,
+    turnTreeId: request.turnTreeId,
+    payload: request.payload,
+    display: {
+      content: request.display.content,
+      ...(request.display.attachments !== undefined
+        ? {
+            attachments: request.display.attachments.map((attachment) => ({
+              kind: attachment.kind,
+              label: attachment.label,
+              ...(attachment.content !== undefined ? { content: attachment.content } : {}),
+              ...(attachment.path !== undefined ? { path: attachment.path } : {}),
+            })),
+          }
+        : {}),
+      ...(request.display.startingCommit !== undefined
+        ? { startingCommit: request.display.startingCommit }
+        : {}),
+      ...(request.display.dirty !== undefined ? { dirty: request.display.dirty } : {}),
+    },
+  }))
 
 export const mainWindowNavigationSchema = z.object({
   activeProjectId: zProjectId.nullable(),
