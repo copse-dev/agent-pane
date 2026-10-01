@@ -3695,7 +3695,7 @@ label {
   justify-content: center;
   flex: 0 0 16px;
   height: 16px;
-  line-height: 0;
+  line-height: 1;
 }
 .model-picker-option:focus-visible {
   outline: 2px solid var(--border-focus);
