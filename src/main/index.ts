@@ -20,6 +20,8 @@ armPerfTrace()
 installIpcPerfTracing()
 
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { ThreadDeepLinks } from './services/thread-deep-links.ts'
+import { findThreadOwners } from './services/thread-store.ts'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
 import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
@@ -42,6 +44,7 @@ import {
   createMainWindow,
   getFocusedMainWindow,
   getMainWindow,
+  getMainWindowForWebContents,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
 import { readBootTheme } from './windows/boot-theme.ts'
@@ -427,12 +430,19 @@ const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
+const threadDeepLinks = new ThreadDeepLinks(getMainWindow, findThreadOwners)
 const gotSingleInstanceLock =
   agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else if (!agentEval && !acpMode && !releaseSmokeTest) {
-  app.on('second-instance', () => {
+  for (const arg of process.argv) threadDeepLinks.accept(arg)
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    threadDeepLinks.accept(url)
+  })
+  app.on('second-instance', (_event, argv) => {
+    for (const arg of argv) threadDeepLinks.accept(arg)
     const win = getMainWindow()
     if (win) {
       if (win.isMinimized()) win.restore()
@@ -502,6 +512,28 @@ app
     perfMark('main:window-create')
     const windows = getRestorableMainWindowRecords().map((record) => createMainWindow(record))
     const win = windows[0] ?? createMainWindow()
+    if (app.isPackaged) app.setAsDefaultProtocolClient('copse')
+    ipcMain.handle('deep-links:ready', (event) => {
+      assertMainFrameSender(event, win)
+      if (!getMainWindowForWebContents(event.sender)) throw new Error('Not a main window')
+      threadDeepLinks.ready(event.sender.id)
+    })
+    app.on('web-contents-created', (_event, contents) => {
+      contents.on('did-start-loading', () => {
+        threadDeepLinks.unready(contents.id)
+      })
+      contents.on('destroyed', () => {
+        threadDeepLinks.unready(contents.id)
+      })
+    })
+    for (const window of new Set([...windows, win])) {
+      window.webContents.on('did-start-loading', () => {
+        threadDeepLinks.unready(window.webContents.id)
+      })
+      window.webContents.on('destroyed', () => {
+        threadDeepLinks.unready(window.webContents.id)
+      })
+    }
     // The shell tool streams child output through a sink rather than reaching
     // for the window itself, so `createRegistry()` stays importable without
     // Electron (#1313). Read the window per chunk rather than capturing `win`,
