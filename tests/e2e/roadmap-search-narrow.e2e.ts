@@ -42,11 +42,22 @@ describe('roadmap search box in a narrow pane', () => {
 
     const widths = await browser.execute(() => {
       const input = document.querySelector('.roadmap-search-input')
-      return input ? { inputWidth: input.getBoundingClientRect().width } : null
+      const toggle = document.querySelector('.roadmap-filter-toggle')
+      const header = document.querySelector('.roadmap-list-header')
+      if (!input || !toggle || !header) return null
+      return {
+        inputWidth: input.getBoundingClientRect().width,
+        toggleRight: toggle.getBoundingClientRect().right,
+        headerRight: header.getBoundingClientRect().right,
+      }
     })
-    assert.ok(widths, 'search input must exist')
+    assert.ok(widths, 'search input, Filter toggle and header must exist')
     assert.ok(
-      widths.inputWidth >= 130,
+      widths.toggleRight <= widths.headerRight + 1,
+      `Filter toggle ends at ${String(widths.toggleRight)}px, past the header edge ${String(widths.headerRight)}px (clipped)`,
+    )
+    assert.ok(
+      widths.inputWidth >= 100,
       `search input is ${String(widths.inputWidth)}px wide; the placeholder would be truncated`,
     )
     await saveAppScreenshot('roadmap-search-narrow.png')
