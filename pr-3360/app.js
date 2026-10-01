@@ -59206,7 +59206,9 @@ function planAcpFrontierCandidates(agents, pricedRoutes = []) {
       );
       if (!resolved3) continue;
       const score = getIntellectScore(resolved3);
-      const info = getModelInfo(resolved3);
+      const info = getModelInfo(resolved3) ?? Object.entries(MODEL_CATALOG).find(
+        ([id]) => resolveIntellectModelId(id) === resolved3
+      )?.[1];
       const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved3);
       if (!score || price === void 0) continue;
       candidates.push({
