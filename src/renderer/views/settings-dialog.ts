@@ -66,6 +66,8 @@ import { createParallelSearchPluginSettings } from './parallel-search-plugin-set
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
+import { createPluginCatalogBrowser } from './plugin-catalog-browser.ts'
+import type { PluginInstallRecord, PluginInstallReview } from '@shared/types/plugin-installs.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -1180,7 +1182,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset id="plugins-fieldset">
               <legend>Plugins</legend>
               <p class="settings-fieldset-desc">
-                Every plugin Copse knows about, whatever installed it — shipped with the app,
+                Browse available packages or manage every plugin Copse already knows about — shipped with the app,
                 added to <code>~/.copse/plugins/</code>, selected as a folder, or installed through
                 Cursor. Each row says where it came from and what it contributes. Turning one off
                 drops all of its contributions from new work in one action; its stored data and old
@@ -1189,18 +1191,29 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-plugin.md" target="_blank" rel="noopener noreferrer">how to add a plugin</a>
                 for authoring and install steps.
               </p>
-              <div class="settings-action-row">
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
-                  Add plugin…
+              <div class="plugin-view-tabs" role="tablist" aria-label="Plugin collection">
+                <button type="button" class="plugin-view-tab active" id="plugins-installed-tab" role="tab" aria-selected="true" aria-controls="plugins-installed-panel">
+                  Installed
                 </button>
-                <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
-                  Reload
+                <button type="button" class="plugin-view-tab" id="plugins-browse-tab" role="tab" aria-selected="false" aria-controls="plugins-browse-panel">
+                  Browse
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
               </div>
-              <div id="plugins-list" class="plugins-group">
-                <span class="plugins-empty">Loading…</span>
+              <div id="plugins-installed-panel" role="tabpanel" aria-labelledby="plugins-installed-tab">
+                <div class="settings-action-row">
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-add-btn">
+                    Add plugin…
+                  </button>
+                  <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
+                    Reload
+                  </button>
+                  <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                </div>
+                <div id="plugins-list" class="plugins-group">
+                  <span class="plugins-empty">Loading…</span>
+                </div>
               </div>
+              <div id="plugins-browse-panel" role="tabpanel" aria-labelledby="plugins-browse-tab" hidden></div>
             </fieldset>
 
           </section>
@@ -3310,6 +3323,145 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // are rebuilt on every `refreshPlugins()`, so the target lives out here rather
   // than in a row that a later refresh would replace.
   let pluginDetail: PluginDetailTarget | null = null
+  let managedInstalls = new Map<string, PluginInstallRecord>()
+
+  function installReviewDetail(review: PluginInstallReview): HTMLElement {
+    const detail = document.createElement('div')
+    detail.className = 'plugin-install-review-dialog'
+    const summary = document.createElement('p')
+    summary.textContent =
+      'Copse will install this pinned package disabled. You can enable its skills and MCP servers after installation.'
+    const values: Array<[string, string]> = [
+      ['Publisher', review.publisher],
+      ['Revision', review.revision],
+      ['Content', review.contentHash],
+      ['Skills', String(review.skillCount)],
+      ['MCP servers', String(review.mcpServerCount)],
+      ['Verification', 'Unsigned package'],
+    ]
+    const list = document.createElement('dl')
+    list.className = 'plugin-source-details plugin-install-review-details'
+    for (const [label, value] of values) {
+      const term = document.createElement('dt')
+      term.textContent = label
+      const description = document.createElement('dd')
+      description.textContent = value
+      list.append(term, description)
+    }
+    detail.append(summary, list)
+    if (review.skills.length > 0) {
+      const skills = document.createElement('p')
+      skills.className = 'plugin-install-review-components'
+      skills.textContent = `Skills: ${review.skills.join(', ')}`
+      detail.append(skills)
+    }
+    if (review.mcpServers.length > 0) {
+      const servers = document.createElement('ul')
+      servers.className = 'plugin-install-review-components'
+      for (const server of review.mcpServers) {
+        const item = document.createElement('li')
+        item.textContent = `${server.name} (${server.transport}): ${server.target}`
+        servers.append(item)
+      }
+      detail.append(servers)
+    }
+    if (review.warnings.length > 0) {
+      const warnings = document.createElement('ul')
+      warnings.className = 'plugin-install-review-warnings'
+      for (const warning of review.warnings) {
+        const item = document.createElement('li')
+        item.textContent = warning
+        warnings.append(item)
+      }
+      detail.append(warnings)
+    }
+    return detail
+  }
+
+  async function reviewCatalogInstall(catalogId: string): Promise<void> {
+    const review = await api.plugins.prepareInstall(catalogId)
+    try {
+      const confirmed = await showConfirmDialog({
+        message: `${review.operation === 'update' ? 'Update' : 'Install'} ${review.name}?`,
+        detail: installReviewDetail(review),
+        confirmLabel: review.operation === 'update' ? 'Install update' : 'Install disabled',
+        confirmPendingLabel: 'Installing…',
+        onConfirm: async () => {
+          await api.plugins.commitInstall(review.token)
+        },
+      })
+      if (!confirmed) {
+        await api.plugins.cancelInstall(review.token)
+        return
+      }
+    } catch (error) {
+      await api.plugins.cancelInstall(review.token).catch(() => undefined)
+      throw error
+    }
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  async function rollbackManagedPlugin(record: PluginInstallRecord): Promise<void> {
+    const previous = record.previousPin
+    if (!previous) return
+    const confirmed = await showConfirmDialog({
+      message: `Roll back ${record.name}?`,
+      detail: `Copse will switch to revision ${previous.revision.slice(0, 12)} and leave the plugin disabled for review.`,
+      confirmLabel: 'Roll back',
+      onConfirm: async () => {
+        await api.plugins.rollback(record.pluginId)
+      },
+    })
+    if (!confirmed) return
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  async function uninstallManagedPlugin(record: PluginInstallRecord): Promise<void> {
+    const detail = document.createElement('div')
+    const explanation = document.createElement('p')
+    explanation.textContent = 'The plugin payload will be removed. Existing thread history is kept.'
+    const deleteLabel = document.createElement('label')
+    deleteLabel.className = 'plugin-uninstall-data-choice'
+    const deleteData = document.createElement('input')
+    deleteData.type = 'checkbox'
+    deleteLabel.append(deleteData, ' Also delete this plugin’s saved data')
+    detail.append(explanation, deleteLabel)
+    const confirmed = await showConfirmDialog({
+      message: `Uninstall ${record.name}?`,
+      detail,
+      confirmLabel: 'Uninstall',
+      confirmPendingLabel: 'Uninstalling…',
+      danger: true,
+      onConfirm: async () => {
+        await api.plugins.uninstall(record.pluginId, deleteData.checked)
+      },
+    })
+    if (!confirmed) return
+    await refreshPlugins()
+    store.emit('settings_changed')
+  }
+
+  const pluginCatalogBrowser = createPluginCatalogBrowser({
+    reviewInstall: reviewCatalogInstall,
+    rollback: rollbackManagedPlugin,
+    uninstall: uninstallManagedPlugin,
+  })
+  qsRequired(overlay, '#plugins-browse-panel').append(pluginCatalogBrowser.element)
+
+  function selectPluginView(view: 'installed' | 'browse'): void {
+    const installed = view === 'installed'
+    const installedTab = qsRequired<HTMLButtonElement>(overlay, '#plugins-installed-tab')
+    const browseTab = qsRequired<HTMLButtonElement>(overlay, '#plugins-browse-tab')
+    installedTab.classList.toggle('active', installed)
+    browseTab.classList.toggle('active', !installed)
+    installedTab.setAttribute('aria-selected', installed ? 'true' : 'false')
+    browseTab.setAttribute('aria-selected', installed ? 'false' : 'true')
+    qsRequired(overlay, '#plugins-installed-panel').hidden = !installed
+    qsRequired(overlay, '#plugins-browse-panel').hidden = installed
+    if (!installed) pluginCatalogBrowser.focusSearch()
+  }
 
   /**
    * Render one plugin row for the Settings → Plugins list (P3 of
@@ -3451,7 +3603,64 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
-    if (plugin.source?.kind === 'directory') {
+    const managedInstall = managedInstalls.get(plugin.id)
+    if (managedInstall) {
+      const review = document.createElement('div')
+      review.className = 'plugin-source-review plugin-managed-review'
+      const status = document.createElement('div')
+      status.className = 'plugin-source-status'
+      status.textContent = 'Installed from the Copse catalogue · disabled after revision changes'
+      const detailList = document.createElement('dl')
+      detailList.className = 'plugin-source-details'
+      const details: Array<[string, string]> = [
+        ['Revision', managedInstall.source.revision],
+        ['Content', managedInstall.contentHash],
+        ['Verification', 'Unsigned package'],
+      ]
+      for (const [term, value] of details) {
+        const dt = document.createElement('dt')
+        dt.textContent = term
+        const dd = document.createElement('dd')
+        dd.textContent = value
+        detailList.append(dt, dd)
+      }
+      const actions = document.createElement('div')
+      actions.className = 'plugin-managed-actions'
+      const operationStatus = document.createElement('span')
+      operationStatus.className = 'plugin-catalog-operation-status'
+      operationStatus.setAttribute('role', 'status')
+      const run = (button: HTMLButtonElement, action: () => Promise<void>): void => {
+        button.disabled = true
+        operationStatus.textContent = 'Working…'
+        void action()
+          .catch((error: unknown) => {
+            operationStatus.textContent = errorMessage(error)
+          })
+          .finally(() => {
+            button.disabled = false
+          })
+      }
+      if (managedInstall.previousPin) {
+        const rollback = document.createElement('button')
+        rollback.type = 'button'
+        rollback.className = 'ui-btn ui-btn-secondary ui-btn-compact'
+        rollback.textContent = 'Roll back'
+        rollback.addEventListener('click', () => {
+          run(rollback, () => rollbackManagedPlugin(managedInstall))
+        })
+        actions.append(rollback)
+      }
+      const uninstall = document.createElement('button')
+      uninstall.type = 'button'
+      uninstall.className = 'ui-btn ui-btn-danger ui-btn-compact'
+      uninstall.textContent = 'Uninstall'
+      uninstall.addEventListener('click', () => {
+        run(uninstall, () => uninstallManagedPlugin(managedInstall))
+      })
+      actions.append(uninstall)
+      review.append(status, detailList, operationStatus, actions)
+      row.append(review)
+    } else if (plugin.source?.kind === 'directory') {
       const review = document.createElement('div')
       review.className = 'plugin-source-review'
 
@@ -3875,11 +4084,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // installed; Cursor owns its own cache, so those rows are read-only. A
       // Cursor failure must not blank the registry rows beside it, hence the
       // catch rather than a bare Promise.all.
-      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins, installs] = await Promise.all([
         api.plugins.list(),
         api.cursorPlugins.list().catch(() => []),
         api.bundledSkillPlugins.list().catch(() => []),
+        api.plugins.listInstalls(),
       ])
+      managedInstalls = new Map(installs.map((record) => [record.pluginId, record]))
+      pluginCatalogBrowser.updateInstalled({
+        cursor: cursorPlugins.map((plugin) => plugin.name),
+        bundledCursor: bundledPlugins.map((plugin) => plugin.name),
+        managed: installs,
+      })
       listEl.innerHTML = ''
       if (
         result.plugins.length === 0 &&
@@ -4607,6 +4823,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   qsRequired(overlay, '#plugins-reload-btn').addEventListener('click', () => {
     void refreshPlugins()
+  })
+
+  qsRequired(overlay, '#plugins-installed-tab').addEventListener('click', () => {
+    selectPluginView('installed')
+  })
+
+  qsRequired(overlay, '#plugins-browse-tab').addEventListener('click', () => {
+    selectPluginView('browse')
   })
 
   qsRequired(overlay, '#plugins-add-btn').addEventListener('click', () => {

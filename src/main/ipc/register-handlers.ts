@@ -232,6 +232,7 @@ import {
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { readHookRunDetail } from '../services/hooks/run-detail.ts'
 import { getPluginService } from '../services/plugins/plugin-service.ts'
+import { getPluginInstallService } from '../services/plugins/plugin-install-service.ts'
 import {
   setPluginToolRuntimeController,
   ToolingPluginToolRuntimeController,
@@ -2157,6 +2158,65 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await getPluginService().refreshInstalledPlugins()
     return { plugins: getPluginService().list() }
+  })
+  ipcMain.handle('plugins:list-installs', async (event) => {
+    assertMainFrameSender(event, win)
+    return getPluginInstallService().records()
+  })
+  ipcMain.handle('plugins:prepare-install', async (event, rawCatalogId: unknown) => {
+    assertMainFrameSender(event, win)
+    const catalogId = parseIpcArgs(zNonEmptyString.max(2048), [rawCatalogId])
+    return getPluginInstallService().prepare(catalogId)
+  })
+  ipcMain.handle('plugins:cancel-install', async (event, rawToken: unknown) => {
+    assertMainFrameSender(event, win)
+    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
+    await getPluginInstallService().cancel(token)
+  })
+  ipcMain.handle('plugins:commit-install', async (event, rawToken: unknown) => {
+    assertMainFrameSender(event, win)
+    const token = parseIpcArgs(zNonEmptyString.max(128), [rawToken])
+    const result = await getPluginInstallService().commit(token)
+    const service = getPluginService()
+    await service.refreshInstalledPlugins()
+    if (service.hasUserPlugin(result.record.pluginId)) {
+      await service.setEnabled(result.record.pluginId, false)
+    }
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return result
+  })
+  ipcMain.handle(
+    'plugins:uninstall',
+    async (event, rawPluginId: unknown, rawDeleteData: unknown) => {
+      assertMainFrameSender(event, win)
+      const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
+      const deleteData = parseIpcArgs(z.boolean(), [rawDeleteData])
+      const service = getPluginService()
+      if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
+      const result = await getPluginInstallService().uninstall(pluginId, deleteData)
+      await service.refreshInstalledPlugins()
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+      const statuses = await reloadMcpServers(registry)
+      win.webContents.send('mcp:status-changed', statuses)
+      return result
+    },
+  )
+  ipcMain.handle('plugins:rollback', async (event, rawPluginId: unknown) => {
+    assertMainFrameSender(event, win)
+    const pluginId = parseIpcArgs(zNonEmptyString.max(128), [rawPluginId])
+    const service = getPluginService()
+    if (service.hasUserPlugin(pluginId)) await service.setEnabled(pluginId, false)
+    const result = await getPluginInstallService().rollback(pluginId)
+    await service.refreshInstalledPlugins()
+    await initSkillsRegistry()
+    registerSkillTools(registry)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return result
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)

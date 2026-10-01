@@ -9,9 +9,13 @@ manifest describe the historical design, not a new portable file format.
 `copse-plugin.json` and `copse-pack.json` remain selected-directory compatibility
 inputs; new authoring uses the standard envelope.
 
-**Status: Proposed.** This is the first delivery slice for #1082: nail the product
-contract for Copse-native pack distribution (discover → install → pin → update →
-disable → uninstall) before a public index, signing ceremony, or Settings chrome.
+**Status: Implemented for pinned, unsigned skills/MCP packages.** Copse now ships
+an offline aggregate of pinned upstream catalogues, native Browse/Installed
+Settings views, reviewed installation into content-addressed storage, explicit
+updates, one-revision rollback, and uninstall with a separate data-deletion
+choice. Signing, publisher verification, arbitrary index URLs, automatic update
+channels, and marketplace installation of Copse executable extensions remain
+future work.
 Implementation PRs should link here and keep [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md),
 [`../plugins.md`](../plugins.md), and Cursor plugin import
 ([`../cursor-plugins.md`](../cursor-plugins.md)) as **foundations/consumers**, not
@@ -32,20 +36,20 @@ not have is a Copse-owned distribution lifecycle: a signed/indexed way for users
 who never open Cursor IDE to install, pin, update, roll back, and conflict-report
 packs whose runtime unit is still a feature pack.
 
-| Surface                                     | Role today                                           | Gap versus a Copse marketplace                                                                                     |
-| ------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| First-party plugins (`FIRST_PARTY_PLUGINS`) | Shipped in-app; Settings → Plugins enable/disable    | Not third-party distribution                                                                                       |
-| Pack manifest + JSON schema                 | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host disk discovery → registry landed for Agent Plugins packages (P1); install records, pinning, and update remain |
-| Cursor plugin cache (`~/.cursor/plugins/`)  | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                           |
-| `skillPluginPaths` / local symlinks         | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                       |
-| Hooks dialect files / custom `tools/*.mjs`  | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                     |
-| Grok Build-style plugin install UX          | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                        |
+| Surface                                     | Role today                                           | Gap versus a Copse marketplace                                                                                  |
+| ------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| First-party plugins (`FIRST_PARTY_PLUGINS`) | Shipped in-app; Settings → Plugins enable/disable    | Not third-party distribution                                                                                    |
+| Pack manifest + JSON schema                 | Declares skills/MCP/hooks/prompt/ui/settings/storage | Host discovery and managed skills/MCP installation are wired; executable marketplace installation remains gated |
+| Cursor plugin cache (`~/.cursor/plugins/`)  | Read-only import of skills + MCP                     | No Copse install/update; depends on Cursor's marketplace                                                        |
+| `skillPluginPaths` / local symlinks         | Power-user overlay                                   | Manual; no pin, signature, or update channel                                                                    |
+| Hooks dialect files / custom `tools/*.mjs`  | Adjacent extension paths                             | Outside pack rows; must not become a silent marketplace bypass                                                  |
+| Grok Build-style plugin install UX          | Discoverable install/update/uninstall                | Copse needs the same UX **without** copying fail-open trust                                                     |
 
 #1078's ownership map assigns Copse-native distribution to #1082 and requires
 reusing feature packs as the runtime unit. This plan defines the binding
 decisions, minimum contract, and the smallest design→implementation sequence.
-A browsable public marketplace lands **after** local install, pinning, and
-verification work.
+The bundled aggregate supplies discovery metadata; Copse remains responsible for
+validation, activation, permissions, and lifecycle.
 
 ## Binding decisions (do not reopen lightly)
 
@@ -146,7 +150,7 @@ Before enable (and again on update), the host reports:
 - capability/permission declarations the current host build does not understand
   (unknown → warn + treat as inert, never as implicit allow)
 
-## First delivery slice (this PR's scope)
+## Original design slice
 
 Ship **design-only** artifacts that unblock implementation without choosing UI chrome:
 
@@ -154,8 +158,40 @@ Ship **design-only** artifacts that unblock implementation without choosing UI c
 2. Index entry in [`README.md`](README.md).
 3. Explicit ownership link from the Grok Build comparison map to this doc.
 
-Out of scope for the first slice: install directories, signing keys, index HTTP
-client, Settings marketplace browser, and changes to Cursor plugin discovery.
+That design slice intentionally excluded install directories, signing keys, an
+index client, and Settings marketplace chrome. The implementation described
+below now covers the pinned unsigned subset.
+
+## Current implementation
+
+- `scripts/plugin-catalog-sync.mts` ingests pinned Claude and Cursor marketplace
+  JSON through source-specific adapters, normalizes repository/package identity,
+  retains provenance, and generates a deterministic bundled snapshot. A failed
+  source records diagnostics and cannot silently empty a healthy neighbour.
+- Settings → Customise → Plugins has **Installed** and **Browse** views. Browse is
+  offline, searchable, and joins the aggregate with Copse-managed installs plus
+  read-only Cursor and bundled-plugin discovery.
+- Only entries pinned to a Git commit can install. The main process downloads the
+  matching GitHub archive on an explicit user action, bounds archive size and
+  expansion, rejects traversal and symlinks, extracts only the listed package,
+  adapts supported legacy metadata, and validates the resulting Agent Plugins
+  package.
+- The first installable tier is portable skills and MCP. Marketplace packages
+  requesting Copse tools, runtimes, hooks, models, prompt/UI contributions,
+  permissions, settings, storage, or capabilities are rejected.
+- Before activation, Settings shows the revision, content hash, skill paths, MCP
+  transports/targets, adaptation warnings, and unsigned provenance. A confirmed
+  package is stored under `~/.copse/plugins/.managed/payloads/`, linked into the
+  ordinary plugin root, recorded as human-readable JSON, and left disabled.
+- Discovery re-hashes managed payloads before registration. A changed payload,
+  mismatched activation link, or corrupt record fails closed before skills or
+  MCP servers can register.
+- Updates use the same fetch → validate → review → atomic switch path and retain
+  one previous pin. Rollback and revision changes leave the plugin disabled.
+  Uninstall removes managed payloads and metadata; deleting `PLUGIN_DATA` is a
+  separate explicit choice, and thread history is untouched.
+- There is no startup catalogue fetch, update timer, silent permission expansion,
+  or write into Cursor-managed caches.
 
 ## Later phases
 
@@ -183,31 +219,33 @@ ordinary user-plugin registration, and isolated tool execution. General portable
 package discovery is now satisfied by #2701; executable behavior continues to use
 the isolated host rather than importing code into Electron main.
 
-### P2 — Install record + path/URL install
+### P2 — Install record + pinned catalogue install (landed)
 
 - Persist install records + content-addressed payloads under Copse-owned storage.
-- Support install from local path and from an explicit URL with hash pin.
+- Resolve bundled catalogue entries to an explicit Git commit. Arbitrary URLs
+  remain unsupported; selected development directories keep their existing path.
 - Exit gate: reopening the app reconciles records → registry without re-fetch when
   payload is present; hash mismatch fails closed.
 
-### P3 — Update, rollback, conflict report
+### P3 — Update and rollback (landed for the installable tier)
 
 - Staged update with previous-pin rollback.
-- Pre-enable and post-update conflict reporting in Settings.
+- Refuse plugin-id conflicts before activation. Existing registry/MCP conflict
+  handling remains authoritative on enable.
 - Exit gate: tests cover happy update, rollback after bad verify, and duplicate-id
   conflict blocking enable.
 
-### P4 — Signing and provenance
+### P4 — Signing and provenance (partial)
 
 - Define signature envelope + trusted key set (first-party keys; optional user
   additional keys).
-- Unsigned installs remain possible only behind an explicit trust confirm.
+- Unsigned installs are labelled and require an explicit content review.
 - Exit gate: tampered payload fails verify; supply-chain doc updated in the same PR.
 
-### P5 — Index / marketplace UI
+### P5 — Aggregate catalogue UI (landed)
 
-- Optional browsable index (Copse-hosted or user-configured) for discover/install.
-- Settings UI for installed pins, update channel, rollback, uninstall.
+- Bundled browsable aggregate generated from pinned upstream indexes.
+- Settings UI for installed pins, explicit updates, rollback, and uninstall.
 - Exit gate: e2e/component proof of install → enable → disable → uninstall; index
   client inert when no index URL configured.
 
@@ -221,16 +259,14 @@ the isolated host rather than importing code into Electron main.
 - Transitive npm-style dependency installation for pack code in v1.
 - Treating hooks dialect files or `userData/tools/*.mjs` as marketplace packages.
 
-## Open questions (resolve in P1/P2 PRs)
+## Remaining decisions
 
-1. Should Copse-owned pack storage live under `~/Library/Application Support/copse-panel/packs/`
-   (userData) or `~/.copse/packs/` next to the workspace thread store?
-2. Do Cursor-imported plugins ever gain install records, or do they stay a separate
-   read-only source indefinitely?
-3. Is the first signing PKI a simple embedded first-party key list, or an offline
+1. Do Cursor-imported plugins ever gain install records, or do they stay a separate
+   read-only source indefinitely? They remain read-only today.
+2. Is the first signing PKI a simple embedded first-party key list, or an offline
    root + intermediate model from day one?
-4. Should unknown capability/permission names hard-block enable, or allow enable
-   with those declarations inert (current lean: inert + warn)?
+3. When should Copse accept publisher or user-configured catalogue feeds instead
+   of updating only the reviewed bundled snapshot?
 
 ## References
 

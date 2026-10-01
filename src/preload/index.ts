@@ -1339,6 +1339,13 @@ const api: ApiClient = {
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('plugins:set-setting', id, key, value),
     addSource: () => ipcRenderer.invoke('plugins:add-source'),
+    listInstalls: () => ipcRenderer.invoke('plugins:list-installs'),
+    prepareInstall: (catalogId: string) => ipcRenderer.invoke('plugins:prepare-install', catalogId),
+    cancelInstall: (token: string) => ipcRenderer.invoke('plugins:cancel-install', token),
+    commitInstall: (token: string) => ipcRenderer.invoke('plugins:commit-install', token),
+    uninstall: (pluginId: string, deleteData: boolean) =>
+      ipcRenderer.invoke('plugins:uninstall', pluginId, deleteData),
+    rollback: (pluginId: string) => ipcRenderer.invoke('plugins:rollback', pluginId),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),

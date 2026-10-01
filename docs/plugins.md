@@ -94,6 +94,32 @@ isolated; legacy HTTP+SSE is reported and skipped. Copse-specific command hooks
 remain declarative. Cursor-installed skills and MCP continue to load through a
 distinct compatibility path.
 
+## Catalogue discovery and managed installs
+
+Settings → Customise → Plugins → **Browse** uses a bundled aggregate generated
+from pinned upstream Claude and Cursor marketplace indexes. The catalogue is
+available offline and joins its entries with Copse-managed plugins, bundled
+plugins, and the read-only Cursor cache. Upstream presence is provenance, not a
+trust or compatibility claim; entries stay labelled **Untested** until reviewed
+for Copse.
+
+A pinned catalogue entry can install when its validated package contains only
+portable skills and MCP servers. Copse downloads the exact Git commit only after
+the user chooses **Review install**, extracts the listed package with bounded
+archive handling, rejects symlinks/traversal and Copse executable contributions,
+then presents the content hash, skill paths, MCP commands or URLs, warnings, and
+unsigned status. Confirmation writes an immutable content-addressed payload and
+human-readable install record under `~/.copse/plugins/.managed/`; the plugin is
+registered disabled so enablement remains the separate component-consent
+boundary.
+
+Managed updates repeat the download, validation, and review path before an atomic
+revision switch. The previous pin is retained for rollback. Discovery re-hashes
+managed payloads and fails closed on changes. Uninstall keeps plugin data by
+default; deleting that data is a separate checkbox, and historical thread
+rendering is not rewritten. Catalogue browsing performs no network request, and
+Copse does not poll or update plugins in the background.
+
 An explicitly selected plugin directory is an ordinary **user** plugin, not a new
 trust tier. Root `plugin.json` declares executable behavior under
 `extensions["dev.copse"]`; `copse-plugin.json` and `copse-pack.json` remain
