@@ -11,11 +11,14 @@ import {
   parseCodexAuthJson,
   parseCursorSessionToken,
   parseHuggingFaceToken,
+  type PlanProviderId,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
+import { acpPlanProvider } from '@shared/acp.ts'
+import { listEnabledAcpAgents } from './acp/acp-agent-registry.ts'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
-import { resolveApiKey } from './storage/settings.ts'
+import { hasApiKey, resolveApiKey } from './storage/settings.ts'
 import { AsyncTtlCache } from './async-ttl-cache.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
@@ -192,7 +195,46 @@ async function discoverCursorSessionToken(
   return undefined
 }
 
-/** Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files, and env. */
+const ALL_PLAN_PROVIDERS: ReadonlySet<PlanProviderId> = new Set([
+  'claude',
+  'codex',
+  'huggingface',
+  'cursor',
+])
+
+/**
+ * The plan providers the user has set up in Settings → General, the only ones
+ * whose sign-ins plan usage may read. Claude and Codex count once an enabled
+ * Claude Code or Codex agent is registered; Cursor once an enabled Cursor agent
+ * is registered or a Cursor key is saved; Hugging Face once a key is saved in
+ * Copse. An environment variable alone does not confirm a provider.
+ */
+export function confirmedPlanUsageProviders(
+  agents = listEnabledAcpAgents(),
+  hasStoredKey: (provider: string) => boolean = hasApiKey,
+): ReadonlySet<PlanProviderId> {
+  const confirmed = new Set<PlanProviderId>()
+  for (const agent of agents) {
+    const plan = acpPlanProvider(agent)
+    if (plan !== null) confirmed.add(plan)
+    if (agent.id === 'cursor') confirmed.add('cursor')
+  }
+  if (hasStoredKey('cursor')) confirmed.add('cursor')
+  if (hasStoredKey('huggingface')) confirmed.add('huggingface')
+  return confirmed
+}
+
+const NOT_CONFIRMED_REASON: Record<PlanProviderId, string> = {
+  claude: 'Set up Claude Code in Settings → General to show this plan’s usage.',
+  codex: 'Set up Codex in Settings → General to show this plan’s usage.',
+  huggingface: 'Save a Hugging Face key in Settings → General to show this plan’s usage.',
+  cursor: 'Set up Cursor in Settings → General to show this plan’s usage.',
+}
+
+/**
+ * Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files,
+ * and env. Only `providers` are looked up: nothing is read for the others.
+ */
 export async function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
@@ -200,14 +242,19 @@ export async function discoverPlanUsageCredentials(
   resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
   readCursorKeychain: () => Promise<string | null> = readCursorKeychainAccessToken,
   readCursorStateDb: (dbPath: string) => Promise<string | null> = readCursorAccessTokenFromStateDb,
+  providers: ReadonlySet<PlanProviderId> = ALL_PLAN_PROVIDERS,
 ): Promise<PlanUsageCredentials> {
-  const claudeCredentials = orderClaudeOAuthCredentials({
-    keychainJson: await readKeychain(),
-    credentialsJson: await readJsonFile(claudeCredentialsPath(home, env)),
-    envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
-  })
+  const claudeCredentials = providers.has('claude')
+    ? orderClaudeOAuthCredentials({
+        keychainJson: await readKeychain(),
+        credentialsJson: await readJsonFile(claudeCredentialsPath(home, env)),
+        envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
+      })
+    : []
 
-  const codexFile = await readJsonFile(join(home, '.codex', 'auth.json'))
+  const codexFile = providers.has('codex')
+    ? await readJsonFile(join(home, '.codex', 'auth.json'))
+    : null
   const parsedCodex = parseCodexAuthJson(codexFile)
 
   const credentials: PlanUsageCredentials = {
@@ -225,11 +272,39 @@ export async function discoverPlanUsageCredentials(
       accountId: parsedCodex.accountId,
     }
   }
-  const hf = await discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
-  if (hf) credentials.huggingfaceToken = hf
-  const cursor = await discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
-  if (cursor) credentials.cursorSessionToken = cursor
+  if (providers.has('huggingface')) {
+    const hf = await discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
+    if (hf) credentials.huggingfaceToken = hf
+  }
+  if (providers.has('cursor')) {
+    const cursor = await discoverCursorSessionToken(
+      home,
+      env,
+      readCursorKeychain,
+      readCursorStateDb,
+    )
+    if (cursor) credentials.cursorSessionToken = cursor
+  }
   return credentials
+}
+
+/** Replace each unconfirmed provider's row with a pointer to Settings → General. */
+export function markUnconfirmedPlanProviders(
+  snapshot: PlanUsageSnapshot,
+  confirmed: ReadonlySet<PlanProviderId>,
+): PlanUsageSnapshot {
+  return {
+    ...snapshot,
+    providers: snapshot.providers.map((result) =>
+      confirmed.has(result.provider)
+        ? result
+        : {
+            status: 'unavailable',
+            provider: result.provider,
+            reason: NOT_CONFIRMED_REASON[result.provider],
+          },
+    ),
+  }
 }
 
 function mockSnapshot(): PlanUsageSnapshot {
@@ -435,11 +510,26 @@ async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
     if (process.env[MOCK_ENV] === 'claude-token-expired')
       return await mockClaudeTokenExpiredSnapshot()
+    // The mock's plans, filtered by the real Settings → General confirmation.
+    if (process.env[MOCK_ENV] === 'confirmed-only')
+      return markUnconfirmedPlanProviders(mockSnapshot(), confirmedPlanUsageProviders())
 
-    const credentials = await discoverPlanUsageCredentials()
-    return await getPlanUsageSnapshot(credentials, {
+    // Read only the sign-ins of providers set up in Settings → General. With
+    // none, nothing is read and every row says where to set one up.
+    const confirmed = confirmedPlanUsageProviders()
+    const credentials = await discoverPlanUsageCredentials(
+      homedir(),
+      process.env,
+      readClaudeKeychainCredentialsJson,
+      () => resolveApiKey('huggingface'),
+      readCursorKeychainAccessToken,
+      readCursorAccessTokenFromStateDb,
+      confirmed,
+    )
+    const snapshot = await getPlanUsageSnapshot(credentials, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.planUsage),
     })
+    return markUnconfirmedPlanProviders(snapshot, confirmed)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const checkedAt = new Date().toISOString()
@@ -468,7 +558,10 @@ export function setPlanUsageSnapshotFetcherForTest(
 export async function loadPlanUsageSnapshot(options?: {
   force?: boolean
 }): Promise<PlanUsageSnapshot> {
-  return planUsageCache.get('plan-usage', () => fetchPlanUsageSnapshot(), {
+  // Keyed by what is set up, so confirming or removing a provider fetches fresh
+  // instead of serving the previous snapshot for up to five minutes.
+  const key = `plan-usage:${[...confirmedPlanUsageProviders()].sort().join(',')}`
+  return planUsageCache.get(key, () => fetchPlanUsageSnapshot(), {
     force: options?.force === true,
   })
 }
