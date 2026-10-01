@@ -137,4 +137,68 @@ describe('memory-tools', () => {
     const empty = await run(recallTool, {})
     assert.match(empty, /No memories stored yet/)
   })
+
+  describe('revisions, provenance and paging', () => {
+    it('assigns revision 1 and bumps it on update by title', async () => {
+      const first = await run(rememberTool, { title: 'A', content: 'one' })
+      assert.match(first, /revision 1/)
+      const second = await run(rememberTool, { title: 'A', content: 'two' })
+      assert.match(second, /revision 2/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 1)
+    })
+
+    it('rejects a stale expectedRevision and leaves the note untouched', async () => {
+      await run(rememberTool, { title: 'A', content: 'one' })
+      const note = loadKnowledgeNotes(MEMORY_TYPE)[0]
+      assert.ok(note)
+      await run(rememberTool, { id: note.id, title: 'A', content: 'two', expectedRevision: 1 })
+      const stale = await run(rememberTool, {
+        id: note.id,
+        title: 'A',
+        content: 'three',
+        expectedRevision: 1,
+      })
+      assert.match(stale, /Not saved.*revision 2/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE)[0]?.body, 'two')
+    })
+
+    it('rejects an unknown id instead of creating a duplicate', async () => {
+      const out = await run(rememberTool, { id: 'nope', title: 'X', content: 'x' })
+      assert.match(out, /No memory with id/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 0)
+    })
+
+    it('records sources and appliesTo, and marks missing sources unknown', async () => {
+      await run(rememberTool, {
+        title: 'With',
+        content: 'c',
+        sources: ['msg:1', 'tool:2'],
+        appliesTo: ['src/**'],
+      })
+      await run(rememberTool, { title: 'Without', content: 'c' })
+      const out = await run(recallTool, {})
+      assert.match(out, /msg:1, tool:2/)
+      assert.match(out, /applies to: src\/\*\*/)
+      assert.match(out, /sources: unknown/)
+    })
+
+    it('treats legacy notes without revision as revision 1', async () => {
+      const { addKnowledgeNote } = await import('../services/storage/knowledge-store.ts')
+      addKnowledgeNote({ type: MEMORY_TYPE, title: 'Old', body: 'b' })
+      assert.match(await run(recallTool, {}), /revision: 1/)
+      assert.match(await run(rememberTool, { title: 'Old', content: 'n' }), /revision 2/)
+    })
+
+    it('pages recall with a cursor and rejects a bad one', async () => {
+      for (const n of ['a', 'b', 'c']) await run(rememberTool, { title: n, content: n })
+      const p1 = await run(recallTool, { limit: 2 })
+      assert.match(p1, /showing 1–2/)
+      const cursor = /Next cursor: (m:\d+)/.exec(p1)?.[1]
+      assert.ok(cursor)
+      const p2 = await run(recallTool, { limit: 2, cursor })
+      assert.match(p2, /## c/)
+      assert.doesNotMatch(p2, /Next cursor/)
+      assert.match(await run(recallTool, { cursor: 'x' }), /Invalid cursor/)
+    })
+  })
 })
