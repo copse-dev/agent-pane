@@ -53,6 +53,14 @@ describe('bridgedWorkspaceWritePaths', () => {
       bridgedWorkspaceWritePaths('rename_file', { from: 'old.css', to: 'styles.css' }),
       ['old.css', 'styles.css'],
     )
+    assert.deepEqual(
+      bridgedWorkspaceWritePaths('apply_patch', {
+        input:
+          '*** Begin Patch\n*** Update File: a.ts\n*** Move to: b.ts\n-x\n+y\n*** Add File: c.ts\n+z\n*** End Patch',
+      }),
+      ['a.ts', 'b.ts', 'c.ts'],
+    )
+    assert.deepEqual(bridgedWorkspaceWritePaths('apply_patch', { input: 42 }), [])
     assert.deepEqual(bridgedWorkspaceWritePaths('read_file', { path: 'index.html' }), [])
     assert.deepEqual(bridgedWorkspaceWritePaths('delete_file', { path: 42 }), [])
   })
@@ -764,6 +772,28 @@ describe('startAcpNativeBridge', () => {
     const result = rpcResult(call)
     assert.equal(result['isError'], true)
     assert.match(contentText(call) ?? '', /not offered/)
+  })
+
+  it('offers propose_thread to ACP agents when it is registered', async () => {
+    const registry = testRegistry([])
+    registry.register({
+      name: 'propose_thread',
+      description: 'Offer a separate thread for the user to start',
+      parameters: z.object({
+        title: z.string(),
+        summary: z.string(),
+        prompt: z.string(),
+      }),
+      execute: () => Promise.resolve('Offered to the user.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const tools = recordArrayOrEmpty(rpcResult(listed)['tools'])
+    assert.ok(tools.some((tool) => tool['name'] === 'propose_thread'))
   })
 
   it('rejects requests without the per-turn bearer token', async () => {

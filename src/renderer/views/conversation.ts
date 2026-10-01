@@ -83,7 +83,11 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  type ImageExpandItem,
+} from '../attachments/image-expand.ts'
 import {
   acpWorkspaceRoot,
   hydrateAcpResourceImages,
@@ -102,6 +106,7 @@ import {
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
+  getApplyPatchFiles,
   getToolCallLabel,
   getToolEditPath,
   RUN_ROLLUP_KEY,
@@ -259,6 +264,49 @@ function statusIcon(status: ToolCardStatus): SVGSVGElement {
 // The disclosure is omitted entirely when there are no arguments to show — e.g.
 // external ACP agents run no-argument commands (grep/search with the query in
 // the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+const PATCH_OP_LABEL = { add: 'Added', update: 'Edited', delete: 'Deleted', move: 'Moved' } as const
+
+/** Per-file rows for an `apply_patch` card: what each file gets, with line counts. */
+function createPatchFilesSection(tc: ToolCall): HTMLElement | null {
+  if (tc.name !== 'apply_patch') return null
+  const files = getApplyPatchFiles(tc)
+  if (files.length === 0) return null
+  return el(
+    'ul',
+    { class: 'tool-patch-files', 'aria-label': 'Files in patch' },
+    ...files.map((file) => {
+      const target = file.movePath ?? file.path
+      return el(
+        'li',
+        {},
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-patch-file',
+            'data-op': file.op,
+            'data-edit-path': target,
+            'data-tooltip': 'View changes',
+          },
+          el('span', { class: 'tool-patch-op' }, PATCH_OP_LABEL[file.op]),
+          el(
+            'span',
+            { class: 'tool-patch-path' },
+            file.movePath === undefined ? file.path : `${file.path} → ${file.movePath}`,
+          ),
+          // A delete names no lines, so its counts would read as a misleading +0 -0.
+          ...(file.op === 'delete'
+            ? []
+            : [
+                el('span', { class: 'tool-stat tool-stat-add' }, `+${String(file.additions)}`),
+                el('span', { class: 'tool-stat tool-stat-del' }, `-${String(file.deletions)}`),
+              ]),
+        ),
+      )
+    }),
+  )
+}
+
 function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   const rendered = renderToolArgs(args)
   if (!rendered.trim()) return null
@@ -445,6 +493,7 @@ function appendStandardToolSections(
   const buildBody = (): void => {
     const argsSection = createToolArgsSection(tc.args)
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc)),
       ...appendIfPresent(argsSection),
       ...(userInterruption(tc) !== undefined
         ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
@@ -1212,6 +1261,20 @@ function createGroupToolCard(
 }
 
 /**
+ * A rollup that holds exactly one group repeats that group's count on its own
+ * header. Not when failures sit beside it: the group then covers only part of
+ * the calls the label counts.
+ */
+function rollupHeaderCount(
+  item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
+): number | undefined {
+  const only = item.children.length === 1 ? item.children[0] : undefined
+  return only?.type === 'group' && only.toolCalls.length === item.toolCalls.length
+    ? item.toolCalls.length
+    : undefined
+}
+
+/**
  * One quiet summary row for a turn's tooling (`Used 12 tools` / `Read files`).
  * Nested cards stay available on expand but don't each paint their own chrome.
  */
@@ -1228,10 +1291,7 @@ function createRollupToolCard(
     'data-status': status,
     'data-tool-count': String(item.toolCalls.length),
   })
-  const count =
-    item.children.length === 1 && item.children[0]?.type === 'group'
-      ? item.toolCalls.length
-      : undefined
+  const count = rollupHeaderCount(item)
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
     const childCard = createToolCard(child, api, threadId, store)
@@ -1297,7 +1357,10 @@ const toolCardSignatures = new WeakMap<HTMLElement, string>()
 const toolGroupItemSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
-  if (item.type === 'rollup') return `r:${item.key}`
+  // One identity for a message's rollup, whether it is still one message's
+  // `turn` or has become a cross-message `run`: the disclosure is patched in
+  // place (keeping its open state) instead of being replaced as messages join.
+  if (item.type === 'rollup') return 'r:activity'
   if (item.type === 'step') return `s:${item.key}`
   if (item.type === 'group') return `g:${item.key}`
   return `t:${item.toolCall.id}`
@@ -1458,11 +1521,10 @@ function reconcileToolCard(
     card.dataset['toolCount'] = String(item.toolCalls.length)
     if (item.type === 'step') {
       card.dataset['stepMessageId'] = item.messageId
+    } else {
+      card.dataset['rollupKey'] = item.key
     }
-    const count =
-      item.type === 'rollup' && item.children.length === 1 && item.children[0]?.type === 'group'
-        ? item.toolCalls.length
-        : undefined
+    const count = item.type === 'rollup' ? rollupHeaderCount(item) : undefined
     replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
     let body = Array.from(card.children).find(
       (node): node is HTMLElement =>
@@ -1486,16 +1548,17 @@ function reconcileToolCard(
 
 function createMessageImages(images: string[]): HTMLElement {
   const wrap = el('div', { class: 'message-images' })
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: 'Attached image' }))
+  images.forEach((dataUrl, index) => {
     const img = el('img', {
       class: 'message-image',
       src: dataUrl,
       alt: 'Attached image',
       loading: 'lazy',
     })
-    attachImageExpand(img, 'Attached image')
+    attachImageExpand(img, 'Attached image', gallery, index)
     wrap.append(img)
-  }
+  })
   return wrap
 }
 
@@ -1516,6 +1579,7 @@ function createAcpContentBlock(
   context: 'message' | 'reasoning' | 'tool',
   workspaceRoot: string | null,
   previewImageDataUrls?: ReadonlySet<string>,
+  imageGallery?: { items: readonly ImageExpandItem[]; index: number },
 ): HTMLElement | null {
   if (block.type === 'text') return null
   if (block.type === 'image') {
@@ -1541,7 +1605,7 @@ function createAcpContentBlock(
       alt: label,
       loading: 'lazy',
     })
-    attachImageExpand(img, label)
+    attachImageExpand(img, label, imageGallery?.items, imageGallery?.index)
     return img
   }
   if (block.type === 'audio') {
@@ -1616,8 +1680,21 @@ function createAcpContentBlocks(
   context: 'message' | 'reasoning',
   workspaceRoot: string | null,
 ): HTMLElement | null {
+  const images: ImageExpandItem[] =
+    context === 'message'
+      ? blocks.flatMap((block) =>
+          block.type === 'image'
+            ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : 'Agent image' }]
+            : [],
+        )
+      : []
+  let imageIndex = 0
   const nodes = blocks.flatMap((block) => {
-    const node = createAcpContentBlock(block, context, workspaceRoot)
+    const gallery =
+      context === 'message' && block.type === 'image'
+        ? { items: images, index: imageIndex++ }
+        : undefined
+    const node = createAcpContentBlock(block, context, workspaceRoot, undefined, gallery)
     return node ? [node] : []
   })
   if (nodes.length === 0) return null
@@ -2051,15 +2128,7 @@ function appendMessageContent(
     hasReasoningContent(msg.reasoning, msg.reasoningBlocks) &&
     opts?.nestReasoningInTools !== true
   ) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? '',
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot,
-      ),
-    )
+    body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks, workspaceRoot))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   // Attach before markdown so ACP transport-noise disclosure can find a parent
@@ -2277,22 +2346,19 @@ function countChipPlaceholders(text: string): number {
 }
 
 /**
- * A `<details>` disclosure holding the model's reasoning trail. `open` reflects
- * whether the answer is still pending so live reasoning is visible by default but
- * past turns stay collapsed. Title tense follows status (`Reasoning` / `Reasoned`).
+ * A compact, initially closed disclosure holding the model's reasoning trail.
+ * Title tense follows status (`Reasoning` / `Reasoned`).
  * A click on the summary marks it user-controlled so later streaming updates
  * never fight the user's choice.
  */
 function buildReasoningEl(
   reasoning: string,
-  open: boolean,
   live: boolean,
   blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
   workspaceRoot: string | null = null,
 ): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
-    open,
   })
   const summary = el(
     'summary',
@@ -2387,7 +2453,7 @@ function syncReasoningEl(
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? '', true, live, msg.reasoningBlocks, workspaceRoot)
+    details = buildReasoningEl(msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     host.prepend(details)
   } else {
     if (details.parentElement !== host) host.prepend(details)
@@ -2396,8 +2462,6 @@ function syncReasoningEl(
       renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     setReasoningDisclosureTitle(details, live)
   }
-  // Keep the trail open while it is still live, unless the user collapsed it.
-  if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
 }
 
 /**
@@ -2423,7 +2487,7 @@ function syncNestedRollupReasoning(
     return
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? '', true, live, reasoningBlocks, workspaceRoot)
+    details = buildReasoningEl(reasoning ?? '', live, reasoningBlocks, workspaceRoot)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks, workspaceRoot)
@@ -2452,25 +2516,31 @@ function syncRunStepReasoning(
   liveStepId: string | null,
   workspaceRoot: string | null,
 ): void {
+  // The rollup is reused when its message becomes a run's anchor, so it may
+  // still carry the trail it nested as a single message. In a run that trail
+  // belongs on the anchor's step: move it there rather than rebuild it, so its
+  // open state and rendered markdown survive the new message arriving.
+  let anchorTrail = card.querySelector<HTMLDetailsElement>(
+    ':scope > .tool-rollup-body > .message-reasoning',
+  )
   for (const step of run.steps) {
     const body = card.querySelector<HTMLElement>(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`,
     )
     if (!body) continue
     let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
+    if (!details && anchorTrail && step.messageId === run.anchorId) {
+      details = anchorTrail
+      anchorTrail = null
+      body.prepend(details)
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove()
       continue
     }
     const live = step.messageId === liveStepId
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? '',
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot,
-      )
+      details = buildReasoningEl(step.reasoning ?? '', live, step.reasoningBlocks, workspaceRoot)
       body.prepend(details)
       continue
     }
@@ -2479,6 +2549,7 @@ function syncRunStepReasoning(
       renderReasoningText(textEl, step.reasoning ?? '', live, step.reasoningBlocks, workspaceRoot)
     setReasoningDisclosureTitle(details, live)
   }
+  anchorTrail?.remove()
 }
 
 /**
@@ -2613,12 +2684,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
   })
 
-  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Clicking a file edit's +/- counts (or a row of an apply_patch card) reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
   list.addEventListener('click', (e) => {
     const statsBtn =
-      e.target instanceof Element ? e.target.closest<HTMLElement>('.tool-edit-stats') : null
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('.tool-edit-stats, .tool-patch-file')
+        : null
     const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()
@@ -3179,7 +3252,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // bubble hides its reasoning, so there the row stays the live signal.
     if (
       label.startsWith('Reasoning…') &&
-      list.querySelector('.msg:not(.msg-concise) .message-reasoning.message-reasoning-live')
+      [
+        ...list.querySelectorAll(
+          '.msg:not(.msg-concise) .message-reasoning.message-reasoning-live',
+        ),
+      ].some((details) => !details.parentElement?.closest('details:not([open]), [hidden]'))
     ) {
       activityBar.hidden = true
       scrollToBottom()
@@ -3381,6 +3458,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (preference !== undefined) {
       card.open = preference
+    } else if (item.type === 'rollup' || item.type === 'step') {
+      // Background activity stays quiet, including while it runs and when a
+      // call failed: failures render beside the rollup, already open.
+      card.open = false
     } else if (failed) {
       // Failed tools stay expanded so the error body is visible without a click.
       // Compaction already skips data-status=error; auto-open here covers the
@@ -3489,11 +3570,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       run === undefined &&
       (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
       shouldNestReasoningInTools(toolCalls)
+    // User-interrupted calls fold into the rollup; genuine failures sit beside it.
+    const isInterrupted = (call: ToolCall): boolean => userInterruption(call) !== undefined
     const items = run
       ? isRunMember
         ? buildSubagentDisplayItems(toolCalls)
-        : [...buildToolRunDisplayItems(run), ...buildSubagentDisplayItems(toolCalls)]
+        : [
+            ...buildToolRunDisplayItems(run, { isInterrupted }),
+            ...buildSubagentDisplayItems(toolCalls),
+          ]
       : buildToolCallDisplayItems(toolCalls, {
+          isInterrupted,
           ...(nestReasoning || (messageKey !== null && liveRollupMessages.has(messageKey))
             ? { forceRollup: true }
             : {}),
@@ -4138,6 +4225,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    // A skipped review still carries the only durable explanation for a
+    // below-threshold diff or declined spend prompt. createReviewCardEl keeps
+    // that state to one compact annotation line rather than dropping it.
     if (!msg?.review || !msgEl) return
     const card = createReviewCardEl(msg.review, api, () => {
       retryReview(store, api, threadId, messageId)

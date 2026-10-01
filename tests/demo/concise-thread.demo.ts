@@ -10,6 +10,8 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 interface TranscriptState {
   toolCards: number
   reasoning: number
+  /** Trails the concise view keeps, whether open or folded in a closed rollup. */
+  reasoningTrails: number
   screenshots: number
   texts: string[]
 }
@@ -23,6 +25,9 @@ async function transcriptState(): Promise<TranscriptState> {
     return {
       toolCards: count('.msg > .tool-card'),
       reasoning: count('.message-reasoning'),
+      reasoningTrails: document.querySelectorAll(
+        '.messages-list .msg:not(.msg-concise):not(.msg-concise-working) .message-reasoning',
+      ).length,
       screenshots: count('.tool-result-preview-image'),
       texts: [...document.querySelectorAll('.messages-list .msg-assistant .message-text')]
         .filter(visible)
@@ -53,7 +58,9 @@ describe('concise thread view', () => {
 
     const state = await transcriptState()
     expect(state.toolCards).toBeGreaterThan(0)
-    expect(state.reasoning).toBe(1)
+    // Finished activity starts collapsed, so the trail can sit folded inside
+    // the closed rollup: kept in the transcript, not hidden by the concise view.
+    expect(state.reasoningTrails).toBe(1)
     expect(state.screenshots).toBe(1)
     expect(state.texts.length).toBeGreaterThan(1)
     await saveAppScreenshot('concise-thread-full.png')
@@ -71,7 +78,9 @@ describe('concise thread view', () => {
 
     const state = await transcriptState()
     expect(state.toolCards).toBeGreaterThan(0)
-    expect(state.reasoning).toBe(1)
+    // Finished activity starts collapsed, so the trail can sit folded inside
+    // the closed rollup: kept in the transcript, not hidden by the concise view.
+    expect(state.reasoningTrails).toBe(1)
     expect(state.texts.length).toBeGreaterThan(1)
   })
 

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { MachineDispatchResult } from '../agent-dispatcher.ts'
+import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
 
 export interface BackgroundCompletionWakeRequest {
