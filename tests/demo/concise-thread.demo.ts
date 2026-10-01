@@ -132,6 +132,10 @@ describe('concise thread view', () => {
 
     const before = await cards()
     expect(before.every((turn) => turn.cards === 0 && turn.reasoning === 0)).toBe(true)
+    // Capture the live end of the thread, where the running row sits.
+    await browser.execute(() => {
+      document.querySelector('.messages-list')?.scrollTo({ top: 1_000_000 })
+    })
     await saveAppScreenshot('concise-thread-running-collapsed.png')
 
     await row.click()
