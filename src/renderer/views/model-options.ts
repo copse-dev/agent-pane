@@ -29,6 +29,7 @@ export interface ModelOptionsApi {
   lmStudio: Pick<ApiClient['lmStudio'], 'models'> &
     Partial<Pick<ApiClient['lmStudio'], 'modelInfo'>>
   plugins?: Pick<ApiClient['plugins'], 'list'>
+  usage?: Pick<ApiClient['usage'], 'getPlanUsage'>
 }
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
@@ -71,6 +72,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
+import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -89,6 +91,8 @@ export interface ModelOption {
   label: string
   group?: string
   disabled?: boolean
+  /** Billing coverage of this concrete route; automatic/placeholder rows omit it. */
+  coverage?: ModelCoverage
   /** Image-input support when known; absent means the provider did not advertise it. */
   supportsImages?: boolean
 }
@@ -473,6 +477,11 @@ export async function fetchModelOptions(
   const acpOverSsh = isSshWorkspace && (await api.settings.get('acpOverSshEnabled')) === true
   const sshWorkspace = isSshWorkspace && !acpOverSsh
   const includeAgentModels = opts.includeAgentModels !== false
+  // The main process caches plan probes. Run alongside catalog discovery; a
+  // failed/unsupported probe makes no claim of included usage.
+  const planUsage = includeAgentModels
+    ? (api.usage?.getPlanUsage().catch(() => null) ?? Promise.resolve(null))
+    : Promise.resolve(null)
 
   let available: AvailableProviders = {}
   try {
@@ -664,7 +673,11 @@ export async function fetchModelOptions(
     })
   }
 
-  return visibleOptions
+  const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage }
+  return visibleOptions.map((option) => {
+    const coverage = modelCoverage(option.value, coverageContext)
+    return coverage ? { ...option, coverage } : option
+  })
 }
 
 function autoModelOption(label: string): ModelOption {
