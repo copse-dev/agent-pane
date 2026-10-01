@@ -98,7 +98,8 @@ describe('projects pane thread PR status (component)', () => {
     while (Date.now() < deadline) {
       const row = rowByTitle(title)
       const icon = row?.querySelector<HTMLElement>(`.chat-pr-status.is-${kind}`)
-      if (icon?.querySelector('svg[data-icon="git-pull-request"]')) return icon
+      const glyph = kind === 'merged' ? 'git-merge' : 'git-pull-request'
+      if (icon?.querySelector(`svg[data-icon="${glyph}"]`)) return icon
       await new Promise((r) => setTimeout(r, 10))
     }
     throw new Error(`Timed out waiting for PR ${kind} icon on "${title}"`)

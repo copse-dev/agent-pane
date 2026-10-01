@@ -74,7 +74,7 @@ describe('thread GitHub PR status icon', () => {
     await expect(labels.openIcon).toBe('git-pull-request')
     await expect(labels.openLabel).toMatch(/#42.*open/i)
     await expect(labels.mergedKind).toBe(true)
-    await expect(labels.mergedIcon).toBe('git-pull-request')
+    await expect(labels.mergedIcon).toBe('git-merge')
     await expect(labels.mergedLabel).toMatch(/merged/i)
     await expect(labels.plainHasIcon).toBe(false)
 
