@@ -30,6 +30,27 @@ function declares(css: string, selector: string, prop: RegExp): boolean {
   return prop.test(body)
 }
 
+/**
+ * Offset of the first `:has(` that opens inside another `:has(`, or -1. Matched
+ * case-insensitively: CSS pseudo-class names are, so `:HAS()` invalidates a rule
+ * the same way.
+ */
+function nestedHasOffset(css: string): number {
+  const open: boolean[] = [] // one entry per unclosed `(`; true when it opens a :has(
+  for (let i = 0; i < css.length; i++) {
+    if (css.slice(i, i + 5).toLowerCase() === ':has(') {
+      if (open.includes(true)) return i
+      open.push(true)
+      i += 4
+    } else if (css[i] === '(') {
+      open.push(false)
+    } else if (css[i] === ')') {
+      open.pop()
+    }
+  }
+  return -1
+}
+
 describe('modern CSS adoptions', () => {
   it('paints native form controls with the accent (#3065)', () => {
     // accent-color inherits, so one declaration on the root surface reaches every
@@ -213,24 +234,18 @@ describe('modern CSS adoptions', () => {
     // entire rule, so the concise view's empty-bubble collapse silently never
     // applied. Flatten `:has(> a:has(> b))` to `:has(> a > b)` instead.
     for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
-      const css = read(file)
-      let depth = 0
-      const stack: boolean[] = []
-      for (let i = 0; i < css.length; i++) {
-        if (css.startsWith(':has(', i)) {
-          assert.ok(!stack.includes(true), `${file}: nested :has() near offset ${String(i)}`)
-          stack.push(true)
-          i += ':has('.length - 1
-          depth++
-        } else if (css[i] === '(') {
-          stack.push(false)
-          depth++
-        } else if (css[i] === ')' && depth > 0) {
-          stack.pop()
-          depth--
-        }
-      }
+      const offset = nestedHasOffset(read(file))
+      assert.equal(offset, -1, `${file}: nested :has() near offset ${String(offset)}`)
     }
+  })
+
+  it('finds nested :has() however it is spelled', () => {
+    // Pseudo-class names are ASCII case-insensitive, so `:HAS()` nests just the same.
+    assert.notEqual(nestedHasOffset('.a:has(> .b:has(> .c)) { top: 0 }'), -1)
+    assert.notEqual(nestedHasOffset('.a:HAS(.x :Has(.y)) { top: 0 }'), -1)
+    assert.notEqual(nestedHasOffset('.a:has(:is(.b, :has(.c))) { top: 0 }'), -1)
+    assert.equal(nestedHasOffset('.a:has(> .b > .c):not(:has(.d)) { top: 0 }'), -1)
+    assert.equal(nestedHasOffset('.a:has(.b), .c:has(.d) { top: 0 }'), -1)
   })
 
   it('themes scrollbars from the active surface tokens', () => {
