@@ -252,7 +252,7 @@ describe('toStrictSchema', () => {
     })
     const props = out['properties']
     assert.ok(typeof props === 'object' && props !== null && Object.hasOwn(props, 'x'))
-    assert.deepEqual(props.x, {
+    assert.deepEqual(Object.entries(props).find(([key]) => key === 'x')?.[1], {
       type: ['object', 'null'],
       properties: { a: { type: 'string' } },
       required: ['a'],
