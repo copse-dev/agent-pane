@@ -1250,50 +1250,12 @@ footer a:hover {
 }
 
 .marketing-site .spotlight-card figure {
-  --screenshot-top: 26px;
-  --screenshot-left: 26px;
   position: relative;
   height: 300px;
   margin: 0 0 28px;
   overflow: hidden;
   border-radius: 40px;
   background: var(--green);
-}
-
-.marketing-site .spotlight-card figure::before {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  top: calc(var(--screenshot-top) + 8px);
-  left: calc(var(--screenshot-left) + 10px);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ff5f57;
-  box-shadow:
-    10px 0 0 #febc2e,
-    20px 0 0 #28c840;
-  pointer-events: none;
-}
-
-.marketing-site .spotlight-card figure::after {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  top: var(--screenshot-top);
-  left: var(--screenshot-left);
-  width: 44px;
-  height: 22px;
-  border-radius: 14px 0 0 0;
-  background: #242525;
-  pointer-events: none;
-}
-
-/* Captures from the browser demo draw their own window controls, so the
-   painted stand-in would cover the real ones and the title beside them. */
-.marketing-site .spotlight-card-demo-capture figure::before,
-.marketing-site .spotlight-card-demo-capture figure::after {
-  content: none;
 }
 
 .marketing-site .spotlight-card img {
@@ -1322,8 +1284,6 @@ footer a:hover {
 }
 
 .marketing-site .spotlight-card-zoomed-bottom-right figure {
-  --screenshot-top: 0px;
-  --screenshot-left: 0px;
   border-radius: 14px 14px 40px 14px;
 }
 
