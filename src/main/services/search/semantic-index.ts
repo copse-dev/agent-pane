@@ -8,6 +8,7 @@ import { computeGitIgnoreExcludes, redundantExcludePatterns } from './git-derive
 import {
   isCommandTimeoutError,
   runCommand,
+  type CommandResult,
   type RunCommandOptions,
 } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
@@ -131,6 +132,26 @@ let gortexCommand: string | null = null
 let gortexDaemonReady: Promise<boolean> | null = null
 /** gortex excludes are written to its config once per app session (idempotent). */
 let gortexExcludesReady: Promise<void> | null = null
+/**
+ * Latched by {@link stopGortexDaemon}: once quit has reaped the daemon, nothing
+ * may bring one back up, because a daemon started after that point outlives the
+ * app with nobody left to stop it.
+ */
+let gortexStopped = false
+
+/** An in-flight gortex run that can leave a daemon behind; see {@link runDaemonSpawningCommand}. */
+interface DaemonSpawningRun {
+  readonly settled: Promise<unknown>
+  /** Cuts the run short; null for runs that must finish so their daemon reaches the pidfile. */
+  readonly abort: (() => void) | null
+}
+const daemonSpawningRuns = new Set<DaemonSpawningRun>()
+/**
+ * How long quit waits for in-flight daemon-spawning runs to settle before it
+ * reads the pidfile: `daemon start --detach` returns in well under a second, and
+ * an aborted `track` exits within the SIGTERM → SIGKILL grace.
+ */
+const DAEMON_SPAWN_SETTLE_MS = 5_000
 
 /**
  * Sentinel filename (under {@link gortexHomeDir}) marking that this install has
@@ -211,6 +232,7 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   gortexCommand = null
   gortexDaemonReady = null
   gortexExcludesReady = null
+  gortexStopped = false
 
   // gortex has no `--version` flag; `gortex version` exits 0 without a daemon.
   const gortexCandidates = ['gortex', getBundledGortexPath()].filter(isNonEmptyString)
@@ -314,15 +336,16 @@ async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
     const cmd = gortexCmd()
     const statusArgs = ['daemon', 'status', '--no-progress']
     if (await probeWithOpts(cmd, statusArgs, gortexRunOpts(workspaceRoot))) return true
-    await runCommand(
-      cmd,
+    await runDaemonSpawningCommand(
       ['daemon', 'start', '--detach', '--no-progress'],
       gortexRunOpts(workspaceRoot),
+      { abortable: false },
     ).catch(() => undefined)
     // Poll rather than check once: the detached daemon isn't reachable the
     // instant `start` returns.
     const deadline = Date.now() + DAEMON_READY_TIMEOUT_MS
     for (;;) {
+      if (gortexStopped) return false
       if (await probeWithOpts(cmd, statusArgs, gortexRunOpts(workspaceRoot))) return true
       if (Date.now() >= deadline) return false
       await delay(DAEMON_READY_POLL_MS)
@@ -337,6 +360,45 @@ async function ensureGortexDaemon(workspaceRoot: string): Promise<boolean> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Run a gortex command that can leave a daemon running, registered so
+ * {@link stopGortexDaemon} can account for it: `daemon start` and `restart`
+ * write the pidfile only as they return, and `track` starts a daemon of its own
+ * when none answers — including one quit has just killed. Refuses once the
+ * daemon has been stopped. `abortable` runs are only clients of the daemon and
+ * are cut short at quit; the rest must finish so their daemon is on record.
+ */
+async function runDaemonSpawningCommand(
+  args: string[],
+  opts: RunCommandOptions,
+  { abortable }: { abortable: boolean },
+): Promise<CommandResult> {
+  if (gortexStopped) throw new Error('gortex daemon has been stopped')
+  const controller = abortable ? new AbortController() : null
+  const run = runCommand(
+    gortexCmd(),
+    args,
+    controller ? { ...opts, signal: controller.signal } : opts,
+  )
+  const entry: DaemonSpawningRun = {
+    settled: run.catch(() => undefined),
+    abort: controller
+      ? (): void => {
+          controller.abort()
+        }
+      : null,
+  }
+  daemonSpawningRuns.add(entry)
+  try {
+    const result = await run
+    // An aborted run still resolves, with the killed process's exit code.
+    if (controller?.signal.aborted) throw new Error('gortex daemon has been stopped')
+    return result
+  } finally {
+    daemonSpawningRuns.delete(entry)
+  }
 }
 
 async function probeWithOpts(
@@ -362,6 +424,8 @@ async function probeWithOpts(
  * to text until a pass genuinely completes.
  */
 function settleFailedSemanticPass(phase: 'setup' | 'update', err: unknown): void {
+  // Quit stopped the daemon under this pass; that is not an index failure.
+  if (gortexStopped) return
   if (isCommandTimeoutError(err)) {
     semanticBuildDeferred(SEMANTIC_INDEX_DEFERRED_REASON)
     console.info(
@@ -724,10 +788,10 @@ async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
       console.info(
         `[copse-panel] pruned ${String(pruned)} redundant gortex excludes; restarting daemon`,
       )
-      await runCommand(
-        gortexCmd(),
+      await runDaemonSpawningCommand(
         ['daemon', 'restart', '--no-progress'],
         gortexRunOpts(workspaceRoot, { timeout_ms: DAEMON_RESTART_TIMEOUT_MS }),
+        { abortable: false },
       ).catch(() => undefined)
       gortexDaemonReady = null
       await ensureGortexDaemon(workspaceRoot)
@@ -1046,9 +1110,27 @@ export async function reapOversizedGortexDaemon(): Promise<void> {
  * this, outlives Copse — each session it re-tracks/indexes and the orphaned
  * daemons accumulate multi-GB graphs until the machine OOM-kills the app on the
  * next launch. Best-effort and idempotent; called from the app before-quit path.
+ *
+ * The index pipeline can still be running when quit lands, so a single pidfile
+ * read is not enough: a `daemon start` in flight has not written the pidfile
+ * yet, and a `track` that connects after the kill starts a replacement daemon.
+ * So latch {@link gortexStopped} first (nothing new may spawn), abort the
+ * `track` clients while the daemon they would reconnect to is still up, let the
+ * starts finish, and only then signal whichever daemon the pidfile names.
  */
 export async function stopGortexDaemon(): Promise<void> {
   if (activeBackend !== 'gortex' || !gortexCommand) return
+  gortexStopped = true
+  const inFlight = [...daemonSpawningRuns]
+  for (const run of inFlight) run.abort?.()
+  let settleTimer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    Promise.all(inFlight.map((run) => run.settled)),
+    new Promise<void>((resolve_) => {
+      settleTimer = setTimeout(resolve_, DAEMON_SPAWN_SETTLE_MS)
+    }),
+  ])
+  clearTimeout(settleTimer)
   // Signal the daemon directly from its pidfile rather than shelling out to
   // `gortex daemon stop`: the CLI stop waits for a final snapshot, and its
   // subprocess spawn + graceful wait can hold app quit for many seconds —
@@ -1161,10 +1243,10 @@ async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
   // gortex v0.60.0 (see SEMANTIC_INDEX_KILL_GRACE_MS), so the command-runner
   // ceiling is what ends the wait on a repo too big to settle in time; callers
   // read that timeout as "still indexing", not as a failure (#517).
-  await runCommand(
-    gortexCmd(),
+  await runDaemonSpawningCommand(
     ['track', workspaceRoot, '--wait', '--wait-timeout', gortexIndexWaitArg(), '--no-progress'],
     gortexRunOpts(workspaceRoot, { timeout_ms: SEMANTIC_INDEX_TIMEOUT_MS }),
+    { abortable: true },
   )
 }
 
