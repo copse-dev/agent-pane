@@ -74,6 +74,33 @@ describe('ACP candidates while bundled pricing catches up', () => {
     assert.equal(picked.costPerMTok, 0)
   })
 
+  it('matches GPT-6.1 Sol bundled pricing to its distinct benchmark id and prefers ACP', () => {
+    const model = 'gpt-6.1-sol'
+    const info = getModelInfo(model)
+    assert.ok(info)
+    const candidates = planAcpFrontierCandidates([
+      { ...CODEX, availableModels: [{ value: model, label: 'GPT-6.1 Sol' }] },
+    ])
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0]?.id, 'acp:codex-acp#gpt-6.1-sol')
+    assert.equal(candidates[0].costPerMTok, blendedPricePerMTok(info))
+    assert.equal(candidates[0].planAccess?.modelId, 'gpt-6-1-sol')
+    const paid = openRouterFrontierCandidates([
+      { id: 'openai/gpt-6.1-sol', name: 'GPT-6.1 Sol', ...info },
+    ])
+    assert.equal(paid.length, 1)
+    const points = frontierForKnownModels(
+      [...paid, ...candidates],
+      (candidate) => applyPlanCoverage(candidate, usage(20)),
+      (candidate) => candidate.id.startsWith('acp:') || candidate.id.startsWith('openrouter:'),
+    )
+    assert.equal(points.length, 1)
+    const picked = pickDynamicModel({ kind: 'balanced' }, points)
+    assert.equal(picked?.id, 'acp:codex-acp#gpt-6.1-sol')
+    assert.equal(picked.plan, '5-hour')
+    assert.equal(picked.costPerMTok, 0)
+  })
+
   it('does not infer free usage from the presence of a live price', () => {
     const candidate = planAcpFrontierCandidates([CODEX], pricedSol())[0]
     assert.ok(candidate)

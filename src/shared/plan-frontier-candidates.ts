@@ -4,7 +4,7 @@
 // surfaces make the same route-aware billing decision.
 
 import { blendedPricePerMTok, type FrontierCandidate } from '@copse/llm/pareto-frontier.ts'
-import { getModelInfo } from '@copse/llm/model-catalog.ts'
+import { getModelInfo, MODEL_CATALOG } from '@copse/llm/model-catalog.ts'
 import { getIntellectScore, resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { acpModelChoiceLabel, acpModelValue, acpModelVersionName, acpPlanProvider } from './acp.ts'
@@ -62,7 +62,13 @@ export function planAcpFrontierCandidates(
       )
       if (!resolved) continue
       const score = getIntellectScore(resolved)
-      const info = getModelInfo(resolved)
+      // Benchmark ids can differ from API ids (gpt-6-1-sol vs gpt-6.1-sol).
+      // Match bundled prices by the same identity before consulting live prices.
+      const info =
+        getModelInfo(resolved) ??
+        Object.entries(MODEL_CATALOG).find(
+          ([id]) => resolveIntellectModelId(id) === resolved,
+        )?.[1]
       const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved)
       if (!score || price === undefined) continue
       candidates.push({
