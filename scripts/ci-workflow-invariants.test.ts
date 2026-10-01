@@ -867,8 +867,10 @@ describe('release-bump.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
   })
 
+  const publicationCheck = 'gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current"'
+
   it('keeps one release in flight and skips an empty week', () => {
-    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const published = workflow.indexOf(publicationCheck)
     const bump = workflow.indexOf('node scripts/release-bump.mts')
     assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
     assert.match(workflow, /args=\(--skip-if-empty\)/)
@@ -880,11 +882,23 @@ describe('release-bump.yml workflow invariants', () => {
     // still skips; only a person naming the next version cuts past it, and the
     // abandoned version's notes move into the new section rather than vanish.
     const gate = workflow.slice(
-      workflow.indexOf('gh release view "v$current"'),
+      workflow.indexOf(publicationCheck),
       workflow.indexOf('node scripts/release-bump.mts'),
     )
     assert.match(gate, /if \[ -z "\$REQUESTED_VERSION" \]; then[\s\S]*?exit 0\n/)
     assert.match(gate, /args\+=\(--carry-forward\)/)
+  })
+
+  it('treats only a confirmed 404 as unpublished', () => {
+    // A rate limit or outage read as "unpublished" would let a dispatch carry a
+    // published version's notes into the next release a second time.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('if [ -z "$REQUESTED_VERSION" ]'),
+    )
+    assert.match(gate, /\*"HTTP 404"\*\) ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(gate, /gh api "repos\/\$RELEASE_REPOSITORY" --silent[\s\S]*?exit 1\n/)
+    assert.doesNotMatch(workflow, /gh release view "v\$current"/)
   })
 
   it('passes the dispatch version through the environment, not the script text', () => {

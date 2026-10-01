@@ -73,7 +73,22 @@ jobs:
           current="$(node -p "require('./package.json').version")"
           args=(--skip-if-empty)
           # The release repository is public, so the workflow token can read it.
-          if ! gh release view "v$current" --repo "$RELEASE_REPOSITORY" > /dev/null 2>&1; then
+          # Only a confirmed 404 means unpublished. Any other failure (rate limit,
+          # outage, auth) must stop the run: treating it as unpublished would let
+          # a dispatch carry an already-published version's notes forward again.
+          if ! lookup="$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current" --silent 2>&1)"; then
+            case "$lookup" in
+              *"HTTP 404"*) ;;
+              *)
+                echo "::error::Could not check whether v$current is published in $RELEASE_REPOSITORY: $lookup"
+                exit 1
+                ;;
+            esac
+            # A missing repository also answers 404; make sure that is not the cause.
+            if ! gh api "repos/$RELEASE_REPOSITORY" --silent; then
+              echo "::error::$RELEASE_REPOSITORY is not reachable, so v$current's publication cannot be checked."
+              exit 1
+            fi
             if [ -z "$REQUESTED_VERSION" ]; then
               echo "::notice::v$current is not published in $RELEASE_REPOSITORY yet; skipping this week's bump. If its release run failed, dispatch this workflow with the next version to cut past it."
               exit 0
