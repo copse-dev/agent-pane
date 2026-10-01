@@ -445,13 +445,21 @@ guarantee, and the record must say so.
   it through its explicit env map, and the worker blanks the variables from its own
   environment before it spawns anything, so shell children inherit no proxy and no token
   (`perCommandNetwork: 'token-gated'`; proven in `guest-egress-proxy.test.ts` and by a
-  Node 22 probe of the dispatcher's capture-at-startup). Residual, recorded rather than
-  hidden: a child runs as the same uid as the worker and can read the worker's initial
-  environment from `/proc`, so a deliberately hostile command could recover the token and
-  reach the allowlisted vendor origins — the same hosts the model already sends the
-  repository to. A namespace was the only thing that closed that, and it was not worth the
-  container's syscall filter. An ACP agent's own shell children inherit the agent's token,
-  as they inherit its seatbelt scope on the desktop.
+  Node 22 probe of the dispatcher's capture-at-startup). Residual as first recorded: a
+  child runs as the same uid as the worker and can read the worker's initial environment
+  from `/proc` (and PID 1's, where `docker create --env` lands), so a deliberately hostile
+  command could recover the token and reach the allowlisted vendor origins — the same hosts
+  the model already sends the repository to. A live probe confirmed it exactly as written.
+  **Amended:** the residual is closed for the worker without a namespace. The token is no
+  longer in any `--env`; the host writes it as the first line of the container's stdin and
+  the entrypoint builds the proxy URL from it, so PID 1's environment never holds it. The
+  worker is then exec-ed from `/usr/local/bin/node-guarded`, a copy of node installed
+  `0711`: the kernel marks a process whose executable its user cannot read non-dumpable,
+  which closes `/proc/<pid>/environ`, `/proc/<pid>/mem` and ptrace to the shell children
+  (proven by `thread-container.integration.test.ts`, which recovers nothing and is refused
+  by the proxy with a `407`). Still residual, by design: an ACP agent's own shell children
+  inherit the agent's token, as they inherit its seatbelt scope on the desktop — the agent
+  is an external binary that needs the proxy URL in its environment.
 - **A8 — the egress link is the container's stdio, not a unix socket.** The first real
   ACP run on the author's Mac showed the broker had never been reached: Docker Desktop's
   VirtioFS file sharing mounts a host unix socket as a file that `connect` refuses with

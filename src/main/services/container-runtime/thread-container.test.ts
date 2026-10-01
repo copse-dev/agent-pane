@@ -106,16 +106,29 @@ describe('dockerRunArgs', () => {
     assert.equal(env('COPSE_EGRESS'), 'stdio')
     assert.equal(args[0], 'create')
     assert.ok(args.includes('--interactive'), 'stdin is the link, so it must stay open')
-    // The proxy URL carries the run's token (A7); the worker blanks it after
-    // Node's dispatcher has read it, so children never see it.
-    const proxy = 'http://run:test-run-token@127.0.0.1:3128'
-    assert.equal(env('HTTPS_PROXY'), proxy)
-    assert.equal(env('HTTP_PROXY'), proxy)
-    assert.equal(env('https_proxy'), proxy)
-    assert.equal(env('COPSE_EGRESS_TOKEN'), 'test-run-token')
+    // The run's token is in no `--env` (A7, as amended): PID 1's environ is
+    // readable by every same-uid process in the guest. It travels on stdin,
+    // and the entrypoint builds the proxy URL from it.
+    assert.equal(env('COPSE_EGRESS_TOKEN_STDIN'), '1')
+    for (const name of [
+      'HTTPS_PROXY',
+      'HTTP_PROXY',
+      'https_proxy',
+      'http_proxy',
+      'COPSE_EGRESS_TOKEN',
+    ]) {
+      assert.equal(env(name), undefined, `${name} must not be set on the container`)
+    }
+    assert.ok(
+      !args.some((a) => a.includes('test-run-token')),
+      'the token appears nowhere in the docker argv',
+    )
     assert.equal(env('NO_PROXY'), '127.0.0.1,localhost,::1')
     assert.equal(env('NODE_USE_ENV_PROXY'), '1')
     assert.equal(env('NODE_OPTIONS'), '--disable-warning=UNDICI-EHPA')
+    const noToken = dockerRunArgs(input({ egressToken: null }))
+    assert.ok(noToken.includes('HTTPS_PROXY=http://127.0.0.1:3128'))
+    assert.ok(!noToken.some((a) => a.startsWith('COPSE_EGRESS_TOKEN_STDIN')))
     const none = dockerRunArgs(input({ egress: [], egressToken: null }))
     assert.equal(
       none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS=')),
@@ -486,6 +499,20 @@ describe('workerBuildFingerprint', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('guarded worker executable', () => {
+  it('runs the worker from an execute-only node, after reading the token from stdin', () => {
+    // Execute-only (0711): the kernel treats a process whose executable its
+    // user cannot read as non-dumpable, closing /proc/<pid>/environ, mem and
+    // ptrace to same-uid shell children.
+    assert.match(WORKER_DOCKERFILE, /install -o root -g root -m 0711 .*node-guarded/)
+    assert.match(WORKER_ENTRYPOINT_SH, /exec \/usr\/local\/bin\/node-guarded \/app\/worker\.cjs/)
+    const read = WORKER_ENTRYPOINT_SH.indexOf('read -r COPSE_EGRESS_TOKEN')
+    const exec = WORKER_ENTRYPOINT_SH.indexOf('exec ')
+    assert.ok(read > 0 && read < exec, 'the token is read before the worker is exec-ed')
+    assert.match(WORKER_ENTRYPOINT_SH, /http:\/\/run:\$\{COPSE_EGRESS_TOKEN\}@127\.0\.0\.1:3128/)
   })
 })
 
