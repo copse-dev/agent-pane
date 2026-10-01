@@ -16,12 +16,12 @@ const NOTICES = `# Third-party notices
 ## noVNC (@novnc/novnc)
 
 - **License:** MPL-2.0
-- **Modifications:** none. Version 1.7.0 is bundled as published.
+- **Modifications:** none. Bundled as published.
 
 ## Forge (node-forge)
 
 - **License:** \`(BSD-3-Clause OR GPL-2.0)\`. Copse elects the BSD-3-Clause option.
-- **Modifications:** none. Version 1.4.0 is shipped as published.
+- **Modifications:** none. Shipped as published.
 
 ## Not shipped: sharp and libvips (sharp, @img/sharp-libvips-*)
 
@@ -45,14 +45,11 @@ function problemsFor(
 }
 
 describe('parseNotices', () => {
-  it('reads entries, quoted versions and not-shipped claims, and skips prose headings', () => {
+  it('reads entries and not-shipped claims, and skips prose headings', () => {
     const parsed = parseNotices(NOTICES)
     assert.deepEqual(
-      parsed.entries.map(({ packageName, version }) => [packageName, version]),
-      [
-        ['@novnc/novnc', '1.7.0'],
-        ['node-forge', '1.4.0'],
-      ],
+      parsed.entries.map(({ packageName }) => packageName),
+      ['@novnc/novnc', 'node-forge'],
     )
     assert.deepEqual(parsed.notShipped, [
       {
@@ -102,12 +99,23 @@ describe('findNoticeProblems', () => {
     assert.match(problems[0] ?? '', /^dompurify@3\.4\.13: .*no "## … \(dompurify\)" entry/)
   })
 
-  it('flags a version the entry no longer matches', () => {
-    const problems = problemsFor([
-      { name: '@novnc/novnc', version: '1.8.0', license: 'MPL-2.0' },
-      ...SHIPPED.slice(1),
+  it('passes when a shipped version moves, so a Dependabot bump needs no notice edit', () => {
+    const bumped = [
+      { name: '@novnc/novnc', version: '2.0.0', license: 'MPL-2.0' },
+      { name: 'node-forge', version: '1.4.0', license: '(BSD-3-Clause OR GPL-2.0)' },
+      { name: 'node-forge', version: '1.5.0', license: '(BSD-3-Clause OR GPL-2.0)' },
+    ]
+    assert.deepEqual(problemsFor(bumped), [])
+  })
+
+  it('flags an entry that quotes a version, which would go stale on the next bump', () => {
+    const markdown = NOTICES.replace(
+      'none. Bundled as published.',
+      'none. Version 1.7.0 is bundled.',
+    )
+    assert.deepEqual(problemsFor(SHIPPED, markdown), [
+      '@novnc/novnc: entry quotes version 1.7.0; drop it, the generated licence report lists the shipped version',
     ])
-    assert.deepEqual(problems, ['@novnc/novnc: entry says version 1.7.0, but 1.8.0 ships'])
   })
 
   it('flags an entry for a component that no longer ships, only when the set is complete', () => {
@@ -148,11 +156,11 @@ describe('findNoticeProblems', () => {
     ]
     const markdown = `## Example (example)
 
-Version 1.0.0 is shipped.
+Shipped as published.
 
 ## Library (library)
 
-Version 2.0.0 is shipped.
+Shipped as published.
 `
 
     assert.deepEqual(problemsFor(components, markdown), [])
@@ -175,7 +183,7 @@ Version 2.0.0 is shipped.
     ]
     const markdown = `## Example (example)
 
-Copse elects the LLVM-exception option. Version 1.0.0 is shipped.
+Copse elects the LLVM-exception option.
 `
     assert.deepEqual(problemsFor(components, markdown), [
       'example@1.0.0: entry elects LLVM-exception, which is not an option in (MIT OR Apache-2.0 WITH LLVM-exception)',
@@ -192,7 +200,7 @@ Copse elects the LLVM-exception option. Version 1.0.0 is shipped.
     ]
     const markdown = `## Example (example)
 
-Copse elects the BSD-3-Clause option. Version 1.0.0 is shipped.
+Copse elects the BSD-3-Clause option.
 `
     assert.deepEqual(problemsFor(components, markdown), [
       'example@1.0.0: entry elects BSD-3-Clause, which is not an option in (MIT OR (Apache-2.0 AND BSD-3-Clause))',
@@ -204,27 +212,11 @@ Copse elects the BSD-3-Clause option. Version 1.0.0 is shipped.
 ## Duplicate Forge entry (node-forge)
 
 - **License:** \`(BSD-3-Clause OR GPL-2.0)\`. Copse elects the BSD-3-Clause option.
-- **Modifications:** none. Version 1.4.0 is shipped as published.
+- **Modifications:** none. Shipped as published.
 `
     assert.deepEqual(problemsFor(SHIPPED, markdown), [
       'node-forge: has 2 THIRD_PARTY_NOTICES.md entries; keep exactly one',
       'node-forge@1.4.0: entry elects GPL-3.0, which is not an option in (BSD-3-Clause OR GPL-2.0)',
     ])
-  })
-
-  it('requires a quoted version list to cover every shipped version of a package', () => {
-    const splitVersions = [
-      ...SHIPPED,
-      { name: 'node-forge', version: '1.5.0', license: '(BSD-3-Clause OR GPL-2.0)' },
-    ]
-    assert.deepEqual(problemsFor(splitVersions), [
-      'node-forge: entry says version 1.4.0, but 1.4.0, 1.5.0 ship',
-    ])
-
-    const completeNotice = NOTICES.replace(
-      'Version 1.4.0 is shipped as published.',
-      'Version 1.4.0 is shipped as published. Version 1.5.0 is shipped as published.',
-    )
-    assert.deepEqual(problemsFor(splitVersions, completeNotice), [])
   })
 })
