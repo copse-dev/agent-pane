@@ -1006,6 +1006,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     acp: {
+      browseRegistry: () => resolved({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
       autoSetup: () =>

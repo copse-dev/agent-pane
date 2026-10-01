@@ -2,6 +2,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { createCustomProvidersSection, type NativeProvider } from './custom-providers-section.ts'
 import { createAcpAgentsSection } from './acp-agents-section.ts'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { SERVICE_TIER_CHOICES } from '@copse/llm/service-tier.ts'
 import { uiField } from '../../ui/index.ts'
 
@@ -83,7 +84,7 @@ export function createProvidersPanel(
     /** Settings-only global request tier for first-party OpenAI API models. */
     showOpenAiServiceTier?: boolean
     /**
-     * Whether picking a provider may run ACP auto-setup (which can install
+     * Whether picking a curated preset may run ACP auto-setup (which can install
      * adapter packages). Defaults to true (Settings). Onboarding mounts with
      * false so first-run stays side-effect-free: badges still refresh via the
      * cheap PATH scan, installs wait for first use.
@@ -238,8 +239,9 @@ export function createProvidersPanel(
     return tierBlock
   }
 
-  function loadDeviceInfoOnce(): void {
-    if (deviceAutoSetup && providerPicked && !autoSetupRun) {
+  function loadDeviceInfoOnce(agentId?: string): void {
+    const preset = KNOWN_ACP_AGENTS.some((agent) => agent.id === agentId && agent.preset)
+    if (deviceAutoSetup && providerPicked && preset && !autoSetupRun) {
       autoSetupRun = true
       deviceScanned = true
       void agentsPanel.refresh()
@@ -362,7 +364,7 @@ export function createProvidersPanel(
     }
     agentsPanel.select(selectedAgentId)
     children.push(agentsPanel.root)
-    loadDeviceInfoOnce()
+    loadDeviceInfoOnce(selectedAgentId)
     return block('On this machine', ...children)
   }
 

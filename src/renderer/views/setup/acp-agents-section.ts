@@ -12,6 +12,8 @@ import { setInlineMarkdown } from '../../markdown/inline-markdown.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
+import type { AcpRegistryEntry } from '@shared/acp-registry.ts'
+import { createAcpRegistryBrowser } from './acp-registry-browser.ts'
 
 // Settings panel for the coding agents installed on the user's own device that
 // Copse drives as a client (the `acp:<id>` models). It scans the device
@@ -131,6 +133,17 @@ export function knownToConfig(known: KnownAcpAgent): AcpAgentConfig {
   }
 }
 
+/** Registry metadata opens a disabled draft in a namespace with no catalog grants. */
+export function registryToDraft(entry: AcpRegistryEntry): AcpAgentConfig {
+  return {
+    id: `registry-${entry.id}`.slice(0, 64),
+    title: entry.title,
+    command: entry.installedPath ?? entry.command ?? '',
+    args: [...entry.args],
+    enabled: false,
+  }
+}
+
 /**
  * Validation for the add/edit form. Besides shape and uniqueness, a draft may
  * not borrow a catalog id it does not earn: the id predicted from a title like
@@ -202,6 +215,11 @@ export function createAcpAgentsSection(
   let agents: AcpAgentConfig[] = []
   let detectedById = new Map<string, DetectedAcpAgent>()
   const knownById = new Map(KNOWN_ACP_AGENTS.map((k) => [k.id, k]))
+  let registryDraft: AcpAgentConfig | undefined
+  const registryBrowser = createAcpRegistryBrowser(api, (entry) => {
+    registryDraft = registryToDraft(entry)
+    renderForm()
+  })
 
   // The selected chip. Empty until the first refresh picks a sensible default
   // (a configured agent if there is one, else the first known agent).
@@ -266,10 +284,10 @@ export function createAcpAgentsSection(
       scanStatus.className = 'key-status err'
     }
     // A fresh scan updates install/running badges. Re-render the chips, and the
-    // open form too — unless it's a configured agent being edited, whose unsaved
-    // field edits we don't want to discard for a badge refresh.
+    // open guidance form too. Custom drafts and configured editors have unsaved
+    // fields that a late scan must not discard.
     renderChips()
-    if (selected === 'other' || !agents.some((a) => a.id === selected)) renderForm()
+    if (selected !== 'other' && !agents.some((a) => a.id === selected)) renderForm()
   }
 
   /** Chip keys in display order: known agents, then custom-configured, then "Add". */
@@ -316,6 +334,7 @@ export function createAcpAgentsSection(
 
   function agentForm(options: {
     initial?: AcpAgentConfig
+    draft?: AcpAgentConfig
     submitLabel: string
     onSubmit: (draft: AcpAgentConfig) => void
   }): HTMLElement {
@@ -381,14 +400,17 @@ export function createAcpAgentsSection(
       modeSelect.value = selected
     }
 
-    if (options.initial) {
-      idInput.value = options.initial.id
-      titleInput.value = options.initial.title
-      commandInput.value = options.initial.command
-      argsArea.value = formatArgsText(options.initial.args)
-      envArea.value = formatEnvText(options.initial.env)
-      enabledBox.checked = options.initial.enabled
+    const values = options.initial ?? options.draft
+    if (values) {
+      idInput.value = values.id
+      titleInput.value = values.title
+      commandInput.value = values.command
+      argsArea.value = formatArgsText(values.args)
+      envArea.value = formatEnvText(values.env)
+      enabledBox.checked = values.enabled
     }
+    // Discovery cannot activate metadata. Enabling is a separate saved-config action.
+    if (options.draft) enabledBox.disabled = true
     // Cached list persisted with the agent so the model picker can list models
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
     let detectedModels: AcpModelChoice[] = options.initial?.availableModels ?? []
@@ -474,7 +496,7 @@ export function createAcpAgentsSection(
         })
     })
     // For a new agent, predict the id from the title until the user edits id.
-    let idEdited = isEdit
+    let idEdited = isEdit || Boolean(options.draft)
     idInput.addEventListener('input', () => {
       idEdited = true
     })
@@ -510,7 +532,7 @@ export function createAcpAgentsSection(
           : {}),
         ...(permissionMode ? { permissionMode } : {}),
         ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
-        enabled: enabledBox.checked,
+        enabled: options.draft ? false : enabledBox.checked,
       })
     })
 
@@ -536,6 +558,16 @@ export function createAcpAgentsSection(
         ),
       ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
+      ...(options.initial?.id.startsWith('registry-')
+        ? [
+            el(
+              'p',
+              { class: 'field-hint' },
+              'Unverified custom agent. Enabling authorizes Copse to start this command, including model detection. ' +
+                'Review its arguments and publisher requirements first.',
+            ),
+          ]
+        : []),
     )
     const actions = el('div', { class: 'provider-actions provider-form-footer' }, submit, status)
     return el('div', { class: 'acp-agent-form' }, fields, actions)
@@ -622,6 +654,7 @@ export function createAcpAgentsSection(
       'div',
       { class: 'provider-form' },
       el('h4', { class: 'provider-form-title' }, 'Add a custom agent'),
+      registryBrowser,
       el(
         'p',
         { class: 'field-hint' },
@@ -629,9 +662,22 @@ export function createAcpAgentsSection(
           'Give it a name, the command that launches it, and the arguments it ' +
           'needs to start in agent mode.',
       ),
+      ...(registryDraft
+        ? [
+            el(
+              'p',
+              { class: 'field-hint acp-registry-draft-note' },
+              'Unverified registry draft. Review the command and arguments; install and authenticate separately. ' +
+                'Adding leaves it disabled. Selecting Enabled authorizes Copse to start this command, including model detection. ' +
+                'Custom agents have no Copse sandbox profile unless you configure one. No registry permissions are imported.',
+            ),
+          ]
+        : []),
       agentForm({
+        ...(registryDraft ? { draft: registryDraft } : {}),
         submitLabel: 'Add agent',
         onSubmit: (draft) => {
+          registryDraft = undefined
           selected = draft.id
           void persist(upsertAgent(agents, draft))
         },
