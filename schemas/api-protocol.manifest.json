@@ -1060,6 +1060,41 @@
           2
         ]
       },
+      "local-classifiers:connect": {
+        "api": "localClassifiers.connect",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "local-classifiers:install": {
+        "api": "localClassifiers.install",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "local-classifiers:start": {
+        "api": "localClassifiers.start",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "local-classifiers:status": {
+        "api": "localClassifiers.status",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "local-classifiers:stop": {
+        "api": "localClassifiers.stop",
+        "args": [
+          1,
+          1
+        ]
+      },
       "main-window:get-browser-session": {
         "api": "windowState.getBrowserSession",
         "args": [
