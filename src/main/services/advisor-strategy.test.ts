@@ -75,10 +75,10 @@ describe('formatAdvisorModelLabel', () => {
     assert.equal(formatAdvisorModelLabel('openrouter:zai-org/glm-5.2'), 'zai-org/glm-5.2')
     // ACP joins `Title — Model` (title alone when no model is chosen); the old
     // `(ACP)` suffix is gone — the `acp:` route is implied by the agent title.
-    assert.equal(formatAdvisorModelLabel('acp:gemini-cli'), 'gemini-cli')
+    assert.equal(formatAdvisorModelLabel('acp:gemini-cli'), 'Gemini CLI')
     assert.equal(
       formatAdvisorModelLabel('acp:gemini-cli#gemini-2.5-pro'),
-      'gemini-cli — Gemini 2.5 Pro',
+      'Gemini CLI — Gemini 2.5 Pro',
     )
   })
 })

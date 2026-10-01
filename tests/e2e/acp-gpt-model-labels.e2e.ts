@@ -41,7 +41,7 @@ describe('ACP GPT model picker labels', () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     const trigger = await $('.model-picker-trigger')
     const triggerLabel = await trigger.getText()
-    assert.match(triggerLabel, /Codex/)
+    assert.match(triggerLabel, /GPT-5\.6 Sol/)
     assert.doesNotMatch(triggerLabel, /acp/i)
     await trigger.click()
     await $('.model-picker-browse').click()
