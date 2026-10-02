@@ -23,6 +23,11 @@ import {
  * Release is the canonical record, so this file only ever holds the notes in
  * flight. `release-bump.yml` runs this weekly; a person runs it with an explicit
  * version to cut a stable release or jump a minor.
+ *
+ * `--carry-forward` is for cutting past a version that was never published,
+ * usually because its release run failed. That version has no GitHub Release to
+ * keep its notes, so they are folded into the new version's section instead of
+ * dropped.
  */
 
 /**
@@ -56,25 +61,57 @@ export function hasUnreleasedNotes(changelog: string): boolean {
   return body !== ''
 }
 
+export interface StampOptions {
+  /** Fold earlier version sections into the new one instead of dropping them. */
+  carryForward?: boolean
+}
+
+/** The non-empty bodies of the version sections `carryForward` folds in, newest first. */
+function carriedNotes(changelog: string): string[] {
+  return splitChangelog(changelog)
+    .sections.filter((s) => isReleaseVersion(s.name))
+    .map((s) => findSectionBody(changelog, s.name) ?? '')
+    .filter((body) => body !== '')
+}
+
+/** Whether a bump with these options would have anything to release. */
+export function hasNotesToRelease(
+  changelog: string,
+  { carryForward = false }: StampOptions = {},
+): boolean {
+  return hasUnreleasedNotes(changelog) || (carryForward && carriedNotes(changelog).length > 0)
+}
+
 /**
  * Rename `Unreleased` to `version`, open a new empty `Unreleased` above it, and
- * drop every earlier version section.
+ * drop every earlier version section, or fold their notes in below the
+ * `Unreleased` notes when `carryForward` is set.
  */
-export function stampChangelog(changelog: string, version: string): string {
+export function stampChangelog(
+  changelog: string,
+  version: string,
+  { carryForward = false }: StampOptions = {},
+): string {
   getReleaseChannel(version)
-  if (!hasUnreleasedNotes(changelog)) {
+  if (!hasNotesToRelease(changelog, { carryForward })) {
     throw new Error(`CHANGELOG.md's "${UNRELEASED}" section is empty; there is nothing to release.`)
   }
   const { preamble, sections } = splitChangelog(changelog)
   if (sections.some((s) => s.name === version)) {
     throw new Error(`CHANGELOG.md already has a "## ${version}" section`)
   }
+  const carried = carryForward ? carriedNotes(changelog) : []
   const kept: ChangelogSection[] = []
   for (const section of sections) {
     if (section.name === UNRELEASED) {
+      const notes = [findSectionBody(changelog, UNRELEASED) ?? '', ...carried].filter(
+        (body) => body !== '',
+      )
       kept.push(
         { name: UNRELEASED, text: `## ${UNRELEASED}\n\n` },
-        { name: version, text: section.text.replace(`## ${UNRELEASED}`, `## ${version}`) },
+        carried.length === 0
+          ? { name: version, text: section.text.replace(`## ${UNRELEASED}`, `## ${version}`) }
+          : { name: version, text: `## ${version}\n\n${notes.join('\n\n')}\n\n` },
       )
     } else if (!isReleaseVersion(section.name)) {
       kept.push(section)
@@ -90,13 +127,15 @@ export function setPackageVersion(packageJson: string, version: string): string 
   return packageJson.replace(pattern, `$1${JSON.stringify(version)}`)
 }
 
-const USAGE = 'Usage: node scripts/release-bump.mts [--skip-if-empty] [version]'
+const USAGE = 'Usage: node scripts/release-bump.mts [--skip-if-empty] [--carry-forward] [version]'
 
 function main(): void {
   let skipIfEmpty = false
+  let carryForward = false
   let requested: string | undefined
   for (const arg of process.argv.slice(2)) {
     if (arg === '--skip-if-empty') skipIfEmpty = true
+    else if (arg === '--carry-forward') carryForward = true
     else if (arg.startsWith('-') || requested !== undefined) throw new Error(USAGE)
     else requested = arg
   }
@@ -104,7 +143,7 @@ function main(): void {
   const changelogUrl = new URL('../CHANGELOG.md', import.meta.url)
   const packageUrl = new URL('../package.json', import.meta.url)
   const changelog = readFileSync(changelogUrl, 'utf8')
-  if (skipIfEmpty && !hasUnreleasedNotes(changelog)) {
+  if (skipIfEmpty && !hasNotesToRelease(changelog, { carryForward })) {
     console.error(`CHANGELOG.md's "${UNRELEASED}" section is empty; nothing to release.`)
     return
   }
@@ -115,7 +154,7 @@ function main(): void {
     throw new Error(`${next} is not newer than the current version ${current}`)
   }
 
-  const stamped = stampChangelog(changelog, next)
+  const stamped = stampChangelog(changelog, next, { carryForward })
   writeFileSync(packageUrl, setPackageVersion(readFileSync(packageUrl, 'utf8'), next))
   writeFileSync(changelogUrl, stamped)
   // stdout carries only the new version, so the workflow can tell a bump from a skip.
