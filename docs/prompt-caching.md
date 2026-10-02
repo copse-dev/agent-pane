@@ -58,6 +58,11 @@ Anything that changes the rendered bytes ahead of a breakpoint:
   are model-scoped; either change forces a full rebuild.
 - **Trimming history.** Dropping the oldest messages is a prefix edit, so
   context pressure and cache cost are coupled.
+- **Pinning the plan at a todo boundary.** `compactAtTodoBoundary` keeps the
+  plan and touched files in `messages[0]`. It writes them only when it drops
+  history, which breaks the prefix anyway, or when an earlier compaction's pin
+  needs refreshing. A completion that drops nothing leaves the request
+  byte-identical, since the `update_todos` result already carries the plan.
 
 The rule of thumb when adding anything to a request: stable content goes as early
 as possible, volatile content goes after the last breakpoint.
