@@ -320,3 +320,25 @@ because CI captured it. Forks and promotion PRs whose source is an integration b
 branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
 by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
 [`testing-strategy.md`](testing-strategy.md).
+
+### Triage a recurring candidate before re-baselining
+
+Accepting a candidate re-baselines the symptom. Before ticking one, or adding `update-screenshots`,
+classify why it differs. The noise filter only absorbs a few anti-aliased pixels (≤12 px or ≤0.08%
+of the shot, see `scripts/filter-screenshots.mts`); anything larger is either a real change or a
+spec that is not deterministic, and re-baselining fixes neither.
+
+1. **Is it recurring?** The same shot appearing on PRs that do not touch its spec is unowned drift.
+   Compare the before/after images of two unrelated PRs' evidence comments.
+2. **Measure it.** Diff the pair with `pixelmatch` (threshold 0.1) for the differing-pixel count and
+   percentage, and compare dimensions. A changed height or width is a state race, never noise.
+3. **Look at both images.** Name what differs before deciding:
+   - live values (PIDs, CPU/memory, clocks, durations, temp paths): mask or mock them in the spec;
+   - a chip, banner or placeholder present in one render only: the spec captured before an async
+     update settled, so wait for the specific element;
+   - a few-pixel shift of whole regions: a real layout change in `main`, so review it as a
+     regression and fix the product or re-baseline deliberately in a dedicated PR;
+   - sub-pixel text wobble only: leave it to the filter.
+4. **Fix the cause in the spec or product, then re-baseline once.** Never raise
+   `SCREENSHOT_IGNORE_RATIO` to hide a recurring shot: it also hides real 1-2px regressions.
+5. Say in the PR which shots were drift, what caused each, and what was fixed.
