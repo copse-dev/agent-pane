@@ -3,8 +3,8 @@
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
 to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
-answer and duration. These profiles are available for safety screening, explicit calls and evals;
-they never appear as chat models or change model routing or the agent loop.
+answer and duration. These profiles are available for safety screening, background questions and
+evals; they never appear as chat models or change model routing or the agent loop.
 
 ## Safety screening
 
@@ -63,6 +63,66 @@ dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cl
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.
 
+## Background questions
+
+**Settings → Classifiers → Background questions** chooses what answers the fixed-choice
+judgements Copse makes on its own account. The default is the small-tasks model. Any saved
+connection can be chosen, SemIf included. The choice is its own `backgroundClassifier` setting. A
+choice naming a removed connection reads as none, and removing the chosen connection clears it.
+Choosing makes no inference call. It is asked:
+
+| Question                        | When                                                | Classifier request                                                                                                       | If it fails                                                                                                        |
+| ------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Roadmap complexity and category | A roadmap prompt is saved                           | One `choice` question on the prompt; the connection's own timeout                                                        | Small-tasks model, then the chat model (see below)                                                                 |
+| Issue coverage                  | The issue-import picker checks open issues          | One request per issue, one `none` / `partial` / `likely` question per roadmap item; 30 s per call and overall            | The small-tasks model, asked about every pair at once                                                              |
+| Follow-up suggestions           | A turn ends and a bubble slot is still free         | One request on the exchange, one yes/no question per preset; 15 s                                                        | The small-tasks model's pick                                                                                       |
+| Fit check                       | The pane's fit check on an item with a pinned issue | One `unlikely` / `partial` / `likely` question on the issue and prompt; 30 s                                             | The small-tasks model, asked at the same time, gives the reasoning; its verdict is used when no classifier answers |
+| Roadmap review                  | Bulk and deep resolution reviews                    | One `open` / `partial` / `likely` / `resolved` question on the item, its issues and commit history; 45 s bulk, 60 s deep | As for fit check                                                                                                   |
+
+A hosted classifier receives that text — roadmap prompts and notes, pinned, linked and imported
+issues, the commit history a review reads, and **each finished turn's user message, assistant reply
+and tool names** — with known saved keys redacted.
+
+Fit check and roadmap review return a verdict and the model's reasoning. The classifier and the
+small-tasks model are asked at the same time: the classifier's verdict wins when it answers, and
+the model's bullets are shown beside it. When the classifier answers and the model fails or answers
+off-format, the verdict stands without reasoning. When no classifier answers, both behave exactly
+as before, errors included. Verdicts are listed least hopeful first, so a tie goes to `unlikely` or
+`open`: a `resolved` verdict invites marking the item done.
+
+Coverage verdicts are read from the probabilities with ties going to `none`, because a `likely`
+match disables importing the issue. Each issue keeps its strongest match, the likelier one on a
+tie. Follow-ups offer the presets with P(`true`) of at least 0.7, likeliest first, at most two;
+none above the bar is an answer, not a failure. Neither falls back to the chat model: follow-ups
+run after every turn, and coverage keeps the model it used before.
+
+The roadmap labels share one question definition (`BackgroundChoiceQuestion` in
+`src/main/services/classifiers/background-classification.ts`) and are asked in this order:
+
+1. The chosen connection, as one `choice` question. The verdict is the likeliest offered option
+   read from the probabilities, never the provider's `choice`. A tie goes to the earlier option,
+   so options are listed in the order a tie should break (`low` before `medium`, `feature` before
+   `project`).
+2. When no connection is chosen, or it fails for any reason (removed, no key, timeout, malformed
+   answer), the same question rendered as a one-word prompt for the small-tasks model. The rendered
+   prompt matches, word for word, the one these features used before.
+3. The chat model, only when the small-tasks call itself fails (a stopped server, an unloaded
+   model, a timeout). A model that answers without an offered word gives no verdict, and no
+   further model is asked: these labels are optional, and an off-format small model must not
+   spend the chat model on every save.
+
+Only an answer from a classifier carries probabilities, so a caller can apply a threshold only
+to that. When nothing answers, the item is left without a badge, as before. For every background
+question, classifier and model tokens are both recorded as `small-tasks` usage.
+
+Safety screening does not use this path: it has its own time budget, and a failed screening
+classifier asks the user rather than falling back to a model.
+
+To compare a classifier connection with a small-tasks model on these questions, run
+`pnpm run eval:background-questions`. It asks both of them labelled cases through the product's own
+requests, prompts and parsers; see
+[`benchmarks/background-questions/README.md`](../benchmarks/background-questions/README.md).
+
 ## Liquid decision API
 
 Choose **Liquid / d1** in **Settings → Classifiers**, add the connection and save a Liquid API key
@@ -72,8 +132,8 @@ adapter posts to `/systemone` beneath that URL. Both fields remain editable.
 
 This uses [Liquid's native decision API](https://docs.liquid.ai/lfm/models/decision-models):
 choice questions preserve the option probabilities and confidence, boolean questions map to `noul`,
-and score questions preserve the numeric score, distribution and ordered rubric. The preset does
-not select a safety-screening connection automatically.
+and score questions preserve the numeric score, distribution and ordered rubric. The preset is not
+chosen for safety screening or background questions automatically.
 
 For an explicit headless smoke run, set `LIQUID_API_KEY` and use:
 
@@ -116,7 +176,7 @@ accepts connections. It needs `git` plus `uv` (Kev) or `python3` (Winnow) on `PA
 stays disabled and names the missing tool otherwise. Copse stops servers it started when it quits and
 leaves ones started elsewhere alone; **Cancel** stops an install or load in progress. Nothing is
 downloaded or started until you confirm, and the connection is not chosen for safety screening
-automatically. A hosted preset whose provider key (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`) is
+or background questions automatically. A hosted preset whose provider key (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`) is
 already in the environment is offered as **Set up**; the key's value is never shown or copied.
 
 The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
