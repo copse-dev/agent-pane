@@ -326,6 +326,11 @@ export function createCustomProvidersSection(
     embedded?: boolean
     /** Fired after a refresh so an embedded host can rebuild its chip row. */
     onChanged?: () => void
+    /**
+     * Fired when only status indicators changed (a local server probe landing), so
+     * a host can repaint its chip dots without rebuilding forms and losing edits.
+     */
+    onStatusChanged?: () => void
   } = {},
 ): ProvidersSection {
   // The same panel renders two ways: the cloud variant (General settings) shows
@@ -1081,7 +1086,7 @@ export function createCustomProvidersSection(
     reachable.clear()
     for (const r of results) if (r.reachable) reachable.add(r.id)
     renderChips()
-    opts.onChanged?.()
+    opts.onStatusChanged?.()
   }
 
   // Per-key plaintext storage consent, matching the fixed cloud-provider flow

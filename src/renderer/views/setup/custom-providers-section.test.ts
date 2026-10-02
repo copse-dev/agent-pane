@@ -198,4 +198,26 @@ describe('local providers: running-server detection', () => {
     assert.equal(section.isConfigured('ollama'), true)
     assert.equal(section.isConfigured('jan'), false)
   })
+
+  it('reports a landed probe as a status change, never rebuilding forms', async () => {
+    const base = stubApi([], [])
+    const api: ApiClient = {
+      ...base,
+      lmStudio: { ...base.lmStudio, test: async () => ({ ok: true, models: [] }) },
+    }
+    let changed = 0
+    let status = 0
+    const section = createCustomProvidersSection(api, {
+      variant: 'local',
+      embedded: true,
+      onChanged: () => (changed += 1),
+      onStatusChanged: () => (status += 1),
+    })
+    await section.refresh()
+    const changedAfterRefresh = changed
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(status, 1)
+    assert.equal(changed, changedAfterRefresh, 'probe completion must not rebuild the form')
+  })
 })

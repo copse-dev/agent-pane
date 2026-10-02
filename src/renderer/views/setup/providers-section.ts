@@ -110,6 +110,7 @@ export function createProvidersPanel(
     variant: 'local',
     embedded: true,
     onChanged: rebuild,
+    onStatusChanged: renderChips,
     ...(opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}),
   })
   const agentsPanel = createAcpAgentsSection(api, { embedded: true, onChanged: rebuild })
