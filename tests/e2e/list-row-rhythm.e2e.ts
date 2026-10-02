@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, rmSync } from 'node:fs'
 import { $, $$, browser } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import {
   resetUserData,
   seedEmptyProject,
@@ -103,7 +102,6 @@ describe('list row rhythm', () => {
       projectGroup: PROJECT_GROUP,
     })
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {

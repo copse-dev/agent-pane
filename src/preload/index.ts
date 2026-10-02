@@ -1476,8 +1476,8 @@ const api: ApiClient = {
   git: {
     isAvailable: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:is-available', projectId, threadId),
-    status: (projectId: string, threadId: string, inspectOnly?: boolean) =>
-      ipcRenderer.invoke('git:status', projectId, threadId, inspectOnly),
+    status: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:status', projectId, threadId),
     changeStats: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:change-stats', projectId, threadId),
     fileDiff: (projectId: string, threadId: string, path: string, staged: boolean) =>

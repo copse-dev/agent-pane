@@ -136,10 +136,9 @@ describe('Activity panel', function () {
     await $(`.chat-row[data-thread-id="${AUDIT_THREAD}"].selected`).waitForExist({
       timeout: 10_000,
     })
+    // The prompt follows focus: it leaves the screen and A's row gets a bell.
     await approvalDialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
-    await $(
-      `.thread-browser [data-group="needs-you"] [data-thread-id="${AUTH_THREAD}"]`,
-    ).waitForExist({
+    await $(`.chat-row[data-thread-id="${AUTH_THREAD}"] .chat-attention-bell`).waitForExist({
       timeout: 10_000,
     })
 
@@ -152,15 +151,11 @@ describe('Activity panel', function () {
     await submitComposer()
     await audit.waitForHold('audit')
 
-    await expect($('.thread-attention-filter')).toHaveText('1 need you')
-    await expect($('.thread-working-filter')).toHaveText('1 working')
-    await expect(
-      $(`.thread-browser [data-group="working"] [data-thread-id="${AUDIT_THREAD}"]`),
-    ).toBeDisplayed()
-    await expect(
-      $(`.thread-browser [data-thread-id="${AUTH_THREAD}"] .thread-browser-meta`),
-    ).toHaveText('Approval · Run shell command?')
-    await saveAppScreenshot('thread-sidebar-needs-you-working.png')
+    // The sidebar header's bell counts the waiting thread.
+    await expect($('.projects-activity-btn')).toHaveAttribute(
+      'aria-label',
+      'Activity: 1 thread needs you',
+    )
 
     await openActivityPanel()
     const needsRow = $(rowSelector('needs-you', AUTH_THREAD))

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { waitForAgentIdle } from '../helpers.ts'
-import { setComposerValue, submitComposer } from './composer.ts'
+import { setComposerValue } from './composer.ts'
 import { installMockScenario } from './mock-scenario.ts'
 
 export function seedCleanFeatureBranch(root: string): void {
@@ -79,7 +79,7 @@ export async function completeMockTurn(includeDebugCiFollowUp = false) {
     ],
   })
   await setComposerValue(prompt)
-  await submitComposer()
+  await $('.submit-btn').click()
 
   await waitForAgentIdle(20_000)
   await expect($('.msg-assistant .message-text')).toHaveText(

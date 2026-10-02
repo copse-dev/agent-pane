@@ -86,7 +86,6 @@ import {
 } from './ipc-guards.ts'
 import {
   inspectThreadCheckoutAttachment,
-  inspectThreadExecutionContext,
   reattachThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -2707,18 +2706,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const [projectId, threadId, inspectOnly] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.boolean().optional()]),
-      rawArgs,
-    )
-    // Inspect-only reads come from the thread browser, which checks every
-    // listed thread. Arming a watcher for each would evict the watch-only
-    // roots the Changes pane relies on and feed the 5s reconcile heartbeat
-    // back into another full sweep, so these reads stay unwatched.
-    if (inspectOnly) {
-      const { root } = await inspectThreadExecutionContext(projectId, threadId)
-      return getGitStatus(root)
-    }
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {

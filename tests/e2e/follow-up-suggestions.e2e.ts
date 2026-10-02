@@ -63,15 +63,13 @@ describe('follow-up suggestion bubbles', () => {
       const scenario = await completeMockTurn(true)
       const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
 
-      await $('.thread-browser [aria-label="New thread"]').click()
+      await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
       await browser.waitUntil(
         async () =>
           browser.execute((expectedTitle) => {
-            const row = [
-              ...document.querySelectorAll<HTMLElement>('.thread-browser-list .chat-row'),
-            ].find(
+            const row = [...document.querySelectorAll<HTMLElement>('.chats-list .chat-row')].find(
               (candidate) =>
                 !candidate.classList.contains('selected') &&
                 candidate.querySelector('.chat-title')?.textContent === expectedTitle,
@@ -97,10 +95,7 @@ describe('follow-up suggestion bubbles', () => {
 
       await $('.follow-up-bubble[data-id="debug-ci"]').click()
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
-      const followUpPrompt = $('.messages-list').$(
-        '.msg-user*=The pull request for this branch has failing CI checks.',
-      )
-      await expect(followUpPrompt).toBeDisplayed()
+      await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()
       const assistantMessages = await $$('.messages-list .msg-assistant .message-text')
       const finalReply = assistantMessages.at(-1)

@@ -1,7 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -55,7 +54,6 @@ describe('sidebar thread selection styling', () => {
     resetUserData()
     seedThreads()
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -64,17 +62,13 @@ describe('sidebar thread selection styling', () => {
 
   it('marks the selected row with the full-bleed fill alone, and roomier padding', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      SELECTED_TITLE,
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText(SELECTED_TITLE)
 
     const geometry = await browser.execute(() => {
       const pane = document.querySelector<HTMLElement>('#pane-projects')
       const header = document.querySelector<HTMLElement>('.pane-projects-header')
       const list = document.querySelector<HTMLElement>('.chats-list')
-      const selected = document.querySelector<HTMLElement>(
-        '.thread-project-manager .chat-row.selected',
-      )
+      const selected = document.querySelector<HTMLElement>('.chat-row.selected')
       if (!pane || !header || !list || !selected) return null
       const paneRect = pane.getBoundingClientRect()
       const listRect = list.getBoundingClientRect()

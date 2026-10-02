@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
@@ -13,7 +12,6 @@ describe('Open remote folder — path breadcrumbs', () => {
     seedEmptyProject(process.cwd(), 'e2e-remote-folder-breadcrumbs')
     seedSshWorkspaceSettings({ hosts: true })
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -23,7 +21,7 @@ describe('Open remote folder — path breadcrumbs', () => {
   it('shows an Up control and root breadcrumb in the browse toolbar', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const addProjectButton = await $('.thread-project-manager .projects-add-btn')
+    const addProjectButton = await $('.projects-add-btn')
     await expect(addProjectButton).toHaveAttribute(
       'data-tooltip',
       'New project, open a folder, or connect remotely',

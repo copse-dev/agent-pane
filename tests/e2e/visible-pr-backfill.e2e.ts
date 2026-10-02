@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
@@ -65,18 +64,15 @@ describe('visible legacy thread PR backfill', () => {
   it('fills visible chips and leaves unrevealed threads unread until Show more', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await openProjectManager()
-    await $(
-      '.thread-project-manager .chat-row[data-thread-id="thread-01"] .chat-pr-status',
-    ).waitForExist({
+    await $('.chat-row[data-thread-id="thread-01"] .chat-pr-status').waitForExist({
       timeout: 15_000,
     })
     await browser.waitUntil(() => metaHasPrRefs('thread-01'), { timeout: 15_000 })
-    await expect($('.thread-project-manager .chat-row[data-thread-id="thread-11"]')).not.toExist()
+    await expect($('.chat-row[data-thread-id="thread-11"]')).not.toExist()
     expect(metaHasPrRefs('thread-11')).toBe(false)
 
-    await $('.thread-project-manager .chats-show-more').click()
-    const laterRow = await $('.thread-project-manager .chat-row[data-thread-id="thread-11"]')
+    await $('.chats-show-more').click()
+    const laterRow = await $('.chat-row[data-thread-id="thread-11"]')
     await laterRow.scrollIntoView()
     const laterChip = await laterRow.$('.chat-pr-status')
     await laterChip.waitForExist({ timeout: 15_000 })

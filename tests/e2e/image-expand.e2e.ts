@@ -395,7 +395,7 @@ describe('Screenshot click-to-expand', () => {
    * not a no-op, and not a different overlay.
    */
   it('expands a composer image chip on a new empty thread', async () => {
-    const newThreadBtn = $('.thread-browser [aria-label="New thread"]')
+    const newThreadBtn = $('.project-new-thread-btn')
     await newThreadBtn.waitForClickable({ timeout: 15_000 })
     await newThreadBtn.click()
     await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })

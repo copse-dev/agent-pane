@@ -57,7 +57,7 @@ describe('terminal after new thread', () => {
       },
     )
 
-    await $('.thread-browser [aria-label="New thread"]').click()
+    await $('.project-new-thread-btn').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
 
     await browser.waitUntil(

@@ -1,5 +1,4 @@
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import type { Thread } from '@shared/types'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -60,7 +59,6 @@ describe('live sidebar thread ordering', () => {
       ],
     })
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -75,10 +73,8 @@ describe('live sidebar thread ordering', () => {
     })
     expect(await sidebarTitles()).toEqual([RECENT_TITLE, OLDER_TITLE])
 
-    await $('.thread-project-manager').$(`.chat-row*=${OLDER_TITLE}`).click()
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      OLDER_TITLE,
-    )
+    await $(`.chat-row*=${OLDER_TITLE}`).click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(OLDER_TITLE)
 
     const reply = 'I am ready to continue where we left off in this thread.'
     await prepareMockTurn('Continue this older thread', [{ text: reply }])
@@ -90,9 +86,7 @@ describe('live sidebar thread ordering', () => {
     expect(await sidebarTitles()).toEqual([OLDER_TITLE, RECENT_TITLE])
     await expectAssistantReply(reply)
     await waitForAgentIdle(20_000)
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      OLDER_TITLE,
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText(OLDER_TITLE)
 
     await saveElementScreenshot('#pane-projects', 'thread-sidebar-live-prompt-order.png')
   })

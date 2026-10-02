@@ -1,6 +1,5 @@
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
@@ -19,7 +18,6 @@ describe('thread GitHub PR status icon', () => {
     ;({ openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle } =
       seedThreadPrStatusFixture(process.cwd()))
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -30,27 +28,24 @@ describe('thread GitHub PR status icon', () => {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      openThreadTitle,
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
 
-    const openIcon = await $('.thread-project-manager .chat-row.selected .chat-pr-status')
+    const openIcon = await $('.chat-row.selected .chat-pr-status')
     await openIcon.waitForExist({ timeout: 15_000 })
     await expect(openIcon).toHaveElementClass('is-open')
     await expect(openIcon.$('svg[data-icon="git-pull-request"]')).toExist()
     await expect(openIcon).toHaveAttribute('aria-label', expect.stringMatching(/#42.*open/i))
 
     // Threads that were never opened this session carry no PR refs yet; open
-    // the merged and failing ones so their icons resolve alongside the open one.
-    await $(`.thread-project-manager .chat-row[data-thread-id="e2e-pr-merged-thread"]`).click()
-    await $(`.thread-project-manager .chat-row[data-thread-id="e2e-pr-failing-thread"]`).click()
+    // the merged one so its icon resolves alongside the open one.
+    await $(`.chat-row[data-thread-id="e2e-pr-merged-thread"]`).click()
+    await $(`.chat-row[data-thread-id="e2e-pr-failing-thread"]`).click()
     await browser.waitUntil(
-      async () =>
-        (await $$('.thread-project-manager .chat-pr-status.is-open.has-ci-failure')).length > 0,
+      async () => (await $$('.chats-list .chat-pr-status.is-open.has-ci-failure')).length > 0,
       { timeout: 15_000, timeoutMsg: 'failing-CI dot never appeared' },
     )
     await browser.waitUntil(
-      async () => (await $$('.thread-project-manager .chat-pr-status.is-merged')).length > 0,
+      async () => (await $$('.chats-list .chat-pr-status.is-merged')).length > 0,
       {
         timeout: 15_000,
         timeoutMsg: 'merged PR icon never resolved',

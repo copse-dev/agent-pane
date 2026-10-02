@@ -1,6 +1,5 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedProjectGroupsFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
@@ -26,13 +25,12 @@ describe('projects sidebar drag-to-reorder', () => {
     resetUserData()
   })
 
-  it('drags a project to a new position', async () => {
+  it('drags a project to a new position and keeps it across a relaunch', async () => {
     resetUserData()
     const { projectIds } = seedProjectGroupsFixture(process.cwd())
     const [alpha, , gamma] = projectIds
     if (!alpha || !gamma) throw new Error('fixture did not seed three projects')
     await browser.reloadSession()
-    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.project-row').waitForExist({ timeout: 10_000 })
 
@@ -49,13 +47,10 @@ describe('projects sidebar drag-to-reorder', () => {
     await waitForSidebarShape(['Gamma', 'Alpha', 'Beta'])
     await expect($('.project-entry.drop-before')).not.toBeExisting()
     await saveElementScreenshot('#pane-projects', 'projects-drag-after.png')
-  })
 
-  it('restores the reordered projects after a relaunch', async () => {
     // Relaunch against the same profile: the order has to come back from
     // config.json, not from the store that just rendered it.
     await browser.reloadSession()
-    await openProjectManager()
     await $('.project-row').waitForExist({ timeout: 30_000 })
     await waitForSidebarShape(['Gamma', 'Alpha', 'Beta'])
     await saveElementScreenshot('#pane-projects', 'projects-drag-persisted.png')

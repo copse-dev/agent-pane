@@ -1,5 +1,4 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { submitComposer } from './helpers/composer.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -112,7 +111,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await submitComposer()
+    await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const text = await dialog.getText()
@@ -135,7 +134,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await submitComposer()
+    await $('.submit-btn').click()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     expect(await dialog.getText()).toContain('Allow reading this Git signing key?')
     await dialog.$('.approval-approve').click()
@@ -165,7 +164,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit was cancelled.',
     )
-    await submitComposer()
+    await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const text = await dialog.getText()
