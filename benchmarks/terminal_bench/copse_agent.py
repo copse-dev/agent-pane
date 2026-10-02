@@ -204,6 +204,7 @@ class CopseTerminalAgent(BaseAgent):
             "applied_nudges": "applied-nudges.jsonl",
             "hook_runs": "hook-runs.jsonl",
             "stream_stats": "stream-stats.jsonl",
+            "step_timing": "step-timing.jsonl",
             "reasoning_checkpoints": "reasoning-checkpoints.jsonl",
             "thread": "thread/events.jsonl",
             "thread_export": "thread/thread.jsonl",
