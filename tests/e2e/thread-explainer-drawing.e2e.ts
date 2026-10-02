@@ -48,7 +48,7 @@ async function guest(code: string, index = 0): Promise<unknown> {
     index,
   )
 }
-async function capture(index: number, name: string): Promise<void> {
+async function capture(index: number, name: string, playerName: string): Promise<void> {
   await prepareE2eScreenshot()
   const png = await browser.execute(async (item) => {
     const card = document.querySelectorAll('.canvas-inline-artefact').item(item)
@@ -67,7 +67,7 @@ async function capture(index: number, name: string): Promise<void> {
     return screenshot.dataUrl
   }, index)
   await writeFile(
-    join(E2E_SCREENSHOT_DIR, `${name}-player.png`),
+    join(E2E_SCREENSHOT_DIR, `${playerName}.png`),
     Buffer.from(png.split(',')[1] ?? '', 'base64'),
   )
   await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `${name}.png`))
@@ -222,7 +222,9 @@ if(!blocked)throw new Error('Drawing network policy is missing');
       )
       await guest('window.renderFrame(story.duration)', index)
       assert.equal(await guest('document.querySelector("#play").textContent', index), 'Replay')
-      await capture(index, index === 0 ? 'explainer-drawing-1' : 'explainer-drawing-2')
+      await (index === 0
+        ? capture(index, 'explainer-drawing-1', 'explainer-drawing-1-player')
+        : capture(index, 'explainer-drawing-2', 'explainer-drawing-2-player'))
       if (index === 1) {
         await browser.execute(() => {
           const card = document.querySelectorAll<HTMLElement>('.canvas-inline-artefact').item(1)
@@ -242,7 +244,7 @@ if(!blocked)throw new Error('Drawing network policy is missing');
           await guest('document.querySelector("#caption").textContent', index),
           drawingStory.beats[3]?.caption,
         )
-        await capture(index, 'explainer-drawing-narrow')
+        await capture(index, 'explainer-drawing-narrow', 'explainer-drawing-narrow-player')
       }
       await assertNoErrorToasts('original drawing')
     }
@@ -310,7 +312,7 @@ if(!blocked)throw new Error('Drawing network policy is missing');
       ),
       true,
     )
-    await capture(index, 'explainer-text-alignment')
+    await capture(index, 'explainer-text-alignment', 'explainer-text-alignment-player')
     await assertNoErrorToasts('text alignment')
   })
 })
