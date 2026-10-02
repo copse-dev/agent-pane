@@ -105,11 +105,23 @@ export function createContextWheel(): {
   let currentUsage: FooterUsageTooltipModel | null = null
   let currentClassifierUse: ThreadClassifierUse | null = null
 
+  // Whether the pointer or focus is on the wheel. A re-render hides the popover
+  // while it rebuilds, so this is what puts it back: without it, anything that
+  // updates the footer while the hover is open — including the re-read the hover
+  // itself triggers — would close it under the user.
+  let engaged = false
+
   function showPopover(): void {
+    engaged = true
     if (popoverActive) popover.hidden = false
   }
   function hidePopover(): void {
+    engaged = false
     popover.hidden = true
+  }
+  /** Reopen after a re-render, if the pointer never left and there is still something to show. */
+  function restoreEngagedPopover(): void {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false
   }
   root.addEventListener('mouseenter', showPopover)
   root.addEventListener('mouseleave', hidePopover)
@@ -219,7 +231,7 @@ export function createContextWheel(): {
 
   function resetToSnapshotMode(): void {
     popoverActive = false
-    hidePopover()
+    popover.hidden = true
     root.classList.remove('has-breakdown', 'is-reported')
     root.removeAttribute('tabindex')
     fill.style.display = ''
@@ -327,6 +339,7 @@ export function createContextWheel(): {
     ) {
       renderBreakdown(breakdown)
       root.classList.add('is-interactive')
+      restoreEngagedPopover()
       return
     }
 
@@ -338,6 +351,7 @@ export function createContextWheel(): {
       renderSnapshot(snapshot, running, options)
     }
     root.classList.toggle('is-interactive', popoverActive && !root.hidden)
+    restoreEngagedPopover()
   }
 
   return { root, update }
