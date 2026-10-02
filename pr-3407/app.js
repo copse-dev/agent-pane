@@ -98444,11 +98444,17 @@ function createContextWheel() {
   root.append(svg2, popover);
   let popoverActive = false;
   let currentUsage = null;
+  let engaged = false;
   function showPopover() {
+    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
+    engaged = false;
     popover.hidden = true;
+  }
+  function restoreEngagedPopover() {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
   }
   root.addEventListener("mouseenter", showPopover);
   root.addEventListener("mouseleave", hidePopover);
@@ -98543,7 +98549,7 @@ function createContextWheel() {
   }
   function resetToSnapshotMode() {
     popoverActive = false;
-    hidePopover();
+    popover.hidden = true;
     root.classList.remove("has-breakdown");
     root.removeAttribute("tabindex");
     fill.style.display = "";
@@ -98617,6 +98623,7 @@ ${usageLine}` : contextLine;
     if (!running && options?.breakdownRing && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
       renderBreakdown(breakdown);
       root.classList.add("is-interactive");
+      restoreEngagedPopover();
       return;
     }
     resetToSnapshotMode();
@@ -98627,6 +98634,7 @@ ${usageLine}` : contextLine;
       renderSnapshot(snapshot, running, options);
     }
     root.classList.toggle("is-interactive", popoverActive && !root.hidden);
+    restoreEngagedPopover();
   }
   return { root, update };
 }
