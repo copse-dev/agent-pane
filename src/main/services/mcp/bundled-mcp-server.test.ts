@@ -1,8 +1,11 @@
-import { describe, it, after } from 'node:test'
+import { describe, it, after, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
+import { drawingStory } from '../../../../tests/fixtures/explainer-drawing.ts'
+import { setExplainerPreviewCapture } from '../explainer-preview.ts'
 import {
   createBundledMcpServers,
   CANVAS_SERVER_NAME,
@@ -14,12 +17,19 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 describe('bundled MCP servers', () => {
   let servers: BundledMcpServer[] = []
 
+  before(async () => {
+    // The test bundler relocates __dirname. Reproduce the packaged asset layout.
+    await cp('assets/explainers', join(__dirname, '../../../../assets/explainers'), {
+      recursive: true,
+    })
+  })
+
   after(async () => {
     await Promise.allSettled(servers.flatMap((s) => [s.client.close(), s.server.close()]))
   })
 
   it('exposes the canvas server with a render_html_artefact tool', async () => {
-    servers = await createBundledMcpServers()
+    servers = await createBundledMcpServers({ animatedExplainersEnabled: true })
     const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
     assert.ok(canvas, 'canvas server should be present')
 
@@ -28,6 +38,27 @@ describe('bundled MCP servers', () => {
       tools.some((t) => t.name === 'render_html_artefact'),
       'render_html_artefact tool should be registered',
     )
+    assert.ok(tools.some((t) => t.name === 'preview_explainer'))
+    assert.ok(tools.some((t) => t.name === 'render_explainer'))
+  })
+
+  it('keeps explainer tools unavailable unless explicitly opted in', async () => {
+    const defaults = await createBundledMcpServers()
+    try {
+      const canvas = defaults.find((s) => s.name === CANVAS_SERVER_NAME)
+      assert.ok(canvas)
+      const { tools } = await canvas.client.listTools()
+      assert.deepEqual(
+        tools.map((tool) => tool.name),
+        ['render_html_artefact'],
+      )
+      for (const name of ['preview_explainer', 'render_explainer']) {
+        const result = await canvas.client.callTool({ name, arguments: {} })
+        assert.equal(result.isError, true)
+      }
+    } finally {
+      await Promise.allSettled(defaults.flatMap((s) => [s.client.close(), s.server.close()]))
+    }
   })
 
   it('returns a text/html UI resource the host can extract', async () => {
@@ -99,4 +130,97 @@ describe('bundled MCP servers', () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+
+  it('publishes the retained custom preview and rejects an unreviewed revision', async () => {
+    const canvas = servers.find((server) => server.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas)
+    let captured = ''
+    const restore = setExplainerPreviewCapture(async (html) => {
+      captured = html
+      return ['cG5n']
+    })
+    try {
+      const preview = await canvas.client.callTool({
+        name: 'preview_explainer',
+        arguments: drawingStory,
+      })
+      assert.notEqual(preview.isError, true)
+      const content = z
+        .object({ content: z.array(z.object({ text: z.string().optional() })) })
+        .parse(preview)
+      const id = content.content
+        .map((item) => item.text ?? '')
+        .join('\n')
+        .match(/Preview ID: ([a-f0-9-]+)/)?.[1]
+      assert.ok(id)
+      const result = await canvas.client.callTool({
+        name: 'render_explainer',
+        arguments: { previewId: id },
+      })
+      assert.notEqual(result.isError, true)
+      assert.equal(extractUiResources(result.content)[0]?.text, captured)
+      const changed = await canvas.client.callTool({
+        name: 'render_explainer',
+        arguments: { ...drawingStory, title: 'Changed after review', previewId: id },
+      })
+      assert.equal(changed.isError, true)
+      const unchecked = await canvas.client.callTool({
+        name: 'render_explainer',
+        arguments: drawingStory,
+      })
+      assert.equal(unchecked.isError, true)
+    } finally {
+      restore()
+    }
+  })
+
+  it(
+    'forwards client cancellation to the active preview renderer',
+    { timeout: 10_000 },
+    async () => {
+      const canvas = servers.find((server) => server.name === CANVAS_SERVER_NAME)
+      assert.ok(canvas)
+      let started = (): void => {}
+      let cancelled = (): void => {}
+      const ready = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const stopped = new Promise<void>((resolve) => {
+        cancelled = resolve
+      })
+      const restore = setExplainerPreviewCapture(async (_html, signal) => {
+        assert.ok(signal)
+        started()
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              cancelled()
+              reject(new Error('Cancelled'))
+            },
+            { once: true },
+          )
+        })
+      })
+      const controller = new AbortController()
+      try {
+        const call = canvas.client.callTool(
+          { name: 'preview_explainer', arguments: drawingStory },
+          undefined,
+          { signal: controller.signal },
+        )
+        await Promise.race([
+          ready,
+          call.then(() => {
+            throw new Error('Preview finished before the renderer started')
+          }),
+        ])
+        controller.abort()
+        await assert.rejects(call)
+        await stopped
+      } finally {
+        restore()
+      }
+    },
+  )
 })

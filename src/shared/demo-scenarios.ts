@@ -2,7 +2,11 @@ import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
+import type { FollowUpSuggestion } from './follow-ups/types.ts'
+import type { McpServerStatus } from './types/mcp.ts'
+import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
+import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -101,6 +105,22 @@ export interface DemoScenario {
     defaultIndex?: number
     cancelIndex?: number
   }[]
+  /**
+   * MCP servers the demo reports as configured, with the per-tool permission
+   * catalog Settings → Permissions lists for them. Scenarios without one show
+   * the default mail-server fixture.
+   */
+  mcpServers?: readonly McpServerStatus[]
+  toolPermissions?: ToolPermissionCatalog
+  /**
+   * What the follow-up model offers once the active thread's last turn ends.
+   * The demo has no model to ask, so without this no bubbles appear.
+   */
+  followUps?: readonly FollowUpSuggestion[]
+  /** The description the demo proposes when a visitor opens Create PR. */
+  prBody?: string
+  /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
+  changeStats?: { readonly additions: number; readonly deletions: number }
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -584,7 +604,12 @@ function conciseThreadScenario(
         title: 'Concise thread view',
         status: live ? 'running' : 'idle',
         model,
-        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        messages: multiTurn
+          ? [
+              ...conciseMultiTurnMessages(model),
+              ...(live ? conciseThreadMessages(model, true) : []),
+            ]
+          : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -1746,6 +1771,12 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     { multiTurn: true },
   ),
   conciseThreadScenario(
+    'concise-thread-multi-working',
+    'Concise thread view with finished turns and a live one',
+    'claude-opus-5-5',
+    { multiTurn: true, live: true },
+  ),
+  conciseThreadScenario(
     'concise-thread-full',
     'Full thread view for a model below the concise gate',
     'gpt-4o',
@@ -1784,4 +1815,6 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+  ...SITE_TOUR_SCENARIOS,
 ]

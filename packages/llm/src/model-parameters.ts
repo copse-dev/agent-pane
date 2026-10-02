@@ -512,6 +512,16 @@ export interface RecommendedOutputCeiling {
  */
 const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
   {
+    match: 'glm-4.7-flash',
+    label: 'Z.ai’s coding-agent recipe',
+    source: 'https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters',
+    // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+    // Its general-task recipe uses different sampling and a larger ceiling;
+    // Copse's coding tool loop uses the coding benchmark profile. The card does
+    // not specify a reasoning-effort value or repetition penalty for this set.
+    params: { temperature: 0.7, topP: 1, maxOutputTokens: 16_384 },
+  },
+  {
     match: 'glm-5.3-flash',
     label: 'Copse’s experimental balanced agent profile',
     source:

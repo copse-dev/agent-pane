@@ -139,7 +139,9 @@ Monday. Publishing is the only routine manual step:
    `Release (macOS)` run ID. The publisher verifies the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
    then creates a prerelease for beta or a normal/latest release for stable in
-   `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
+   `copse-dev/copse-releases`. It first commits `LATEST.md` there, naming the
+   release, and tags that commit: GitHub dates and orders releases by the
+   tagged commit, so each release needs its own. It never rebuilds. GitHub artifact attestation is
    added automatically once the source repository is public; until then the
    signed build, immutable Actions artifact, and published SHA256 manifest are
    the integrity chain available on this GitHub Team plan. Publishing is what
