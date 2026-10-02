@@ -101853,7 +101853,8 @@ ${description}
   let classifierUseKey = "";
   let classifierUseThreadId = null;
   let classifierUseSeq = 0;
-  function refreshClassifierUse(thread) {
+  let classifierUseInFlight = false;
+  function refreshClassifierUse(thread, force = false) {
     const projectId = store2.getState().activeProjectId;
     if (!thread || projectId === null) {
       classifierUse = null;
@@ -101864,20 +101865,29 @@ ${description}
     }
     const last = thread.messages.at(-1);
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`;
-    if (key === classifierUseKey) return;
+    if (force ? classifierUseInFlight : key === classifierUseKey) return;
     if (thread.id !== classifierUseThreadId) classifierUse = null;
     classifierUseThreadId = thread.id;
     classifierUseKey = key;
     const seq = ++classifierUseSeq;
+    classifierUseInFlight = true;
     api2.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
+        classifierUseInFlight = false;
         if (seq !== classifierUseSeq) return;
         classifierUse = use;
         updateFooter();
       },
-      () => void 0
+      () => {
+        classifierUseInFlight = false;
+      }
     );
   }
+  const rereadClassifierUse = () => {
+    refreshClassifierUse(getActiveThread(store2), true);
+  };
+  contextWheel.root.addEventListener("mouseenter", rereadClassifierUse);
+  contextWheel.root.addEventListener("focusin", rereadClassifierUse);
   function updateFooter() {
     const thread = getActiveThread(store2);
     const running = thread?.status === "running";
