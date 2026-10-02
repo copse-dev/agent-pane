@@ -29,7 +29,8 @@ describe('hook cards in the transcript', function () {
     await $('[data-message-id="msg-assistant-hook"]').waitForExist({ timeout: 10_000 })
     await expect($$('.hook-card')).toBeElementsArrayOfSize(0)
     await expect($('[data-hook-cards-for="msg-assistant-hook"]')).not.toBeExisting()
-    await browser.saveScreenshot('test-results/hook-cards-developer-mode-off.png')
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-cards-developer-mode-off.png'))
   })
 
   it('renders the right-aligned blue hook-card family + origin marker', async function () {
