@@ -60,6 +60,7 @@ import { createAboutSection } from './setup/about-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/canvas-settings.ts'
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { createParallelSearchPluginSettings } from './parallel-search-plugin-settings.ts'
@@ -153,6 +154,7 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
 function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSummary): string {
   const raw = plugin.name || plugin.id
   if (plugin.trust !== 'first-party') return raw
+  if (plugin.id === 'copse.mcp-ui-canvas') return 'Canvas and explainers'
   const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
   return stripped ? humanizeIdentifier(stripped) : raw
 }
@@ -1439,6 +1441,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
+
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask “explain X” in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings…
+                </button>
+              </div>
+            </fieldset>
 
             <fieldset>
               <legend>Mobile Companion</legend>
@@ -3324,6 +3343,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // than in a row that a later refresh would replace.
   let pluginDetail: PluginDetailTarget | null = null
 
+  qsRequired<HTMLButtonElement>(overlay, '#animated-explainers-manage').addEventListener(
+    'click',
+    () => {
+      searchInput.value = ''
+      applySearch('')
+      showSection('customise')
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID }
+      void refreshSources()
+      void revealPluginDetail()
+    },
+  )
+
   /**
    * Render one plugin row for the Settings → Plugins list (P3 of
    * docs/plans/hooks-and-feature-packs.md). Each row shows the plugin's name and
@@ -3377,11 +3408,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // the change handler's `finally` re-arms the lock instead of clearing it.
     let credentialLocked = false
     toggle.addEventListener('change', () => {
+      const settingsOpen = row.querySelector<HTMLDetailsElement>('.plugin-settings-fold')?.open
       toggle.disabled = true
       void api.plugins
         .setEnabled(plugin.id, toggle.checked)
         .then(async () => {
-          await refreshPlugins()
+          // Enabling moves the card into Active. Keep its open settings in view
+          // so the next setup step (for example enabling explainers) stays reachable.
+          if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id })
+          else await refreshPlugins()
           // Turning a plugin off is exactly what moves its declared MCP servers
           // between "off because the plugin is" and "off because we don't start
           // them yet", so the MCP lens has to follow the toggle rather than wait
@@ -4276,8 +4311,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
    * land on a card with the thing it linked to still folded away. The detail
    * itself opens the linked row (see `createAutomationPluginSettings`).
    */
-  async function revealPluginDetail(): Promise<void> {
-    const target = pluginDetail
+  async function revealPluginDetail(target = pluginDetail): Promise<void> {
     await refreshPlugins()
     pluginDetail = null
     if (!target) return
