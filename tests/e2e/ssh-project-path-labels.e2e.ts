@@ -11,28 +11,28 @@ describe('SSH project sidebar path labels', () => {
     writeSeedConfig({
       projects: [
         {
-          id: 'ssh-etc-ddg',
-          path: '/etc/ddg',
-          name: 'euw-serp-dev-testing16:ddg',
+          id: 'ssh-srv-app',
+          path: '/srv/app',
+          name: 'remote-dev-testing-016:app',
           sshHost: 'dev',
         },
         {
-          id: 'ssh-home-ddg',
-          path: '/home/ubuntu/ddg',
-          name: 'euw-serp-dev-testing16:ddg',
+          id: 'ssh-home-app',
+          path: '/home/ubuntu/app',
+          name: 'remote-dev-testing-016:app',
           sshHost: 'dev',
         },
       ],
-      activeProjectId: 'ssh-etc-ddg',
-      'threads:ssh-etc-ddg': [],
-      'threads:ssh-home-ddg': [],
+      activeProjectId: 'ssh-srv-app',
+      'threads:ssh-srv-app': [],
+      'threads:ssh-home-app': [],
     })
     seedSshWorkspaceSettings({
       hosts: [
         {
           id: 'dev',
-          label: 'euw-serp-dev-testing16',
-          host: 'euw-serp-dev-testing16',
+          label: 'remote-dev-testing-016',
+          host: 'remote-dev-testing-016',
           user: 'ubuntu',
         },
       ],
@@ -58,12 +58,12 @@ describe('SSH project sidebar path labels', () => {
     const texts = (await $$('#pane-projects .project-name').map((el) => el.getText())).map((t) =>
       t.trim(),
     )
-    assert.ok(texts.includes('euw-serp-dev-testing16:/etc/ddg'), `got: ${texts.join(' | ')}`)
+    assert.ok(texts.includes('remote-dev-testing-016:/srv/app'), `got: ${texts.join(' | ')}`)
     assert.ok(
-      texts.includes('euw-serp-dev-testing16:/home/ubuntu/ddg'),
+      texts.includes('remote-dev-testing-016:/home/ubuntu/app'),
       `got: ${texts.join(' | ')}`,
     )
-    assert.ok(!texts.includes('euw-serp-dev-testing16:ddg'))
+    assert.ok(!texts.includes('remote-dev-testing-016:app'))
 
     await saveElementScreenshot('#pane-projects', 'ssh-project-path-labels.png')
   })

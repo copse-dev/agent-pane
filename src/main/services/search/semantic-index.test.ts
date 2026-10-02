@@ -243,7 +243,7 @@ describe('gortex daemon scoping + reaping', () => {
     'repos:',
     '    - path: /Users/me/debugging/jotter',
     '    - path: /Users/me/debugging/agent-pane',
-    '    - path: /Users/me/debugging/ddg-workflow',
+    '    - path: /Users/me/debugging/web-workflow',
     'exclude:',
     '    - node_modules/',
     '    - path: /not/a/repo/should/not/parse',
@@ -254,7 +254,7 @@ describe('gortex daemon scoping + reaping', () => {
     assert.deepEqual(parseTrackedRepos(CONFIG), [
       '/Users/me/debugging/jotter',
       '/Users/me/debugging/agent-pane',
-      '/Users/me/debugging/ddg-workflow',
+      '/Users/me/debugging/web-workflow',
     ])
   })
 
@@ -266,7 +266,7 @@ describe('gortex daemon scoping + reaping', () => {
     const tracked = parseTrackedRepos(CONFIG)
     assert.deepEqual(reposToUntrackForActive(tracked, '/Users/me/debugging/agent-pane'), [
       '/Users/me/debugging/jotter',
-      '/Users/me/debugging/ddg-workflow',
+      '/Users/me/debugging/web-workflow',
     ])
   })
 
@@ -281,22 +281,22 @@ describe('gortex daemon scoping + reaping', () => {
         ['/Users/me/debugging/agent-pane', '/Users/me/debugging/jotter'],
         3,
       ),
-      ['/Users/me/debugging/ddg-workflow'],
+      ['/Users/me/debugging/web-workflow'],
     )
   })
 
   it('evicts past the MRU ceiling, counting the active repo against it', () => {
     const tracked = parseTrackedRepos(CONFIG)
-    // maxTracked=2 → active + one most-recent; ddg-workflow falls out even
+    // maxTracked=2 → active + one most-recent; web-workflow falls out even
     // though it is in the MRU list.
     assert.deepEqual(
       reposToUntrackForActive(
         tracked,
         '/Users/me/debugging/agent-pane',
-        ['/Users/me/debugging/jotter', '/Users/me/debugging/ddg-workflow'],
+        ['/Users/me/debugging/jotter', '/Users/me/debugging/web-workflow'],
         2,
       ),
-      ['/Users/me/debugging/ddg-workflow'],
+      ['/Users/me/debugging/web-workflow'],
     )
   })
 

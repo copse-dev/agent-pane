@@ -50,7 +50,7 @@ A nested `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, or
 In fallback mode, a directory's Claude file claims that directory and its Agents file is omitted.
 A path enters context when the prompt or an attachment names it, or when one of Copse's built-in
 file tools touches it: `read_file`, `list_dir`, `search_code`, `search_codebase`,
-`read_staged_diff`, `write_file`, `str_replace`, `delete_file`, `rename_file`, and
+`read_staged_diff`, `write_file`, `str_replace`, `apply_patch` (every file in the patch), `delete_file`, `rename_file`, and
 `make_directory`. Nothing else activates a nested file: a `run_shell` command that reads or writes
 under the directory, an ACP agent's own file access, and a subagent's reads do not count.
 Instructions are applied from the project root toward the target directory, so the nearest file

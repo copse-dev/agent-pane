@@ -139,8 +139,12 @@ describe('SSH settings section', () => {
     assert.equal(fields.hostInvalid, null, 'fields that passed stay unmarked')
     assert.equal(fields.portBorder, fields.errorColor, 'the invalid port draws in --error')
     for (const width of fields.widths) {
-      assert.equal(width, fields.policyWidth, 'host fields share the Settings field width')
+      assert.equal(width, fields.widths[0], 'host text fields share the narrower text width')
     }
+    assert.ok(
+      fields.policyWidth > fields.widths[0],
+      'the host policy select stays wider than text fields',
+    )
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })

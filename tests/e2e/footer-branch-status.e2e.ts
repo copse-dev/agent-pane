@@ -11,6 +11,8 @@ import {
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { installMockScenario } from './helpers/mock-scenario.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -160,6 +162,13 @@ describe('footer branch status for a detached thread worktree', () => {
               role: 'user',
               content: 'Inspect this detached worktree.',
               toolCalls: [],
+              createdAt: now - 2,
+            },
+            {
+              id: 'msg-assistant-detached',
+              role: 'assistant',
+              content: 'I inspected the detached worktree and found an interrupted Git operation.',
+              toolCalls: [],
               createdAt: now - 1,
             },
           ],
@@ -241,13 +250,35 @@ describe('footer branch status for a detached thread worktree', () => {
     await expectOnBranchLine(continueBtn)
 
     await saveElementScreenshot('#input-bar', 'footer-branch-rebase-in-progress.png')
+
+    // Resolve the conflict, then let the same background shell finish the
+    // rebase. The completion event should start a machine-originated turn.
+    writeFileSync(join(worktreeRoot, 'README.md'), 'resolved thread change\n')
+    git(worktreeRoot, ['add', 'README.md'])
+    git(worktreeRoot, ['config', 'core.editor', 'true'])
+    await installMockScenario({
+      title: 'Continue after Git recovery',
+      turns: [
+        {
+          user: { includes: 'Continue after the Git recovery command completed.' },
+          responses: [{ text: 'The recovery completed; continuing the task.' }],
+        },
+      ],
+    })
+    await continueBtn.click()
+    await approveUnsandboxedTerminalIfPrompted()
+    await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
+    await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
+    await saveElementScreenshot('#conversation', 'footer-branch-recovery-continued.png')
   })
 
   it('commits a pick that failed to sign before continuing the rebase', async function () {
     this.timeout(90_000)
     // Start from main so the conflicting commit from the previous case does
-    // not stop this rebase first.
-    git(worktreeRoot, ['rebase', '--abort'])
+    // not stop this rebase first. The previous case may have completed it.
+    if (git(worktreeRoot, ['status']).includes('rebase in progress')) {
+      git(worktreeRoot, ['rebase', '--abort'])
+    }
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
     writeFileSync(join(worktreeRoot, 'thread.txt'), 'thread\n')
@@ -278,11 +309,34 @@ describe('footer branch status for a detached thread worktree', () => {
     await expectOnBranchLine(button)
 
     await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
+
+    const signingKey = join(worktreeRoot, 'copse-e2e-signing-key')
+    execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', signingKey], {
+      encoding: 'utf8',
+    })
+    git(worktreeRoot, ['config', 'gpg.format', 'ssh'])
+    git(worktreeRoot, ['config', 'user.signingkey', signingKey])
+    git(worktreeRoot, ['config', 'core.editor', 'true'])
+    await installMockScenario({
+      title: 'Continue after Git recovery',
+      turns: [
+        {
+          user: { includes: 'Continue after the Git recovery command completed.' },
+          responses: [{ text: 'The recovery completed; continuing the task.' }],
+        },
+      ],
+    })
+    await button.click()
+    await approveUnsandboxedTerminalIfPrompted()
+    await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
+    await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
   })
 
   it('offers to reset an active bisect without stranding it', async function () {
     this.timeout(90_000)
-    git(worktreeRoot, ['rebase', '--abort'])
+    if (git(worktreeRoot, ['status']).includes('rebase in progress')) {
+      git(worktreeRoot, ['rebase', '--abort'])
+    }
     const baseBranch = git(projectRoot, ['branch', '--show-current'])
     git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
     git(worktreeRoot, ['bisect', 'start', 'HEAD', 'HEAD~2'])

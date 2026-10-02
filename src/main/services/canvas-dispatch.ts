@@ -1,3 +1,4 @@
+import { queueInlineCanvasReference } from './inline-canvas-context.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 /**
  * Push MCP-UI resources extracted from a tool result to the renderer so they can
@@ -63,12 +64,20 @@ export async function dispatchCanvasArtefact(artefact: CanvasArtefact): Promise<
  * A mirror failure is swallowed to a null preview: being unable to *inspect* an
  * artefact must not stop it reaching the user's canvas.
  */
-export async function dispatchCanvasArtefacts(content: unknown, threadId?: string): Promise<void> {
+export async function dispatchCanvasArtefacts(
+  content: unknown,
+  threadId?: string,
+  inline = false,
+): Promise<void> {
   const artefacts = extractUiResources(content)
     .map(toCanvasArtefact)
     .map((artefact) => (threadId ? { ...artefact, threadId } : artefact))
   if (artefacts.length === 0) return
   for (const artefact of artefacts) {
-    await dispatchCanvasArtefact(artefact)
+    const presentation =
+      inline && threadId && queueInlineCanvasReference(threadId, artefact.title)
+        ? { presentation: 'inline' as const }
+        : {}
+    await dispatchCanvasArtefact({ ...artefact, ...presentation })
   }
 }

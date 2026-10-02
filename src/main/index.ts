@@ -20,6 +20,8 @@ armPerfTrace()
 installIpcPerfTracing()
 
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
+import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
@@ -93,6 +95,7 @@ import {
   repairCorruptGortexConfig,
   stopGortexDaemon,
 } from './services/search/semantic-index.ts'
+import { stopLocalClassifierServers } from './services/classifiers/local-classifiers.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
@@ -129,7 +132,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { suggestFollowUps } from './services/follow-up-service.ts'
+import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -161,6 +164,7 @@ import {
   lmStudioDownloadSchema,
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
+  machineAgentRunSchema,
   parseIpcArgs,
   zGitBranchName,
   zProjectId,
@@ -575,6 +579,7 @@ app
     })
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
+    setExplainerPreviewCapture(captureExplainerFrames)
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
@@ -803,6 +808,28 @@ app
       },
     )
 
+    ipcMain.handle('agent:run-machine', async (event, requestArg: unknown) => {
+      assertMainFrameSender(event, win)
+      assertPrimaryMainWindow(event.sender)
+      const request = parseIpcArgs(machineAgentRunSchema, [requestArg])
+      const result = await agentDispatcher.dispatchMachine({
+        projectId: request.projectId,
+        threadId: request.threadId,
+        operationId: request.operationId,
+        turnTreeId: request.turnTreeId,
+        payload: parseAgentRunPayload(request.payload),
+        display: request.display,
+      })
+      if (result === 'completed') {
+        await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(
+          (error: unknown) => {
+            console.warn('[worktree] Could not park PR-backed checkout:', error)
+          },
+        )
+      }
+      return result
+    })
+
     ipcMain.handle('agent:describe-images', async (event, ...rawArgs: unknown[]) => {
       assertMainFrameSender(event, win)
       const [projectId, threadId, model, userPrompt, images] = parseIpcArgs(
@@ -994,7 +1021,9 @@ app
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        return suggestFollowUps(parsed.data, root)
+        const thread = await getProjectThread(projectId, threadId)
+        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+        return suggestFollowUps(parsed.data, root, executor)
       },
     )
 
@@ -1179,6 +1208,7 @@ app.on('before-quit', (event) => {
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  stopLocalClassifierServers()
   // The hidden video-decoder window is not the main window, so nothing else
   // closes it — left open it would keep the app alive past the last quit.
   closeVideoDecoder()
