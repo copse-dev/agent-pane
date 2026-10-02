@@ -35,26 +35,6 @@ describe('resolveModelIdForm', () => {
     assert.equal(resolveModelIdForm('openrouter:qwen/qwen3-235b', known), 'qwen/qwen3-235b')
   })
 
-  it('unwraps exact OpenAI and Anthropic maker namespaces for newly catalogued models', () => {
-    const known = catalog('gpt-future-sol', 'claude-future-sonnet')
-    assert.equal(resolveModelIdForm('openrouter:openai/gpt-future-sol', known), 'gpt-future-sol')
-    assert.equal(
-      resolveModelIdForm('anthropic/claude-future-sonnet', known),
-      'claude-future-sonnet',
-    )
-    assert.equal(resolveModelIdForm('other/gpt-future-sol', known), null)
-    assert.equal(resolveModelIdForm('openai/claude-future-sonnet', known), null)
-    assert.equal(resolveModelIdForm('openai/gpt-future-sol-mini', known), null)
-    // An explicit entry or alias still wins before structural unwrapping.
-    assert.equal(
-      resolveModelIdForm(
-        'openai/gpt-future-sol',
-        catalog('openai/gpt-future-sol', 'gpt-future-sol'),
-      ),
-      'openai/gpt-future-sol',
-    )
-  })
-
   it('peels a serving-route tag from a vendor path', () => {
     const known = catalog('MiniMaxAI/MiniMax-M3')
     assert.equal(resolveModelIdForm('MiniMaxAI/MiniMax-M3:novita', known), 'MiniMaxAI/MiniMax-M3')

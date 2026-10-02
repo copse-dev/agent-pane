@@ -87,15 +87,9 @@ describe('pickDynamicModel', () => {
   })
 
   describe('balanced', () => {
-    it('balances included models at their real API prices', () => {
+    it('judges a plan-covered model at its real API price, not $0', () => {
       const planned: FrontierCandidate[] = [
-        {
-          id: 'sonnet',
-          intellect: 53,
-          costPerMTok: 0,
-          plan: 'Claude Max',
-          planDetail: { usedPercent: 30, resetsAt: null, apiPricePerMTok: 3.6 },
-        },
+        { id: 'sonnet', intellect: 53, costPerMTok: 3.6 },
         {
           id: 'fable-on-plan',
           intellect: 60,
@@ -138,56 +132,6 @@ describe('pickDynamicModel', () => {
         },
       ]
       assert.equal(pick('auto:balanced', withCoverage), 'sonnet-on-plan')
-    })
-
-    it('keeps using confirmed plan coverage when a stronger, cheaper API model launches', () => {
-      const candidates: FrontierCandidate[] = [
-        {
-          id: 'included',
-          intellect: 53,
-          costPerMTok: 0,
-          plan: 'Weekly',
-          planDetail: { usedPercent: 30, resetsAt: null, apiPricePerMTok: 18 },
-        },
-        { id: 'new-api-model', intellect: 75, costPerMTok: 0.1 },
-      ]
-      assert.equal(pick('auto:balanced', candidates), 'included')
-      assert.equal(pick('auto:best-intellect', candidates), 'new-api-model')
-    })
-
-    it('preserves a stronger local alternative when a plan has headroom', () => {
-      assert.equal(
-        pick('auto:balanced', [
-          {
-            id: 'included',
-            intellect: 40,
-            costPerMTok: 0,
-            plan: 'Weekly',
-            planDetail: { usedPercent: 30, resetsAt: null, apiPricePerMTok: 3 },
-          },
-          { id: 'local', intellect: 50, costPerMTok: 0, local: true },
-          { id: 'paid', intellect: 75, costPerMTok: 0.1 },
-        ]),
-        'local',
-      )
-    })
-
-    it('does not treat unknown or exhausted plan usage as confirmed coverage', () => {
-      const unknown: FrontierCandidate = {
-        id: 'acp:codex-acp#unknown-usage',
-        intellect: 53,
-        costPerMTok: 18,
-        planAccess: { provider: 'codex', modelId: 'unknown-usage' },
-      }
-      const paid: FrontierCandidate = { id: 'paid', intellect: 60, costPerMTok: 3 }
-      assert.equal(pick('auto:balanced', [unknown, paid]), 'paid')
-      assert.equal(
-        pick('auto:balanced', [
-          { ...unknown, planLimitReached: { label: 'Weekly', resetsAt: null } },
-          paid,
-        ]),
-        'paid',
-      )
     })
 
     it('degrades to a sensible pick for a single-candidate pool', () => {

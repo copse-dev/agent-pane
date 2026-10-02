@@ -2123,14 +2123,11 @@ export function createIntellectFrontierPanel(
     // A verified feed can also PRICE curated models we couldn't plot before
     // (curated score wins, feed contributes the cost) — but never where a
     // catalog or provider price already covers the model.
-    const pricedRoutes = [
-      ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models),
-    ]
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
-      ...pricedRoutes,
-      ...planAcpFrontierCandidates(acpAgents, pricedRoutes),
+      ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models),
+      ...planAcpFrontierCandidates(acpAgents),
     ]
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections)
     const delegatedModelIds = new Set<string>()

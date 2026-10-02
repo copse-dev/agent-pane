@@ -7,6 +7,7 @@ import {
   isEmptyModelParameters,
   clampReasoning,
   isReasoningLevel,
+  isVerbosityLevel,
   modelParameterSupport,
   recommendedModelParameters,
   recommendedOutputCeiling,
@@ -647,5 +648,114 @@ describe('resolvedOutputCeiling', () => {
       }),
       8_192,
     )
+  })
+})
+
+describe('verbosity', () => {
+  const LADDER = ['low', 'medium', 'high']
+
+  it('is a three-value vocabulary', () => {
+    for (const level of LADDER) assert.equal(isVerbosityLevel(level), true, level)
+    for (const bad of ['LOW', 'terse', '', 2, null, undefined]) {
+      assert.equal(isVerbosityLevel(bad), false, String(bad))
+    }
+  })
+
+  it('is offered on first-party GPT-5 and GPT-6 ids, dated snapshots included', () => {
+    for (const model of [
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra-2026-07-01',
+      'gpt-6-astra',
+      'gpt-6.1-sol',
+    ]) {
+      assert.deepEqual([...modelParameterSupport(model).verbosity], LADDER, model)
+    }
+  })
+
+  it('is not offered where OpenAI documents no support', () => {
+    for (const model of ['gpt-4o', 'gpt-4.1', 'o3', 'o4-mini', 'o1']) {
+      assert.deepEqual([...modelParameterSupport(model).verbosity], [], model)
+    }
+  })
+
+  it('is not offered on codex ids, which accept only medium', () => {
+    // 400 `Unsupported value: 'low' ... Supported values are: 'medium'`,
+    // param text.verbosity — on every turn, so an allowlist miss is costly.
+    for (const model of ['gpt-5-codex', 'gpt-5.2-codex-2026-01-14', 'gpt-5.3-codex']) {
+      assert.deepEqual([...modelParameterSupport(model).verbosity], [], model)
+    }
+  })
+
+  it('is never offered on another vendor, aggregator, or local route', () => {
+    for (const model of [
+      'claude-opus-5',
+      'claude-sonnet-4-6',
+      'openrouter:openai/gpt-5.6-sol',
+      'lmstudio:gpt-5-lookalike',
+      'some-unrecognised-id',
+      'acp:codex',
+      'auto:balanced',
+    ]) {
+      assert.deepEqual([...modelParameterSupport(model).verbosity], [], model)
+    }
+  })
+
+  it('sanitizes a stored level against the model it is read for', () => {
+    assert.deepEqual(sanitizeModelParameters({ verbosity: 'low' }, 'gpt-5.6-sol'), {
+      verbosity: 'low',
+    })
+    // Tuned on GPT-5, later pinned to a codex model or an aggregator route.
+    assert.deepEqual(sanitizeModelParameters({ verbosity: 'low' }, 'gpt-5-codex'), {})
+    assert.deepEqual(sanitizeModelParameters({ verbosity: 'low' }, 'claude-opus-5'), {})
+    assert.deepEqual(sanitizeModelParameters({ verbosity: 'low' }, 'openrouter:openai/gpt-5'), {})
+  })
+
+  it('counts as a set parameter, so a verbosity-only entry is persisted', () => {
+    assert.equal(isEmptyModelParameters({ verbosity: 'low' }), false)
+    assert.deepEqual(decodeModelParametersMap({ 'gpt-5.6-sol': { verbosity: 'high' } }), {
+      'gpt-5.6-sol': { verbosity: 'high' },
+    })
+    assert.deepEqual(decodeModelParametersMap({ 'gpt-5.6-sol': { verbosity: 'loud' } }), {})
+  })
+
+  it('maps to Chat Completions top-level `verbosity`', () => {
+    assert.deepEqual(openAiParameterFields({ verbosity: 'low' }), { verbosity: 'low' })
+    assert.deepEqual(openAiParameterFields({}), {})
+  })
+
+  it('maps to Responses `text.verbosity`, with no top-level field', () => {
+    assert.deepEqual(responsesParameterFields({ verbosity: 'low', reasoning: 'high' }), {
+      text: { verbosity: 'low' },
+      reasoning: { effort: 'high' },
+    })
+    assert.deepEqual(responsesParameterFields({}), {})
+  })
+
+  it('is never an Anthropic field, which rejects unknown body fields', () => {
+    const fields = anthropicParameterFields({ verbosity: 'low' }, 'claude-opus-5')
+    assert.equal(Object.hasOwn(fields, 'verbosity'), false)
+    assert.equal(Object.hasOwn(fields, 'text'), false)
+  })
+
+  it('has no curated default: nothing is sent until a user chooses it', () => {
+    // A default needs a checked-in evidence record (see RECOMMENDATIONS); none
+    // exists, so an untouched OpenAI model must resolve to no verbosity.
+    for (const model of ['gpt-5.6-sol', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-5-mini']) {
+      assert.equal(recommendedModelParameters(model), null, model)
+      assert.deepEqual(resolveModelParameters({}, model), {}, model)
+    }
+  })
+
+  it('resolves a stored level for a supporting model and drops it elsewhere', () => {
+    const stored = {
+      'gpt-6.1-sol': { verbosity: 'low' },
+      'gpt-5-codex': { verbosity: 'low' },
+      'openrouter:openai/gpt-5': { verbosity: 'low' },
+    }
+    assert.deepEqual(resolveModelParameters(stored, 'gpt-6.1-sol'), { verbosity: 'low' })
+    assert.deepEqual(resolveModelParameters(stored, 'gpt-5-codex'), {})
+    assert.deepEqual(resolveModelParameters(stored, 'openrouter:openai/gpt-5'), {})
   })
 })
