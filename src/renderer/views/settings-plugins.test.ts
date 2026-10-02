@@ -318,7 +318,7 @@ describe('settings → plugins list', () => {
       ['copse.pii-redaction', 'PII redaction'],
       ['copse.ci-investigator', 'CI investigator'],
       ['copse.okf-memories', 'OKF memories'],
-      ['copse.mcp-ui-canvas', 'MCP UI canvas'],
+      ['copse.mcp-ui-canvas', 'Canvas and explainers'],
       ['copse.agents-md', 'AGENTS.md'],
       ['copse.claude-md', 'CLAUDE.md'],
       ['copse.devtools-shortcut', 'DevTools shortcut'],

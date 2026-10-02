@@ -50,25 +50,26 @@
             Your workspace stays yours. Here’s exactly where Copse keeps data and when it leaves
             your machine.
           </p>
-          <p class="date">Last updated: 25 August 2026</p>
+          <p class="date">Last updated: 1 October 2026</p>
         </header>
 
         <article class="privacy-content content-surface">
           <div class="short-version">
             <p>
-              <strong>Copse has no hosted backend and sends no product telemetry.</strong> Data
-              stays on your machine until you configure or use a feature that talks directly to
-              another service, such as a cloud model, remote agent, MCP server, website, or the
-              GitHub update feed.
+              <strong>Copse has no hosted backend and sends no product telemetry.</strong> Your
+              prompts and code leave your machine only when you use a feature that talks directly to
+              another service, such as a cloud model, remote agent, MCP server, or website. Copse
+              also makes a few automatic checks — for updates, for usage on coding plans you have
+              set up in Settings → General, and for public model information — listed under
+              <a href="#automatic-checks">Automatic Checks</a>.
             </p>
           </div>
 
           <h2>The Short Version</h2>
           <ul>
             <li>
-              <strong>No Copse account or backend.</strong> The desktop app talks directly to
-              services you configure; Copse does not operate an intermediary service for your
-              prompts or code.
+              <strong>No Copse account or backend.</strong> The desktop app talks directly to other
+              services; Copse does not operate an intermediary service for your prompts or code.
             </li>
             <li>
               <strong>No telemetry.</strong> No analytics, no crash reporting, no usage data
@@ -76,8 +77,8 @@
             </li>
             <li>
               <strong>External features send data.</strong> Cloud models, remote agents, MCP/ACP,
-              browser sessions, custom tools, hooks, and updates have the data flows described
-              below.
+              SSH workspaces, browser sessions and web search, custom tools, hooks, the Mobile
+              Companion, and the automatic checks have the data flows described below.
             </li>
             <li>
               <strong>Local does not mean encrypted.</strong> Conversations are stored as ordinary
@@ -129,11 +130,38 @@
             workspace-trust gated; server and tool approvals apply according to your settings.
           </p>
           <p>
-            An ACP agent is an external program running on the same machine. Copse gives it the
+            An ACP agent is an external program, normally on the same machine. Copse gives it the
             prompt, workspace path, selected MCP configuration, and any tools exposed through the
             optional localhost bridge. Copse strips its provider keys from the inherited base
             environment, but values explicitly configured for the agent are passed to it. The ACP
-            program may have its own credentials, storage, and network behavior.
+            program may have its own credentials, storage, and network behavior. When you open the
+            ACP agents settings, Copse asks the npm registry for the latest version of each agent's
+            adapter package, and an adapter you approve is installed through npm.
+          </p>
+
+          <h3>SSH workspaces and remote agents over SSH</h3>
+          <p>
+            Both are off by default (Settings → SSH). An SSH workspace runs file, shell, terminal,
+            Git, and search operations on the host you configure, through your system OpenSSH, so
+            that host receives the commands and file content they involve. With agents on the remote
+            machine turned on, the ACP agent itself runs on the SSH host: it receives your prompts
+            and makes its own model calls from there. Copse forwards the agent's configured keys to
+            that host only after you approve it in a dialog, and installs a missing adapter there
+            only with your approval. SSH passwords and passphrases you ask Copse to remember are
+            stored encrypted on this machine.
+          </p>
+
+          <h3>Mobile Companion</h3>
+          <p>
+            Off by default (Settings → Experimental). When you turn it on, Copse listens on your
+            local network — on the private address you choose, never the internet — so a phone you
+            pair can follow your work. Pairing needs a code shown on the phone and your approval on
+            the desktop. A paired phone can read project names, thread titles and status, recent
+            messages, and pending approvals and questions; one you allow to control Copse can also
+            answer approvals and questions, stop runs, and send messages, which then run against
+            your model. Copse keeps its local certificate authority and the list of paired phones
+            (with hashed tokens) in <code>~/.copse/lan/</code>. You can revoke a phone or turn the
+            companion off from the same settings.
           </p>
 
           <h3>Browser and web tools</h3>
@@ -144,6 +172,14 @@
             interaction results may be sent to the selected model as tool results and are stored in
             the thread. Browser cookies and site storage remain in their local profiles.
           </p>
+          <p>
+            The agent's web search sends its search query to DuckDuckGo. DuckDuckGo is an approved
+            origin by default, so a search runs without asking unless you set the web tools to ask
+            first. Fetching a page sends a normal request to that site, and only to approved
+            origins. Two optional services need your own API key and are off until you add one:
+            Parallel search sends the agent's search objective and queries to Parallel, and
+            Artificial Analysis model data is downloaded from Artificial Analysis with your key.
+          </p>
 
           <h3>Custom tools and hooks</h3>
           <p>
@@ -152,11 +188,44 @@
             as passive configuration.
           </p>
 
+          <h2 id="automatic-checks">Automatic Checks</h2>
+          <p>
+            These run without a separate action from you. None of them sends your prompts or code.
+          </p>
+
           <h3>Updates</h3>
           <p>
-            The packaged macOS app checks its GitHub Releases update feed on launch. Copse asks
-            before downloading an update. Once downloaded, the update installs when you restart or
-            next quit. Development builds do not use the feed.
+            The packaged macOS app checks its update feed on GitHub
+            (<code>copse-dev/copse-releases</code>) on launch and when you choose Check for Updates.
+            When an update is available, Copse also fetches the release notes from the GitHub API to
+            show what changed. Copse asks before downloading an update. Once downloaded, the update
+            installs when you restart or next quit. Development builds do not use the feed.
+          </p>
+
+          <h3>Coding plan usage</h3>
+          <p>
+            To show how much of your coding plans you have used, and to choose a default model that
+            makes the best use of them, Copse can read the sign-in another tool on this Mac already
+            holds — but only for a provider you have set up in Settings → General: Claude Code or
+            Codex once you have added and enabled that agent, Cursor once you have added its agent
+            or saved a Cursor key, and Hugging Face once you have saved a Hugging Face key in Copse.
+            For those, it reads Claude Code's Keychain item or
+            <code>~/.claude/.credentials.json</code>, Codex's <code>~/.codex/auth.json</code>,
+            Cursor's Keychain item or local app state, or your Hugging Face token, and sends each
+            token only to the service that issued it — Anthropic, OpenAI's ChatGPT service, Cursor,
+            or Hugging Face — to read that plan's usage. Nothing is read for a provider you have not
+            set up. This runs when you open Settings → Usage, and when Copse resolves the default
+            “best value” chat model as a thread opens or an agent runs, at most every five minutes.
+            Copse keeps recent usage samples locally. macOS may ask before Copse reads another app's
+            Keychain item.
+          </p>
+
+          <h3>Model information</h3>
+          <p>
+            The value chart in Settings → Usage checks which models have published model cards by
+            requesting public pages on Hugging Face and on model vendors' sites. These requests
+            carry a model name and your network address, nothing else, and their results are cached
+            locally.
           </p>
 
           <h2>Credentials and Environment Scanning</h2>
@@ -187,7 +256,15 @@
               conversation messages, reasoning, tool calls/results, images, hooks, and subagents;
             </li>
             <li>separate browser profiles and agent-browser screenshots;</li>
-            <li>semantic-search indexes; and</li>
+            <li>semantic-search indexes;</li>
+            <li>
+              cached model-card checks and coding plan usage samples, and remembered SSH passwords
+              and passphrases (encrypted);
+            </li>
+            <li>
+              when the Mobile Companion has been set up, its certificate authority and paired phones
+              in <code>~/.copse/lan/</code>; and
+            </li>
             <li>short-lived Git worktree backup refs inside opened repositories.</li>
           </ul>
           <p>
