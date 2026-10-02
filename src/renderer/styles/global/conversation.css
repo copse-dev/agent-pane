@@ -319,6 +319,26 @@
 .agent-activity-clickable:hover {
   color: var(--text-primary);
 }
+/* A running concise turn: the row opens that turn's steps in the full view. */
+.agent-activity-expandable {
+  cursor: pointer;
+}
+.agent-activity-expandable:hover {
+  color: var(--text-primary);
+}
+.agent-activity-expandable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.agent-activity-expandable .agent-activity-label::after {
+  content: '›';
+  display: inline-block;
+  margin-inline-start: var(--spacing-xs);
+  transition: transform 0.15s ease;
+}
+.agent-activity-expanded .agent-activity-label::after {
+  transform: rotate(90deg);
+}
 .msg {
   width: min(100%, var(--chat-content-max));
   margin-inline: auto;

@@ -213,6 +213,17 @@ describe('configured classifiers', () => {
   it('rejects unrelated environment secrets and binds preset variables to their official endpoints', async () => {
     const invalidConnections = [
       {
+        apiKeyEnv: 'LIQUID_API_KEY',
+        baseUrl: 'https://api.typesafe.ai/v1',
+        protocol: 'systemone',
+      },
+      {
+        apiKeyEnv: 'LIQUID_API_KEY',
+        baseUrl: 'https://api.liquid.ai/collector',
+        protocol: 'systemone',
+      },
+      { apiKeyEnv: 'LIQUID_API_KEY', baseUrl: 'http://127.0.0.1:8009/v1', protocol: 'systemone' },
+      {
         apiKeyEnv: 'AWS_SECRET_ACCESS_KEY',
         baseUrl: 'https://api.typesafe.ai/v1',
         protocol: 'systemone',
@@ -255,6 +266,34 @@ describe('configured classifiers', () => {
     assert.equal(fetchMock.mock.callCount(), 0)
     await saveClassifierProfile(preset('typesafe'))
     await saveClassifierProfile(preset('featherless'))
+    await saveClassifierProfile(preset('liquid'))
+  })
+
+  it('uses Liquid’s environment key at its endpoint, with a saved key taking precedence', async () => {
+    const previousKey = process.env['LIQUID_API_KEY']
+    process.env['LIQUID_API_KEY'] = 'liquid-environment-fixture'
+    try {
+      const profile = preset('liquid')
+      await saveClassifierProfile(profile)
+      assert.equal(listClassifierProfiles()[0]?.hasKey, true)
+      const authorizations: (string | null)[] = []
+      mock.method(globalThis, 'fetch', async (url: string | URL | Request, init?: RequestInit) => {
+        assert.equal(url, 'https://api.liquid.ai/decisions/v1/systemone')
+        authorizations.push(new Headers(init?.headers).get('Authorization'))
+        return response()
+      })
+      await testClassifierProfile(profile.id)
+      setApiKey(classifierCredentialId(profile.id), 'liquid-saved-fixture')
+      await testClassifierProfile(profile.id)
+      assert.deepEqual(authorizations, [
+        'Bearer liquid-environment-fixture',
+        'Bearer liquid-saved-fixture',
+      ])
+      assert.equal(JSON.stringify(listClassifierProfiles()).includes('liquid-saved-fixture'), false)
+    } finally {
+      if (previousKey === undefined) delete process.env['LIQUID_API_KEY']
+      else process.env['LIQUID_API_KEY'] = previousKey
+    }
   })
 
   it('resolves keys once per eval session while fresh sessions observe updated credentials', async () => {
