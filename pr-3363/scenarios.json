@@ -108,6 +108,10 @@
     "label": "Concise thread view across several turns"
   },
   {
+    "id": "concise-thread-multi-working",
+    "label": "Concise thread view with finished turns and a live one"
+  },
+  {
     "id": "concise-thread-full",
     "label": "Full thread view for a model below the concise gate"
   },
