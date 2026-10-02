@@ -949,6 +949,6 @@ describe('analyzeShellCommand — system executable heads and quoted separators'
   it('still sees a command after a real separator following a quoted one', () => {
     assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'external')
     assert.equal(verdict("echo 'a;b' && bin/tool"), 'external')
-    assert.equal(verdict("echo \"$(echo 'x'; ./evil)\""), 'external')
+    assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
   })
 })
