@@ -62681,6 +62681,14 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
+  }
+});
+
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
@@ -64927,6 +64935,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -66000,6 +66009,23 @@ function mountSettingsDialog(store2, api2) {
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
+
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
 
             <fieldset>
               <legend>Mobile Companion</legend>
@@ -67430,6 +67456,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -67465,9 +67502,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -68094,8 +68133,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -68779,6 +68817,7 @@ var init_settings_dialog = __esm({
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -73270,7 +73309,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -75826,6 +75867,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -75838,7 +75880,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -75851,7 +75893,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -75862,6 +75904,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -75898,7 +75941,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -75908,6 +75951,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -75950,7 +75994,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
