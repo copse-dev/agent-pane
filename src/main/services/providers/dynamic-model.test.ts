@@ -54,6 +54,19 @@ describe('resolveDynamicModelId', () => {
     )
   })
 
+  it('refuses a paid fallback for balanced with no usage charges', async () => {
+    await assert.rejects(
+      resolveDynamicModelId('auto:balanced-included', {
+        pool: [{ id: 'openrouter:paid', intellect: 53, costPerMTok: 4, onFrontier: true }],
+      }),
+      /no available local, subscription-covered, or zero-priced model/,
+    )
+    await assert.rejects(
+      resolveDynamicModelId('auto:balanced-included', { pool: [] }),
+      /no available local, subscription-covered, or zero-priced model/,
+    )
+  })
+
   describe('roles', () => {
     it('returns the model assigned to the role', async () => {
       await setSetting('roleModels', { advisor: 'claude-opus-4-8' })
