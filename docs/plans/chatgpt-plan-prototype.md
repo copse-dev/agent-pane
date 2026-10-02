@@ -1,6 +1,7 @@
 # Native ChatGPT plan prototype
 
-Base: `14b02041fe6760d71308653ba2a0c8c0a6880b51`.
+Original base: `14b02041fe6760d71308653ba2a0c8c0a6880b51`.
+PR rebased onto `cf5ba42734562bd8861675d179811a5767568adf`.
 
 ## Task brief
 
@@ -173,3 +174,21 @@ all the same host/toolchain failures described above. Final build and
 includes IPC changes; the complete Electron tier was run earlier as recorded
 above, and these subsequent renderer changes were checked with focused specs.
 Logs: `.tmp/chatgpt-plan-cleanup-{focused-final,check,build-final,e2e-final,e2e-capture}.log`.
+
+## PR handoff
+
+The rebase applied cleanly. Rebased focused tests passed: 196 tests covering OAuth,
+Responses, registration-pinned routing, model options, settings, usage and protocol.
+The rebased build passed, and 3 focused Electron specs / 4 tests passed, including
+main's new unconfirmed-plan gating. A final settings fixture uses the supported
+ACP registration configuration so discovery timing cannot change card ordering;
+that rerun passed 1 spec / 2 tests and its screenshots were visually reviewed.
+The product source is unchanged by this evidence-only follow-up. Final static and
+full-unit results are recorded against their exact SHAs in the PR description.
+
+Remaining before production: independent auth/security review; live token renewal
+and multiple real account tests; approved OpenAI branding and first-use onboarding;
+a direct Manage usage action on usage-limit errors; and clearer account distinction
+in Usage when multiple registrations use the same model. Containers, automatic
+best-value routing and hosted Responses tools remain explicitly outside this
+prototype. CI must resolve or confirm the recorded host-only validation failures.

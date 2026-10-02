@@ -6,6 +6,9 @@ describe('native ChatGPT plan connection settings', () => {
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-chatgpt-plan', {
+      registeredAcpAgents: [
+        { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+      ],
       usageEvents: [
         {
           at: Date.now(),
@@ -30,6 +33,7 @@ describe('native ChatGPT plan connection settings', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
+    await expect($('.openai-connection-card:first-child h4')).toHaveText('Codex ACP')
     const section = $('[data-testid="chatgpt-plan-section"]')
     await $('#settings-providers-host').scrollIntoView()
     await expect(section).toBeDisplayed()
