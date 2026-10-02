@@ -10004,6 +10004,31 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   position: fixed;
   max-height: calc(100vh - 2 * var(--spacing-xl));
 }
+.approval-github-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.approval-github-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: var(--bg-base);
+}
+.approval-github-icon {
+  width: 30px;
+  height: 30px;
+  fill: currentColor;
+}
 .approval-heading {
   margin-bottom: var(--spacing-md);
 }
