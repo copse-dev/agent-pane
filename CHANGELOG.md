@@ -16,6 +16,10 @@ released — rather than copying every published entry.
   sign-ins whenever it checked plan usage, including when choosing the default
   model for a new thread. Plans that are not set up now say where to set them
   up in Settings → Usage, and nothing is read for them.
+- Help → Report an Issue… opens Copse's bug report form on GitHub with your
+  Copse version and Mac platform already filled in. Nothing about your
+  projects, threads, or settings is included, and nothing is filed until you
+  submit the form.
 
 - The footer's context ring and token counter are now one control. The ring is
   the only thing left in the footer: the percentage and the `N tokens` text are
