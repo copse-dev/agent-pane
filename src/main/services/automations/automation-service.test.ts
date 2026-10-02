@@ -948,6 +948,7 @@ describe('AutomationService', () => {
       const [input] = supervisor.enqueued
       assert.ok(input)
       assert.equal(input.restartPolicy, 'retry')
+      assert.ok(input.maxAttempts > 1, 'a requeued tick keeps its attempt count')
       assert.ok((input.resourceBudget?.maxDurationMs ?? 0) >= 120_000)
     })
   })

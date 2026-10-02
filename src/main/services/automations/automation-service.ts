@@ -341,7 +341,10 @@ export function createAutomationService(
       reapproveOnWake: false,
       concurrencyClass: 'schedule',
       resourceBudget: { maxDurationMs: SCHEDULER_MAX_DURATION_MS },
-      maxAttempts: 1,
+      // An interrupted tick is re-queued on relaunch with its attempt already
+      // counted, so a budget of one would fail it on the spot as exhausted. The
+      // count resets whenever a tick completes and the task goes back to waiting.
+      maxAttempts: 3,
       // The tick is idempotent per minute, so an interrupted one is safe to rerun.
       restartPolicy: 'retry',
       contentHash: SCHEDULER_HANDLER,
