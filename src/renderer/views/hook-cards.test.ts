@@ -28,6 +28,13 @@ function fakeApi(): ApiClient {
   })()
 }
 
+/** Hook cards are a developer-mode surface; the default store keeps it off. */
+function createDeveloperStore(): ReturnType<typeof createStore> {
+  const store = createStore()
+  store.setState({ developerMode: true })
+  return store
+}
+
 function seedThread(store: ReturnType<typeof createStore>, messages: Message[]): string {
   const threadId = createThread(store)
   const threads = store.getState().threads.map((t) => (t.id !== threadId ? t : { ...t, messages }))
@@ -67,8 +74,29 @@ afterEach(() => {
 })
 
 describe('hook cards (component, decision 10)', () => {
-  it('renders folded hook cards as a right-aligned family after their message', () => {
+  it('renders no hook cards unless developer mode is on', () => {
     const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'run the build',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [card({ id: 'h-allow', status: 'allow' })],
+      },
+    ])
+
+    assert.ok(document.querySelector('[data-message-id="u1"]'))
+    assert.equal(document.querySelector('[data-hook-cards-for]'), null)
+  })
+
+  it('renders folded hook cards as a right-aligned family after their message', () => {
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -106,7 +134,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('keeps the group collapsed and pre-opens only inner hooks that took action', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -156,7 +184,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('opens a non-blocking hook that changed the turn and names every effect in its details', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -193,7 +221,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('labels a tool-enabled finalization nudge accurately', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -223,7 +251,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('marks a hook-originated turn with an origin marker (not a plain user message)', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -253,7 +281,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('marks a host-native continuation as machine-originated', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -281,7 +309,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('renders a halt card with its stop reason detail', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
@@ -313,7 +341,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('reads the injected context on demand instead of only reporting its length', async () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     const asked: string[] = []
@@ -374,7 +402,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('says why an inspector is empty rather than showing a blank box', async () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     const base = fakeApi()
@@ -406,7 +434,7 @@ describe('hook cards (component, decision 10)', () => {
   })
 
   it('appends a live hook card to the current turn (hook_run chunk path)', () => {
-    const store = createStore()
+    const store = createDeveloperStore()
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
