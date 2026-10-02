@@ -419,7 +419,7 @@ export function getActiveProjectSshHost(): string | undefined {
  * Resolve which SSH host owns a workspace root about to be activated.
  * Prefer an explicit host from the renderer, then any persisted project whose
  * path matches (so `workspace:set` never falls through to a local `exists`
- * check for remote roots like `/etc/ddg`).
+ * check for remote roots like `/srv/app`).
  *
  * Do **not** inherit the active project's sshHost for an unrelated path —
  * switching from an SSH project to a local folder would otherwise treat the
