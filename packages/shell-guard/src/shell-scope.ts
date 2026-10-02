@@ -754,6 +754,24 @@ function maskPathAssignments(command: string): string {
   )
 }
 
+/** A command word spelled as an absolute path into the OS-owned binary directories. */
+const SYSTEM_EXECUTABLE_HEAD = /((?:^|[\n|;&(])\s*)\/(?:usr\/)?bin\/([A-Za-z0-9._+-]+)(?=\s|$)/g
+
+/**
+ * Rewrite `/usr/bin/python3 …` to `python3 …` before the outside-path rules run.
+ * Naming the program by its full path opens nothing outside the workspace, yet
+ * it scored `system path (/usr/)` and sent every such command outside the
+ * sandbox. Only the command word is rewritten, so the bare name still meets the
+ * rules for that program (`/usr/bin/curl` stays a network command), and an
+ * operand under `/usr/` still counts as a system path.
+ */
+function maskSystemExecutableHeads(command: string): string {
+  return command.replace(
+    SYSTEM_EXECUTABLE_HEAD,
+    (_match, lead: string, name: string) => lead + name,
+  )
+}
+
 function referencesOutsideWorkspace(
   rawCommand: string,
   workspaceRoot: string | null,
@@ -766,7 +784,12 @@ function referencesOutsideWorkspace(
   const isContainedRead = (absPath: string): boolean =>
     readRoots.some((root) => isInsideRoot(absPath, root))
   const command = maskPathAssignments(
-    maskInertOperandPaths(maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots)),
+    maskInertOperandPaths(
+      maskContainedReadPaths(
+        maskSystemExecutableHeads(maskAgentScratchPaths(rawCommand)),
+        readRoots,
+      ),
+    ),
   )
   const root = workspaceRoot === null ? null : resolve(workspaceRoot)
   // A home-relative path that lands in the workspace (`~/project/src` when the
