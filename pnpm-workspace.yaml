@@ -118,3 +118,16 @@ minimumReleaseAgeExclude:
 #    Guarded by `project-sandbox/acp-trustd.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+
+# GHSA-86w9-cpqp-85rv (node-forge <=1.4.0, RSA PKCS#1 v1.5 signature
+# verification accepts extra DigestAlgorithm elements) has no patched release,
+# and the latest @anthropic-ai/sandbox-runtime still depends on node-forge
+# ^1.4.0, so no override or bump clears it. It is only reachable by calling
+# forge's RSA verify on attacker-supplied signatures. sandbox-runtime uses
+# node-forge solely to build the local CA and leaf certificates for its
+# `network.mitmProxy` mode (signing goes through native crypto), never calls
+# verify, and Copse never enables `mitmProxy`. Remove this once node-forge
+# publishes a patched version.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-86w9-cpqp-85rv
