@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -12,7 +12,10 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // tests cover the layout helper; this proves it end-to-end and screenshots both.
 async function openRightPanelWith(position: 'bottom' | 'side'): Promise<void> {
   resetUserData()
-  seedEmptyProject(process.cwd(), `e2e-panel-position-${position}`, {
+  // The fixed fixture project, not the repo checkout: the Explorer in the
+  // screenshot lists the workspace root, so the checkout's own files made the
+  // reference change with every commit.
+  seedEmptyProject(seedStableWorkspace(), `e2e-panel-position-${position}`, {
     rightPanelPosition: position,
   })
   await browser.reloadSession()
