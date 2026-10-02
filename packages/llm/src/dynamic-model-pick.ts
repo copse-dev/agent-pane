@@ -108,12 +108,15 @@ export function pickDynamicModel(
         null
       )
     }
-    case 'balanced': {
+    case 'balanced':
+    case 'balanced-included': {
+      const candidates = selector.kind === 'balanced-included' ? pool.filter(isFree) : pool
+      if (candidates.length === 0) return null
       // Real API price, plan discount ignored: a plan-covered Fable is judged
       // at $18/MTok, not $0. Plan-covered routes with headroom still get a
       // small bias — the marginal dollar is already spent, so they cost the
       // user nothing extra even though they aren't literally free.
-      const priced = pool.map((point) => ({
+      const priced = candidates.map((point) => ({
         point,
         price: realApiPrice(point),
         covered: point.plan !== undefined && point.planDetail !== undefined,

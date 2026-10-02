@@ -162,10 +162,11 @@ describe('fetchModelOptions visibility', () => {
 
   it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    // Automatic choices plus the empty placeholder.
     const values = options.map((o) => o.value)
     assert.ok(values.includes('auto:best-value'))
     assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    assert.ok(values.includes('auto:balanced-included'), 'no-charge balanced should be selectable')
     const bestValue = options.find((o) => o.value === 'auto:best-value')
     assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
