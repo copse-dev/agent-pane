@@ -73,6 +73,75 @@ function captureJson(value: unknown): string | null {
   }
 }
 
+/** A value rebuilt for capture, with the length of its compact JSON form. */
+interface SizedValue {
+  value: unknown
+  size: number
+}
+
+/**
+ * Rebuild `value` so every object lists its members smallest-serialized-first,
+ * measured bottom-up in one pass (each leaf is stringified once).
+ *
+ * JSON member order carries no meaning, but {@link boundedCapture} keeps only a
+ * prefix — and a dispatch payload's natural order is the order its author wrote
+ * the fields. The `stepBoundary` payload nests the whole transcript
+ * (`escalation.input.messages`) ahead of the numbers its hooks decide on
+ * (`fillRatio`, `toolOnlySteps`, `trimEvents`, the once-per-run flags), so on any
+ * real run the cut fell inside the transcript and every decision input was lost.
+ * Small-first keeps the scalars in the prefix whatever the payload's shape.
+ * Arrays keep their order (it is meaningful); integer-like keys keep the
+ * ascending order JavaScript forces on them. A cycle throws, exactly as
+ * `JSON.stringify` would, so {@link captureJson} still degrades to no blob.
+ */
+function smallestMembersFirst(value: unknown, ancestors: Set<object> = new Set()): SizedValue {
+  if (value === null || typeof value !== 'object') {
+    const json = safeJsonStringify(value)
+    return { value, size: json === undefined ? 0 : json.length }
+  }
+  if (ancestors.has(value)) throw new TypeError('cyclic capture payload')
+  const toJSON: unknown = Reflect.get(value, 'toJSON')
+  if (typeof toJSON === 'function') {
+    const replaced: unknown = Reflect.apply(toJSON, value, [])
+    return smallestMembersFirst(replaced, ancestors)
+  }
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      const items = value.map((item: unknown) => smallestMembersFirst(item, ancestors))
+      const size = items.reduce((sum, item) => sum + item.size + 1, 1)
+      return { value: items.map((item) => item.value), size }
+    }
+    const members = Object.keys(value).map((key, index) => ({
+      key,
+      index,
+      sized: smallestMembersFirst(Reflect.get(value, key), ancestors),
+    }))
+    members.sort((a, b) => a.sized.size - b.sized.size || a.index - b.index)
+    const rebuilt: Record<string, unknown> = {}
+    let size = 1
+    for (const member of members) {
+      rebuilt[member.key] = member.sized.value
+      size += member.key.length + 4 + member.sized.size
+    }
+    return { value: rebuilt, size }
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
+/**
+ * {@link captureJson} for a dispatch payload: small members first, so the
+ * bounded prefix keeps a hook's decision inputs (see {@link smallestMembersFirst}).
+ */
+function capturePayloadJson(payload: unknown): string | null {
+  try {
+    return captureJson(smallestMembersFirst(payload).value)
+  } catch {
+    return null
+  }
+}
+
 interface HookRunRecordingContext {
   projectId: string
   threadId: string
@@ -274,7 +343,7 @@ function functionCaptureBlobs(
   const blobs: FileToWrite[] = []
   const refs: Pick<SpineHookRunLine, 'payload' | 'outcome'> = {}
 
-  const payload = record.payload === undefined ? null : captureJson(record.payload)
+  const payload = record.payload === undefined ? null : capturePayloadJson(record.payload)
   if (payload !== null) {
     const ref = payloadBlobRef(id)
     refs.payload = blobRef(ref, payload)
