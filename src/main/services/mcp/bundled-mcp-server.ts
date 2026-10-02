@@ -1,3 +1,12 @@
+import { randomUUID } from 'node:crypto'
+import { captureExplainerPreview } from '../explainer-preview.ts'
+import {
+  createExplainerPreviews,
+  explainerInput,
+  explainerPublishInput,
+  prepareExplainer,
+  renderExplainerHtml,
+} from '../explainer.ts'
 /**
  * Bundled, in-process MCP server(s) that ship with Copse so features "just work"
  * with zero user configuration — no subprocess, port, or network. Each server is
@@ -5,8 +14,8 @@
  * registry exactly like an external server, so its tool results flow through the
  * same flatten / UI-resource extraction path.
  *
- * Today this hosts the experimental canvas: a `render_html_artefact` tool that
- * returns a `text/html` MCP-UI resource for the host to render as a sandboxed
+ * This hosts the experimental canvas: `preview_explainer` returns scene images;
+ * `render_html_artefact` and `render_explainer` return a `text/html` MCP-UI resource for the host to render as a sandboxed
  * artefact. Gated by the `copse.mcp-ui-canvas` first-party plugin's `mcp-ui-canvas`
  * capability (the connect site in `mcp-registry.ts` reads
  * `isCapabilityActive('mcp-ui-canvas')`).
@@ -68,7 +77,11 @@ export interface BundledMcpServer {
   client: Client
 }
 
-function buildCanvasServer(): { name: string; server: McpServer } {
+interface BundledMcpOptions {
+  animatedExplainersEnabled?: boolean
+}
+
+function buildCanvasServer(options: BundledMcpOptions): { name: string; server: McpServer } {
   const server = new McpServer({ name: CANVAS_SERVER_NAME, version: '0.1.0' }, { capabilities: {} })
 
   server.registerTool(
@@ -143,13 +156,87 @@ function buildCanvasServer(): { name: string; server: McpServer } {
     },
   )
 
+  if (options.animatedExplainersEnabled !== true) return { name: CANVAS_SERVER_NAME, server }
+
+  const previews = createExplainerPreviews()
+  server.registerTool(
+    'preview_explainer',
+    {
+      title: 'Preview animated explanation',
+      description:
+        'Preview an original animated explanation. Prefer beats plus drawing: invent the art direction and Canvas drawing function; Copse supplies the player, timings, title, captions, transcript and inline sizing. No HTML, files, browser tools or extra key. Returns one image strip per beat, with early movement, mid-transition and outcome frames, plus a previewId. Checks runtime, changing artwork and repeatable seeking. Inspect every strip for clarity, text collisions and factual meaning; revise and preview again when needed. Publish with render_explainer using only previewId. Existing objects/scenes and legacy stories remain supported.',
+      inputSchema: explainerInput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (input, extra) => {
+      try {
+        const html = await renderExplainerHtml(input)
+        const images = await captureExplainerPreview(html, extra.signal)
+        extra.signal.throwIfAborted()
+        const story = prepareExplainer(input)
+        const previewId = previews.record(html, story)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Preview ID: ${previewId}. ${story.drawing ? 'Each image is one beat: early movement, mid-transition, then outcome from left to right. Runtime, changing artwork and repeatable seeking checks passed.' : 'These are actual end-of-scene frames, in order.'} Inspect every frame for readable labels, overlaps, continuity and factual meaning. Does the visible change prove the narration? If anything is wrong, revise and preview again. Otherwise call render_explainer with only this previewId; the exact reviewed artifact is retained. Nothing is embedded yet.`,
+            },
+            ...images.map((data) => ({ type: 'image' as const, data, mimeType: 'image/png' })),
+          ],
+        }
+      } catch (err) {
+        return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
+      }
+    },
+  )
+
+  server.registerTool(
+    'render_explainer',
+    {
+      title: 'Create animated explanation',
+      description:
+        'Publish the exact reviewed animation inline in this conversation. Review the preview yourself and publish automatically; do not ask for user review or approval unless they explicitly requested that step. After inspecting preview_explainer images, send only previewId; do not repeat the drawing code. Changes require a new preview. Follow-ups create a revised card and retain earlier cards. Shared Play/Pause/Replay, seeking, captions, transcript and saved playback. Silent; no speech service or MP4 export. Complete story arguments remain accepted for compatibility, with a matching previewId for composed or custom drawings.',
+      inputSchema: explainerPublishInput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (input) => {
+      try {
+        const reviewed = Object.keys(input).every((key) => key === 'previewId')
+          ? previews.get(input.previewId)
+          : undefined
+        const story = reviewed?.story ?? prepareExplainer(input)
+        const html = reviewed?.html ?? (await renderExplainerHtml(input))
+        if (!reviewed && story.version !== 1) previews.assertReviewed(input.previewId, html)
+        const slug =
+          story.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') || 'explainer'
+        // Canvas keys by title. A unique resource tail preserves earlier cards
+        // when a follow-up revises the same story with the same human title.
+        const uri = `ui://canvas/explainer-${slug}-${randomUUID().slice(0, 8)}`
+        return {
+          content: [
+            { type: 'resource', resource: { uri, mimeType: 'text/html', text: html } },
+            {
+              type: 'text',
+              text: `Created “${story.title}” as a playable, captioned explainer in the conversation. Narration: ${story.beats.map((beat) => beat.caption).join(' ')} Grounding: ${story.source}`,
+            },
+          ],
+        }
+      } catch (err) {
+        return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
+      }
+    },
+  )
+
   return { name: CANVAS_SERVER_NAME, server }
 }
 
 /** Factories for every bundled server, so callers connect them uniformly. */
-const BUNDLED_SERVER_FACTORIES: ReadonlyArray<() => { name: string; server: McpServer }> = [
-  buildCanvasServer,
-]
+const BUNDLED_SERVER_FACTORIES: ReadonlyArray<
+  (options: BundledMcpOptions) => { name: string; server: McpServer }
+> = [buildCanvasServer]
 
 /**
  * Instantiate the bundled servers and connect each to its own in-memory client.
@@ -157,10 +244,12 @@ const BUNDLED_SERVER_FACTORIES: ReadonlyArray<() => { name: string; server: McpS
  * the client. Returns [] on any wiring failure so a bundled-server bug can't take
  * down the rest of MCP loading.
  */
-export async function createBundledMcpServers(): Promise<BundledMcpServer[]> {
+export async function createBundledMcpServers(
+  options: BundledMcpOptions = {},
+): Promise<BundledMcpServer[]> {
   const out: BundledMcpServer[] = []
   for (const factory of BUNDLED_SERVER_FACTORIES) {
-    const { name, server } = factory()
+    const { name, server } = factory(options)
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     try {

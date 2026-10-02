@@ -130,7 +130,7 @@ const MAX_INCLUDE_FILES = 64
 
 /**
  * Read `~/.ssh/config` (or `configPath`) and follow `Include` globs so hosts in
- * files like `~/.ssh/ddg/*` appear in the import picker.
+ * files like `~/.ssh/team/*` appear in the import picker.
  */
 export function readSshConfigAliases(
   configPath = join(homedir(), '.ssh', 'config'),
