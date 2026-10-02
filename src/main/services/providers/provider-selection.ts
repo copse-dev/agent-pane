@@ -1,4 +1,5 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -89,8 +90,7 @@ export function normalizeRoleModelSelection(model: string): string {
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
     extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
-    value.startsWith('claude-') ||
-    value.startsWith('gpt-')
+    firstPartyProviderOf(value) !== null
   ) {
     return value
   }
@@ -196,6 +196,17 @@ export interface BuildProviderOptions {
    * would arrive with nothing on screen to explain it.
    */
   maxReasoning?: ReasoningLevel
+  /**
+   * Ceiling on output tokens for this call only, for callers with a fixed output
+   * budget — the advisor consult is capped at `DEFAULT_ADVISOR_MAX_TOKENS`. Lowers
+   * the user's saved cap, never raises it. With no saved cap it stands in for the
+   * model card's recommended ceiling (`resolvedOutputCeiling` prefers an explicit
+   * cap), so it only lowers that ceiling while the card's is larger. Sent by the
+   * transports that carry an output cap (Anthropic, Chat Completions, OpenRouter,
+   * LM Studio, and Responses); compatible endpoints retry once without it when
+   * they reject the field.
+   */
+  maxOutputTokens?: number
 }
 
 /**
@@ -217,7 +228,15 @@ export function resolveTurnParameters(
   const requested = opts.reasoning ?? saved.reasoning
   const reasoning =
     opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
-  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
+  const maxOutputTokens =
+    opts.maxOutputTokens === undefined
+      ? saved.maxOutputTokens
+      : Math.min(opts.maxOutputTokens, saved.maxOutputTokens ?? opts.maxOutputTokens)
+  return {
+    ...saved,
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  }
 }
 
 /**
@@ -383,12 +402,14 @@ export async function describeProvider(
       params,
     }
   }
-  if (model.startsWith('claude'))
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty === 'anthropic') {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }
-  if (model.startsWith('gpt')) {
+  }
+  if (firstParty === 'openai') {
     return { kind: 'openai', model, apiKeySlug: 'openai', params, ...openAiTransport() }
   }
-  // An id neither prefix claims goes to whichever cloud provider has a key,
+  // An id no first-party family claims goes to whichever cloud provider has a key,
   // Anthropic first — the order `createProvider` has always used.
   if (storedOrEnvApiKey('anthropic')) {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }

@@ -1,4 +1,6 @@
+import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { randomUUID } from 'node:crypto'
+import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import {
@@ -68,6 +70,7 @@ import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -143,7 +146,7 @@ import { applyArchiveToolAvailability, getThreadArchives } from './archive/threa
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { resolveAdvisorModelId } from './advisor-runner.ts'
+import { resolveAdvisorModelForGating, resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
 import {
@@ -357,6 +360,8 @@ function parentTools(
   subagentsEnabled: boolean,
   readonlyMode: boolean,
   executorModel: string,
+  /** The concrete model the advisor would consult; null when the tool is not registered. */
+  advisorModel: string | null,
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
   threadArchives: readonly ArchiveAttachmentRef[],
@@ -371,8 +376,9 @@ function parentTools(
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
   // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
   if (
+    advisorModel !== null &&
     tools.some((t) => t.name === 'advisor') &&
-    !advisorAddsLift(executorModel, resolveAdvisorModelId())
+    !advisorAddsLift(executorModel, advisorModel)
   ) {
     tools = tools.filter((t) => t.name !== 'advisor')
   }
@@ -440,6 +446,7 @@ const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]
 }
 
 function instructionContextPathsForTool(name: string, args: unknown): string[] {
+  if (name === 'apply_patch') return isRecord(args) ? patchTouchedPaths(args['input']) : []
   const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
   if (!fields || !isRecord(args)) return []
   return fields.flatMap((field) => {
@@ -548,8 +555,8 @@ function continuationBudgetChunk(
 }
 
 function providerIdForModel(model: string): string {
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty !== null) return firstParty
   const colon = model.indexOf(':')
   return colon > 0 ? model.slice(0, colon) : model
 }
@@ -750,6 +757,19 @@ export interface RunAgentResult {
 }
 
 export async function runAgent(
+  threadId: string,
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  options?: RunAgentOptions,
+): Promise<RunAgentResult> {
+  return runWithInlineCanvas(threadId, host, (inlineHost) =>
+    runAgentWithInlineCanvas(threadId, userPrompt, priorMessages, inlineHost, registry, options),
+  )
+}
+
+async function runAgentWithInlineCanvas(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
@@ -1669,15 +1689,20 @@ export async function runAgent(
     // skills may depend on host tools (notably Codex's imagegen -> image_gen), so
     // the prompt must not advertise one this turn has filtered out.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const [threadVideos, threadArchives] = await Promise.all([
+    const [threadVideos, threadArchives, advisorModelForGating] = await Promise.all([
       getThreadVideos(),
       getThreadArchives(),
+      // Expanded before grading: the default `auto:best-intellect` selector
+      // names no model, so comparing it as-is would always keep the tool — even
+      // for an executor that is already the model the advisor would consult.
+      registry.has('advisor') ? resolveAdvisorModelForGating() : Promise.resolve(null),
     ])
     const parentLoopTools = parentTools(
       registry,
       subagentsEnabled,
       readonlyMode,
       model,
+      advisorModelForGating,
       threadId,
       threadVideos,
       threadArchives,

@@ -1,7 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -68,6 +78,63 @@ describe('ci.yml workflow invariants', () => {
     const next = rest.search(/^ {2}[a-z][a-z0-9-]*:$/m)
     return next >= 0 ? rest.slice(0, next) : rest
   }
+
+  function shardSpecs(mode: 'full' | 'subset', shard: number, total: number, specs = ''): string[] {
+    const job = jobBlock('e2e')
+    const start = job.indexOf('          if [ "$PLAN_MODE" = "full" ]; then')
+    const end = job.indexOf('          # `timeout`', start)
+    assert.ok(start >= 0 && end > start, 'expected the real shard-selection shell')
+    const script = job.slice(start, end).replaceAll('${{ matrix.shard }}', String(shard))
+    const result = spawnSync(
+      'bash',
+      ['-eu', '-c', `${script}\nprintf '\nSELECTED:%s\n' "$SPEC_ARGS"`],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, PLAN_MODE: mode, PLAN_SPECS: specs, SHARD_TOTAL: String(total) },
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const selected = result.stdout.match(/^SELECTED:(.*)$/m)?.[1]?.trim()
+    if (!selected) return []
+    const args = selected.split(/\s+/)
+    assert.ok(args.every((arg, index) => index % 2 === 1 || arg === '--spec'))
+    return args.filter((_arg, index) => index % 2 === 1)
+  }
+
+  it('spreads the full eligible suite without losing coverage or clustering explainer specs', () => {
+    const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
+      encoding: 'utf8',
+    })
+    assert.equal(listed.status, 0, listed.stderr)
+    const expected = listed.stdout.trim().split('\n')
+    assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
+    const sizes = buckets.map((bucket) => bucket.length)
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1)
+    const family = ['thread-explainer-drawing', 'thread-explainer-scenes', 'thread-explainer']
+    const owners = family.map((name) =>
+      buckets.findIndex((bucket) => bucket.includes(`tests/e2e/${name}.e2e.ts`)),
+    )
+    assert.equal(
+      new Set(owners).size,
+      family.length,
+      'long animation cases must not share a worker',
+    )
+    assert.ok(owners.every((owner) => owner >= 0))
+  })
+
+  it('keeps subset plans scoped and safely handles an empty slice', () => {
+    const specs = 'tests/e2e/a.e2e.ts tests/e2e/b.e2e.ts tests/e2e/c.e2e.ts'
+    assert.deepEqual(shardSpecs('subset', 1, 2, specs), [
+      'tests/e2e/a.e2e.ts',
+      'tests/e2e/c.e2e.ts',
+    ])
+    assert.deepEqual(shardSpecs('subset', 2, 2, specs), ['tests/e2e/b.e2e.ts'])
+    assert.deepEqual(shardSpecs('subset', 1, 1), [])
+  })
 
   it('fetches one commit history instead of every branch and tag', () => {
     // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
@@ -396,6 +463,38 @@ describe('ci.yml workflow invariants', () => {
       /- uses: \.\/\.github\/actions\/setup\n {8}if: steps\.changed\.outputs\.any == 'true'/,
       'setup must be gated on there being something to fix',
     )
+  })
+
+  it('accepts ignored-only autofix diffs while still formatting source and rejecting parse errors', () => {
+    const commands = [...jobBlock('autoformat').matchAll(/npx oxfmt ([^\n]+)/g)]
+    assert.equal(commands.length, 2, 'exercise both the initial formatter run and its OOM retry')
+    const root = mkdtempSync(join(tmpdir(), 'copse-autoformat-'))
+    const formatter = resolve('node_modules/.bin/oxfmt')
+    try {
+      writeFileSync(join(root, '.prettierignore'), 'package-lock.json\n')
+      const lockfile = '{ "generated":true }\n'
+      writeFileSync(join(root, 'package-lock.json'), lockfile)
+      for (const command of commands) {
+        assert.equal(command[1]?.endsWith('-- "${files[@]}"'), true)
+        const options = command[1].split(' -- ')[0]?.split(' ')
+        assert.ok(options)
+        const run = (files: string[]): SpawnSyncReturns<string> =>
+          spawnSync(formatter, [...options, '--', ...files], { cwd: root, encoding: 'utf8' })
+        const ignored = run(['package-lock.json'])
+        assert.equal(ignored.status, 0, ignored.stderr)
+        writeFileSync(join(root, 'source.json'), '{"source":true}\n')
+        const mixed = run(['package-lock.json', 'source.json'])
+        assert.equal(mixed.status, 0, mixed.stderr)
+        assert.equal(readFileSync(join(root, 'source.json'), 'utf8'), '{ "source": true }\n')
+        assert.equal(readFileSync(join(root, 'package-lock.json'), 'utf8'), lockfile)
+        writeFileSync(join(root, 'source.json'), '{ invalid json\n')
+        const malformed = run(['package-lock.json', 'source.json'])
+        assert.notEqual(malformed.status, 0, 'real formatter errors must still fail the job')
+        assert.equal(malformed.error, undefined)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('lets every branch-checkout job no-op when the PR merged and deleted its head', () => {

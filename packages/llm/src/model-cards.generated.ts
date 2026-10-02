@@ -2,7 +2,7 @@
 // Vendor-published model cards / system cards, keyed by canonical model id.
 // Source of truth: scripts/data/model-cards.json.
 // Absent models mean "no sourced card yet", and the UI shows no link.
-// Last synced: 2026-09-28
+// Last synced: 2026-09-30
 
 /** Whether a link is a card about this model, or a vendor hub listing cards. */
 export type ModelCardKind = 'system-card' | 'model-card' | 'index'
@@ -59,6 +59,13 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     kind: 'system-card',
     asOf: '2026-09-02',
   },
+  'claude-opus-5-5': {
+    url: 'https://www.anthropic.com/claude-opus-5-5-system-card',
+    title: 'Claude Opus 5.5 system card',
+    publisher: 'Anthropic',
+    kind: 'system-card',
+    asOf: '2026-09-30',
+  },
   'claude-sonnet-4-6': {
     url: 'https://www.anthropic.com/claude-sonnet-4-6-system-card',
     title: 'Claude Sonnet 4.6 system card',
@@ -114,6 +121,13 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     publisher: 'OpenAI',
     kind: 'system-card',
     asOf: '2026-08-04',
+  },
+  'gpt-6-1-sol': {
+    url: 'https://deploymentsafety.openai.com/gpt-6-1-sol',
+    title: 'GPT-6.1 Sol system card addendum',
+    publisher: 'OpenAI',
+    kind: 'system-card',
+    asOf: '2026-09-30',
   },
   'gpt-6-astra': {
     url: 'https://deploymentsafety.openai.com/gpt-6-astra/vision',

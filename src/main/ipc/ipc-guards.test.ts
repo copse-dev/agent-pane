@@ -8,6 +8,7 @@ import {
   lmStudioDetectSchema,
   lmStudioDownloadSchema,
   lmStudioTestSchema,
+  machineAgentRunSchema,
   parsePortKillArgs,
   vncDiscoveryHostSchema,
   vncTargetSchema,
@@ -188,6 +189,32 @@ describe('ipc-guards agent payload schemas', () => {
         assistantMessage: 'a',
         toolNames: [],
         openTodos: Array.from({ length: 21 }, () => 'item'),
+      }).success,
+      false,
+    )
+  })
+
+  it('pins machine continuations to a bounded thread, epoch, payload, and display', () => {
+    const request = {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      operationId: 'git-recovery:1',
+      turnTreeId: 'tree-1',
+      payload: '{"content":"continue"}',
+      display: {
+        content: 'Continue after Git recovery.',
+        attachments: [{ kind: 'shell', label: 'Git recovery', content: 'done' }],
+        startingCommit: 'a'.repeat(40),
+        dirty: true,
+      },
+    }
+
+    assert.equal(machineAgentRunSchema.safeParse(request).success, true)
+    assert.equal(machineAgentRunSchema.safeParse({ ...request, turnTreeId: '' }).success, false)
+    assert.equal(
+      machineAgentRunSchema.safeParse({
+        ...request,
+        display: { ...request.display, startingCommit: '../HEAD' },
       }).success,
       false,
     )

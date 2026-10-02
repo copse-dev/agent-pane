@@ -35,6 +35,11 @@ describe('ghEnv', () => {
     assert.match(env['PATH'] ?? '', /\/custom\/bin/)
   })
 
+  it('honours a launcher-controlled PATH', () => {
+    const env = ghEnv({ PATH: '/fixture/bin', COPSE_PRESERVE_PATH: '1' })
+    assert.equal(env['PATH'], '/fixture/bin')
+  })
+
   it('always forwards non-token GitHub config vars (host/config dir)', () => {
     const env = ghEnv({
       PATH: '/bin',

@@ -220,6 +220,24 @@ describe('Activity panel', function () {
     assert.deepEqual(fits, { noSideScroll: true, inside: true })
     await saveAppScreenshot('activity-panel-needs-you.png')
 
+    // The running audit thread makes the global stop shortcut active. Dialog
+    // keyboard events must still reach the native Activity panel: Escape closes
+    // it, and Enter activates its focused close button.
+    await browser.keys('Escape')
+    await $('#activity-panel').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await openActivityPanel()
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('#activity-panel .activity-panel-close')?.focus()
+    })
+    await browser.keys('Enter')
+    await $('#activity-panel').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await openActivityPanel()
+    await needsRow.waitForDisplayed({ timeout: 10_000 })
+    const reopenedDetail = $('#activity-panel .activity-detail')
+    const reopenedApprove = reopenedDetail.$('.activity-approve')
+    await reopenedApprove.waitForEnabled({ timeout: 5_000 })
+
+    // Scroll the reopened list before approving so the update must preserve it.
     const initialScroll = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('#activity-panel .activity-list')
       if (!list) return { scrollHeight: 0, clientHeight: 0, scrollTop: 0 }
@@ -236,7 +254,7 @@ describe('Activity panel', function () {
     )
 
     // Approve from the panel. The user stays on thread B the whole time.
-    await approve.click()
+    await reopenedApprove.click()
     await browser.waitUntil(
       async () => !(await $(rowSelector('needs-you', AUTH_THREAD)).isExisting()),
       {

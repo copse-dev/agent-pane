@@ -509,6 +509,11 @@ async def _main() -> int:
         }
     active = {task["name"]: task for task in descriptor["active"]}
     requested = [name.strip() for name in args.task_names.split(",") if name.strip()]
+    study_excluded = {task["name"]: task["reason"] for task in descriptor["studyExcluded"]}
+    excluded = [name for name in requested if name in study_excluded]
+    if excluded:
+        details = "; ".join(f"{name}: {study_excluded[name]}" for name in excluded)
+        raise ValueError(f"predeclared SkillsBench study exclusion(s): {details}")
     unknown = [name for name in requested if name not in active]
     if unknown:
         raise ValueError(f"unknown SkillsBench v1.1 task(s): {', '.join(unknown)}")

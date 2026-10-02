@@ -166,6 +166,18 @@ function parseSpendControlWindow(body: Record<string, unknown>, nowMs: number): 
   }
 }
 
+/** `model_usage: { "<model-id>": { available: boolean, ... } }` → availability map. */
+function parseModelUsage(raw: unknown): Record<string, boolean> | null {
+  if (!isRecord(raw)) return null
+  const out: Record<string, boolean> = {}
+  for (const [model, entry] of Object.entries(raw)) {
+    if (isRecord(entry) && typeof entry['available'] === 'boolean') {
+      out[model.toLowerCase()] = entry['available']
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 /**
  * Parse a Codex/ChatGPT usage JSON body into plan windows.
  * Missing `rate_limit` / empty windows (common on enterprise) are returned
@@ -185,6 +197,17 @@ export function parseCodexUsage(body: unknown, nowMs: number): ProviderPlanUsage
     )
   }
 
+  // `chatpass` is a separate pool that can still cover models when the main
+  // windows are spent; its window ids never govern models unless a model is
+  // reported available (see `resolvePlanInclusion`).
+  const chatpass = body['chatpass']
+  if (isRecord(chatpass) && Array.isArray(chatpass['windows'])) {
+    chatpass['windows'].forEach((raw, index) => {
+      const window = parseRateWindow(raw, `chatpass_${String(index)}`, 'ChatPass', nowMs)
+      if (window) windows.push(window)
+    })
+  }
+
   const spendControl = parseSpendControlWindow(body, nowMs)
   if (spendControl && !windows.some((w) => w.id === spendControl.id)) {
     windows.push(spendControl)
@@ -196,10 +219,12 @@ export function parseCodexUsage(body: unknown, nowMs: number): ProviderPlanUsage
     (rate ? (rate['plan_type'] ?? rate['planType']) : undefined)
   const plan = typeof planRaw === 'string' && planRaw.trim() ? planRaw.trim() : null
 
+  const modelAvailability = parseModelUsage(body['model_usage'] ?? body['modelUsage'])
   return {
     provider: 'codex',
     plan,
     windows,
+    ...(modelAvailability ? { modelAvailability } : {}),
     checkedAt: new Date(nowMs).toISOString(),
   }
 }

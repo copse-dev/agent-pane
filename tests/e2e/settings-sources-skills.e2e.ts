@@ -135,7 +135,7 @@ describe('settings sources skills origin hover', () => {
         }
       },
       SKILL_NAME,
-      '/Users/jonathankingston/.cursor/plugins/cache/cursor-public/long-plugin-id-aaaaaaaa/skills/ai-writing-signs-report/SKILL.md',
+      '/Users/alexandra-morgan/.cursor/plugins/cache/cursor-public/long-plugin-id-aaaaaaaa/skills/ai-writing-signs-report/SKILL.md',
     )
 
     const hoverMetrics = await browser.execute((name: string) => {

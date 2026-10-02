@@ -547,6 +547,8 @@ export function seedEmptyProject(
      * the prototype steering hook). Ships off, like the other experimental packs.
      */
     mcpUiCanvasEnabled?: boolean
+    /** Opt into the experimental CI investigator pack. */
+    ciInvestigatorEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -624,6 +626,7 @@ export function seedEmptyProject(
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
+  if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
@@ -1382,15 +1385,23 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
 export function seedPrPanelChatFixture(
   workspaceRoot: string,
-  options?: { worktreeMode?: 'always' | 'never' },
+  options?: { worktreeMode?: 'always' | 'never'; roadmapPlansEnabled?: boolean },
 ): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
+    projects: [
+      {
+        id: projectId,
+        path: workspaceRoot,
+        name: 'workspace',
+        ...(options?.worktreeMode ? { worktreeMode: options.worktreeMode } : {}),
+      },
+    ],
     activeProjectId: projectId,
+    pluginDisabled: pluginDisabledSeed(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
     [`threads:${projectId}`]: [
       {
         id: threadId,
@@ -4445,6 +4456,7 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-status',
                 name: 'mcp__copse__git_status',
+                title: 'mcp.copse.git_status',
                 args: {},
                 status: 'done',
                 result: 'working tree clean',
@@ -4452,9 +4464,34 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-diff',
                 name: 'mcp__copse__git_diff',
+                title: 'mcp__copse__git_diff',
                 args: {},
                 status: 'done',
                 result: 'no changes',
+              },
+              {
+                id: 'tc-copse-shell',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: { command: 'cd /workspace && pnpm test' },
+                status: 'done',
+                result: 'Tests passed',
+              },
+              {
+                id: 'tc-copse-read',
+                name: 'mcp__copse__read_file',
+                title: 'mcp.copse.read_file',
+                args: { path: 'README.md' },
+                status: 'done',
+                result: '# Copse',
+              },
+              {
+                id: 'tc-copse-error',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: {},
+                status: 'error',
+                result: 'Command failed: exit 1',
               },
             ],
             createdAt: now + 3,
@@ -5186,11 +5223,14 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
   openThreadTitle: string
   mergedThreadTitle: string
   plainThreadTitle: string
+  failingThreadTitle: string
 } {
   const projectId = 'e2e-thread-pr-status-project'
   const openThreadTitle = 'Open PR thread'
   const mergedThreadTitle = 'Merged PR thread'
   const plainThreadTitle = 'No PR thread'
+  const failingThreadTitle = 'Failing CI thread'
+  const failingPrUrl = 'https://github.com/copse-dev/copse-panel/pull/88'
   const openPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   const mergedPrUrl = 'https://github.com/copse-dev/copse-panel/pull/99'
   const now = Date.now()
@@ -5262,9 +5302,32 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
         createdAt: now - 2000,
         updatedAt: now - 2000,
       },
+      {
+        id: 'e2e-pr-failing-thread',
+        title: failingThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-failing-pr',
+            role: 'assistant',
+            content: `Opened [PR #88](${failingPrUrl}); checks are red.`,
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-failing-agent',
+          prUrl: failingPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now - 3000,
+        },
+        createdAt: now - 3000,
+        updatedAt: now - 3000,
+      },
     ],
   })
-  return { openThreadTitle, mergedThreadTitle, plainThreadTitle }
+  return { openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle }
 }
 
 /**

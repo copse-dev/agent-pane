@@ -54,7 +54,11 @@ export class AnthropicProvider implements LLMProvider {
     const apiMessages = toAnthropicMessages(conversation.slice(0, operatorStart))
     markTrailingCacheBreakpoint(apiMessages)
     apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart)))
-    const maxTokens = anthropicMaxOutputTokens(model)
+    // A caller-supplied ceiling (e.g. the advisor's fixed output budget) can only
+    // lower the catalog cap. User settings never reach here with one: the
+    // Anthropic routes declare no user output cap, so sanitizing strips it.
+    const catalogMax = anthropicMaxOutputTokens(model)
+    const maxTokens = Math.min(catalogMax, this.params.maxOutputTokens ?? catalogMax)
     // Thinking / effort / sampling the user chose for this model. Empty unless
     // they tuned it, so an untouched model's request body is byte-identical to
     // what it was before — no accidental cache invalidation (#582).

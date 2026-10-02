@@ -184,6 +184,18 @@
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
+.review-panel-skipped .review-panel-header {
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.review-panel-skipped-summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
 /* Clean reviews render as a collapsed <details>; the header is the <summary>. */
 .review-panel > summary.review-panel-header {
   cursor: pointer;

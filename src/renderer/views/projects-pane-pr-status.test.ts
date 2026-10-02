@@ -98,7 +98,8 @@ describe('projects pane thread PR status (component)', () => {
     while (Date.now() < deadline) {
       const row = rowByTitle(title)
       const icon = row?.querySelector<HTMLElement>(`.chat-pr-status.is-${kind}`)
-      if (icon?.querySelector('svg[data-icon="git-pull-request"]')) return icon
+      const glyph = kind === 'merged' ? 'git-merge' : 'git-pull-request'
+      if (icon?.querySelector(`svg[data-icon="${glyph}"]`)) return icon
       await new Promise((r) => setTimeout(r, 10))
     }
     throw new Error(`Timed out waiting for PR ${kind} icon on "${title}"`)
@@ -237,5 +238,169 @@ describe('projects pane thread PR status (component)', () => {
       rowByTitle('Refreshing PR')?.querySelector('.chat-pr-status.is-open'),
       refreshingIcon,
     )
+  })
+
+  it('re-observes the current visible row when an older render request fails', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    t.mock.method(console, 'warn', () => {})
+    const originalObserver = globalThis.IntersectionObserver
+    const observed = new Set<Element>()
+    let deliver: IntersectionObserverCallback | undefined
+    let observer: IntersectionObserver | undefined
+    class FakeIntersectionObserver implements IntersectionObserver {
+      readonly root = null
+      readonly rootMargin = '0px'
+      readonly scrollMargin = '0px'
+      readonly thresholds = [0]
+
+      constructor(callback: IntersectionObserverCallback) {
+        deliver = callback
+        observer = this
+      }
+
+      observe(target: Element): void {
+        observed.add(target)
+      }
+
+      unobserve(target: Element): void {
+        observed.delete(target)
+      }
+
+      disconnect(): void {
+        observed.clear()
+      }
+
+      takeRecords(): IntersectionObserverEntry[] {
+        return []
+      }
+    }
+    Object.defineProperty(globalThis, 'IntersectionObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeIntersectionObserver,
+    })
+
+    let attempts = 0
+    let rejectFirst: ((reason: Error) => void) | undefined
+    const base = apiWithPrDetails(async () => null)
+    const api = {
+      ...base,
+      threads: {
+        ...base.threads,
+        backfillPrRefs: async (): Promise<void> => {
+          attempts += 1
+          if (attempts === 1) {
+            return new Promise((_resolve, reject) => {
+              rejectFirst = reject
+            })
+          }
+        },
+      },
+    } satisfies ApiClient
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [thread('legacy', 'Legacy thread')],
+      activeThreadId: 'legacy',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const cleanup = mountProjectsPane(host, store, api)
+    try {
+      const row = rowByTitle('Legacy thread')
+      assert.ok(row)
+      assert.ok(deliver)
+      assert.ok(observer)
+      assert.equal(observed.has(row), true)
+      const rect = row.getBoundingClientRect()
+      const entry = {
+        target: row,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: rect,
+        intersectionRect: rect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+
+      deliver([entry], observer)
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(attempts, 1)
+      assert.equal(observed.has(row), false)
+
+      // A normal sidebar update replaces both the row and observer while the
+      // first IPC request remains in flight. The replacement observer sees the
+      // row but skips its leased id, then unobserves it.
+      store.emit('threads_changed')
+      const currentRow = rowByTitle('Legacy thread')
+      assert.ok(currentRow)
+      assert.notEqual(currentRow, row)
+      assert.ok(deliver)
+      assert.ok(observer)
+      assert.equal(observed.has(currentRow), true)
+      const currentRect = currentRow.getBoundingClientRect()
+      const currentEntry = {
+        target: currentRow,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: currentRect,
+        intersectionRect: currentRect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+      deliver([currentEntry], observer)
+      assert.equal(observed.has(currentRow), false)
+      assert.equal(attempts, 1)
+
+      assert.ok(rejectFirst)
+      rejectFirst(new Error('transient backfill failure'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // A render during the backoff must not make the still-visible row
+      // immediately eligible again. The replacement observer may report it,
+      // but the failed request keeps its lease until the retry timer expires.
+      store.emit('threads_changed')
+      const retryRow = rowByTitle('Legacy thread')
+      assert.ok(retryRow)
+      assert.notEqual(retryRow, currentRow)
+      assert.ok(deliver)
+      assert.ok(observer)
+      const retryRect = retryRow.getBoundingClientRect()
+      const retryEntry = {
+        target: retryRow,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: retryRect,
+        intersectionRect: retryRect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+      deliver([retryEntry], observer)
+      await Promise.resolve()
+      assert.equal(attempts, 1)
+
+      t.mock.timers.tick(999)
+      assert.equal(observed.has(retryRow), false)
+      t.mock.timers.tick(1)
+      assert.equal(observed.has(retryRow), true)
+
+      deliver([retryEntry], observer)
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(attempts, 2)
+    } finally {
+      cleanup()
+      Object.defineProperty(globalThis, 'IntersectionObserver', {
+        configurable: true,
+        writable: true,
+        value: originalObserver,
+      })
+    }
   })
 })
