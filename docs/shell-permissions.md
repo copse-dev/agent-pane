@@ -597,4 +597,6 @@ the registry still fails contained and offers to run outside.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.
+`shell-gate-replay.test.ts` replays the public command test set through the real gate under each
+platform situation and pins every outcome (`benchmarks/escalation-review/testset/gate-replay.jsonl`).
 Update this document and those tests with any intentional contract change.
