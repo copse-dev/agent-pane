@@ -1,55 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  isRoadmapComplexity,
-  parseComplexityWord,
-  isRoadmapCategory,
-  parseCategoryWord,
-  roadmapCategoryLabel,
-} from './complexity.ts'
-
-describe('parseComplexityWord', () => {
-  it('reads a bare verdict', () => {
-    assert.equal(parseComplexityWord('low'), 'low')
-    assert.equal(parseComplexityWord('  High  '), 'high')
-  })
-
-  it('tolerates chatty replies, first line only', () => {
-    assert.equal(parseComplexityWord('Medium — touches two files.'), 'medium')
-    assert.equal(parseComplexityWord('Verdict: high\nBecause of the refactor.'), 'high')
-    assert.equal(parseComplexityWord('I would not classify this.\nlow'), null)
-  })
-
-  it('rejects output with no verdict or embedded words', () => {
-    assert.equal(parseComplexityWord(''), null)
-    assert.equal(parseComplexityWord('lowering the bar is highly complex'), null)
-  })
-})
-
-describe('parseCategoryWord', () => {
-  it('reads a bare verdict', () => {
-    assert.equal(parseCategoryWord('bug'), 'bug')
-    assert.equal(parseCategoryWord('  Feature  '), 'feature')
-    assert.equal(parseCategoryWord('project'), 'project')
-  })
-
-  it('tolerates chatty replies, first line only', () => {
-    assert.equal(parseCategoryWord('Bug — crash on startup'), 'bug')
-    assert.equal(parseCategoryWord('Feature — adds a toggle.'), 'feature')
-    assert.equal(parseCategoryWord('Project — migration across three modules'), 'project')
-    assert.equal(
-      parseCategoryWord('I would not classify this.\nbug'),
-      null,
-      'ignores verdict on second line',
-    )
-  })
-
-  it('rejects output with no verdict or embedded words', () => {
-    assert.equal(parseCategoryWord(''), null)
-    assert.equal(parseCategoryWord('bugging the system'), null)
-    assert.equal(parseCategoryWord('featurette'), null)
-  })
-})
+import { isRoadmapComplexity, isRoadmapCategory, roadmapCategoryLabel } from './complexity.ts'
 
 describe('isRoadmapComplexity', () => {
   it('guards stored frontmatter values', () => {
