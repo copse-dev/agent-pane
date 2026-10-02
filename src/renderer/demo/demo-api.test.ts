@@ -197,6 +197,64 @@ describe('createDemoApi decisions surface', () => {
   })
 })
 
+describe('createDemoApi scenario-provided state', () => {
+  const bare: DemoScenario = {
+    id: 'bare',
+    label: 'No extras',
+    project: { id: 'demo-bare-project', path: '/demo/copse', name: 'copse-demo' },
+    settings: {},
+    threads: [],
+  }
+
+  it('keeps a dropped archive by name and size, since there is no store to hold it', async () => {
+    const api = createDemoApi(bare)
+    const ref = await api.archive.attach('demo-bare-project', 'thread-1', {
+      name: 'brand-kit.zip',
+      bytes: new Uint8Array(2_048),
+    })
+    assert.deepEqual(ref, {
+      path: '/demo/demo-bare-project/thread-1/blobs/brand-kit.zip',
+      name: 'brand-kit.zip',
+      sizeBytes: 2_048,
+    })
+  })
+
+  it('offers no follow-ups, PR description, or change counts unless a scenario sets them', async () => {
+    const api = createDemoApi(bare)
+    assert.deepEqual(await api.agent.suggestFollowUps('p', 't', '{}'), [])
+    assert.equal(await api.agent.suggestPrBody('p', 't', '{}'), null)
+    assert.equal(await api.git.changeStats('p', 't'), null)
+    assert.deepEqual(
+      (await api.mcp.list()).map((server) => server.name),
+      ['proton-mcp'],
+    )
+  })
+
+  it('answers with the follow-ups, PR description, and MCP servers a scenario declares', async () => {
+    const scenario = DEMO_SCENARIOS.find((entry) => entry.id === 'site-create-pr')
+    assert.ok(scenario?.prBody)
+    const api = createDemoApi(scenario)
+    assert.deepEqual(
+      (await api.agent.suggestFollowUps('p', 't', '{}')).map((bubble) => bubble.action),
+      ['create-pr', 'review'],
+    )
+    assert.equal(await api.agent.suggestPrBody('p', 't', '{}'), scenario.prBody)
+    assert.deepEqual(await api.git.changeStats('p', 't'), { additions: 86, deletions: 12 })
+
+    const mcp = DEMO_SCENARIOS.find((entry) => entry.id === 'site-mcp-permissions')
+    assert.ok(mcp)
+    const mcpApi = createDemoApi(mcp)
+    assert.deepEqual(
+      (await mcpApi.mcp.list()).map((server) => server.name),
+      ['github'],
+    )
+    assert.deepEqual(
+      (await mcpApi.toolPermissions.list()).groups.map((group) => group.name),
+      ['Copse tools', 'github'],
+    )
+  })
+})
+
 describe('createDemoApi pane expansion', () => {
   it('moves the Browser restore control into the toolbar, then returns it home', async () => {
     assert.ok(tracedScenario)

@@ -270,6 +270,10 @@ import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import {
+  MCP_UI_CANVAS_PLUGIN_ID,
+  ANIMATED_EXPLAINERS_SETTING_ID,
+} from '@copse/agent/canvas-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -2350,6 +2354,10 @@ export function registerAllHandlers(
         [rawValue],
       )
       await getPluginService().setSetting(id, key, value)
+      if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
+        const statuses = await reloadMcpServersForPluginToggle(registry, id)
+        if (statuses) win.webContents.send('mcp:status-changed', statuses)
+      }
       return { plugins: getPluginService().list() }
     },
   )

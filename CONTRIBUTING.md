@@ -1,7 +1,8 @@
 # Contributing to Copse
 
 Thanks for wanting to help. This file is the short path; [AGENTS.md](AGENTS.md)
-is the full contributor contract.
+is the full contributor contract. Everyone taking part is expected to follow the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 ## Before you open a PR
 
