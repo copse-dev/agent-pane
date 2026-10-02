@@ -453,7 +453,8 @@ the parent's screenshot comment links a view-only GitHub compare page of those
 PNGs against the rendered head, so reviewing them needs no download. The
 review blocks merging: a required `Screenshot review` status stays pending until
 a maintainer adds `accept-screenshots` (the bot fast-forwards the PR branch to
-the compare commit) or `decline-screenshots` (nothing is committed). To accept
+the compare commit) or `decline-screenshots` (nothing is committed); ticking
+individual screenshots in the comment plus its last box commits only those. To accept
 them by hand, cherry-pick the compare commit with the command the comment gives, or
 download that artifact, copy its `tests/e2e/screenshots/` contents into the
 checkout, and commit only the intentional updates. `pnpm run filter:screenshots`

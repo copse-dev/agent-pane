@@ -591,9 +591,9 @@ test('switchProject passes sshHost through to workspace.set', async () => {
       { id: 'local', path: '/local', name: 'Local' },
       {
         id: 'remote',
-        path: '/etc/ddg',
-        name: 'ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/srv/app',
+        name: 'app',
+        sshHost: 'remote-dev-testing-016',
       },
     ],
     activeProjectId: 'local',
@@ -619,7 +619,7 @@ test('switchProject passes sshHost through to workspace.set', async () => {
     sshWorkspace: {
       getStates: async () => [
         {
-          hostId: 'euw-serp-dev-testing16',
+          hostId: 'remote-dev-testing-016',
           status: 'connected',
           label: 'dev',
           target: 'dev',
@@ -631,7 +631,7 @@ test('switchProject passes sshHost through to workspace.set', async () => {
 
   switchProject(store, api, 'remote')
   await waitUntil(() => store.getState().activeProjectId === 'remote')
-  assert.deepEqual(sets.at(-1), { path: '/etc/ddg', sshHost: 'euw-serp-dev-testing16' })
+  assert.deepEqual(sets.at(-1), { path: '/srv/app', sshHost: 'remote-dev-testing-016' })
 })
 
 test('restoreProject does not emit projects_changed before threads are loaded', async () => {

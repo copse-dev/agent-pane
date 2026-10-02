@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { stampRoadmapCategory } from './roadmap-category.ts'
+import { ROADMAP_CATEGORY_QUESTION, stampRoadmapCategory } from './roadmap-category.ts'
+import { backgroundChoicePrompt } from './classifiers/background-classification.ts'
 import {
   addKnowledgeNote,
   deleteKnowledgeNote,
@@ -105,5 +106,26 @@ describe('stampRoadmapCategory', () => {
     )
     assert.equal(getKnowledgeNote(note.id)?.fields['category'], undefined)
     assert.equal(stamped, 0)
+  })
+})
+
+describe('ROADMAP_CATEGORY_QUESTION', () => {
+  it('renders the same prompt the small-tasks model was tuned on', () => {
+    // The wording the model path used before it moved onto background questions.
+    const previous =
+      'Classify the coding task below as exactly one word: bug, feature, or project.\n' +
+      '- bug: fixing broken behavior — a crash, wrong output, an exception, a regression, ' +
+      'or something that does not work as documented.\n' +
+      '- feature: new functionality or an enhancement to existing behavior — a new control, ' +
+      'command, option, or small improvement, contained to a familiar area.\n' +
+      '- project: a multi-part initiative — a new subsystem, a migration, an architectural ' +
+      'change, or a goal that needs design and several distinct pieces of work before it lands.\n' +
+      'Use all three options: not every task is a feature. If torn between feature and project, ' +
+      'pick feature unless the work clearly spans multiple coordinated pieces.\n' +
+      'Reply with ONLY the word.\n\nTask:\n'
+    assert.equal(
+      backgroundChoicePrompt(ROADMAP_CATEGORY_QUESTION, 'Add a flag'),
+      previous + 'Add a flag',
+    )
   })
 })
