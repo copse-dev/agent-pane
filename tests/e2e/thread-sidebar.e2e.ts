@@ -253,17 +253,18 @@ describe('default thread sidebar with real Git status', function () {
     await $('[aria-label="Find threads"]').setValue('')
     await $('[aria-label="Filter by project"]').selectByAttribute('value', '')
 
-    const dirtyRow = $('.thread-browser [data-thread-id="sidebar-dirty-thread"]')
-    await dirtyRow.click({ button: 'right' })
+    // Rows are rebuilt as Git status and ages update, so look elements up again
+    // for each action instead of holding a handle across renders.
+    const dirtyRow = '.thread-browser [data-thread-id="sidebar-dirty-thread"]'
+    await $(dirtyRow).click({ button: 'right' })
     await $('.context-menu').waitForDisplayed()
     assert.deepEqual(await menuLabels(), ['Rename', 'Fork', 'Archive', 'Delete'])
     await saveAppScreenshot('thread-sidebar-row-menu.png')
     await $('.context-menu-item=Rename').click()
-    const rename = $('.thread-browser .chat-title-rename')
-    await expect(rename).toBeFocused()
-    await rename.setValue('Renamed from the sidebar')
+    await expect($('.thread-browser .chat-title-rename')).toBeFocused()
+    await $('.thread-browser .chat-title-rename').setValue('Renamed from the sidebar')
     await browser.keys('Enter')
-    await expect(dirtyRow.$('.chat-title')).toHaveText('Renamed from the sidebar')
+    await expect($(`${dirtyRow} .chat-title`)).toHaveText('Renamed from the sidebar')
 
     await $('.thread-browser [data-thread-id="sidebar-earlier-thread"]').click({ button: 'right' })
     await $('.context-menu').waitForDisplayed()
@@ -289,8 +290,8 @@ describe('default thread sidebar with real Git status', function () {
     await saveAppScreenshot('thread-sidebar-project-menu.png')
     await browser.keys('Escape')
 
-    await dirtyRow.click({ button: 'right' })
+    await $(dirtyRow).click({ button: 'right' })
     await $('.context-menu-item=Archive').click()
-    await expect(dirtyRow).not.toBeExisting()
+    await expect($(dirtyRow)).not.toBeExisting()
   })
 })

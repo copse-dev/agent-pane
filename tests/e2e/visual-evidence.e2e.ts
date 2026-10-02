@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedVisualEvidenceFixture } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -6,10 +8,23 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 // event ownership and blob folding; this reaches the persisted thread through
 // real Electron, asserts the compact/expanded geometry, and leaves both states
 // as reviewable screenshots.
+/**
+ * Pixel width of a PNG, from its IHDR chunk. The fixture embeds sidebar
+ * captures that other specs re-render at the current pane width, so the
+ * expected size is read from the file rather than assumed.
+ */
+function pngWidth(path: string): number {
+  return readFileSync(path).readUInt32BE(16)
+}
+
 describe('assistant visual evidence', () => {
+  let captureWidths: number[] = []
   before(async () => {
     resetUserData()
     seedVisualEvidenceFixture(process.cwd())
+    captureWidths = ['projects-drag-before.png', 'projects-drag-after.png'].map((name) =>
+      pngWidth(join(process.cwd(), 'tests/e2e/screenshots', name)),
+    )
     await browser.reloadSession()
   })
 
@@ -52,7 +67,7 @@ describe('assistant visual evidence', () => {
     const card = $('.visual-evidence-card')
     await expect(card).toHaveAttribute('open')
 
-    const state = await browser.execute(() => {
+    const state = await browser.execute((expectedWidths) => {
       const evidence = document.querySelector<HTMLDetailsElement>('.visual-evidence-card')
       const images = Array.from(
         evidence?.querySelectorAll<HTMLImageElement>('.visual-evidence-image') ?? [],
@@ -67,10 +82,12 @@ describe('assistant visual evidence', () => {
           (node) => node.textContent ?? '',
         ),
         imageCount: images.length,
-        loaded: images.every((image) => image.complete && image.naturalWidth === 480),
+        loaded: images.every(
+          (image, index) => image.complete && image.naturalWidth === expectedWidths[index],
+        ),
         expandable: images.every((image) => image.tabIndex === 0),
       }
-    })
+    }, captureWidths)
 
     expect(state.labels).toEqual(['Before', 'After'])
     expect(state.sourceUrls).toEqual([

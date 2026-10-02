@@ -26,7 +26,7 @@ describe('thread + terminal rename / archive', () => {
     resetUserData()
   })
 
-  it('double-click renames a thread; right-click offers Rename, Fork and Archive', async function () {
+  it('double-click renames a thread; right-click offers Rename, Fork, Archive and Delete', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -40,7 +40,7 @@ describe('thread + terminal rename / archive', () => {
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
     )
-    expect(labels).toEqual(['Rename', 'Fork', 'Archive'])
+    expect(labels).toEqual(['Rename', 'Fork', 'Archive', 'Delete'])
     await saveAppScreenshot('thread-context-menu-rename-archive.png')
 
     // Dismiss and exercise double-click rename on the keep thread.

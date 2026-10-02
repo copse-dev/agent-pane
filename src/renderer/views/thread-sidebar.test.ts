@@ -301,6 +301,12 @@ describe('default thread sidebar', () => {
     const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
     assert.ok(input)
     assert.equal(document.activeElement, input)
+    // Live updates must not rebuild the row out from under the open input.
+    fixture.store.emit('threads_changed')
+    fixture.changed()
+    await delay(1150)
+    assert.equal(document.querySelector('.chat-title-rename'), input)
+    assert.equal(document.activeElement, input)
     input.value = 'Renamed work'
     input.dispatchEvent(new Event('input'))
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -463,6 +469,24 @@ describe('default thread sidebar', () => {
     find('[data-group-heading="changes"]').focus()
     find('[data-group-heading="changes"]').click()
     assert.equal(document.activeElement, find('[data-group-heading="changes"]'))
+  })
+
+  it('keeps live rows when an update changes nothing they show', async () => {
+    const fixture = mount()
+    await delay(80)
+    const row = find('[data-thread-id="finished"]')
+    fixture.store.emit('threads_changed')
+    await delay(50)
+    assert.equal(find('[data-thread-id="finished"]'), row)
+    fixture.store.setState({
+      threads: fixture.store
+        .getState()
+        .threads.map((item) => (item.id === 'finished' ? { ...item, title: 'Retitled' } : item)),
+    })
+    fixture.store.emit('threads_changed')
+    await delay(50)
+    assert.notEqual(find('[data-thread-id="finished"]'), row)
+    assert.equal(find('[data-thread-id="finished"] .chat-title').textContent, 'Retitled')
   })
 
   it('counts unique paths and includes untracked-only work', () => {

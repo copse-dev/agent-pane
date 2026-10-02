@@ -46,13 +46,13 @@ describe('project switch with recoverable threads', () => {
     await expect($('.thread-project-manager [data-project-id="workspace"] .chat-title')).toHaveText(
       'Workspace notes',
     )
-    await expect($('.orphan-name')).toHaveText('Recoverable notes')
+    await expect($('.thread-project-manager .orphan-name')).toHaveText('Recoverable notes')
 
     await $('.thread-project-manager [data-project-id="skills"] .project-row').click()
     await expect($('.thread-project-manager [data-project-id="skills"] .chat-title')).toHaveText(
       'Skills notes',
     )
-    await expect($('.orphan-name')).toHaveText('Recoverable notes')
+    await expect($('.thread-project-manager .orphan-name')).toHaveText('Recoverable notes')
     assert.match(
       (await $('.thread-project-manager [data-project-id="skills"] .project-row').getAttribute(
         'class',
@@ -65,6 +65,6 @@ describe('project switch with recoverable threads', () => {
     await expect($('.thread-project-manager [data-project-id="workspace"] .chat-title')).toHaveText(
       'Workspace notes',
     )
-    await expect($('.orphan-name')).toHaveText('Recoverable notes')
+    await expect($('.thread-project-manager .orphan-name')).toHaveText('Recoverable notes')
   })
 })

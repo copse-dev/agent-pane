@@ -82,6 +82,8 @@ export function mountThreadSidebar(
   let sshWorkspaceEnabled = false
   // Inline rename state survives `render()`, which rebuilds every row.
   let renaming: { key: string; threadId: string; draft: string } | null = null
+  // Markup of the list as last rendered; an identical render keeps the live rows.
+  let renderedSignature = ''
   const collapsed = new Set<string>()
   const timings = trackRunTimings(store, Date.now)
   const data = createThreadBrowserData(store, api, scheduleRender)
@@ -382,7 +384,8 @@ export function mountThreadSidebar(
     if (save && next) {
       setThreadTitle(store, threadId, next)
       maybeRenameThreadBranch(store, api, threadId)
-    } else render()
+    }
+    render()
     for (const row of list.querySelectorAll<HTMLElement>('[data-entry-key]')) {
       if (row.dataset['entryKey'] === key) row.focus()
     }
@@ -417,6 +420,9 @@ export function mountThreadSidebar(
 
   function render(): void {
     if (disposed) return
+    // Rebuilding the list would replace an open rename input, dropping its
+    // focus or committing it through blur. Finishing the rename renders again.
+    if (renaming && list.querySelector('.chat-title-rename')) return
     data.load()
     const state = store.getState()
     const targetProjectId = state.expandedProjectId ?? state.activeProjectId
@@ -663,6 +669,17 @@ export function mountThreadSidebar(
       })
       nodes.push(showMore)
     }
+    // Most updates (a Git read landing, a streamed token) change nothing this
+    // list shows. Keeping the live rows then preserves hover, focus and the
+    // element a click is already aimed at.
+    const signature = nodes.map((node) => node.outerHTML).join('\n')
+    if (signature === renderedSignature) {
+      const liveHeader = list.querySelector('[data-group="changes"] .thread-browser-group-header')
+      if (liveHeader && workToggle.parentElement !== liveHeader) liveHeader.append(workToggle)
+      if (focusKey === 'work-toggle') workToggle.focus()
+      return
+    }
+    renderedSignature = signature
     list.replaceChildren(...nodes)
     prBackfill.observe(backfillRows)
     if (focusKey === 'work-toggle') workToggle.focus()
@@ -797,6 +814,10 @@ export function mountThreadSidebar(
             ? warningIcon
             : checkIcon
     row.dataset['state'] = waitingSince !== undefined ? 'waiting' : thread.status
+    // The same state hooks the project manager's rows carry.
+    row.classList.toggle('is-running', thread.status === 'running')
+    row.classList.toggle('is-unread', thread.unreadAt !== undefined && !selected)
+    row.classList.toggle('needs-attention', waitingSince !== undefined)
     const titleLine = el('span', { class: 'thread-browser-title-line' }, title)
     const prRollup = prStatus.rollup(thread)
     if (prRollup) {
