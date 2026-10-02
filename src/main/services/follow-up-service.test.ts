@@ -9,9 +9,12 @@ import {
   parseGhOpenPr,
   parseGhOpenPrList,
 } from './github/pr-context-service.ts'
+import type { ClassifierRequest, ClassifierResult } from '@copse/llm/classifiers/types.ts'
 import {
+  FOLLOW_UP_PROBABILITY,
   buildPluginFollowUps,
   buildDeterministicFollowUps,
+  classifyFollowUps,
   fillFollowUpSuggestions,
   followUpExecutorForModels,
   pluginFollowUpConditionMet,
@@ -551,4 +554,78 @@ describe('debug-ci deterministic bubble', () => {
       }
     }
   }
+})
+
+describe('classifyFollowUps', () => {
+  const context = {
+    userMessage: 'Fix the flaky login test',
+    assistantMessage: 'I changed the retry logic in login.test.ts.',
+    toolNames: ['edit_file'],
+  }
+
+  function answering(probabilities: Record<string, number>): ClassifierResult {
+    return {
+      profileId: 'kev',
+      adapter: 'systemone',
+      requestedModel: 'kev',
+      model: 'kev-fixture',
+      elapsedMs: 1,
+      answers: Object.fromEntries(
+        Object.entries(probabilities).map(([id, probability]) => [
+          id,
+          { type: 'boolean', probability },
+        ]),
+      ),
+    }
+  }
+
+  it('asks one yes/no question per preset about the exchange, within the pick budget', async () => {
+    const captured: { requests: readonly ClassifierRequest[]; timeoutMs?: number | undefined } = {
+      requests: [],
+    }
+    await classifyFollowUps(context, async (requests, options) => {
+      captured.requests = requests
+      captured.timeoutMs = options?.timeoutMs
+      return null
+    })
+    assert.equal(captured.requests.length, 1)
+    const request = captured.requests[0]
+    assert.ok(request)
+    assert.deepEqual(Object.keys(request.questions), ['explain', 'run-tests', 'continue'])
+    assert.equal(request.questions['run-tests']?.type, 'boolean')
+    const state = typeof request.state === 'string' ? request.state : ''
+    assert.match(state, /User:\nFix the flaky login test/)
+    assert.match(state, /Tools used: edit_file/)
+    assert.equal(captured.timeoutMs, 15_000)
+  })
+
+  it('offers presets at or above the bar, likeliest first, at most two', async () => {
+    const picks = await classifyFollowUps(context, async () => [
+      answering({ explain: FOLLOW_UP_PROBABILITY, 'run-tests': 0.95, continue: 0.9 }),
+    ])
+    assert.ok(picks)
+    assert.deepEqual(
+      picks.map((pick) => pick.id),
+      ['run-tests', 'continue'],
+    )
+    assert.equal(
+      picks.at(0)?.prompt,
+      'Run the relevant tests for these changes and fix any failures.',
+    )
+  })
+
+  it('treats nothing above the bar as an answer, not a failure', async () => {
+    const picks = await classifyFollowUps(context, async () => [
+      answering({ explain: 0.2, 'run-tests': 0.69, continue: 0.1 }),
+    ])
+    assert.deepEqual(picks, [])
+  })
+
+  it('returns null when no classifier answers or an answer is not a yes/no', async () => {
+    assert.equal(await classifyFollowUps(context, async () => null), null)
+    assert.equal(
+      await classifyFollowUps(context, async () => [answering({ explain: 0.9, continue: 0.9 })]),
+      null,
+    )
+  })
 })
