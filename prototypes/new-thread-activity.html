@@ -4242,6 +4242,45 @@
           grid-template-columns: 1fr;
         }
       }
+
+      .autoclock {
+        width: 12px;
+        height: 12px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        margin-left: 6px;
+        vertical-align: -1px;
+        opacity: 0.6;
+      }
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 6px;
+        font-size: 11px;
+        color: var(--muted);
+        margin-left: 6px;
+        white-space: nowrap;
+        font-weight: 400;
+      }
+      .tb-fold-n {
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .fold-kids {
+        margin-left: 18px;
+      }
+      .tb-fold .tb-name,
+      .activity-row.fold .name {
+        font-weight: 400;
+      }
+      .activity-row.fold .glyph,
+      .tb-fold .tb-glyph {
+        color: var(--muted);
+      }
     </style>
   </head>
   <body>
@@ -4750,6 +4789,67 @@
           pr: x[7],
         })
       })
+      const AUTO = {
+        nightly: { name: 'Nightly dependency check', project: 'agent-pane' },
+        links: { name: 'Docs link checker', project: 'docs-site' },
+      }
+      const _ap = new URLSearchParams(location.search)
+      const _ls = function (k) {
+        try {
+          return localStorage.getItem(k)
+        } catch (x) {
+          return null
+        }
+      }
+      const runsMany = (_ap.get('runs') || _ls('runs')) === 'many'
+      let failBreak = (_ap.get('fail') || _ls('failmode')) === 'break'
+      function ageStr(m) {
+        return m < 60 ? m + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd'
+      }
+      function pushRun(sid, kind, mins, failed) {
+        const a = AUTO[sid]
+        threads.push({
+          title: a.name,
+          project: a.project,
+          sched: sid,
+          kind: kind,
+          failed: !!failed,
+          need: kind === 'attention' ? 'approval' : undefined,
+          state: kind === 'attention' ? 'Needs you' : kind === 'done' ? 'Done' : 'Running',
+          activity:
+            kind === 'attention'
+              ? 'Approve pnpm update --latest?'
+              : kind === 'working'
+                ? 'Running command…'
+                : failed
+                  ? 'Run failed (exit 1)'
+                  : 'Completed',
+          out:
+            kind === 'attention'
+              ? '$ pnpm update --latest\nRuns outside the sandbox (network). Waiting for your approval.'
+              : undefined,
+          age: ageStr(mins),
+          longAge: (kind === 'done' ? 'finished ' : 'started ') + ageStr(mins) + ' ago',
+          created: mins,
+          updated: mins,
+          files: 0,
+          pr: null,
+        })
+      }
+      for (let i = 0; i < (runsMany ? 7 : 1); i++) pushRun('nightly', 'attention', 5 + i * 6)
+      pushRun('links', 'working', 2)
+      for (let i = 0; i < 27; i++) pushRun('nightly', 'done', (i + 1) * 1440 + 5, i === 2)
+      for (let i = 0; i < 24; i++) pushRun('links', 'done', 15 + i * 15, i === 4 || i === 7)
+      function autoScript(t) {
+        if (!t.sched) return null
+        return {
+          body: t.failed
+            ? '<p>The run failed with exit code 1.</p><p class="muted">Open the thread to see the log and re-run.</p>'
+            : t.sched === 'nightly'
+              ? '<p>No dependency updates needed. Lockfile unchanged.</p>'
+              : '<p>Checked 412 links. All reachable.</p>',
+        }
+      }
       threads.forEach(function (t, i) {
         t.ord = i
       })
@@ -4796,6 +4896,205 @@
         if (sortRev) ids.reverse()
         return ids
       }
+      const foldOpen = {},
+        foldShown = {}
+      const CLOCK =
+        '<svg class="autoclock" viewBox="0 0 24 24" role="img" aria-label="Automation run"><title>Automation run</title><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+      let kidMode = false
+      function titleHtml(t) {
+        // Inside an expanded fold the schedule name is already the heading.
+        if (kidMode)
+          return (t.failed ? 'Failed run' : 'Run') + '<span class="pill">' + t.age + ' ago</span>'
+        return (
+          escapeText(t.title) +
+          (t.sched ? CLOCK : '') +
+          (t.failed && failBreak ? '<span class="pill">failed</span>' : '')
+        )
+      }
+      // Automation runs: only runs that need you or are working stay as their own
+      // rows. Finished runs fold into one row per schedule, and more than three
+      // pending approvals from one schedule collapse into one row.
+      function foldIds(ids) {
+        const pend = {},
+          seen = {},
+          groups = {}
+        ids.forEach(function (i) {
+          const t = threads[i]
+          if (t.sched && t.kind === 'attention') pend[t.sched] = (pend[t.sched] || 0) + 1
+        })
+        const out = []
+        ids.forEach(function (i) {
+          const t = threads[i]
+          if (!t.sched || t.kind === 'working') return out.push(i)
+          if (t.kind === 'attention') {
+            if (pend[t.sched] <= 3) return out.push(i)
+            const k = 'm' + t.sched
+            if (!groups[k]) {
+              groups[k] = { m: t.sched, ids: [] }
+              out.push(groups[k])
+            }
+            groups[k].ids.push(i)
+            return
+          }
+          if (t.failed && failBreak) return out.push(i)
+          const k = 'f' + t.sched
+          if (!groups[k]) {
+            groups[k] = { f: t.sched, ids: [] }
+            out.push(groups[k])
+          }
+          groups[k].ids.push(i)
+        })
+        // Fold rows lead the finished section, so they are not hidden behind Show more.
+        const folds = out.filter(function (x) {
+          return typeof x === 'object' && x.f
+        })
+        const rest = out.filter(function (x) {
+          return !(typeof x === 'object' && x.f)
+        })
+        let at = rest.findIndex(function (x) {
+          return typeof x === 'number' && threads[x].kind === 'done'
+        })
+        if (at < 0) at = rest.length
+        return rest.slice(0, at).concat(folds, rest.slice(at))
+      }
+      function autoRow(mk, where, plain) {
+        const sid = mk.f || mk.m,
+          a = AUTO[sid],
+          first = threads[mk.ids[0]]
+        const chev = function (open) {
+          return (
+            '<svg class="gl sm' +
+            (open ? '' : ' rot') +
+            '" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
+          )
+        }
+        const side = where === 's'
+        if (mk.m) {
+          const label = escapeText(a.name) + CLOCK
+          const sub = mk.ids.length + ' need you · open in Activity'
+          return side
+            ? '<button class="tb-row attention' +
+                (plain ? ' plain' : '') +
+                '" data-foldmany="' +
+                mk.ids[0] +
+                '"><span class="tb-glyph">' +
+                glyphFor(first) +
+                '</span><span class="tb-name">' +
+                label +
+                '</span>' +
+                (plain
+                  ? '<span class="tb-fold-n">' + mk.ids.length + '</span>'
+                  : '<span class="tb-age"><span class="pr-slot"></span><span class="agetxt">' +
+                    first.age +
+                    '</span></span><span class="tb-meta"><span class="tb-sub">' +
+                    sub +
+                    '</span><span class="tb-proj">' +
+                    escapeText(a.project) +
+                    '</span></span>') +
+                '</button>'
+            : '<button class="activity-row attention" data-foldmany="' +
+                mk.ids[0] +
+                '"><span class="glyph" aria-hidden="true">' +
+                glyphFor(first) +
+                '</span><span class="name">' +
+                label +
+                '</span><span class="age"><span class="pr-slot"></span><span class="agetxt">' +
+                first.age +
+                '</span></span><span class="second"><span class="task">' +
+                sub +
+                '</span><span class="project-name">' +
+                escapeText(a.project) +
+                '</span></span></button>'
+        }
+        const key = where + sid + (plain ? 'p' : '')
+        const open = !!foldOpen[key]
+        const nFail = mk.ids.filter(function (i) {
+          return threads[i].failed
+        }).length
+        const n = mk.ids.length
+        const sub =
+          n + ' finished run' + (n === 1 ? '' : 's') + (nFail ? ' · ' + nFail + ' failed' : '')
+        const cap = foldShown[key] || 10
+        const kid = function (i) {
+          kidMode = true
+          const h = side ? sideRow(i, true) : row(i)
+          kidMode = false
+          return h
+        }
+        let kids = ''
+        if (open) {
+          kids =
+            '<div class="fold-kids">' +
+            mk.ids.slice(0, cap).map(kid).join('') +
+            (n > cap
+              ? '<button class="more more-' +
+                where +
+                '" data-foldmore="' +
+                key +
+                '">Show more (' +
+                (n - cap) +
+                ')</button>'
+              : '') +
+            '</div>'
+        }
+        const head = side
+          ? '<button class="tb-row tb-fold' +
+            (plain ? ' plain' : '') +
+            '" data-foldtoggle="' +
+            key +
+            '" aria-expanded="' +
+            open +
+            '"><span class="tb-glyph">' +
+            chev(open) +
+            '</span><span class="tb-name">' +
+            escapeText(a.name) +
+            CLOCK +
+            (nFail ? '<span class="pill">' + nFail + ' failed</span>' : '') +
+            '</span>' +
+            (plain
+              ? '<span class="tb-fold-n">' + n + '</span>'
+              : '<span class="tb-age"><span class="pr-slot"></span><span class="agetxt">' +
+                first.age +
+                '</span></span><span class="tb-meta"><span class="tb-sub">' +
+                sub +
+                '</span><span class="tb-proj">' +
+                escapeText(a.project) +
+                '</span></span>') +
+            '</button>'
+          : '<button class="activity-row done fold" data-foldtoggle="' +
+            key +
+            '" aria-expanded="' +
+            open +
+            '"><span class="glyph" aria-hidden="true">' +
+            chev(open) +
+            '</span><span class="name">' +
+            escapeText(a.name) +
+            CLOCK +
+            '</span><span class="age"><span class="pr-slot"></span><span class="agetxt">' +
+            first.age +
+            '</span></span><span class="second"><span class="task">' +
+            sub +
+            '</span><span class="project-name">' +
+            escapeText(a.project) +
+            '</span></span></button>'
+        return head + kids
+      }
+      document.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-foldtoggle],[data-foldmore],[data-foldmany]')
+        if (!b) return
+        if (b.dataset.foldtoggle) {
+          const k = b.dataset.foldtoggle
+          foldOpen[k] = !foldOpen[k]
+        } else if (b.dataset.foldmore) {
+          const k = b.dataset.foldmore
+          foldShown[k] = (foldShown[k] || 10) + 10
+        } else {
+          selected = Number(b.dataset.foldmany)
+          if (opened !== null) showHome()
+        }
+        render()
+        renderSide()
+      })
       let newIn = null
       let selected = 0
       let opened = null
@@ -4819,6 +5118,7 @@
         return x
       }
       function row(i) {
+        if (typeof i === 'object') return autoRow(i, 'p', false)
         const t = threads[i]
         const done = t.kind === 'done'
         return (
@@ -4835,7 +5135,7 @@
           '" aria-hidden="true">' +
           glyphFor(t) +
           '</span><span class="name">' +
-          escapeText(t.title) +
+          titleHtml(t) +
           '</span><span class="age">' +
           '<span class="pr-slot">' +
           prIcon(t) +
@@ -4890,6 +5190,7 @@
         '<svg class="gl" viewBox="0 0 24 24"><path d="M10.27 21a2 2 0 0 0 3.46 0"/><path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"/></svg>'
       let compact = false
       function sideRow(i, plain) {
+        if (typeof i === 'object') return autoRow(i, 's', !!plain)
         const t = threads[i]
         const cmp = compact && !plain
         if (cmp) plain = true
@@ -4907,7 +5208,7 @@
           '<span class="tb-glyph">' +
           glyphFor(t) +
           '</span><span class="tb-name">' +
-          escapeText(t.title) +
+          titleHtml(t) +
           '</span>' +
           (cmp
             ? prIcon(t) + '<span class="tb-age">' + t.age + '</span>'
@@ -4958,7 +5259,7 @@
           '"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>' +
           (c
             ? ''
-            : limited('t', n, ids, function (i) {
+            : limited('t', n, foldIds(ids), function (i) {
                 return sideRow(i, true)
               })) +
           '</div>'
@@ -5016,7 +5317,7 @@
             })
             .join('')
         } else if (groupBy === 'none') {
-          out = limited('s', 'flat', flatIds(), function (i) {
+          out = limited('s', 'flat', foldIds(flatIds()), function (i) {
             return sideRow(i, false)
           })
         } else {
@@ -5026,7 +5327,7 @@
             ['Recent', 'done'],
           ]
             .map(function (g) {
-              const ids = idx(g[1], false, true)
+              const ids = foldIds(idx(g[1], false, true))
               if (!ids.length) return ''
               return (
                 '<div class="tb-sec"><span>' +
@@ -5479,7 +5780,7 @@
       const panelCollapsed = { working: true }
       const OPTS = { 'Mobile view fixes': ['850px', '600px', 'Both'] }
       function detailMain(t) {
-        const sc = SCRIPTS[t.title]
+        const sc = SCRIPTS[t.title] || autoScript(t)
         if (t.kind === 'attention' && t.need === 'ask') {
           const o = OPTS[t.title] || ['Yes', 'No']
           return (
@@ -5551,15 +5852,15 @@
         list.innerHTML =
           (a.length
             ? secHead('Needs you', 'attention', false) +
-              (panelCollapsed.attention ? '' : limited('p', 'attention', a, row))
+              (panelCollapsed.attention ? '' : limited('p', 'attention', foldIds(a), row))
             : '') +
           (w.length
             ? secHead('Working', 'working', a.length > 0) +
-              (panelCollapsed.working ? '' : limited('p', 'working', w, row))
+              (panelCollapsed.working ? '' : limited('p', 'working', foldIds(w), row))
             : '') +
           (d.length
             ? secHead('Recently finished', 'done', true) +
-              (panelCollapsed.done ? '' : limited('p', 'done', d, row))
+              (panelCollapsed.done ? '' : limited('p', 'done', foldIds(d), row))
             : '')
         list.querySelectorAll('[data-sec]').forEach(function (b) {
           b.addEventListener('click', function () {
@@ -6073,6 +6374,15 @@
           { label: 'Permissions', run: function () {} },
         ])
       })
+      function reloadWith(k, v) {
+        const u = new URL(location.href)
+        u.searchParams.set(k, v)
+        u.searchParams.set('fail', failBreak ? 'break' : 'badge')
+        try {
+          localStorage.setItem(k, v)
+        } catch (x) {}
+        location.href = u.toString()
+      }
       document.getElementById('protoBtn').addEventListener('click', function (e) {
         e.stopPropagation()
         const d = document.documentElement.dataset
@@ -6113,6 +6423,46 @@
                 try {
                   localStorage.setItem('attn', 'pink')
                 } catch (x) {}
+              },
+            },
+            { sep: true },
+            { head: 'Automation runs' },
+            {
+              label: '1 run needs you',
+              on: !runsMany,
+              run: function () {
+                reloadWith('runs', 'one')
+              },
+            },
+            {
+              label: '7 runs need you',
+              on: runsMany,
+              run: function () {
+                reloadWith('runs', 'many')
+              },
+            },
+            {
+              label: 'Failed runs: badge only',
+              on: !failBreak,
+              run: function () {
+                failBreak = false
+                try {
+                  localStorage.setItem('failmode', 'badge')
+                } catch (x) {}
+                render()
+                renderSide()
+              },
+            },
+            {
+              label: 'Failed runs: break out',
+              on: failBreak,
+              run: function () {
+                failBreak = true
+                try {
+                  localStorage.setItem('failmode', 'break')
+                } catch (x) {}
+                render()
+                renderSide()
               },
             },
             { sep: true },
