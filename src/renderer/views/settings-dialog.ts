@@ -1198,7 +1198,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading…</span>
@@ -1576,6 +1576,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading…</span>
+              </div>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="about">
@@ -1915,6 +1927,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   function showSection(id: SettingsSection): void {
     activeSection = id
+    renderPluginLists()
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
     renderNavSubheadings(id)
@@ -2066,8 +2079,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'customise') {
           void refreshSources()
-          void refreshPlugins()
         }
+        if (id === 'customise' || id === 'experimental') void refreshPlugins()
         if (id === 'storage') void refreshWorktrees()
         // Plugin toggles and config edits both change what this section claims,
         // and the open-time staged refresh already ran by the time a user comes
@@ -3901,10 +3914,54 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     return hint
   }
 
+  // Keep one live row per plugin: custom panels and model pickers own state and
+  // element ids. Move experimental rows into the active section instead of
+  // mounting duplicate controls, and return them to Customise on navigation.
+  let pluginEntries: { enabled: boolean; experimental: boolean; row: HTMLElement }[] | null = null
+
+  function renderPluginLists(): void {
+    // Cross-section search should only collect the fieldset holding the rows.
+    qsRequired(overlay, '#experimental-plugins-fieldset').hidden = activeSection !== 'experimental'
+    if (!pluginEntries) return
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? '#experimental-plugins-list' : '#plugins-list',
+      )
+      const entries = pluginEntries.filter(
+        (entry) => (activeSection === 'experimental' && entry.experimental) === experimental,
+      )
+      listEl.replaceChildren()
+      let lastEnabled: boolean | null = null
+      for (const entry of entries) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement('h4')
+          heading.className = 'plugins-group-heading'
+          heading.textContent = entry.enabled ? 'Active' : 'Inactive'
+          listEl.append(heading)
+          lastEnabled = entry.enabled
+        }
+        listEl.append(entry.row)
+      }
+      if (entries.length === 0) {
+        const empty = document.createElement('span')
+        empty.className = 'plugins-empty'
+        empty.textContent = experimental
+          ? 'No experimental plugins installed.'
+          : 'No plugins installed.'
+        listEl.append(empty)
+      }
+    }
+  }
+
   async function refreshPlugins(): Promise<void> {
-    const listEl = qsRequired(overlay, '#plugins-list')
-    const statusEl = qsRequired(overlay, '#plugins-reload-status')
-    statusEl.textContent = 'Loading…'
+    const statusEls = overlay.querySelectorAll('.plugins-load-status')
+    const setStatus = (text: string): void => {
+      statusEls.forEach((el) => {
+        el.textContent = text
+      })
+    }
+    setStatus('Loading…')
     try {
       // Two origins, one list. The registry owns lifecycle for everything Copse
       // installed; Cursor owns its own cache, so those rows are read-only. A
@@ -3915,60 +3972,46 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api.cursorPlugins.list().catch(() => []),
         api.bundledSkillPlugins.list().catch(() => []),
       ])
-      listEl.innerHTML = ''
-      if (
-        result.plugins.length === 0 &&
-        cursorPlugins.length === 0 &&
-        bundledPlugins.length === 0
-      ) {
-        const empty = document.createElement('span')
-        empty.className = 'plugins-empty'
-        empty.textContent = 'No plugins installed.'
-        listEl.append(empty)
-      } else {
-        // Enabled plugins first, disabled plugins after — so a scrapped plugin moves
-        // out of the way instead of sitting in the middle of the list. The two
-        // runs get a heading each: with rows this tall, "why is this one dimmed"
-        // is a question the list should answer before it is asked. A heading is
-        // skipped when nothing falls under it.
-        // One sequence, whatever installed the plugin. A Cursor plugin sorts in
-        // as `enabled: true` because it genuinely is — nothing gates
-        // `~/.cursor/plugins`, so it is contributing exactly like the rows
-        // around it, and the reader's question is "is this on", not "who
-        // packaged it". Origin is a badge on the row, not a section.
-        const entries: { id: string; enabled: boolean; render: () => HTMLElement }[] = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin),
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin),
-          })),
-          ...bundledPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: plugin.enabled && !plugin.suppressed,
-            render: () => makeBundledSkillPluginRow(plugin),
-          })),
-        ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
+      // Enabled plugins first, disabled plugins after — so a scrapped plugin moves
+      // out of the way instead of sitting in the middle of the list. The two
+      // runs get a heading each: with rows this tall, "why is this one dimmed"
+      // is a question the list should answer before it is asked. A heading is
+      // skipped when nothing falls under it.
+      // One sequence, whatever installed the plugin. A Cursor plugin sorts in
+      // as `enabled: true` because it genuinely is — nothing gates
+      // `~/.cursor/plugins`, so it is contributing exactly like the rows
+      // around it, and the reader's question is "is this on", not "who
+      // packaged it". Origin is a badge on the row, not a section.
+      const entries = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === 'experimental',
+          render: (): HTMLElement => makePluginRow(plugin),
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: (): HTMLElement => makeCursorPluginRow(plugin),
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: (): HTMLElement => makeBundledSkillPluginRow(plugin),
+        })),
+      ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
 
-        let lastEnabled: boolean | null = null
-        for (const entry of entries) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement('h4')
-            heading.className = 'plugins-group-heading'
-            heading.textContent = entry.enabled ? 'Active' : 'Inactive'
-            listEl.append(heading)
-            lastEnabled = entry.enabled
-          }
-          listEl.append(entry.render())
-        }
-      }
-      statusEl.textContent = ''
+      pluginEntries = entries.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render(),
+      }))
+      renderPluginLists()
+      setStatus('')
     } catch {
-      statusEl.textContent = 'Failed to load plugins.'
+      setStatus('Failed to load plugins.')
     }
   }
 
@@ -4736,6 +4779,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
     if (openedSection === 'about') void aboutSection.refresh()
+    if (openedSection === 'experimental') void refreshPlugins()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()
