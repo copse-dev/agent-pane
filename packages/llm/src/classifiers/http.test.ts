@@ -28,6 +28,92 @@ function success(): object {
 }
 
 describe('classifier HTTP adapters', () => {
+  it('uses Liquid’s native decision endpoint and preserves all three answer types', async () => {
+    const request: ClassifierRequest = {
+      state: 'The bicycle is red and needs an urgent repair.',
+      questions: {
+        color: {
+          type: 'choice',
+          instructions: 'What color is the bicycle?',
+          options: { red: null, blue: null },
+        },
+        repair: { type: 'boolean', instructions: 'Does the bicycle need repair?' },
+        urgency: { type: 'score', instructions: 'How urgent?', levels: ['Routine', 'Urgent'] },
+      },
+    }
+    let attempts = 0
+    const result = await classifyHttp(profile('liquid'), request, {
+      apiKey: 'liquid-test-key',
+      fetchImpl: async (url, init) => {
+        attempts++
+        assert.equal(url, 'https://api.liquid.ai/decisions/v1/systemone')
+        assert.equal(init?.method, 'POST')
+        assert.equal(init.redirect, 'manual')
+        assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer liquid-test-key')
+        if (typeof init.body !== 'string') assert.fail('expected JSON body')
+        assert.deepEqual(safeJsonParse(init.body), {
+          model: 'd1:free',
+          state: request.state,
+          questions: {
+            color: {
+              type: 'choice',
+              instructions: 'What color is the bicycle?',
+              criteria: { red: null, blue: null },
+            },
+            repair: { type: 'noul', instructions: 'Does the bicycle need repair?' },
+            urgency: {
+              type: 'score',
+              instructions: 'How urgent?',
+              criteria: ['Routine', 'Urgent'],
+            },
+          },
+        })
+        return Response.json({
+          model: 'd1:free',
+          answers: {
+            color: {
+              type: 'choice',
+              choice: 'red',
+              probabilities: { red: 0.95, blue: 0.05 },
+              confidence: 0.9,
+            },
+            repair: { type: 'noul', noul: 0.99 },
+            urgency: {
+              type: 'score',
+              score: 0.85,
+              probabilities: { '0': 0.15, '1': 0.85 },
+              legend: { '0': 'Routine', '1': 'Urgent' },
+              confidence: 0.7,
+            },
+          },
+          usage: { input_tokens: 84, output_tokens: 0 },
+        })
+      },
+    })
+    assert.equal(attempts, 1)
+    assert.equal(result.adapter, 'systemone@1')
+    assert.equal(result.requestedModel, 'd1:free')
+    assert.equal(result.model, 'd1:free')
+    assert.deepEqual(result.usage, { inputTokens: 84, outputTokens: 0 })
+    assert.deepEqual(result.answers, {
+      color: {
+        type: 'choice',
+        choice: 'red',
+        probabilities: { red: 0.95, blue: 0.05 },
+        confidence: 0.9,
+      },
+      repair: { type: 'boolean', probability: 0.99 },
+      urgency: {
+        type: 'score',
+        score: 0.85,
+        probabilities: { '0': 0.15, '1': 0.85 },
+        levels: ['Routine', 'Urgent'],
+        confidence: 0.7,
+      },
+    })
+    assert.equal(result.metadata?.['derivedFields'], undefined)
+  })
+
   it('derives fields that self-hosted systemone servers omit, and says so', async () => {
     // Shaped like metask-jev (no model, no choice), Jobe (score without score or
     // legend) and JevK5 (score without legend), with their extra fields.
