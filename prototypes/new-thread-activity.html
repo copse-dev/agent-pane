@@ -4281,6 +4281,93 @@
       .tb-fold .tb-glyph {
         color: var(--muted);
       }
+
+      .small-chip svg.gl {
+        flex: none;
+      }
+      .small-chip.locked {
+        cursor: default;
+      }
+      .small-chip.locked:hover {
+        background: transparent;
+        color: inherit;
+      }
+      .bp {
+        position: fixed;
+        z-index: 60;
+        min-width: 220px;
+        max-width: 320px;
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        padding: 4px 0;
+      }
+      .bp-filter {
+        margin: 4px 8px;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font: inherit;
+        font-size: 13px;
+        padding: 4px 8px;
+        outline: 2px solid transparent;
+        outline-offset: 1px;
+      }
+      .bp-filter:focus-visible {
+        outline: 2px solid var(--accent);
+      }
+      .bp-list {
+        overflow-y: auto;
+        max-height: 240px;
+      }
+      .bp-opt {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 5px 12px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .bp-opt:hover,
+      .bp-opt.act {
+        background: var(--hover);
+      }
+      .bp-opt.sel {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .bp-opt .l {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bp-badge {
+        flex: none;
+        margin-left: 6px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .bp-empty {
+        padding: 8px 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
@@ -4436,6 +4523,12 @@
                 ><button type="button" class="small-chip" id="checkoutButton">
                   workspace <svg class="gl sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
                 </button>
+                <button
+                  type="button"
+                  class="small-chip"
+                  id="branchButton"
+                  aria-haspopup="listbox"
+                ></button>
                 <div
                   class="context-wheel"
                   id="ctxWheel"
@@ -6325,6 +6418,7 @@
         document.getElementById('topTitle').textContent = t.title
         document.getElementById('crumbProj').textContent = t.project
         document.getElementById('composerCaption').textContent = ''
+        branchSync()
         renderSide()
         updateBell()
         document.getElementById('content').scrollTop = 0
@@ -7012,7 +7106,163 @@
         const t = document.createElement('span')
         t.innerHTML = '<svg class="gl sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
         b.append(t.firstChild)
+        if (id === 'checkoutButton') branchSync()
       }
+      // Branch picker, as in the real footer: filter row, default branch first
+      // with a badge, the pick highlighted. Picking only names the base the new
+      // thread starts from. Inside a thread the branch is fixed, so the chip is a label.
+      const BRANCHES = {
+        workspace: ['main', 'develop', 'release/0.1'],
+        'agent-pane': [
+          'main',
+          'claude/automation-hardening',
+          'codex/living-spec-workflow',
+          'copse/safe-execution',
+          'prototype/new-thread-activity',
+        ],
+        'docs-site': ['main', 'content/onboarding', 'site-tour'],
+      }
+      const BP = { el: null, pick: {}, filter: '', act: 0 }
+      const BRSVG =
+        '<svg class="gl sm" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>'
+      const CHEVSVG = '<svg class="gl sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
+      function threadBranch(t) {
+        return (
+          'copse/' +
+          t.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 26)
+        )
+      }
+      function bpProject() {
+        return document.getElementById('crumbProj').textContent
+      }
+      function bpCurrent() {
+        return BP.pick[bpProject()] || 'main'
+      }
+      function bpOptions() {
+        const q = BP.filter.toLowerCase()
+        return (BRANCHES[bpProject()] || ['main']).filter(function (b) {
+          return !q || b.toLowerCase().indexOf(q) >= 0
+        })
+      }
+      function branchSync() {
+        const b = document.getElementById('branchButton')
+        bpClose()
+        if (opened !== null) {
+          const n = threadBranch(threads[opened])
+          b.innerHTML = BRSVG + ' ' + escapeText(n)
+          b.classList.add('locked')
+          b.setAttribute('aria-label', 'Branch: ' + n)
+          b.title = 'Branch: ' + n
+          return
+        }
+        const cur = bpCurrent()
+        b.innerHTML = BRSVG + ' ' + escapeText(cur) + ' ' + CHEVSVG
+        b.classList.remove('locked')
+        b.setAttribute('aria-label', 'Start this thread from: ' + cur)
+        b.title = 'Start this thread from: ' + cur
+      }
+      function bpClose() {
+        if (BP.el) {
+          BP.el.remove()
+          BP.el = null
+          document.getElementById('branchButton').setAttribute('aria-expanded', 'false')
+        }
+      }
+      function bpList() {
+        const opts = bpOptions()
+        const cur = bpCurrent()
+        if (BP.act >= opts.length) BP.act = Math.max(0, opts.length - 1)
+        BP.el.querySelector('.bp-list').innerHTML = opts.length
+          ? opts
+              .map(function (n, i) {
+                return (
+                  '<button type="button" role="option" class="bp-opt' +
+                  (n === cur ? ' sel' : '') +
+                  (i === BP.act ? ' act' : '') +
+                  '" aria-selected="' +
+                  (n === cur) +
+                  '" data-b="' +
+                  escapeText(n) +
+                  '"><span class="l">' +
+                  escapeText(n) +
+                  '</span>' +
+                  (n === 'main' ? '<span class="bp-badge">default</span>' : '') +
+                  '</button>'
+                )
+              })
+              .join('')
+          : '<div class="bp-empty">No matching branches</div>'
+      }
+      function bpPick(n) {
+        BP.pick[bpProject()] = n
+        bpClose()
+        branchSync()
+        document.getElementById('branchButton').focus()
+      }
+      document.getElementById('branchButton').addEventListener('click', function (e) {
+        e.stopPropagation()
+        if (opened !== null) return
+        if (BP.el) {
+          bpClose()
+          return
+        }
+        mpClose()
+        closeMenu()
+        BP.filter = ''
+        BP.act = 0
+        const m = document.createElement('div')
+        m.className = 'bp'
+        m.innerHTML =
+          '<input class="bp-filter" placeholder="Filter branches…" aria-label="Filter branches" autocomplete="off"><div class="bp-list" role="listbox"></div>'
+        document.body.appendChild(m)
+        BP.el = m
+        this.setAttribute('aria-expanded', 'true')
+        const r = this.getBoundingClientRect()
+        m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + 'px'
+        m.style.bottom = window.innerHeight - r.top + 4 + 'px'
+        bpList()
+        const f = m.querySelector('.bp-filter')
+        f.focus()
+        f.addEventListener('input', function () {
+          BP.filter = f.value
+          BP.act = 0
+          bpList()
+        })
+        f.addEventListener('keydown', function (ev) {
+          const n = bpOptions().length
+          if (ev.key === 'ArrowDown' && n) {
+            BP.act = (BP.act + 1) % n
+            bpList()
+            ev.preventDefault()
+          } else if (ev.key === 'ArrowUp' && n) {
+            BP.act = (BP.act - 1 + n) % n
+            bpList()
+            ev.preventDefault()
+          } else if (ev.key === 'Enter') {
+            const o = bpOptions()[BP.act]
+            if (o) bpPick(o)
+            ev.preventDefault()
+          } else if (ev.key === 'Escape') {
+            bpClose()
+            document.getElementById('branchButton').focus()
+          }
+        })
+        m.addEventListener('click', function (ev) {
+          const o = ev.target.closest('[data-b]')
+          if (o) bpPick(o.dataset.b)
+        })
+      })
+      document.addEventListener('pointerdown', function (e) {
+        if (!BP.el) return
+        const p = e.composedPath ? e.composedPath() : []
+        if (p.indexOf(BP.el) < 0 && p.indexOf(document.getElementById('branchButton')) < 0)
+          bpClose()
+      })
+      branchSync()
       function setComposerProject(n) {
         document.getElementById('crumbProj').textContent = n
         chip('checkoutButton', n)
