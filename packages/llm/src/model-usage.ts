@@ -179,6 +179,13 @@ export function splitServiceTierUsage(usage: ModelUsage): {
   return { standard: remaining, tiers }
 }
 
+/** Cache tokens of an ACP record that holds fewer input tokens than that, else null. */
+function legacyAcpCachedTokens(model: string, usage: TokenUsage): number | null {
+  if (parseModelSelection(model).namespace !== 'acp') return null
+  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
+  return cached > usage.inputTokens ? cached : null
+}
+
 /**
  * Restore the cache share to a legacy ACP usage record's `inputTokens`.
  *
@@ -191,13 +198,28 @@ export function splitServiceTierUsage(usage: ModelUsage): {
  * only be the fresh-only shape. That makes this repair idempotent and safe to
  * run on every read.
  *
+ * Only for a single call's record (a ledger event). A running total may mix
+ * legacy and normalised turns, so it needs {@link repairLegacyAcpTotalInputTokens}.
+ *
  * A legacy record whose fresh input was at least its cached input looks the
  * same under both meanings and is left as recorded: its input under-counts by
  * the cache share, so its cost is understated, never overstated.
  */
 export function repairLegacyAcpInputTokens<T extends TokenUsage>(model: string, usage: T): T {
-  if (parseModelSelection(model).namespace !== 'acp') return usage
-  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
-  if (cached <= usage.inputTokens) return usage
-  return { ...usage, inputTokens: usage.inputTokens + cached }
+  const cached = legacyAcpCachedTokens(model, usage)
+  return cached === null ? usage : { ...usage, inputTokens: usage.inputTokens + cached }
+}
+
+/**
+ * The running-total counterpart of {@link repairLegacyAcpInputTokens}, for a
+ * thread's per-model usage. A total can sum legacy fresh-only turns with
+ * normalised ones (for example when an older Copse build keeps writing to the
+ * same profile), and how much of its cache belongs to legacy turns is not
+ * recoverable. Whatever the mix, the true input is at least the cache tokens,
+ * so input is raised to that floor: it never overstates, and it under-counts a
+ * wholly legacy total only by that total's fresh input.
+ */
+export function repairLegacyAcpTotalInputTokens<T extends TokenUsage>(model: string, usage: T): T {
+  const cached = legacyAcpCachedTokens(model, usage)
+  return cached === null ? usage : { ...usage, inputTokens: cached }
 }

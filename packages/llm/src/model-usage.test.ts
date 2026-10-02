@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   mergeModelUsage,
   repairLegacyAcpInputTokens,
+  repairLegacyAcpTotalInputTokens,
   splitServiceTierUsage,
 } from './model-usage.ts'
 
@@ -86,5 +87,22 @@ describe('repairLegacyAcpInputTokens', () => {
   it('never touches non-ACP models', () => {
     assert.equal(repairLegacyAcpInputTokens('claude-opus-4-6', legacy), legacy)
     assert.equal(repairLegacyAcpInputTokens('openrouter:anthropic/claude-opus-4-6', legacy), legacy)
+  })
+})
+
+describe('repairLegacyAcpTotalInputTokens', () => {
+  it('raises a running total to its cache floor, which never overstates a mix', () => {
+    // 3 fresh + 40 cache (legacy, recorded as 3) merged with 40 normalised: truth is 83.
+    const mixed = { inputTokens: 43, outputTokens: 2, cacheReadTokens: 80 }
+    const repaired = repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', mixed)
+    assert.equal(repaired.inputTokens, 80)
+    assert.equal(repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', repaired), repaired)
+  })
+
+  it('leaves totals that already cover their cache, and non-ACP models, untouched', () => {
+    const covered = { inputTokens: 90, outputTokens: 2, cacheReadTokens: 80 }
+    assert.equal(repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', covered), covered)
+    const cloud = { inputTokens: 3, outputTokens: 2, cacheReadTokens: 80 }
+    assert.equal(repairLegacyAcpTotalInputTokens('claude-opus-4-6', cloud), cloud)
   })
 })

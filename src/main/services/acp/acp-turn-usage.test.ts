@@ -94,6 +94,18 @@ describe('acpTurnUsage', () => {
     )
   })
 
+  it('keeps a cache-only turn as reported usage rather than estimating it', () => {
+    // No fresh input or output, but the cache tokens were real and billed.
+    assert.deepEqual(
+      acpTurnUsage(
+        { inputTokens: 0, outputTokens: 0, cachedReadTokens: 500, totalTokens: 500 },
+        'prompt',
+        'response',
+      ),
+      { inputTokens: 500, outputTokens: 0, cacheReadTokens: 500, estimated: false },
+    )
+  })
+
   it('prices fresh ACP input instead of clamping it to zero', () => {
     const turn = acpTurnUsage(
       { inputTokens: 1_000_000, outputTokens: 0, cachedReadTokens: 1_000_000, totalTokens: 0 },

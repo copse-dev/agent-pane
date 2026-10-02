@@ -7,7 +7,7 @@ function meta(usage: unknown): unknown {
 }
 
 describe('parseThreadMetaValue usage', () => {
-  it('repairs legacy fresh-only ACP byModel entries and the thread total, once', () => {
+  it('raises legacy fresh-only ACP byModel entries and the thread total to the cache floor, once', () => {
     const parsed = parseThreadMetaValue(
       meta({
         inputTokens: 1_003,
@@ -28,9 +28,11 @@ describe('parseThreadMetaValue usage', () => {
     assert.ok(parsed)
     const { byModel } = parsed.usage
     assert.ok(byModel)
-    assert.equal(parsed.usage.inputTokens, 42_203)
+    // A running total cannot say how much of it was fresh, so the entry rises to
+    // its cache total (41,200), not the exact 41,203 a single event would get.
+    assert.equal(parsed.usage.inputTokens, 42_200)
     assert.deepEqual(byModel['acp:claude-acp#opus'], {
-      inputTokens: 41_203,
+      inputTokens: 41_200,
       outputTokens: 120,
       cacheReadTokens: 40_000,
       cacheCreationTokens: 1_200,
@@ -42,6 +44,24 @@ describe('parseThreadMetaValue usage', () => {
     // The repaired meta is what the next save persists; reading it back is a no-op.
     const reread = parseThreadMetaValue(JSON.parse(JSON.stringify(parsed)))
     assert.deepEqual(reread?.usage, parsed.usage)
+  })
+
+  it('never overstates an entry that mixes legacy and normalised ACP turns', () => {
+    // Legacy turn: 3 fresh + 40 cache recorded as input 3. Normalised turn: 40
+    // input, all of it cache. The merged entry is input 43 / cache 80, and the
+    // true input is 83; adding the whole cache again would claim 123.
+    const parsed = parseThreadMetaValue(
+      meta({
+        inputTokens: 43,
+        outputTokens: 2,
+        byModel: {
+          'acp:claude-acp#opus': { inputTokens: 43, outputTokens: 2, cacheReadTokens: 80 },
+        },
+      }),
+    )
+    const input = parsed?.usage.byModel?.['acp:claude-acp#opus']?.inputTokens
+    assert.equal(input, 80)
+    assert.equal(parsed?.usage.inputTokens, 80)
   })
 
   it('leaves usage without legacy ACP entries untouched', () => {
