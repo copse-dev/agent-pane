@@ -493,6 +493,31 @@ function mockAuthErrorSnapshot(): PlanUsageSnapshot {
   }
 }
 
+/** Codex weekly window spent while the separate ChatPass pool still covers Astra. */
+function mockCodexChatpassSnapshot(): PlanUsageSnapshot {
+  const checkedAt = new Date().toISOString()
+  const resetsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+  return {
+    checkedAt,
+    providers: [
+      {
+        status: 'ok',
+        provider: 'codex',
+        usage: {
+          provider: 'codex',
+          plan: 'pro',
+          windows: [
+            { id: 'primary', label: 'Weekly', usedPercent: 100, resetsAt },
+            { id: 'chatpass_0', label: 'ChatPass Weekly', usedPercent: 0, resetsAt },
+          ],
+          modelAvailability: { 'gpt-6-astra': true },
+          checkedAt,
+        },
+      },
+    ],
+  }
+}
+
 /**
  * A lapsed Claude access token, run through the real package path (it returns
  * before any network call) so the fixture shows the copy users actually see.
@@ -508,6 +533,7 @@ async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
   try {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
+    if (process.env[MOCK_ENV] === 'codex-chatpass') return mockCodexChatpassSnapshot()
     if (process.env[MOCK_ENV] === 'claude-token-expired')
       return await mockClaudeTokenExpiredSnapshot()
     // The mock's plans, filtered by the real Settings → General confirmation.

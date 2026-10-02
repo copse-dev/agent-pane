@@ -10,6 +10,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { transformSync } from 'esbuild'
+import { z } from 'zod'
+import { checkBundledExplainerSyntax } from './lib/explainer-syntax.mts'
 
 function walk(dir: string): string[] {
   const files: string[] = []
@@ -23,6 +25,7 @@ function walk(dir: string): string[] {
 
 const roots = [
   ...walk(join(process.cwd(), 'tests', 'e2e')),
+  ...walk(join(process.cwd(), 'tests', 'fixtures')),
   ...readdirSync(process.cwd())
     .filter((name) => /^wdio.*\.conf\.ts$/.test(name))
     .map((name) => join(process.cwd(), name)),
@@ -44,3 +47,25 @@ if (failures > 0) {
   process.exit(1)
 }
 console.log(`check-e2e-syntax: ${String(roots.length)} files parsed cleanly`)
+
+// Only import after the outer fixture syntax passes. TypeScript cannot inspect
+// JavaScript held inside template strings; parse those in their worker wrapper.
+// The repo is CommonJS. Explicitly transform this data-only fixture to ESM;
+// directly importing its .ts file would misclassify its export declarations.
+const fixtureModule = transformSync(readFileSync('tests/fixtures/explainer-drawing.ts', 'utf8'), {
+  loader: 'ts',
+  format: 'esm',
+}).code
+const imported: unknown = await import(
+  `data:text/javascript;base64,${Buffer.from(fixtureModule).toString('base64')}`
+)
+const drawings = z
+  .record(z.string(), z.object({ drawing: z.object({ code: z.string() }) }))
+  .parse(imported)
+checkBundledExplainerSyntax(
+  Object.entries(drawings).map(([name, story]) => ({
+    name: `tests/fixtures/explainer-drawing.ts:${name}.drawing.code`,
+    code: story.drawing.code,
+  })),
+)
+console.log('check-e2e-syntax: explainer player, worker and drawing bodies parsed cleanly')
