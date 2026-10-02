@@ -1065,8 +1065,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
-    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('tags each release on its own commit, so releases sort by publication', () => {
+    // GitHub dates and orders releases by the tagged commit. Tagging the binary
+    // repository's unchanging `main` dated every release to one commit, and a
+    // new beta sorted below the old ones.
+    assert.doesNotMatch(workflow, /--target main/)
+    const record = workflow.indexOf('- name: Record the release in the release repository')
+    const publish = workflow.indexOf('gh release create')
+    assert.ok(record >= 0 && publish > record, 'the release commit must precede the release')
+    const recordStep = workflow.slice(record, workflow.indexOf('- name: Publish the exact'))
+    assert.match(recordStep, /--method PUT "repos\/\$RELEASE_REPOSITORY\/contents\/\$path"/)
+    assert.match(recordStep, /-f branch=main/)
+    assert.match(recordStep, /\*"HTTP 404"\*\) current='' ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(recordStep, /echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/)
+    assert.match(workflow, /RELEASE_COMMIT: \$\{\{ steps\.record\.outputs\.commit \}\}/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target "\$RELEASE_COMMIT"/)
   })
 
   it('skips unavailable provenance only while the source repository is private', () => {
