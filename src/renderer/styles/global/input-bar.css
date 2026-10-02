@@ -1107,11 +1107,6 @@
 .context-wheel-fill.is-danger {
   stroke: var(--danger);
 }
-/* A dashed track marks a figure an external (ACP) agent reported rather than
-   one Copse measured. */
-.context-wheel.is-reported .context-wheel-track {
-  stroke-dasharray: 2 2.2;
-}
 /* Compact footer: the wheel carries the usage line in its title. Hover-only —
    it stopped toggling a cost label when the usage counter dropped its click. */
 .context-wheel.is-interactive {
