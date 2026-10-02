@@ -28,6 +28,7 @@ describe('classifier connections settings', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: '1',
+      LIQUID_API_KEY: '',
       TYPESAFE_API_KEY: '',
       FEATHERLESS_API_KEY: '',
     })
@@ -72,6 +73,7 @@ describe('classifier connections settings', () => {
   after(async () => {
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
+      LIQUID_API_KEY: undefined,
       TYPESAFE_API_KEY: undefined,
       FEATHERLESS_API_KEY: undefined,
     })
@@ -114,12 +116,23 @@ describe('classifier connections settings', () => {
     )
   }
 
-  it('saves a keyed profile and makes only an explicit test call', async () => {
+  it('offers Liquid’s native decision preset and tests an edited connection only explicitly', async () => {
     await openClassifiers()
     const host = $('#settings-classifiers-host')
-    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'typesafe')
+    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'liquid')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-create', 'secondary')
     await host.$('.classifier-create').click()
+    await expect(host.$('[name="classifierLabel"]')).toHaveValue('Liquid / d1')
+    await expect(host.$('[name="classifierModel"]')).toHaveValue('d1:free')
+    await expect(host.$('[name="classifierUrl"]')).toHaveValue('https://api.liquid.ai/decisions/v1')
+    await toggleOptions()
+    await expect(host.$('[name="classifierProtocol"]')).toHaveValue('systemone')
+    await expect(host.$('[name="classifierAuth"]')).toHaveValue('bearer')
+    await expect(host.$('[name="classifierKeyEnv"]')).toHaveValue('LIQUID_API_KEY')
+    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-liquid.png')
+    await toggleOptions()
+    assert.equal(requests, 0, 'selecting Liquid must not call inference')
+    // Exercise saving and invocation against the local fixture, without a live Liquid key.
     await host.$('[name="classifierLabel"]').setValue('Hosted classifier fixture')
     await host.$('[name="classifierModel"]').setValue('fixture-model')
     await host.$('[name="classifierUrl"]').setValue(baseUrl)
@@ -270,6 +283,7 @@ describe('classifier connections settings', () => {
           env: {
             ...process.env,
             COPSE_PANEL_USER_DATA: userData,
+            LIQUID_API_KEY: '',
             TYPESAFE_API_KEY: '',
             FEATHERLESS_API_KEY: '',
           },

@@ -1,7 +1,7 @@
 # Classifier providers and evals
 
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
-to add a TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
+to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
 answer and duration. These profiles are available for safety screening, background questions and
 evals; they never appear as chat models or change model routing or the agent loop.
@@ -57,7 +57,7 @@ Changing an existing profile's HTTP destination, protocol, or authentication mod
 key before applying the change. Save a replacement key or select a named environment variable for
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
-Saved Copse profiles can use a hosted preset's variable (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`)
+Saved Copse profiles can use a hosted preset's variable (`LIQUID_API_KEY`, `TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`)
 only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESETS`. Custom saved profiles use a
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
@@ -122,6 +122,28 @@ To compare a classifier connection with a small-tasks model on these questions, 
 `pnpm run eval:background-questions`. It asks both of them labelled cases through the product's own
 requests, prompts and parsers; see
 [`benchmarks/background-questions/README.md`](../benchmarks/background-questions/README.md).
+
+## Liquid decision API
+
+Choose **Liquid / d1** in **Settings → Classifiers**, add the connection and save a Liquid API key
+from [Liquid's console](https://console.liquid.ai), or launch Copse with `LIQUID_API_KEY` set.
+The preset uses model `d1:free` and base URL `https://api.liquid.ai/decisions/v1`; the System One
+adapter posts to `/systemone` beneath that URL. Both fields remain editable.
+
+This uses [Liquid's native decision API](https://docs.liquid.ai/lfm/models/decision-models):
+choice questions preserve the option probabilities and confidence, boolean questions map to `noul`,
+and score questions preserve the numeric score, distribution and ordered rubric. The preset is not
+chosen for safety screening or background questions automatically.
+
+For an explicit headless smoke run, set `LIQUID_API_KEY` and use:
+
+```sh
+pnpm run eval:classifier --config benchmarks/classifiers/liquid.json \
+  --input benchmarks/classifiers/smoke.jsonl --output /tmp/liquid-results.jsonl
+```
+
+This sends the fixture contents to Liquid. The profile enables evals; it does not establish d1's
+quality on Copse tasks. `d1:free` is a provider alias, not a pinned model revision.
 
 ## Self-hosted systemone servers
 

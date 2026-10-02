@@ -644,6 +644,8 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
           'Custom connections use ',
           el('code', {}, 'COPSE_CLASSIFIER_*'),
           ' variables. ',
+          el('code', {}, 'LIQUID_API_KEY'),
+          ', ',
           el('code', {}, 'TYPESAFE_API_KEY'),
           ' and ',
           el('code', {}, 'FEATHERLESS_API_KEY'),
