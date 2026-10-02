@@ -1168,6 +1168,16 @@ var init_model_parameters = __esm({
     };
     RECOMMENDATIONS = [
       {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
         match: "glm-5.3-flash",
         label: "Copse\u2019s experimental balanced agent profile",
         source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
@@ -39296,6 +39306,13 @@ function createDemoApi(scenario, options = {}) {
       background: () => resolved(null),
       setBackground: unsupported
     },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
+    },
     settings: {
       get: (key) => resolved(settings.get(key)),
       set: (key, value) => {
@@ -57609,6 +57626,18 @@ var init_presets = __esm({
         }
       },
       {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
         id: "semif",
         label: "SemIf (local)",
         model: "Qwen/Qwen3.5-4B",
@@ -57664,12 +57693,32 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
   const background = el("select", { name: "classifierBackground" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -57701,6 +57750,7 @@ function createClassifiersSection(api2) {
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
       )
     ),
+    localHost,
     chips,
     formHost,
     status
@@ -57751,6 +57801,187 @@ function createClassifiersSection(api2) {
       render();
     });
     chips.append(add2);
+  }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderBackground();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
   }
   function renderScreening() {
     clear(screening);
@@ -57832,18 +58063,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -58177,6 +58397,7 @@ function createClassifiersSection(api2) {
         api2.classifiers.background()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -58185,6 +58406,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -65822,7 +66044,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -66200,6 +66422,18 @@ function mountSettingsDialog(store2, api2) {
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading\u2026</span>
+              </div>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="about">
@@ -66468,6 +66702,7 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
+    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -66577,8 +66812,8 @@ function mountSettingsDialog(store2, api2) {
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
-          void refreshPlugins();
         }
+        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -67930,55 +68165,81 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
+  let pluginEntries = null;
+  function renderPluginLists() {
+    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
+    if (!pluginEntries) return;
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? "#experimental-plugins-list" : "#plugins-list"
+      );
+      const entries2 = pluginEntries.filter(
+        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
+      );
+      listEl.replaceChildren();
+      let lastEnabled = null;
+      for (const entry of entries2) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement("h4");
+          heading.className = "plugins-group-heading";
+          heading.textContent = entry.enabled ? "Active" : "Inactive";
+          listEl.append(heading);
+          lastEnabled = entry.enabled;
+        }
+        listEl.append(entry.row);
+      }
+      if (entries2.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "plugins-empty";
+        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
+        listEl.append(empty);
+      }
+    }
+  }
   async function refreshPlugins() {
-    const listEl = qsRequired(overlay, "#plugins-list");
-    const statusEl = qsRequired(overlay, "#plugins-reload-status");
-    statusEl.textContent = "Loading\u2026";
+    const statusEls = overlay.querySelectorAll(".plugins-load-status");
+    const setStatus = (text2) => {
+      statusEls.forEach((el3) => {
+        el3.textContent = text2;
+      });
+    };
+    setStatus("Loading\u2026");
     try {
       const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
         api2.bundledSkillPlugins.list().catch(() => [])
       ]);
-      listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "plugins-empty";
-        empty.textContent = "No plugins installed.";
-        listEl.append(empty);
-      } else {
-        const entries2 = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin)
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin)
-          })),
-          ...bundledPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: plugin.enabled && !plugin.suppressed,
-            render: () => makeBundledSkillPluginRow(plugin)
-          }))
-        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-        let lastEnabled = null;
-        for (const entry of entries2) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement("h4");
-            heading.className = "plugins-group-heading";
-            heading.textContent = entry.enabled ? "Active" : "Inactive";
-            listEl.append(heading);
-            lastEnabled = entry.enabled;
-          }
-          listEl.append(entry.render());
-        }
-      }
-      statusEl.textContent = "";
+      const entries2 = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === "experimental",
+          render: () => makePluginRow(plugin)
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: () => makeCursorPluginRow(plugin)
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: () => makeBundledSkillPluginRow(plugin)
+        }))
+      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+      pluginEntries = entries2.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render()
+      }));
+      renderPluginLists();
+      setStatus("");
     } catch {
-      statusEl.textContent = "Failed to load plugins.";
+      setStatus("Failed to load plugins.");
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -68532,6 +68793,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
+    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -98121,15 +98383,22 @@ function footerNaturalWidth(footer) {
   const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
