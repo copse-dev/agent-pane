@@ -8,6 +8,19 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Copse reads another tool's sign-in to show plan usage only for providers you
+  have set up in Settings → General: Claude Code or Codex once you have added
+  and enabled its agent, Cursor once you have added its agent or saved a Cursor
+  key, and Hugging Face once you have saved a Hugging Face key in Copse.
+  Previously it looked for Claude Code, Codex, Cursor, and Hugging Face
+  sign-ins whenever it checked plan usage, including when choosing the default
+  model for a new thread. Plans that are not set up now say where to set them
+  up in Settings → Usage, and nothing is read for them.
+- Help → Report an Issue… opens Copse's bug report form on GitHub with your
+  Copse version and Mac platform already filled in. Nothing about your
+  projects, threads, or settings is included, and nothing is filed until you
+  submit the form.
+
 ## 0.1.0-beta.12
 
 This is the first published release since 0.1.0-beta.8. Betas 9, 10, and 11

@@ -39,14 +39,14 @@ describe('remote exec quoting', () => {
 
 describe('buildRemotePtyCommand', () => {
   it('uses shell assignments before builtin exec, never env … exec', () => {
-    const cmd = buildRemotePtyCommand('/bin/bash', '/etc/ddg', {
+    const cmd = buildRemotePtyCommand('/bin/bash', '/srv/app', {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       LANG: 'C.UTF-8',
     })
     assert.equal(
       cmd,
-      "cd '/etc/ddg' && TERM='xterm-256color' COLORTERM='truecolor' LANG='C.UTF-8' exec '/bin/bash' -l",
+      "cd '/srv/app' && TERM='xterm-256color' COLORTERM='truecolor' LANG='C.UTF-8' exec '/bin/bash' -l",
     )
     assert.doesNotMatch(cmd, /\benv\b/)
   })
