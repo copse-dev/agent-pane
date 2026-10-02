@@ -39,6 +39,25 @@ Usage comes back decomposed — `inputTokens` is the sum of fresh, cache-creatio
 and cache-read tokens — and `estimate-cost.ts` prices the three buckets
 separately, so the Settings usage table reflects real cache savings.
 
+ACP agents report the other way: `PromptResponse.usage.inputTokens` is fresh
+input only, with `cachedReadTokens` / `cachedWriteTokens` beside it
+(`claude-agent-acp` sums Anthropic `input_tokens`; `codex-acp` subtracts OpenAI's
+cached input). `acpTurnUsage` folds the cache counts into `inputTokens` at the
+ACP boundary, so every usage record has the same meaning. If an agent's
+`totalTokens` is less than input + output + cache, its input already counts the
+cache, so it is used as reported.
+
+ACP records written before that normalisation are repaired on read
+(`repairLegacyAcpInputTokens`, applied by `parseUsageEvents` and the thread-meta
+decoder). The repair only touches a record whose cache tokens are larger than its
+input, because such a record can only have been written under the old rule. That
+makes it idempotent, and the repaired values persist on the next write. The rule
+can't identify an old record whose fresh input was at least as large as its
+cache, mostly low-hit `codex-acp` turns. Those records still undercount input by
+their cache share, so their cost is understated, never overstated. This also
+applies to thread `byModel` entries where such a record was later merged with
+newer turns.
+
 ## What breaks the prefix
 
 Anything that changes the rendered bytes ahead of a breakpoint:

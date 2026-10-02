@@ -2,6 +2,28 @@ import type { Message, Thread, ThreadUsage, ToolCall } from './thread-types.ts'
 import type { ThreadMeta } from './spine-schema.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
+import { repairLegacyAcpInputTokens } from '@copse/llm/model-usage.ts'
+
+/**
+ * Fold the cache share back into legacy ACP `byModel` entries recorded with
+ * fresh-only input (see {@link repairLegacyAcpInputTokens}), raising the
+ * thread's `inputTokens` total by the same amount so it still sums its models.
+ * Runs on every meta read; a repaired entry no longer matches, so it is applied
+ * at most once per entry and persists with the thread's next save.
+ */
+function repairLegacyAcpThreadUsage(usage: ThreadUsage): ThreadUsage {
+  if (!isRecord(usage.byModel)) return usage
+  let added = 0
+  const byModel = { ...usage.byModel }
+  for (const [model, modelUsage] of Object.entries(byModel)) {
+    if (!isRecord(modelUsage) || typeof modelUsage.inputTokens !== 'number') continue
+    const repaired = repairLegacyAcpInputTokens(model, modelUsage)
+    if (repaired === modelUsage) continue
+    added += repaired.inputTokens - modelUsage.inputTokens
+    byModel[model] = repaired
+  }
+  return added > 0 ? { ...usage, inputTokens: usage.inputTokens + added, byModel } : usage
+}
 
 function parseUsage(value: unknown): ThreadUsage | null {
   if (
@@ -11,11 +33,11 @@ function parseUsage(value: unknown): ThreadUsage | null {
   ) {
     return null
   }
-  return {
+  return repairLegacyAcpThreadUsage({
     ...value,
     inputTokens: value['inputTokens'],
     outputTokens: value['outputTokens'],
-  }
+  })
 }
 
 function parseToolCall(value: unknown): ToolCall | null {

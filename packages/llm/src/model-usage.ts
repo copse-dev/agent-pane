@@ -1,6 +1,7 @@
 import type { ModelUsage, TokenUsage } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { USAGE_SERVICE_TIERS, type UsageServiceTier } from './service-tier.ts'
+import { parseModelSelection } from './model-selection.ts'
 
 function nonNegative(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
@@ -176,4 +177,27 @@ export function splitServiceTierUsage(usage: ModelUsage): {
     remaining = remainingAfter(remaining, capped)
   }
   return { standard: remaining, tiers }
+}
+
+/**
+ * Restore the cache share to a legacy ACP usage record's `inputTokens`.
+ *
+ * ACP reports `inputTokens` as fresh input only, with cache reads and writes
+ * alongside it; every other Copse usage record counts fresh + cache-read +
+ * cache-creation as input. ACP turns used to be recorded with the agent's
+ * fresh-only figure, which the ACP boundary now normalises. Those older records
+ * can be recognised exactly: once cache is folded in, `inputTokens` can never be
+ * below the cache tokens, so a record whose cache tokens exceed its input can
+ * only be the fresh-only shape. That makes this repair idempotent and safe to
+ * run on every read.
+ *
+ * A legacy record whose fresh input was at least its cached input looks the
+ * same under both meanings and is left as recorded: its input under-counts by
+ * the cache share, so its cost is understated, never overstated.
+ */
+export function repairLegacyAcpInputTokens<T extends TokenUsage>(model: string, usage: T): T {
+  if (parseModelSelection(model).namespace !== 'acp') return usage
+  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
+  if (cached <= usage.inputTokens) return usage
+  return { ...usage, inputTokens: usage.inputTokens + cached }
 }
