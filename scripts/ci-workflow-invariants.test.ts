@@ -989,6 +989,36 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
 
+  it('signs, notarizes, and staples the DMG itself, then rebuilds its blockmap', () => {
+    // electron-builder notarizes only the app inside the image. Stapling the
+    // DMG rewrites it after electron-builder wrote its blockmap, so the map is
+    // rebuilt from the final bytes before anything verifies or uploads it.
+    assert.match(workflow, /electron-builder --mac .*-c\.dmg\.sign=true/)
+    const start = workflow.indexOf('- name: Notarize and staple the DMG')
+    const verify = workflow.indexOf('- name: Verify signatures, notarization, metadata')
+    const upload = workflow.indexOf('uses: actions/upload-artifact@', verify)
+    assert.ok(start > workflow.indexOf('-c.dmg.sign=true'), 'notarize after the signed build')
+    assert.ok(verify > start && upload > verify, 'verify and upload the stapled DMG')
+    const step = workflow.slice(start, verify)
+    assert.match(step, /xcrun notarytool submit "\$dmg" .*\n.*--wait/)
+    assert.match(step, /if \[ "\$status" != 'Accepted' \]; then[\s\S]*?exit 1\n/)
+    const staple = step.indexOf('xcrun stapler staple "$dmg"')
+    const rebuild = step.indexOf('node scripts/rebuild-dmg-blockmap.mts "$dmg"')
+    assert.ok(staple > step.indexOf("!= 'Accepted'") && rebuild > staple)
+    // Apple credentials reach the script through `env`, never the script text.
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('verifies the downloadable DMG, not only the app inside it', () => {
+    const verify = workflow.slice(
+      workflow.indexOf('- name: Verify signatures, notarization, metadata'),
+      workflow.indexOf('- name: Enforce the per-client size budget'),
+    )
+    assert.match(verify, /codesign --verify --strict --verbose=2 "\$dmg"/)
+    assert.match(verify, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/)
+    assert.match(verify, /xcrun stapler validate "\$dmg"/)
+  })
+
   it('bounds the signed package verification step', () => {
     assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
     assert.match(
@@ -1035,8 +1065,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
-    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('tags each release on its own commit, so releases sort by publication', () => {
+    // GitHub dates and orders releases by the tagged commit. Tagging the binary
+    // repository's unchanging `main` dated every release to one commit, and a
+    // new beta sorted below the old ones.
+    assert.doesNotMatch(workflow, /--target main/)
+    const record = workflow.indexOf('- name: Record the release in the release repository')
+    const publish = workflow.indexOf('gh release create')
+    assert.ok(record >= 0 && publish > record, 'the release commit must precede the release')
+    const recordStep = workflow.slice(record, workflow.indexOf('- name: Publish the exact'))
+    assert.match(recordStep, /--method PUT "repos\/\$RELEASE_REPOSITORY\/contents\/\$path"/)
+    assert.match(recordStep, /-f branch=main/)
+    assert.match(recordStep, /\*"HTTP 404"\*\) current='' ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(recordStep, /echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/)
+    assert.match(workflow, /RELEASE_COMMIT: \$\{\{ steps\.record\.outputs\.commit \}\}/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target "\$RELEASE_COMMIT"/)
   })
 
   it('skips unavailable provenance only while the source repository is private', () => {

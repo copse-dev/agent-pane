@@ -41,7 +41,7 @@ package contains the other architecture's application or native helper:
 
 | Artifact                                 | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
-| `Copse-<ver>-<arch>.dmg`                 | First-install disk image.                    |
+| `Copse-<ver>-<arch>.dmg`                 | First-install disk image, notarized.         |
 | `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | Payload and differential-update metadata.    |
 | `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
 | `SHA256SUMS`                             | Checksums for every promoted artifact.       |
@@ -137,7 +137,9 @@ Monday. Publishing is the only routine manual step:
    `Release (macOS)` run ID. The publisher verifies the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
    then creates a prerelease for beta or a normal/latest release for stable in
-   `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
+   `copse-dev/copse-releases`. It first commits `LATEST.md` there, naming the
+   release, and tags that commit: GitHub dates and orders releases by the
+   tagged commit, so each release needs its own. It never rebuilds. GitHub artifact attestation is
    added automatically once the source repository is public; until then the
    signed build, immutable Actions artifact, and published SHA256 manifest are
    the integrity chain available on this GitHub Team plan. Publishing is what
@@ -192,12 +194,24 @@ Keychain. `release:dry` reads signing/notarization values from the environment;
 it does not upload. `npm run pack:mac` creates a quick unsigned `.app` directory
 for development and is not distributable.
 
-Validate a signed app bundle rather than the enclosing DMG:
+Validate the signed app bundle:
 
 ```bash
 spctl -a -vvv -t install "release/mac-arm64/Copse.app"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
 xcrun stapler validate "release/mac-arm64/Copse.app"
+```
+
+`Release (macOS)` also signs, notarizes, and staples the DMG itself, then
+rebuilds its blockmap from the stapled bytes
+([`scripts/rebuild-dmg-blockmap.mts`](../scripts/rebuild-dmg-blockmap.mts)). A
+local `dist:mac` or `release:dry` signs and notarizes only the app. To check a
+released DMG:
+
+```bash
+codesign --verify --strict --verbose=2 Copse-<ver>-arm64.dmg
+spctl -a -vvv -t open --context context:primary-signature Copse-<ver>-arm64.dmg
+xcrun stapler validate Copse-<ver>-arm64.dmg
 ```
 
 After downloading an Actions artifact or the files from a GitHub Release into
