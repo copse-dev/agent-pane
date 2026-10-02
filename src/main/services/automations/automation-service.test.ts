@@ -27,6 +27,7 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
   private tasks: SupervisedTaskMeta[] = []
   private started: Promise<void> | null = null
   private nextId = 0
+  private readonly listeners = new Set<(task: SupervisedTaskMeta) => void>()
 
   constructor(durable: readonly SupervisedTaskMeta[] = []) {
     this.durable = [...durable]
@@ -74,6 +75,22 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
 
   registerHandler(): () => void {
     return () => {}
+  }
+
+  subscribe(listener: (task: SupervisedTaskMeta) => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  /** Move a task to a new state and tell subscribers, as the real supervisor does. */
+  setState(taskId: string, state: SupervisedTaskMeta['state']): void {
+    const task = this.tasks.find((candidate) => candidate.taskId === taskId)
+    if (!task) throw new Error(`No task ${taskId}`)
+    const next: SupervisedTaskMeta = { ...task, state }
+    this.tasks = this.tasks.map((candidate) => (candidate === task ? next : candidate))
+    for (const listener of this.listeners) listener(next)
   }
 }
 
@@ -817,5 +834,168 @@ describe('AutomationService', () => {
     assert.equal(supervisor.enqueued.length, 1)
     assert.equal(supervisor.enqueued[0]?.threadId, scheduleId)
     assert.deepEqual(supervisor.cancelled, [])
+  })
+
+  describe('scheduler task recovery', () => {
+    const SCHEDULE_ID = 'schedule-1'
+    function seedSchedule(): void {
+      storageSet(STORAGE_KEY, [
+        {
+          id: SCHEDULE_ID,
+          projectId: 'project-a',
+          name: 'Morning review',
+          cron: '* * * * *',
+          prompt: 'Review the current project.',
+          model: 'gpt-5.4',
+          enabled: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ])
+    }
+    function serviceFor(
+      supervisor: FakeTaskSupervisor,
+    ): ReturnType<typeof createAutomationService> {
+      return createAutomationService({
+        now: () => 0,
+        isPluginEnabled: () => true,
+        createProjectThread: () => Promise.resolve(),
+        loadProjectThreads: () => Promise.resolve([]),
+        releasePreviousRun: () => Promise.resolve(true),
+        supervisor: () => supervisor,
+        recoveryDelayMs: 0,
+      })
+    }
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10))
+
+    it('replaces a scheduler task left blocked by an interrupted restart', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        {
+          ...schedulerTask({ taskId: 'stale', projectId: 'project-a', threadId: SCHEDULE_ID }),
+          state: 'blocked',
+        },
+      ])
+      const service = serviceFor(supervisor)
+
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      assert.deepEqual(supervisor.cancelled, ['stale'])
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('replaces a scheduler task that fails while the app is running', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+      assert.equal(supervisor.enqueued.length, 0)
+
+      supervisor.setState('live', 'failed')
+      await settle()
+      service.stop()
+
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('does not replace the scheduler task more than once for a burst of failures', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+
+      supervisor.setState('live', 'blocked')
+      supervisor.setState('live', 'failed')
+      await settle()
+      service.stop()
+
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('stops reacting to the supervisor once stopped', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      supervisor.setState('live', 'failed')
+      await settle()
+
+      assert.equal(supervisor.enqueued.length, 0)
+    })
+
+    it('enqueues a scheduler task that survives an interrupted tick and has room to finish', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor()
+      const service = serviceFor(supervisor)
+
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      const [input] = supervisor.enqueued
+      assert.ok(input)
+      assert.equal(input.restartPolicy, 'retry')
+      assert.ok((input.resourceBudget?.maxDurationMs ?? 0) >= 120_000)
+    })
+  })
+
+  it('triggers schedules due in the same minute together, so a slow one cannot starve the rest', async () => {
+    storageSet(
+      STORAGE_KEY,
+      ['a', 'b', 'c'].map((id) => ({
+        id,
+        projectId: 'project-a',
+        name: id,
+        cron: '* * * * *',
+        prompt: 'p',
+        model: 'm',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      })),
+    )
+    // Every thread creation waits until all three have begun. A sequential tick
+    // would never get the second one started, and the guard below would fire.
+    const begun: string[] = []
+    let openBarrier: () => void = () => {}
+    const barrier = new Promise<void>((resolve) => {
+      openBarrier = resolve
+    })
+    const service = createAutomationService({
+      now: () => new Date(2026, 6, 27, 9, 0, 5).getTime(),
+      isPluginEnabled: () => true,
+      createProjectThread: async (_projectId, thread) => {
+        begun.push(thread.title)
+        if (begun.length === 3) openBarrier()
+        await barrier
+      },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+
+    const outcome = await Promise.race([
+      service.tick().then(() => 'done'),
+      new Promise<string>((resolve) => {
+        setTimeout(() => {
+          resolve('serialised')
+        }, 500)
+      }),
+    ])
+
+    assert.equal(outcome, 'done')
+    assert.deepEqual(begun.sort(), ['a', 'b', 'c'])
   })
 })

@@ -26,6 +26,8 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
+const SCHEDULER_MAX_DURATION_MS = 120_000
+const SCHEDULER_RECOVERY_DELAY_MS = 5_000
 
 interface CopseAutomationAction {
   toolName: string
@@ -203,6 +205,7 @@ export interface AutomationTaskSupervisor {
   cancel(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null>
   enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta>
   registerHandler(kind: string, handler: SupervisedTaskHandler): () => void
+  subscribe(listener: (task: SupervisedTaskMeta) => void): () => void
 }
 
 export interface AutomationServiceDependencies {
@@ -212,6 +215,8 @@ export interface AutomationServiceDependencies {
   releasePreviousRun(projectId: string, threadId: string): Promise<boolean>
   isPluginEnabled(): boolean
   supervisor?: () => AutomationTaskSupervisor
+  /** Pause before replacing a scheduler task that died, so a task that dies instantly cannot spin. */
+  recoveryDelayMs?: number
 }
 
 export function createAutomationService(
@@ -219,6 +224,8 @@ export function createAutomationService(
 ): AutomationService {
   let notify: ((event: AutomationTriggerEvent) => void) | null = null
   let disposeSupervisorHandler: (() => void) | null = null
+  let disposeSupervisorSubscription: (() => void) | null = null
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null
   let schedulerSync = Promise.resolve()
   const inFlight = new Set<string>()
   const attemptedMinutes = new Map<string, number>()
@@ -284,7 +291,7 @@ export function createAutomationService(
     // `automation_scheduler_tick` per launch, each ticking every minute.
     await supervisor.start()
     supervisor.syncCronTasks()
-    const existing = supervisor
+    const unfinished = supervisor
       .list()
       .filter(
         (task) =>
@@ -293,6 +300,12 @@ export function createAutomationService(
           task.state !== 'failed' &&
           task.state !== 'completed',
       )
+    // A blocked task is never woken again (an interrupted tick leaves it so after
+    // a restart). Adopting it as the owner would leave nothing ticking at all, so
+    // retire it and let a fresh task take over below.
+    const blocked = unfinished.filter((task) => task.state === 'blocked')
+    await Promise.all(blocked.map((task) => supervisor.cancel(task.projectId, task.taskId)))
+    const existing = unfinished.filter((task) => task.state !== 'blocked')
     if (!dependencies.isPluginEnabled()) {
       await Promise.all(existing.map((task) => supervisor.cancel(task.projectId, task.taskId)))
       return
@@ -327,10 +340,23 @@ export function createAutomationService(
       },
       reapproveOnWake: false,
       concurrencyClass: 'schedule',
-      resourceBudget: { maxDurationMs: 30_000 },
+      resourceBudget: { maxDurationMs: SCHEDULER_MAX_DURATION_MS },
       maxAttempts: 1,
+      // The tick is idempotent per minute, so an interrupted one is safe to rerun.
+      restartPolicy: 'retry',
       contentHash: SCHEDULER_HANDLER,
     })
+  }
+
+  function scheduleRecovery(): void {
+    if (recoveryTimer !== null) return
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null
+      void ensureSupervisorTask().catch((error: unknown) => {
+        console.error('[automations] Scheduler recovery failed:', error)
+      })
+    }, dependencies.recoveryDelayMs ?? SCHEDULER_RECOVERY_DELAY_MS)
+    recoveryTimer.unref()
   }
 
   function ensureSupervisorTask(): Promise<void> {
@@ -552,6 +578,14 @@ export function createAutomationService(
           return {}
         },
       )
+      // The scheduler task can fail (duration budget, thrown error) with nothing
+      // else to replace it until the next launch, so replace it as soon as it dies.
+      disposeSupervisorSubscription ??= (dependencies.supervisor ?? getTaskSupervisor)().subscribe(
+        (task) => {
+          if (task.handler !== SCHEDULER_HANDLER) return
+          if (task.state === 'failed' || task.state === 'blocked') scheduleRecovery()
+        },
+      )
       void ensureSupervisorTask().catch((error: unknown) => {
         console.error('[automations] Scheduler registration failed:', error)
       })
@@ -562,6 +596,10 @@ export function createAutomationService(
     stop() {
       disposeSupervisorHandler?.()
       disposeSupervisorHandler = null
+      disposeSupervisorSubscription?.()
+      disposeSupervisorSubscription = null
+      if (recoveryTimer !== null) clearTimeout(recoveryTimer)
+      recoveryTimer = null
       notify = null
     },
     async tick() {
@@ -569,6 +607,7 @@ export function createAutomationService(
       const now = dependencies.now()
       const date = new Date(now)
       const currentMinute = minuteStamp(now)
+      const due: AutomationSchedule[] = []
       for (const schedule of readSchedules()) {
         if (!schedule.enabled || inFlight.has(schedule.id)) continue
         if (
@@ -585,14 +624,22 @@ export function createAutomationService(
           continue
         }
         attemptedMinutes.set(schedule.id, currentMinute)
-        try {
-          await trigger(schedule, now)
-        } catch (error) {
-          // Isolate failures so one project cannot prevent other matching
-          // schedules from running. Do not retry repeatedly in the same minute.
-          logTriggerFailure(schedule, error)
-        }
+        due.push(schedule)
       }
+      // Run due schedules side by side: each one does git worktree work, and a
+      // sequential pass over many schedules due on the same minute could outlast
+      // the scheduler task's duration budget and take the whole scheduler down.
+      await Promise.all(
+        due.map(async (schedule) => {
+          try {
+            await trigger(schedule, now)
+          } catch (error) {
+            // Isolate failures so one project cannot prevent other matching
+            // schedules from running. Do not retry repeatedly in the same minute.
+            logTriggerFailure(schedule, error)
+          }
+        }),
+      )
     },
   }
   return service
