@@ -113,6 +113,11 @@ export function moreHorizontalIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('more-horizontal', ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], className)
 }
 
+/** Three vertical dots for row action menus. */
+export function moreVerticalIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('more-vertical', ['M12 5h.01', 'M12 12h.01', 'M12 19h.01'], className)
+}
+
 /**
  * Same three-dot glyph as {@link moreHorizontalIcon}, used as a running-thread
  * status mark. CSS animates opacity across the paths so the ellipsis "walks".
