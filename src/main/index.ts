@@ -95,6 +95,7 @@ import {
   repairCorruptGortexConfig,
   stopGortexDaemon,
 } from './services/search/semantic-index.ts'
+import { stopLocalClassifierServers } from './services/classifiers/local-classifiers.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
@@ -1207,6 +1208,7 @@ app.on('before-quit', (event) => {
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  stopLocalClassifierServers()
   // The hidden video-decoder window is not the main window, so nothing else
   // closes it — left open it would keep the app alive past the last quit.
   closeVideoDecoder()

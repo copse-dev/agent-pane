@@ -843,6 +843,37 @@ dialog.settings-overlay::backdrop {
   margin-left: auto;
 }
 
+/* Classifiers: servers found on this machine and keys found in the environment,
+   one row each, above the saved connections. */
+.classifier-local {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.classifier-local-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+}
+.classifier-local-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.classifier-local-info .field-hint {
+  overflow-wrap: anywhere;
+}
+.classifier-local-error {
+  color: var(--danger);
+}
+
 /* Providers panel: chip row selects one provider; its form shows below. */
 .provider-chips {
   display: flex;

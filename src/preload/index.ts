@@ -1014,6 +1014,13 @@ const api: ApiClient = {
     screening: () => ipcRenderer.invoke('classifiers:screening'),
     setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
   },
+  localClassifiers: {
+    status: () => ipcRenderer.invoke('local-classifiers:status'),
+    install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
+    start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
+    stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
