@@ -310,6 +310,39 @@ describe('context wheel combined usage hover', () => {
     assert.equal(popover.querySelectorAll('.footer-usage-popover-divider').length, 0)
   })
 
+  it('stays open across a re-render while the pointer is on it', () => {
+    // The footer re-renders under an open hover — streaming, a usage change, the
+    // async context estimate landing. That must not close it.
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    assert.equal(popover.hidden, false)
+
+    wheel.root.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+    // After the pointer has left, a re-render must not reopen it.
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    assert.equal(popover.hidden, true)
+  })
+
+  it('does not reopen for a pointer that is still there once the wheel has nothing to show', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    wheel.update(null, false, { breakdown: null, breakdownRing: false, usage: null })
+    assert.equal(wheel.root.hidden, true)
+    assert.equal(popover.hidden, true)
+  })
+
   it('does not leak the previous usage into a thread without any', () => {
     const wheel = createContextWheel()
     document.body.append(wheel.root)

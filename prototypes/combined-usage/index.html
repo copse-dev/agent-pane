@@ -211,10 +211,6 @@
       .ring-fill.is-danger {
         stroke: var(--danger);
       }
-      /* ACP: the ring is the agent's own figure — dashed track says "reported". */
-      .usage-trigger.is-acp .ring-track {
-        stroke-dasharray: 2 2.2;
-      }
 
       /* ── The combined popover ──────────────────────────────────── */
       .popover {
@@ -451,10 +447,6 @@
           <li>
             Sections the mode can't supply are dropped, not zeroed — ACP has no part-by-part context
             split; a thread with no subagent runs shows no subagent block.
-          </li>
-          <li>
-            Dashed ring track = the figure is reported by an external (ACP) agent rather than
-            measured by Copse.
           </li>
         </ul>
       </div>
@@ -1024,7 +1016,6 @@
           'aria-label',
           `Context ${pctOf(m.used, m.window)}% used, ${m.tokens}`,
         )
-        $('trigger').classList.toggle('is-acp', m.kind === 'acp')
         drawRing(m)
         renderPopover(m)
         syncOpen()
