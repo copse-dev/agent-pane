@@ -21,6 +21,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
@@ -269,6 +270,10 @@ import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import {
+  MCP_UI_CANVAS_PLUGIN_ID,
+  ANIMATED_EXPLAINERS_SETTING_ID,
+} from '@copse/agent/canvas-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -1344,6 +1349,27 @@ export function registerAllHandlers(
     return setScreeningClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
   })
 
+  ipcMain.handle('local-classifiers:status', (event) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().overview()
+  })
+  ipcMain.handle('local-classifiers:install', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().install(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:start', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().start(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1768,20 +1794,20 @@ export function registerAllHandlers(
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
-    // Archived threads are hidden from every renderer surface (sidebar and
-    // `@`-catalog both filter them), so folding their history into the store
-    // only grew the heap. They stay on disk and in the whole-history readers.
-    // Threads written before `prRefs` existed have no cached PR links, and a
-    // metadata-only load has no transcript to scrape — so their sidebar chips
-    // would be missing. Fill them in behind the load: fire-and-forget, low
-    // concurrency, one pass per project ever (the result is recorded on each
-    // thread's metadata), pushing batches so the chips appear without a relaunch.
-    void backfillThreadPrRefs(id, (refs) => {
-      if (!win.isDestroyed()) win.webContents.send('threads:pr-refs', id, refs)
-    }).catch((err: unknown) => {
-      console.warn('[threads] PR-ref backfill failed:', err)
-    })
+    // Archived threads stay on disk but are hidden from renderer surfaces.
+    // The sidebar loads metadata only; legacy PR links are filled on demand
+    // when their rows enter the visible viewport.
     return loadProjectThreadMetas(id, { includeArchived: false })
+  })
+  ipcMain.handle('threads:backfill-pr-refs', async (event, projectId: unknown, ids: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, threadIds] = parseIpcArgs(z.tuple([zProjectId, z.array(zThreadId).min(1).max(10)]), [
+      projectId,
+      ids,
+    ])
+    await backfillThreadPrRefs(id, threadIds, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr-refs', id, refs)
+    })
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.
@@ -2328,6 +2354,10 @@ export function registerAllHandlers(
         [rawValue],
       )
       await getPluginService().setSetting(id, key, value)
+      if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
+        const statuses = await reloadMcpServersForPluginToggle(registry, id)
+        if (statuses) win.webContents.send('mcp:status-changed', statuses)
+      }
       return { plugins: getPluginService().list() }
     },
   )

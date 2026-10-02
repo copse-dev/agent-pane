@@ -50,7 +50,7 @@ describe('buildRemotePtyLaunch', () => {
       )
 
       await getSshConnectionManager().connect('dev-box')
-      const launch = await buildRemotePtyLaunch('dev-box', '/etc/ddg', {
+      const launch = await buildRemotePtyLaunch('dev-box', '/srv/app', {
         SHELL: '/bin/zsh',
         PATH: '/opt/homebrew/bin:/bin',
         HOME: '/Users/me',
@@ -59,7 +59,7 @@ describe('buildRemotePtyLaunch', () => {
 
       const remoteCmd = launch.args.at(-1)
       assert.ok(remoteCmd)
-      assert.match(remoteCmd, /cd '\/etc\/ddg'/)
+      assert.match(remoteCmd, /cd '\/srv\/app'/)
       assert.match(remoteCmd, /LANG='en_US\.UTF-8' exec '\/bin\/bash' -l/)
       assert.doesNotMatch(remoteCmd, /\benv\b/)
       assert.doesNotMatch(remoteCmd, /\/bin\/zsh/)
