@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedProjectSwitchFixture, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -28,7 +27,6 @@ describe('roadmap project switching', () => {
       ]),
     )
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {

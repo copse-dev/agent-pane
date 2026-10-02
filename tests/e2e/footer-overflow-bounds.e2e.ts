@@ -103,8 +103,7 @@ describe('footer overflow menu bounds', () => {
   it('keeps every menu edge inside a narrow composer', async function () {
     this.timeout(90_000)
 
-    await $('.thread-browser [aria-label="New thread"]').waitForClickable({ timeout: 30_000 })
-    await $('.thread-browser [aria-label="New thread"]').click()
+    await $('.project-new-thread-btn').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
 
     const checkoutTrigger = $('.footer-checkout-btn')

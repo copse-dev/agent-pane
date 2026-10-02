@@ -1,5 +1,4 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -53,7 +52,6 @@ describe('dialog keyboard shortcuts', () => {
     })
     seedE2eViewport()
     await browser.reloadSession()
-    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
 
@@ -66,11 +64,9 @@ describe('dialog keyboard shortcuts', () => {
       timeout: 15_000,
       timeoutMsg: 'expected two seeded chat rows',
     })
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      'Active conversation',
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Active conversation')
 
-    await $('.thread-project-manager [aria-label="Settings"]').click()
+    await $('[aria-label="Settings"]').click()
     const settings = $('#settings-dialog')
     await settings.waitForDisplayed({ timeout: 10_000 })
 
@@ -84,9 +80,7 @@ describe('dialog keyboard shortcuts', () => {
 
     await expect(settings).toBeDisplayed()
     await expect($('#confirm-dialog')).not.toBeDisplayed()
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      'Active conversation',
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Active conversation')
     expect(await $$('.chats-list .chat-row')).toHaveLength(2)
     await saveElementScreenshot('#settings-dialog', 'cmd-w-settings-dialog-safe.png')
   })

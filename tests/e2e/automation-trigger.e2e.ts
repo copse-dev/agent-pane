@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import {
   E2E_SCREENSHOT_DIR,
   pinTextForCapture,
@@ -222,7 +221,6 @@ describe('cron automation trigger', function () {
       nextWakeAt: MISSED_TICK_AT,
     })
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -257,7 +255,7 @@ describe('cron automation trigger', function () {
     // The switch selects the project's newest thread, which is the scheduled
     // run whenever the tick beat the click. Select the ordinary chat so the
     // Automations section starts collapsed either way.
-    const regularChat = $('.thread-project-manager .chat-row[data-thread-id="regular-chat"]')
+    const regularChat = $('.chat-row[data-thread-id="regular-chat"]')
     await regularChat.waitForExist({ timeout: 15_000 })
     await regularChat.click()
     await browser.waitUntil(

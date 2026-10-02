@@ -11,6 +11,7 @@ import type {
 } from '@shared/types/app-run.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
+import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
 import type {
   ContextBreakdown,
   MachineAgentRunRequest,
@@ -790,6 +791,7 @@ export interface ApiClient {
     onUiScaleReset: (handler: () => void) => () => void
   }
   classifiers: ClassifierClient
+  localClassifiers: LocalClassifierClient
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
@@ -1227,11 +1229,7 @@ export interface ApiClient {
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>
-    status: (
-      projectId: string,
-      threadId: string,
-      inspectOnly?: boolean,
-    ) => Promise<GitStatusResult | null>
+    status: (projectId: string, threadId: string) => Promise<GitStatusResult | null>
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
     changeStats: (
       projectId: string,

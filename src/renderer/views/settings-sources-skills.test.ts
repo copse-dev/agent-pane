@@ -108,7 +108,7 @@ describe('settings sources → skills list', () => {
 
   it('wraps title and hover path in a primary slot for containment', async () => {
     const longPath =
-      '/Users/jonathankingston/.cursor/plugins/cache/cursor-public/very-long-plugin-id/' +
+      '/Users/alexandra-morgan/.cursor/plugins/cache/cursor-public/very-long-plugin-id/' +
       'skills/ai-writing-signs-report/SKILL.md'
     const list = await openSkillsList([
       {

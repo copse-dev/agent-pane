@@ -21,6 +21,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
@@ -85,7 +86,6 @@ import {
 } from './ipc-guards.ts'
 import {
   inspectThreadCheckoutAttachment,
-  inspectThreadExecutionContext,
   reattachThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -270,6 +270,10 @@ import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import {
+  MCP_UI_CANVAS_PLUGIN_ID,
+  ANIMATED_EXPLAINERS_SETTING_ID,
+} from '@copse/agent/canvas-settings.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -1345,6 +1349,27 @@ export function registerAllHandlers(
     return setScreeningClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
   })
 
+  ipcMain.handle('local-classifiers:status', (event) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().overview()
+  })
+  ipcMain.handle('local-classifiers:install', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().install(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:start', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().start(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -2329,6 +2354,10 @@ export function registerAllHandlers(
         [rawValue],
       )
       await getPluginService().setSetting(id, key, value)
+      if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
+        const statuses = await reloadMcpServersForPluginToggle(registry, id)
+        if (statuses) win.webContents.send('mcp:status-changed', statuses)
+      }
       return { plugins: getPluginService().list() }
     },
   )
@@ -2677,18 +2706,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    const [projectId, threadId, inspectOnly] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.boolean().optional()]),
-      rawArgs,
-    )
-    // Inspect-only reads come from the thread browser, which checks every
-    // listed thread. Arming a watcher for each would evict the watch-only
-    // roots the Changes pane relies on and feed the 5s reconcile heartbeat
-    // back into another full sweep, so these reads stay unwatched.
-    if (inspectOnly) {
-      const { root } = await inspectThreadExecutionContext(projectId, threadId)
-      return getGitStatus(root)
-    }
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {

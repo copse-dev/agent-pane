@@ -34,7 +34,7 @@ describe('dedupeNearbyVncServers', () => {
 
   it('prefers a saved SSH machine whose hostname resolves to the advertised address', () => {
     const hosts: SshWorkspaceHost[] = [
-      { id: 'mini', label: 'kingston-mac-mini', host: 'kingston-mac-mini' },
+      { id: 'mini', label: 'studio-mac-mini', host: 'studio-mac-mini' },
     ]
 
     assert.deepEqual(

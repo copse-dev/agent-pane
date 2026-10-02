@@ -101,7 +101,7 @@ describe('Attaching an archive to the chat', () => {
 
   it('keeps the unsent archive with its draft while switching threads', async () => {
     const originalThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
-    await $('.thread-browser [aria-label="New thread"]').click()
+    await $('.project-new-thread-btn').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await expect($('.attachment-chips .archive-chip')).not.toBeExisting()
 

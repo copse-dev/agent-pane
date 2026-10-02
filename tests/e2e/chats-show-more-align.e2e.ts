@@ -1,7 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -49,7 +48,6 @@ describe('sidebar Show more alignment', () => {
     resetUserData()
     seedManyThreads()
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   after(() => {
@@ -58,13 +56,13 @@ describe('sidebar Show more alignment', () => {
 
   it('aligns Show more text with thread titles above it', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const showMore = await $('.thread-project-manager .chats-show-more')
+    const showMore = await $('.chats-show-more')
     await showMore.waitForDisplayed({ timeout: 10_000 })
     await expect(showMore).toHaveText('Show more')
 
     const alignment = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>('.chats-list .chat-row')
-      const btn = document.querySelector<HTMLElement>('.thread-project-manager .chats-show-more')
+      const btn = document.querySelector<HTMLElement>('.chats-show-more')
       if (!row || !btn) return null
       const rowStyle = getComputedStyle(row)
       const btnStyle = getComputedStyle(btn)

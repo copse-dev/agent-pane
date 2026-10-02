@@ -1,6 +1,5 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { openProjectManager } from './helpers/project-manager.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
@@ -24,7 +23,6 @@ describe('thread GitHub PR status refresh', () => {
     resetUserData()
     ;({ openThreadTitle } = seedThreadPrStatusFixture(process.cwd()))
     await browser.reloadSession()
-    await openProjectManager()
   })
 
   afterEach(() => {
@@ -35,11 +33,9 @@ describe('thread GitHub PR status refresh', () => {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
-      openThreadTitle,
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
 
-    const openIcon = await $('.thread-project-manager .chat-row.selected .chat-pr-status')
+    const openIcon = await $('.chat-row.selected .chat-pr-status')
     await openIcon.waitForExist({ timeout: 15_000 })
     await expect(openIcon).toHaveElementClass('is-open')
 
@@ -50,9 +46,7 @@ describe('thread GitHub PR status refresh', () => {
       try {
         const searchInput = document.querySelector<HTMLInputElement>('.projects-search-input')
         searchInput?.dispatchEvent(new Event('input', { bubbles: true }))
-        const icon = document.querySelector(
-          '.thread-project-manager .chat-row.selected .chat-pr-status',
-        )
+        const icon = document.querySelector('.chat-row.selected .chat-pr-status')
         return {
           exists: icon !== null,
           open: icon?.classList.contains('is-open') ?? false,

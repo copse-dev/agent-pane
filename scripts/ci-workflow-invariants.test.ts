@@ -79,6 +79,63 @@ describe('ci.yml workflow invariants', () => {
     return next >= 0 ? rest.slice(0, next) : rest
   }
 
+  function shardSpecs(mode: 'full' | 'subset', shard: number, total: number, specs = ''): string[] {
+    const job = jobBlock('e2e')
+    const start = job.indexOf('          if [ "$PLAN_MODE" = "full" ]; then')
+    const end = job.indexOf('          # `timeout`', start)
+    assert.ok(start >= 0 && end > start, 'expected the real shard-selection shell')
+    const script = job.slice(start, end).replaceAll('${{ matrix.shard }}', String(shard))
+    const result = spawnSync(
+      'bash',
+      ['-eu', '-c', `${script}\nprintf '\nSELECTED:%s\n' "$SPEC_ARGS"`],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, PLAN_MODE: mode, PLAN_SPECS: specs, SHARD_TOTAL: String(total) },
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const selected = result.stdout.match(/^SELECTED:(.*)$/m)?.[1]?.trim()
+    if (!selected) return []
+    const args = selected.split(/\s+/)
+    assert.ok(args.every((arg, index) => index % 2 === 1 || arg === '--spec'))
+    return args.filter((_arg, index) => index % 2 === 1)
+  }
+
+  it('spreads the full eligible suite without losing coverage or clustering explainer specs', () => {
+    const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
+      encoding: 'utf8',
+    })
+    assert.equal(listed.status, 0, listed.stderr)
+    const expected = listed.stdout.trim().split('\n')
+    assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
+    const sizes = buckets.map((bucket) => bucket.length)
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1)
+    const family = ['thread-explainer-drawing', 'thread-explainer-scenes', 'thread-explainer']
+    const owners = family.map((name) =>
+      buckets.findIndex((bucket) => bucket.includes(`tests/e2e/${name}.e2e.ts`)),
+    )
+    assert.equal(
+      new Set(owners).size,
+      family.length,
+      'long animation cases must not share a worker',
+    )
+    assert.ok(owners.every((owner) => owner >= 0))
+  })
+
+  it('keeps subset plans scoped and safely handles an empty slice', () => {
+    const specs = 'tests/e2e/a.e2e.ts tests/e2e/b.e2e.ts tests/e2e/c.e2e.ts'
+    assert.deepEqual(shardSpecs('subset', 1, 2, specs), [
+      'tests/e2e/a.e2e.ts',
+      'tests/e2e/c.e2e.ts',
+    ])
+    assert.deepEqual(shardSpecs('subset', 2, 2, specs), ['tests/e2e/b.e2e.ts'])
+    assert.deepEqual(shardSpecs('subset', 1, 1), [])
+  })
+
   it('fetches one commit history instead of every branch and tag', () => {
     // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
     // every tag: 2.3 GB, against ~1 GB for the checked-out commit's history.
