@@ -900,6 +900,11 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    /** Classifier calls, verdicts, latency and tokens a thread caused (its decision log). */
+    getThreadClassifierUse: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (

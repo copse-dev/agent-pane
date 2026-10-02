@@ -5,7 +5,12 @@ import { getSetting } from '../storage/settings.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { recordDecision } from './decision-log-store.ts'
-import { classifyShellTierWithClassifier } from './safety-classifier-profile.ts'
+import { recordClassifierCall } from './classifier-call-log.ts'
+import type { Screening } from './safety-screening.ts'
+import {
+  classifyShellTierWithClassifier,
+  type ShellTierVerdict,
+} from './safety-classifier-profile.ts'
 import { reportSafetyModelProblem } from './safety-model-availability.ts'
 
 /**
@@ -44,6 +49,32 @@ export function tierScreeningClassifier(): string | null {
   return screeningClassifierId()
 }
 
+/**
+ * Report one tier-classifier call on the thread's classifier-use record. The
+ * label is the tier it thought likeliest; `threadId`/`projectId` are passed by a
+ * caller whose answer can arrive after another run is active.
+ */
+function reportTierCall(
+  screening: Screening<ShellTierVerdict>,
+  attribution: { threadId?: string; projectId?: string } = {},
+): void {
+  if (screening.engine === undefined) return
+  let top: { tier: string; probability: number } | null = null
+  for (const [tier, probability] of Object.entries(screening.verdict?.probabilities ?? {})) {
+    if (top === null || probability > top.probability) top = { tier, probability }
+  }
+  recordClassifierCall({
+    subject: 'shell-tier',
+    engine: screening.engine,
+    verdictLabel: top?.tier ?? null,
+    ...(top ? { confidence: top.probability } : {}),
+    latencyMs: screening.latencyMs ?? 0,
+    usage: screening.usage,
+    ...(screening.timedOut ? { timedOut: true } : {}),
+    ...attribution,
+  })
+}
+
 function probabilityOf(probabilities: Readonly<Record<string, number>>, tiers: string[]): number {
   return tiers.reduce((sum, tier) => sum + (probabilities[tier] ?? 0), 0)
 }
@@ -59,12 +90,9 @@ export async function guardedYoloTierReason(
 ): Promise<string | null> {
   const id = tierScreeningClassifier()
   if (!id) return null
-  const { verdict, problem } = await classifyShellTierWithClassifier(
-    id,
-    command,
-    workspaceRoot,
-    signal,
-  )
+  const screening = await classifyShellTierWithClassifier(id, command, workspaceRoot, signal)
+  const { verdict, problem } = screening
+  reportTierCall(screening)
   if (problem) reportSafetyModelProblem(problem)
   if (!verdict) return null
   const ask = probabilityOf(verdict.probabilities, ['ask'])
@@ -104,7 +132,9 @@ export function shadowTierScreening(
   const projectId = getActiveProjectId()
   if (!threadId || !projectId) return null
   return classifyShellTierWithClassifier(id, command, workspaceRoot).then(
-    ({ verdict }) => {
+    (screening) => {
+      reportTierCall(screening, { threadId, projectId })
+      const { verdict } = screening
       if (!verdict) return
       const localWrite = probabilityOf(verdict.probabilities, LOCAL_WRITE_TIERS)
       const wouldApprove = localWrite >= SHADOW_LOCAL_WRITE_PROBABILITY && harmAction === 'allow'

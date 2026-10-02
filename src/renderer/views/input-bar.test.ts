@@ -92,6 +92,7 @@ function createApi(options: {
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
   catalogThreads?: ThreadCatalogHit[]
+  getThreadClassifierUse?: ApiClient['usage']['getThreadClassifierUse']
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -121,6 +122,11 @@ function createApi(options: {
       fs: {
         ...base['fs'],
         onChanged: () => () => {},
+      },
+      usage: {
+        ...base['usage'],
+        getThreadClassifierUse:
+          options.getThreadClassifierUse ?? base['usage'].getThreadClassifierUse,
       },
       security: {
         ...base['security'],
@@ -3507,6 +3513,105 @@ describe('input bar footer usage hover', () => {
     assert.match(popover.textContent, /Output\s*196\.0k/)
     assert.match(popover.textContent, /Subagents\s*1 run · 800\.0k in \/ 15\.0k out/)
     assert.match(popover.textContent, /Free: local model/)
+  })
+})
+
+describe('input bar footer classifier use', () => {
+  const classifierUse = {
+    calls: 2,
+    rows: [
+      {
+        subject: 'shell-scope' as const,
+        engine: 'Kev 4B',
+        calls: 2,
+        verdicts: [{ label: 'sandbox', count: 2 }],
+        noVerdict: 0,
+        averageLatencyMs: 800,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    ],
+  }
+
+  function mountWith(getThreadClassifierUse: ApiClient['usage']['getThreadClassifierUse']): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+  } {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [
+        {
+          ...thread(),
+          model: 'claude-sonnet-4-6',
+          usage: { inputTokens: 1200, outputTokens: 300 },
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main', getThreadClassifierUse }))
+    return { host, store }
+  }
+
+  it('asks main for the active thread and shows the classifiers in the hover', async () => {
+    const asked: Array<[string, string]> = []
+    const { host } = mountWith(async (projectId, threadId) => {
+      asked.push([projectId, threadId])
+      return classifierUse
+    })
+    await settle()
+
+    assert.deepEqual(asked, [['project-1', 'thread-1']])
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    const popover = host.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.match(popover?.textContent ?? '', /Classifiers · 2 calls/)
+    assert.match(popover?.textContent ?? '', /Shell guard/)
+    assert.match(popover?.textContent ?? '', /2 sandbox/)
+  })
+
+  it('does not re-ask on an unrelated footer refresh', async () => {
+    let asks = 0
+    const { host } = mountWith(async () => {
+      asks += 1
+      return classifierUse
+    })
+    await settle()
+    const before = asks
+    // Typing refreshes the footer; nothing that can add a classifier call moved.
+    const input = host.querySelector<HTMLTextAreaElement>('.prompt-input')
+    assert.ok(input)
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    assert.equal(asks, before)
+  })
+
+  it('shows no classifier section when the thread asked none', async () => {
+    const { host } = mountWith(async () => ({ calls: 0, rows: [] }))
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.doesNotMatch(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers/,
+    )
+  })
+
+  it('survives a failed fetch without breaking the hover', async () => {
+    const { host } = mountWith(async () => {
+      throw new Error('boom')
+    })
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.match(host.querySelector('.context-wheel-popover')?.textContent ?? '', /Usage ·/)
   })
 })
 

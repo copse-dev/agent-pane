@@ -20,9 +20,13 @@ import {
 } from '../thread-models.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { readDecisionLog } from './decision-log-store.ts'
+import { getThreadClassifierUse } from './classifier-use-report.ts'
+import { CLASSIFIER_CALL_KIND } from '@shared/usage/classifier-use.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { SHELL_TIER_QUESTION } from './safety-classifier-profile.ts'
+import { classifyShellScope } from './safety-classifier.ts'
+import { classifyTerminalSnapshot } from './terminal-read-guard.ts'
 import { resetSafetyModelProblemReportsForTest } from './safety-model-availability.ts'
 import { resetSafetyModelCooldownsForTest } from './safety-model-cooldown.ts'
 
@@ -137,6 +141,93 @@ describe('tier screening through the safety-screening classifier', () => {
     assert.equal(prompts, 1)
     const decisions = await readDecisionLog(PROJECT)
     assert.ok(decisions.some((d) => d.source === 'tier-screening' && d.confidence === 0.9))
+  })
+
+  it('reports the call on the thread: subject, engine, verdict and latency', async () => {
+    await chooseKev()
+    answering(distribution(0.9))
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.equal(calls.length, 1, 'one line per engine call')
+    const [call] = calls
+    assert.equal(call?.actor, 'classifier')
+    assert.equal(call?.verdict, 'classified')
+    assert.equal(call?.subject, 'shell-tier')
+    assert.equal(call?.scope, 'ask', 'the label is the tier it thought likeliest')
+    assert.equal(call?.confidence, 0.9)
+    assert.equal(call?.source, KEV?.label)
+    assert.equal(typeof call?.latencyMs, 'number')
+    assert.doesNotMatch(JSON.stringify(call), /example\.com/, 'the command is never recorded')
+
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.calls, 1)
+    assert.deepEqual(use.rows[0]?.verdicts, [{ label: 'ask', count: 1 }])
+  })
+
+  it('reports shell-scope and terminal-read calls with their verdict labels and tokens', async () => {
+    await chooseKev()
+    mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+      const asksScope = typeof init?.body === 'string' && init.body.includes('sandbox')
+      const probabilities = asksScope
+        ? { sandbox: 0.8, external: 0.2 }
+        : { safe: 0.95, risky: 0.05 }
+      return Response.json({
+        model: 'kev-fixture',
+        answers: {
+          decision: {
+            type: 'choice',
+            choice: Object.keys(probabilities)[0],
+            probabilities,
+          },
+        },
+        usage: { input_tokens: 12, output_tokens: 3 },
+      })
+    })
+    await runWithActiveRunIdentity(THREAD, async () => {
+      setActiveRunThread(THREAD)
+      try {
+        await classifyShellScope('ls')
+        await classifyShellScope('ls -la')
+        await classifyTerminalSnapshot('ordinary output')
+      } finally {
+        clearActiveRunThread(THREAD)
+      }
+    })
+
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.calls, 3)
+    const scope = use.rows.find((row) => row.subject === 'shell-scope')
+    assert.equal(scope?.calls, 2)
+    assert.deepEqual(scope?.verdicts, [{ label: 'sandbox', count: 2 }])
+    assert.equal(scope?.inputTokens, 24)
+    assert.equal(scope?.outputTokens, 6)
+    const terminal = use.rows.find((row) => row.subject === 'terminal-read')
+    assert.deepEqual(terminal?.verdicts, [{ label: 'safe', count: 1 }])
+  })
+
+  it('reports a failed connection as a call with no verdict', async () => {
+    await chooseKev()
+    answering('fail')
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.scope, undefined)
+    assert.equal(calls[0]?.verdict, 'ask')
+    const use = await getThreadClassifierUse(PROJECT, THREAD)
+    assert.equal(use.rows[0]?.noVerdict, 1)
+  })
+
+  it('reports nothing when no connection was asked', async () => {
+    answering(distribution(0.9))
+    await underGuardedYolo(() =>
+      ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+    )
+    const calls = (await readDecisionLog(PROJECT)).filter((d) => d.kind === CLASSIFIER_CALL_KIND)
+    assert.deepEqual(calls, [])
   })
 
   it('lets the harm gate allow stand when ask is unlikely', async () => {

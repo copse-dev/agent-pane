@@ -1,6 +1,7 @@
 import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
 import type { FooterUsageTooltipModel } from '@shared/usage/footer-usage-tooltip.ts'
-import { appendUsageSections } from './footer-usage-popover.ts'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
+import { appendClassifierSection, appendUsageSections } from './footer-usage-popover.ts'
 
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -42,6 +43,8 @@ export interface ContextWheelOptions {
    * stays visible as an empty ring so usage still has an anchor.
    */
   usage?: FooterUsageTooltipModel | null
+  /** What the classifiers did for this thread; shown beneath usage when any was asked. */
+  classifierUse?: ThreadClassifierUse | null
   /**
    * When true the multi-arc breakdown ring replaces the live snapshot fill
    * (pre-send / fresh threads). When false the measured snapshot ring stays,
@@ -100,6 +103,7 @@ export function createContextWheel(): {
 
   let popoverActive = false
   let currentUsage: FooterUsageTooltipModel | null = null
+  let currentClassifierUse: ThreadClassifierUse | null = null
 
   function showPopover(): void {
     if (popoverActive) popover.hidden = false
@@ -156,6 +160,7 @@ export function createContextWheel(): {
       popover.append(divider)
     }
     appendUsageSections(popover, currentUsage)
+    if (currentClassifierUse) appendClassifierSection(popover, currentClassifierUse)
   }
 
   function renderBreakdown(breakdown: ContextBreakdown): void {
@@ -311,6 +316,7 @@ export function createContextWheel(): {
     options?: ContextWheelOptions,
   ): void {
     currentUsage = options?.usage ?? null
+    currentClassifierUse = options?.classifierUse ?? null
     const breakdown = options?.breakdown
     if (
       !running &&
