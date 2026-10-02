@@ -289,6 +289,19 @@ export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Lucide git-merge — sidebar thread mark for a PR that has landed. */
+export function gitMergeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'git-merge',
+    [
+      'M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M6 21V9a9 9 0 0 0 9 9',
+    ],
+    className,
+  )
+}
+
 /** Pencil over a baseline — annotation / draw mode. */
 export function penLineIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(

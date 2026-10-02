@@ -561,6 +561,8 @@ jobs:
             // under the comment. Names are re-checked here because they reach
             // markdown and HTML; anything unexpected drops the whole table.
             const previewLimit = 20;
+            const rawImage = (sha, name) =>
+              `<img src="https://github.com/${owner}/${repo}/raw/${sha}/tests/e2e/screenshots/${name}" width="360">`;
             const parseEntries = () => {
               const commit = process.env.COMPARE_COMMIT || '';
               if (!compareUrl || !/^[0-9a-f]{40}$/.test(commit)) return [];
@@ -600,9 +602,7 @@ jobs:
               const shownOthers = others.slice(0, previewLimit - shownTouched.length);
               const shownCount = shownTouched.length + shownOthers.length;
               const total = Math.max(Number(process.env.CANDIDATE_COUNT) || 0, entries.length);
-              const raw = (sha, name) =>
-                `https://github.com/${owner}/${repo}/raw/${sha}/tests/e2e/screenshots/${name}`;
-              const image = (sha, name) => `<img src="${raw(sha, name)}" width="360">`;
+              const image = rawImage;
               const rows = (shown) => [
                 '| Screenshot | Before | After |',
                 '| --- | --- | --- |',
@@ -689,10 +689,21 @@ jobs:
                     'Or commit only some: tick the screenshots to keep, then tick the last box. ' +
                       'The others are not committed.',
                     '',
-                    ...[...candidateEntries]
-                      .sort(byName)
+                    ...[
+                      ...candidateEntries.filter((entry) => entry.focus === true).sort(byName),
+                      ...candidateEntries.filter((entry) => entry.focus !== true).sort(byName),
+                    ]
                       .slice(0, selectionLimit)
-                      .map((entry) => `- [ ] \`${entry.name}\`${entry.new ? ' *(new)*' : ''}`),
+                      .flatMap((entry, index) => [
+                        `- [ ] \`${entry.name}\`${entry.new ? ' *(new)*' : ''}`,
+                        ...(index < previewLimit
+                          ? [
+                              '  ' +
+                                (entry.new ? '' : `${rawImage(process.env.EXPECTED_HEAD_SHA, entry.name)} `) +
+                                rawImage(commit, entry.name),
+                            ]
+                          : []),
+                      ]),
                     ...(candidateEntries.length > selectionLimit
                       ? [`…and ${candidateEntries.length - selectionLimit} more, which only the labels can commit.`]
                       : []),
@@ -747,7 +758,7 @@ jobs:
                         'GitHub’s image diff (2-up, swipe, onion skin).',
                       'The compare view is for viewing only: it shows one bot commit of candidate PNGs on top of this ' +
                         'head and is never merged.',
-                      ...table,
+                      ...(selection.length > 0 && reviewState.includes(selection[0]) ? [] : table),
                       '',
                       'To accept every candidate locally instead, cherry-pick the compare commit onto the PR branch:',
                       '',
