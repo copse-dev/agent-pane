@@ -50,13 +50,10 @@ describe('scaffoldProject', () => {
       await scaffoldProject(project, 'ignored', true)
       assert.deepEqual(git(project, ['ls-files']).split('\n'), ['AGENT.md', 'README.md'])
     } finally {
-      for (const [key, value] of [
-        ['HOME', saved.home],
-        ['XDG_CONFIG_HOME', saved.xdg],
-      ] as const) {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      }
+      if (saved.home === undefined) delete process.env['HOME']
+      else process.env['HOME'] = saved.home
+      if (saved.xdg === undefined) delete process.env['XDG_CONFIG_HOME']
+      else process.env['XDG_CONFIG_HOME'] = saved.xdg
     }
   })
 })
