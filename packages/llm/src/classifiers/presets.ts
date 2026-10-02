@@ -28,6 +28,18 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
     },
   },
   {
+    id: 'winnow',
+    label: 'Winnow-12B (local)',
+    model: 'jev-latest',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      baseUrl: 'http://127.0.0.1:8091/v1',
+      auth: 'none',
+    },
+  },
+  {
     id: 'semif',
     label: 'SemIf (local)',
     model: 'Qwen/Qwen3.5-4B',
