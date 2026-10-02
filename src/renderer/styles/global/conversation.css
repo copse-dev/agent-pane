@@ -355,10 +355,11 @@
   > :not(.message-visual-evidence, .message-canvas-previews) {
   display: none;
 }
-/* With no produced output at all, the bubble takes no room. */
+/* With no produced output at all, the bubble takes no room. (Selectors here
+   must not nest :has(): that is invalid CSS and drops the whole rule.) */
 :is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(
   :has(
-    > .tool-result-content:has(> :not([hidden], .acp-terminal-reference)),
+    > .tool-result-content > :not([hidden], .acp-terminal-reference),
     > .thread-proposal,
     > .reviewer-input-card,
     > .message-body > .message-visual-evidence,
