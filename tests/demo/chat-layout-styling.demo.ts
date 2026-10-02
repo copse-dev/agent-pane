@@ -111,7 +111,7 @@ describe('browser-hosted chat layout styling', () => {
   })
 
   it('shows the gradient in an empty composer-centered chat', async () => {
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await $('.pane-chat.composer-centered').waitForExist()
     const gradient = await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
@@ -125,7 +125,7 @@ describe('browser-hosted chat layout styling', () => {
     // Prior test already opened a blank thread; ensure we stay on that surface
     // without a full remount (another navigation was the flake surface).
     if (!(await $('.pane-chat.composer-centered').isExisting())) {
-      await $('.project-new-thread-btn').click()
+      await $('.thread-browser [aria-label="New thread"]').click()
       await $('.pane-chat.composer-centered').waitForExist()
     }
     const border = await browser.execute(() => {

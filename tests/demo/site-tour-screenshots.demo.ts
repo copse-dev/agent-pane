@@ -23,7 +23,10 @@ async function useReferenceViewport(): Promise<void> {
 async function openScenario(id: string): Promise<void> {
   await browser.url(`/?scenario=${id}`)
   await $('.prompt-input').waitForExist()
-  await expect($('.project-name')).toHaveText('Crumb & Bloom')
+  // The default thread sidebar names the active thread's project on its row.
+  await expect($('.thread-browser-row.selected .thread-browser-project')).toHaveText(
+    'Crumb & Bloom',
+  )
   // A configured model: no "(no key)" or "(offline)" suffix.
   const model = await $('.footer-model-host .model-picker-label').getText()
   expect(model).toMatch(/^Claude Opus 5\.5\b/)

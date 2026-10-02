@@ -51,8 +51,11 @@ describe('landing cupcake walkthrough', () => {
     expect(publishedSite.root).toBe('sites/cupcakes')
     expect(publishedSite.ok).toBe(true)
     expect(publishedSite.html).toContain('<title>Crumb & Bloom')
+    // The default thread sidebar names the active thread's project on its row.
     const projectName = await browser.execute(
-      () => document.querySelector('.project-name')?.textContent ?? '',
+      () =>
+        document.querySelector('.thread-browser-row.selected .thread-browser-project')
+          ?.textContent ?? '',
     )
     expect(projectName).toBe('Crumb & Bloom')
     await expect($('.msg-user .message-text')).toHaveText(expect.stringContaining('Crumb & Bloom'))
