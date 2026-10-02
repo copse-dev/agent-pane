@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
@@ -6,7 +6,7 @@ import {
   saveThreePaneScreenshot,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedE2eThreePaneLayout } from './helpers/seed-config.ts'
-import { seedTodoPlanFixtures } from './todo-plan-fixtures.ts'
+import { createTodoWorkspace, seedTodoPlanFixtures } from './todo-plan-fixtures.ts'
 
 async function openRightPanel(): Promise<void> {
   const pane = await $('#pane-files')
@@ -26,17 +26,21 @@ async function clickThreadByTitle(title: string): Promise<void> {
 describe('todo plan display', () => {
   let noPlanThreadTitle: string
   let allCancelledThreadTitle: string
+  let workspaceParent = ''
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    ;({ noPlanThreadTitle, allCancelledThreadTitle } = seedTodoPlanFixtures(process.cwd()))
+    const workspace = createTodoWorkspace()
+    workspaceParent = workspace.parent
+    ;({ noPlanThreadTitle, allCancelledThreadTitle } = seedTodoPlanFixtures(workspace.root))
     seedE2eThreePaneLayout()
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
+    if (workspaceParent) rmSync(workspaceParent, { recursive: true, force: true })
   })
 
   it('shows inline todo panel with statuses (rendered as the copse.todos plugin panel)', async () => {
