@@ -9,12 +9,12 @@ import {
   checkIcon,
   chevronDownIcon,
   fileTextIcon,
-  handIcon,
   messageQuestionIcon,
   moreHorizontalIcon,
   plusIcon,
   runningStatusIcon,
   searchIcon,
+  shieldIcon,
   warningIcon,
 } from '../dom/icons.ts'
 import { formatAge, trackRunTimings } from '../controller/activity-model.ts'
@@ -807,7 +807,7 @@ export function mountThreadSidebar(
     const glyph = question
       ? messageQuestionIcon
       : approval || waitingSince !== undefined
-        ? handIcon
+        ? shieldIcon
         : thread.status === 'running'
           ? runningStatusIcon
           : thread.status === 'error'
