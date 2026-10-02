@@ -1168,6 +1168,16 @@ var init_model_parameters = __esm({
     };
     RECOMMENDATIONS = [
       {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
         match: "glm-5.3-flash",
         label: "Copse\u2019s experimental balanced agent profile",
         source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
@@ -25661,22 +25671,23 @@ var init_thread_pr_status2 = __esm({
 
 // src/renderer/controller/sidebar-thread.ts
 function sidebarPrRefs(thread) {
-  if (thread.messages && thread.messagesLoaded !== false) {
-    const scraped = collectThreadPrRefs({
-      messages: thread.messages,
-      ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
-    });
-    const seen = new Set(scraped.map(githubPrKey));
-    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)));
-    return [...scraped, ...cachedOnly];
-  }
-  return thread.prRefs ?? [];
+  const scraped = collectThreadPrRefs({
+    messages: thread.messagesLoaded === false ? [] : thread.messages ?? [],
+    ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
+  });
+  const seen = new Set(scraped.map(githubPrKey));
+  const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)));
+  return [...scraped, ...cachedOnly];
 }
 function compactSidebarThread(thread) {
   return {
     id: thread.id,
     title: thread.title,
     status: thread.status,
+    ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
+    ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...thread.gitBranch !== void 0 ? { gitBranch: thread.gitBranch } : {},
+    ...thread.worktree !== void 0 ? { worktree: thread.worktree } : {},
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
     ...thread.automation ? { automation: thread.automation } : {},
@@ -26266,6 +26277,17 @@ function gitPullRequestIcon(className = DEFAULT) {
     className
   );
 }
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
 function penLineIcon(className = DEFAULT) {
   return outlineIcon(
     "pen-line",
@@ -26326,7 +26348,7 @@ var init_icons = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -26350,14 +26372,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -26397,7 +26419,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -26688,7 +26710,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -26769,12 +26791,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -26850,7 +26872,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -26871,7 +26893,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -27149,7 +27171,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -27158,7 +27180,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -27308,7 +27330,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -27319,17 +27341,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -27425,7 +27447,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -27461,7 +27483,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -27556,7 +27578,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -27570,7 +27592,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -27706,7 +27728,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -27717,17 +27739,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -28494,7 +28516,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -28511,7 +28533,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -28532,7 +28554,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -28545,7 +28567,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -28571,7 +28593,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -28623,7 +28645,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -28655,7 +28677,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -28694,7 +28716,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -28716,13 +28738,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -28755,7 +28777,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -28765,17 +28787,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -28828,13 +28850,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -29037,7 +29059,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -29066,7 +29088,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -29085,7 +29107,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -29104,7 +29126,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -29302,7 +29324,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -29313,7 +29335,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -29408,12 +29430,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -29710,7 +29732,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -29727,7 +29749,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -29777,7 +29799,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -29787,7 +29809,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -30006,7 +30028,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -30026,7 +30048,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -30122,7 +30144,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -30132,7 +30154,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -30581,7 +30603,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -30599,7 +30621,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -30699,7 +30721,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -30707,16 +30729,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -30763,7 +30785,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -30787,7 +30809,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -30856,7 +30878,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -30938,7 +30960,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -30976,7 +30998,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -30986,7 +31008,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -31160,7 +31182,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -31174,7 +31196,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -31289,14 +31311,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -31348,7 +31370,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -31533,7 +31555,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -31562,11 +31584,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -31615,13 +31637,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -31665,13 +31687,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -31712,11 +31734,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -31766,14 +31788,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -31879,7 +31901,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -31892,7 +31914,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -31937,7 +31959,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -31946,18 +31968,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -32059,7 +32081,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -32067,7 +32089,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -32254,7 +32276,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -33490,7 +33512,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -33932,7 +33954,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -34200,9 +34222,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -36624,6 +36646,421 @@ url: http://localhost:61025/index.html
   }
 });
 
+// src/shared/demo-site-tour.ts
+function earlierThreads(minutesAgo) {
+  return [
+    {
+      id: "demo-site-tour-coming-soon",
+      title: "Crumb & Bloom coming soon",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-coming-soon-user",
+          role: "user",
+          content: "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4
+        },
+        {
+          id: "demo-site-tour-coming-soon-assistant",
+          role: "assistant",
+          content: "Built the coming-soon page in `index.html`, `styles.css`, and `script.js`.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+    },
+    {
+      id: "demo-site-tour-menu-photos",
+      title: "Compress the menu photos",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-menu-photos-user",
+          role: "user",
+          content: "The menu photos are slow on mobile. Can you compress them?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4
+        },
+        {
+          id: "demo-site-tour-menu-photos-assistant",
+          role: "assistant",
+          content: 'Converted the six menu photos to WebP and added `loading="lazy"`.',
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+    }
+  ];
+}
+function siteTourScenario(id, label, thread, extra = {}) {
+  return {
+    id,
+    label,
+    project: CRUMB_AND_BLOOM,
+    settings: SITE_TOUR_SETTINGS,
+    threads: [thread, ...earlierThreads(30)],
+    ...extra
+  };
+}
+var SITE_TOUR_TIME, SITE_TOUR_MODEL, CRUMB_AND_BLOOM, SITE_TOUR_SETTINGS, SITE_TOUR_GITHUB_MCP, SITE_TOUR_TOOL_PERMISSIONS, SEASONAL_PR_BODY, SIGNUP_THREAD, SITE_TOUR_SCENARIOS;
+var init_demo_site_tour = __esm({
+  "src/shared/demo-site-tour.ts"() {
+    SITE_TOUR_TIME = Date.UTC(2026, 8, 14, 10, 30, 0);
+    SITE_TOUR_MODEL = "claude-opus-5-5";
+    CRUMB_AND_BLOOM = {
+      id: "demo-crumb-and-bloom",
+      name: "Crumb & Bloom",
+      path: "/demo/crumb-and-bloom"
+    };
+    SITE_TOUR_SETTINGS = {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model: SITE_TOUR_MODEL
+    };
+    SITE_TOUR_GITHUB_MCP = {
+      name: "github",
+      transport: "http",
+      state: "connected",
+      toolCount: 5,
+      tools: [
+        "search_issues",
+        "get_pull_request",
+        "create_issue",
+        "add_issue_comment",
+        "merge_pull_request"
+      ],
+      source: "/demo/crumb-and-bloom/.mcp.json",
+      origin: "project",
+      originDetail: ".mcp.json",
+      userEnabled: true,
+      configDisabled: false
+    };
+    SITE_TOUR_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            }
+          ]
+        },
+        {
+          id: "mcp:project:github",
+          name: "github",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/crumb-and-bloom/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:github:search-issues",
+              executionName: "mcp__github__search_issues",
+              name: "Search issues",
+              description: "Search issues and pull requests in a repository.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:get-pull-request",
+              executionName: "mcp__github__get_pull_request",
+              name: "Get pull request",
+              description: "Read a pull request, its diff, and its review comments.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:create-issue",
+              executionName: "mcp__github__create_issue",
+              name: "Create issue",
+              description: "Open a new issue in a repository.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:add-issue-comment",
+              executionName: "mcp__github__add_issue_comment",
+              name: "Add issue comment",
+              description: "Comment on an issue or pull request.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:merge-pull-request",
+              executionName: "mcp__github__merge_pull_request",
+              name: "Merge pull request",
+              description: "Merge a pull request into its base branch.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
+    SEASONAL_PR_BODY = [
+      "Adds a seasonal flavours section below the hero.",
+      "",
+      "- Reads the current menu from `flavours.json`, so the bakery can swap flavours without touching markup",
+      "- Pauses the flavour ticker for visitors who prefer reduced motion",
+      "- Keeps the section to a single column on narrow screens"
+    ].join("\n");
+    SIGNUP_THREAD = {
+      id: "demo-site-tour-signup",
+      title: "Send signups to the newsletter",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-signup-user-1",
+          role: "user",
+          content: "Where does the email signup get handled?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 4 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-1",
+          role: "assistant",
+          content: "In `script.js`: the form\u2019s submit handler checks the address, then shows the confirmation note under the form. Nothing is sent anywhere yet, so the address only lives in the page.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 3 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-user-2",
+          role: "user",
+          content: "Send new signups to the newsletter list instead of only showing the note.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 2 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-2",
+          role: "assistant",
+          content: "The submit handler now posts the address to the newsletter endpoint and only shows the confirmation note once the request succeeds. A failed request keeps what the visitor typed and offers to try again.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - 4 * 6e4,
+      updatedAt: SITE_TOUR_TIME - 6e4
+    };
+    SITE_TOUR_SCENARIOS = [
+      siteTourScenario("site-fork-resend", "Copse.dev tour: fork and resend a prompt", SIGNUP_THREAD, {
+        // The site the thread is about, open in the Browser pane beside it.
+        staticSite: "sites/cupcakes",
+        settings: {
+          ...SITE_TOUR_SETTINGS,
+          layout: { projectsPaneWidth: 240, filesPaneWidth: 560 }
+        }
+      }),
+      siteTourScenario("site-subagent", "Copse.dev tour: an expanded subagent", {
+        id: "demo-site-tour-accessibility",
+        title: "Accessibility audit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [
+          {
+            id: "demo-site-tour-accessibility-user",
+            role: "user",
+            content: "Check the coming-soon page for accessibility problems before we launch.",
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 3 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-assistant",
+            role: "assistant",
+            content: "I asked an explore agent to audit the markup and styles.",
+            toolCalls: [
+              {
+                id: "demo-site-tour-accessibility-explore",
+                name: "explore",
+                args: { query: "Audit index.html and styles.css for accessibility gaps" },
+                status: "done",
+                result: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                subagent: {
+                  id: "demo-site-tour-accessibility-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Audit index.html and styles.css for accessibility gaps",
+                  summary: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                  model: SITE_TOUR_MODEL,
+                  messages: [
+                    {
+                      id: "demo-site-tour-accessibility-explore-1",
+                      role: "assistant",
+                      content: "Reading the page structure and the stylesheet.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-read-html",
+                          name: "read_file",
+                          args: { path: "index.html" },
+                          status: "done",
+                          result: "<!doctype html>\n"
+                        },
+                        {
+                          id: "demo-site-tour-accessibility-read-css",
+                          name: "read_file",
+                          args: { path: "styles.css" },
+                          status: "done",
+                          result: ":root {\n"
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-2",
+                      role: "assistant",
+                      content: "Checking whether the ticker animation respects **reduced motion**.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-grep",
+                          name: "grep_search",
+                          args: { pattern: "prefers-reduced-motion" },
+                          status: "done",
+                          result: "No matches."
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-3",
+                      role: "assistant",
+                      content: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                      toolCalls: []
+                    }
+                  ]
+                }
+              }
+            ],
+            createdAt: SITE_TOUR_TIME - 2 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-findings",
+            role: "assistant",
+            content: [
+              "Two things to fix before launch:",
+              "",
+              "- The flavour ticker keeps scrolling for visitors who prefer reduced motion.",
+              "- The signup field relies on its placeholder, so it has no visible label.",
+              "",
+              "Want me to fix both?"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 6e4
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME - 3 * 6e4,
+        updatedAt: SITE_TOUR_TIME - 6e4
+      }),
+      siteTourScenario("site-archive-attachment", "Copse.dev tour: attach a zip archive", {
+        // Empty: the spec drops the archive into this thread's composer.
+        id: "demo-site-tour-brand-kit",
+        title: "Swap in the new brand kit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME,
+        updatedAt: SITE_TOUR_TIME
+      }),
+      // Settings opens over the same conversation the fork shot uses.
+      siteTourScenario("site-providers", "Copse.dev tour: provider settings", SIGNUP_THREAD),
+      siteTourScenario(
+        "site-create-pr",
+        "Copse.dev tour: create a pull request",
+        {
+          id: "demo-site-tour-seasonal",
+          title: "Add seasonal flavours",
+          status: "idle",
+          gitBranch: "seasonal-flavours",
+          model: SITE_TOUR_MODEL,
+          messages: [
+            {
+              id: "demo-site-tour-seasonal-user",
+              role: "user",
+              content: "Add a seasonal flavours section under the hero that reads from flavours.json, and make sure the ticker respects reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 3 * 6e4
+            },
+            {
+              id: "demo-site-tour-seasonal-assistant",
+              role: "assistant",
+              content: "Added the seasonal flavours section and committed it on `seasonal-flavours`. The ticker now pauses for visitors who prefer reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 6e4
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME - 3 * 6e4,
+          updatedAt: SITE_TOUR_TIME - 6e4
+        },
+        {
+          changeStats: { additions: 86, deletions: 12 },
+          followUps: [
+            { id: "create-pr", label: "Create PR", action: "create-pr" },
+            { id: "review", label: "Review changes", action: "review" }
+          ],
+          prBody: SEASONAL_PR_BODY
+        }
+      ),
+      siteTourScenario(
+        "site-mcp-permissions",
+        "Copse.dev tour: per-tool MCP permissions",
+        {
+          id: "demo-site-tour-triage",
+          title: "Triage launch issues",
+          status: "idle",
+          gitBranch: "main",
+          model: SITE_TOUR_MODEL,
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME,
+          updatedAt: SITE_TOUR_TIME
+        },
+        {
+          mcpServers: [SITE_TOUR_GITHUB_MCP],
+          toolPermissions: SITE_TOUR_TOOL_PERMISSIONS
+        }
+      )
+    ];
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -36719,7 +37156,104 @@ function conciseThreadMessages(model, live) {
     ]
   ];
 }
-function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
   return {
     id,
     label,
@@ -36737,7 +37271,7 @@ function conciseThreadScenario(id, label, model, { live = false, enabled = true 
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: conciseThreadMessages(model, live),
+        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -36749,6 +37283,7 @@ var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT,
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
+    init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -38114,6 +38649,12 @@ var init_demo_scenarios = __esm({
         "claude-opus-5-5"
       ),
       conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
+      ),
+      conciseThreadScenario(
         "concise-thread-full",
         "Full thread view for a model below the concise gate",
         "gpt-4o"
@@ -38151,7 +38692,9 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
-      }
+      },
+      // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+      ...SITE_TOUR_SCENARIOS
     ];
   }
 });
@@ -38209,7 +38752,8 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -38469,8 +39013,8 @@ function createDemoApi(scenario, options = {}) {
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...scenario.followUps ?? []])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -38561,7 +39105,7 @@ function createDemoApi(scenario, options = {}) {
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -38600,8 +39144,16 @@ function createDemoApi(scenario, options = {}) {
         return resolvedVoid();
       }
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) => resolved({
+        path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+        name: archive.name,
+        sizeBytes: archive.bytes?.byteLength ?? 0
+      })
+    },
     threads: {
       loadProject: (projectId) => resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -38752,6 +39304,13 @@ function createDemoApi(scenario, options = {}) {
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -39041,7 +39600,7 @@ function createDemoApi(scenario, options = {}) {
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -39684,9 +40243,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -39757,7 +40316,7 @@ var DEFAULT_LAYOUT, LAYOUT_LIMITS;
 var init_layout = __esm({
   "src/shared/types/layout.ts"() {
     DEFAULT_LAYOUT = {
-      projectsPaneWidth: 240,
+      projectsPaneWidth: 300,
       filesPaneWidth: 480,
       filesPaneHeight: 360,
       fileTreeWidth: 200
@@ -40623,7 +41182,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       maxlength: "80"
     });
     const explanation = el("p", { class: "app-run-notice" });
-    const apply2 = el("button", {
+    const apply3 = el("button", {
       type: "button",
       class: "ui-btn ui-btn-primary app-run-setup-apply"
     });
@@ -40636,17 +41195,17 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     const sync = () => {
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       const download2 = selected && !selected.installed;
-      apply2.textContent = download2 ? "Download selected image" : "Create device";
+      apply3.textContent = download2 ? "Download selected image" : "Create device";
       explanation.textContent = download2 ? "Downloads this system image into your Android SDK. Review any license agreement in Android Studio before continuing." : "Uses an installed runtime. Your existing devices are kept.";
-      apply2.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
+      apply3.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
     };
     runtime.addEventListener("change", sync);
     name.addEventListener("input", sync);
     dismiss.addEventListener("click", () => {
       setupHost.hidden = true;
     });
-    apply2.addEventListener("click", () => {
-      apply2.disabled = true;
+    apply3.addEventListener("click", () => {
+      apply3.disabled = true;
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       void api2.appRun.setup(owner, {
         platform,
@@ -40683,7 +41242,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       el("label", {}, "Device type", deviceType),
       el("label", {}, "Name", name),
       explanation,
-      el("div", { class: "app-run-actions" }, apply2, installApple, dismiss)
+      el("div", { class: "app-run-actions" }, apply3, installApple, dismiss)
     );
     sync();
   }
@@ -41886,6 +42445,745 @@ var RENAME_BLUR_GRACE_MS;
 var init_rename_blur = __esm({
   "src/renderer/dom/rename-blur.ts"() {
     RENAME_BLUR_GRACE_MS = 200;
+  }
+});
+
+// src/renderer/controller/activity-model.ts
+function truncateText(text2, max = WANT_MAX_CHARS) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
+}
+function threadName(thread) {
+  const title = thread?.title.trim();
+  return title && title.length > 0 ? title : UNTITLED_THREAD;
+}
+function requestThreadFields(threadId, byId) {
+  if (threadId === void 0) {
+    return { threadId: null, threadTitle: "No thread", projectId: null, projectName: null };
+  }
+  const thread = byId.get(threadId);
+  return {
+    threadId,
+    threadTitle: threadName(thread),
+    projectId: thread?.projectId ?? null,
+    projectName: thread?.projectName ?? null
+  };
+}
+function questionWant(questions) {
+  const first = questions[0] ?? "";
+  const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
+  return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
+}
+function deriveActivity(input2) {
+  const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
+  const needsYou = [
+    ...input2.approvals.map((req) => ({
+      key: `approval:${req.id}`,
+      state: "needs-approval",
+      ...requestThreadFields(req.threadId, byId),
+      want: truncateText(req.title),
+      detail: req.body.trim() === "" ? null : truncateText(req.body),
+      requestId: req.id,
+      requestType: req.type,
+      approval: req,
+      since: req.receivedAt
+    })),
+    ...input2.questions.map((req) => ({
+      key: `question:${req.id}`,
+      state: "needs-answer",
+      ...requestThreadFields(req.threadId, byId),
+      want: questionWant(req.questions),
+      detail: null,
+      requestId: req.id,
+      requestType: null,
+      approval: null,
+      since: req.receivedAt
+    }))
+  ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
+  const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const threadRow = (thread, state, want, since) => ({
+    key: `thread:${thread.id}`,
+    state,
+    threadId: thread.id,
+    threadTitle: threadName(thread),
+    projectId: thread.projectId,
+    projectName: thread.projectName,
+    want,
+    detail: null,
+    requestId: null,
+    requestType: null,
+    approval: null,
+    since
+  });
+  const working = [];
+  const recent = [];
+  for (const thread of input2.threads) {
+    if (waitingThreads.has(thread.id)) continue;
+    const run2 = input2.runs.get(thread.id);
+    if (thread.status === "running") {
+      working.push(
+        threadRow(
+          thread,
+          "working",
+          truncateText(run2?.activity ?? "Working\u2026"),
+          run2?.startedAt ?? null
+        )
+      );
+    } else {
+      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      if (endedAt === void 0) continue;
+      recent.push(
+        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
+      );
+    }
+  }
+  const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
+  working.sort(newestFirst);
+  recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const groups = [
+    { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
+    { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
+    {
+      id: "recent",
+      label: GROUP_LABELS.recent,
+      rows: recent.slice(0, RECENT_ROW_LIMIT),
+      total: recent.length
+    }
+  ];
+  return groups;
+}
+function collectActivityThreads(store2) {
+  const { projects, backgroundThreads } = store2.getState();
+  const out = /* @__PURE__ */ new Map();
+  for (const project2 of projects) {
+    const projectName = projectDisplayName(project2);
+    for (const thread of getSidebarThreads(store2, project2.id)) {
+      out.set(thread.id, {
+        id: thread.id,
+        title: thread.title,
+        status: thread.status,
+        ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        projectId: project2.id,
+        projectName
+      });
+    }
+  }
+  for (const carried of backgroundThreads) {
+    const project2 = projects.find((p2) => p2.id === carried.projectId);
+    if (!project2 || carried.thread.archivedAt != null) continue;
+    out.set(carried.thread.id, {
+      id: carried.thread.id,
+      title: carried.thread.title,
+      status: carried.thread.status,
+      ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      projectId: project2.id,
+      projectName: projectDisplayName(project2)
+    });
+  }
+  return [...out.values()];
+}
+function trackRunTimings(store2, now) {
+  const runs = /* @__PURE__ */ new Map();
+  const unsubs = [
+    store2.on("thread_status_changed", (threadId, status) => {
+      const previous = runs.get(threadId);
+      if (status === "running") {
+        if (previous?.startedAt !== void 0 && previous.endedAt === void 0) return;
+        runs.set(threadId, { startedAt: now() });
+        return;
+      }
+      if (status === "error" || previous?.startedAt !== void 0 && previous.endedAt === void 0) {
+        runs.set(threadId, { ...previous, endedAt: now(), activity: null });
+      }
+    }),
+    store2.on("agent_activity", (threadId, label) => {
+      const previous = runs.get(threadId);
+      if (!previous || previous.endedAt !== void 0) return;
+      runs.set(threadId, { ...previous, activity: label });
+    })
+  ];
+  return {
+    runs,
+    dispose: () => {
+      unsubs.forEach((unsub) => {
+        unsub();
+      });
+    }
+  };
+}
+function formatAge(elapsedMs) {
+  if (elapsedMs < MINUTE) return "now";
+  if (elapsedMs < HOUR) return `${String(Math.floor(elapsedMs / MINUTE))}m`;
+  if (elapsedMs < DAY) return `${String(Math.floor(elapsedMs / HOUR))}h`;
+  return `${String(Math.floor(elapsedMs / DAY))}d`;
+}
+function formatAgeLong(elapsedMs) {
+  const unit = (count, name) => `${String(count)} ${name}${count === 1 ? "" : "s"}`;
+  if (elapsedMs < MINUTE) return "just now";
+  if (elapsedMs < HOUR) return unit(Math.floor(elapsedMs / MINUTE), "minute");
+  if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
+  return unit(Math.floor(elapsedMs / DAY), "day");
+}
+var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var init_activity_model = __esm({
+  "src/renderer/controller/activity-model.ts"() {
+    init_projects();
+    RECENT_ROW_LIMIT = 10;
+    WANT_MAX_CHARS = 140;
+    UNTITLED_THREAD = "New thread";
+    GROUP_LABELS = {
+      "needs-you": "Needs you",
+      working: "Working",
+      recent: "Recently finished"
+    };
+    MINUTE = 6e4;
+    HOUR = 60 * MINUTE;
+    DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/controller/thread-browser.ts
+function summarizeThreadWork(status) {
+  return {
+    count: new Set([...status.staged, ...status.unstaged].map((change) => change.path)).size,
+    staged: status.staged.length,
+    unstaged: status.unstaged.filter((change) => change.status !== "untracked").length,
+    untracked: status.unstaged.filter((change) => change.status === "untracked").length
+  };
+}
+function threadEntryKey(entry) {
+  return `${entry.project.id}/${entry.thread.id}`;
+}
+function workTarget(entry) {
+  const { project: project2, thread } = entry;
+  const worktree = thread.worktree;
+  if (!worktree) return { key: `shared/${project2.id}/${project2.path}`, root: project2.path };
+  return {
+    key: `worktree/${threadEntryKey(entry)}/${String(worktree.createdAt)}/${String(worktree.retiredAt ?? "")}`,
+    root: worktree.path
+  };
+}
+function sameRoot(left, right) {
+  const trim = (path) => path.length > 1 ? path.replace(/[/\\]+$/, "") : path;
+  return trim(left) === trim(right);
+}
+function createThreadBrowserData(store2, api2, changed, now = Date.now) {
+  const saved = /* @__PURE__ */ new Map();
+  const loading = /* @__PURE__ */ new Set();
+  const failures = /* @__PURE__ */ new Set();
+  const work = /* @__PURE__ */ new Map();
+  const known = /* @__PURE__ */ new Map();
+  const queued = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Set();
+  let disposed = false;
+  const isDisposed = () => disposed;
+  const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
+    const list = saved.get(projectId);
+    if (!list || refs.length === 0) return;
+    const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
+    if (!list.threads.some((thread) => byThread.has(thread.id))) return;
+    list.threads = list.threads.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    });
+    changed();
+  });
+  function entries2() {
+    const state = store2.getState();
+    return state.projects.flatMap((project2) => {
+      const listed = project2.id === state.activeProjectId ? getSidebarThreads(store2, project2.id) : saved.get(project2.id)?.threads ?? getSidebarThreads(store2, project2.id);
+      const threads = new Map(listed.map((thread) => [thread.id, thread]));
+      for (const carried of state.backgroundThreads) {
+        if (carried.projectId === project2.id) threads.set(carried.thread.id, carried.thread);
+      }
+      return [...threads.values()].filter((thread) => thread.archivedAt == null).map((thread) => ({ project: project2, thread }));
+    });
+  }
+  async function loadProject(projectId) {
+    if (disposed || loading.has(projectId)) return;
+    loading.add(projectId);
+    failures.delete(projectId);
+    try {
+      const threads = await api2.threads.loadProject(projectId);
+      if (!isDisposed() && store2.getState().activeProjectId !== projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
+        saved.set(projectId, { threads, loadedAt: now() });
+      }
+    } catch {
+      if (!isDisposed()) failures.add(projectId);
+    } finally {
+      loading.delete(projectId);
+      if (!isDisposed()) changed();
+    }
+  }
+  function load() {
+    const state = store2.getState();
+    for (const project2 of state.projects) {
+      if (project2.id === state.activeProjectId) {
+        saved.delete(project2.id);
+        continue;
+      }
+      const list = saved.get(project2.id);
+      if (failures.has(project2.id) || project2.missing) continue;
+      if (!list || now() - list.loadedAt >= METADATA_TTL_MS) void loadProject(project2.id);
+    }
+    for (const projectId of saved.keys()) {
+      if (!state.projects.some((project2) => project2.id === projectId)) saved.delete(projectId);
+    }
+  }
+  async function readWork(key, candidates) {
+    let value = null;
+    try {
+      for (const entry of candidates.slice(0, MAX_SHARED_ATTEMPTS)) {
+        if (disposed) return;
+        try {
+          const status = await api2.git.status(entry.project.id, entry.thread.id, true);
+          value = status ? summarizeThreadWork(status) : null;
+          break;
+        } catch {
+        }
+      }
+      if (!disposed) work.set(key, { value, checkedAt: now() });
+    } finally {
+      inFlight4.delete(key);
+      if (!disposed) {
+        pump();
+        changed();
+      }
+    }
+  }
+  function pump() {
+    for (const [key, candidates] of queued) {
+      if (disposed || inFlight4.size >= MAX_IN_FLIGHT) break;
+      if (inFlight4.has(key)) continue;
+      queued.delete(key);
+      inFlight4.add(key);
+      void readWork(key, candidates);
+    }
+  }
+  function inspect(targets, force = false) {
+    const grouped = /* @__PURE__ */ new Map();
+    for (const entry of targets) {
+      const target = workTarget(entry);
+      if (entry.project.sshHost || entry.thread.worktree?.retiredAt != null) {
+        work.set(target.key, { value: null, checkedAt: now() });
+        continue;
+      }
+      const group = grouped.get(target.key);
+      if (group) group.entries.push(entry);
+      else grouped.set(target.key, { root: target.root, entries: [entry] });
+    }
+    for (const [key, group] of grouped) {
+      known.set(key, group);
+      if (inFlight4.has(key)) {
+        if (force) queued.set(key, group.entries);
+        continue;
+      }
+      const cached2 = work.get(key);
+      if (!force && cached2 && now() - cached2.checkedAt < WORK_TTL_MS) continue;
+      queued.set(key, group.entries);
+    }
+    pump();
+  }
+  function invalidateRoot(root) {
+    const matches2 = [...known.values()].filter((group) => sameRoot(group.root, root));
+    if (matches2.length > 0)
+      inspect(
+        matches2.flatMap((group) => group.entries),
+        true
+      );
+  }
+  return {
+    entries: entries2,
+    load,
+    inspect,
+    invalidateRoot,
+    summary: (entry) => work.get(workTarget(entry).key)?.value,
+    pending: () => loading.size > 0 || queued.size > 0 || inFlight4.size > 0,
+    failed: () => failures.size > 0,
+    refresh: () => {
+      failures.clear();
+      for (const project2 of store2.getState().projects) {
+        if (project2.id !== store2.getState().activeProjectId) void loadProject(project2.id);
+      }
+      inspect(entries2(), true);
+    },
+    dispose: () => {
+      disposed = true;
+      queued.clear();
+      offPrRefs();
+    }
+  };
+}
+var WORK_TTL_MS, METADATA_TTL_MS, MAX_IN_FLIGHT, MAX_SHARED_ATTEMPTS;
+var init_thread_browser = __esm({
+  "src/renderer/controller/thread-browser.ts"() {
+    init_projects();
+    WORK_TTL_MS = 5 * 6e4;
+    METADATA_TTL_MS = 6e4;
+    MAX_IN_FLIGHT = 2;
+    MAX_SHARED_ATTEMPTS = 3;
+  }
+});
+
+// src/renderer/controller/thread-filter.ts
+function filterText(value) {
+  return value.normalize("NFC").toLowerCase();
+}
+function filterableContent(message2) {
+  const cached2 = filterableContentCache.get(message2);
+  if (cached2?.content === message2.content) return cached2.text;
+  const text2 = filterText(message2.content);
+  filterableContentCache.set(message2, { content: message2.content, text: text2 });
+  return text2;
+}
+function residentRequestMatches(messages, query) {
+  if (query.length < MIN_REQUEST_QUERY_LENGTH) return false;
+  return messages.some(
+    (message2) => isHumanUserPrompt(message2) && filterableContent(message2).includes(query)
+  );
+}
+function createThreadFilter(store2, api2, changed, candidates) {
+  const matches2 = /* @__PURE__ */ new Set();
+  const promptIndex = /* @__PURE__ */ new Map();
+  let promptIndexSize = 0;
+  let generation = 0;
+  let timer;
+  let scan = Promise.resolve();
+  let pending = false;
+  let waiting = false;
+  let failed = false;
+  const forget = (key) => {
+    const entry = promptIndex.get(key);
+    if (!entry) return;
+    promptIndex.delete(key);
+    promptIndexSize -= entry.size;
+  };
+  const remember = (key, entry) => {
+    forget(key);
+    promptIndex.set(key, entry);
+    promptIndexSize += entry.size;
+    for (const oldest of promptIndex.keys()) {
+      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
+      forget(oldest);
+    }
+  };
+  const savedPrompts = async (projectId, thread) => {
+    const key = `${projectId}/${thread.id}`;
+    const cached2 = promptIndex.get(key);
+    if (cached2 && cached2.updatedAt === thread.updatedAt && cached2.lastPromptAt === thread.lastPromptAt) {
+      return cached2.prompts;
+    }
+    const messages = await api2.threads.loadMessages(projectId, thread.id);
+    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
+    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
+    remember(key, {
+      updatedAt: thread.updatedAt,
+      lastPromptAt: thread.lastPromptAt,
+      prompts,
+      size
+    });
+    return prompts;
+  };
+  const notify = () => {
+    try {
+      changed();
+    } catch (error62) {
+      console.error("[thread-filter] sidebar update failed", error62);
+    }
+  };
+  const cancel = () => {
+    generation += 1;
+    clearTimeout(timer);
+    matches2.clear();
+    pending = false;
+    waiting = false;
+    failed = false;
+  };
+  const search = (rawQuery) => {
+    cancel();
+    const query = filterText(rawQuery);
+    const { activeProjectId, threads } = store2.getState();
+    if (query.length < MIN_REQUEST_QUERY_LENGTH) return;
+    if (!candidates && !activeProjectId) return;
+    const current = generation;
+    const isCurrent = () => current === generation && (candidates !== void 0 || store2.getState().activeProjectId === activeProjectId);
+    const scanned = candidates?.() ?? sortThreadsNewestFirst(threads).map((thread) => ({
+      projectId: activeProjectId ?? "",
+      thread
+    }));
+    const pendingScan = scanned.filter(
+      ({ thread }) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
+    );
+    if (pendingScan.length === 0) return;
+    waiting = true;
+    timer = setTimeout(() => {
+      waiting = false;
+      pending = true;
+      notify();
+      scan = scan.then(async () => {
+        for (const { projectId, thread } of pendingScan) {
+          if (!isCurrent()) return;
+          try {
+            const matched = residentRequestMatches(thread.messages ?? [], query) || // Compacted sidebar metadata carries no transcript at all.
+            (thread.messagesLoaded === false || thread.messages === void 0) && (await savedPrompts(projectId, thread)).some((prompt) => prompt.includes(query));
+            if (!isCurrent()) return;
+            if (matched) {
+              matches2.add(thread.id);
+              notify();
+            }
+          } catch {
+            if (!isCurrent()) return;
+            failed = true;
+          }
+        }
+        if (!isCurrent()) return;
+        pending = false;
+        notify();
+      }).catch((error62) => {
+        console.error("[thread-filter] request scan failed", error62);
+        if (!isCurrent()) return;
+        pending = false;
+        failed = true;
+        notify();
+      });
+    }, SCAN_DELAY_MS);
+  };
+  return {
+    search,
+    cancel,
+    matches: matches2,
+    get pending() {
+      return pending;
+    },
+    get waiting() {
+      return waiting;
+    },
+    get failed() {
+      return failed;
+    }
+  };
+}
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
+var init_thread_filter = __esm({
+  "src/renderer/controller/thread-filter.ts"() {
+    init_thread_sort();
+    MIN_REQUEST_QUERY_LENGTH = 2;
+    SCAN_DELAY_MS = 200;
+    PROMPT_INDEX_MAX_CHARS = 8e6;
+    filterableContentCache = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// packages/thread-store/src/prompt-placeholders.ts
+function stripPastePlaceholders(content) {
+  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
+  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
+}
+var PASTE_PLACEHOLDER;
+var init_prompt_placeholders = __esm({
+  "packages/thread-store/src/prompt-placeholders.ts"() {
+    PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
+  }
+});
+
+// src/shared/git/worktree-policy.ts
+function slugPrompt(prompt) {
+  const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
+  return slug2 || "thread";
+}
+function shortThreadId(threadId) {
+  const compact = threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (compact.slice(-6) || "thread").slice(0, 6);
+}
+function threadWorktreeBranchName(title, threadId, collision = 0) {
+  const base = `copse/${slugPrompt(title)}-${shortThreadId(threadId)}`;
+  return collision > 0 ? `${base}-${String(collision + 1)}` : base;
+}
+function initialThreadWorktreeBranchName(threadId, collision = 0) {
+  return threadWorktreeBranchName("thread", threadId, collision);
+}
+function isInitialThreadWorktreeBranchName(branch, threadId) {
+  for (let collision = 0; collision < 100; collision += 1) {
+    if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
+  }
+  return false;
+}
+var init_worktree_policy = __esm({
+  "src/shared/git/worktree-policy.ts"() {
+  }
+});
+
+// src/shared/thread-title.ts
+function stripDecoration(value) {
+  return value.replace(/^\s*\x60{1,3}/, "").replace(/\x60{1,3}\s*$/, "").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/(?:\*{1,2}|_{1,2})\s*$/, "").replace(/^(?:here(?:'s| is)(?: the)?\s+)?(?:thread\s+)?title\s*:\s*/i, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/^[“”"'‘’]+|[“”"'‘’]+$/g, "").trim();
+}
+function stripConversationalLead(value) {
+  let result = value.trim();
+  let changed = true;
+  while (changed && result) {
+    changed = false;
+    for (const pattern of CONVERSATIONAL_LEADS) {
+      const next = result.replace(pattern, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
+    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+    ""
+  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
+}
+function vagueClause(value) {
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
+    value.trim()
+  );
+}
+function compactTitle(value, capitalize) {
+  const words = value.replace(BIDI_FORMAT_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").replace(/[.!?,:;\s]+$/g, "").trim().split(" ").filter(Boolean).slice(0, MAX_THREAD_TITLE_WORDS);
+  let title = words.join(" ");
+  const chars = Array.from(title);
+  if (chars.length > MAX_THREAD_TITLE_CHARS) {
+    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join("");
+    const boundary = clipped.lastIndexOf(" ");
+    title = (boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join("")).trim();
+  }
+  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title;
+}
+function fallbackThreadTitle(input2) {
+  const plain = input2.replace(/\x60{3}(?:[a-z0-9_-]+)?/gi, " ").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/gm, "").replace(/\s+/g, " ").trim();
+  const clauses = plain.split(/(?<=[.!?])\s+/);
+  for (const rawClause of clauses) {
+    const clause = stripConversationalLead(stripDecoration(rawClause));
+    if (!clause || vagueClause(clause)) continue;
+    const title = compactTitle(clause, true);
+    if (title && !vagueClause(title)) return title;
+  }
+  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
+  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
+}
+var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
+var init_thread_title = __esm({
+  "src/shared/thread-title.ts"() {
+    MAX_THREAD_TITLE_CHARS = 60;
+    MAX_THREAD_TITLE_WORDS = 6;
+    CONVERSATIONAL_LEADS = [
+      /^(?:got it|sure|okay|ok)\b[\s,:;—-]*/i,
+      /^(?:a\s+)?proposed thread\b[\s,:;—-]*/i,
+      /^(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?/i,
+      /^(?:i(?:'d| would)\s+like|i\s+want|we\s+need)\s+(?:you\s+)?(?:to\s+)?/i,
+      /^(?:how|what|why)\s+(?:can|could|might|do|does|would|should)\s+(?:you|we|i)\s+/i,
+      /^(?:sometimes\s+)?when(?:ever)?\s+(?:i|we)\s+/i,
+      /^please\s+/i,
+      /^help\s+(?:me|us)\s+(?:to\s+)?/i
+    ];
+    CONTROL_CHARS = /\p{Cc}/gu;
+    BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+    MODEL_PREAMBLE = new RegExp(
+      [
+        // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
+        String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
+        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
+        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
+      ].join("|"),
+      "i"
+    );
+  }
+});
+
+// src/renderer/controller/thread-naming.ts
+function namingMessages(thread) {
+  const queued = queuedMessageIds(thread);
+  return thread.messages.filter(
+    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
+  );
+}
+function promptWords(message2) {
+  return stripPastePlaceholders(message2.content);
+}
+function namingInput(userMessages) {
+  const first = userMessages[0];
+  if (!first) return "";
+  const recent = userMessages.slice(1).slice(-3);
+  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
+}
+function owningProjectId(store2, threadId) {
+  const background = backgroundProjectOf(store2, threadId);
+  if (background) return background;
+  const state = store2.getState();
+  if (!state.threads.some((thread) => thread.id === threadId)) return null;
+  return state.activeProjectId;
+}
+function maybeRenameThreadBranch(store2, api2, threadId) {
+  if (branchRenameInFlight.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.worktree || thread.status !== "idle" || thread.title === "New Thread" || !isInitialThreadWorktreeBranchName(thread.worktree.branch, threadId)) {
+    return;
+  }
+  const projectId = owningProjectId(store2, threadId);
+  if (!projectId) return;
+  branchRenameInFlight.add(threadId);
+  void api2.agent.renameCheckoutBranch(projectId, threadId, thread.title).then((worktree) => {
+    if (worktree) applyRenamedThreadWorktree(store2, threadId, worktree);
+  }).catch((error62) => {
+    console.warn("[thread-naming] Could not rename thread branch:", error62);
+  }).finally(() => branchRenameInFlight.delete(threadId));
+}
+function maybeNameThread(store2, api2, threadId) {
+  if (inFlight.has(threadId)) return;
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return;
+  const passes = thread.autoTitleCount ?? 0;
+  if (passes === 0 && thread.title !== "New Thread") return;
+  const threshold = PASS_THRESHOLDS[passes];
+  if (threshold === void 0) return;
+  const userMessages = namingMessages(thread);
+  const first = userMessages[0];
+  if (!first || userMessages.length < threshold) return;
+  const titleBefore = thread.title;
+  const input2 = namingInput(userMessages);
+  inFlight.add(threadId);
+  void (async () => {
+    let title;
+    try {
+      title = await api2.agent.suggestTitle(input2);
+    } catch {
+      title = null;
+    } finally {
+      inFlight.delete(threadId);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current) return;
+    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
+    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title;
+    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
+      autoTitleCount: passes + 1
+    });
+    maybeRenameThreadBranch(store2, api2, threadId);
+  })();
+}
+var inFlight, PASS_THRESHOLDS, branchRenameInFlight;
+var init_thread_naming = __esm({
+  "src/renderer/controller/thread-naming.ts"() {
+    init_thread_helpers();
+    init_unknown_value3();
+    init_prompt_placeholders2();
+    init_worktree_policy();
+    init_message_queue();
+    init_background_threads();
+    init_thread_title();
+    inFlight = /* @__PURE__ */ new Set();
+    PASS_THRESHOLDS = [1, 3, 8];
+    branchRenameInFlight = /* @__PURE__ */ new Set();
   }
 });
 
@@ -52038,10 +53336,6 @@ function unwrapUncached(id, search) {
     const stripped = unwrap2(id.slice(sep + 1), search);
     if (stripped !== null) return stripped;
   }
-  if (id.startsWith("openai/gpt-") || id.startsWith("anthropic/claude-")) {
-    const stripped = unwrap2(id.slice(id.indexOf("/") + 1), search);
-    if (stripped !== null) return stripped;
-  }
   const lastColon = id.lastIndexOf(":");
   if (lastColon > 0 && id.slice(0, lastColon).includes("/")) {
     return unwrap2(id.slice(0, lastColon), search);
@@ -57070,6 +58364,18 @@ var init_presets = __esm({
         }
       },
       {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
         id: "semif",
         label: "SemIf (local)",
         model: "Qwen/Qwen3.5-4B",
@@ -57125,11 +58431,31 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -57150,6 +58476,7 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    localHost,
     chips,
     formHost,
     status
@@ -57199,6 +58526,186 @@ function createClassifiersSection(api2) {
       render();
     });
     chips.append(add2);
+  }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
   }
   function renderScreening() {
     clear(screening);
@@ -57255,18 +58762,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -57596,6 +59092,7 @@ function createClassifiersSection(api2) {
         api2.classifiers.screening()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -57604,6 +59101,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -58941,10 +60439,10 @@ async function requestModelCards(ids, api2) {
   if (!api2) return false;
   const requested = [...new Set(ids)].filter((id) => !resolved2.has(id));
   const waiting = requested.flatMap((id) => {
-    const pending = inFlight.get(id);
+    const pending = inFlight2.get(id);
     return pending ? [pending] : [];
   });
-  const missing = requested.filter((id) => !inFlight.has(id));
+  const missing = requested.filter((id) => !inFlight2.has(id));
   if (missing.length > 0) {
     const batch = (async () => {
       try {
@@ -58962,21 +60460,21 @@ async function requestModelCards(ids, api2) {
     })();
     for (const id of missing) {
       const pending = batch.then((landed) => landed.has(id));
-      inFlight.set(id, pending);
+      inFlight2.set(id, pending);
       waiting.push(pending);
       void pending.then(() => {
-        if (inFlight.get(id) === pending) inFlight.delete(id);
+        if (inFlight2.get(id) === pending) inFlight2.delete(id);
       });
     }
   }
   if (waiting.length === 0) return false;
   return (await Promise.all(waiting)).some(Boolean);
 }
-var resolved2, inFlight;
+var resolved2, inFlight2;
 var init_model_card_cache = __esm({
   "src/renderer/views/model-card-cache.ts"() {
     resolved2 = /* @__PURE__ */ new Map();
-    inFlight = /* @__PURE__ */ new Map();
+    inFlight2 = /* @__PURE__ */ new Map();
   }
 });
 
@@ -59119,8 +60617,15 @@ function providerWindows(snapshot, provider) {
 function resolvePlanInclusion(provider, modelId, snapshot) {
   const windows = providerWindows(snapshot, provider);
   if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
   const govern = new Set(governingWindowIds(provider, modelId));
-  const applicable = windows.filter((w2) => govern.has(w2.id));
+  let applicable = windows.filter((w2) => govern.has(w2.id));
+  if (availability === true) {
+    const pool = windows.filter((w2) => w2.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
   if (applicable.length === 0) return null;
   const binding = applicable.reduce(
     (tightest, w2) => w2.usedPercent > tightest.usedPercent ? w2 : tightest
@@ -59131,8 +60636,13 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
   };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
 }
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
@@ -59174,18 +60684,7 @@ var init_plan_inclusion = __esm({
 });
 
 // src/shared/plan-frontier-candidates.ts
-function planAcpFrontierCandidates(agents, pricedRoutes = []) {
-  const livePrices = /* @__PURE__ */ new Map();
-  for (const route of pricedRoutes) {
-    if (route.local || route.plan !== void 0 || route.planAccess !== void 0) continue;
-    if (!Number.isFinite(route.costPerMTok) || route.costPerMTok < 0) continue;
-    const identity = resolveIntellectModelId(route.id);
-    if (!identity) continue;
-    const previous = livePrices.get(identity);
-    if (previous === void 0 || route.costPerMTok < previous) {
-      livePrices.set(identity, route.costPerMTok);
-    }
-  }
+function planAcpFrontierCandidates(agents) {
   const candidates = [];
   for (const agent of agents) {
     if (!agent.enabled) continue;
@@ -59206,13 +60705,12 @@ function planAcpFrontierCandidates(agents, pricedRoutes = []) {
       );
       if (!resolved3) continue;
       const score = getIntellectScore(resolved3);
-      const info = getModelInfo(resolved3) ?? Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved3)?.[1];
-      const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved3);
-      if (!score || price === void 0) continue;
+      const info = getModelInfo(resolved3);
+      if (!score || !info) continue;
       candidates.push({
         id: acpModelValue(agent.id, choice.value),
         intellect: score.value,
-        costPerMTok: price,
+        costPerMTok: blendedPricePerMTok(info),
         planAccess: { provider, modelId: resolved3 }
       });
     }
@@ -60796,14 +62294,11 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     } else if (liveFetch.error) {
       liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`);
     }
-    const pricedRoutes = [
-      ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models)
-    ];
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
-      ...pricedRoutes,
-      ...planAcpFrontierCandidates(acpAgents, pricedRoutes)
+      ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models),
+      ...planAcpFrontierCandidates(acpAgents)
     ];
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
     const delegatedModelIds = /* @__PURE__ */ new Set();
@@ -62156,6 +63651,14 @@ var init_ssh_workspace_section = __esm({
     init_inline_status();
     init_ssh_host_helpers();
     init_ssh_host_helpers();
+  }
+});
+
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
   }
 });
 
@@ -64405,6 +65908,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -65235,7 +66739,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -65479,6 +66983,23 @@ function mountSettingsDialog(store2, api2) {
               and are off by default.
             </p>
 
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
+
             <fieldset>
               <legend>Mobile Companion</legend>
               <p class="field-hint">
@@ -65595,6 +67116,18 @@ function mountSettingsDialog(store2, api2) {
                 Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
+            </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading\u2026</span>
+              </div>
             </fieldset>
           </section>
 
@@ -65864,6 +67397,7 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
+    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -65973,8 +67507,8 @@ function mountSettingsDialog(store2, api2) {
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
-          void refreshPlugins();
         }
+        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -66908,6 +68442,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -66943,9 +68488,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -67313,55 +68860,81 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
+  let pluginEntries = null;
+  function renderPluginLists() {
+    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
+    if (!pluginEntries) return;
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? "#experimental-plugins-list" : "#plugins-list"
+      );
+      const entries2 = pluginEntries.filter(
+        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
+      );
+      listEl.replaceChildren();
+      let lastEnabled = null;
+      for (const entry of entries2) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement("h4");
+          heading.className = "plugins-group-heading";
+          heading.textContent = entry.enabled ? "Active" : "Inactive";
+          listEl.append(heading);
+          lastEnabled = entry.enabled;
+        }
+        listEl.append(entry.row);
+      }
+      if (entries2.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "plugins-empty";
+        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
+        listEl.append(empty);
+      }
+    }
+  }
   async function refreshPlugins() {
-    const listEl = qsRequired(overlay, "#plugins-list");
-    const statusEl = qsRequired(overlay, "#plugins-reload-status");
-    statusEl.textContent = "Loading\u2026";
+    const statusEls = overlay.querySelectorAll(".plugins-load-status");
+    const setStatus = (text2) => {
+      statusEls.forEach((el3) => {
+        el3.textContent = text2;
+      });
+    };
+    setStatus("Loading\u2026");
     try {
       const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
         api2.bundledSkillPlugins.list().catch(() => [])
       ]);
-      listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "plugins-empty";
-        empty.textContent = "No plugins installed.";
-        listEl.append(empty);
-      } else {
-        const entries2 = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin)
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin)
-          })),
-          ...bundledPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: plugin.enabled && !plugin.suppressed,
-            render: () => makeBundledSkillPluginRow(plugin)
-          }))
-        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-        let lastEnabled = null;
-        for (const entry of entries2) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement("h4");
-            heading.className = "plugins-group-heading";
-            heading.textContent = entry.enabled ? "Active" : "Inactive";
-            listEl.append(heading);
-            lastEnabled = entry.enabled;
-          }
-          listEl.append(entry.render());
-        }
-      }
-      statusEl.textContent = "";
+      const entries2 = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === "experimental",
+          render: () => makePluginRow(plugin)
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: () => makeCursorPluginRow(plugin)
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: () => makeBundledSkillPluginRow(plugin)
+        }))
+      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+      pluginEntries = entries2.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render()
+      }));
+      renderPluginLists();
+      setStatus("");
     } catch {
-      statusEl.textContent = "Failed to load plugins.";
+      setStatus("Failed to load plugins.");
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -67572,8 +69145,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -67916,6 +69488,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
+    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -68257,6 +69830,7 @@ var init_settings_dialog = __esm({
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -68492,286 +70066,6 @@ var init_automation_dialog = __esm({
   }
 });
 
-// packages/thread-store/src/fork-thread.ts
-function forkThreadTitle(title) {
-  const base = title.trim() || "New Thread";
-  const match = /^(.*) \(fork(?: (\d+))?\)$/.exec(base);
-  if (match?.[1] !== void 0) {
-    const next = match[2] === void 0 ? 3 : Number(match[2]) + 1;
-    return truncateTitle(`${match[1]} (fork ${String(next)})`);
-  }
-  return truncateTitle(`${base}${FORK_SUFFIX}`);
-}
-function truncateTitle(title) {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
-}
-function buildForkedThread(source, options = {}) {
-  const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
-  const settled = source.messages.filter((m2) => !excluded.has(m2.id));
-  let slice;
-  if (options.throughMessageId === void 0) {
-    slice = settled;
-  } else {
-    const cut = settled.findIndex((m2) => m2.id === options.throughMessageId);
-    if (cut === -1) return null;
-    slice = settled.slice(0, cut + 1);
-  }
-  if (slice.length === 0) return null;
-  const now = Date.now();
-  const messages = slice.map((message2) => copyMessage(message2));
-  const gitBranch = source.worktree === void 0 ? source.gitBranch : void 0;
-  return {
-    id: randomUUID2(),
-    title: forkThreadTitle(source.title),
-    status: "idle",
-    messages,
-    // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
-    // the source keeps its own totals.
-    usage: { inputTokens: 0, outputTokens: 0 },
-    ...source.model !== void 0 ? { model: source.model } : {},
-    ...source.todos !== void 0 ? { todos: source.todos.map((todo) => ({ ...todo })) } : {},
-    ...source.workingBrief !== void 0 ? { workingBrief: source.workingBrief } : {},
-    ...gitBranch !== void 0 ? { gitBranch } : {},
-    createdAt: now,
-    updatedAt: now
-  };
-}
-function copyMessage(message2) {
-  const {
-    id: _id,
-    hookCards: _hookCards,
-    review: _review,
-    reviewReport: _reviewReport,
-    toolCalls,
-    images,
-    canvasArtefacts,
-    visualEvidence,
-    attachments,
-    ...rest
-  } = message2;
-  return {
-    ...rest,
-    id: randomUUID2(),
-    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
-    ...images !== void 0 ? { images: [...images] } : {},
-    ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
-    ...visualEvidence !== void 0 ? {
-      visualEvidence: visualEvidence.map((evidence) => ({
-        ...evidence,
-        assets: evidence.assets.map((asset) => ({
-          ...asset,
-          source: { ...asset.source }
-        }))
-      }))
-    } : {},
-    ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
-  };
-}
-var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
-var init_fork_thread = __esm({
-  "packages/thread-store/src/fork-thread.ts"() {
-    randomUUID2 = () => globalThis.crypto.randomUUID();
-    MAX_TITLE_LENGTH = 120;
-    FORK_SUFFIX = " (fork)";
-  }
-});
-
-// src/shared/store/fork-thread.ts
-var init_fork_thread2 = __esm({
-  "src/shared/store/fork-thread.ts"() {
-    init_fork_thread();
-  }
-});
-
-// src/renderer/controller/fork-thread.ts
-function hasAttachments(thread) {
-  return thread.messages.some((m2) => (m2.attachments ?? []).length > 0);
-}
-async function forkThread(store2, api2, sourceThreadId, options = {}) {
-  const source = getThreadById(store2, sourceThreadId);
-  if (!source) return null;
-  const forked = buildForkedThread(source, {
-    ...options,
-    excludeMessageIds: queuedMessageIds(source)
-  });
-  if (!forked) return null;
-  store2.emit("composer_draft_flush");
-  store2.setState({
-    threads: [forked, ...store2.getState().threads],
-    activeThreadId: forked.id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
-  store2.emit("threads_changed");
-  store2.emit("panel_changed");
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false };
-  let history = null;
-  try {
-    history = await api2.threads.fork(projectId, sourceThreadId, forked.id, options.throughMessageId);
-  } catch (error62) {
-    console.error("[fork] failed to seed forked thread history:", error62);
-  }
-  return {
-    threadId: forked.id,
-    history,
-    droppedAttachments: history?.source === "rebuilt" && hasAttachments(forked)
-  };
-}
-var init_fork_thread3 = __esm({
-  "src/renderer/controller/fork-thread.ts"() {
-    init_fork_thread2();
-    init_thread_helpers();
-    init_message_queue();
-  }
-});
-
-// src/renderer/controller/thread-filter.ts
-function filterText(value) {
-  return value.normalize("NFC").toLowerCase();
-}
-function filterableContent(message2) {
-  const cached2 = filterableContentCache.get(message2);
-  if (cached2?.content === message2.content) return cached2.text;
-  const text2 = filterText(message2.content);
-  filterableContentCache.set(message2, { content: message2.content, text: text2 });
-  return text2;
-}
-function residentRequestMatches(messages, query) {
-  if (query.length < MIN_REQUEST_QUERY_LENGTH) return false;
-  return messages.some(
-    (message2) => isHumanUserPrompt(message2) && filterableContent(message2).includes(query)
-  );
-}
-function createThreadFilter(store2, api2, changed) {
-  const matches2 = /* @__PURE__ */ new Set();
-  const promptIndex = /* @__PURE__ */ new Map();
-  let promptIndexSize = 0;
-  let generation = 0;
-  let timer;
-  let scan = Promise.resolve();
-  let pending = false;
-  let waiting = false;
-  let failed = false;
-  const forget = (key) => {
-    const entry = promptIndex.get(key);
-    if (!entry) return;
-    promptIndex.delete(key);
-    promptIndexSize -= entry.size;
-  };
-  const remember = (key, entry) => {
-    forget(key);
-    promptIndex.set(key, entry);
-    promptIndexSize += entry.size;
-    for (const oldest of promptIndex.keys()) {
-      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
-      forget(oldest);
-    }
-  };
-  const savedPrompts = async (projectId, thread) => {
-    const key = `${projectId}/${thread.id}`;
-    const cached2 = promptIndex.get(key);
-    if (cached2 && cached2.updatedAt === thread.updatedAt && cached2.lastPromptAt === thread.lastPromptAt) {
-      return cached2.prompts;
-    }
-    const messages = await api2.threads.loadMessages(projectId, thread.id);
-    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
-    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
-    remember(key, {
-      updatedAt: thread.updatedAt,
-      lastPromptAt: thread.lastPromptAt,
-      prompts,
-      size
-    });
-    return prompts;
-  };
-  const notify = () => {
-    try {
-      changed();
-    } catch (error62) {
-      console.error("[thread-filter] sidebar update failed", error62);
-    }
-  };
-  const cancel = () => {
-    generation += 1;
-    clearTimeout(timer);
-    matches2.clear();
-    pending = false;
-    waiting = false;
-    failed = false;
-  };
-  const search = (rawQuery) => {
-    cancel();
-    const query = filterText(rawQuery);
-    const { activeProjectId, threads } = store2.getState();
-    if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
-    const current = generation;
-    const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
-    const candidates = sortThreadsNewestFirst(threads).filter(
-      (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
-    );
-    if (candidates.length === 0) return;
-    waiting = true;
-    timer = setTimeout(() => {
-      waiting = false;
-      pending = true;
-      notify();
-      scan = scan.then(async () => {
-        for (const thread of candidates) {
-          if (!isCurrent()) return;
-          try {
-            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
-              (prompt) => prompt.includes(query)
-            );
-            if (!isCurrent()) return;
-            if (matched) {
-              matches2.add(thread.id);
-              notify();
-            }
-          } catch {
-            if (!isCurrent()) return;
-            failed = true;
-          }
-        }
-        if (!isCurrent()) return;
-        pending = false;
-        notify();
-      }).catch((error62) => {
-        console.error("[thread-filter] request scan failed", error62);
-        if (!isCurrent()) return;
-        pending = false;
-        failed = true;
-        notify();
-      });
-    }, SCAN_DELAY_MS);
-  };
-  return {
-    search,
-    cancel,
-    matches: matches2,
-    get pending() {
-      return pending;
-    },
-    get waiting() {
-      return waiting;
-    },
-    get failed() {
-      return failed;
-    }
-  };
-}
-var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
-var init_thread_filter = __esm({
-  "src/renderer/controller/thread-filter.ts"() {
-    init_thread_sort();
-    MIN_REQUEST_QUERY_LENGTH = 2;
-    SCAN_DELAY_MS = 200;
-    PROMPT_INDEX_MAX_CHARS = 8e6;
-    filterableContentCache = /* @__PURE__ */ new WeakMap();
-  }
-});
-
 // src/renderer/controller/attention.ts
 function recompute() {
   const next = /* @__PURE__ */ new Set();
@@ -68797,200 +70091,6 @@ var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/renderer/controller/activity-model.ts
-function truncateText(text2, max = WANT_MAX_CHARS) {
-  const flat = text2.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
-}
-function threadName(thread) {
-  const title = thread?.title.trim();
-  return title && title.length > 0 ? title : UNTITLED_THREAD;
-}
-function requestThreadFields(threadId, byId) {
-  if (threadId === void 0) {
-    return { threadId: null, threadTitle: "No thread", projectId: null, projectName: null };
-  }
-  const thread = byId.get(threadId);
-  return {
-    threadId,
-    threadTitle: threadName(thread),
-    projectId: thread?.projectId ?? null,
-    projectName: thread?.projectName ?? null
-  };
-}
-function questionWant(questions) {
-  const first = questions[0] ?? "";
-  const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
-  return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
-}
-function deriveActivity(input2) {
-  const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
-  const needsYou = [
-    ...input2.approvals.map((req) => ({
-      key: `approval:${req.id}`,
-      state: "needs-approval",
-      ...requestThreadFields(req.threadId, byId),
-      want: truncateText(req.title),
-      detail: req.body.trim() === "" ? null : truncateText(req.body),
-      requestId: req.id,
-      requestType: req.type,
-      approval: req,
-      since: req.receivedAt
-    })),
-    ...input2.questions.map((req) => ({
-      key: `question:${req.id}`,
-      state: "needs-answer",
-      ...requestThreadFields(req.threadId, byId),
-      want: questionWant(req.questions),
-      detail: null,
-      requestId: req.id,
-      requestType: null,
-      approval: null,
-      since: req.receivedAt
-    }))
-  ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
-  const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
-  const threadRow = (thread, state, want, since) => ({
-    key: `thread:${thread.id}`,
-    state,
-    threadId: thread.id,
-    threadTitle: threadName(thread),
-    projectId: thread.projectId,
-    projectName: thread.projectName,
-    want,
-    detail: null,
-    requestId: null,
-    requestType: null,
-    approval: null,
-    since
-  });
-  const working = [];
-  const recent = [];
-  for (const thread of input2.threads) {
-    if (waitingThreads.has(thread.id)) continue;
-    const run2 = input2.runs.get(thread.id);
-    if (thread.status === "running") {
-      working.push(
-        threadRow(
-          thread,
-          "working",
-          truncateText(run2?.activity ?? "Working\u2026"),
-          run2?.startedAt ?? null
-        )
-      );
-    } else {
-      const endedAt = run2?.endedAt ?? thread.unreadAt;
-      if (endedAt === void 0) continue;
-      recent.push(
-        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
-      );
-    }
-  }
-  const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
-  working.sort(newestFirst);
-  recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
-  const groups = [
-    { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
-    { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
-    {
-      id: "recent",
-      label: GROUP_LABELS.recent,
-      rows: recent.slice(0, RECENT_ROW_LIMIT),
-      total: recent.length
-    }
-  ];
-  return groups;
-}
-function collectActivityThreads(store2) {
-  const { projects, backgroundThreads } = store2.getState();
-  const out = /* @__PURE__ */ new Map();
-  for (const project2 of projects) {
-    const projectName = projectDisplayName(project2);
-    for (const thread of getSidebarThreads(store2, project2.id)) {
-      out.set(thread.id, {
-        id: thread.id,
-        title: thread.title,
-        status: thread.status,
-        ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
-        projectId: project2.id,
-        projectName
-      });
-    }
-  }
-  for (const carried of backgroundThreads) {
-    const project2 = projects.find((p2) => p2.id === carried.projectId);
-    if (!project2 || carried.thread.archivedAt != null) continue;
-    out.set(carried.thread.id, {
-      id: carried.thread.id,
-      title: carried.thread.title,
-      status: carried.thread.status,
-      ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
-      projectId: project2.id,
-      projectName: projectDisplayName(project2)
-    });
-  }
-  return [...out.values()];
-}
-function trackRunTimings(store2, now) {
-  const runs = /* @__PURE__ */ new Map();
-  const unsubs = [
-    store2.on("thread_status_changed", (threadId, status) => {
-      const previous = runs.get(threadId);
-      if (status === "running") {
-        if (previous?.startedAt !== void 0 && previous.endedAt === void 0) return;
-        runs.set(threadId, { startedAt: now() });
-        return;
-      }
-      if (status === "error" || previous?.startedAt !== void 0 && previous.endedAt === void 0) {
-        runs.set(threadId, { ...previous, endedAt: now(), activity: null });
-      }
-    }),
-    store2.on("agent_activity", (threadId, label) => {
-      const previous = runs.get(threadId);
-      if (!previous || previous.endedAt !== void 0) return;
-      runs.set(threadId, { ...previous, activity: label });
-    })
-  ];
-  return {
-    runs,
-    dispose: () => {
-      unsubs.forEach((unsub) => {
-        unsub();
-      });
-    }
-  };
-}
-function formatAge(elapsedMs) {
-  if (elapsedMs < MINUTE) return "now";
-  if (elapsedMs < HOUR) return `${String(Math.floor(elapsedMs / MINUTE))}m`;
-  if (elapsedMs < DAY) return `${String(Math.floor(elapsedMs / HOUR))}h`;
-  return `${String(Math.floor(elapsedMs / DAY))}d`;
-}
-function formatAgeLong(elapsedMs) {
-  const unit = (count, name) => `${String(count)} ${name}${count === 1 ? "" : "s"}`;
-  if (elapsedMs < MINUTE) return "just now";
-  if (elapsedMs < HOUR) return unit(Math.floor(elapsedMs / MINUTE), "minute");
-  if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
-  return unit(Math.floor(elapsedMs / DAY), "day");
-}
-var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
-var init_activity_model = __esm({
-  "src/renderer/controller/activity-model.ts"() {
-    init_projects();
-    RECENT_ROW_LIMIT = 10;
-    WANT_MAX_CHARS = 140;
-    UNTITLED_THREAD = "New thread";
-    GROUP_LABELS = {
-      "needs-you": "Needs you",
-      working: "Working",
-      recent: "Recently finished"
-    };
-    MINUTE = 6e4;
-    HOUR = 60 * MINUTE;
-    DAY = 24 * HOUR;
   }
 });
 
@@ -70071,219 +71171,6 @@ var init_activity_panel = __esm({
   }
 });
 
-// packages/thread-store/src/prompt-placeholders.ts
-function stripPastePlaceholders(content) {
-  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
-  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
-}
-var PASTE_PLACEHOLDER;
-var init_prompt_placeholders = __esm({
-  "packages/thread-store/src/prompt-placeholders.ts"() {
-    PASTE_PLACEHOLDER = "\uFFFC";
-  }
-});
-
-// src/shared/threads/prompt-placeholders.ts
-var init_prompt_placeholders2 = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
-    init_prompt_placeholders();
-  }
-});
-
-// src/shared/git/worktree-policy.ts
-function slugPrompt(prompt) {
-  const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
-  return slug2 || "thread";
-}
-function shortThreadId(threadId) {
-  const compact = threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return (compact.slice(-6) || "thread").slice(0, 6);
-}
-function threadWorktreeBranchName(title, threadId, collision = 0) {
-  const base = `copse/${slugPrompt(title)}-${shortThreadId(threadId)}`;
-  return collision > 0 ? `${base}-${String(collision + 1)}` : base;
-}
-function initialThreadWorktreeBranchName(threadId, collision = 0) {
-  return threadWorktreeBranchName("thread", threadId, collision);
-}
-function isInitialThreadWorktreeBranchName(branch, threadId) {
-  for (let collision = 0; collision < 100; collision += 1) {
-    if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
-  }
-  return false;
-}
-var init_worktree_policy = __esm({
-  "src/shared/git/worktree-policy.ts"() {
-  }
-});
-
-// src/shared/thread-title.ts
-function stripDecoration(value) {
-  return value.replace(/^\s*\x60{1,3}/, "").replace(/\x60{1,3}\s*$/, "").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/(?:\*{1,2}|_{1,2})\s*$/, "").replace(/^(?:here(?:'s| is)(?: the)?\s+)?(?:thread\s+)?title\s*:\s*/i, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/^[“”"'‘’]+|[“”"'‘’]+$/g, "").trim();
-}
-function stripConversationalLead(value) {
-  let result = value.trim();
-  let changed = true;
-  while (changed && result) {
-    changed = false;
-    for (const pattern of CONVERSATIONAL_LEADS) {
-      const next = result.replace(pattern, "").trim();
-      if (next !== result) {
-        result = next;
-        changed = true;
-      }
-    }
-  }
-  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
-    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
-    ""
-  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
-}
-function vagueClause(value) {
-  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
-    value.trim()
-  );
-}
-function compactTitle(value, capitalize) {
-  const words = value.replace(BIDI_FORMAT_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").replace(/[.!?,:;\s]+$/g, "").trim().split(" ").filter(Boolean).slice(0, MAX_THREAD_TITLE_WORDS);
-  let title = words.join(" ");
-  const chars = Array.from(title);
-  if (chars.length > MAX_THREAD_TITLE_CHARS) {
-    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join("");
-    const boundary = clipped.lastIndexOf(" ");
-    title = (boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join("")).trim();
-  }
-  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title;
-}
-function fallbackThreadTitle(input2) {
-  const plain = input2.replace(/\x60{3}(?:[a-z0-9_-]+)?/gi, " ").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/gm, "").replace(/\s+/g, " ").trim();
-  const clauses = plain.split(/(?<=[.!?])\s+/);
-  for (const rawClause of clauses) {
-    const clause = stripConversationalLead(stripDecoration(rawClause));
-    if (!clause || vagueClause(clause)) continue;
-    const title = compactTitle(clause, true);
-    if (title && !vagueClause(title)) return title;
-  }
-  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
-  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
-}
-var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
-var init_thread_title = __esm({
-  "src/shared/thread-title.ts"() {
-    MAX_THREAD_TITLE_CHARS = 60;
-    MAX_THREAD_TITLE_WORDS = 6;
-    CONVERSATIONAL_LEADS = [
-      /^(?:got it|sure|okay|ok)\b[\s,:;—-]*/i,
-      /^(?:a\s+)?proposed thread\b[\s,:;—-]*/i,
-      /^(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?/i,
-      /^(?:i(?:'d| would)\s+like|i\s+want|we\s+need)\s+(?:you\s+)?(?:to\s+)?/i,
-      /^(?:how|what|why)\s+(?:can|could|might|do|does|would|should)\s+(?:you|we|i)\s+/i,
-      /^(?:sometimes\s+)?when(?:ever)?\s+(?:i|we)\s+/i,
-      /^please\s+/i,
-      /^help\s+(?:me|us)\s+(?:to\s+)?/i
-    ];
-    CONTROL_CHARS = /\p{Cc}/gu;
-    BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
-    MODEL_PREAMBLE = new RegExp(
-      [
-        // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
-        String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
-        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
-        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
-        String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
-      ].join("|"),
-      "i"
-    );
-  }
-});
-
-// src/renderer/controller/thread-naming.ts
-function namingMessages(thread) {
-  const queued = queuedMessageIds(thread);
-  return thread.messages.filter(
-    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
-  );
-}
-function promptWords(message2) {
-  return stripPastePlaceholders(message2.content);
-}
-function namingInput(userMessages) {
-  const first = userMessages[0];
-  if (!first) return "";
-  const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
-}
-function owningProjectId(store2, threadId) {
-  const background = backgroundProjectOf(store2, threadId);
-  if (background) return background;
-  const state = store2.getState();
-  if (!state.threads.some((thread) => thread.id === threadId)) return null;
-  return state.activeProjectId;
-}
-function maybeRenameThreadBranch(store2, api2, threadId) {
-  if (branchRenameInFlight.has(threadId)) return;
-  const thread = getThreadById(store2, threadId);
-  if (!thread?.worktree || thread.status !== "idle" || thread.title === "New Thread" || !isInitialThreadWorktreeBranchName(thread.worktree.branch, threadId)) {
-    return;
-  }
-  const projectId = owningProjectId(store2, threadId);
-  if (!projectId) return;
-  branchRenameInFlight.add(threadId);
-  void api2.agent.renameCheckoutBranch(projectId, threadId, thread.title).then((worktree) => {
-    if (worktree) applyRenamedThreadWorktree(store2, threadId, worktree);
-  }).catch((error62) => {
-    console.warn("[thread-naming] Could not rename thread branch:", error62);
-  }).finally(() => branchRenameInFlight.delete(threadId));
-}
-function maybeNameThread(store2, api2, threadId) {
-  if (inFlight2.has(threadId)) return;
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return;
-  const passes = thread.autoTitleCount ?? 0;
-  if (passes === 0 && thread.title !== "New Thread") return;
-  const threshold = PASS_THRESHOLDS[passes];
-  if (threshold === void 0) return;
-  const userMessages = namingMessages(thread);
-  const first = userMessages[0];
-  if (!first || userMessages.length < threshold) return;
-  const titleBefore = thread.title;
-  const input2 = namingInput(userMessages);
-  inFlight2.add(threadId);
-  void (async () => {
-    let title;
-    try {
-      title = await api2.agent.suggestTitle(input2);
-    } catch {
-      title = null;
-    } finally {
-      inFlight2.delete(threadId);
-    }
-    const current = getThreadById(store2, threadId);
-    if (!current) return;
-    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title;
-    setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
-      autoTitleCount: passes + 1
-    });
-    maybeRenameThreadBranch(store2, api2, threadId);
-  })();
-}
-var inFlight2, PASS_THRESHOLDS, branchRenameInFlight;
-var init_thread_naming = __esm({
-  "src/renderer/controller/thread-naming.ts"() {
-    init_thread_helpers();
-    init_unknown_value3();
-    init_prompt_placeholders2();
-    init_worktree_policy();
-    init_message_queue();
-    init_background_threads();
-    init_thread_title();
-    inFlight2 = /* @__PURE__ */ new Set();
-    PASS_THRESHOLDS = [1, 3, 8];
-    branchRenameInFlight = /* @__PURE__ */ new Set();
-  }
-});
-
 // src/renderer/controller/project-tree.ts
 function projectGroupId(project2, groups) {
   const { groupId } = project2;
@@ -70592,6 +71479,677 @@ var init_projects_drag = __esm({
   }
 });
 
+// src/renderer/views/thread-pr-chips.ts
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
+  icon.setAttribute("aria-hidden", "true");
+  return el(
+    "span",
+    {
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
+      role: "img",
+      "aria-label": label,
+      "data-tooltip": label
+    },
+    icon
+  );
+}
+function createPrStatusTracker(api2, changed) {
+  const cache = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Set();
+  let generation = 0;
+  function isFresh(key) {
+    const entry = cache.get(key);
+    return entry !== void 0 && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS;
+  }
+  function ensure(refs) {
+    const stale = refs.filter((ref) => {
+      const key = githubPrKey(ref);
+      return !isFresh(key) && !inFlight4.has(key);
+    });
+    if (stale.length === 0) return;
+    const current = generation;
+    for (const ref of stale) {
+      const key = githubPrKey(ref);
+      let lifecycleChanged = false;
+      inFlight4.add(key);
+      void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+        if (current !== generation) return;
+        const state = details ? normalizePrLifecycleState(details.state) : "unknown";
+        const previous = cache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        cache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (current !== generation) return;
+          const entry = cache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          cache.set(key, { ...entry, checks });
+        });
+      }).catch(() => {
+        if (current !== generation) return;
+        cache.set(key, { state: cache.get(key)?.state ?? "unknown", fetchedAt: Date.now() });
+      }).finally(() => {
+        if (current !== generation) return;
+        inFlight4.delete(key);
+        if (lifecycleChanged) changed();
+      });
+    }
+  }
+  return {
+    rollup: (thread) => {
+      const refs = sidebarPrRefs(thread);
+      if (refs.length === 0) return null;
+      ensure(refs);
+      const states = refs.map((ref) => cache.get(githubPrKey(ref))?.state ?? "unknown");
+      return summarizeThreadPrStatus(states, refs);
+    },
+    ciFailing: (thread) => sidebarPrRefs(thread).some((ref) => {
+      const entry = cache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    }),
+    reset: () => {
+      generation += 1;
+      cache.clear();
+      inFlight4.clear();
+    }
+  };
+}
+function createPrBackfill(api2) {
+  const requested = /* @__PURE__ */ new Map();
+  const retryAttempts = /* @__PURE__ */ new Map();
+  const retryTimers = /* @__PURE__ */ new Set();
+  let rowsByKey = /* @__PURE__ */ new Map();
+  let observer = null;
+  function observe(rows) {
+    observer?.disconnect();
+    observer = null;
+    rowsByKey = new Map(
+      rows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
+    if (rows.length === 0 || typeof IntersectionObserver === "undefined") return;
+    const rowThreads = new Map(
+      rows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+    );
+    const current = new IntersectionObserver((entries2) => {
+      if (observer !== current) return;
+      const pending = /* @__PURE__ */ new Map();
+      for (const entry of entries2) {
+        if (!entry.isIntersecting) continue;
+        current.unobserve(entry.target);
+        const thread = rowThreads.get(entry.target);
+        if (!thread) continue;
+        const projectRequested = requested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
+        requested.set(thread.projectId, projectRequested);
+        if (projectRequested.has(thread.threadId)) continue;
+        projectRequested.add(thread.threadId);
+        const batchRows = pending.get(thread.projectId) ?? [];
+        batchRows.push({ threadId: thread.threadId, row: entry.target });
+        pending.set(thread.projectId, batchRows);
+      }
+      for (const [projectId, batchRows] of pending) {
+        const projectRequested = requested.get(projectId);
+        for (let i2 = 0; i2 < batchRows.length; i2 += 10) {
+          const batch = batchRows.slice(i2, i2 + 10);
+          const threadIds = batch.map(({ threadId }) => threadId);
+          void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
+            for (const threadId of threadIds) retryAttempts.delete(`${projectId}\0${threadId}`);
+          }).catch((err2) => {
+            let attempt = 1;
+            for (const threadId of threadIds) {
+              const key = `${projectId}\0${threadId}`;
+              const nextAttempt = (retryAttempts.get(key) ?? 0) + 1;
+              retryAttempts.set(key, nextAttempt);
+              attempt = Math.max(attempt, nextAttempt);
+            }
+            const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
+            const timer = setTimeout(() => {
+              retryTimers.delete(timer);
+              for (const { threadId } of batch) projectRequested?.delete(threadId);
+              const latest = observer;
+              if (!latest) return;
+              for (const { threadId } of batch) {
+                const row2 = rowsByKey.get(`${projectId}\0${threadId}`);
+                if (row2?.isConnected) latest.observe(row2);
+              }
+            }, delay);
+            retryTimers.add(timer);
+            console.warn("[threads] visible PR-ref backfill failed:", err2);
+          });
+        }
+      }
+    });
+    observer = current;
+    for (const { row: row2 } of rows) current.observe(row2);
+  }
+  return {
+    observe,
+    dispose: () => {
+      for (const timer of retryTimers) clearTimeout(timer);
+      retryTimers.clear();
+      observer?.disconnect();
+      observer = null;
+      rowsByKey.clear();
+    }
+  };
+}
+var PR_STATUS_CACHE_TTL_MS;
+var init_thread_pr_chips = __esm({
+  "src/renderer/views/thread-pr-chips.ts"() {
+    init_helpers();
+    init_icons();
+    init_github_pr_url2();
+    init_thread_pr_status2();
+    init_sidebar_thread();
+    PR_STATUS_CACHE_TTL_MS = 6e4;
+  }
+});
+
+// src/renderer/views/recoverable-threads.ts
+function renderMissingNotice(store2, api2, project2) {
+  const wrap = el("div", { class: "project-missing-notice", "data-project-id": project2.id });
+  wrap.append(
+    el(
+      "div",
+      { class: "project-missing-text" },
+      "This folder could not be opened. Its threads are safe \u2014 " + (project2.sshHost ? "retry once the host is reachable." : "relocate the project to restore them.")
+    )
+  );
+  const action = project2.sshHost ? el("button", { type: "button", class: "project-missing-btn" }, "Retry") : el("button", { type: "button", class: "project-missing-btn" }, "Relocate\u2026");
+  action.addEventListener("click", () => {
+    if (project2.sshHost) {
+      switchProject(store2, api2, project2.id);
+      return;
+    }
+    void relocateProject(store2, api2, project2.id).catch((err2) => {
+      showErrorToast("Could not relocate project", err2);
+    });
+  });
+  wrap.append(action);
+  return wrap;
+}
+function orphanPrimaryLabel(orphan) {
+  const lead = orphan.sampleTitles[0]?.trim();
+  if (lead) return lead;
+  const count = orphan.threadCount;
+  return `${String(count)} thread${count === 1 ? "" : "s"}`;
+}
+function orphanSubtitle(orphan) {
+  const count = orphan.threadCount;
+  const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+  const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0);
+  if (extra.length === 0) return countLabel;
+  const shown = extra.slice(0, 2).join(" \xB7 ");
+  const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
+  return `${countLabel} \xB7 ${shown}${more}`;
+}
+function orphanRecoverDetail(orphan) {
+  const lines = [
+    "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
+  ];
+  if (orphan.sampleTitles.length > 0) {
+    lines.push("");
+    lines.push("Threads in this store:");
+    for (const title of orphan.sampleTitles) {
+      lines.push(`\u2022 ${title}`);
+    }
+    if (orphan.threadCount > orphan.sampleTitles.length) {
+      lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
+    }
+  } else {
+    lines.push("");
+    lines.push(
+      `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
+    );
+  }
+  lines.push("");
+  lines.push(`Store id: ${orphan.id}`);
+  return lines.join("\n");
+}
+function createRecoverableThreads(store2, api2, changed) {
+  let orphans = [];
+  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
+  let generation = 0;
+  function refresh() {
+    const current = ++generation;
+    void listOrphanProjects(api2).then((scanned) => {
+      if (current !== generation) return;
+      const known = new Set(store2.getState().projects.map((project2) => project2.id));
+      const next = scanned.filter((orphan) => !known.has(orphan.id));
+      const differs = next.length !== orphans.length || next.some((o3, i2) => {
+        const prev = orphans[i2];
+        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
+      });
+      orphans = next;
+      if (differs) changed();
+    }).catch((err2) => {
+      if (current !== generation) return;
+      showErrorToast("Could not scan recoverable threads", err2);
+    });
+  }
+  const offProjects = store2.on("projects_changed", () => {
+    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
+    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
+      return;
+    }
+    knownProjectIds = nextIds;
+    refresh();
+  });
+  function section() {
+    if (orphans.length === 0) return null;
+    const wrap = el("div", { class: "orphans-section" });
+    wrap.append(
+      el(
+        "div",
+        { class: "orphans-heading" },
+        warningIcon("ui-icon ui-icon-sm"),
+        el("span", {}, "Recoverable threads")
+      ),
+      el(
+        "p",
+        { class: "orphans-hint" },
+        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
+      )
+    );
+    for (const orphan of orphans) {
+      const primary = orphanPrimaryLabel(orphan);
+      const row2 = el(
+        "div",
+        { class: "orphan-row", title: `Store ${orphan.id}`, "data-orphan-id": orphan.id },
+        el(
+          "div",
+          { class: "orphan-copy" },
+          el("span", { class: "orphan-name" }, primary),
+          el("span", { class: "orphan-meta" }, orphanSubtitle(orphan))
+        )
+      );
+      const actions = el("div", { class: "orphan-actions" });
+      const dismissBtn = el(
+        "button",
+        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
+        "Dismiss"
+      );
+      dismissBtn.addEventListener("click", () => {
+        void dismissOrphanProject(api2, orphan.id).then(() => {
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          changed();
+          showToast("Recoverable threads hidden. They remain on disk.");
+        }).catch((err2) => {
+          showErrorToast("Could not dismiss recoverable threads", err2);
+        });
+      });
+      const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
+      recoverBtn.addEventListener("click", () => {
+        void recoverOrphanProject(
+          store2,
+          api2,
+          orphan.id,
+          () => showConfirmDialog({
+            message: `Recover \u201C${primary}\u201D?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: "Choose folder\u2026",
+            cancelLabel: "Cancel"
+          })
+        ).then((recovered) => {
+          if (!recovered) return;
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          changed();
+        }).catch((err2) => {
+          showErrorToast("Could not recover threads", err2);
+        });
+      });
+      actions.append(dismissBtn, recoverBtn);
+      row2.append(actions);
+      wrap.append(row2);
+    }
+    return wrap;
+  }
+  refresh();
+  return {
+    section,
+    get count() {
+      return orphans.length;
+    },
+    refresh,
+    dispose: () => {
+      generation += 1;
+      offProjects();
+    }
+  };
+}
+var init_recoverable_threads = __esm({
+  "src/renderer/views/recoverable-threads.ts"() {
+    init_helpers();
+    init_icons();
+    init_projects();
+    init_confirm_dialog();
+    init_toast();
+  }
+});
+
+// packages/thread-store/src/fork-thread.ts
+function forkThreadTitle(title) {
+  const base = title.trim() || "New Thread";
+  const match = /^(.*) \(fork(?: (\d+))?\)$/.exec(base);
+  if (match?.[1] !== void 0) {
+    const next = match[2] === void 0 ? 3 : Number(match[2]) + 1;
+    return truncateTitle(`${match[1]} (fork ${String(next)})`);
+  }
+  return truncateTitle(`${base}${FORK_SUFFIX}`);
+}
+function truncateTitle(title) {
+  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+}
+function buildForkedThread(source, options = {}) {
+  const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
+  const settled = source.messages.filter((m2) => !excluded.has(m2.id));
+  let slice;
+  if (options.throughMessageId === void 0) {
+    slice = settled;
+  } else {
+    const cut = settled.findIndex((m2) => m2.id === options.throughMessageId);
+    if (cut === -1) return null;
+    slice = settled.slice(0, cut + 1);
+  }
+  if (slice.length === 0) return null;
+  const now = Date.now();
+  const messages = slice.map((message2) => copyMessage(message2));
+  const gitBranch = source.worktree === void 0 ? source.gitBranch : void 0;
+  return {
+    id: randomUUID2(),
+    title: forkThreadTitle(source.title),
+    status: "idle",
+    messages,
+    // Usage is a ledger of what a thread spent. The fork has spent nothing yet;
+    // the source keeps its own totals.
+    usage: { inputTokens: 0, outputTokens: 0 },
+    ...source.model !== void 0 ? { model: source.model } : {},
+    ...source.todos !== void 0 ? { todos: source.todos.map((todo) => ({ ...todo })) } : {},
+    ...source.workingBrief !== void 0 ? { workingBrief: source.workingBrief } : {},
+    ...gitBranch !== void 0 ? { gitBranch } : {},
+    createdAt: now,
+    updatedAt: now
+  };
+}
+function copyMessage(message2) {
+  const {
+    id: _id,
+    hookCards: _hookCards,
+    review: _review,
+    reviewReport: _reviewReport,
+    toolCalls,
+    images,
+    canvasArtefacts,
+    visualEvidence,
+    attachments,
+    ...rest
+  } = message2;
+  return {
+    ...rest,
+    id: randomUUID2(),
+    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
+    ...images !== void 0 ? { images: [...images] } : {},
+    ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
+    ...visualEvidence !== void 0 ? {
+      visualEvidence: visualEvidence.map((evidence) => ({
+        ...evidence,
+        assets: evidence.assets.map((asset) => ({
+          ...asset,
+          source: { ...asset.source }
+        }))
+      }))
+    } : {},
+    ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
+  };
+}
+var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
+var init_fork_thread = __esm({
+  "packages/thread-store/src/fork-thread.ts"() {
+    randomUUID2 = () => globalThis.crypto.randomUUID();
+    MAX_TITLE_LENGTH = 120;
+    FORK_SUFFIX = " (fork)";
+  }
+});
+
+// src/shared/store/fork-thread.ts
+var init_fork_thread2 = __esm({
+  "src/shared/store/fork-thread.ts"() {
+    init_fork_thread();
+  }
+});
+
+// src/renderer/controller/fork-thread.ts
+function hasAttachments(thread) {
+  return thread.messages.some((m2) => (m2.attachments ?? []).length > 0);
+}
+async function forkThread(store2, api2, sourceThreadId, options = {}) {
+  const source = getThreadById(store2, sourceThreadId);
+  if (!source) return null;
+  const forked = buildForkedThread(source, {
+    ...options,
+    excludeMessageIds: queuedMessageIds(source)
+  });
+  if (!forked) return null;
+  store2.emit("composer_draft_flush");
+  store2.setState({
+    threads: [forked, ...store2.getState().threads],
+    activeThreadId: forked.id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false };
+  let history = null;
+  try {
+    history = await api2.threads.fork(projectId, sourceThreadId, forked.id, options.throughMessageId);
+  } catch (error62) {
+    console.error("[fork] failed to seed forked thread history:", error62);
+  }
+  return {
+    threadId: forked.id,
+    history,
+    droppedAttachments: history?.source === "rebuilt" && hasAttachments(forked)
+  };
+}
+var init_fork_thread3 = __esm({
+  "src/renderer/controller/fork-thread.ts"() {
+    init_fork_thread2();
+    init_thread_helpers();
+    init_message_queue();
+  }
+});
+
+// src/renderer/views/sidebar-actions.ts
+function startRunNow(api2, target) {
+  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
+    showToast(
+      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
+    );
+  }).catch((error62) => {
+    showErrorToast(
+      `Could not run \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The run could not start")
+    );
+  });
+}
+function automationMenuEntries(api2, target, openSetup) {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: "Run now",
+      onSelect: () => {
+        startRunNow(api2, target);
+      }
+    },
+    {
+      label: "Automation setup\u2026",
+      onSelect: openSetup
+    }
+  ];
+}
+function forkProjectThread(store2, api2, projectId, threadId) {
+  if (projectId !== store2.getState().activeProjectId) return;
+  void forkThread(store2, api2, threadId).then((result) => {
+    if (!result) {
+      showToast("That thread has no messages to fork.", { variant: "error" });
+      return;
+    }
+    showToast("Forked into a new thread.");
+  });
+}
+function archiveProjectThread(store2, projectId, threadId) {
+  if (projectId !== store2.getState().activeProjectId) return;
+  archiveThread(store2, threadId);
+}
+function deleteProjectThread(store2, api2, projectId, threadId) {
+  if (projectId !== store2.getState().activeProjectId) return false;
+  if (getSidebarThreads(store2, projectId).length <= 1) return false;
+  void api2.agent.clearHistory(projectId, threadId);
+  deleteThread(store2, threadId);
+  return true;
+}
+function threadMenuEntries(store2, api2, options) {
+  const { project: project2, thread } = options;
+  const canMutate = project2.id === store2.getState().activeProjectId;
+  const scheduleId = thread.automation?.scheduleId;
+  return [
+    ...!canMutate && options.onOpen ? [{ label: "Open thread", onSelect: options.onOpen }] : [],
+    ...canMutate ? [
+      ...options.allowRename ? [{ label: "Rename", onSelect: options.onRename }] : [],
+      {
+        label: "Fork",
+        onSelect: () => {
+          forkProjectThread(store2, api2, project2.id, thread.id);
+        }
+      },
+      {
+        label: "Archive",
+        onSelect: () => {
+          archiveProjectThread(store2, project2.id, thread.id);
+        }
+      },
+      ...options.allowDelete ? [
+        {
+          label: "Delete",
+          disabled: getSidebarThreads(store2, project2.id).length <= 1,
+          onSelect: () => {
+            deleteProjectThread(store2, api2, project2.id, thread.id);
+          }
+        }
+      ] : []
+    ] : [],
+    // A schedule with a single run has no heading of its own, and a
+    // historical run is several rows below the one that does, so every
+    // automation row carries the way out to its setup. Opens directly
+    // against this run's own project rather than switching the active
+    // project just to reach the editor.
+    ...scheduleId ? [
+      {
+        label: "Run now",
+        onSelect: () => {
+          startRunNow(api2, {
+            project: project2,
+            scheduleName: thread.automation?.scheduleName ?? thread.title,
+            scheduleId
+          });
+        }
+      },
+      {
+        label: "Automation setup\u2026",
+        onSelect: () => {
+          openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+        }
+      }
+    ] : []
+  ];
+}
+function projectMenuEntries(store2, api2, project2) {
+  return [
+    {
+      label: "Remove from sidebar",
+      onSelect: () => {
+        void removeProject(store2, api2, project2.id);
+      }
+    }
+  ];
+}
+async function showProjectMenu(store2, api2, project2, anchor2, trailing) {
+  const state = store2.getState();
+  try {
+    const [result, appDetected] = await Promise.all([
+      api2.plugins.list(),
+      api2.appRun.detect({
+        projectId: project2.id,
+        ...state.activeProjectId === project2.id && state.activeThreadId ? { threadId: state.activeThreadId } : {}
+      }).catch(() => false)
+    ]);
+    if (!anchor2.isConnected) return;
+    const rect = anchor2.getBoundingClientRect();
+    const entries2 = [];
+    if (appDetected) {
+      entries2.push({
+        label: "Run app\u2026",
+        onSelect: () => {
+          if (store2.getState().activeProjectId === project2.id) {
+            openAppRunDialog(store2, api2, project2.id);
+            return;
+          }
+          const unsubscribe = store2.on("workspace_changed", () => {
+            if (store2.getState().activeProjectId === project2.id) {
+              unsubscribe();
+              openAppRunDialog(store2, api2, project2.id);
+            } else if (!isProjectSwitchInFlight(store2, project2.id)) {
+              unsubscribe();
+            }
+          });
+          switchProject(store2, api2, project2.id);
+        }
+      });
+    }
+    if (result.plugins.some(hasAutomationDialog)) {
+      entries2.push(
+        {
+          label: "Automations",
+          onSelect: () => {
+            openAutomationDialog(store2, api2, { projectId: project2.id });
+          }
+        },
+        {
+          label: "New automation\u2026",
+          disabled: project2.missing === true,
+          onSelect: () => {
+            openAutomationDialog(store2, api2, { projectId: project2.id, createNew: true });
+          }
+        }
+      );
+    }
+    showContextMenu(rect.left, rect.bottom, [...entries2, ...trailing]);
+  } catch (error62) {
+    showErrorToast("Could not load project menu", error62);
+  }
+}
+var init_sidebar_actions = __esm({
+  "src/renderer/views/sidebar-actions.ts"() {
+    init_thread_helpers();
+    init_context_menu();
+    init_projects();
+    init_fork_thread3();
+    init_app_run_dialog();
+    init_automation_dialog();
+    init_ipc_error_message();
+    init_toast();
+  }
+});
+
 // src/renderer/views/projects-pane.ts
 function attentionBell(label) {
   const svg2 = document.createElementNS(SVG_NS3, "svg");
@@ -70618,21 +72176,6 @@ function runningStatus(label) {
   svg2.setAttribute("data-tooltip", label);
   svg2.removeAttribute("aria-hidden");
   return svg2;
-}
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
-  icon.setAttribute("aria-hidden", "true");
-  return el(
-    "span",
-    {
-      class: `chat-pr-status is-${rollup.kind}`,
-      role: "img",
-      "aria-label": label,
-      "data-tooltip": label
-    },
-    icon
-  );
 }
 function settingsIcon(className = "titlebar-btn-icon") {
   const svg2 = document.createElementNS(SVG_NS3, "svg");
@@ -70662,33 +72205,6 @@ function automationSetupBtn(label, open2, icon = settingsIcon) {
     open2();
   });
   return btn;
-}
-function startRunNow(api2, target) {
-  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
-    showToast(
-      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
-    );
-  }).catch((error62) => {
-    showErrorToast(
-      `Could not run \u201C${target.scheduleName}\u201D`,
-      ipcErrorMessage(error62, "The run could not start")
-    );
-  });
-}
-function automationMenuEntries(api2, target, openSetup) {
-  return [
-    { heading: target.scheduleName },
-    {
-      label: "Run now",
-      onSelect: () => {
-        startRunNow(api2, target);
-      }
-    },
-    {
-      label: "Automation setup\u2026",
-      onSelect: openSetup
-    }
-  ];
 }
 function mountProjectsPane(root, store2, api2) {
   const title = el("span", {}, "Projects");
@@ -70856,22 +72372,18 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
-  const prBackfillRequested = /* @__PURE__ */ new Map();
-  const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
-  const prBackfillRetryTimers = /* @__PURE__ */ new Set();
-  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
-  let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
-  let orphans = [];
-  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
-  let orphanScanGeneration = 0;
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
-  const prLifecycleCache = /* @__PURE__ */ new Map();
-  const prFetchInFlight = /* @__PURE__ */ new Set();
-  let prStatusGeneration = 0;
+  const prStatus = createPrStatusTracker(api2, () => {
+    render();
+  });
+  const prBackfill = createPrBackfill(api2);
+  const recoverable = createRecoverableThreads(store2, api2, () => {
+    render();
+  });
   function beginThreadRename(threadId, currentTitle) {
     renaming = { threadId, draft: currentTitle || "New Thread" };
     render();
@@ -70892,222 +72404,6 @@ function mountProjectsPane(root, store2, api2) {
     } else {
       render();
     }
-  }
-  function forkProjectThread(projectId, threadId) {
-    if (projectId !== store2.getState().activeProjectId) return;
-    void forkThread(store2, api2, threadId).then((result) => {
-      if (!result) {
-        showToast("That thread has no messages to fork.", { variant: "error" });
-        return;
-      }
-      showToast("Forked into a new thread.");
-    });
-  }
-  function archiveProjectThread(projectId, threadId) {
-    if (projectId !== store2.getState().activeProjectId) return;
-    archiveThread(store2, threadId);
-  }
-  function cachedPrLifecycle(key) {
-    return prLifecycleCache.get(key)?.state;
-  }
-  function hasFreshPrLifecycle(key) {
-    const entry = prLifecycleCache.get(key);
-    return entry !== void 0 && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS;
-  }
-  function ensurePrLifecycles(refs) {
-    const stale = refs.filter((ref) => {
-      const key = githubPrKey(ref);
-      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key);
-    });
-    if (stale.length === 0) return;
-    const generation = prStatusGeneration;
-    for (const ref of stale) {
-      const key = githubPrKey(ref);
-      let lifecycleChanged = false;
-      prFetchInFlight.add(key);
-      void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
-        if (generation !== prStatusGeneration) return;
-        const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
-      }).catch(() => {
-        if (generation !== prStatusGeneration) return;
-        const cached2 = prLifecycleCache.get(key);
-        prLifecycleCache.set(key, {
-          state: cached2?.state ?? "unknown",
-          fetchedAt: Date.now()
-        });
-      }).finally(() => {
-        if (generation !== prStatusGeneration) return;
-        prFetchInFlight.delete(key);
-        if (lifecycleChanged) render();
-      });
-    }
-  }
-  function rollupForThread(thread) {
-    const refs = sidebarPrRefs(thread);
-    if (refs.length === 0) return null;
-    ensurePrLifecycles(refs);
-    const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? "unknown");
-    return summarizeThreadPrStatus(states, refs);
-  }
-  function renderMissingNotice(project2) {
-    const wrap = el("div", { class: "project-missing-notice" });
-    wrap.append(
-      el(
-        "div",
-        { class: "project-missing-text" },
-        "This folder could not be opened. Its threads are safe \u2014 " + (project2.sshHost ? "retry once the host is reachable." : "relocate the project to restore them.")
-      )
-    );
-    const action = project2.sshHost ? el("button", { type: "button", class: "project-missing-btn" }, "Retry") : el("button", { type: "button", class: "project-missing-btn" }, "Relocate\u2026");
-    action.addEventListener("click", () => {
-      if (project2.sshHost) {
-        switchProject(store2, api2, project2.id);
-        return;
-      }
-      void relocateProject(store2, api2, project2.id).catch((err2) => {
-        showErrorToast("Could not relocate project", err2);
-      });
-    });
-    wrap.append(action);
-    return wrap;
-  }
-  function orphanPrimaryLabel(orphan) {
-    const lead = orphan.sampleTitles[0]?.trim();
-    if (lead) return lead;
-    const count = orphan.threadCount;
-    return `${String(count)} thread${count === 1 ? "" : "s"}`;
-  }
-  function orphanSubtitle(orphan) {
-    const count = orphan.threadCount;
-    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
-    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
-    if (extra.length === 0) return countLabel;
-    const shown = extra.slice(0, 2).join(" \xB7 ");
-    const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
-    return `${countLabel} \xB7 ${shown}${more}`;
-  }
-  function orphanRecoverDetail(orphan) {
-    const lines = [
-      "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
-    ];
-    if (orphan.sampleTitles.length > 0) {
-      lines.push("");
-      lines.push("Threads in this store:");
-      for (const title2 of orphan.sampleTitles) {
-        lines.push(`\u2022 ${title2}`);
-      }
-      if (orphan.threadCount > orphan.sampleTitles.length) {
-        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
-      }
-    } else {
-      lines.push("");
-      lines.push(
-        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
-      );
-    }
-    lines.push("");
-    lines.push(`Store id: ${orphan.id}`);
-    return lines.join("\n");
-  }
-  function renderOrphansSection() {
-    const section = el("div", { class: "orphans-section" });
-    section.append(
-      el(
-        "div",
-        { class: "orphans-heading" },
-        warningIcon("ui-icon ui-icon-sm"),
-        el("span", {}, "Recoverable threads")
-      ),
-      el(
-        "p",
-        { class: "orphans-hint" },
-        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
-      )
-    );
-    for (const orphan of orphans) {
-      const primary = orphanPrimaryLabel(orphan);
-      const subtitle = orphanSubtitle(orphan);
-      const row2 = el(
-        "div",
-        {
-          class: "orphan-row",
-          title: `Store ${orphan.id}`,
-          "data-orphan-id": orphan.id
-        },
-        el(
-          "div",
-          { class: "orphan-copy" },
-          el("span", { class: "orphan-name" }, primary),
-          el("span", { class: "orphan-meta" }, subtitle)
-        )
-      );
-      const actions = el("div", { class: "orphan-actions" });
-      const dismissBtn = el(
-        "button",
-        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
-        "Dismiss"
-      );
-      dismissBtn.addEventListener("click", () => {
-        void dismissOrphanProject(api2, orphan.id).then(() => {
-          orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          render();
-          showToast("Recoverable threads hidden. They remain on disk.");
-        }).catch((err2) => {
-          showErrorToast("Could not dismiss recoverable threads", err2);
-        });
-      });
-      const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
-      recoverBtn.addEventListener("click", () => {
-        void recoverOrphanProject(
-          store2,
-          api2,
-          orphan.id,
-          () => showConfirmDialog({
-            message: `Recover \u201C${primary}\u201D?`,
-            detail: orphanRecoverDetail(orphan),
-            confirmLabel: "Choose folder\u2026",
-            cancelLabel: "Cancel"
-          })
-        ).then((recovered) => {
-          if (!recovered) return;
-          orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          render();
-        }).catch((err2) => {
-          showErrorToast("Could not recover threads", err2);
-        });
-      });
-      actions.append(dismissBtn, recoverBtn);
-      row2.append(actions);
-      section.append(row2);
-    }
-    return section;
-  }
-  function refreshOrphansIfProjectSetChanged() {
-    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
-    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
-      return;
-    }
-    knownProjectIds = nextIds;
-    refreshOrphans();
-  }
-  function refreshOrphans() {
-    const generation = ++orphanScanGeneration;
-    void listOrphanProjects(api2).then((scanned) => {
-      if (generation !== orphanScanGeneration) return;
-      const known = new Set(store2.getState().projects.map((project2) => project2.id));
-      const next = scanned.filter((orphan) => !known.has(orphan.id));
-      const changed = next.length !== orphans.length || next.some((o3, i2) => {
-        const prev = orphans[i2];
-        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
-      });
-      orphans = next;
-      if (changed) render();
-    }).catch((err2) => {
-      if (generation !== orphanScanGeneration) return;
-      showErrorToast("Could not scan recoverable threads", err2);
-    });
   }
   const DROP_CLASSES = ["drop-before", "drop-after", "drop-into"];
   function clearDropIndicators() {
@@ -71329,13 +72625,11 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
-    prBackfillObserver?.disconnect();
-    prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
-    if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
+    if (projects.length === 0 && projectGroups.length === 0 && recoverable.count === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       return;
     }
@@ -71344,7 +72638,6 @@ function mountProjectsPane(root, store2, api2) {
       const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
       const canMutate = project2.id === activeProjectId;
       const allowRename = (options.allowRename ?? true) && canMutate;
-      const scheduleId = thread.automation?.scheduleId;
       const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
       let title2;
       if (renameState) {
@@ -71401,54 +72694,18 @@ function mountProjectsPane(root, store2, api2) {
       chatRow.addEventListener("contextmenu", (e3) => {
         e3.preventDefault();
         e3.stopPropagation();
-        showContextMenu(e3.clientX, e3.clientY, [
-          ...canMutate ? [
-            ...allowRename ? [
-              {
-                label: "Rename",
-                onSelect: () => {
-                  beginThreadRename(thread.id, displayTitle);
-                }
-              }
-            ] : [],
-            {
-              label: "Fork",
-              onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
-              }
-            },
-            {
-              label: "Archive",
-              onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
-              }
+        showContextMenu(
+          e3.clientX,
+          e3.clientY,
+          threadMenuEntries(store2, api2, {
+            project: project2,
+            thread,
+            allowRename,
+            onRename: () => {
+              beginThreadRename(thread.id, displayTitle);
             }
-          ] : [],
-          // A schedule with a single run has no heading of its own, and a
-          // historical run is several rows below the one that does, so every
-          // automation row carries the way out to its setup. Opens directly
-          // against this run's own project — same as the project menu's
-          // "Automations" entry — rather than switching the active project
-          // just to reach the editor.
-          ...scheduleId ? [
-            {
-              label: "Run now",
-              onSelect: () => {
-                startRunNow(api2, {
-                  project: project2,
-                  scheduleName: thread.automation?.scheduleName ?? thread.title,
-                  scheduleId
-                });
-              }
-            },
-            {
-              label: "Automation setup\u2026",
-              onSelect: () => {
-                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
-              }
-            }
-          ] : []
-        ]);
+          })
+        );
       });
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
@@ -71468,10 +72725,12 @@ function mountProjectsPane(root, store2, api2) {
         chatRow.classList.add("needs-attention");
         chatRow.append(attentionBell("This thread needs your attention"));
       }
-      const prRollup = rollupForThread(thread);
+      const prRollup = prStatus.rollup(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && prStatus.ciFailing(thread))
+        );
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -71484,10 +72743,7 @@ function mountProjectsPane(root, store2, api2) {
         );
         del.addEventListener("click", (e3) => {
           e3.stopPropagation();
-          if (getSidebarThreads(store2, project2.id).length > 1) {
-            void api2.agent.clearHistory(project2.id, thread.id);
-            deleteThread(store2, thread.id);
-          }
+          deleteProjectThread(store2, api2, project2.id, thread.id);
         });
         chatRow.append(del);
       }
@@ -71727,19 +72983,14 @@ function mountProjectsPane(root, store2, api2) {
         }
         switchProject(store2, api2, project2.id);
       });
-      const projectMenuEntries = [
-        {
-          label: "Remove from sidebar",
-          onSelect: () => {
-            void removeProject(store2, api2, project2.id);
-          }
-        },
+      const projectEntries = [
+        ...projectMenuEntries(store2, api2, project2),
         ...groupMenuEntries(project2, projectGroups)
       ];
       projectRow.addEventListener("contextmenu", (e3) => {
         e3.preventDefault();
         e3.stopPropagation();
-        showContextMenu(e3.clientX, e3.clientY, projectMenuEntries);
+        showContextMenu(e3.clientX, e3.clientY, projectEntries);
       });
       const menuButton = el(
         "button",
@@ -71754,65 +73005,14 @@ function mountProjectsPane(root, store2, api2) {
       );
       menuButton.addEventListener("click", () => {
         menuButton.disabled = true;
-        const state = store2.getState();
-        void Promise.all([
-          api2.plugins.list(),
-          api2.appRun.detect({
-            projectId: project2.id,
-            ...state.activeProjectId === project2.id && state.activeThreadId ? { threadId: state.activeThreadId } : {}
-          }).catch(() => false)
-        ]).then(([result, appDetected]) => {
-          if (!menuButton.isConnected) return;
-          const rect = menuButton.getBoundingClientRect();
-          const entries2 = [];
-          if (appDetected) {
-            entries2.push({
-              label: "Run app\u2026",
-              onSelect: () => {
-                if (store2.getState().activeProjectId === project2.id) {
-                  openAppRunDialog(store2, api2, project2.id);
-                  return;
-                }
-                const unsubscribe = store2.on("workspace_changed", () => {
-                  if (store2.getState().activeProjectId === project2.id) {
-                    unsubscribe();
-                    openAppRunDialog(store2, api2, project2.id);
-                  } else if (!isProjectSwitchInFlight(store2, project2.id)) {
-                    unsubscribe();
-                  }
-                });
-                switchProject(store2, api2, project2.id);
-              }
-            });
-          }
-          if (result.plugins.some(hasAutomationDialog)) {
-            entries2.push(
-              {
-                label: "Automations",
-                onSelect: () => {
-                  openAutomationDialog(store2, api2, { projectId: project2.id });
-                }
-              },
-              {
-                label: "New automation\u2026",
-                disabled: project2.missing === true,
-                onSelect: () => {
-                  openAutomationDialog(store2, api2, { projectId: project2.id, createNew: true });
-                }
-              }
-            );
-          }
-          showContextMenu(rect.left, rect.bottom, [...entries2, ...projectMenuEntries]);
-        }).catch((error62) => {
-          showErrorToast("Could not load project menu", error62);
-        }).finally(() => {
+        void showProjectMenu(store2, api2, project2, menuButton, projectEntries).finally(() => {
           menuButton.disabled = false;
         });
       });
       const projectLine = el("div", { class: "project-line" }, projectRow, menuButton);
       entry.append(projectLine);
       if (isExpanded && project2.missing) {
-        entry.append(renderMissingNotice(project2));
+        entry.append(renderMissingNotice(store2, api2, project2));
         return entry;
       }
       if (isExpanded) {
@@ -71932,67 +73132,9 @@ function mountProjectsPane(root, store2, api2) {
       if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
       else list.append(renderProjectEntry(node2.project));
     }
-    if (orphans.length > 0) list.append(renderOrphansSection());
-    prBackfillRowsByKey = new Map(
-      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
-    );
-    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
-      const rowThreads = new Map(
-        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
-      );
-      const observer = new IntersectionObserver((entries2) => {
-        if (prBackfillObserver !== observer) return;
-        const pending = /* @__PURE__ */ new Map();
-        for (const entry of entries2) {
-          if (!entry.isIntersecting) continue;
-          observer.unobserve(entry.target);
-          const thread = rowThreads.get(entry.target);
-          if (!thread) continue;
-          const requested = prBackfillRequested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
-          prBackfillRequested.set(thread.projectId, requested);
-          if (requested.has(thread.threadId)) continue;
-          requested.add(thread.threadId);
-          const rows = pending.get(thread.projectId) ?? [];
-          rows.push({ threadId: thread.threadId, row: entry.target });
-          pending.set(thread.projectId, rows);
-        }
-        for (const [projectId, rows] of pending) {
-          const requested = prBackfillRequested.get(projectId);
-          for (let i2 = 0; i2 < rows.length; i2 += 10) {
-            const batch = rows.slice(i2, i2 + 10);
-            const threadIds = batch.map(({ threadId }) => threadId);
-            void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
-              for (const threadId of threadIds) {
-                prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`);
-              }
-            }).catch((err2) => {
-              let attempt = 1;
-              for (const threadId of threadIds) {
-                const key = `${projectId}\0${threadId}`;
-                const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
-                prBackfillRetryAttempts.set(key, nextAttempt);
-                attempt = Math.max(attempt, nextAttempt);
-              }
-              const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
-              const timer = setTimeout(() => {
-                prBackfillRetryTimers.delete(timer);
-                for (const { threadId } of batch) requested?.delete(threadId);
-                const currentObserver = prBackfillObserver;
-                if (!currentObserver) return;
-                for (const { threadId } of batch) {
-                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
-                  if (row2?.isConnected) currentObserver.observe(row2);
-                }
-              }, delay);
-              prBackfillRetryTimers.add(timer);
-              console.warn("[threads] visible PR-ref backfill failed:", err2);
-            });
-          }
-        }
-      });
-      prBackfillObserver = observer;
-      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
-    }
+    const recoverableSection = recoverable.section();
+    if (recoverableSection) list.append(recoverableSection);
+    prBackfill.observe(prBackfillRows);
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -72005,28 +73147,18 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("workspace_changed", () => {
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
-      prStatusGeneration += 1;
-      prLifecycleCache.clear();
-      prFetchInFlight.clear();
+      prStatus.reset();
       render();
     }),
     store2.on("attention_changed", render),
-    store2.on("attention_changed", syncActivityButton),
-    // Switches emit `projects_changed` twice; neither changes which stores are
-    // orphaned. Re-scan only when a project is added, removed, or recovered.
-    store2.on("projects_changed", refreshOrphansIfProjectSetChanged)
+    store2.on("attention_changed", syncActivityButton)
   ];
   render();
-  refreshOrphans();
   return () => {
     contentFilter.cancel();
-    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
-    prBackfillRetryTimers.clear();
-    prBackfillObserver?.disconnect();
-    prBackfillObserver = null;
-    prBackfillRowsByKey.clear();
-    prStatusGeneration += 1;
-    orphanScanGeneration += 1;
+    prBackfill.dispose();
+    prStatus.reset();
+    recoverable.dispose();
     dismissContextMenu();
     renaming = null;
     renamingGroup = null;
@@ -72036,27 +73168,20 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3;
+var ICON_SIZE2, SVG_NS3;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
-    init_app_run_dialog();
     init_helpers();
     init_context_menu();
     init_rename_blur();
     init_icons();
     init_thread_helpers();
-    init_github_pr_url2();
-    init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
-    init_ipc_error_message();
-    init_confirm_dialog();
     init_toast();
-    init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
-    init_sidebar_thread();
     init_attention();
     init_activity_panel();
     init_ssh_workspace_ui();
@@ -72064,9 +73189,750 @@ var init_projects_pane = __esm({
     init_project_tree();
     init_project_groups();
     init_projects_drag();
-    PR_STATUS_CACHE_TTL_MS = 6e4;
+    init_thread_pr_chips();
+    init_recoverable_threads();
+    init_sidebar_actions();
     ICON_SIZE2 = "16";
     SVG_NS3 = "http://www.w3.org/2000/svg";
+  }
+});
+
+// src/renderer/views/thread-sidebar.ts
+function mountThreadSidebar(root, store2, api2, sources3) {
+  const pane = el("div", { class: "thread-browser" });
+  const projectsPane = el("div", { class: "thread-project-manager", hidden: true });
+  const back = el("button", { class: "thread-browser-back", type: "button" }, "\u2190 Threads");
+  const projectHost = el("div", { class: "thread-project-host" });
+  projectsPane.append(back, projectHost);
+  root.append(pane, projectsPane);
+  let disposeProjects;
+  let disposed = false;
+  let frame;
+  let refreshTimer;
+  const changedRoots = /* @__PURE__ */ new Set();
+  let selectedProject = "";
+  let query = "";
+  let onlyWork = false;
+  let onlyAttention = false;
+  let onlyWorking = false;
+  let sort = "activity";
+  let ascending = false;
+  let limit = 40;
+  let sshWorkspaceEnabled = false;
+  let renaming = null;
+  const collapsed = /* @__PURE__ */ new Set();
+  const timings = trackRunTimings(store2, Date.now);
+  const data = createThreadBrowserData(store2, api2, scheduleRender);
+  const prStatus = createPrStatusTracker(api2, scheduleRender);
+  const prBackfill = createPrBackfill(api2);
+  const recoverable = createRecoverableThreads(store2, api2, scheduleRender);
+  const requestFilter = createThreadFilter(
+    store2,
+    api2,
+    scheduleRender,
+    () => data.entries().filter((entry) => !selectedProject || entry.project.id === selectedProject).sort((left, right) => (right.thread.updatedAt ?? 0) - (left.thread.updatedAt ?? 0)).map((entry) => ({ projectId: entry.project.id, thread: entry.thread }))
+  );
+  function showProjects() {
+    pane.hidden = true;
+    projectsPane.hidden = false;
+    disposeProjects ??= mountProjectsPane(projectHost, store2, api2);
+  }
+  back.addEventListener("click", () => {
+    disposeProjects?.();
+    disposeProjects = void 0;
+    projectHost.replaceChildren();
+    projectsPane.hidden = true;
+    pane.hidden = false;
+    data.refresh();
+    recoverable.refresh();
+    render();
+  });
+  const manage = el("button", { type: "button", class: "thread-browser-manage" }, "Projects");
+  manage.addEventListener("click", showProjects);
+  function clearFilters() {
+    query = "";
+    search.value = "";
+    requestFilter.cancel();
+    selectedProject = "";
+    onlyWork = false;
+    onlyAttention = false;
+    onlyWorking = false;
+  }
+  const newThread = el(
+    "button",
+    { type: "button", "aria-label": "New thread", class: "projects-add-btn" },
+    plusIcon("ui-icon ui-icon-sm")
+  );
+  newThread.addEventListener("click", () => {
+    const state = store2.getState();
+    const targetProjectId = state.expandedProjectId ?? state.activeProjectId;
+    if (targetProjectId && isProjectSwitchInFlight(store2, targetProjectId)) return;
+    if (!store2.getState().activeProjectId) showProjects();
+    else {
+      clearFilters();
+      openNewThread(store2);
+    }
+  });
+  const more = el(
+    "button",
+    {
+      type: "button",
+      class: "thread-browser-more",
+      "aria-label": "More actions",
+      "aria-haspopup": "menu",
+      "data-tooltip": "Add a project, automations and activity"
+    },
+    moreHorizontalIcon("ui-icon ui-icon-sm")
+  );
+  more.addEventListener("click", () => {
+    const rect = more.getBoundingClientRect();
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: "New project",
+        onSelect: () => {
+          void createNewProject(store2, api2);
+        }
+      },
+      {
+        label: "Open folder",
+        onSelect: () => {
+          void addProject(store2, api2);
+        }
+      },
+      ...sshWorkspaceEnabled ? [
+        {
+          label: "Open remote project",
+          onSelect: () => {
+            void addRemoteProject(store2, api2).catch((err2) => {
+              showErrorToast("Could not open remote folder", err2);
+            });
+          }
+        }
+      ] : [],
+      {
+        label: "New automation\u2026",
+        disabled: !store2.getState().activeProjectId,
+        onSelect: () => {
+          openAutomationDialog(store2, api2, { createNew: true });
+        }
+      },
+      {
+        label: "Activity",
+        onSelect: () => {
+          openActivityPanel();
+        }
+      }
+    ]);
+  });
+  const syncRemoteOpenAvailability = () => {
+    void isSshWorkspaceEnabled(api2).then((enabled) => {
+      sshWorkspaceEnabled = enabled;
+    });
+  };
+  syncRemoteOpenAvailability();
+  const totalCount = el("span", { class: "thread-browser-total" });
+  const header = el(
+    "div",
+    { class: "thread-browser-heading" },
+    el("h2", {}, "Threads"),
+    totalCount,
+    el("span", { class: "thread-browser-heading-actions" }, more, newThread)
+  );
+  const search = el("input", {
+    type: "search",
+    class: "thread-browser-search-input",
+    "aria-label": "Find threads",
+    placeholder: "Search titles and requests\u2026",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  search.addEventListener("input", () => {
+    query = filterText(search.value.trim());
+    requestFilter.search(query);
+    limit = 40;
+    render();
+  });
+  search.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !search.value) return;
+    event.stopPropagation();
+    search.value = "";
+    query = "";
+    requestFilter.cancel();
+    render();
+  });
+  const sortSelect = el(
+    "select",
+    { "aria-label": "Sort threads" },
+    el("option", { value: "activity" }, "Activity order"),
+    el("option", { value: "updated" }, "Updated"),
+    el("option", { value: "title" }, "Thread name"),
+    el("option", { value: "work" }, "Changed files")
+  );
+  sortSelect.addEventListener("change", () => {
+    const value = sortSelect.value;
+    if (value !== "activity" && value !== "updated" && value !== "title" && value !== "work") return;
+    sort = value;
+    ascending = value === "title";
+    render();
+  });
+  const projectSelect = el("select", { "aria-label": "Filter by project" });
+  projectSelect.addEventListener("change", () => {
+    selectedProject = projectSelect.value;
+    limit = 40;
+    if (query) requestFilter.search(query);
+    render();
+  });
+  const projectMenu = el(
+    "button",
+    {
+      type: "button",
+      class: "thread-browser-project-menu",
+      "aria-haspopup": "menu"
+    },
+    moreHorizontalIcon("ui-icon ui-icon-sm")
+  );
+  projectMenu.addEventListener("click", () => {
+    const project2 = store2.getState().projects.find((item) => item.id === selectedProject);
+    if (!project2) return;
+    projectMenu.disabled = true;
+    void showProjectMenu(
+      store2,
+      api2,
+      project2,
+      projectMenu,
+      projectMenuEntries(store2, api2, project2)
+    ).finally(() => {
+      projectMenu.disabled = !selectedProject;
+    });
+  });
+  const workToggle = el(
+    "button",
+    {
+      type: "button",
+      class: "thread-work-filter",
+      "aria-pressed": "false",
+      "aria-label": "Show only threads with uncommitted changes"
+    },
+    "Only changes"
+  );
+  workToggle.addEventListener("click", () => {
+    onlyWork = !onlyWork;
+    limit = 40;
+    render();
+  });
+  const attentionToggle = el(
+    "button",
+    { type: "button", class: "thread-attention-filter", "aria-pressed": "false" },
+    "Needs you"
+  );
+  attentionToggle.addEventListener("click", () => {
+    onlyAttention = !onlyAttention;
+    onlyWorking = false;
+    render();
+  });
+  const workingToggle = el("button", {
+    type: "button",
+    class: "thread-working-filter",
+    "aria-pressed": "false"
+  });
+  workingToggle.addEventListener("click", () => {
+    onlyWorking = !onlyWorking;
+    onlyAttention = false;
+    render();
+  });
+  const sortDirection = el("button", { type: "button", class: "thread-browser-sort-direction" });
+  sortDirection.append(arrowDownIcon("ui-icon ui-icon-sm"));
+  sortDirection.addEventListener("click", () => {
+    ascending = !ascending;
+    render();
+  });
+  const list = el("div", { class: "thread-browser-list", "aria-label": "Threads" });
+  const status = el("span", { role: "status", class: "thread-browser-status" });
+  const refresh = el(
+    "button",
+    { type: "button", "aria-label": "Refresh threads and Git status" },
+    "Refresh"
+  );
+  refresh.addEventListener("click", () => {
+    data.refresh();
+    recoverable.refresh();
+    render();
+  });
+  const settings = el(
+    "button",
+    { type: "button", class: "projects-settings-btn", "aria-label": "Settings" },
+    "Settings"
+  );
+  settings.addEventListener("click", () => {
+    openSettingsDialog();
+  });
+  pane.append(
+    header,
+    el("div", { class: "thread-browser-summary" }, attentionToggle, workingToggle),
+    el("div", { class: "thread-browser-search" }, searchIcon("ui-icon ui-icon-sm"), search),
+    el(
+      "div",
+      { class: "thread-browser-controls" },
+      el("div", { class: "thread-browser-scope" }, projectSelect, projectMenu),
+      el("div", { class: "thread-browser-sort" }, sortDirection, sortSelect)
+    ),
+    list,
+    el("div", { class: "thread-browser-footer" }, status, refresh),
+    el("div", { class: "projects-settings-actions" }, manage, settings)
+  );
+  function scheduleRender() {
+    if (disposed || frame !== void 0) return;
+    frame = requestAnimationFrame(() => {
+      frame = void 0;
+      if (!disposed) render();
+    });
+  }
+  function beginRename(entry) {
+    renaming = {
+      key: threadEntryKey(entry),
+      threadId: entry.thread.id,
+      draft: entry.thread.title || "New thread"
+    };
+    render();
+    const input2 = list.querySelector(".chat-title-rename");
+    input2?.focus();
+    input2?.select();
+  }
+  function finishRename(save) {
+    if (!renaming) return;
+    const { threadId, draft, key } = renaming;
+    renaming = null;
+    const next = draft.trim();
+    if (save && next) {
+      setThreadTitle(store2, threadId, next);
+      maybeRenameThreadBranch(store2, api2, threadId);
+    } else render();
+    for (const row2 of list.querySelectorAll("[data-entry-key]")) {
+      if (row2.dataset["entryKey"] === key) row2.focus();
+    }
+  }
+  function renderNotices() {
+    const nodes = [];
+    const missing = store2.getState().projects.filter(
+      (project2) => project2.missing && (!selectedProject || project2.id === selectedProject)
+    );
+    for (const project2 of missing) {
+      nodes.push(
+        el(
+          "section",
+          { class: "thread-browser-notice", "data-project-id": project2.id },
+          el(
+            "div",
+            { class: "thread-browser-notice-heading" },
+            warningIcon("ui-icon ui-icon-sm"),
+            el("span", {}, projectDisplayName(project2))
+          ),
+          renderMissingNotice(store2, api2, project2)
+        )
+      );
+    }
+    const recovery = recoverable.section();
+    if (recovery) nodes.push(recovery);
+    return nodes;
+  }
+  function render() {
+    if (disposed) return;
+    data.load();
+    const state = store2.getState();
+    const targetProjectId = state.expandedProjectId ?? state.activeProjectId;
+    newThread.disabled = Boolean(targetProjectId && isProjectSwitchInFlight(store2, targetProjectId));
+    const projectOptions = [
+      el("option", { value: "" }, "All projects"),
+      ...state.projects.map(
+        (project2) => el("option", { value: project2.id }, projectDisplayName(project2))
+      )
+    ];
+    if (!state.projects.some((project2) => project2.id === selectedProject)) selectedProject = "";
+    projectSelect.replaceChildren(...projectOptions);
+    projectSelect.value = selectedProject;
+    const scopedProject = state.projects.find((project2) => project2.id === selectedProject);
+    projectMenu.hidden = !scopedProject;
+    projectMenu.disabled = !scopedProject;
+    projectMenu.setAttribute(
+      "aria-label",
+      scopedProject ? `Project menu for ${projectDisplayName(scopedProject)}` : "Project menu (choose a project first)"
+    );
+    projectMenu.title = scopedProject ? "Project menu" : "Choose a project to manage it";
+    const waiting = /* @__PURE__ */ new Map();
+    for (const request of [...sources3.approvals.pending(), ...sources3.questions.pending()]) {
+      if (request.threadId)
+        waiting.set(
+          request.threadId,
+          Math.min(waiting.get(request.threadId) ?? Infinity, request.receivedAt)
+        );
+    }
+    const groupFor = (entry) => waiting.has(entry.thread.id) ? "needs-you" : entry.thread.status === "running" ? "working" : (data.summary(entry)?.count ?? 0) > 0 ? "changes" : "threads";
+    const all = data.entries();
+    const scoped = all.filter(
+      (entry) => (!selectedProject || entry.project.id === selectedProject) && (!query || filterText(
+        `${entry.thread.title} ${projectDisplayName(entry.project)} ${entry.thread.gitBranch ?? ""}`
+      ).includes(query) || requestFilter.matches.has(entry.thread.id)) && (!onlyAttention || waiting.has(entry.thread.id)) && (!onlyWorking || entry.thread.status === "running" && !waiting.has(entry.thread.id))
+    );
+    data.inspect(scoped);
+    const matching = scoped.filter((entry) => !onlyWork || (data.summary(entry)?.count ?? 0) > 0);
+    const groupOrder = {
+      "needs-you": 0,
+      working: 1,
+      changes: 2,
+      threads: 3
+    };
+    matching.sort((left, right) => {
+      const groupComparison = groupOrder[groupFor(left)] - groupOrder[groupFor(right)];
+      if (groupComparison !== 0) return groupComparison;
+      let comparison;
+      if (sort === "title") comparison = left.thread.title.localeCompare(right.thread.title);
+      else if (sort === "work") {
+        const leftWork = data.summary(left);
+        const rightWork = data.summary(right);
+        if (!leftWork || !rightWork)
+          return leftWork ? -1 : rightWork ? 1 : threadEntryKey(left).localeCompare(threadEntryKey(right));
+        comparison = leftWork.count - rightWork.count;
+      } else if (sort === "activity" && waiting.has(left.thread.id) && waiting.has(right.thread.id)) {
+        comparison = (waiting.get(right.thread.id) ?? 0) - (waiting.get(left.thread.id) ?? 0);
+      } else if (sort === "activity" && left.thread.status === "running" && right.thread.status === "running") {
+        comparison = (timings.runs.get(right.thread.id)?.startedAt ?? 0) - (timings.runs.get(left.thread.id)?.startedAt ?? 0);
+      } else comparison = (left.thread.updatedAt ?? 0) - (right.thread.updatedAt ?? 0);
+      return (ascending ? comparison : -comparison) || threadEntryKey(left).localeCompare(threadEntryKey(right));
+    });
+    const selectedIndex = matching.findIndex(
+      (entry) => entry.project.id === state.activeProjectId && entry.thread.id === state.activeThreadId
+    );
+    if (selectedIndex >= limit) limit = Math.ceil((selectedIndex + 1) / 40) * 40;
+    sortDirection.dataset["direction"] = ascending ? "ascending" : "descending";
+    sortDirection.setAttribute(
+      "aria-label",
+      `Reverse sort order, currently ${ascending ? "ascending" : "descending"}`
+    );
+    totalCount.textContent = String(all.length);
+    const waitingCount = all.filter((entry) => waiting.has(entry.thread.id)).length;
+    attentionToggle.textContent = `${String(waitingCount)} need you`;
+    attentionToggle.classList.toggle("is-empty", waitingCount === 0);
+    attentionToggle.setAttribute("aria-pressed", String(onlyAttention));
+    workingToggle.textContent = `${String(all.filter((entry) => groupFor(entry) === "working").length)} working`;
+    workingToggle.setAttribute("aria-pressed", String(onlyWorking));
+    workToggle.textContent = onlyWork ? "Clear filter" : "Only changes";
+    workToggle.setAttribute("aria-pressed", String(onlyWork));
+    workToggle.setAttribute(
+      "aria-label",
+      onlyWork ? "Clear uncommitted changes filter" : "Show only threads with uncommitted changes"
+    );
+    const unknown2 = scoped.filter((entry) => data.summary(entry) == null).length;
+    workToggle.title = "Includes staged, unstaged and untracked work. Threads sharing a checkout share its changes.";
+    const searching = Boolean(query) && (requestFilter.pending || requestFilter.waiting);
+    status.textContent = `${String(matching.length)} ${matching.length === 1 ? "thread" : "threads"}${searching ? " \xB7 Searching requests\u2026" : data.pending() ? " \xB7 Checking\u2026" : data.failed() ? " \xB7 Some projects unavailable" : query && requestFilter.failed ? " \xB7 Some requests could not be searched" : unknown2 > 0 && onlyWork ? ` \xB7 ${String(unknown2)} unavailable` : ""}`;
+    const active2 = document.activeElement;
+    const focusKey = active2 instanceof HTMLElement && list.contains(active2) ? active2.closest("[data-entry-key]")?.dataset["entryKey"] ?? active2.closest("[data-group-heading]")?.dataset["groupHeading"] ?? (active2 === workToggle ? "work-toggle" : void 0) : void 0;
+    const groups = /* @__PURE__ */ new Map([
+      [
+        "needs-you",
+        { label: "Needs you", context: sort === "activity" ? "longest wait first" : "", rows: [] }
+      ],
+      ["working", { label: "Working", context: "runtime", rows: [] }],
+      ["changes", { label: "Has changes", context: "", rows: [] }],
+      ["threads", { label: "Recent", context: "updated", rows: [] }]
+    ]);
+    for (const entry of matching) {
+      groups.get(groupFor(entry))?.rows.push(entry);
+    }
+    const nodes = renderNotices();
+    const backfillRows = [];
+    let remaining = limit;
+    for (const [key, group] of groups) {
+      if (group.rows.length === 0 && key !== "changes") continue;
+      const collapseKey = key;
+      const section = el("section", { class: "thread-browser-group", "data-group": key });
+      const heading = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-browser-group-heading",
+          "data-group-heading": key,
+          "aria-expanded": String(!collapsed.has(collapseKey))
+        },
+        chevronDownIcon("ui-icon thread-browser-chevron"),
+        el("span", { class: "thread-browser-group-label" }, group.label),
+        el("span", { class: "thread-browser-group-count" }, String(group.rows.length)),
+        el("span", { class: "thread-browser-group-context" }, group.context)
+      );
+      heading.addEventListener("click", () => {
+        if (collapsed.has(collapseKey)) collapsed.delete(collapseKey);
+        else collapsed.add(collapseKey);
+        render();
+      });
+      const headingRow = el("div", { class: "thread-browser-group-header" }, heading);
+      if (key === "changes") headingRow.append(workToggle);
+      section.append(headingRow);
+      if (!collapsed.has(collapseKey)) {
+        for (const entry of group.rows.slice(0, remaining)) {
+          const row2 = renderRow2(entry, waiting.get(entry.thread.id));
+          if (entry.thread.prRefs === void 0) {
+            backfillRows.push({ row: row2, projectId: entry.project.id, threadId: entry.thread.id });
+          }
+          section.append(row2);
+        }
+        remaining = Math.max(0, remaining - group.rows.length);
+        if (key === "changes" && group.rows.length === 0 && !onlyWork) {
+          section.append(
+            el(
+              "p",
+              { class: "thread-browser-section-empty" },
+              data.pending() ? "Checking worktrees\u2026" : scoped.some((entry) => (data.summary(entry)?.count ?? 0) > 0) ? "Active threads with changes are shown above." : "No confirmed changes"
+            )
+          );
+        }
+      }
+      nodes.push(section);
+    }
+    if (matching.length === 0) {
+      nodes.push(
+        el(
+          "div",
+          { class: "sidebar-empty" },
+          data.pending() || searching ? "Checking threads\u2026" : onlyWork && unknown2 > 0 ? "No confirmed uncommitted work. Some checkouts could not be checked." : "No matching threads"
+        )
+      );
+      const reset = el(
+        "button",
+        { type: "button", class: "thread-browser-reset" },
+        state.projects.length === 0 ? "Add a project" : "Clear filters"
+      );
+      reset.addEventListener("click", () => {
+        if (state.projects.length === 0) {
+          showProjects();
+          return;
+        }
+        clearFilters();
+        render();
+      });
+      nodes.push(reset);
+    }
+    if (matching.length > limit) {
+      const showMore = el("button", { type: "button", class: "chats-show-more" }, "Show more");
+      showMore.addEventListener("click", () => {
+        limit += 40;
+        render();
+      });
+      nodes.push(showMore);
+    }
+    list.replaceChildren(...nodes);
+    prBackfill.observe(backfillRows);
+    if (focusKey === "work-toggle") workToggle.focus();
+    else if (focusKey) {
+      for (const node2 of list.querySelectorAll(
+        "[data-entry-key], [data-group-heading]"
+      )) {
+        if (node2.dataset["entryKey"] === focusKey || node2.dataset["groupHeading"] === focusKey) {
+          node2.focus();
+          break;
+        }
+      }
+    }
+  }
+  function renderRenameRow(entry, draft) {
+    const input2 = el("input", {
+      type: "text",
+      class: "chat-title-rename",
+      "aria-label": "Rename thread"
+    });
+    input2.value = draft;
+    input2.addEventListener("input", () => {
+      if (renaming) renaming.draft = input2.value;
+    });
+    input2.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finishRename(true);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        finishRename(false);
+      }
+    });
+    bindRenameBlur(input2, () => {
+      if (renaming?.key !== threadEntryKey(entry)) return;
+      finishRename(true);
+    });
+    return el(
+      "div",
+      {
+        class: "chat-row thread-browser-row is-renaming",
+        "data-thread-id": entry.thread.id
+      },
+      checkIcon("ui-icon thread-browser-glyph"),
+      el("span", { class: "thread-browser-row-content" }, input2)
+    );
+  }
+  function renderRow2(entry, waitingSince) {
+    const { thread, project: project2 } = entry;
+    if (renaming?.key === threadEntryKey(entry)) return renderRenameRow(entry, renaming.draft);
+    const state = store2.getState();
+    const isActiveProject = state.activeProjectId === project2.id;
+    const selected = isActiveProject && state.activeThreadId === thread.id;
+    const row2 = el("button", {
+      type: "button",
+      class: `chat-row thread-browser-row${selected ? " selected" : ""}`,
+      "data-thread-id": thread.id,
+      "data-entry-key": threadEntryKey(entry),
+      "aria-pressed": String(selected)
+    });
+    const title = el(
+      "span",
+      { class: "chat-title", title: thread.title || "New thread" },
+      thread.title || "New thread"
+    );
+    const timing = timings.runs.get(thread.id);
+    const updated = thread.updatedAt ?? thread.createdAt;
+    const timestamp = waitingSince ?? (thread.status === "running" ? timing?.startedAt : updated);
+    const ageKind = waitingSince !== void 0 ? "Waiting since" : thread.status === "running" ? "Running since" : "Updated";
+    const age = el(
+      "span",
+      {
+        class: "thread-browser-age",
+        title: timestamp === void 0 ? "Time unavailable" : `${ageKind} ${new Date(timestamp).toLocaleString()}`
+      },
+      timestamp === void 0 ? "\u2014" : formatAge(Date.now() - timestamp)
+    );
+    const summary = data.summary(entry);
+    const workLabel = summary ? `${String(summary.count)} ${summary.count === 1 ? "file" : "files"}` : summary === null ? "\u2014" : "\u2026";
+    const changes = el(
+      "span",
+      {
+        class: "thread-browser-work",
+        title: summary ? `${String(summary.staged)} staged \xB7 ${String(summary.unstaged)} unstaged \xB7 ${String(summary.untracked)} untracked` : thread.worktree?.retiredAt != null ? "Retired worktree" : summary === null ? "Git status unavailable" : "Checking Git status"
+      },
+      fileTextIcon("ui-icon ui-icon-sm"),
+      workLabel
+    );
+    changes.hidden = summary?.count === 0;
+    const approval = sources3.approvals.pending().find((request) => request.threadId === thread.id);
+    const question = sources3.questions.pending().find((request) => request.threadId === thread.id);
+    const stateLabel = approval ? `Approval \xB7 ${approval.title}` : question ? `Question \xB7 ${question.questions[0] ?? "Needs an answer"}` : thread.status === "running" ? "Working" : thread.status === "error" ? "Failed" : thread.unreadAt ? "Finished \xB7 unread" : thread.gitBranch ?? (thread.worktree ? "Ready" : "Shared checkout");
+    const metadata = el("span", { class: "thread-browser-meta", title: stateLabel }, stateLabel);
+    const glyph = question ? messageQuestionIcon : approval || waitingSince !== void 0 ? handIcon : thread.status === "running" ? runningStatusIcon : thread.status === "error" ? warningIcon : checkIcon;
+    row2.dataset["state"] = waitingSince !== void 0 ? "waiting" : thread.status;
+    const titleLine = el("span", { class: "thread-browser-title-line" }, title);
+    const prRollup = prStatus.rollup(thread);
+    if (prRollup) {
+      row2.classList.add("has-pr-status");
+      titleLine.append(
+        chatPrStatus(prRollup, prRollup.kind === "open" && prStatus.ciFailing(thread))
+      );
+    }
+    titleLine.append(age);
+    row2.append(
+      glyph("ui-icon thread-browser-glyph"),
+      el(
+        "span",
+        { class: "thread-browser-row-content" },
+        titleLine,
+        el(
+          "span",
+          { class: "thread-browser-subtitle" },
+          metadata,
+          changes,
+          el(
+            "span",
+            { class: "thread-browser-project", title: projectDisplayName(project2) },
+            projectDisplayName(project2)
+          )
+        )
+      )
+    );
+    const open2 = () => {
+      switchProjectThread(store2, api2, project2.id, thread.id);
+    };
+    row2.addEventListener("click", open2);
+    if (isActiveProject) {
+      title.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        beginRename(entry);
+      });
+    }
+    row2.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const entries2 = threadMenuEntries(store2, api2, {
+        project: project2,
+        thread,
+        allowRename: true,
+        allowDelete: true,
+        onRename: () => {
+          beginRename(entry);
+        },
+        onOpen: open2
+      });
+      showContextMenu(event.clientX, event.clientY, entries2);
+    });
+    return row2;
+  }
+  const workingTreeChanged = (changedRoot) => {
+    changedRoots.add(changedRoot);
+    if (refreshTimer !== void 0) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = void 0;
+      const roots = [...changedRoots];
+      changedRoots.clear();
+      for (const item of roots) data.invalidateRoot(item);
+      scheduleRender();
+    }, WORKING_TREE_EVENT_DELAY_MS);
+  };
+  const unsubs = [
+    store2.on("projects_changed", scheduleRender),
+    store2.on("threads_changed", scheduleRender),
+    store2.on("workspace_changed", scheduleRender),
+    store2.on("thread_status_changed", scheduleRender),
+    store2.on("settings_changed", syncRemoteOpenAvailability),
+    sources3.approvals.onChange(scheduleRender),
+    sources3.questions.onChange(scheduleRender),
+    api2.git.onWorkingTreeChanged(workingTreeChanged)
+  ];
+  const ageTimer = setInterval(scheduleRender, 3e4);
+  render();
+  return () => {
+    disposed = true;
+    if (frame !== void 0) cancelAnimationFrame(frame);
+    clearTimeout(refreshTimer);
+    clearInterval(ageTimer);
+    data.dispose();
+    timings.dispose();
+    requestFilter.cancel();
+    prBackfill.dispose();
+    prStatus.reset();
+    recoverable.dispose();
+    dismissContextMenu();
+    disposeProjects?.();
+    for (const unsub of unsubs) unsub();
+    root.replaceChildren();
+  };
+}
+var WORKING_TREE_EVENT_DELAY_MS;
+var init_thread_sidebar = __esm({
+  "src/renderer/views/thread-sidebar.ts"() {
+    init_thread_helpers();
+    init_helpers();
+    init_context_menu();
+    init_rename_blur();
+    init_icons();
+    init_activity_model();
+    init_thread_browser();
+    init_thread_filter();
+    init_projects();
+    init_ssh_workspace_ui();
+    init_thread_naming();
+    init_projects_pane();
+    init_activity_panel();
+    init_automation_dialog();
+    init_settings_dialog();
+    init_toast();
+    init_thread_pr_chips();
+    init_recoverable_threads();
+    init_sidebar_actions();
+    WORKING_TREE_EVENT_DELAY_MS = 1e3;
   }
 });
 
@@ -72727,7 +74593,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -75283,6 +77151,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -75295,7 +77164,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -75308,7 +77177,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -75319,6 +77188,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -75355,7 +77225,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -75365,6 +77235,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -75407,7 +77278,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
@@ -76325,7 +78199,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -76509,7 +78383,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -77036,9 +78910,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -77590,12 +79464,12 @@ function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
 function forgetImageRead(read) {
   if (imageReads.get(read.key) === read) imageReads.delete(read.key);
 }
-function whenImageRead(read, apply2) {
+function whenImageRead(read, apply3) {
   if (read.src !== void 0) {
-    apply2(read.src);
+    apply3(read.src);
     return;
   }
-  read.promise.then(apply2, () => {
+  read.promise.then(apply3, () => {
   });
 }
 function messageIdOf(node2) {
@@ -97475,15 +99349,22 @@ function footerNaturalWidth(footer) {
   const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -99402,18 +101283,18 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       );
     }
     if (!isLive2(run2) && run2.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
-      const apply2 = el(
+      const apply3 = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
         `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
       );
-      apply2.addEventListener("click", () => {
-        apply2.disabled = true;
+      apply3.addEventListener("click", () => {
+        apply3.disabled = true;
         void adopt(run2.record?.runtimeId ?? "", null).finally(() => {
-          apply2.disabled = false;
+          apply3.disabled = false;
         });
       });
-      actions.push(apply2);
+      actions.push(apply3);
     }
     if (!isLive2(run2)) {
       const again = el(
@@ -102004,12 +103885,12 @@ function watchEditorTheme(onChange, root = document.documentElement) {
   };
 }
 function installMonacoEditorTheme(monaco) {
-  const apply2 = (tokens) => {
+  const apply3 = (tokens) => {
     monaco.editor.defineTheme(COPSE_MONACO_THEME, monacoThemeFromTokens(tokens));
     monaco.editor.setTheme(COPSE_MONACO_THEME);
   };
-  apply2(readEditorThemeTokens());
-  return watchEditorTheme(apply2);
+  apply3(readEditorThemeTokens());
+  return watchEditorTheme(apply3);
 }
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
@@ -138200,7 +140081,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
+  function threadMenuEntries2(threadId, projectId, running, stillSameRun) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -138230,7 +140111,7 @@ function mountProcessManagerDialog(api2, store2) {
     return title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
   }
   function threadEntries(threadId) {
-    return threadId ? threadMenuEntries(
+    return threadId ? threadMenuEntries2(
       threadId,
       projectForThread(threadId),
       getThreadById(store2, threadId)?.status === "running"
@@ -138257,7 +140138,7 @@ function mountProcessManagerDialog(api2, store2) {
   }
   function activityMenuEntries(threadId, projectId) {
     const run2 = runGenerations.get(threadId);
-    return threadMenuEntries(
+    return threadMenuEntries2(
       threadId,
       projectId,
       true,
@@ -138265,7 +140146,7 @@ function mountProcessManagerDialog(api2, store2) {
     );
   }
   function menuEntries(row2) {
-    const entries2 = row2.threadId ? threadMenuEntries(
+    const entries2 = row2.threadId ? threadMenuEntries2(
       row2.threadId,
       projectForThread(row2.threadId, row2.projectId),
       getThreadById(store2, row2.threadId)?.status === "running"
@@ -140910,7 +142791,10 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs
+// node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs
+function _OverloadYield(e3, d3) {
+  this.v = e3, this.k = d3;
+}
 function _arrayLikeToArray(r2, a3) {
   (null == a3 || a3 > r2.length) && (a3 = r2.length);
   for (var e3 = 0, n2 = Array(a3); e3 < a3; e3++) n2[e3] = r2[e3];
@@ -140924,8 +142808,10 @@ function _iterableToArrayLimit(r2, l2) {
   if (null != t2) {
     var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
-      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
+      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) {
+        if (Object(t2) !== t2) return;
+        f4 = false;
+      } else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
@@ -140951,42 +142837,68 @@ function _unsupportedIterableToArray(r2, a3) {
     return "Object" === t2 && r2.constructor && (t2 = r2.constructor.name), "Map" === t2 || "Set" === t2 ? Array.from(r2) : "Arguments" === t2 || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t2) ? _arrayLikeToArray(r2, a3) : void 0;
   }
 }
+function AsyncGenerator(e3) {
+  var t2, n2;
+  function resume(t3, n3) {
+    try {
+      var r2 = e3[t3](n3), o3 = r2.value, u2 = o3 instanceof _OverloadYield;
+      Promise.resolve(u2 ? o3.v : o3).then(function(n4) {
+        if (u2) {
+          var i2 = "return" === t3 && o3.k ? t3 : "next";
+          if (!o3.k || n4.done) return resume(i2, n4);
+          n4 = e3[i2](n4).value;
+        }
+        settle2(!!r2.done, n4);
+      }, function(e4) {
+        resume("throw", e4);
+      });
+    } catch (e4) {
+      settle2(2, e4);
+    }
+  }
+  function settle2(e4, r2) {
+    2 === e4 ? t2.reject(r2) : t2.resolve({
+      value: r2,
+      done: e4
+    }), (t2 = t2.next) ? resume(t2.key, t2.arg) : n2 = null;
+  }
+  this._invoke = function(e4, r2) {
+    return new Promise(function(o3, u2) {
+      var i2 = {
+        key: e4,
+        arg: r2,
+        resolve: o3,
+        reject: u2,
+        next: null
+      };
+      n2 ? n2 = n2.next = i2 : (t2 = n2 = i2, resume(e4, r2));
+    });
+  }, "function" != typeof e3.return && (this.return = void 0);
+}
 function unapply(func) {
   return function(thisArg) {
-    if (thisArg instanceof RegExp) {
-      thisArg.lastIndex = 0;
-    }
-    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-      args[_key3 - 1] = arguments[_key3];
-    }
+    if (thisArg instanceof RegExp) thisArg.lastIndex = 0;
+    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) args[_key3 - 1] = arguments[_key3];
     return apply(func, thisArg, args);
   };
 }
 function unconstruct(Func) {
   return function() {
-    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
-      args[_key4] = arguments[_key4];
-    }
+    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) args[_key4] = arguments[_key4];
     return construct(Func, args);
   };
 }
 function addToSet(set2, array2) {
   let transformCaseFunc = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : stringToLowerCase;
-  if (setPrototypeOf) {
-    setPrototypeOf(set2, null);
-  }
-  if (!arrayIsArray(array2)) {
-    return set2;
-  }
+  if (setPrototypeOf) setPrototypeOf(set2, null);
+  if (!arrayIsArray(array2)) return set2;
   let l2 = array2.length;
   while (l2--) {
     let element = array2[l2];
     if (typeof element === "string") {
       const lcElement = transformCaseFunc(element);
       if (lcElement !== element) {
-        if (!isFrozen(array2)) {
-          array2[l2] = lcElement;
-        }
+        if (!isFrozen(array2)) array2[l2] = lcElement;
         element = lcElement;
       }
     }
@@ -140995,12 +142907,7 @@ function addToSet(set2, array2) {
   return set2;
 }
 function cleanArray(array2) {
-  for (let index = 0; index < array2.length; index++) {
-    const isPropertyExist = objectHasOwnProperty(array2, index);
-    if (!isPropertyExist) {
-      array2[index] = null;
-    }
-  }
+  for (let index = 0; index < array2.length; index++) if (!objectHasOwnProperty(array2, index)) array2[index] = null;
   return array2;
 }
 function clone2(object2) {
@@ -141009,44 +142916,31 @@ function clone2(object2) {
     var _ref3 = _slicedToArray(_ref2, 2);
     const property = _ref3[0];
     const value = _ref3[1];
-    const isPropertyExist = objectHasOwnProperty(object2, property);
-    if (isPropertyExist) {
-      if (arrayIsArray(value)) {
-        newObject[property] = cleanArray(value);
-      } else if (value && typeof value === "object" && value.constructor === Object) {
-        newObject[property] = clone2(value);
-      } else {
-        newObject[property] = value;
-      }
+    if (objectHasOwnProperty(object2, property)) {
+      if (arrayIsArray(value)) newObject[property] = cleanArray(value);
+      else if (value && typeof value === "object" && value.constructor === Object) newObject[property] = clone2(value);
+      else newObject[property] = value;
     }
   }
   return newObject;
 }
 function stringifyValue(value) {
   switch (typeof value) {
-    case "string": {
+    case "string":
       return value;
-    }
-    case "number": {
+    case "number":
       return numberToString(value);
-    }
-    case "boolean": {
+    case "boolean":
       return booleanToString(value);
-    }
-    case "bigint": {
+    case "bigint":
       return bigintToString ? bigintToString(value) : "0";
-    }
-    case "symbol": {
+    case "symbol":
       return symbolToString ? symbolToString(value) : "Symbol()";
-    }
-    case "undefined": {
+    case "undefined":
       return objectToString(value);
-    }
     case "function":
     case "object": {
-      if (value === null) {
-        return objectToString(value);
-      }
+      if (value === null) return objectToString(value);
       const valueAsRecord = value;
       const valueToString = lookupGetter(valueAsRecord, "toString");
       if (typeof valueToString === "function") {
@@ -141055,21 +142949,16 @@ function stringifyValue(value) {
       }
       return objectToString(value);
     }
-    default: {
+    default:
       return objectToString(value);
-    }
   }
 }
 function lookupGetter(object2, prop) {
   while (object2 !== null) {
     const desc = getOwnPropertyDescriptor(object2, prop);
     if (desc) {
-      if (desc.get) {
-        return unapply(desc.get);
-      }
-      if (typeof desc.value === "function") {
-        return unapply(desc.value);
-      }
+      if (desc.get) return unapply(desc.get);
+      if (typeof desc.value === "function") return unapply(desc.value);
     }
     object2 = getPrototypeOf(object2);
   }
@@ -141089,7 +142978,7 @@ function isRegex(value) {
 function createDOMPurify() {
   let window2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : getGlobal();
   const DOMPurify = (root) => createDOMPurify(root);
-  DOMPurify.version = "3.4.15";
+  DOMPurify.version = "3.4.16";
   DOMPurify.removed = [];
   if (!window2 || !window2.document || window2.document.nodeType !== NODE_TYPE.document || !window2.Element) {
     DOMPurify.isSupported = false;
@@ -141099,8 +142988,8 @@ function createDOMPurify() {
   const originalDocument = document2;
   const currentScript = originalDocument.currentScript;
   window2.DocumentFragment;
-  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter, _window$NamedNodeMap = window2.NamedNodeMap;
-  _window$NamedNodeMap === void 0 ? window2.NamedNodeMap || window2.MozNamedAttrMap : _window$NamedNodeMap;
+  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter;
+  window2.NamedNodeMap === void 0 && (window2.NamedNodeMap || window2.MozNamedAttrMap);
   window2.HTMLFormElement;
   const DOMParser2 = window2.DOMParser, trustedTypes = window2.trustedTypes;
   const ElementPrototype = Element2.prototype;
@@ -141123,9 +143012,7 @@ function createDOMPurify() {
   };
   if (typeof HTMLTemplateElement === "function") {
     const template = document2.createElement("template");
-    if (template.content && template.content.ownerDocument) {
-      document2 = template.content.ownerDocument;
-    }
+    if (template.content && template.content.ownerDocument) document2 = template.content.ownerDocument;
   }
   let trustedTypesPolicy;
   let emptyHTML = "";
@@ -141133,9 +143020,7 @@ function createDOMPurify() {
   let defaultTrustedTypesPolicyResolved = false;
   let IN_TRUSTED_TYPES_POLICY = 0;
   const _assertNotInTrustedTypesPolicy = function _assertNotInTrustedTypesPolicy2() {
-    if (IN_TRUSTED_TYPES_POLICY > 0) {
-      throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
-    }
+    if (IN_TRUSTED_TYPES_POLICY > 0) throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
   };
   const _createTrustedHTML = function _createTrustedHTML2(html2) {
     _assertNotInTrustedTypesPolicy();
@@ -141169,9 +143054,20 @@ function createDOMPurify() {
   const MUSTACHE_EXPR$1 = MUSTACHE_EXPR, ERB_EXPR$1 = ERB_EXPR, TMPLIT_EXPR$1 = TMPLIT_EXPR, DATA_ATTR$1 = DATA_ATTR, ARIA_ATTR$1 = ARIA_ATTR, IS_SCRIPT_OR_DATA$1 = IS_SCRIPT_OR_DATA, ATTR_WHITESPACE$1 = ATTR_WHITESPACE, CUSTOM_ELEMENT$1 = CUSTOM_ELEMENT;
   let IS_ALLOWED_URI$1 = IS_ALLOWED_URI;
   let ALLOWED_TAGS2 = null;
-  const DEFAULT_ALLOWED_TAGS = addToSet({}, [...html$1, ...svg$1, ...svgFilters, ...mathMl$1, ...text]);
+  const DEFAULT_ALLOWED_TAGS = addToSet({}, [
+    ...html$1,
+    ...svg$1,
+    ...svgFilters,
+    ...mathMl$1,
+    ...text
+  ]);
   let ALLOWED_ATTR2 = null;
-  const DEFAULT_ALLOWED_ATTR = addToSet({}, [...html, ...svg, ...mathMl, ...xml]);
+  const DEFAULT_ALLOWED_ATTR = addToSet({}, [
+    ...html,
+    ...svg,
+    ...mathMl,
+    ...xml
+  ]);
   let CUSTOM_ELEMENT_HANDLING = Object.seal(create(null, {
     tagNameCheck: {
       writable: true,
@@ -141248,15 +143144,6 @@ function createDOMPurify() {
     "noscript",
     "plaintext",
     "script",
-    // <selectedcontent> mirrors the selected <option>'s subtree, cloned by
-    // the UA (customizable <select>) — including any on* handlers — and the
-    // engine re-mirrors synchronously whenever a removal changes which
-    // option/selectedcontent is current, even inside DOMPurify's inert
-    // DOMParser document. Hoisting its children on removal re-inserts a fresh
-    // mirror target ahead of the walk, which the engine refills, looping
-    // forever (DoS) and amplifying output. Dropping its content on removal
-    // (rather than hoisting) breaks that cascade; the content is a duplicate
-    // of the option, which is sanitized on its own. See campaign-3 F1/F6.
     "selectedcontent",
     "style",
     "svg",
@@ -141267,21 +143154,59 @@ function createDOMPurify() {
     "xmp"
   ]);
   let DATA_URI_TAGS = null;
-  const DEFAULT_DATA_URI_TAGS = addToSet({}, ["audio", "video", "img", "source", "image", "track"]);
+  const DEFAULT_DATA_URI_TAGS = addToSet({}, [
+    "audio",
+    "video",
+    "img",
+    "source",
+    "image",
+    "track"
+  ]);
   let URI_SAFE_ATTRIBUTES = null;
-  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, ["alt", "class", "for", "id", "label", "name", "pattern", "placeholder", "role", "summary", "title", "value", "style", "xmlns"]);
+  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, [
+    "alt",
+    "class",
+    "for",
+    "id",
+    "label",
+    "name",
+    "pattern",
+    "placeholder",
+    "role",
+    "summary",
+    "title",
+    "value",
+    "style",
+    "xmlns"
+  ]);
   const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
   let NAMESPACE = HTML_NAMESPACE;
   let IS_EMPTY_INPUT = false;
   let ALLOWED_NAMESPACES = null;
-  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [MATHML_NAMESPACE, SVG_NAMESPACE, HTML_NAMESPACE], stringToString);
-  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze(["mi", "mo", "mn", "ms", "mtext"]);
+  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [
+    MATHML_NAMESPACE,
+    SVG_NAMESPACE,
+    HTML_NAMESPACE
+  ], stringToString);
+  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze([
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext"
+  ]);
   let MATHML_TEXT_INTEGRATION_POINTS = addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS);
   const DEFAULT_HTML_INTEGRATION_POINTS = freeze(["annotation-xml"]);
   let HTML_INTEGRATION_POINTS = addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS);
-  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, ["title", "style", "font", "a", "script"]);
+  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, [
+    "title",
+    "style",
+    "font",
+    "a",
+    "script"
+  ]);
   let PARSER_MEDIA_TYPE = null;
   const SUPPORTED_PARSER_MEDIA_TYPES = ["application/xhtml+xml", "text/html"];
   const DEFAULT_PARSER_MEDIA_TYPE = "text/html";
@@ -141293,25 +143218,14 @@ function createDOMPurify() {
   };
   const _parseConfig = function _parseConfig2() {
     let cfg = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : {};
-    if (CONFIG && CONFIG === cfg) {
-      return;
-    }
-    if (!cfg || typeof cfg !== "object") {
-      cfg = {};
-    }
+    if (CONFIG && CONFIG === cfg) return;
+    if (!cfg || typeof cfg !== "object") cfg = {};
     cfg = clone2(cfg);
-    PARSER_MEDIA_TYPE = // eslint-disable-next-line unicorn/prefer-includes
-    SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
+    PARSER_MEDIA_TYPE = SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
     transformCaseFunc = PARSER_MEDIA_TYPE === "application/xhtml+xml" ? stringToString : stringToLowerCase;
-    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, {
-      transform: stringToString
-    });
+    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, { transform: transformCaseFunc });
+    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, { transform: transformCaseFunc });
+    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, { transform: stringToString });
     URI_SAFE_ATTRIBUTES = _resolveSetOption(cfg, "ADD_URI_SAFE_ATTR", DEFAULT_URI_SAFE_ATTRIBUTES, {
       transform: transformCaseFunc,
       base: DEFAULT_URI_SAFE_ATTRIBUTES
@@ -141320,15 +143234,9 @@ function createDOMPurify() {
       transform: transformCaseFunc,
       base: DEFAULT_DATA_URI_TAGS
     });
-    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, {
-      transform: transformCaseFunc
-    });
-    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), {
-      transform: transformCaseFunc
-    });
-    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), {
-      transform: transformCaseFunc
-    });
+    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, { transform: transformCaseFunc });
+    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), { transform: transformCaseFunc });
+    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), { transform: transformCaseFunc });
     USE_PROFILES = objectHasOwnProperty(cfg, "USE_PROFILES") ? cfg.USE_PROFILES && typeof cfg.USE_PROFILES === "object" ? clone2(cfg.USE_PROFILES) : cfg.USE_PROFILES : false;
     ALLOW_ARIA_ATTR = cfg.ALLOW_ARIA_ATTR !== false;
     ALLOW_DATA_ATTR = cfg.ALLOW_DATA_ATTR !== false;
@@ -141347,36 +143255,16 @@ function createDOMPurify() {
     IN_PLACE = cfg.IN_PLACE || false;
     IS_ALLOWED_URI$1 = isRegex(cfg.ALLOWED_URI_REGEXP) ? cfg.ALLOWED_URI_REGEXP : IS_ALLOWED_URI;
     NAMESPACE = typeof cfg.NAMESPACE === "string" ? cfg.NAMESPACE : HTML_NAMESPACE;
-    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "MATHML_TEXT_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS)
-      // Default built-in map
-    );
-    HTML_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "HTML_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS)
-      // Default built-in map
-    );
+    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(cfg, "MATHML_TEXT_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS));
+    HTML_INTEGRATION_POINTS = _resolveObjectOption(cfg, "HTML_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS));
     const customElementHandling = _resolveObjectOption(cfg, "CUSTOM_ELEMENT_HANDLING", () => create(null));
     CUSTOM_ELEMENT_HANDLING = create(null);
-    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") {
-      CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
-    }
+    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
     seal(CUSTOM_ELEMENT_HANDLING);
-    if (SAFE_FOR_TEMPLATES) {
-      ALLOW_DATA_ATTR = false;
-    }
-    if (RETURN_DOM_FRAGMENT) {
-      RETURN_DOM = true;
-    }
+    if (SAFE_FOR_TEMPLATES) ALLOW_DATA_ATTR = false;
+    if (RETURN_DOM_FRAGMENT) RETURN_DOM = true;
     if (USE_PROFILES) {
       ALLOWED_TAGS2 = addToSet({}, text);
       ALLOWED_ATTR2 = create(null);
@@ -141403,48 +143291,36 @@ function createDOMPurify() {
     EXTRA_ELEMENT_HANDLING.tagCheck = null;
     EXTRA_ELEMENT_HANDLING.attributeCheck = null;
     if (objectHasOwnProperty(cfg, "ADD_TAGS")) {
-      if (typeof cfg.ADD_TAGS === "function") {
-        EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
-      } else if (arrayIsArray(cfg.ADD_TAGS)) {
-        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) {
-          ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-        }
+      if (typeof cfg.ADD_TAGS === "function") EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
+      else if (arrayIsArray(cfg.ADD_TAGS)) {
+        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
         addToSet(ALLOWED_TAGS2, cfg.ADD_TAGS, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_ATTR")) {
-      if (typeof cfg.ADD_ATTR === "function") {
-        EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
-      } else if (arrayIsArray(cfg.ADD_ATTR)) {
-        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) {
-          ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-        }
+      if (typeof cfg.ADD_ATTR === "function") EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
+      else if (arrayIsArray(cfg.ADD_ATTR)) {
+        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
         addToSet(ALLOWED_ATTR2, cfg.ADD_ATTR, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_FORBID_CONTENTS") && arrayIsArray(cfg.ADD_FORBID_CONTENTS)) {
-      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) {
-        FORBID_CONTENTS = clone2(FORBID_CONTENTS);
-      }
+      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) FORBID_CONTENTS = clone2(FORBID_CONTENTS);
       addToSet(FORBID_CONTENTS, cfg.ADD_FORBID_CONTENTS, transformCaseFunc);
     }
-    if (KEEP_CONTENT) {
-      ALLOWED_TAGS2["#text"] = true;
-    }
-    if (WHOLE_DOCUMENT) {
-      addToSet(ALLOWED_TAGS2, ["html", "head", "body"]);
-    }
+    if (KEEP_CONTENT) ALLOWED_TAGS2["#text"] = true;
+    if (WHOLE_DOCUMENT) addToSet(ALLOWED_TAGS2, [
+      "html",
+      "head",
+      "body"
+    ]);
     if (ALLOWED_TAGS2.table) {
       addToSet(ALLOWED_TAGS2, ["tbody"]);
       delete FORBID_TAGS.tbody;
     }
     if (cfg.TRUSTED_TYPES_POLICY) {
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
-      }
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
-      }
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
       const previousTrustedTypesPolicy = trustedTypesPolicy;
       trustedTypesPolicy = cfg.TRUSTED_TYPES_POLICY;
       try {
@@ -141457,85 +143333,55 @@ function createDOMPurify() {
       trustedTypesPolicy = void 0;
       emptyHTML = "";
     } else {
-      if (trustedTypesPolicy === void 0) {
-        trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
-      }
-      if (trustedTypesPolicy && typeof emptyHTML === "string") {
-        emptyHTML = _createTrustedHTML("");
-      }
+      if (trustedTypesPolicy === void 0) trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
+      if (trustedTypesPolicy && typeof emptyHTML === "string") emptyHTML = _createTrustedHTML("");
     }
-    if (freeze) {
-      freeze(cfg);
-    }
+    if (freeze) freeze(cfg);
     CONFIG = cfg;
   };
-  const ALL_SVG_TAGS = addToSet({}, [...svg$1, ...svgFilters, ...svgDisallowed]);
+  const ALL_SVG_TAGS = addToSet({}, [
+    ...svg$1,
+    ...svgFilters,
+    ...svgDisallowed
+  ]);
   const ALL_MATHML_TAGS = addToSet({}, [...mathMl$1, ...mathMlDisallowed]);
   const _checkSvgNamespace = function _checkSvgNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "svg";
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE) {
-      return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "svg";
+    if (parent.namespaceURI === MATHML_NAMESPACE) return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
     return Boolean(ALL_SVG_TAGS[tagName]);
   };
   const _checkMathMlNamespace = function _checkMathMlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "math";
-    }
-    if (parent.namespaceURI === SVG_NAMESPACE) {
-      return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "math";
+    if (parent.namespaceURI === SVG_NAMESPACE) return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
     return Boolean(ALL_MATHML_TAGS[tagName]);
   };
   const _checkHtmlNamespace = function _checkHtmlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
+    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) return false;
+    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) return false;
     return !ALL_MATHML_TAGS[tagName] && (COMMON_SVG_AND_HTML_ELEMENTS[tagName] || !ALL_SVG_TAGS[tagName]);
   };
   const _checkValidNamespace = function _checkValidNamespace2(element) {
     let parent = getParentNode(element);
-    if (!parent || !parent.tagName) {
-      parent = {
-        namespaceURI: NAMESPACE,
-        tagName: "template"
-      };
-    }
+    if (!parent || !parent.tagName) parent = {
+      namespaceURI: NAMESPACE,
+      tagName: "template"
+    };
     const tagName = stringToLowerCase(element.tagName);
     const parentTagName = stringToLowerCase(parent.tagName);
-    if (!ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return false;
-    }
-    if (element.namespaceURI === SVG_NAMESPACE) {
-      return _checkSvgNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === MATHML_NAMESPACE) {
-      return _checkMathMlNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === HTML_NAMESPACE) {
-      return _checkHtmlNamespace(tagName, parent, parentTagName);
-    }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return true;
-    }
+    if (!ALLOWED_NAMESPACES[element.namespaceURI]) return false;
+    if (element.namespaceURI === SVG_NAMESPACE) return _checkSvgNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === MATHML_NAMESPACE) return _checkMathMlNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === HTML_NAMESPACE) return _checkHtmlNamespace(tagName, parent, parentTagName);
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) return true;
     return false;
   };
   const _forceRemove = function _forceRemove2(node2) {
-    arrayPush(DOMPurify.removed, {
-      element: node2
-    });
+    arrayPush(DOMPurify.removed, { element: node2 });
     try {
       getParentNode(node2).removeChild(node2);
     } catch (_3) {
       remove(node2);
-      if (!getParentNode(node2)) {
-        throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
-      }
+      if (!getParentNode(node2)) throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
     }
   };
   const _stripAttributeNode = function _stripAttributeNode2(element, attribute, name) {
@@ -141564,34 +143410,25 @@ function createDOMPurify() {
       });
     }
     const attributes = getAttributes(root);
-    if (attributes) {
-      for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
-        const attribute = attributes[i2];
-        const name = attribute && attribute.name;
-        if (typeof name === "string") {
-          _stripAttributeNode(root, attribute, name);
-        }
-      }
+    if (attributes) for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
+      const attribute = attributes[i2];
+      const name = attribute && attribute.name;
+      if (typeof name === "string") _stripAttributeNode(root, attribute, name);
     }
   };
   const _removeAttribute = function _removeAttribute2(name, element, attr) {
-    if (!attr) {
-      try {
-        attr = element.getAttributeNode(name);
-      } catch (_3) {
-        attr = null;
-      }
+    if (!attr) try {
+      attr = element.getAttributeNode(name);
+    } catch (_3) {
+      attr = null;
     }
     arrayPush(DOMPurify.removed, {
       attribute: attr || null,
       from: element
     });
     try {
-      if (attr) {
-        removeAttributeNode(element, attr);
-      } else {
-        element.removeAttribute(name);
-      }
+      if (attr) removeAttributeNode(element, attr);
+      else element.removeAttribute(name);
     } catch (_3) {
       try {
         element.removeAttribute(name);
@@ -141599,30 +143436,23 @@ function createDOMPurify() {
       }
     }
     if (name === "is") {
-      if (RETURN_DOM || RETURN_DOM_FRAGMENT) {
-        try {
-          _forceRemove(element);
-        } catch (_3) {
-        }
-      } else {
-        try {
-          element.setAttribute(name, "");
-        } catch (_3) {
-        }
+      if (RETURN_DOM || RETURN_DOM_FRAGMENT) try {
+        _forceRemove(element);
+      } catch (_3) {
+      }
+      else try {
+        element.setAttribute(name, "");
+      } catch (_3) {
       }
     }
   };
   const _stripDisallowedAttributes = function _stripDisallowedAttributes2(element) {
     const attributes = getAttributes(element);
-    if (!attributes) {
-      return;
-    }
+    if (!attributes) return;
     for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
       const attribute = attributes[i2];
       const name = attribute && attribute.name;
-      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) {
-        continue;
-      }
+      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) continue;
       _stripAttributeNode(element, attribute, name);
     }
   };
@@ -141630,31 +143460,18 @@ function createDOMPurify() {
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
-      const nodeType = _readNodeType(node2);
-      if (nodeType === NODE_TYPE.element) {
-        _stripDisallowedAttributes(node2);
-      }
+      if (_readNodeType(node2) === NODE_TYPE.element) _stripDisallowedAttributes(node2);
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _isPatchLinkageAttribute = function _isPatchLinkageAttribute2(lcName, lcTag) {
-    if (!SAFE_FOR_XML) {
-      return false;
-    }
-    if (lcName === "patchsrc") {
-      return true;
-    }
+    if (!SAFE_FOR_XML) return false;
+    if (lcName === "patchsrc") return true;
     return lcName === "for" && lcTag !== "label" && lcTag !== "output";
   };
   const _neutralizePatchLinkage = function _neutralizePatchLinkage2(root) {
-    if (!SAFE_FOR_XML) {
-      return;
-    }
+    if (!SAFE_FOR_XML) return;
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
@@ -141670,41 +143487,28 @@ function createDOMPurify() {
         const element = node2;
         const lcTag = transformCaseFunc(_readNodeName(node2));
         try {
-          if (element.hasAttribute && element.hasAttribute("patchsrc")) {
-            element.removeAttribute("patchsrc");
-          }
-          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) {
-            element.removeAttribute("for");
-          }
+          if (element.hasAttribute && element.hasAttribute("patchsrc")) element.removeAttribute("patchsrc");
+          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) element.removeAttribute("for");
         } catch (_3) {
         }
       }
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _initDocument = function _initDocument2(dirty) {
     let doc = null;
     let leadingWhitespace = null;
-    if (FORCE_BODY) {
-      dirty = "<remove></remove>" + dirty;
-    } else {
+    if (FORCE_BODY) dirty = "<remove></remove>" + dirty;
+    else {
       const matches2 = stringMatch(dirty, /^[\r\n\t ]+/);
       leadingWhitespace = matches2 && matches2[0];
     }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) {
-      dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
-    }
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
     const dirtyPayload = trustedTypesPolicy ? _createTrustedHTML(dirty) : dirty;
-    if (NAMESPACE === HTML_NAMESPACE) {
-      try {
-        doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
-      } catch (_3) {
-      }
+    if (NAMESPACE === HTML_NAMESPACE) try {
+      doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
+    } catch (_3) {
     }
     if (!doc || !doc.documentElement) {
       doc = implementation.createDocument(NAMESPACE, "template", null);
@@ -141714,23 +143518,13 @@ function createDOMPurify() {
       }
     }
     const body = doc.body || doc.documentElement;
-    if (dirty && leadingWhitespace) {
-      body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
-    }
-    if (NAMESPACE === HTML_NAMESPACE) {
-      return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
-    }
+    if (dirty && leadingWhitespace) body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
+    if (NAMESPACE === HTML_NAMESPACE) return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
     return WHOLE_DOCUMENT ? doc.documentElement : body;
   };
   const _createNodeIterator = function _createNodeIterator2(root) {
     const doc = getOwnerDocument ? getOwnerDocument(root) : root.ownerDocument;
-    return createNodeIterator.call(
-      doc || root,
-      root,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION,
-      null
-    );
+    return createNodeIterator.call(doc || root, root, NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION, null);
   };
   const _stripTemplateExpressions = function _stripTemplateExpressions2(value) {
     value = stringReplace(value, MUSTACHE_EXPR$1, " ");
@@ -141742,73 +143536,25 @@ function createDOMPurify() {
     var _node$querySelectorAl;
     node2.normalize();
     const doc = getOwnerDocument ? getOwnerDocument(node2) : node2.ownerDocument;
-    const walker = createNodeIterator.call(
-      doc || node2,
-      node2,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION,
-      null
-    );
+    const walker = createNodeIterator.call(doc || node2, node2, NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION, null);
     let currentNode = walker.nextNode();
     while (currentNode) {
       currentNode.data = _stripTemplateExpressions(currentNode.data);
       currentNode = walker.nextNode();
     }
     const templates = (_node$querySelectorAl = node2.querySelectorAll) === null || _node$querySelectorAl === void 0 ? void 0 : _node$querySelectorAl.call(node2, "template");
-    if (templates) {
-      arrayForEach(templates, (tmpl) => {
-        if (_isDocumentFragment(tmpl.content)) {
-          _scrubTemplateExpressions2(tmpl.content);
-        }
-      });
-    }
+    if (templates) arrayForEach(templates, (tmpl) => {
+      if (_isDocumentFragment(tmpl.content)) _scrubTemplateExpressions2(tmpl.content);
+    });
   };
   const _isClobbered = function _isClobbered2(element) {
     const realTagName = getNodeName ? getNodeName(element) : null;
-    if (typeof realTagName !== "string") {
-      return false;
-    }
-    if (transformCaseFunc(realTagName) !== "form") {
-      return false;
-    }
-    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || // Realm-safe NamedNodeMap detection: equality against the cached
-    // prototype getter. Clobbered .attributes (e.g. <input name="attributes">)
-    // makes the direct read diverge from the cached read; a clean form
-    // (same-realm OR foreign-realm) has both reads pointing at the same
-    // canonical NamedNodeMap.
-    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || // A form descendant named "removeAttributeNode" or "getAttributeNode"
-    // shadows these Attr-node methods via [LegacyOverrideBuiltIns].
-    // _removeAttribute() / _stripAttributeNode() reach for
-    // element.removeAttributeNode(attr) first; when it is shadowed the call
-    // throws and the name-based fallback element.removeAttribute(name)
-    // ASCII-lowercases its lookup key in an HTML document, silently missing
-    // a case-preserved event-handler attribute (e.g. an ONANIMATIONSTART
-    // that reached the sanitizer through an XML/XHTML parse). Flag the form
-    // so it is removed wholesale, exactly as for the other shadowed methods.
-    typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
-    // returns the integer 1 for any Element regardless of realm; direct
-    // read on a clobbered form (e.g. <input name="nodeType">) returns
-    // the named child element. Cheap addition — nodeType is read from
-    // an internal slot, no serialization cost — and removes a residual
-    // clobbering surface used by several mXSS / PI / comment branches
-    // in _sanitizeElements that compare currentNode.nodeType directly.
-    element.nodeType !== getNodeType(element) || // HTMLFormElement has [LegacyOverrideBuiltIns]: a descendant named
-    // "childNodes" shadows the prototype getter. Direct reads of
-    // form.childNodes from a clobbered form return the named child
-    // instead of the real NodeList, so any walk that reads it directly
-    // skips the form's real children. Compare the direct read to the
-    // cached Node.prototype getter — when the form's named-property
-    // getter intercepts the read, the two values differ and we flag
-    // the form. This catches every clobbering child type (input,
-    // select, etc.) regardless of whether the named child happens to
-    // carry a numeric .length, which a typeof-based probe would miss
-    // (e.g. HTMLSelectElement.length is a defined unsigned-long).
-    element.childNodes !== getChildNodes(element);
+    if (typeof realTagName !== "string") return false;
+    if (transformCaseFunc(realTagName) !== "form") return false;
+    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || element.nodeType !== getNodeType(element) || element.childNodes !== getChildNodes(element);
   };
   const _isDocumentFragment = function _isDocumentFragment2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return getNodeType(value) === NODE_TYPE.documentFragment;
     } catch (_3) {
@@ -141816,9 +143562,7 @@ function createDOMPurify() {
     }
   };
   const _isNode = function _isNode2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return typeof getNodeType(value) === "number";
     } catch (_3) {
@@ -141826,44 +143570,28 @@ function createDOMPurify() {
     }
   };
   function _executeHooks(hooks2, currentNode, data) {
-    if (hooks2.length === 0) {
-      return;
-    }
+    if (hooks2.length === 0) return;
     arrayForEach(hooks2, (hook) => {
       hook.call(DOMPurify, currentNode, data, CONFIG);
     });
   }
   const _isUnsafeNode = function _isUnsafeNode2(currentNode, tagName) {
-    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) {
-      return true;
-    }
-    if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) {
-      return true;
-    }
+    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) return true;
+    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) return true;
+    if (currentNode.nodeType === NODE_TYPE.processingInstruction) return true;
+    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) return true;
     return false;
   };
   const _matchesNameCheck = function _matchesNameCheck2(check2, name) {
-    if (check2 instanceof RegExp) {
-      return regExpTest(check2, name);
-    }
+    if (check2 instanceof RegExp) return regExpTest(check2, name);
     if (check2 instanceof Function) {
-      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-        args[_key - 2] = arguments[_key];
-      }
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
       return Boolean(check2(name, ...args));
     }
     return false;
   };
   const _sanitizeDisallowedNode = function _sanitizeDisallowedNode2(currentNode, tagName, root) {
-    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) {
-      return false;
-    }
+    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) return false;
     if (KEEP_CONTENT && !FORBID_CONTENTS[tagName]) {
       const parentNode = getParentNode(currentNode);
       const childNodes = getChildNodes(currentNode);
@@ -141879,25 +143607,17 @@ function createDOMPurify() {
     return true;
   };
   const _forkSharedAllowlist = function _forkSharedAllowlist2(hookList, set2, defaultSet, setConfigSet) {
-    if (hookList.length === 0) {
-      return set2;
-    }
+    if (hookList.length === 0) return set2;
     return set2 === defaultSet || set2 === setConfigSet ? clone2(set2) : set2;
   };
   const _handleHookDetachedNode = function _handleHookDetachedNode2(currentNode, root) {
-    if (currentNode === root || getParentNode(currentNode) !== null) {
-      return false;
-    }
-    if (IN_PLACE) {
-      _neutralizeSubtree(currentNode);
-    }
+    if (currentNode === root || getParentNode(currentNode) !== null) return false;
+    if (IN_PLACE) _neutralizeSubtree(currentNode);
     return true;
   };
   const _sanitizeElements = function _sanitizeElements2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeElements, currentNode, null);
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isClobbered(currentNode)) {
       _forceRemove(currentNode);
       return true;
@@ -141908,9 +143628,7 @@ function createDOMPurify() {
       tagName,
       allowedTags: ALLOWED_TAGS2
     });
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isUnsafeNode(currentNode, tagName)) {
       _forceRemove(currentNode);
       return true;
@@ -141919,11 +143637,11 @@ function createDOMPurify() {
       const removed = _sanitizeDisallowedNode(currentNode, tagName, root);
       if (removed === false) {
         _executeHooks(hooks.afterSanitizeElements, currentNode, null);
+        if (_handleHookDetachedNode(currentNode, root)) return true;
       }
       return removed;
     }
-    const nt2 = _readNodeType(currentNode);
-    if (nt2 === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
+    if (_readNodeType(currentNode) === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
       _forceRemove(currentNode);
       return true;
     }
@@ -141934,81 +143652,53 @@ function createDOMPurify() {
     if (SAFE_FOR_TEMPLATES && currentNode.nodeType === NODE_TYPE.text) {
       const content = _stripTemplateExpressions(currentNode.textContent);
       if (currentNode.textContent !== content) {
-        arrayPush(DOMPurify.removed, {
-          element: currentNode.cloneNode()
-        });
+        arrayPush(DOMPurify.removed, { element: currentNode.cloneNode() });
         currentNode.textContent = content;
       }
     }
     _executeHooks(hooks.afterSanitizeElements, currentNode, null);
-    return false;
+    return _handleHookDetachedNode(currentNode, root);
   };
   const _isValidAttribute = function _isValidAttribute2(lcTag, lcName, value) {
-    if (FORBID_ATTR[lcName]) {
-      return false;
-    }
-    if (_isPatchLinkageAttribute(lcName, lcTag)) {
-      return false;
-    }
-    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) {
-      return false;
-    }
+    if (FORBID_ATTR[lcName]) return false;
+    if (_isPatchLinkageAttribute(lcName, lcTag)) return false;
+    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) return false;
     const nameIsPermitted = ALLOWED_ATTR2[lcName] || EXTRA_ELEMENT_HANDLING.attributeCheck instanceof Function && EXTRA_ELEMENT_HANDLING.attributeCheck(lcName, lcTag);
-    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (!nameIsPermitted) {
-      return (
-        // Condition a) covers a basically valid custom element tag name whose
-        // tag passes the configured tagNameCheck and whose attribute name
-        // passes the configured attributeNameCheck ...
-        _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || // Condition b) covers an `is` attribute whose value passes the
-        // configured tagNameCheck while customized built-in elements are
-        // allowed.
-        lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value)
-      );
-    }
-    if (URI_SAFE_ATTRIBUTES[lcName]) {
-      return true;
-    }
-    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
-    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) {
-      return true;
-    }
-    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
+    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) return true;
+    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) return true;
+    if (!nameIsPermitted) return _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value);
+    if (URI_SAFE_ATTRIBUTES[lcName]) return true;
+    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
+    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) return true;
+    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
     return !value;
   };
-  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, ["annotation-xml", "color-profile", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "missing-glyph"]);
+  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, [
+    "annotation-xml",
+    "color-profile",
+    "font-face",
+    "font-face-format",
+    "font-face-name",
+    "font-face-src",
+    "font-face-uri",
+    "missing-glyph"
+  ]);
   const _isBasicCustomElement = function _isBasicCustomElement2(tagName) {
     return !RESERVED_CUSTOM_ELEMENT_NAMES[stringToLowerCase(tagName)] && regExpTest(CUSTOM_ELEMENT$1, tagName);
   };
   const _applyTrustedTypesToAttribute = function _applyTrustedTypesToAttribute2(lcTag, lcName, namespaceURI, value) {
-    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) {
-      switch (trustedTypes.getAttributeType(lcTag, lcName)) {
-        case "TrustedHTML": {
-          return _createTrustedHTML(value);
-        }
-        case "TrustedScriptURL": {
-          return _createTrustedScriptURL(value);
-        }
-      }
+    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) switch (trustedTypes.getAttributeType(lcTag, lcName)) {
+      case "TrustedHTML":
+        return _createTrustedHTML(value);
+      case "TrustedScriptURL":
+        return _createTrustedScriptURL(value);
     }
     return value;
   };
   const _setAttributeValue = function _setAttributeValue2(currentNode, name, namespaceURI, value) {
     try {
-      if (namespaceURI) {
-        currentNode.setAttributeNS(namespaceURI, name, value);
-      } else {
-        currentNode.setAttribute(name, value);
-      }
+      if (namespaceURI) currentNode.setAttributeNS(namespaceURI, name, value);
+      else currentNode.setAttribute(name, value);
       if (_isClobbered(currentNode)) {
         _forceRemove(currentNode);
         return false;
@@ -142019,12 +143709,11 @@ function createDOMPurify() {
       return false;
     }
   };
-  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode) {
+  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeAttributes, currentNode, null);
+    if (_handleHookDetachedNode(currentNode, root)) return;
     const attributes = currentNode.attributes;
-    if (!attributes || _isClobbered(currentNode)) {
-      return;
-    }
+    if (!attributes || _isClobbered(currentNode)) return;
     ALLOWED_ATTR2 = _forkSharedAllowlist(hooks.uponSanitizeAttribute, ALLOWED_ATTR2, DEFAULT_ALLOWED_ATTR, SET_CONFIG_ALLOWED_ATTR);
     const hookEvent = {
       attrName: "",
@@ -142061,9 +143750,7 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (hookEvent.forceKeepAttr) {
-        continue;
-      }
+      if (hookEvent.forceKeepAttr) continue;
       if (!hookEvent.keepAttr) {
         _removeAttribute(name, currentNode, attr);
         continue;
@@ -142072,22 +143759,18 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (SAFE_FOR_TEMPLATES) {
-        value = _stripTemplateExpressions(value);
-      }
+      if (SAFE_FOR_TEMPLATES) value = _stripTemplateExpressions(value);
       if (!_isValidAttribute(lcTag, lcName, value)) {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
       value = _applyTrustedTypesToAttribute(lcTag, lcName, namespaceURI, value);
       if (value !== initValue) {
-        const cleanWrite = _setAttributeValue(currentNode, name, namespaceURI, value);
-        if (cleanWrite && recreatedNamedProp) {
-          arrayPop(DOMPurify.removed);
-        }
+        if (_setAttributeValue(currentNode, name, namespaceURI, value) && recreatedNamedProp) arrayPop(DOMPurify.removed);
       }
     }
     _executeHooks(hooks.afterSanitizeAttributes, currentNode, null);
+    _handleHookDetachedNode(currentNode, root);
   };
   const _sanitizeShadowDOM2 = function _sanitizeShadowDOM(fragment) {
     let shadowNode = null;
@@ -142096,10 +143779,8 @@ function createDOMPurify() {
     while (shadowNode = shadowIterator.nextNode()) {
       _executeHooks(hooks.uponSanitizeShadowNode, shadowNode, null);
       _sanitizeElements(shadowNode, fragment);
-      _sanitizeAttributes(shadowNode);
-      if (_isDocumentFragment(shadowNode.content)) {
-        _sanitizeShadowDOM2(shadowNode.content);
-      }
+      _sanitizeAttributes(shadowNode, fragment);
+      if (_isDocumentFragment(shadowNode.content)) _sanitizeShadowDOM2(shadowNode.content);
       if (_readNodeType(shadowNode) === NODE_TYPE.element) {
         const innerSr = getShadowRoot(shadowNode);
         if (_isDocumentFragment(innerSr)) {
@@ -142122,40 +143803,31 @@ function createDOMPurify() {
         continue;
       }
       const node2 = item.node;
-      const nodeType = _readNodeType(node2);
-      const isElement = nodeType === NODE_TYPE.element;
+      const isElement = _readNodeType(node2) === NODE_TYPE.element;
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push({
-            node: childNodes[i2],
-            shadow: null
-          });
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push({
+        node: childNodes[i2],
+        shadow: null
+      });
       if (isElement) {
         const rootName = getNodeName ? getNodeName(node2) : null;
         if (typeof rootName === "string" && transformCaseFunc(rootName) === "template") {
           const content = node2.content;
-          if (_isDocumentFragment(content)) {
-            stack.push({
-              node: content,
-              shadow: null
-            });
-          }
+          if (_isDocumentFragment(content)) stack.push({
+            node: content,
+            shadow: null
+          });
         }
       }
       if (isElement) {
         const sr2 = getShadowRoot(node2);
-        if (_isDocumentFragment(sr2)) {
-          stack.push({
-            node: null,
-            shadow: sr2
-          }, {
-            node: sr2,
-            shadow: null
-          });
-        }
+        if (_isDocumentFragment(sr2)) stack.push({
+          node: null,
+          shadow: sr2
+        }, {
+          node: sr2,
+          shadow: null
+        });
       }
     }
   };
@@ -142166,30 +143838,18 @@ function createDOMPurify() {
     let currentNode = null;
     let returnNode = null;
     IS_EMPTY_INPUT = !dirty;
-    if (IS_EMPTY_INPUT) {
-      dirty = "<!-->";
-    }
+    if (IS_EMPTY_INPUT) dirty = "<!-->";
     if (typeof dirty !== "string" && !_isNode(dirty)) {
       dirty = stringifyValue(dirty);
-      if (typeof dirty !== "string") {
-        throw typeErrorCreate("dirty is not a string, aborting");
-      }
+      if (typeof dirty !== "string") throw typeErrorCreate("dirty is not a string, aborting");
     }
-    if (!DOMPurify.isSupported) {
-      return dirty;
-    }
+    if (!DOMPurify.isSupported) return dirty;
     if (SET_CONFIG) {
       ALLOWED_TAGS2 = SET_CONFIG_ALLOWED_TAGS;
       ALLOWED_ATTR2 = SET_CONFIG_ALLOWED_ATTR;
-    } else {
-      _parseConfig(cfg);
-    }
-    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-    }
-    if (hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-    }
+    } else _parseConfig(cfg);
+    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
+    if (hooks.uponSanitizeAttribute.length > 0) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
     DOMPurify.removed = [];
     const inPlace = IN_PLACE && typeof dirty !== "string" && _isNode(dirty);
     if (inPlace) {
@@ -142215,83 +143875,57 @@ function createDOMPurify() {
     } else if (_isNode(dirty)) {
       body = _initDocument("<!---->");
       importedNode = body.ownerDocument.importNode(dirty, true);
-      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") {
-        body = importedNode;
-      } else if (importedNode.nodeName === "HTML") {
-        body = importedNode;
-      } else {
-        body.appendChild(importedNode);
-      }
+      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") body = importedNode;
+      else if (importedNode.nodeName === "HTML") body = importedNode;
+      else body.appendChild(importedNode);
       _sanitizeAttachedShadowRoots(body);
     } else {
-      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && // eslint-disable-next-line unicorn/prefer-includes
-      dirty.indexOf("<") === -1) {
-        return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
-      }
+      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && dirty.indexOf("<") === -1) return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
       body = _initDocument(dirty);
-      if (!body) {
-        return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
-      }
+      if (!body) return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
     }
-    if (body && FORCE_BODY) {
-      _forceRemove(body.firstChild);
-    }
+    if (body && FORCE_BODY) _forceRemove(body.firstChild);
     const walkRoot = inPlace ? dirty : body;
     try {
       const nodeIterator = _createNodeIterator(walkRoot);
       while (currentNode = nodeIterator.nextNode()) {
         _sanitizeElements(currentNode, walkRoot);
-        _sanitizeAttributes(currentNode);
-        if (_isDocumentFragment(currentNode.content)) {
-          _sanitizeShadowDOM2(currentNode.content);
-        }
+        _sanitizeAttributes(currentNode, walkRoot);
+        if (_isDocumentFragment(currentNode.content)) _sanitizeShadowDOM2(currentNode.content);
       }
     } catch (error62) {
       if (inPlace) {
         _neutralizeRoot(dirty);
         arrayForEach(DOMPurify.removed, (entry) => {
-          if (entry.element) {
-            _neutralizeSubtree(entry.element);
-          }
+          if (entry.element) _neutralizeSubtree(entry.element);
         });
       }
       throw error62;
     }
     if (inPlace) {
+      let rootWasRemoved = false;
       arrayForEach(DOMPurify.removed, (entry) => {
         if (entry.element) {
+          if (entry.element === dirty) rootWasRemoved = true;
           _neutralizeSubtree(entry.element);
         }
       });
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(dirty);
-      }
+      if (rootWasRemoved) throw typeErrorCreate("a node selected for removal could not be safely returned; refusing to sanitize in place");
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(dirty);
       return dirty;
     }
     if (RETURN_DOM) {
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(body);
-      }
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(body);
       if (RETURN_DOM_FRAGMENT) {
         returnNode = createDocumentFragment.call(body.ownerDocument);
-        while (body.firstChild) {
-          returnNode.appendChild(body.firstChild);
-        }
-      } else {
-        returnNode = body;
-      }
-      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) {
-        returnNode = importNode.call(originalDocument, returnNode, true);
-      }
+        while (body.firstChild) returnNode.appendChild(body.firstChild);
+      } else returnNode = body;
+      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) returnNode = importNode.call(originalDocument, returnNode, true);
       return returnNode;
     }
     let serializedHTML = WHOLE_DOCUMENT ? body.outerHTML : body.innerHTML;
-    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) {
-      serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
-    }
-    if (SAFE_FOR_TEMPLATES) {
-      serializedHTML = _stripTemplateExpressions(serializedHTML);
-    }
+    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
+    if (SAFE_FOR_TEMPLATES) serializedHTML = _stripTemplateExpressions(serializedHTML);
     return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(serializedHTML) : serializedHTML;
   };
   DOMPurify.setConfig = function() {
@@ -142310,26 +143944,18 @@ function createDOMPurify() {
     emptyHTML = "";
   };
   DOMPurify.isValidAttribute = function(tag, attr, value) {
-    if (!CONFIG) {
-      _parseConfig({});
-    }
+    if (!CONFIG) _parseConfig({});
     const lcTag = transformCaseFunc(tag);
     const lcName = transformCaseFunc(attr);
     return _isValidAttribute(lcTag, lcName, value);
   };
   DOMPurify.addHook = function(entryPoint, hookFunction) {
-    if (typeof hookFunction !== "function") {
-      return;
-    }
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (typeof hookFunction !== "function") return;
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     arrayPush(hooks[entryPoint], hookFunction);
   };
   DOMPurify.removeHook = function(entryPoint, hookFunction) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return void 0;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     if (hookFunction !== void 0) {
       const index = arrayLastIndexOf(hooks[entryPoint], hookFunction);
       return index === -1 ? void 0 : arraySplice(hooks[entryPoint], index, 1)[0];
@@ -142337,9 +143963,7 @@ function createDOMPurify() {
     return arrayPop(hooks[entryPoint]);
   };
   DOMPurify.removeHooks = function(entryPoint) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     hooks[entryPoint] = [];
   };
   DOMPurify.removeAllHooks = function() {
@@ -142347,9 +143971,18 @@ function createDOMPurify() {
   };
   return DOMPurify;
 }
-var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify;
+var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify_default;
 var init_purify_es = __esm({
-  "node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs"() {
+  "node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs"() {
+    AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+      return this;
+    }, AsyncGenerator.prototype.next = function(e3) {
+      return this._invoke("next", e3);
+    }, AsyncGenerator.prototype.throw = function(e3) {
+      return this._invoke("throw", e3);
+    }, AsyncGenerator.prototype.return = function(e3) {
+      return this._invoke("return", e3);
+    };
     entries = Object.entries;
     setPrototypeOf = Object.setPrototypeOf;
     isFrozen = Object.isFrozen;
@@ -142361,36 +143994,26 @@ var init_purify_es = __esm({
     _ref = typeof Reflect !== "undefined" && Reflect;
     apply = _ref.apply;
     construct = _ref.construct;
-    if (!freeze) {
-      freeze = function freeze2(x2) {
-        return x2;
-      };
-    }
-    if (!seal) {
-      seal = function seal2(x2) {
-        return x2;
-      };
-    }
-    if (!apply) {
-      apply = function apply2(func, thisArg) {
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
-        }
-        return func.apply(thisArg, args);
-      };
-    }
-    if (!construct) {
-      construct = function construct2(Func) {
-        for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-          args[_key2 - 1] = arguments[_key2];
-        }
-        return new Func(...args);
-      };
-    }
+    if (!freeze) freeze = function freeze2(x2) {
+      return x2;
+    };
+    if (!seal) seal = function seal2(x2) {
+      return x2;
+    };
+    if (!apply) apply = function apply2(func, thisArg) {
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
+      return func.apply(thisArg, args);
+    };
+    if (!construct) construct = function construct2(Func) {
+      for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) args[_key2 - 1] = arguments[_key2];
+      return new Func(...args);
+    };
     arrayForEach = unapply(Array.prototype.forEach);
+    Array.prototype.indexOf;
     arrayLastIndexOf = unapply(Array.prototype.lastIndexOf);
     arrayPop = unapply(Array.prototype.pop);
     arrayPush = unapply(Array.prototype.push);
+    Array.prototype.slice;
     arraySplice = unapply(Array.prototype.splice);
     arrayIsArray = Array.isArray;
     stringToLowerCase = unapply(String.prototype.toLowerCase);
@@ -142407,31 +144030,662 @@ var init_purify_es = __esm({
     objectToString = unapply(Object.prototype.toString);
     regExpTest = unapply(RegExp.prototype.test);
     typeErrorCreate = unconstruct(TypeError);
-    html$1 = freeze(["a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "content", "data", "datalist", "dd", "decorator", "del", "details", "dfn", "dialog", "dir", "div", "dl", "dt", "element", "em", "fieldset", "figcaption", "figure", "font", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "img", "input", "ins", "kbd", "label", "legend", "li", "main", "map", "mark", "marquee", "menu", "menuitem", "meter", "nav", "nobr", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "search", "section", "select", "shadow", "slot", "small", "source", "spacer", "span", "strike", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr"]);
-    svg$1 = freeze(["svg", "a", "altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "enterkeyhint", "exportparts", "filter", "font", "g", "glyph", "glyphref", "hkern", "image", "inputmode", "line", "lineargradient", "marker", "mask", "metadata", "mpath", "part", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "stop", "style", "switch", "symbol", "text", "textpath", "title", "tref", "tspan", "view", "vkern"]);
-    svgFilters = freeze(["feBlend", "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence"]);
-    svgDisallowed = freeze(["animate", "color-profile", "cursor", "discard", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "foreignobject", "hatch", "hatchpath", "mesh", "meshgradient", "meshpatch", "meshrow", "missing-glyph", "script", "set", "solidcolor", "unknown", "use"]);
-    mathMl$1 = freeze(["math", "menclose", "merror", "mfenced", "mfrac", "mglyph", "mi", "mlabeledtr", "mmultiscripts", "mn", "mo", "mover", "mpadded", "mphantom", "mroot", "mrow", "ms", "mspace", "msqrt", "mstyle", "msub", "msup", "msubsup", "mtable", "mtd", "mtext", "mtr", "munder", "munderover", "mprescripts"]);
-    mathMlDisallowed = freeze(["maction", "maligngroup", "malignmark", "mlongdiv", "mscarries", "mscarry", "msgroup", "mstack", "msline", "msrow", "semantics", "annotation", "annotation-xml", "mprescripts", "none"]);
+    html$1 = freeze([
+      "a",
+      "abbr",
+      "acronym",
+      "address",
+      "area",
+      "article",
+      "aside",
+      "audio",
+      "b",
+      "bdi",
+      "bdo",
+      "big",
+      "blink",
+      "blockquote",
+      "body",
+      "br",
+      "button",
+      "canvas",
+      "caption",
+      "center",
+      "cite",
+      "code",
+      "col",
+      "colgroup",
+      "content",
+      "data",
+      "datalist",
+      "dd",
+      "decorator",
+      "del",
+      "details",
+      "dfn",
+      "dialog",
+      "dir",
+      "div",
+      "dl",
+      "dt",
+      "element",
+      "em",
+      "fieldset",
+      "figcaption",
+      "figure",
+      "font",
+      "footer",
+      "form",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "head",
+      "header",
+      "hgroup",
+      "hr",
+      "html",
+      "i",
+      "img",
+      "input",
+      "ins",
+      "kbd",
+      "label",
+      "legend",
+      "li",
+      "main",
+      "map",
+      "mark",
+      "marquee",
+      "menu",
+      "menuitem",
+      "meter",
+      "nav",
+      "nobr",
+      "ol",
+      "optgroup",
+      "option",
+      "output",
+      "p",
+      "picture",
+      "pre",
+      "progress",
+      "q",
+      "rp",
+      "rt",
+      "ruby",
+      "s",
+      "samp",
+      "search",
+      "section",
+      "select",
+      "shadow",
+      "slot",
+      "small",
+      "source",
+      "spacer",
+      "span",
+      "strike",
+      "strong",
+      "style",
+      "sub",
+      "summary",
+      "sup",
+      "table",
+      "tbody",
+      "td",
+      "template",
+      "textarea",
+      "tfoot",
+      "th",
+      "thead",
+      "time",
+      "tr",
+      "track",
+      "tt",
+      "u",
+      "ul",
+      "var",
+      "video",
+      "wbr"
+    ]);
+    svg$1 = freeze([
+      "svg",
+      "a",
+      "altglyph",
+      "altglyphdef",
+      "altglyphitem",
+      "animatecolor",
+      "animatemotion",
+      "animatetransform",
+      "circle",
+      "clippath",
+      "defs",
+      "desc",
+      "ellipse",
+      "enterkeyhint",
+      "exportparts",
+      "filter",
+      "font",
+      "g",
+      "glyph",
+      "glyphref",
+      "hkern",
+      "image",
+      "inputmode",
+      "line",
+      "lineargradient",
+      "marker",
+      "mask",
+      "metadata",
+      "mpath",
+      "part",
+      "path",
+      "pattern",
+      "polygon",
+      "polyline",
+      "radialgradient",
+      "rect",
+      "stop",
+      "style",
+      "switch",
+      "symbol",
+      "text",
+      "textpath",
+      "title",
+      "tref",
+      "tspan",
+      "view",
+      "vkern"
+    ]);
+    svgFilters = freeze([
+      "feBlend",
+      "feColorMatrix",
+      "feComponentTransfer",
+      "feComposite",
+      "feConvolveMatrix",
+      "feDiffuseLighting",
+      "feDisplacementMap",
+      "feDistantLight",
+      "feDropShadow",
+      "feFlood",
+      "feFuncA",
+      "feFuncB",
+      "feFuncG",
+      "feFuncR",
+      "feGaussianBlur",
+      "feImage",
+      "feMerge",
+      "feMergeNode",
+      "feMorphology",
+      "feOffset",
+      "fePointLight",
+      "feSpecularLighting",
+      "feSpotLight",
+      "feTile",
+      "feTurbulence"
+    ]);
+    svgDisallowed = freeze([
+      "animate",
+      "color-profile",
+      "cursor",
+      "discard",
+      "font-face",
+      "font-face-format",
+      "font-face-name",
+      "font-face-src",
+      "font-face-uri",
+      "foreignobject",
+      "hatch",
+      "hatchpath",
+      "mesh",
+      "meshgradient",
+      "meshpatch",
+      "meshrow",
+      "missing-glyph",
+      "script",
+      "set",
+      "solidcolor",
+      "unknown",
+      "use"
+    ]);
+    mathMl$1 = freeze([
+      "math",
+      "menclose",
+      "merror",
+      "mfenced",
+      "mfrac",
+      "mglyph",
+      "mi",
+      "mlabeledtr",
+      "mmultiscripts",
+      "mn",
+      "mo",
+      "mover",
+      "mpadded",
+      "mphantom",
+      "mroot",
+      "mrow",
+      "ms",
+      "mspace",
+      "msqrt",
+      "mstyle",
+      "msub",
+      "msup",
+      "msubsup",
+      "mtable",
+      "mtd",
+      "mtext",
+      "mtr",
+      "munder",
+      "munderover",
+      "mprescripts"
+    ]);
+    mathMlDisallowed = freeze([
+      "maction",
+      "maligngroup",
+      "malignmark",
+      "mlongdiv",
+      "mscarries",
+      "mscarry",
+      "msgroup",
+      "mstack",
+      "msline",
+      "msrow",
+      "semantics",
+      "annotation",
+      "annotation-xml",
+      "mprescripts",
+      "none"
+    ]);
     text = freeze(["#text"]);
-    html = freeze(["accept", "action", "align", "alt", "autocapitalize", "autocomplete", "autopictureinpicture", "autoplay", "background", "bgcolor", "border", "capture", "cellpadding", "cellspacing", "checked", "cite", "class", "clear", "color", "cols", "colspan", "command", "commandfor", "controls", "controlslist", "coords", "crossorigin", "datetime", "decoding", "default", "dir", "disabled", "disablepictureinpicture", "disableremoteplayback", "download", "draggable", "enctype", "enterkeyhint", "exportparts", "face", "for", "headers", "height", "hidden", "high", "href", "hreflang", "id", "inert", "inputmode", "integrity", "ismap", "kind", "label", "lang", "list", "loading", "loop", "low", "max", "maxlength", "media", "method", "min", "minlength", "multiple", "muted", "name", "nonce", "noshade", "novalidate", "nowrap", "open", "optimum", "part", "pattern", "placeholder", "playsinline", "popover", "popovertarget", "popovertargetaction", "poster", "preload", "pubdate", "radiogroup", "readonly", "rel", "required", "rev", "reversed", "role", "rows", "rowspan", "spellcheck", "scope", "selected", "shape", "size", "sizes", "slot", "span", "srclang", "start", "src", "srcset", "step", "style", "summary", "tabindex", "title", "translate", "type", "usemap", "valign", "value", "width", "wrap", "xmlns"]);
-    svg = freeze(["accent-height", "accumulate", "additive", "alignment-baseline", "amplitude", "ascent", "attributename", "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin", "bias", "by", "class", "clip", "clippathunits", "clip-path", "clip-rule", "color", "color-interpolation", "color-interpolation-filters", "color-profile", "color-rendering", "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dominant-baseline", "dur", "edgemode", "elevation", "end", "exponent", "fill", "fill-opacity", "fill-rule", "filter", "filterunits", "flood-color", "flood-opacity", "font-family", "font-size", "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx", "fy", "g1", "g2", "glyph-name", "glyphref", "gradientunits", "gradienttransform", "height", "href", "id", "image-rendering", "in", "in2", "intercept", "k", "k1", "k2", "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lang", "lengthadjust", "letter-spacing", "kernelmatrix", "kernelunitlength", "lighting-color", "local", "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth", "maskcontentunits", "maskunits", "max", "mask", "mask-type", "media", "method", "mode", "min", "name", "numoctaves", "offset", "operator", "opacity", "order", "orient", "orientation", "origin", "overflow", "paint-order", "path", "pathlength", "patterncontentunits", "patterntransform", "patternunits", "pointer-events", "points", "preservealpha", "preserveaspectratio", "primitiveunits", "r", "rx", "ry", "radius", "refx", "refy", "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed", "shape-rendering", "slope", "specularconstant", "specularexponent", "spreadmethod", "startoffset", "stddeviation", "stitchtiles", "stop-color", "stop-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "stroke", "stroke-width", "style", "surfacescale", "systemlanguage", "tabindex", "tablevalues", "targetx", "targety", "transform", "transform-origin", "text-anchor", "text-decoration", "text-orientation", "text-rendering", "textlength", "type", "u1", "u2", "unicode", "values", "vector-effect", "viewbox", "visibility", "version", "vert-adv-y", "vert-origin-x", "vert-origin-y", "width", "word-spacing", "wrap", "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "xmlns", "y", "y1", "y2", "z", "zoomandpan"]);
-    mathMl = freeze(["accent", "accentunder", "align", "bevelled", "close", "columnalign", "columnlines", "columnspacing", "columnspan", "denomalign", "depth", "dir", "display", "displaystyle", "encoding", "fence", "frame", "height", "href", "id", "largeop", "length", "linethickness", "lquote", "lspace", "mathbackground", "mathcolor", "mathsize", "mathvariant", "maxsize", "minsize", "movablelimits", "notation", "numalign", "open", "rowalign", "rowlines", "rowspacing", "rowspan", "rspace", "rquote", "scriptlevel", "scriptminsize", "scriptsizemultiplier", "selection", "separator", "separators", "stretchy", "subscriptshift", "supscriptshift", "symmetric", "voffset", "width", "xmlns"]);
-    xml = freeze(["xlink:href", "xml:id", "xlink:title", "xml:space", "xmlns:xlink"]);
+    html = freeze([
+      "accept",
+      "action",
+      "align",
+      "alt",
+      "autocapitalize",
+      "autocomplete",
+      "autopictureinpicture",
+      "autoplay",
+      "background",
+      "bgcolor",
+      "border",
+      "capture",
+      "cellpadding",
+      "cellspacing",
+      "checked",
+      "cite",
+      "class",
+      "clear",
+      "color",
+      "cols",
+      "colspan",
+      "command",
+      "commandfor",
+      "controls",
+      "controlslist",
+      "coords",
+      "crossorigin",
+      "datetime",
+      "decoding",
+      "default",
+      "dir",
+      "disabled",
+      "disablepictureinpicture",
+      "disableremoteplayback",
+      "download",
+      "draggable",
+      "enctype",
+      "enterkeyhint",
+      "exportparts",
+      "face",
+      "for",
+      "headers",
+      "height",
+      "hidden",
+      "high",
+      "href",
+      "hreflang",
+      "id",
+      "inert",
+      "inputmode",
+      "integrity",
+      "ismap",
+      "kind",
+      "label",
+      "lang",
+      "list",
+      "loading",
+      "loop",
+      "low",
+      "max",
+      "maxlength",
+      "media",
+      "method",
+      "min",
+      "minlength",
+      "multiple",
+      "muted",
+      "name",
+      "nonce",
+      "noshade",
+      "novalidate",
+      "nowrap",
+      "open",
+      "optimum",
+      "part",
+      "pattern",
+      "placeholder",
+      "playsinline",
+      "popover",
+      "popovertarget",
+      "popovertargetaction",
+      "poster",
+      "preload",
+      "pubdate",
+      "radiogroup",
+      "readonly",
+      "rel",
+      "required",
+      "rev",
+      "reversed",
+      "role",
+      "rows",
+      "rowspan",
+      "spellcheck",
+      "scope",
+      "selected",
+      "shape",
+      "size",
+      "sizes",
+      "slot",
+      "span",
+      "srclang",
+      "start",
+      "src",
+      "srcset",
+      "step",
+      "style",
+      "summary",
+      "tabindex",
+      "title",
+      "translate",
+      "type",
+      "usemap",
+      "valign",
+      "value",
+      "width",
+      "wrap",
+      "xmlns"
+    ]);
+    svg = freeze([
+      "accent-height",
+      "accumulate",
+      "additive",
+      "alignment-baseline",
+      "amplitude",
+      "ascent",
+      "attributename",
+      "attributetype",
+      "azimuth",
+      "basefrequency",
+      "baseline-shift",
+      "begin",
+      "bias",
+      "by",
+      "class",
+      "clip",
+      "clippathunits",
+      "clip-path",
+      "clip-rule",
+      "color",
+      "color-interpolation",
+      "color-interpolation-filters",
+      "color-profile",
+      "color-rendering",
+      "cx",
+      "cy",
+      "d",
+      "dx",
+      "dy",
+      "diffuseconstant",
+      "direction",
+      "display",
+      "divisor",
+      "dominant-baseline",
+      "dur",
+      "edgemode",
+      "elevation",
+      "end",
+      "exponent",
+      "fill",
+      "fill-opacity",
+      "fill-rule",
+      "filter",
+      "filterunits",
+      "flood-color",
+      "flood-opacity",
+      "font-family",
+      "font-size",
+      "font-size-adjust",
+      "font-stretch",
+      "font-style",
+      "font-variant",
+      "font-weight",
+      "fx",
+      "fy",
+      "g1",
+      "g2",
+      "glyph-name",
+      "glyphref",
+      "gradientunits",
+      "gradienttransform",
+      "height",
+      "href",
+      "id",
+      "image-rendering",
+      "in",
+      "in2",
+      "intercept",
+      "k",
+      "k1",
+      "k2",
+      "k3",
+      "k4",
+      "kerning",
+      "keypoints",
+      "keysplines",
+      "keytimes",
+      "lang",
+      "lengthadjust",
+      "letter-spacing",
+      "kernelmatrix",
+      "kernelunitlength",
+      "lighting-color",
+      "local",
+      "marker-end",
+      "marker-mid",
+      "marker-start",
+      "markerheight",
+      "markerunits",
+      "markerwidth",
+      "maskcontentunits",
+      "maskunits",
+      "max",
+      "mask",
+      "mask-type",
+      "media",
+      "method",
+      "mode",
+      "min",
+      "name",
+      "numoctaves",
+      "offset",
+      "operator",
+      "opacity",
+      "order",
+      "orient",
+      "orientation",
+      "origin",
+      "overflow",
+      "paint-order",
+      "path",
+      "pathlength",
+      "patterncontentunits",
+      "patterntransform",
+      "patternunits",
+      "pointer-events",
+      "points",
+      "preservealpha",
+      "preserveaspectratio",
+      "primitiveunits",
+      "r",
+      "rx",
+      "ry",
+      "radius",
+      "refx",
+      "refy",
+      "repeatcount",
+      "repeatdur",
+      "restart",
+      "result",
+      "rotate",
+      "scale",
+      "seed",
+      "shape-rendering",
+      "slope",
+      "specularconstant",
+      "specularexponent",
+      "spreadmethod",
+      "startoffset",
+      "stddeviation",
+      "stitchtiles",
+      "stop-color",
+      "stop-opacity",
+      "stroke-dasharray",
+      "stroke-dashoffset",
+      "stroke-linecap",
+      "stroke-linejoin",
+      "stroke-miterlimit",
+      "stroke-opacity",
+      "stroke",
+      "stroke-width",
+      "style",
+      "surfacescale",
+      "systemlanguage",
+      "tabindex",
+      "tablevalues",
+      "targetx",
+      "targety",
+      "transform",
+      "transform-origin",
+      "text-anchor",
+      "text-decoration",
+      "text-orientation",
+      "text-rendering",
+      "textlength",
+      "type",
+      "u1",
+      "u2",
+      "unicode",
+      "values",
+      "vector-effect",
+      "viewbox",
+      "visibility",
+      "version",
+      "vert-adv-y",
+      "vert-origin-x",
+      "vert-origin-y",
+      "width",
+      "word-spacing",
+      "wrap",
+      "writing-mode",
+      "xchannelselector",
+      "ychannelselector",
+      "x",
+      "x1",
+      "x2",
+      "xmlns",
+      "y",
+      "y1",
+      "y2",
+      "z",
+      "zoomandpan"
+    ]);
+    mathMl = freeze([
+      "accent",
+      "accentunder",
+      "align",
+      "bevelled",
+      "close",
+      "columnalign",
+      "columnlines",
+      "columnspacing",
+      "columnspan",
+      "denomalign",
+      "depth",
+      "dir",
+      "display",
+      "displaystyle",
+      "encoding",
+      "fence",
+      "frame",
+      "height",
+      "href",
+      "id",
+      "largeop",
+      "length",
+      "linethickness",
+      "lquote",
+      "lspace",
+      "mathbackground",
+      "mathcolor",
+      "mathsize",
+      "mathvariant",
+      "maxsize",
+      "minsize",
+      "movablelimits",
+      "notation",
+      "numalign",
+      "open",
+      "rowalign",
+      "rowlines",
+      "rowspacing",
+      "rowspan",
+      "rspace",
+      "rquote",
+      "scriptlevel",
+      "scriptminsize",
+      "scriptsizemultiplier",
+      "selection",
+      "separator",
+      "separators",
+      "stretchy",
+      "subscriptshift",
+      "supscriptshift",
+      "symmetric",
+      "voffset",
+      "width",
+      "xmlns"
+    ]);
+    xml = freeze([
+      "xlink:href",
+      "xml:id",
+      "xlink:title",
+      "xml:space",
+      "xmlns:xlink"
+    ]);
     MUSTACHE_EXPR = seal(/{{[\w\W]*|^[\w\W]*}}/g);
     ERB_EXPR = seal(/<%[\w\W]*|^[\w\W]*%>/g);
     TMPLIT_EXPR = seal(/\${[\w\W]*/g);
     DATA_ATTR = seal(/^data-[\-\w.\u00B7-\uFFFF]+$/);
     ARIA_ATTR = seal(/^aria-[\-\w]+$/);
-    IS_ALLOWED_URI = seal(
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-      // eslint-disable-line no-useless-escape
-    );
+    IS_ALLOWED_URI = seal(/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i);
     IS_SCRIPT_OR_DATA = seal(/^(?:\w+script|data):/i);
-    ATTR_WHITESPACE = seal(
-      /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
-      // eslint-disable-line no-control-regex
-    );
+    ATTR_WHITESPACE = seal(/[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g);
     DOCTYPE_NAME = seal(/^html$/i);
     CUSTOM_ELEMENT = seal(/^[a-z][.\w]*(-[.\w]+)+$/i);
     ELEMENT_MARKUP_PROBE = seal(/<[/\w!]/g);
@@ -142444,18 +144698,24 @@ var init_purify_es = __esm({
       text: 3,
       cdataSection: 4,
       entityReference: 5,
-      // Deprecated
       entityNode: 6,
-      // Deprecated
       processingInstruction: 7,
       comment: 8,
       document: 9,
       documentType: 10,
       documentFragment: 11,
       notation: 12
-      // Deprecated
     };
-    LITERAL_TEXT_ELEMENT_NAMES = ["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"];
+    LITERAL_TEXT_ELEMENT_NAMES = [
+      "style",
+      "script",
+      "xmp",
+      "iframe",
+      "noembed",
+      "noframes",
+      "plaintext",
+      "noscript"
+    ];
     LITERAL_TEXT_ELEMENTS = freeze(addToSet({}, LITERAL_TEXT_ELEMENT_NAMES));
     LITERAL_TEXT_CLOSE = (function() {
       const map2 = {};
@@ -142468,14 +144728,10 @@ var init_purify_es = __esm({
       return typeof window === "undefined" ? null : window;
     };
     _createTrustedTypesPolicy = function _createTrustedTypesPolicy2(trustedTypes, purifyHostElement) {
-      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") {
-        return null;
-      }
+      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") return null;
       let suffix = null;
       const ATTR_NAME = "data-tt-policy-suffix";
-      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) {
-        suffix = purifyHostElement.getAttribute(ATTR_NAME);
-      }
+      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) suffix = purifyHostElement.getAttribute(ATTR_NAME);
       const policyName = "dompurify" + (suffix ? "#" + suffix : "");
       try {
         return trustedTypes.createPolicy(policyName, {
@@ -142511,11 +144767,11 @@ var init_purify_es = __esm({
       const value = objectHasOwnProperty(cfg, key) ? cfg[key] : void 0;
       return value && typeof value === "object" ? clone2(value) : makeFallback();
     };
-    purify = createDOMPurify();
+    purify_default = createDOMPurify();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -142524,7 +144780,7 @@ function installHook() {
   if (hookInstalled)
     return;
   hookInstalled = true;
-  purify.addHook("uponSanitizeElement", (node2, data) => {
+  purify_default.addHook("uponSanitizeElement", (node2, data) => {
     activeOnElement?.(node2, data.tagName);
   });
 }
@@ -142539,12 +144795,12 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
       sanitize(html2, config2) {
-        return withGate(config2, () => purify.sanitize(html2, {
+        return withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr]
         }));
@@ -142555,7 +144811,7 @@ var init_sanitize_dompurify = __esm({
       // DOMPurify parses in body context, so content must be body-context-safe
       // (see the sanitizeInto contract in sanitize.ts).
       sanitizeInto(target, html2, config2) {
-        const fragment = withGate(config2, () => purify.sanitize(html2, {
+        const fragment = withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr],
           RETURN_DOM_FRAGMENT: true
@@ -149337,7 +151593,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -149348,7 +151604,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -149437,6 +151693,7 @@ async function boot() {
   mountOnboardingDialog(store, api);
   const approvalRequests = mountApprovalDialog(api, store);
   const askUserRequests = mountAskUserDialog(api, store);
+  threadActivitySources = { approvals: approvalRequests, questions: askUserRequests };
   mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
@@ -149647,7 +151904,7 @@ async function activatePopoutPane(mode) {
 }
 function mountFullLayout() {
   const monacoReady = loadMonaco();
-  mountProjectsPane(requireElement("pane-projects"), store, api);
+  mountThreadSidebar(requireElement("pane-projects"), store, api, threadActivitySources);
   const inputRoot = requireElement("input-bar");
   const inputBar = mountInputBar(inputRoot, store, api, {
     portraitPanelHost: requireElement("pane-chat")
@@ -149837,7 +152094,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, threadActivitySources, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_mobile_chat();
@@ -149850,7 +152107,7 @@ var init_main = __esm({
     init_thread_helpers();
     init_welcome();
     init_titlebar();
-    init_projects_pane();
+    init_thread_sidebar();
     init_conversation();
     init_file_tree();
     init_input_bar();
@@ -150020,5 +152277,6 @@ export default require_main();
    *)
 
 dompurify/dist/purify.es.mjs:
-  (*! @license DOMPurify 3.4.15 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.15/LICENSE *)
+  (*! @license DOMPurify 3.4.16 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.16/LICENSE *)
+  (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)
 */
