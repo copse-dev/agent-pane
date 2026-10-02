@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedStableWorkspace, writeSeedConfig } from './helpers/seed-config.ts'
 
@@ -48,7 +49,7 @@ async function headingAlignment(): Promise<{
 
 /** Save an interface scale through Settings ▸ Appearance, as a user would. */
 async function setUiScaleThroughSettings(value: string): Promise<void> {
-  await $('[aria-label="Settings"]').click()
+  await $('.thread-project-manager [aria-label="Settings"]').click()
   await $('.settings-nav-btn[data-section="appearance"]').click()
   const scaleInput = await $('input[name="uiScale"]')
   await scaleInput.waitForDisplayed({ timeout: 30_000 })
@@ -199,6 +200,7 @@ describe('workspace-level automations section', function () {
       },
     })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {

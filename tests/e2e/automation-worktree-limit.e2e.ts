@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { BEST_VALUE_CHAT_MODEL } from '../../src/shared/lm-studio-defaults.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-automation-worktree-limit'
 const SCHEDULE_ID = 'schedule-blocked'
-const PROJECT_MENU = `.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`
+const PROJECT_MENU = `.thread-project-manager .project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`
 
 describe('automation worktree limit in the project modal', function () {
   this.timeout(60_000)
@@ -52,6 +53,7 @@ describe('automation worktree limit in the project modal', function () {
 
   it('shows the skipped run and saves a higher limit from the modal', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openProjectManager()
     await $(PROJECT_MENU).click()
     await $('.context-menu-item=Automations').click()
     const dialog = $('#automation-dialog')

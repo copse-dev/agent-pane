@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import {
   resetUserData,
   seedProjectSwitchFixture,
@@ -62,6 +63,7 @@ describe('project switch panel and terminal scoping', () => {
     resetUserData()
     seedProjectSwitchFixture(seedStableWorkspace())
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await openTerminalPane()

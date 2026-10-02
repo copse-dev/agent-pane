@@ -19,6 +19,10 @@ export interface SidebarThread {
   id: string
   title: string
   status: Thread['status']
+  updatedAt?: number
+  createdAt?: number
+  gitBranch?: string
+  worktree?: Thread['worktree']
   unreadAt?: number
   archivedAt?: number
   automation?: Thread['automation']
@@ -44,19 +48,16 @@ export interface SidebarThread {
  * carries refs recorded without any prose to scrape (a PR opened by
  * `gh_pr_create` is linked from the tool result itself). With no transcript to
  * read — an entry compacted on switching away, or a thread never loaded off
- * disk (`messagesLoaded: false`) — the cache stands alone.
+ * disk (`messagesLoaded: false`) — use the cache and remote-agent link metadata.
  */
 export function sidebarPrRefs(thread: SidebarThread): GithubPrRef[] {
-  if (thread.messages && thread.messagesLoaded !== false) {
-    const scraped = collectThreadPrRefs({
-      messages: thread.messages,
-      ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
-    })
-    const seen = new Set(scraped.map(githubPrKey))
-    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)))
-    return [...scraped, ...cachedOnly]
-  }
-  return thread.prRefs ?? []
+  const scraped = collectThreadPrRefs({
+    messages: thread.messagesLoaded === false ? [] : (thread.messages ?? []),
+    ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
+  })
+  const seen = new Set(scraped.map(githubPrKey))
+  const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)))
+  return [...scraped, ...cachedOnly]
 }
 
 /**
@@ -68,6 +69,10 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     id: thread.id,
     title: thread.title,
     status: thread.status,
+    ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
+    ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
+    ...(thread.gitBranch !== undefined ? { gitBranch: thread.gitBranch } : {}),
+    ...(thread.worktree !== undefined ? { worktree: thread.worktree } : {}),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),

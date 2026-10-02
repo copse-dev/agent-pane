@@ -133,7 +133,9 @@ describe('conversation visual hierarchy', () => {
     })
 
     expect(layout).not.toHaveProperty('error')
-    expect(layout.userWidth).toBeLessThan(layout.traceWidth)
+    // Below the user-message width cap, both surfaces fill the available column.
+    expect(layout.userWidth).toBeLessThanOrEqual(layout.traceWidth)
+    expect(layout.userWidth).toBeLessThanOrEqual(842)
     expect(layout.traceWidth).toBeLessThanOrEqual(962)
     expect(layout.todoWidth).toBeLessThanOrEqual(962)
     expect(Math.abs(layout.todoWidth - layout.traceWidth)).toBeLessThanOrEqual(
@@ -177,6 +179,21 @@ describe('conversation visual hierarchy', () => {
     expect(layout.reviewLineHeight).toBe(layout.baseLineHeight)
     expect(layout.comparisonLineHeight).toBe(layout.baseLineHeight)
 
+    // Exercise the distinct reading widths independently of the default sidebar width.
+    const wideLayout = await browser.execute(() => {
+      const app = document.getElementById('app')
+      if (!app) throw new Error('missing app shell')
+      app.style.width = '1600px'
+      const user = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+      const trace = document.querySelector('[data-message-id="msg-assistant-check"]')
+      if (!user || !trace) throw new Error('missing hierarchy messages')
+      return {
+        userWidth: user.getBoundingClientRect().width,
+        traceWidth: trace.getBoundingClientRect().width,
+      }
+    })
+    expect(wideLayout.userWidth).toBeLessThan(wideLayout.traceWidth)
+    expect(wideLayout.userWidth).toBeLessThanOrEqual(842)
     await saveAppScreenshot('conversation-visual-hierarchy.png')
   })
 })

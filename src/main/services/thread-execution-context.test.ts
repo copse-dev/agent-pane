@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getThreadExecutionContext,
+  inspectThreadExecutionContext,
   prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -44,6 +45,52 @@ function resolver(
 }
 
 describe('thread execution context', () => {
+  it('inspects worktrees without restoring checkouts or writing branch metadata', async () => {
+    const worktree: ThreadWorktree = {
+      path: '/diagnostic/path',
+      branch: 'old',
+      baseBranch: 'main',
+      baseCommit: 'abc',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+      pullRequestUrl: 'https://github.com/example/repo/pull/1',
+    }
+    let restores = 0
+    let writes = 0
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => ({ id: 'thread-1', worktree }),
+      validateWorktree: async () => ({
+        ...worktree,
+        root: '/validated/root',
+        branch: 'current',
+        gitDir: '/repo/.git/worktrees/thread-1',
+        commonGitDir: '/repo/.git',
+      }),
+      restoreWorktree: async () => {
+        restores += 1
+        return worktree
+      },
+      syncWorktreeBranch: async () => {
+        writes += 1
+      },
+    }
+    const result = await inspectThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(result.root, '/validated/root')
+    assert.equal(result.branch, 'current')
+    assert.equal(restores, 0)
+    assert.equal(writes, 0)
+    worktree.retiredAt = 10
+    await assert.rejects(
+      inspectThreadExecutionContext('project-1', 'thread-1', dependencies),
+      /retired/,
+    )
+    assert.equal(restores, 0)
+    await assert.rejects(
+      inspectThreadExecutionContext('project-1', 'other-thread', dependencies),
+      /does not belong/,
+    )
+  })
   it('is absent outside an agent run', () => {
     assert.equal(getThreadExecutionContext(), null)
     assert.throws(() => requireThreadExecutionContext(), /No thread execution context/)

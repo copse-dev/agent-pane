@@ -1229,7 +1229,11 @@ export interface ApiClient {
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>
-    status: (projectId: string, threadId: string) => Promise<GitStatusResult | null>
+    status: (
+      projectId: string,
+      threadId: string,
+      inspectOnly?: boolean,
+    ) => Promise<GitStatusResult | null>
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
     changeStats: (
       projectId: string,
@@ -1270,8 +1274,6 @@ export interface ApiClient {
     worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
     /** Put a detached thread checkout back on its branch, keeping any detached commits. */
     reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
-    /** Recreate a missing thread checkout from its retained branch, preserving the chat. */
-    restoreWorktree: (projectId: string, threadId: string) => Promise<void>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

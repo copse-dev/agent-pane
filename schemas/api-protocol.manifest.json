@@ -920,13 +920,6 @@
           2
         ]
       },
-      "git:restore-worktree": {
-        "api": "git.restoreWorktree",
-        "args": [
-          2,
-          2
-        ]
-      },
       "git:session-backup": {
         "api": "git.sessionBackup",
         "args": [
@@ -938,7 +931,7 @@
         "api": "git.status",
         "args": [
           2,
-          2
+          3
         ]
       },
       "git:working-file-diff": {

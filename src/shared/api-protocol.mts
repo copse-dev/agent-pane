@@ -60,5 +60,5 @@
 // v32 versions automation worktree-limit status in list/upsert payloads.
 // v33 versions machine-turn dispatch and its chunk metadata.
 // v34 versions the per-model availability shape returned by `usage:get-plan-usage`.
-// v35 versions the missing-worktree recovery state returned to thread clients.
+// v35 versions the optional `inspectOnly` argument on `git:status`.
 export const API_PROTOCOL_VERSION = 35 as const

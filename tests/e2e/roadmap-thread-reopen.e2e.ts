@@ -89,7 +89,7 @@ describe('roadmap start-thread tracking and reopen', () => {
     await saveAppScreenshot('roadmap-thread-origin-chip.png')
 
     // Switch away to a fresh thread — the composer clears.
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await expect($('.prompt-input')).toHaveText('')
 
     // Reopen jumps back to the tracked thread (its draft returns to the composer).

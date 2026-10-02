@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -30,8 +30,9 @@ describe('titlebar workspace name', () => {
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
 
-    const newThreadBtn = await $('.project-new-thread-btn')
+    const newThreadBtn = await $('.thread-browser [aria-label="New thread"]')
     await expect(newThreadBtn).toBeDisplayed()
+    await newThreadBtn.waitForClickable({ timeout: 30_000 })
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
@@ -57,7 +58,7 @@ describe('titlebar workspace name', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
 
     await newThreadBtn.click()
-    const blankRows = await $$('.chats-list .chat-row .chat-title')
+    const blankRows = await $$('.thread-browser-list .chat-row .chat-title')
     const titles = await blankRows.map((el) => el.getText())
     await expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
   })

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
@@ -24,6 +25,7 @@ describe('automation modal from the project row menu', function () {
       pluginMigration: { automationsEnablement: true },
     })
     await browser.reloadSession()
+    await openProjectManager()
   })
   after(() => {
     resetUserData()
@@ -79,7 +81,7 @@ describe('automation modal from the project row menu', function () {
     )
 
     await dialog.$('[aria-label="Close automations"]').click()
-    await $('[aria-label="Settings"]').click()
+    await $('.thread-project-manager [aria-label="Settings"]').click()
     const settings = $('#settings-dialog')
     await settings.$('[data-section="customise"]').click()
     const plugin = settings.$('.plugin-row[data-plugin-id="copse.automations"]')
