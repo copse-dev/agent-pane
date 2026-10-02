@@ -232,7 +232,7 @@ export function createContextWheel(): {
   function resetToSnapshotMode(): void {
     popoverActive = false
     popover.hidden = true
-    root.classList.remove('has-breakdown', 'is-reported')
+    root.classList.remove('has-breakdown')
     root.removeAttribute('tabindex')
     fill.style.display = ''
     clearSegments()
@@ -276,8 +276,6 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     setFillState(ratio)
-    // A dashed track marks a figure the external agent reported, not one Copse measured.
-    root.classList.toggle('is-reported', !!options?.snapshotSource)
     const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
     root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine

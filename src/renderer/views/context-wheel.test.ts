@@ -242,7 +242,7 @@ describe('context wheel fill state', () => {
     assert.equal(fill.classList.contains('is-warn'), false)
   })
 
-  it('marks an agent-reported ring with a dashed-track class', () => {
+  it('keeps the track solid for agent-reported figures', () => {
     const wheel = createContextWheel()
     document.body.append(wheel.root)
     wheel.update(snapshotAt(0.4), false, {
@@ -250,8 +250,9 @@ describe('context wheel fill state', () => {
       breakdownRing: false,
       snapshotSource: 'Reported by ACP agent',
     })
-    assert.ok(wheel.root.classList.contains('is-reported'))
-    wheel.update(snapshotAt(0.4), false, { breakdown: null, breakdownRing: false })
+    const track = wheel.root.querySelector('.context-wheel-track')
+    assert.ok(track)
+    assert.equal(track.getAttribute('stroke-dasharray'), null)
     assert.equal(wheel.root.classList.contains('is-reported'), false)
   })
 })
@@ -340,7 +341,8 @@ describe('context wheel combined usage hover', () => {
 
   it('stays open across a re-render while the pointer is on it', () => {
     // The footer re-renders under an open hover — streaming, a usage change, the
-    // classifier re-read the hover itself starts. That must not close it.
+    // async context estimate landing, the classifier re-read the hover itself
+    // starts. That must not close it.
     const wheel = createContextWheel()
     document.body.append(wheel.root)
     wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })

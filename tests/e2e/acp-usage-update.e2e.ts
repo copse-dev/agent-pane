@@ -22,8 +22,8 @@ describe('ACP usage_update context wheel', () => {
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
     await expect(wheel.$('.context-wheel-label')).not.toExist()
-    // Agent-reported figure: the track is dashed.
-    await expect(wheel).toHaveElementClass('is-reported')
+    const track = wheel.$('.context-wheel-track')
+    await expect((await track.getCSSProperty('stroke-dasharray')).value).toBe('none')
     // The aria-label also carries the usage line, replacing the removed counter's label.
     await expect(wheel).toHaveAttribute(
       'aria-label',
