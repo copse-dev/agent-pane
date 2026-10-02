@@ -217,7 +217,43 @@ jobs:
           # The package config lists both architectures for local `dist:mac`.
           # A bare `--x64`/`--arm64` does not override those explicit target
           # entries, so qualify each target to keep this matrix job truly single-arch.
-          pnpm exec electron-builder --mac "dmg:$TARGET_ARCH" "zip:$TARGET_ARCH" -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
+          # `dmg.sign` signs the disk image with the same Developer ID while the
+          # signing keychain is still set up; the next step notarizes it.
+          pnpm exec electron-builder --mac "dmg:$TARGET_ARCH" "zip:$TARGET_ARCH" -c.mac.notarize=true -c.dmg.sign=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
+      # electron-builder notarizes only the app inside the DMG. Notarize and
+      # staple the DMG too, so the file people download is itself verifiable,
+      # offline included. Stapling rewrites the image after electron-builder
+      # wrote its blockmap, so rebuild that from the final bytes; `assemble`
+      # rehashes every package for the feeds and SHA256SUMS.
+      - name: Notarize and staple the DMG
+        timeout-minutes: 45
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dmg="release/Copse-$(node -p "require('./package.json').version")-$TARGET_ARCH.dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          result="$RUNNER_TEMP/notarize-dmg-$TARGET_ARCH.json"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait --timeout 40m --output-format json > "$result" || true
+          # An empty or partial result (a network failure) reads as no status.
+          field() { node -p "(() => { try { return JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[process.argv[2]] ?? '' } catch { return '' } })()" "$result" "$1"; }
+          status="$(field status)"
+          if [ "$status" != 'Accepted' ]; then
+            echo "::error::DMG notarization finished with status '${status:-unknown}'"
+            cat "$result"
+            id="$(field id)"
+            if [ -n "$id" ]; then
+              xcrun notarytool log "$id" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          fi
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          node scripts/rebuild-dmg-blockmap.mts "$dmg"
       - name: Verify signatures, notarization, metadata, and packaged runtime
         timeout-minutes: 15
         env:
@@ -285,6 +321,10 @@ jobs:
             exit 1
           fi
           dmg="release/Copse-$(node -p "require('./package.json').version")-$TARGET_ARCH.dmg"
+          # The image people download is signed, notarized, and stapled itself.
+          codesign --verify --strict --verbose=2 "$dmg"
+          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+          xcrun stapler validate "$dmg"
           mount_point="$RUNNER_TEMP/copse-dmg-$TARGET_ARCH"
           mkdir -p "$mount_point"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "$dmg"
