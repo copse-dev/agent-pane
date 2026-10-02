@@ -1031,6 +1031,36 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
   })
 
+  it('signs, notarizes, and staples the DMG itself, then rebuilds its blockmap', () => {
+    // electron-builder notarizes only the app inside the image. Stapling the
+    // DMG rewrites it after electron-builder wrote its blockmap, so the map is
+    // rebuilt from the final bytes before anything verifies or uploads it.
+    assert.match(workflow, /electron-builder --mac .*-c\.dmg\.sign=true/)
+    const start = workflow.indexOf('- name: Notarize and staple the DMG')
+    const verify = workflow.indexOf('- name: Verify signatures, notarization, metadata')
+    const upload = workflow.indexOf('uses: actions/upload-artifact@', verify)
+    assert.ok(start > workflow.indexOf('-c.dmg.sign=true'), 'notarize after the signed build')
+    assert.ok(verify > start && upload > verify, 'verify and upload the stapled DMG')
+    const step = workflow.slice(start, verify)
+    assert.match(step, /xcrun notarytool submit "\$dmg" .*\n.*--wait/)
+    assert.match(step, /if \[ "\$status" != 'Accepted' \]; then[\s\S]*?exit 1\n/)
+    const staple = step.indexOf('xcrun stapler staple "$dmg"')
+    const rebuild = step.indexOf('node scripts/rebuild-dmg-blockmap.mts "$dmg"')
+    assert.ok(staple > step.indexOf("!= 'Accepted'") && rebuild > staple)
+    // Apple credentials reach the script through `env`, never the script text.
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('verifies the downloadable DMG, not only the app inside it', () => {
+    const verify = workflow.slice(
+      workflow.indexOf('- name: Verify signatures, notarization, metadata'),
+      workflow.indexOf('- name: Enforce the per-client size budget'),
+    )
+    assert.match(verify, /codesign --verify --strict --verbose=2 "\$dmg"/)
+    assert.match(verify, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/)
+    assert.match(verify, /xcrun stapler validate "\$dmg"/)
+  })
+
   it('bounds the signed package verification step', () => {
     assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
     assert.match(

@@ -41,7 +41,7 @@ package contains the other architecture's application or native helper:
 
 | Artifact                                 | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
-| `Copse-<ver>-<arch>.dmg`                 | First-install disk image.                    |
+| `Copse-<ver>-<arch>.dmg`                 | First-install disk image, notarized.         |
 | `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | Payload and differential-update metadata.    |
 | `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
 | `SHA256SUMS`                             | Checksums for every promoted artifact.       |
@@ -204,12 +204,24 @@ Keychain. `release:dry` reads signing/notarization values from the environment;
 it does not upload. `npm run pack:mac` creates a quick unsigned `.app` directory
 for development and is not distributable.
 
-Validate a signed app bundle rather than the enclosing DMG:
+Validate the signed app bundle:
 
 ```bash
 spctl -a -vvv -t install "release/mac-arm64/Copse.app"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
 xcrun stapler validate "release/mac-arm64/Copse.app"
+```
+
+`Release (macOS)` also signs, notarizes, and staples the DMG itself, then
+rebuilds its blockmap from the stapled bytes
+([`scripts/rebuild-dmg-blockmap.mts`](../scripts/rebuild-dmg-blockmap.mts)). A
+local `dist:mac` or `release:dry` signs and notarizes only the app. To check a
+released DMG:
+
+```bash
+codesign --verify --strict --verbose=2 Copse-<ver>-arm64.dmg
+spctl -a -vvv -t open --context context:primary-signature Copse-<ver>-arm64.dmg
+xcrun stapler validate Copse-<ver>-arm64.dmg
 ```
 
 After downloading an Actions artifact or the files from a GitHub Release into
