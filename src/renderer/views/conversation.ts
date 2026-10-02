@@ -4201,6 +4201,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function renderMessageHookCards(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove()
+    // Hook cards are a developer surface (same gate as the Hooks settings).
+    if (!store.getState().developerMode) return
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     const cards = msg?.hookCards ?? []
