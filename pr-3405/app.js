@@ -39311,7 +39311,9 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported,
       test: unsupported,
       screening: () => resolved(null),
-      setScreening: unsupported
+      setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported
     },
     localClassifiers: {
       status: () => resolved({ servers: [], hosted: [] }),
@@ -57734,6 +57736,7 @@ function createClassifiersSection(api2) {
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const background = el("select", { name: "classifierBackground" });
   const localHost = el("div", {
     class: "classifier-local",
     "aria-label": "Local classifier servers"
@@ -57745,7 +57748,7 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, background questions and evals. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
     ),
     el(
       "label",
@@ -57758,6 +57761,17 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    el(
+      "label",
+      { class: "classifier-background" },
+      "Background questions",
+      background,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
+      )
+    ),
     localHost,
     chips,
     formHost,
@@ -57765,6 +57779,7 @@ function createClassifiersSection(api2) {
   );
   let profiles = [];
   let screeningId = null;
+  let backgroundId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -57846,6 +57861,7 @@ function createClassifiersSection(api2) {
   async function reloadProfiles() {
     profiles = await api2.classifiers.list();
     renderScreening();
+    renderBackground();
     renderChips();
   }
   async function applyLocal(next) {
@@ -57885,7 +57901,7 @@ function createClassifiersSection(api2) {
   async function confirmInstall(server) {
     const approved = await showConfirmDialog({
       message: `Download and run ${server.label}?`,
-      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
       confirmLabel: "Download and run"
     });
     if (approved) await localAction(() => api2.localClassifiers.install(server.id));
@@ -57998,34 +58014,59 @@ function createClassifiersSection(api2) {
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
   }
-  screening.addEventListener("change", () => {
-    const id = screening.value || null;
-    if (busy) {
-      renderScreening();
-      return;
+  function renderBackground() {
+    clear(background);
+    background.append(el("option", { value: "" }, "Small-tasks model"));
+    for (const { profile } of profiles) {
+      background.append(el("option", { value: profile.id }, profile.label));
     }
-    busy = true;
-    root.disabled = true;
-    void (async () => {
-      try {
-        screeningId = await api2.classifiers.setScreening(id);
-        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
-        setInlineStatus(
-          status,
-          "ok",
-          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
-        );
-      } catch (error62) {
-        setInlineStatus(status, "error", classifierErrorMessage(error62));
-      } finally {
-        busy = false;
-        root.disabled = false;
-        renderScreening();
+    background.value = profiles.some((item) => item.profile.id === backgroundId) ? backgroundId ?? "" : "";
+  }
+  function onRouteChange(select, renderRoute, save, describeChoice) {
+    select.addEventListener("change", () => {
+      const id = select.value || null;
+      if (busy) {
+        renderRoute();
+        return;
       }
-    })();
-  });
+      busy = true;
+      root.disabled = true;
+      void (async () => {
+        try {
+          const saved = await save(id);
+          const chosen = profiles.find((item) => item.profile.id === saved)?.profile.label;
+          setInlineStatus(status, "ok", describeChoice(chosen));
+        } catch (error62) {
+          setInlineStatus(status, "error", classifierErrorMessage(error62));
+        } finally {
+          busy = false;
+          root.disabled = false;
+          renderRoute();
+        }
+      })();
+    });
+  }
+  onRouteChange(
+    screening,
+    renderScreening,
+    async (id) => {
+      screeningId = await api2.classifiers.setScreening(id);
+      return screeningId;
+    },
+    (chosen) => chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+  );
+  onRouteChange(
+    background,
+    renderBackground,
+    async (id) => {
+      backgroundId = await api2.classifiers.setBackground(id);
+      return backgroundId;
+    },
+    (chosen) => chosen ? `Background questions now use ${chosen}. No test call has been made.` : "Background questions now use the small-tasks model."
+  );
   function render() {
     renderScreening();
+    renderBackground();
     renderChips();
     clear(formHost);
     clear(status);
@@ -58352,7 +58393,10 @@ function createClassifiersSection(api2) {
       void run2(async () => {
         if (saved) {
           profiles = await api2.classifiers.remove(profile.id);
-          screeningId = await api2.classifiers.screening();
+          [screeningId, backgroundId] = await Promise.all([
+            api2.classifiers.screening(),
+            api2.classifiers.background()
+          ]);
         }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
@@ -58371,9 +58415,10 @@ function createClassifiersSection(api2) {
     captureDraft?.();
     try {
       ;
-      [profiles, screeningId] = await Promise.all([
+      [profiles, screeningId, backgroundId] = await Promise.all([
         api2.classifiers.list(),
-        api2.classifiers.screening()
+        api2.classifiers.screening(),
+        api2.classifiers.background()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
       void refreshLocal();
@@ -70696,6 +70741,31 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
+  function captureListScrollAnchor() {
+    const listRect = list.getBoundingClientRect();
+    for (const row2 of list.querySelectorAll(".activity-row")) {
+      const rowKey2 = row2.dataset["rowKey"];
+      if (!rowKey2) continue;
+      const rowRect = row2.getBoundingClientRect();
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey: rowKey2, viewportTop: rowRect.top };
+      }
+    }
+    return null;
+  }
+  function restoreListScrollAnchor(anchor2, fallbackScrollTop) {
+    if (anchor2) {
+      const row2 = [...list.querySelectorAll(".activity-row")].find(
+        (candidate) => candidate.dataset["rowKey"] === anchor2.rowKey
+      );
+      if (row2) {
+        const delta = row2.getBoundingClientRect().top - anchor2.viewportTop;
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta;
+        return;
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
+  }
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
@@ -70719,7 +70789,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
     }
     const opener = selectedOpener();
-    if (opener) opener.focus();
+    if (opener) opener.focus({ preventScroll: true });
     else closeButton.focus();
   }
   function armSettle() {
@@ -70742,6 +70812,8 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     const at3 = now();
     lastRenderAt = at3;
     const focus = captureFocus();
+    const previousListScrollTop = list.scrollTop;
+    const listScrollAnchor = captureListScrollAnchor();
     const groups = deriveActivity({
       threads: collectActivityThreads(store2),
       approvals: sources3.approvals.pending(),
@@ -70785,6 +70857,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
       children.push(...populated.map((group) => groupElement(group, at3)));
       list.replaceChildren(...children);
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
     dialog2.dataset["needsYou"] = String(needCount);
