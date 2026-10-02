@@ -39304,6 +39304,13 @@ function createDemoApi(scenario, options = {}) {
       screening: () => resolved(null),
       setScreening: unsupported
     },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
+    },
     settings: {
       get: (key) => resolved(settings.get(key)),
       set: (key, value) => {
@@ -57617,6 +57624,18 @@ var init_presets = __esm({
         }
       },
       {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
         id: "semif",
         label: "SemIf (local)",
         model: "Qwen/Qwen3.5-4B",
@@ -57672,11 +57691,31 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -57697,6 +57736,7 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    localHost,
     chips,
     formHost,
     status
@@ -57746,6 +57786,186 @@ function createClassifiersSection(api2) {
       render();
     });
     chips.append(add2);
+  }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
   }
   function renderScreening() {
     clear(screening);
@@ -57802,18 +58022,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -58143,6 +58352,7 @@ function createClassifiersSection(api2) {
         api2.classifiers.screening()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -58151,6 +58361,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -98127,15 +98338,22 @@ function footerNaturalWidth(footer) {
   const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
