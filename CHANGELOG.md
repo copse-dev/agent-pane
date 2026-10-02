@@ -8,6 +8,11 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Help → Report an Issue… opens Copse's bug report form on GitHub with your
+  Copse version and Mac platform already filled in. Nothing about your
+  projects, threads, or settings is included, and nothing is filed until you
+  submit the form.
+
 ## 0.1.0-beta.12
 
 This is the first published release since 0.1.0-beta.8. Betas 9, 10, and 11
