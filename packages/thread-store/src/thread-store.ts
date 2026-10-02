@@ -609,7 +609,14 @@ async function readThread(
     return body
   }
   try {
-    const thread = foldThread(meta, spine, resolve, { hash: sha256 })
+    const thread = foldThread(meta, spine, resolve, {
+      hash: sha256,
+      onIntegrityFailure: (ref) => {
+        console.warn(
+          `[thread-store] Thread ${threadId}: ${ref} failed its hash check; showing that tool call as unavailable`,
+        )
+      },
+    })
     // Surface the always-on `hook_run` records (decision 6) as display-only hook
     // cards on the messages they fired within (decisions 10 & 17). Derived from
     // the spine — never from live hook registration — so history stays honest.
