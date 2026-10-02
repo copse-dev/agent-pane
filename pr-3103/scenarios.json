@@ -20,6 +20,10 @@
     "label": "Unattended container run"
   },
   {
+    "id": "balanced-model-label",
+    "label": "Balanced model rule label"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -94,6 +98,10 @@
   {
     "id": "concise-thread",
     "label": "Concise thread view for a capable model"
+  },
+  {
+    "id": "concise-thread-multi",
+    "label": "Concise thread view across several turns"
   },
   {
     "id": "concise-thread-full",
