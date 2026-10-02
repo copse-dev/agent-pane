@@ -13,6 +13,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -237,6 +238,43 @@ describe('footer branch status for a detached thread worktree', () => {
     git(projectRoot, ['commit', '-qam', 'base change'])
     expect(() => git(worktreeRoot, ['rebase', baseBranch])).toThrow()
     expect(git(worktreeRoot, ['status'])).toContain('rebase in progress')
+
+    // The same real paused checkout must still resolve for file IPC, the
+    // external editor control, and an agent turn.
+    const conflictedFile = await browser.execute(
+      async ({ projectId, threadId }) => window.api.fs.readFile(projectId, threadId, 'README.md'),
+      { projectId, threadId: detachedThreadId },
+    )
+    expect(conflictedFile).toContain('<<<<<<<')
+    await expect($('.open-in-editor-primary')).toBeDisplayed()
+    await $('.open-in-editor-primary').click()
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(async () => (await window.api.editors.list()).lastUsedId)) ===
+        'vscode',
+      { timeout: 10_000, timeoutMsg: 'VS Code did not receive the paused checkout' },
+    )
+    await expect($('.toast-error')).not.toExist()
+
+    // Hold the turn so the footer can be checked while the agent works.
+    const scenario = await installMockScenario({
+      title: 'Detached worktree thread',
+      turns: [
+        {
+          user: 'Inspect the paused rebase.',
+          responses: [{ waitFor: 'paused-rebase', text: 'I can inspect the paused rebase.' }],
+        },
+      ],
+    })
+    await setComposerValue('Inspect the paused rebase.')
+    await $('.submit-btn').click()
+    await scenario.waitForHold('paused-rebase')
+    await expect($('.chat-row.selected')).toHaveElementClass('is-running')
+    await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
+    await expect($('.branch-reattach-button')).not.toBeDisplayed()
+    await saveElementScreenshot('#input-bar', 'footer-branch-rebase-agent-running.png')
+    await scenario.release('paused-rebase')
+    await scenario.waitForComplete()
 
     // The rebase rewrote the checkout's files, and the footer's working-tree
     // watcher picks that up without a thread switch.
