@@ -8,6 +8,15 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Copse reads another tool's sign-in to show plan usage only for providers you
+  have set up in Settings → General: Claude Code or Codex once you have added
+  and enabled its agent, Cursor once you have added its agent or saved a Cursor
+  key, and Hugging Face once you have saved a Hugging Face key in Copse.
+  Previously it looked for Claude Code, Codex, Cursor, and Hugging Face
+  sign-ins whenever it checked plan usage, including when choosing the default
+  model for a new thread. Plans that are not set up now say where to set them
+  up in Settings → Usage, and nothing is read for them.
+
 - The footer's context ring and token counter are now one control. The ring is
   the only thing left in the footer: the percentage and the `N tokens` text are
   gone, and one hover shows the context breakdown, token usage, cache and cost,
