@@ -325,21 +325,22 @@ describe('input bar resolved model label', () => {
     try {
       await new Promise((resolve) => setTimeout(resolve, 0))
       const label = host.querySelector('.model-picker-label')
-      assert.equal(label?.textContent, 'GPT-5.6 Sol')
+      assert.ok(label)
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
       send(active.id, {
         type: 'turn_parameters',
         model: 'claude-sonnet-4-6',
         parameters: {},
         requestedModel: 'auto:balanced',
       })
-      assert.equal(label?.textContent, 'Claude Sonnet 4.6')
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
       assert.equal(getThreadById(store, active.id)?.resolvedModel, 'claude-sonnet-4-6')
       assert.equal(getThreadById(store, active.id)?.model, 'auto:balanced')
       assert.equal(getThreadById(store, active.id)?.messages.length, 0)
       send(other.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
-      assert.equal(label?.textContent, 'Claude Sonnet 4.6')
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
       send(active.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
-      assert.equal(label?.textContent, 'GPT-5.6 Sol')
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
       assert.equal(store.getState().activeThreadId, active.id)
       send(active.id, { type: 'text', text: 'Hello' })
       assert.equal(getThreadById(store, active.id)?.messages[0]?.model, 'gpt-5.6-sol')
