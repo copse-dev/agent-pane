@@ -41,6 +41,20 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     assert.equal(d.action, 'allow')
   })
 
+  it('starts pnpm exec checks inside the sandbox and keeps outside approvals', () => {
+    const check = 'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts'
+    assert.equal(decideShellPermission(check, { ...opts, classification: null }).action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox(check, root, true), false)
+    assert.equal(
+      decideShellPermission(check, { ...opts, sandboxEnabled: false, classification: null }).action,
+      'prompt',
+    )
+    assert.equal(
+      decideShellPermission('pnpm install', { ...opts, classification: null }).action,
+      'prompt',
+    )
+  })
+
   it('auto-opens a local user terminal on macOS', () => {
     assert.deepEqual(
       decideTerminalPermission({

@@ -49,6 +49,12 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+Package-manager `exec` commands are ambiguous: they run a project command, but npm may fetch a
+missing executable and pnpm can install stale dependencies if `verifyDepsBeforeRun=install` is set.
+They start inside an active sandbox and ask before an outside retry only if that sandbox blocks them.
+Explicit package installs remain hard-external. The shell `exec` builtin in command position remains
+hard-external as dynamic execution.
+
 A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
 (`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
 gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's
