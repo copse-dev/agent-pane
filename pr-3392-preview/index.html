@@ -24,7 +24,15 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://copse.dev/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Copse with an agent conversation beside a live browser preview of the cupcake site it built"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://copse.dev/og-image.png" />
     <meta name="twitter:title" content="Copse — AI coding that stays on your machine" />
     <meta
       name="twitter:description"
@@ -36,7 +44,7 @@
         "@type": "SoftwareApplication",
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS",
+        "operatingSystem": "macOS 26 or later",
         "description": "Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git and pull requests, terminal, and browser support.",
         "url": "https://copse.dev/",
         "offers": {
@@ -121,6 +129,18 @@
                   <path d="M1.5 13h13" />
                 </svg>
                 Desktop native
+              </span>
+              <span class="mode-download-live-only">
+                <svg
+                  class="badge-icon"
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                >
+                  <path d="m3 8.5 3 3 7-7" />
+                </svg>
+                Public beta · macOS 26+
               </span>
             </div>
             <h1>
@@ -338,15 +358,13 @@
           >
 
           <div class="spotlight-grid" aria-label="Control and privacy">
-            <article
-              class="spotlight-card spotlight-card-zoomed spotlight-card-zoomed-bottom-right"
-            >
+            <article class="spotlight-card">
               <figure>
                 <img
-                  src="screenshots/tool-display-group-expanded.png"
-                  alt="Expanded tool activity in a Copse conversation"
+                  src="screenshots/tool-activity-live.png"
+                  alt="Copse explaining its plan while its tool activity streams in below: tools used, the file being edited, and a file being written"
                   width="1280"
-                  height="800"
+                  height="657"
                   loading="lazy"
                 />
               </figure>
@@ -592,8 +610,9 @@
             <p class="download-kicker">Signed, notarized, and ready for macOS</p>
             <h2>Download Copse</h2>
             <p>
-              Get the latest macOS release for Apple Silicon or Intel. Each release includes
-              separate installers for both architectures, checksums, and release notes.
+              Copse is a free public beta for <strong>macOS 26 or newer</strong>, on Apple Silicon
+              or Intel. Each release includes separate installers for both architectures, checksums,
+              and release notes, and the app updates itself from the same feed.
             </p>
             <p class="mode-source-live-only">
               Prefer to inspect every line or contribute a change? The complete source and build
