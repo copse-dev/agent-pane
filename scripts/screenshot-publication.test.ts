@@ -937,6 +937,24 @@ describe('parent screenshot evidence comment', () => {
     assert.doesNotMatch((await publish()).bodies[0] ?? '', /Commit the ticked/)
   })
 
+  it('puts each checkbox beside its before/after images instead of a separate table', async () => {
+    const body = (await publish({ REVIEW_PENDING: 'true' })).bodies[0] ?? ''
+    const lines = body.split('\n')
+    const at = lines.indexOf('- [ ] `a-changed.png`')
+    assert.ok(at >= 0, body)
+    assert.equal(
+      lines[at + 1],
+      `  <img src="${RAW}/${SHA}/tests/e2e/screenshots/a-changed.png" width="360"> ` +
+        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/a-changed.png" width="360">`,
+    )
+    assert.equal(lines[at + 2], '- [ ] `b-new.png` *(new)*')
+    assert.equal(
+      lines[at + 3],
+      `  <img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png" width="360">`,
+    )
+    assert.doesNotMatch(body, /\| Screenshot \|/)
+  })
+
   it('offers accept only when there is a compare commit to fast-forward to', async () => {
     for (const env of [{ COMPARE_PUSHED: '' }, { COMPARE_COMMIT: '' }]) {
       const body = (await publish({ REVIEW_PENDING: 'true', ...env })).bodies[0] ?? ''

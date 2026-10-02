@@ -65,6 +65,12 @@ export interface ProviderPlanUsage {
   windows: PlanWindow[]
   /** Promotional/account credits when the provider reports a grant. */
   creditGrant?: PlanCreditGrant
+  /**
+   * Per-model plan availability keyed by lower-cased model id, when the
+   * provider reports it (Codex `model_usage`). `false` means the plan does not
+   * currently cover that model, whatever the shared windows say.
+   */
+  modelAvailability?: Record<string, boolean>
   checkedAt: string
 }
 
