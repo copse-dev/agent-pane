@@ -101,7 +101,10 @@ export const rememberTool = defineTool({
   parameters: z.object({
     title: z
       .string()
-      .describe('Short, unique title. Reuse a title to update that memory instead of adding one.'),
+      .optional()
+      .describe(
+        'Short, unique title. Required unless id is given. Reuse a title to update that memory instead of adding one; with id, a new title renames the memory.',
+      ),
     content: z.string().describe('The memory body as markdown.'),
     tags: z.array(z.string()).optional().describe('Optional tags to aid later retrieval.'),
     id: z
@@ -125,12 +128,16 @@ export const rememberTool = defineTool({
       .describe('Optional project-relative paths or globs this memory applies to.'),
   }),
   execute({ title, content, tags, id, expectedRevision, sources, appliesTo }) {
-    const cleanTitle = title.trim()
     const memories = loadKnowledgeNotes(MEMORY_TYPE)
+    const requestedTitle = title?.trim()
     const existing = id
       ? memories.find((note) => note.id === id)
-      : memories.find((note) => note.title === cleanTitle)
+      : memories.find((note) => note.title === requestedTitle)
     if (id && !existing) return `No memory with id "${id}" exists in this project; nothing saved.`
+    const cleanTitle =
+      requestedTitle === undefined || requestedTitle === '' ? existing?.title : requestedTitle
+    if (!cleanTitle)
+      return 'Not saved: a title is required unless you pass the id of an existing memory.'
     // An id update renames the note, so the new title must not collide with another memory's.
     if (id && memories.some((note) => note.id !== id && note.title === cleanTitle)) {
       return `Not saved: another memory is already titled "${cleanTitle}". Pick a different title.`
@@ -157,7 +164,7 @@ export const rememberTool = defineTool({
       if (appliesTo) fields[APPLIES_TO_FIELD] = joinList(appliesTo)
       note =
         updateKnowledgeNote(existing.id, {
-          title: id ? cleanTitle : existing.title,
+          title: cleanTitle,
           body: content,
           tags: tags ?? existing.tags,
           fields,

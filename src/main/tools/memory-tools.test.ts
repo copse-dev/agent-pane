@@ -201,6 +201,28 @@ describe('memory-tools', () => {
       assert.match(await run(recallTool, { cursor: 'x' }), /Invalid cursor/)
     })
 
+    it('updates by id without a title and keeps the existing one', async () => {
+      const a = await run(rememberTool, { title: 'A', content: 'a' })
+      const idA = /id (\S+),/.exec(a)?.[1]
+      assert.ok(idA)
+      assert.match(
+        await run(rememberTool, { id: idA, content: 'a2' }),
+        /Saved memory "A".*revision 2/,
+      )
+      const notes = loadKnowledgeNotes(MEMORY_TYPE)
+      assert.equal(notes.length, 1)
+      const note = notes.find((n) => n.id === idA)
+      assert.ok(note)
+      assert.equal(note.title, 'A')
+      assert.equal(note.body.trim(), 'a2')
+    })
+
+    it('requires a title when no id is given', async () => {
+      assert.match(await run(rememberTool, { content: 'x' }), /title is required/)
+      assert.match(await run(rememberTool, { title: '  ', content: 'x' }), /title is required/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 0)
+    })
+
     it('reports a cursor past the end instead of an empty page', async () => {
       for (const n of ['a', 'b', 'c']) await run(rememberTool, { title: n, content: n })
       const out = await run(recallTool, { cursor: 'm:99' })
