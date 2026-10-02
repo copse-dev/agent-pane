@@ -23,11 +23,27 @@ async function resultPath(): Promise<string> {
 }
 
 describe('Terminal-Bench retained profile metadata', () => {
-  it('records the current product profile as v3', async () => {
+  it('records the current product profile as v4', async () => {
     const result = await resultPath()
     await recordTerminalBenchTrialProfile(result, 'product-aligned')
     const retained = await readTerminalBenchTrialProfile(result)
+    assert.equal(retained?.versionedId, 'product-aligned@4')
+  })
+
+  it('continues loading retired product-aligned v3 capsules', async () => {
+    const result = await resultPath()
+    const v3 = terminalBenchProfile('product-aligned@3')
+    await writeFile(
+      join(result, '..', 'terminal-bench-profile.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        profile: v3.versionedId,
+        contentHash: v3.contentHash,
+      })}\n`,
+    )
+    const retained = await readTerminalBenchTrialProfile(result)
     assert.equal(retained?.versionedId, 'product-aligned@3')
+    assert.equal(retained.contentHash, v3.contentHash)
   })
 
   it('continues loading historical product-aligned v2 capsules', async () => {

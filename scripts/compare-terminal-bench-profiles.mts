@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { TERMINAL_BENCH_HELD_OUT_TASKS } from './lib/terminal-bench-ablation.mts'
+import {
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
+  terminalBenchProfile,
+  terminalBenchStreamCapOverrides,
+  type TerminalBenchRuntimeConfiguration,
+  type TerminalBenchStreamCapOverrides,
+} from './lib/terminal-bench-profiles.mts'
 import { TERMINAL_BENCH_DATASET_DESCRIPTOR } from './lib/terminal-bench-tasks.mts'
 
 const STUDY_MODEL = 'qwen3.6-35b-a3b'
@@ -16,6 +23,8 @@ interface Trial {
   outcome: string
   failureCategory: string | undefined
   model: string | undefined
+  profileHash: string | undefined
+  runtimeConfiguration: TerminalBenchRuntimeConfiguration | undefined
 }
 
 interface ProfileTrials {
@@ -69,7 +78,16 @@ function parseTrial(value: unknown): Trial {
     durationSeconds: numberProperty(value, 'durationSeconds'),
     failureCategory: stringProperty(value, 'failureCategory'),
     model: stringProperty(value, 'model'),
+    profileHash: stringProperty(value, 'profileHash'),
+    runtimeConfiguration: parseRuntimeConfiguration(property(value, 'runtimeConfiguration')),
   }
+}
+
+function parseRuntimeConfiguration(value: unknown): TerminalBenchRuntimeConfiguration | undefined {
+  if (value === undefined) return undefined
+  const parsed = TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.safeParse(value)
+  if (!parsed.success) throw new Error('Invalid Terminal-Bench comparison runtime configuration.')
+  return parsed.data
 }
 
 function parseReport(value: unknown): ParsedReport {
@@ -200,6 +218,79 @@ for (const path of paths) {
     })
   }
 }
+// A profile id only identifies behaviour if every trial ran the definition the
+// id names today. A report hash that disagrees with the definition means the
+// definition changed under a retained id, which the pinned-hash test forbids.
+for (const profile of merged.values()) {
+  const expectedHash = terminalBenchProfile(profile.profile).contentHash
+  const hashes = new Set(
+    [profile.profileHash, ...profile.tasks.map((trial) => trial.profileHash)].filter(
+      (hash) => hash !== undefined,
+    ),
+  )
+  if (hashes.size > 1 || (hashes.size === 1 && !hashes.has(expectedHash))) {
+    throw new Error(
+      `Profile ${profile.profile} trials do not all carry its content hash ${expectedHash}.`,
+    )
+  }
+}
+
+/**
+ * Run-level settings that must match for trials to be comparable: the harness
+ * budgets, plus any stream cap a run used in place of its profile's own value.
+ * Profiles may declare different caps; only an override of them is a run
+ * property. Unrecorded trials (before agents reported their settings) are
+ * tolerated for description but make every comparison involving them
+ * ineligible as a default.
+ */
+interface ComparableRuntime {
+  maxSteps: number
+  maxLlmCalls: number
+  maxContextTokens: number
+  maxCommandTimeoutSec: number
+  streamCapOverrides: TerminalBenchStreamCapOverrides
+}
+
+function comparableRuntime(
+  profile: string,
+  runtime: TerminalBenchRuntimeConfiguration,
+): ComparableRuntime {
+  return {
+    maxSteps: runtime.maxSteps,
+    maxLlmCalls: runtime.maxLlmCalls,
+    maxContextTokens: runtime.maxContextTokens,
+    maxCommandTimeoutSec: runtime.maxCommandTimeoutSec,
+    streamCapOverrides: terminalBenchStreamCapOverrides(terminalBenchProfile(profile), runtime),
+  }
+}
+
+const runtimeVariants = new Map<string, { settings: ComparableRuntime; profiles: Set<string> }>()
+for (const profile of merged.values()) {
+  for (const trial of profile.tasks) {
+    if (!trial.runtimeConfiguration) continue
+    const settings = comparableRuntime(profile.profile, trial.runtimeConfiguration)
+    const key = JSON.stringify(settings)
+    const variant = runtimeVariants.get(key) ?? { settings, profiles: new Set<string>() }
+    variant.profiles.add(profile.profile)
+    runtimeVariants.set(key, variant)
+  }
+}
+if (runtimeVariants.size > 1) {
+  throw new Error(
+    'Refusing to compare runs with differing runtime settings or stream-cap overrides:\n' +
+      [...runtimeVariants]
+        .map(([key, variant]) => `  ${[...variant.profiles].join(', ')}: ${key}`)
+        .join('\n'),
+  )
+}
+const sharedStreamCapOverrides = [...runtimeVariants.values()][0]?.settings.streamCapOverrides
+const runtimeOverridden =
+  sharedStreamCapOverrides !== undefined && Object.keys(sharedStreamCapOverrides).length > 0
+
+function runtimeRecorded(profile: ProfileTrials): boolean {
+  return profile.tasks.every((trial) => trial.runtimeConfiguration !== undefined)
+}
+
 const expectedDatasetIdentity = `${TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId}@${TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision}`
 if (datasetIdentities.size !== 1 || !datasetIdentities.has(expectedDatasetIdentity)) {
   throw new Error(
@@ -271,6 +362,7 @@ const summaries = [...merged.values()]
     const toolCalls = median(profile.tasks.map((trial) => trial.toolCalls))
     const additionalSolves = solves > baselineSolves
     const complete = heldOutComplete(profile)
+    const recorded = runtimeRecorded(profile)
     const costWithinLimit =
       additionalSolves ||
       ((baselineTokens === null || tokens === null || tokens <= baselineTokens * 1.25) &&
@@ -294,12 +386,17 @@ const summaries = [...merged.values()]
       timeouts: profile.tasks.filter((trial) => trial.outcome === 'timeout').length,
       comparisonToMain: comparison ?? null,
       heldOutComplete: complete,
+      runtimeConfigurationRecorded: recorded,
+      streamCapOverrides: recorded ? (sharedStreamCapOverrides ?? {}) : null,
       eligibleAsDefault:
         comparison !== undefined &&
         comparison.lower95 > 0 &&
         costWithinLimit &&
         complete &&
         heldOutComplete(baseline) &&
+        recorded &&
+        runtimeRecorded(baseline) &&
+        !runtimeOverridden &&
         pinnedModel,
     }
   })

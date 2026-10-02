@@ -25,10 +25,19 @@ Each skill-delivery profile has two content-addressed versions that share a prom
 differ only in how a reasoning-only stream is bounded:
 
 - `@1` — the original single fixed per-stream output cap.
-- `@2` — the checkpointed policy ported from Terminal-Bench `product-aligned@3`. A clean
-  reasoning-only stream is reassessed once per stream cap and may continue up to the product's
-  32k per-stream ceiling; a high-confidence circle signal (self-report, repeated blocks, headings,
-  or plans, or a 100-item enumeration) cuts it into the ordinary bounded recovery path.
+- `@2` — a checkpointed policy modelled on Terminal-Bench `product-aligned@3`, not a copy of it.
+  A clean reasoning-only stream is reassessed once per stream cap and may continue up to the
+  product's 32k per-stream ceiling; a high-confidence circle signal cuts it into a recovery stream
+  capped at twice the stream cap. It sets no trailing-reasoning budget.
+
+`@2`'s hash has the same weakness that retired Terminal-Bench `product-aligned@3`: it names the
+reasoning implementation with a description. The checkpoint interval follows
+`COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS`, and the circle detector is the product's live one,
+which gained `repeated_sentence`/`repeated_tail` signals in #1242 and visible-text and cross-turn
+checks in #1413. `@2` runs from before and after those changes, or with different stream caps,
+share one hash. Compare `@2` runs only within a single source commit and stream-cap setting until
+SkillsBench profiles adopt the effective-value hashing Terminal-Bench uses from `product-aligned@4`
+(see [`benchmarks/terminal_bench/README.md`](../terminal_bench/README.md)).
 
 A bare id such as `skills-product` stays pinned to `@1`, so existing dispatches and their content
 hashes keep their exact meaning and the checkpointed arm is always requested explicitly.

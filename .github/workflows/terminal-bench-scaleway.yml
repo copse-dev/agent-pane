@@ -44,7 +44,7 @@ on:
           - pr-1149
           - product-aligned
           - product-aligned@2
-          - product-aligned@3
+          - product-aligned@4
       profiles:
         description: Optional comma-separated profiles to run sequentially on one fleet
         required: false
@@ -66,7 +66,7 @@ on:
         default: true
         type: boolean
       max_stream_output_tokens:
-        description: Per-model-response stream cap (512-16384; baseline 2048)
+        description: Per-model-response stream cap (512-16384; 2048 matches every profile, other values are recorded as overrides and bar default promotion)
         required: true
         default: '2048'
         type: string
@@ -148,7 +148,8 @@ jobs:
           declare -A seen_profiles=()
           for profile_id in "${profile_ids[@]}"; do
             case "$profile_id" in
-              main-legacy|pr-1149|product-aligned|main-legacy@1|main-legacy@2|pr-1149@1|product-aligned@1|product-aligned@2|product-aligned@3) ;;
+              main-legacy|pr-1149|product-aligned|main-legacy@1|main-legacy@2|pr-1149@1|product-aligned@1|product-aligned@2|product-aligned@4) ;;
+              product-aligned@3) echo "::error::product-aligned@3 is retired because its hash does not identify its behaviour; run product-aligned@4"; exit 2 ;;
               *) echo "::error::unsupported Terminal-Bench profile: $profile_id"; exit 2 ;;
             esac
             if [ -n "${seen_profiles[$profile_id]:-}" ]; then

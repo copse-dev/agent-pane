@@ -231,6 +231,30 @@ subagent loops now use the same reasoning checkpoints while preserving ordinary 
 up to the existing 32k product ceiling. ACP and other externally hosted agents remain unchanged;
 the #1149 forced-write and task-specific warning mechanisms remain benchmark-only.
 
+> **Evidence caveat (added October 2026).** The product promotion of the reasoning-checkpoint
+> policy in #1204 predates any held-out-gated evaluation. The two paired runs above are the only
+> evidence it relied on, and their 12-task cohort was post-selected: no rule fixed it before the
+> runs, it is not the precommitted `SHA256("copse-tbench-2.1-ablation-v1:" + taskName)` held-out
+> selection, and none of its tasks are in that held-out cohort. It also includes three of
+> the four historical #1149 development tasks (`circuit-fibsqrt`, `break-filter-js-from-html` and
+> `chess-best-move`), which the ablation design reserves as a diagnostic cohort precisely because
+> they shaped earlier changes. The 9/24 versus 5/24 result is therefore development evidence for
+> the mechanism, not a held-out estimate of its effect. The only held-out result recorded in this
+> note (above) compares `main-legacy@1`, `pr-1149@1` and `product-aligned@1`; no
+> reasoning-checkpoint profile has been through the held-out default gate.
+>
+> The result is also not attributable to `product-aligned@3` as it exists today. v3's content
+> hash described its reasoning policy instead of hashing the values it ran with, and the host took
+> those values from live product constants. Both studies ran before #1242 added the
+> trailing-reasoning budget and the `repeated_sentence`/`repeated_tail` signals and before #1413
+> added visible-text and cross-turn circle checks, so later v3 runs share the studies' hash while
+> behaving differently. v3 is now retired. `product-aligned@4` hashes the effective loop settings,
+> pins the loop's decisions on scripted streams, and carries the post-#1413 behaviour that v3 had
+> immediately before retirement. That configuration has not itself been evaluated; any claim about
+> it needs a fresh held-out run. Under Terminal-Bench's 2K visible-answer ceiling, #1242's trailing
+> budget and #1413's visible-text check cannot fire (the ordinary 2K cap trips first), while the
+> new reasoning signals and #1413's cross-turn check do apply.
+
 ## Compact evidence retention
 
 This note is the canonical human-readable findings record for the 2.1 study. It retains run and

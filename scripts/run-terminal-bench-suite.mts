@@ -11,7 +11,7 @@ import {
   terminalBenchTaskImage,
 } from './lib/terminal-bench-tasks.mts'
 import {
-  parseTerminalBenchProfileIds,
+  parseRunnableTerminalBenchProfileIds,
   rotateTerminalBenchProfiles,
 } from './lib/terminal-bench-profiles.mts'
 import {
@@ -111,7 +111,7 @@ const profileFlags = rawArgs
 if (profileFlags.length > 1 || (profilesFlag !== undefined && profileFlags.length > 0)) {
   throw new Error('Pass either --profiles=<ids> or one --profile=<id>, not both.')
 }
-const profiles = parseTerminalBenchProfileIds(
+const profiles = parseRunnableTerminalBenchProfileIds(
   profilesFlag ??
     profileFlags[0] ??
     process.env['COPSE_TERMINAL_PROFILES'] ??

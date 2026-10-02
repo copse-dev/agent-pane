@@ -3,13 +3,13 @@ import { describe, it } from 'node:test'
 import { formatTerminalResult } from './lib/terminal-bench-protocol.mts'
 import {
   DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
-  DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
-  DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
   TERMINAL_BENCH_SYSTEM_PROMPT,
   TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE,
   TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
   terminalCommandTimeoutParameter,
+  terminalBenchLoopOptions,
   terminalBenchProfileToolNames,
+  terminalBenchRuntimeConfiguration,
   terminalBenchSystemPrompt,
   terminalReasoningRunawayRecoveryNudge,
   terminalReasoningCheckpointPolicy,
@@ -40,16 +40,16 @@ describe('terminal benchmark bridge', () => {
         'main-legacy@1': main.contentHash,
         'pr-1149@1': pr.contentHash,
         'product-aligned@2': alignedV2.contentHash,
-        'product-aligned@3': aligned.contentHash,
+        'product-aligned@4': aligned.contentHash,
       },
       {
         'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
         'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
         'product-aligned@2': 'bb72d92ff108556d25660492cdf6bfd0e165b45db13aebcfb9d1e3132461dd23',
-        'product-aligned@3': '69c56451ed7d3abb564ac6edf731294cbf70d8c496249336f9282dbd64181a1f',
+        'product-aligned@4': '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
       },
     )
-    assert.equal(aligned.versionedId, 'product-aligned@3')
+    assert.equal(aligned.versionedId, 'product-aligned@4')
     assert.equal(
       new Set([main.contentHash, pr.contentHash, alignedV2.contentHash, aligned.contentHash]).size,
       4,
@@ -95,19 +95,67 @@ describe('terminal benchmark bridge', () => {
     assert.equal(terminalShellResultIsError(terminalBenchProfile('product-aligned'), result), true)
   })
   it('uses an action-oriented local-model stream cap', () => {
-    assert.equal(DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS, 2_048)
-    assert.equal(DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS, 4_096)
+    for (const id of ['main-legacy', 'pr-1149', 'product-aligned@2', 'product-aligned@4']) {
+      const runtime = terminalBenchRuntimeConfiguration(terminalBenchProfile(id), {})
+      assert.equal(runtime.maxStreamOutputTokens, 2_048)
+      assert.equal(runtime.reasoningRunawayRecoveryOutputTokens, 4_096)
+    }
     assert.equal(
       terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@2')),
       undefined,
     )
-    assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@3')), {
+    assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@4')), {
       intervalTokens: 2_048,
       maxNonReasoningTokens: 2_048,
       maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
       maxRecoveryTokens: 4_096,
       maxTrailingReasoningTokens: 4_096,
     })
+  })
+
+  it('takes every loop setting from the profile and reports environment overrides', () => {
+    const profile = terminalBenchProfile('product-aligned@4')
+    const runtime = terminalBenchRuntimeConfiguration(profile, {
+      COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: '4096',
+      COPSE_TERMINAL_MAX_STEPS: '10',
+    })
+    assert.deepEqual(runtime, {
+      maxSteps: 10,
+      maxLlmCalls: 13,
+      maxContextTokens: 32_768,
+      maxStreamOutputTokens: 4_096,
+      reasoningRunawayRecoveryOutputTokens: 4_096,
+      maxCommandTimeoutSec: DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
+    })
+    assert.deepEqual(terminalBenchLoopOptions(profile, runtime, 'Write /app/out.txt'), {
+      maxSteps: 10,
+      maxLlmCalls: 13,
+      adaptiveExtensions: false,
+      maxContextTokens: 32_768,
+      maxStreamOutputTokens: 4_096,
+      reasoningRunawayRecoveryOutputTokens: 4_096,
+      reasoningRunawayRecoveryNudge: profile.reasoningRunawayRecoveryNudge,
+      reasoningRunawayTextToleranceChars: 256,
+      // The checkpoint policy is the profile's own; a stream-cap override does
+      // not move its 2K visible-answer ceiling.
+      reasoningCheckpointPolicy: profile.loop.reasoningCheckpointPolicy,
+      allowForcedTextEscalation: false,
+      stuckToolRecoveryNudge: profile.stuckToolRecoveryNudge,
+    })
+    const legacy = terminalBenchLoopOptions(
+      terminalBenchProfile('main-legacy'),
+      terminalBenchRuntimeConfiguration(terminalBenchProfile('main-legacy'), {}),
+      'task',
+    )
+    assert.equal(legacy.reasoningCheckpointPolicy, undefined)
+    assert.ok(!Object.hasOwn(legacy, 'reasoningCheckpointPolicy'))
+    assert.throws(
+      () =>
+        terminalBenchRuntimeConfiguration(profile, {
+          COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: '0',
+        }),
+      /must be a positive integer/,
+    )
   })
 
   it('offers a bounded opt-in timeout for legitimately long commands', () => {

@@ -311,7 +311,7 @@ describe('terminal benchmark capsule sealing', () => {
     )
     assert.deepEqual(
       index.map((capsule) => [capsule['profile'], capsule['outcome']]),
-      [['product-aligned@3', 'invalid']],
+      [['product-aligned@4', 'invalid']],
     )
   })
 })

@@ -5,7 +5,7 @@ import {
 import { TERMINAL_BENCH_DATASET_DESCRIPTOR } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileIds,
+  parseRunnableTerminalBenchProfileIds,
   terminalBenchProfile,
 } from './lib/terminal-bench-profiles.mts'
 import { firstNonEmptyString } from '../src/shared/unknown-value.mts'
@@ -33,7 +33,7 @@ const workersPerInstance = process.env['COPSE_TERMINAL_WORKERS_PER_INSTANCE']
 const taskNames = terminalBenchRequestedTaskNames(process.env['COPSE_TERMINAL_TASK_NAMES']) ?? []
 const selectedTaskCount = Math.min(maxTasks, taskNames.length === 0 ? maxTasks : taskNames.length)
 const shardCount = Math.min(instances * workersPerInstance, selectedTaskCount)
-const profiles = parseTerminalBenchProfileIds(
+const profiles = parseRunnableTerminalBenchProfileIds(
   firstNonEmptyString(
     process.env['COPSE_TERMINAL_PROFILES']?.trim(),
     process.env['COPSE_TERMINAL_PROFILE'],

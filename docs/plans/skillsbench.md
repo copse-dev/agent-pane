@@ -97,9 +97,17 @@ byte-identical and changes only the reasoning bound:
 
 This is the mechanism from Terminal-Bench `product-aligned@3` (#1181), which found that Qwen often
 needs more than one cap's worth of reasoning while some traces keep going after the model has
-explicitly said it is circling. The circle signals are self-report, repeated blocks, repeated
-headings, repeated plans, and 100-item enumeration; common successful planning markers such as
-`actually`, `wait`, and `I need to` are deliberately not signals.
+explicitly said it is circling. When `@2` was defined, the circle signals were self-report,
+repeated blocks, repeated headings, repeated plans, and 100-item enumeration; common successful
+planning markers such as `actually`, `wait`, and `I need to` are deliberately not signals.
+
+`@2` uses the product's live circle detector, which has since gained repeated-sentence and
+repeated-tail signals (#1242) and visible-text and cross-turn checks (#1413). Its content hash
+describes the reasoning policy instead of hashing the values it runs with, so it does not
+distinguish those versions or a changed `COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS`. This is the
+defect that retired Terminal-Bench `product-aligned@3` in favour of `product-aligned@4`. Until
+SkillsBench profiles hash their effective values the same way, pair `@1`/`@2` arms only within one
+source commit and one stream-cap setting.
 
 A bare id resolves to `@1`, so every profile hash recorded before this arm existed keeps its exact
 meaning and the checkpointed arm is always named explicitly. `@1` and `@2` have distinct content

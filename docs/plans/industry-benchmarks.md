@@ -77,13 +77,26 @@ pressure.
 The adapter now targets Terminal-Bench 2.1 and exposes four versioned experiment profiles:
 `main-legacy@1` (the unchanged original adapter), `pr-1149@1` (the exact constrained-write and
 validation-warning experiment), and `product-aligned@2` (workspace-aware regular shell/write
-semantics without task-specific recovery). `product-aligned@3` preserves v2's prompt/tools and
+semantics without task-specific recovery). `product-aligned@4` preserves v2's prompt/tools and
 reassesses a reasoning-dominated stream every 2k tokens: clean streams may expand to the product's
-32k hard cap, while high-confidence self-reported or structural circles enter the existing bounded
-recovery. Historical `product-aligned@1` and v2 capsules remain readable.
+32k hard cap, while high-confidence circle signals enter the existing bounded recovery.
+Historical `product-aligned@1`, v2 and the retired v3 capsules remain readable.
 `main-legacy` remains the default. Dataset revision, task configuration
-checksum, resolved image digest, profile ID, and profile content hash are retained with every
-trial. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
+checksum, resolved image digest, profile ID, profile content hash, and the agent's effective
+runtime settings are retained with every trial.
+
+A profile content hash is only evidence if it identifies behaviour. `product-aligned@3` hashed a
+description of its reasoning policy while the host spread live product constants into it, so v3
+runs on either side of #1204, #1242 and #1413 share a hash but behaved differently; v3 is
+retired and cannot be run. From v4, the hash covers the literal loop settings the host passes to
+`runAgentLoop`, and the profile — never a product constant — supplies them.
+`scripts/lib/terminal-bench-profiles.test.ts` pins every version's hash and fails when the current
+product-aligned settings or the circle-detector thresholds drift from the product, and
+`scripts/terminal-bench-loop-fingerprint.test.ts` pins the loop's decisions for v4 on scripted
+streams. Either failure is resolved by a new profile version, never by editing a pinned value.
+Stream-cap environment overrides are recorded per trial instead of hashed (historical hashes cannot
+absorb them); the comparison gate refuses to pool runs whose runtime settings or overrides differ
+and never promotes a profile when any trial overrode a cap or predates the record. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
 [`docs/spikes/terminal-bench-pr-1149.md`](../spikes/terminal-bench-pr-1149.md).
 The two-attempt 2.1 result, adapter defects, corrected v2 targeted follow-up, and compact evidence
 retention policy are recorded in the canonical findings note
@@ -100,7 +113,11 @@ excludes zero, all expected attempts are present, and median tokens and elapsed 
 default. The #1149 forced-write and task-specific warning mechanisms remain benchmark-only. After
 two paired targeted runs favored v3, the generic reasoning checkpoint policy is also used by the
 built-in Copse agent: 2K reasoning checkpoints inside the existing 32K product ceiling, with a 4K
-recovery ceiling. ACP and other externally hosted agents are unchanged.
+recovery ceiling. ACP and other externally hosted agents are unchanged. That promotion (#1204)
+predates any held-out-gated evaluation: the 12-task cohort it relied on was post-selected rather
+than drawn by the precommitted held-out rule, and includes three of the four historical #1149 tasks
+(see the caveat in the
+[profile ablation note](../spikes/terminal-bench-2.1-profile-ablation.md#product-aligned-v3-reasoning-checkpoint-study)).
 
 ## Terminal-Bench experiment log
 

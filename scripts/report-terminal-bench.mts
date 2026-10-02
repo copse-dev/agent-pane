@@ -6,12 +6,18 @@ import {
   TERMINAL_BENCH_TASK_NAMES,
   terminalBenchCanonicalTaskName,
 } from './lib/terminal-bench-tasks.mts'
+import {
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
+  type TerminalBenchRuntimeConfiguration,
+} from './lib/terminal-bench-profiles.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 import { terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
 interface TrialSummary {
   profile: string
   profileHash: string | undefined
+  /** Absent for trials recorded before the agent reported its effective settings. */
+  runtimeConfiguration: TerminalBenchRuntimeConfiguration | undefined
   model: string | undefined
   taskName: string
   startedAt: string
@@ -201,6 +207,16 @@ async function traceMetrics(path: string): Promise<TraceMetrics> {
   return metrics
 }
 
+function runtimeConfiguration(
+  value: unknown,
+  path: string,
+): TerminalBenchRuntimeConfiguration | undefined {
+  if (value === undefined) return undefined
+  const parsed = TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.safeParse(value)
+  if (!parsed.success) throw new Error(`Invalid runtime configuration in ${path}.`)
+  return parsed.data
+}
+
 async function parseTrial(path: string): Promise<TrialSummary | undefined> {
   let value: unknown
   try {
@@ -233,6 +249,7 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
     profile:
       stringValue(nested(metadata, 'profile')) ?? retainedProfile?.versionedId ?? 'main-legacy@1',
     profileHash: stringValue(nested(metadata, 'profile_hash')) ?? retainedProfile?.contentHash,
+    runtimeConfiguration: runtimeConfiguration(nested(metadata, 'runtime_configuration'), path),
     model:
       stringValue(nested(value, 'config', 'model')) ??
       stringValue(nested(value, 'config', 'agent', 'model_name')),

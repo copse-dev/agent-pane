@@ -24,11 +24,24 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
 - `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
   recovery logic.
-- `product-aligned@3` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
+- `product-aligned@4` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
   Clean reasoning receives another 2k window, checked again up to the product's 32k hard ceiling;
-  explicit self-diagnosis, repeated blocks/headings/plans, or a 100-item list cuts the stream into
-  the existing bounded recovery path. Historical v1/v2 capsules remain readable; the unversioned
-  CLI and workflow selection resolves to v3.
+  a high-confidence circle signal cuts the stream into the existing bounded recovery path. The
+  unversioned CLI and workflow selection resolves to v4.
+- `product-aligned@3` is retired. Its hash named the reasoning policy with a description while the
+  host took the actual values from live product constants, so v3 runs before and after #1204,
+  #1242 and #1413 share one hash but behaved differently. v3 capsules remain readable; every run
+  entry point refuses to start a new v3 run.
+
+Since v4, a profile's content hash covers the loop settings the host passes to `runAgentLoop`
+(stream caps, preamble tolerance, forced-text escalation, adaptive budget extensions, the full
+reasoning-checkpoint policy and the circle-detector thresholds) as literal values. Nothing a
+profile runs with is read from a product constant at dispatch time. Three tests keep the id
+honest: `scripts/lib/terminal-bench-profiles.test.ts` pins every version's hash and fails when the
+current product-aligned version or the detector thresholds drift from the product;
+`scripts/terminal-bench-loop-fingerprint.test.ts` pins the decisions `runAgentLoop` makes for v4
+on scripted streams, so a loop change that alters v4's behaviour needs a new version too.
+Historical v1/v2 capsules remain readable and their hashes are unchanged.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
@@ -77,7 +90,7 @@ sources to the host Docker daemon, so remapping that path would make verifier re
 to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
-`product-aligned@2,product-aligned@3` and set `steered_rerun` to false. The workflow provisions one
+`product-aligned@2,product-aligned@4` and set `steered_rerun` to false. The workflow provisions one
 fleet, then each worker runs one task across every profile before advancing to its next task. The
 profile order rotates by the task's global cohort position to counterbalance ordering effects:
 task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
@@ -448,9 +461,10 @@ Optional tuning variables:
 - `COPSE_TERMINAL_MAX_STEPS` (default `80`)
 - `COPSE_TERMINAL_MAX_LLM_CALLS` (default: step limit plus `3` finalization calls)
 - `COPSE_TERMINAL_CONTEXT_TOKENS` (default `32768`)
-- `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` (default `2048`; terminal-only runaway guard)
-- `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` (default `4096`; cap for the
-  single nudged recovery stream)
+- `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` (default: the profile's own cap, `2048` for every
+  profile; terminal-only runaway guard)
+- `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` (default: the profile's own cap,
+  `4096` for every profile; cap for the single nudged recovery stream)
 - `COPSE_TERMINAL_COMMAND_TIMEOUT_SEC` (default `120`; a timeout is returned to the agent as
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
@@ -473,6 +487,13 @@ Optional tuning variables:
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)
+
+The agent reports the effective step, call, context, stream-cap and command-timeout settings with
+every trial (`agent_result.metadata.runtime_configuration`). Overriding a stream cap does not
+change the profile's hash, because the hash identifies the profile definition and historical
+capsules pin it. Instead, `npm run bench:terminal:compare` refuses to compare reports whose trials
+used different runtime settings or different stream-cap overrides, and never marks a profile
+eligible as the default when any trial overrode a cap or predates this record.
 
 The launcher pins Harbor so the custom-agent API and result shape do not drift between
 runs. Change that pin deliberately and revalidate the adapter before comparing results.

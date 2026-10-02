@@ -1,16 +1,25 @@
 import { createHash } from 'node:crypto'
+import type {
+  ReasoningCheckpointPolicy,
+  ReasoningCircleDetectorOptions,
+} from '@copse/agent/reasoning-circle-detector.ts'
 import { keyOf } from '@copse/std/member-of.ts'
+import { z } from 'zod'
 
 export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-aligned'] as const
 
 export type TerminalBenchProfileId = (typeof TERMINAL_BENCH_PROFILE_IDS)[number]
-export type TerminalBenchProfileVersionedId =
-  | 'main-legacy@1'
-  | 'main-legacy@2'
-  | 'pr-1149@1'
-  | 'product-aligned@1'
-  | 'product-aligned@2'
-  | 'product-aligned@3'
+export const TERMINAL_BENCH_PROFILE_VERSIONED_IDS = [
+  'main-legacy@1',
+  'main-legacy@2',
+  'pr-1149@1',
+  'product-aligned@1',
+  'product-aligned@2',
+  'product-aligned@3',
+  'product-aligned@4',
+] as const
+
+export type TerminalBenchProfileVersionedId = (typeof TERMINAL_BENCH_PROFILE_VERSIONED_IDS)[number]
 export type TerminalBenchProfileSelectionId =
   | TerminalBenchProfileId
   | TerminalBenchProfileVersionedId
@@ -18,9 +27,59 @@ export type TerminalBenchProfileSelectionId =
 export type TerminalBenchWriteFilePolicy = 'none' | 'app-absolute' | 'workspace-relative'
 export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkpoints-v1'
 
+/**
+ * The `runAgentLoop` settings a profile runs with. The host passes these values
+ * verbatim, so a profile — not whatever the product constants happen to be at
+ * dispatch time — decides how its streams are bounded.
+ *
+ * `reasoningCircleDetector` is different: `runAgentLoop` always uses the
+ * product's `DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS`, so this field records
+ * the thresholds the profile was defined against. The drift test in
+ * `terminal-bench-profiles.test.ts` fails when a runnable profile's recorded
+ * thresholds no longer match the product, because the host cannot pin them.
+ */
+export interface TerminalBenchLoopSettings {
+  /** Default per-stream cap; `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` may override it. */
+  maxStreamOutputTokens: number
+  /** Default recovery-stream cap; `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` may override it. */
+  reasoningRunawayRecoveryOutputTokens: number
+  reasoningRunawayTextToleranceChars: number
+  allowForcedTextEscalation: boolean
+  adaptiveExtensions: boolean
+  reasoningCheckpointPolicy: Readonly<ReasoningCheckpointPolicy> | null
+  reasoningCircleDetector: Readonly<ReasoningCircleDetectorOptions> | null
+}
+
+const positiveInteger = z.number().int().positive()
+
+/**
+ * Effective run-level settings the agent reports with every trial. They come
+ * from the environment, not from the profile, so they are recorded per trial
+ * rather than folded into a profile hash that historical capsules pin.
+ */
+export const TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA = z
+  .object({
+    maxSteps: positiveInteger,
+    maxLlmCalls: positiveInteger,
+    maxContextTokens: positiveInteger,
+    maxStreamOutputTokens: positiveInteger,
+    reasoningRunawayRecoveryOutputTokens: positiveInteger,
+    maxCommandTimeoutSec: positiveInteger,
+  })
+  .strict()
+
+export type TerminalBenchRuntimeConfiguration = z.infer<
+  typeof TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA
+>
+
+export interface TerminalBenchStreamCapOverrides {
+  maxStreamOutputTokens?: number
+  reasoningRunawayRecoveryOutputTokens?: number
+}
+
 export interface TerminalBenchProfile {
   id: TerminalBenchProfileId
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   versionedId: TerminalBenchProfileVersionedId
   contentHash: string
   systemPrompt: string
@@ -32,6 +91,13 @@ export interface TerminalBenchProfile {
   warnsOnValidationEvidence: boolean
   nonzeroShellResultIsError: boolean
   reasoningPolicy: TerminalBenchReasoningPolicy
+  loop: TerminalBenchLoopSettings
+  /**
+   * Why the profile can no longer be run, or null when it can. A retired
+   * profile still resolves so historical capsules keep their identity, but its
+   * hash does not describe what the current host would do with it.
+   */
+  retirement: string | null
   /** Run one read-only /tests and /app probe before the first model turn. */
   preflightProbe: boolean
 }
@@ -101,6 +167,52 @@ type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash' | 'preflightPr
   hashPayload: unknown
 }
 
+/**
+ * Loop settings every profile before v4 ran with. They were hard-coded in the
+ * host rather than declared by the profile, so the v1–v3 hashes never covered
+ * them; those hashes stay frozen because retained capsules reference them.
+ */
+const FIXED_CAP_LOOP: TerminalBenchLoopSettings = {
+  maxStreamOutputTokens: 2_048,
+  reasoningRunawayRecoveryOutputTokens: 4_096,
+  reasoningRunawayTextToleranceChars: 256,
+  allowForcedTextEscalation: false,
+  adaptiveExtensions: false,
+  reasoningCheckpointPolicy: null,
+  reasoningCircleDetector: null,
+}
+
+/**
+ * Circle-detector thresholds in force when product-aligned@4 was defined
+ * (`DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS`, after #1242 and #1413).
+ */
+const CIRCLE_DETECTOR_V1: Readonly<ReasoningCircleDetectorOptions> = {
+  minRepeatedBlockChars: 120,
+  minRepeatedSentenceChars: 80,
+  repeatLimit: 3,
+  planWindowItems: 3,
+  maxListItems: 100,
+  minRepeatedTailChars: 40,
+  maxRepeatedTailChars: 2_000,
+  minRepeatedTurnChars: 24,
+}
+
+/**
+ * The product reasoning-checkpoint policy (#1204, plus #1242's trailing cap)
+ * with Terminal-Bench's 2K visible-answer ceiling.
+ */
+const CHECKPOINTED_LOOP: TerminalBenchLoopSettings = {
+  ...FIXED_CAP_LOOP,
+  reasoningCheckpointPolicy: {
+    intervalTokens: 2_048,
+    maxNonReasoningTokens: 2_048,
+    maxInitialTokens: 32_000,
+    maxRecoveryTokens: 4_096,
+    maxTrailingReasoningTokens: 4_096,
+  },
+  reasoningCircleDetector: CIRCLE_DETECTOR_V1,
+}
+
 function legacyDefinition(
   definition: LegacyHashDefinition,
   writeFilePolicy: TerminalBenchWriteFilePolicy,
@@ -109,6 +221,8 @@ function legacyDefinition(
     ...definition,
     writeFilePolicy,
     reasoningPolicy: 'fixed-cap',
+    loop: FIXED_CAP_LOOP,
+    retirement: null,
     hashPayload: definition,
   }
 }
@@ -147,6 +261,8 @@ const MAIN_LEGACY_V2: ProfileDefinition = {
   writeFilePolicy: 'none',
   reasoningPolicy: 'fixed-cap',
   preflightProbe: true,
+  loop: FIXED_CAP_LOOP,
+  retirement: null,
   hashPayload: {
     hashSchema: 4,
     profile: MAIN_LEGACY_V2_BASE,
@@ -206,6 +322,8 @@ const PRODUCT_ALIGNED_V2_BASE = {
 const PRODUCT_ALIGNED_V2: ProfileDefinition = {
   ...PRODUCT_ALIGNED_V2_BASE,
   reasoningPolicy: 'fixed-cap',
+  loop: FIXED_CAP_LOOP,
+  retirement: null,
   hashPayload: {
     hashSchema: 2,
     profile: PRODUCT_ALIGNED_V2_BASE,
@@ -226,8 +344,20 @@ const PRODUCT_ALIGNED_V3_BASE = {
   reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
 }
 
+/**
+ * v3's hash names its reasoning behaviour with a description instead of the
+ * values the host used. Those values tracked live product constants, so v3
+ * runs made as introduced in #1181, after #1204 moved the policy into the
+ * product, after #1242 added the trailing budget and sentence/tail signals,
+ * and after #1413 added text and cross-turn checks all share this hash while
+ * behaving differently. It stays resolvable for those capsules but can no
+ * longer be run; product-aligned@4 hashes the effective values instead.
+ */
 const PRODUCT_ALIGNED_V3: ProfileDefinition = {
   ...PRODUCT_ALIGNED_V3_BASE,
+  loop: CHECKPOINTED_LOOP,
+  retirement:
+    'product-aligned@3 hashed a description of its reasoning policy rather than the values it ran with, so its hash covers behaviour that changed in #1204, #1242 and #1413. Run product-aligned@4 instead.',
   hashPayload: {
     hashSchema: 3,
     profile: PRODUCT_ALIGNED_V3_BASE,
@@ -243,6 +373,35 @@ const PRODUCT_ALIGNED_V3: ProfileDefinition = {
   },
 }
 
+const PRODUCT_ALIGNED_V4_BASE = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  version: 4 as const,
+  versionedId: 'product-aligned@4' as const,
+  reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
+}
+
+/**
+ * v4 behaves exactly as v3 did immediately before it was retired. Its hash
+ * covers the effective loop settings themselves, so any change to them needs a
+ * new version rather than silently altering what this id means.
+ */
+const PRODUCT_ALIGNED_V4: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V4_BASE,
+  loop: CHECKPOINTED_LOOP,
+  retirement: null,
+  hashPayload: {
+    hashSchema: 4,
+    profile: PRODUCT_ALIGNED_V4_BASE,
+    loop: CHECKPOINTED_LOOP,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+    },
+  },
+}
+
 const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = {
   'main-legacy@1': MAIN_LEGACY_V1,
   'main-legacy@2': MAIN_LEGACY_V2,
@@ -250,16 +409,30 @@ const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = 
   'product-aligned@1': PRODUCT_ALIGNED_V1,
   'product-aligned@2': PRODUCT_ALIGNED_V2,
   'product-aligned@3': PRODUCT_ALIGNED_V3,
+  'product-aligned@4': PRODUCT_ALIGNED_V4,
 }
 
 const CURRENT_PROFILE_VERSIONS: Record<TerminalBenchProfileId, TerminalBenchProfileVersionedId> = {
   'main-legacy': 'main-legacy@1',
   'pr-1149': 'pr-1149@1',
-  'product-aligned': 'product-aligned@3',
+  'product-aligned': 'product-aligned@4',
+}
+
+/** JSON with object keys sorted, so a hash never depends on property order. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
+    return Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+  })
 }
 
 function profileHash(definition: ProfileDefinition): string {
-  return createHash('sha256').update(JSON.stringify(definition.hashPayload)).digest('hex')
+  // v1–v3 hashes predate canonical ordering and stay byte-identical.
+  const serialized =
+    definition.version < 4
+      ? JSON.stringify(definition.hashPayload)
+      : canonicalJson(definition.hashPayload)
+  return createHash('sha256').update(serialized).digest('hex')
 }
 
 export function parseTerminalBenchProfileId(value: string | undefined): TerminalBenchProfileId {
@@ -327,5 +500,46 @@ export function terminalBenchProfile(
     ...definition,
     preflightProbe: definition.preflightProbe ?? false,
     contentHash: profileHash(DEFINITIONS[versionedId]),
+  }
+}
+
+/**
+ * Resolve a profile for a new run. Retired profiles resolve for historical
+ * capsules through {@link terminalBenchProfile} but must never start one.
+ */
+export function runnableTerminalBenchProfile(value: string | undefined): TerminalBenchProfile {
+  const profile = terminalBenchProfile(value)
+  if (profile.retirement !== null) throw new Error(profile.retirement)
+  return profile
+}
+
+/** {@link parseTerminalBenchProfileIds} for a new run: retired profiles are rejected. */
+export function parseRunnableTerminalBenchProfileIds(
+  value: string | undefined,
+): TerminalBenchProfileSelectionId[] {
+  const ids = parseTerminalBenchProfileIds(value)
+  for (const id of ids) runnableTerminalBenchProfile(id)
+  return ids
+}
+
+/**
+ * Stream caps a run used that differ from the ones its profile declares. Empty
+ * means the run behaved as the profile's hash describes.
+ */
+export function terminalBenchStreamCapOverrides(
+  profile: TerminalBenchProfile,
+  runtime: Pick<
+    TerminalBenchRuntimeConfiguration,
+    'maxStreamOutputTokens' | 'reasoningRunawayRecoveryOutputTokens'
+  >,
+): TerminalBenchStreamCapOverrides {
+  return {
+    ...(runtime.maxStreamOutputTokens === profile.loop.maxStreamOutputTokens
+      ? {}
+      : { maxStreamOutputTokens: runtime.maxStreamOutputTokens }),
+    ...(runtime.reasoningRunawayRecoveryOutputTokens ===
+    profile.loop.reasoningRunawayRecoveryOutputTokens
+      ? {}
+      : { reasoningRunawayRecoveryOutputTokens: runtime.reasoningRunawayRecoveryOutputTokens }),
   }
 }

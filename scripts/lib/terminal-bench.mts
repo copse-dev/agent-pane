@@ -5,7 +5,7 @@ import {
   terminalBenchCanonicalTaskName,
   terminalBenchQualifiedTaskName,
 } from './terminal-bench-tasks.mts'
-import { terminalBenchProfile } from './terminal-bench-profiles.mts'
+import { runnableTerminalBenchProfile } from './terminal-bench-profiles.mts'
 
 export const HARBOR_VERSION = '0.16.1'
 export const TERMINAL_BENCH_DATASET = TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId
@@ -222,7 +222,7 @@ export function buildTerminalBenchLaunch(
   if (rawArgs.includes('--profile')) {
     throw new Error('Pass the Terminal-Bench profile as --profile=<id>.')
   }
-  const profile = terminalBenchProfile(explicitProfiles[0] ?? env['COPSE_TERMINAL_PROFILE'])
+  const profile = runnableTerminalBenchProfile(explicitProfiles[0] ?? env['COPSE_TERMINAL_PROFILE'])
   const args = qualifyTaskSelectors(
     rawArgs.filter(
       (arg) => arg !== '--all' && arg !== '--dry-run' && !arg.startsWith('--profile='),
