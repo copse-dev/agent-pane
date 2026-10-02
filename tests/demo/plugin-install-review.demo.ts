@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('browser-hosted plugin install review', () => {
@@ -39,7 +39,10 @@ describe('browser-hosted plugin install review', () => {
     await expect(dialog.$('.plugin-install-review-servers li')).toHaveText(
       expect.stringContaining('mcp.figma.com/mcp'),
     )
-    assert.equal(await $$('#confirm-dialog .plugin-install-review-warnings').length, 0)
+    // Figma's server only admits approved apps, so the review says it won't connect.
+    const warnings = await dialog.$$('.plugin-install-review-warnings li').map((el) => el.getText())
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0] ?? '', /won't connect: Figma only admits MCP apps it has approved/)
 
     // Nothing in the dialog may run past its own edge.
     const fits = await browser.execute(() => {

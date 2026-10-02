@@ -108,7 +108,10 @@ portable skills and MCP servers. Copse downloads the exact Git commit only after
 the user chooses **Review install**, extracts the listed package with bounded
 archive handling, rejects symlinks/traversal and Copse executable contributions,
 then presents the skills by name, MCP commands or URLs, actionable warnings,
-unsigned status, and (folded) the exact revision and content hash. That review
+unsigned status, and (folded) the exact revision and content hash. A remote MCP
+server whose host only admits vendor-approved clients (today Figma's
+`mcp.figma.com`) is flagged as one that won't connect, while its skills still
+install. That review
 is the consent: confirmation writes an immutable content-addressed payload and
 human-readable install record under `~/.copse/plugins/.managed/` and enables the
 plugin. Updates and rollbacks keep whatever enabled state the user last chose.

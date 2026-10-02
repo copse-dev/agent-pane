@@ -95,6 +95,32 @@ const legacyHttpSchema = z
 
 type CatalogEntry = (typeof BUNDLED_PLUGIN_CATALOG.entries)[number]
 
+/**
+ * Remote MCP hosts that only admit clients their vendor has approved, which
+ * Copse is not. Their sign-in can only fail, so the review says so before the
+ * package installs rather than leaving the user to find out from a refused
+ * registration. Figma: "Only clients listed in the Figma MCP Catalog can
+ * connect" (developers.figma.com/docs/figma-mcp-server).
+ */
+const APPROVED_CLIENTS_ONLY_MCP_HOSTS: ReadonlyMap<string, string> = new Map([
+  ['mcp.figma.com', 'Figma'],
+])
+
+function approvedClientsOnlyWarnings(
+  servers: readonly { name: string; transport: string; target: string }[],
+): string[] {
+  return servers.flatMap((server) => {
+    if (server.transport === 'stdio') return []
+    const host = URL.parse(server.target)?.host
+    const vendor = host === undefined ? undefined : APPROVED_CLIENTS_ONLY_MCP_HOSTS.get(host)
+    return vendor === undefined
+      ? []
+      : [
+          `MCP server ${JSON.stringify(server.name)} won't connect: ${vendor} only admits MCP apps it has approved, and Copse isn't one yet. The skills still work.`,
+        ]
+  })
+}
+
 interface PreparedInstall {
   root: string
   candidate: UserPluginCandidate
@@ -552,7 +578,7 @@ export function createPluginInstallService(
         mcpServerCount: mcpServers.length,
         skills,
         mcpServers,
-        warnings: normalized.warnings,
+        warnings: [...normalized.warnings, ...approvedClientsOnlyWarnings(mcpServers)],
         provenance: 'unsigned',
         operation: existing ? 'update' : 'install',
       }

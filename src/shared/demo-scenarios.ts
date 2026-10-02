@@ -1524,7 +1524,9 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       mcpServers: [
         { name: 'figma', transport: 'streamable-http', target: 'https://mcp.figma.com/mcp' },
       ],
-      warnings: [],
+      warnings: [
+        'MCP server "figma" won\'t connect: Figma only admits MCP apps it has approved, and Copse isn\'t one yet. The skills still work.',
+      ],
       provenance: 'unsigned',
       operation: 'install',
     },

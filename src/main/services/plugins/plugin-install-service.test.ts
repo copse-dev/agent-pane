@@ -120,7 +120,7 @@ describe('catalogue plugin installation lifecycle', () => {
       await claudeArchive({
         figma: {
           type: 'http',
-          url: 'https://mcp.figma.com/mcp',
+          url: 'https://mcp.example.com/mcp',
           headers: { 'X-Figma-Plugin-Bundle': 'figma_prod@2_2_120' },
           _meta: { ideToolIconPath: './icon.svg' },
         },
@@ -130,11 +130,25 @@ describe('catalogue plugin installation lifecycle', () => {
     ])
     const review = await service.prepare(CATALOG_ID)
     assert.deepEqual(review.mcpServers, [
-      { name: 'figma', transport: 'streamable-http', target: 'https://mcp.figma.com/mcp' },
+      { name: 'figma', transport: 'streamable-http', target: 'https://mcp.example.com/mcp' },
       { name: 'legacy', transport: 'sse', target: 'https://example.com/sse' },
     ])
     assert.deepEqual(review.warnings, [
       'Skipped MCP server "unknown": Copse runs local commands and HTTP URLs only.',
+    ])
+  })
+
+  it('warns before installing an MCP server that only admits approved apps', async () => {
+    const service = serviceWith([
+      await claudeArchive({
+        figma: { type: 'http', url: 'https://mcp.figma.com/mcp' },
+        open: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+      }),
+    ])
+    const review = await service.prepare(CATALOG_ID)
+    assert.equal(review.mcpServerCount, 2)
+    assert.deepEqual(review.warnings, [
+      'MCP server "figma" won\'t connect: Figma only admits MCP apps it has approved, and Copse isn\'t one yet. The skills still work.',
     ])
   })
 
