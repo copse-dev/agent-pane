@@ -26276,6 +26276,17 @@ function gitPullRequestIcon(className = DEFAULT) {
     className
   );
 }
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
 function penLineIcon(className = DEFAULT) {
   return outlineIcon(
     "pen-line",
@@ -36634,6 +36645,421 @@ url: http://localhost:61025/index.html
   }
 });
 
+// src/shared/demo-site-tour.ts
+function earlierThreads(minutesAgo) {
+  return [
+    {
+      id: "demo-site-tour-coming-soon",
+      title: "Crumb & Bloom coming soon",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-coming-soon-user",
+          role: "user",
+          content: "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4
+        },
+        {
+          id: "demo-site-tour-coming-soon-assistant",
+          role: "assistant",
+          content: "Built the coming-soon page in `index.html`, `styles.css`, and `script.js`.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+    },
+    {
+      id: "demo-site-tour-menu-photos",
+      title: "Compress the menu photos",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-menu-photos-user",
+          role: "user",
+          content: "The menu photos are slow on mobile. Can you compress them?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4
+        },
+        {
+          id: "demo-site-tour-menu-photos-assistant",
+          role: "assistant",
+          content: 'Converted the six menu photos to WebP and added `loading="lazy"`.',
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+    }
+  ];
+}
+function siteTourScenario(id, label, thread, extra = {}) {
+  return {
+    id,
+    label,
+    project: CRUMB_AND_BLOOM,
+    settings: SITE_TOUR_SETTINGS,
+    threads: [thread, ...earlierThreads(30)],
+    ...extra
+  };
+}
+var SITE_TOUR_TIME, SITE_TOUR_MODEL, CRUMB_AND_BLOOM, SITE_TOUR_SETTINGS, SITE_TOUR_GITHUB_MCP, SITE_TOUR_TOOL_PERMISSIONS, SEASONAL_PR_BODY, SIGNUP_THREAD, SITE_TOUR_SCENARIOS;
+var init_demo_site_tour = __esm({
+  "src/shared/demo-site-tour.ts"() {
+    SITE_TOUR_TIME = Date.UTC(2026, 8, 14, 10, 30, 0);
+    SITE_TOUR_MODEL = "claude-opus-5-5";
+    CRUMB_AND_BLOOM = {
+      id: "demo-crumb-and-bloom",
+      name: "Crumb & Bloom",
+      path: "/demo/crumb-and-bloom"
+    };
+    SITE_TOUR_SETTINGS = {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model: SITE_TOUR_MODEL
+    };
+    SITE_TOUR_GITHUB_MCP = {
+      name: "github",
+      transport: "http",
+      state: "connected",
+      toolCount: 5,
+      tools: [
+        "search_issues",
+        "get_pull_request",
+        "create_issue",
+        "add_issue_comment",
+        "merge_pull_request"
+      ],
+      source: "/demo/crumb-and-bloom/.mcp.json",
+      origin: "project",
+      originDetail: ".mcp.json",
+      userEnabled: true,
+      configDisabled: false
+    };
+    SITE_TOUR_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            }
+          ]
+        },
+        {
+          id: "mcp:project:github",
+          name: "github",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/crumb-and-bloom/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:github:search-issues",
+              executionName: "mcp__github__search_issues",
+              name: "Search issues",
+              description: "Search issues and pull requests in a repository.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:get-pull-request",
+              executionName: "mcp__github__get_pull_request",
+              name: "Get pull request",
+              description: "Read a pull request, its diff, and its review comments.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:create-issue",
+              executionName: "mcp__github__create_issue",
+              name: "Create issue",
+              description: "Open a new issue in a repository.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:add-issue-comment",
+              executionName: "mcp__github__add_issue_comment",
+              name: "Add issue comment",
+              description: "Comment on an issue or pull request.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:merge-pull-request",
+              executionName: "mcp__github__merge_pull_request",
+              name: "Merge pull request",
+              description: "Merge a pull request into its base branch.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
+    SEASONAL_PR_BODY = [
+      "Adds a seasonal flavours section below the hero.",
+      "",
+      "- Reads the current menu from `flavours.json`, so the bakery can swap flavours without touching markup",
+      "- Pauses the flavour ticker for visitors who prefer reduced motion",
+      "- Keeps the section to a single column on narrow screens"
+    ].join("\n");
+    SIGNUP_THREAD = {
+      id: "demo-site-tour-signup",
+      title: "Send signups to the newsletter",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-signup-user-1",
+          role: "user",
+          content: "Where does the email signup get handled?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 4 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-1",
+          role: "assistant",
+          content: "In `script.js`: the form\u2019s submit handler checks the address, then shows the confirmation note under the form. Nothing is sent anywhere yet, so the address only lives in the page.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 3 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-user-2",
+          role: "user",
+          content: "Send new signups to the newsletter list instead of only showing the note.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 2 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-2",
+          role: "assistant",
+          content: "The submit handler now posts the address to the newsletter endpoint and only shows the confirmation note once the request succeeds. A failed request keeps what the visitor typed and offers to try again.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - 4 * 6e4,
+      updatedAt: SITE_TOUR_TIME - 6e4
+    };
+    SITE_TOUR_SCENARIOS = [
+      siteTourScenario("site-fork-resend", "Copse.dev tour: fork and resend a prompt", SIGNUP_THREAD, {
+        // The site the thread is about, open in the Browser pane beside it.
+        staticSite: "sites/cupcakes",
+        settings: {
+          ...SITE_TOUR_SETTINGS,
+          layout: { projectsPaneWidth: 240, filesPaneWidth: 560 }
+        }
+      }),
+      siteTourScenario("site-subagent", "Copse.dev tour: an expanded subagent", {
+        id: "demo-site-tour-accessibility",
+        title: "Accessibility audit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [
+          {
+            id: "demo-site-tour-accessibility-user",
+            role: "user",
+            content: "Check the coming-soon page for accessibility problems before we launch.",
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 3 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-assistant",
+            role: "assistant",
+            content: "I asked an explore agent to audit the markup and styles.",
+            toolCalls: [
+              {
+                id: "demo-site-tour-accessibility-explore",
+                name: "explore",
+                args: { query: "Audit index.html and styles.css for accessibility gaps" },
+                status: "done",
+                result: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                subagent: {
+                  id: "demo-site-tour-accessibility-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Audit index.html and styles.css for accessibility gaps",
+                  summary: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                  model: SITE_TOUR_MODEL,
+                  messages: [
+                    {
+                      id: "demo-site-tour-accessibility-explore-1",
+                      role: "assistant",
+                      content: "Reading the page structure and the stylesheet.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-read-html",
+                          name: "read_file",
+                          args: { path: "index.html" },
+                          status: "done",
+                          result: "<!doctype html>\n"
+                        },
+                        {
+                          id: "demo-site-tour-accessibility-read-css",
+                          name: "read_file",
+                          args: { path: "styles.css" },
+                          status: "done",
+                          result: ":root {\n"
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-2",
+                      role: "assistant",
+                      content: "Checking whether the ticker animation respects **reduced motion**.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-grep",
+                          name: "grep_search",
+                          args: { pattern: "prefers-reduced-motion" },
+                          status: "done",
+                          result: "No matches."
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-3",
+                      role: "assistant",
+                      content: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                      toolCalls: []
+                    }
+                  ]
+                }
+              }
+            ],
+            createdAt: SITE_TOUR_TIME - 2 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-findings",
+            role: "assistant",
+            content: [
+              "Two things to fix before launch:",
+              "",
+              "- The flavour ticker keeps scrolling for visitors who prefer reduced motion.",
+              "- The signup field relies on its placeholder, so it has no visible label.",
+              "",
+              "Want me to fix both?"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 6e4
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME - 3 * 6e4,
+        updatedAt: SITE_TOUR_TIME - 6e4
+      }),
+      siteTourScenario("site-archive-attachment", "Copse.dev tour: attach a zip archive", {
+        // Empty: the spec drops the archive into this thread's composer.
+        id: "demo-site-tour-brand-kit",
+        title: "Swap in the new brand kit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME,
+        updatedAt: SITE_TOUR_TIME
+      }),
+      // Settings opens over the same conversation the fork shot uses.
+      siteTourScenario("site-providers", "Copse.dev tour: provider settings", SIGNUP_THREAD),
+      siteTourScenario(
+        "site-create-pr",
+        "Copse.dev tour: create a pull request",
+        {
+          id: "demo-site-tour-seasonal",
+          title: "Add seasonal flavours",
+          status: "idle",
+          gitBranch: "seasonal-flavours",
+          model: SITE_TOUR_MODEL,
+          messages: [
+            {
+              id: "demo-site-tour-seasonal-user",
+              role: "user",
+              content: "Add a seasonal flavours section under the hero that reads from flavours.json, and make sure the ticker respects reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 3 * 6e4
+            },
+            {
+              id: "demo-site-tour-seasonal-assistant",
+              role: "assistant",
+              content: "Added the seasonal flavours section and committed it on `seasonal-flavours`. The ticker now pauses for visitors who prefer reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 6e4
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME - 3 * 6e4,
+          updatedAt: SITE_TOUR_TIME - 6e4
+        },
+        {
+          changeStats: { additions: 86, deletions: 12 },
+          followUps: [
+            { id: "create-pr", label: "Create PR", action: "create-pr" },
+            { id: "review", label: "Review changes", action: "review" }
+          ],
+          prBody: SEASONAL_PR_BODY
+        }
+      ),
+      siteTourScenario(
+        "site-mcp-permissions",
+        "Copse.dev tour: per-tool MCP permissions",
+        {
+          id: "demo-site-tour-triage",
+          title: "Triage launch issues",
+          status: "idle",
+          gitBranch: "main",
+          model: SITE_TOUR_MODEL,
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME,
+          updatedAt: SITE_TOUR_TIME
+        },
+        {
+          mcpServers: [SITE_TOUR_GITHUB_MCP],
+          toolPermissions: SITE_TOUR_TOOL_PERMISSIONS
+        }
+      )
+    ];
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -36729,7 +37155,104 @@ function conciseThreadMessages(model, live) {
     ]
   ];
 }
-function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
   return {
     id,
     label,
@@ -36747,7 +37270,7 @@ function conciseThreadScenario(id, label, model, { live = false, enabled = true 
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: conciseThreadMessages(model, live),
+        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -36759,6 +37282,7 @@ var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT,
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
+    init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -38124,6 +38648,12 @@ var init_demo_scenarios = __esm({
         "claude-opus-5-5"
       ),
       conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
+      ),
+      conciseThreadScenario(
         "concise-thread-full",
         "Full thread view for a model below the concise gate",
         "gpt-4o"
@@ -38161,7 +38691,9 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
-      }
+      },
+      // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+      ...SITE_TOUR_SCENARIOS
     ];
   }
 });
@@ -38219,7 +38751,8 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -38479,8 +39012,8 @@ function createDemoApi(scenario, options = {}) {
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...scenario.followUps ?? []])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -38571,7 +39104,7 @@ function createDemoApi(scenario, options = {}) {
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -38610,8 +39143,16 @@ function createDemoApi(scenario, options = {}) {
         return resolvedVoid();
       }
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) => resolved({
+        path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+        name: archive.name,
+        sizeBytes: archive.bytes?.byteLength ?? 0
+      })
+    },
     threads: {
       loadProject: (projectId) => resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -39051,7 +39592,7 @@ function createDemoApi(scenario, options = {}) {
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -62150,6 +62691,14 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
+  }
+});
+
 // src/renderer/views/branch-ci-editor.ts
 function mountBranchCiEditor(options) {
   const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
@@ -64396,6 +64945,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -65469,6 +66019,23 @@ function mountSettingsDialog(store2, api2) {
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
+
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
 
             <fieldset>
               <legend>Mobile Companion</legend>
@@ -66899,6 +67466,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -66934,9 +67512,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -67563,8 +68143,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -68248,6 +68827,7 @@ var init_settings_dialog = __esm({
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -70610,14 +71190,14 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -70919,8 +71499,21 @@ function mountProjectsPane(root, store2, api2) {
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
+        const previous = prLifecycleCache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        prLifecycleCache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (generation !== prStatusGeneration) return;
+          const entry = prLifecycleCache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          prLifecycleCache.set(key, { ...entry, checks });
+        });
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached2 = prLifecycleCache.get(key);
@@ -70934,6 +71527,12 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function ciFailingForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    });
   }
   function rollupForThread(thread) {
     const refs = sidebarPrRefs(thread);
@@ -71462,7 +72061,9 @@ function mountProjectsPane(root, store2, api2) {
       const prRollup = rollupForThread(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+        );
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -72718,7 +73319,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -75274,6 +75877,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -75286,7 +75890,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -75299,7 +75903,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -75310,6 +75914,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -75346,7 +75951,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -75356,6 +75961,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -75398,7 +76004,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
