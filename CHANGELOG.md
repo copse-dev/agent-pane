@@ -16,6 +16,13 @@ released — rather than copying every published entry.
   figure is reported by an ACP agent rather than measured by Copse. The footer
   now needs less width before it collapses into its compact layout.
 
+- The footer hover now reports what the classifiers did for the thread: for the
+  shell guard, the shell approval tier and the terminal-read screen, how many
+  checks ran on which model or classifier connection, what they decided, how
+  long they took on average, and the tokens they used. Calls that never reached
+  a classifier (screening off, a missing model) are not counted, and no command
+  text is stored.
+
 ## 0.1.0-beta.12
 
 This is the first published release since 0.1.0-beta.8. Betas 9, 10, and 11
