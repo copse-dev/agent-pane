@@ -30,6 +30,10 @@ import {
 import { buildMobileAssets } from './mobile-build.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
+import { checkBundledExplainerSyntax } from './lib/explainer-syntax.mts'
+
+// These scripts are copied, not bundled, so esbuild would otherwise never parse them.
+checkBundledExplainerSyntax()
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')

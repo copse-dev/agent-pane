@@ -20,6 +20,8 @@ armPerfTrace()
 installIpcPerfTracing()
 
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
+import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
@@ -576,6 +578,7 @@ app
     })
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
+    setExplainerPreviewCapture(captureExplainerFrames)
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
