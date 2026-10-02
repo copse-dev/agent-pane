@@ -38,8 +38,8 @@ export function formatSshProjectName(hostLabel: string, remotePath: string): str
 
 /**
  * Label shown in the projects sidebar. SSH projects always include the remote
- * path so two folders that share a basename (e.g. `/etc/ddg` vs `/opt/ddg`)
- * do not both render as `host:ddg`.
+ * path so two folders that share a basename (e.g. `/srv/app` vs `/opt/app`)
+ * do not both render as `host:app`.
  */
 export function projectDisplayName(project: Project): string {
   if (!project.sshHost) return project.name

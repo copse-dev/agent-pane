@@ -448,7 +448,7 @@ describe('approval dialog coalescing', () => {
     emit({
       id: 'gh',
       type: 'mcp',
-      title: 'Mark pull request ready for review?',
+      title: 'Mark pull request ready for review on GitHub?',
       body: 'PR #1478',
     })
     fireWindow()
@@ -456,7 +456,7 @@ describe('approval dialog coalescing', () => {
     assert.ok(body)
     assert.equal(body.textContent, 'PR #1478')
     assert.equal(body.classList.contains('approval-body-code'), false)
-    assert.equal(heading(), 'Mark pull request ready for review?')
+    assert.equal(heading(), 'Mark pull request ready for review on GitHub?')
   })
 
   it('keeps per-row labels and a count heading for a mixed batch', () => {

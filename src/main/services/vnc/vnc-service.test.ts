@@ -147,7 +147,7 @@ describe('VNC discovery candidates', () => {
   it('resolves configured SSH hostnames for nearby-device identity matching', async () => {
     let lookedUp = ''
     assert.deepEqual(
-      await resolveVncSshHostAddresses('jonathan@kingston-mac-mini.local', async (hostname) => {
+      await resolveVncSshHostAddresses('alex@studio-mac-mini.local', async (hostname) => {
         lookedUp = hostname
         return [
           { address: '192.168.0.21', family: 4 },
@@ -157,7 +157,7 @@ describe('VNC discovery candidates', () => {
       }),
       ['192.168.0.21', 'fe80::21'],
     )
-    assert.equal(lookedUp, 'kingston-mac-mini.local')
+    assert.equal(lookedUp, 'studio-mac-mini.local')
   })
 
   it('uses literal SSH addresses and tolerates names that do not resolve', async () => {

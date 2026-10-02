@@ -25,27 +25,27 @@ function breadcrumbDisplay(path: string): string {
 
 describe('parentRemotePath', () => {
   it('walks up POSIX paths and stops at root', () => {
-    assert.equal(parentRemotePath('/etc/ddg'), '/etc')
+    assert.equal(parentRemotePath('/srv/app'), '/srv')
     assert.equal(parentRemotePath('/etc'), '/')
     assert.equal(parentRemotePath('/'), '/')
-    assert.equal(parentRemotePath('/etc/ddg/'), '/etc')
+    assert.equal(parentRemotePath('/srv/app/'), '/srv')
   })
 })
 
 describe('remotePathSegments', () => {
   it('builds clickable crumbs from root', () => {
     assert.deepEqual(remotePathSegments('/'), [{ label: '/', path: '/' }])
-    assert.deepEqual(remotePathSegments('/etc/ddg'), [
+    assert.deepEqual(remotePathSegments('/srv/app'), [
       { label: '/', path: '/' },
-      { label: 'etc', path: '/etc' },
-      { label: 'ddg', path: '/etc/ddg' },
+      { label: 'srv', path: '/srv' },
+      { label: 'app', path: '/srv/app' },
     ])
   })
 
   it('does not double the root slash in the breadcrumb display', () => {
     assert.equal(breadcrumbDisplay('/'), '/')
     assert.equal(breadcrumbDisplay('/usr'), '/ usr')
-    assert.equal(breadcrumbDisplay('/etc/ddg'), '/ etc / ddg')
+    assert.equal(breadcrumbDisplay('/srv/app'), '/ srv / app')
     assert.notEqual(breadcrumbDisplay('/usr'), '/ / usr')
   })
 })
@@ -68,8 +68,8 @@ describe('fillRemotePathBreadcrumbs', () => {
 
   it('keeps separators between non-root crumbs', () => {
     const nav = document.createElement('nav')
-    fillRemotePathBreadcrumbs(nav, '/etc/ddg', () => undefined)
-    assert.equal(nav.textContent, '/etc/ddg')
+    fillRemotePathBreadcrumbs(nav, '/srv/app', () => undefined)
+    assert.equal(nav.textContent, '/srv/app')
     assert.equal(nav.querySelectorAll('.remote-folder-crumb-sep').length, 1)
   })
 })

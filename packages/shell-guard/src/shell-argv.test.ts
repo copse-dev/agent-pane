@@ -434,3 +434,20 @@ describe('inlineLeadingLiteralAssignments', () => {
     assert.equal(inlineLeadingLiteralAssignments('L=/a; cat $LOG'), 'cat $LOG')
   })
 })
+
+describe('shellSegments — single-quoted separators', () => {
+  it('does not split inside a closed single-quoted span', () => {
+    const all = shellSegments("sed -i 's/a;b/c/' f.html").map((argv) => argv.join(' '))
+    assert.deepEqual(all, ['sed -i s/a;b/c/ f.html', 'sed -i s/a;b/c/ f.html'])
+  })
+
+  it('splits on a real separator after the quoted span', () => {
+    const all = shellSegments("echo 'a;b'; rm x").map((argv) => argv.join(' '))
+    assert.ok(all.includes('rm x'))
+  })
+
+  it('treats an unclosed or multi-line quote as ordinary text', () => {
+    assert.ok(shellSegments("echo it's; rm x").some((argv) => argv.join(' ') === 'rm x'))
+    assert.ok(shellSegments("echo 'a\nb'; rm x").some((argv) => argv.join(' ') === 'rm x'))
+  })
+})

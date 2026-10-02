@@ -294,10 +294,10 @@ describe('VNC viewer', function () {
       await window.api.settings.set('sshWorkspaceEnabled', false)
       await window.api.settings.set('sshWorkspaceHosts', [
         {
-          id: 'kingston-mac-mini',
-          label: 'kingston-mac-mini',
+          id: 'studio-mac-mini',
+          label: 'studio-mac-mini',
           host: 'localhost',
-          user: 'jonathankingston',
+          user: 'alexandra-morgan',
         },
       ])
       const e2e = (
@@ -379,7 +379,7 @@ describe('VNC viewer', function () {
       'This machine',
       'Studio Mac · studio.local:5900',
       'Other address…',
-      'kingston-mac-mini · jonathankingston@localhost',
+      'studio-mac-mini · alexandra-morgan@localhost',
     ])
     assert.doesNotMatch(machineOptions.join('\n'), /test-mac-box/)
     assert.equal(await $('.vnc-nearby-status').isDisplayed(), false)
@@ -392,7 +392,7 @@ describe('VNC viewer', function () {
     )
     assert.deepEqual(
       deviceSummaries.map(({ name }) => name),
-      ['This machine', 'Studio Mac', 'Add device', 'kingston-mac-mini'],
+      ['This machine', 'Studio Mac', 'Add device', 'studio-mac-mini'],
     )
     assert.equal(deviceSummaries.length, 4)
     assert.equal(await $('.vnc-device.is-selected .vnc-device-name').getText(), 'This machine')
@@ -404,7 +404,7 @@ describe('VNC viewer', function () {
     assert.equal(await $('.vnc-setup-password-field').isDisplayed(), true)
     assert.equal(await $('.vnc-connect-btn').getText(), 'Sign in & connect')
     assert.match(deviceSummaries[1]?.meta ?? '', /Nearby.*studio\.local:5900/i)
-    assert.match(deviceSummaries[3]?.meta ?? '', /Saved SSH.*jonathankingston@localhost/i)
+    assert.match(deviceSummaries[3]?.meta ?? '', /Saved SSH.*alexandra-morgan@localhost/i)
 
     const previousFilesWidth = await browser.execute(() => {
       const body = document.getElementById('body')

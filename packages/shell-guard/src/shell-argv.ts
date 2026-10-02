@@ -597,8 +597,6 @@ const WRITE_REDIRECTS = new Set(['>', '>>'])
  */
 const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
 
-const RAW_SEPARATORS = /&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/g
-
 /**
  * `command` with the inside of every span the shell cannot expand replaced by
  * `x`, keeping each character in place so indexes still line up. That is a
@@ -634,13 +632,14 @@ function maskInertQuotedText(command: string): string | null {
 }
 
 /**
- * The raw separator split behind {@link shellSegments}' fallback. A `;` inside
- * a quoted sed character class is data, and splitting there invented a command
- * head (`]*m//g'`) that read as a local executable.
+ * The stricter split behind {@link shellSegmentsQuoteAware}. On top of the
+ * single-quote masking {@link splitRawSegments} does, it also ignores separators
+ * inside a double-quoted span that holds no `$` or backtick (`jq ".a | length"`),
+ * and falls back to that split when quoting is ambiguous.
  */
-function splitRawSegments(command: string): string[] {
+function splitRawSegmentsQuoteAware(command: string): string[] {
   const masked = maskInertQuotedText(command)
-  if (masked === null) return command.split(new RegExp(RAW_SEPARATORS.source))
+  if (masked === null) return splitRawSegments(command)
   const segments: string[] = []
   let start = 0
   for (const match of masked.matchAll(RAW_SEPARATORS)) {
@@ -725,13 +724,62 @@ function collectSegments(
   // made `1` a command head, and that phantom head's "not a plain read" blocker
   // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
   for (const segment of quoteAware
-    ? splitRawSegments(command)
-    : command.split(new RegExp(RAW_SEPARATORS.source))) {
+    ? splitRawSegmentsQuoteAware(command)
+    : splitRawSegments(command)) {
     const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
 
   return segments
+}
+
+const RAW_SEPARATORS = /&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/g
+
+/**
+ * Blank the separator characters inside a closed, single-line `'…'` span. The
+ * shell never expands single quotes, so `;` in `sed 's/a;b/c/'` starts nothing.
+ * Double quotes are left alone because `"$(a; b)"` does run `b`, and so is any
+ * `'` that has no closing partner on its line (an apostrophe in a heredoc body or
+ * comment) so an unbalanced quote can only add segments, never hide one.
+ */
+function maskSingleQuotedSeparators(command: string): string {
+  let out = ''
+  let index = 0
+  let inDouble = false
+  while (index < command.length) {
+    const char = command.charAt(index)
+    if (char === '\\') {
+      out += command.slice(index, index + 2)
+      index += 2
+      continue
+    }
+    if (char === '"') inDouble = !inDouble
+    if (char === "'" && !inDouble) {
+      const end = command.indexOf("'", index + 1)
+      const span = end === -1 ? '' : command.slice(index, end + 1)
+      if (end !== -1 && !/[\r\n]/.test(span)) {
+        out += span.replace(/[;|&(]/g, '_')
+        index = end + 1
+        continue
+      }
+    }
+    out += char
+    index++
+  }
+  return out
+}
+
+/** `command.split(RAW_SEPARATORS)` that ignores separators inside single quotes. */
+function splitRawSegments(command: string): string[] {
+  const masked = maskSingleQuotedSeparators(command)
+  const pieces: string[] = []
+  let start = 0
+  for (const match of masked.matchAll(RAW_SEPARATORS)) {
+    pieces.push(command.slice(start, match.index))
+    start = match.index + match[0].length
+  }
+  pieces.push(command.slice(start))
+  return pieces
 }
 
 export interface ShellRedirect {
