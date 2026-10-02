@@ -26266,6 +26266,17 @@ function gitPullRequestIcon(className = DEFAULT) {
     className
   );
 }
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
 function penLineIcon(className = DEFAULT) {
   return outlineIcon(
     "pen-line",
@@ -37134,7 +37145,104 @@ function conciseThreadMessages(model, live) {
     ]
   ];
 }
-function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
   return {
     id,
     label,
@@ -37152,7 +37260,7 @@ function conciseThreadScenario(id, label, model, { live = false, enabled = true 
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: conciseThreadMessages(model, live),
+        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -38528,6 +38636,12 @@ var init_demo_scenarios = __esm({
         "concise-thread",
         "Concise thread view for a capable model",
         "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
       ),
       conciseThreadScenario(
         "concise-thread-full",
@@ -71027,14 +71141,14 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -71336,8 +71450,21 @@ function mountProjectsPane(root, store2, api2) {
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
+        const previous = prLifecycleCache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        prLifecycleCache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (generation !== prStatusGeneration) return;
+          const entry = prLifecycleCache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          prLifecycleCache.set(key, { ...entry, checks });
+        });
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached2 = prLifecycleCache.get(key);
@@ -71351,6 +71478,12 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function ciFailingForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    });
   }
   function rollupForThread(thread) {
     const refs = sidebarPrRefs(thread);
@@ -71879,7 +72012,9 @@ function mountProjectsPane(root, store2, api2) {
       const prRollup = rollupForThread(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+        );
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
