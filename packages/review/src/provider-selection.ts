@@ -9,6 +9,7 @@ import {
   createOpenRouterProvider,
   createProvider,
 } from '@copse/llm/create-provider.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { memberOf } from '@copse/std/member-of.ts'
@@ -54,8 +55,8 @@ export interface SelectedProvider {
 /** The provider a model id implies when none was named. */
 export function inferProviderKind(model: string | undefined): ProviderKind {
   if (model === undefined) return 'lmstudio'
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3')) return 'openai'
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty !== null) return firstParty
   if (model.includes('/')) return 'openrouter'
   return 'lmstudio'
 }

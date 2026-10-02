@@ -42,8 +42,12 @@ describe('PREVIEW_CSP', () => {
     assert.deepEqual(policy.get('connect-src'), ["'self'"])
   })
 
-  it('refuses frames, workers, plugins and a base-URL rewrite', () => {
-    for (const name of ['frame-src', 'worker-src', 'object-src', 'base-uri']) {
+  it('allows only local blob workers, which inherit the document policy', () => {
+    assert.deepEqual(policy.get('worker-src'), ['blob:'])
+  })
+
+  it('refuses frames, plugins and a base-URL rewrite', () => {
+    for (const name of ['frame-src', 'object-src', 'base-uri']) {
       assert.deepEqual(policy.get(name), ["'none'"], name)
     }
   })

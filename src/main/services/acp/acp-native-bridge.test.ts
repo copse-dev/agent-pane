@@ -1,3 +1,5 @@
+import { queueInlineCanvasReference, runWithInlineCanvas } from '../inline-canvas-context.ts'
+import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
@@ -531,6 +533,45 @@ describe('startAcpNativeBridge', () => {
     assert.equal(seen.length, 1, 'the straggling call must never reach the tool')
   })
 
+  it('rebinds inline explainer publication across the bridge HTTP boundary', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'mcp__copse-canvas__render_explainer',
+      description: 'Publish a captioned animation',
+      parameters: z.object({}),
+      execute: () =>
+        Promise.resolve(String(queueInlineCanvasReference('explainer-thread', 'Example'))),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'explainer-thread',
+    })
+    assert.ok(bridge)
+    const currentBridge = bridge
+    const chunks: StreamChunk[] = []
+    const finish = runWithInlineCanvas(
+      'explainer-thread',
+      { emit: (_id, chunk) => chunks.push(chunk) },
+      (host) => {
+        currentBridge.setExecutionContext(worktreeContext('explainer-thread', '/worktrees/example'))
+        return (): void => {
+          host.emit('explainer-thread', { type: 'done' })
+        }
+      },
+    )
+    for (const init of initialized()) await rpc(currentBridge, init)
+    const result = await rpc(currentBridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'mcp__copse-canvas__render_explainer', arguments: {} },
+    })
+    assert.equal(contentText(result), 'true')
+    finish()
+    assert.deepEqual(chunks[0], { type: 'canvas_artefact', artefact: { title: 'Example' } })
+    currentBridge.setExecutionContext(null)
+  })
+
   it('rejects a bridged call dispatched with no bound execution context', async () => {
     // The turn's inner finally nulls the bridge context before the caller's
     // outer finally aborts straggling bridged calls, so a call can land in that
@@ -772,6 +813,28 @@ describe('startAcpNativeBridge', () => {
     const result = rpcResult(call)
     assert.equal(result['isError'], true)
     assert.match(contentText(call) ?? '', /not offered/)
+  })
+
+  it('offers propose_thread to ACP agents when it is registered', async () => {
+    const registry = testRegistry([])
+    registry.register({
+      name: 'propose_thread',
+      description: 'Offer a separate thread for the user to start',
+      parameters: z.object({
+        title: z.string(),
+        summary: z.string(),
+        prompt: z.string(),
+      }),
+      execute: () => Promise.resolve('Offered to the user.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const tools = recordArrayOrEmpty(rpcResult(listed)['tools'])
+    assert.ok(tools.some((tool) => tool['name'] === 'propose_thread'))
   })
 
   it('rejects requests without the per-turn bearer token', async () => {
