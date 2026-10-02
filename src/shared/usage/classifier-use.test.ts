@@ -40,15 +40,15 @@ describe('summarizeClassifierUse', () => {
     assert.equal(use.rows.length, 1)
     const [row] = use.rows
     assert.equal(row?.calls, 4)
-    assert.deepEqual(row?.verdicts, [
+    assert.deepEqual(row.verdicts, [
       { label: 'sandbox', count: 2 },
       { label: 'external', count: 1 },
     ])
-    assert.equal(row?.noVerdict, 1)
+    assert.equal(row.noVerdict, 1)
     // The call that reported no latency does not drag the mean down.
-    assert.equal(row?.averageLatencyMs, 1000)
-    assert.equal(row?.inputTokens, 20)
-    assert.equal(row?.outputTokens, 4)
+    assert.equal(row.averageLatencyMs, 1000)
+    assert.equal(row.inputTokens, 20)
+    assert.equal(row.outputTokens, 4)
   })
 
   it('keeps separate engines and subjects apart, busiest first', () => {

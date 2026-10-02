@@ -235,8 +235,8 @@ describe('decision-log classifier-call fields', () => {
     const line = serializeDecisionLine(makeDecisionEvent(callInput, 'id-1', 1))
     const parsed = parseDecisionLine(line)
     assert.equal(parsed?.latencyMs, 850)
-    assert.equal(parsed?.inputTokens, 120)
-    assert.equal(parsed?.outputTokens, 4)
+    assert.equal(parsed.inputTokens, 120)
+    assert.equal(parsed.outputTokens, 4)
   })
 
   it('omits the fields when a call reported none', () => {
