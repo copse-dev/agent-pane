@@ -133,6 +133,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --change-modified: var(--warning);
   --change-deleted: var(--error);
   --change-renamed: var(--info);
+  --pr-merged: var(--important);
+  --pr-closed: var(--error);
   --diff-insert: color-mix(in srgb, var(--success) 20%, transparent);
   --diff-delete: color-mix(in srgb, var(--danger) 26%, transparent);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -1415,8 +1417,15 @@ copse-ui-field input[type=password],
 .chat-pr-status.is-open {
   color: var(--accent);
 }
+.chat-pr-status.has-ci-failure svg path:nth-child(2) {
+  fill: var(--pr-closed);
+  stroke: var(--pr-closed);
+}
 .chat-pr-status.is-merged {
-  color: var(--success);
+  color: var(--pr-merged);
+}
+.chat-pr-status.is-closed {
+  color: var(--pr-closed);
 }
 .chat-attention-bell {
   flex-shrink: 0;
@@ -3941,7 +3950,7 @@ label {
 :is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)) > .message-body > :not(.message-visual-evidence, .message-canvas-previews) {
   display: none;
 }
-:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(:has(> .tool-result-content:has(> :not([hidden], .acp-terminal-reference)), > .thread-proposal, > .reviewer-input-card, > .message-body > .message-visual-evidence, > .message-body > .message-canvas-previews)) {
+:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(:has(> .tool-result-content > :not([hidden], .acp-terminal-reference), > .thread-proposal, > .reviewer-input-card, > .message-body > .message-visual-evidence, > .message-body > .message-canvas-previews)) {
   display: none;
 }
 .message-reasoning {
@@ -7892,6 +7901,34 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-family: var(--font-mono, monospace);
   margin-left: auto;
+}
+.classifier-local {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.classifier-local-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+}
+.classifier-local-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.classifier-local-info .field-hint {
+  overflow-wrap: anywhere;
+}
+.classifier-local-error {
+  color: var(--danger);
 }
 .provider-chips {
   display: flex;
