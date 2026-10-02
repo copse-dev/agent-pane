@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { ChatGptPlanStatus } from '@shared/types/chatgpt-plan.ts'
+import { showConfirmDialog } from '../confirm-dialog.ts'
 import { el, clear } from '../../dom/helpers.ts'
 
 const USAGE_URL = 'https://chatgpt.com/settings/usage'
@@ -16,8 +17,12 @@ export function createChatGptPlanSection(
   let status: ChatGptPlanStatus = { accounts: [], activeClientId: null }
   let busy = false
   let message = ''
+  let signingIn = false
+  let accountOptionsOpen = false
+  let welcomeShowing = false
 
-  async function act(work: () => Promise<void>): Promise<void> {
+  async function act(work: () => Promise<void>, isSignIn = false): Promise<void> {
+    signingIn = isSignIn
     busy = true
     message = ''
     render()
@@ -29,10 +34,12 @@ export function createChatGptPlanSection(
       busy = false
       render()
       onChanged()
+      if (isSignIn) await welcome()
     }
   }
 
   function render(): void {
+    accountOptionsOpen = root.querySelector('details')?.open ?? accountOptionsOpen
     clear(root)
     const active = status.accounts.find((account) => account.clientId === status.activeClientId)
     if (status.accounts.length) {
@@ -72,28 +79,33 @@ export function createChatGptPlanSection(
       'button',
       {
         type: 'button',
-        class: 'ui-btn ui-btn-secondary',
+        class: 'ui-btn chatgpt-sign-in',
         disabled: busy,
         'data-testid': 'chatgpt-plan-connect',
       },
+      el('img', {
+        src: './chatgpt-logo-white.svg',
+        alt: '',
+        width: '21',
+        height: '21',
+        'aria-hidden': 'true',
+      }),
       'Continue with ChatGPT',
     )
     connect.addEventListener('click', () => {
       void act(async () => {
-        const before = status.accounts.map((account) => account.clientId)
         status = await api.chatGptPlan.signIn(active?.clientId)
-        const connected = status.accounts.find(
-          (account) => account.clientId === status.activeClientId,
-        )
-        if (connected?.planEnabled && !before.includes(connected.clientId))
-          message = 'You’re using your ChatGPT plan. Manage usage in ChatGPT settings.'
-      })
+      }, true)
     })
     if (!active?.connected || !active.planEnabled) actions.append(connect)
     const accountActions = el('div', { class: 'provider-actions' })
     if (busy) {
       root.append(
-        el('p', { role: 'status', class: 'field-hint' }, 'Finish signing in in your browser.'),
+        el(
+          'p',
+          { role: 'status', class: 'field-hint' },
+          signingIn ? 'Finish signing in in your browser.' : 'Updating connection…',
+        ),
       )
       const cancel = el(
         'button',
@@ -103,7 +115,7 @@ export function createChatGptPlanSection(
       cancel.addEventListener('click', () => {
         void api.chatGptPlan.cancelSignIn()
       })
-      actions.append(cancel)
+      if (signingIn) actions.append(cancel)
     }
     if (active?.connected) {
       const disconnect = el(
@@ -120,7 +132,18 @@ export function createChatGptPlanSection(
               'Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.'
         })
       })
-      accountActions.append(disconnect)
+      const renew = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-secondary', disabled: busy },
+        'Refresh connection',
+      )
+      renew.addEventListener('click', () => {
+        void act(async () => {
+          status = await api.chatGptPlan.refreshAccount(active.clientId)
+          message = 'Connection refreshed.'
+        })
+      })
+      accountActions.append(renew, disconnect)
     }
     const add = el(
       'button',
@@ -130,7 +153,7 @@ export function createChatGptPlanSection(
     add.addEventListener('click', () => {
       void act(async () => {
         status = await api.chatGptPlan.signIn()
-      })
+      }, true)
     })
     if (status.accounts.length) accountActions.append(add)
     const usage = el(
@@ -146,8 +169,11 @@ export function createChatGptPlanSection(
     })
     actions.append(usage)
     root.append(actions)
-    if (status.accounts.length)
-      root.append(el('details', {}, el('summary', {}, 'Account options'), accountActions))
+    if (status.accounts.length) {
+      const options = el('details', {}, el('summary', {}, 'Account options'), accountActions)
+      options.open = accountOptionsOpen
+      root.append(options)
+    }
     if (message)
       root.append(
         el(
@@ -158,6 +184,30 @@ export function createChatGptPlanSection(
       )
   }
 
+  async function welcome(): Promise<void> {
+    if (
+      welcomeShowing ||
+      !status.accounts.some((account) => account.connected && account.planEnabled)
+    )
+      return
+    welcomeShowing = true
+    try {
+      if ((await api.settings.get('chatGptPlanWelcomeSeen')) === true) return
+      await showConfirmDialog({
+        message: 'You’re using your ChatGPT plan',
+        detail:
+          'Copse uses your ChatGPT plan or available credits for ChatGPT plan models. Manage Copse’s allowance and credit usage in ChatGPT Settings → Usage.',
+        confirmLabel: 'Got it',
+        cancelLabel: 'Close',
+      })
+      await api.settings.set('chatGptPlanWelcomeSeen', true)
+    } catch {
+      // A failed preference write must not undo a successfully connected account.
+    } finally {
+      welcomeShowing = false
+    }
+  }
+
   async function refresh(): Promise<void> {
     try {
       status = await api.chatGptPlan.status()
@@ -165,6 +215,7 @@ export function createChatGptPlanSection(
       message = error instanceof Error ? error.message : 'Could not read the ChatGPT connection.'
     }
     render()
+    await welcome()
   }
   render()
   return {

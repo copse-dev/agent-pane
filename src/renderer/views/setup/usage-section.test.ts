@@ -326,6 +326,46 @@ describe('renderModelTable alignment', () => {
     assert.equal(usage.model, model)
   })
 
+  it('keeps malformed historical plan selections readable without exposing their registration', () => {
+    const host = document.createElement('div')
+    assert.doesNotThrow(() => {
+      renderModelTable(host, 'Cloud models', [row('chatgpt-plan:old-registration')], 'none')
+    })
+    assert.equal(host.textContent.includes('old-registration'), false)
+  })
+
+  it('distinguishes accounts using their stable saved order and hides registration IDs', () => {
+    const host = document.createElement('div')
+    const accounts = ['first', 'second'].map((clientId) => ({
+      clientId,
+      label: 'same@example.com',
+      connected: true,
+      planEnabled: true,
+    }))
+    renderModelTable(
+      host,
+      'Cloud models',
+      [row('chatgpt-plan:second#gpt-5.6-luna'), row('chatgpt-plan:first#gpt-5.6-luna')],
+      'none',
+      accounts,
+    )
+    const cells = [...host.querySelectorAll('tbody tr td:first-child')].map(
+      (cell) => cell.textContent,
+    )
+    assert.match(cells[0] ?? '', /Connection 2/)
+    assert.match(cells[1] ?? '', /Connection 1/)
+    assert.equal(host.textContent.includes('chatgpt-plan:'), false)
+    const saved = document.createElement('div')
+    renderModelTable(
+      saved,
+      'Cloud models',
+      [row('chatgpt-plan:forgotten#gpt-5.6-luna'), row('chatgpt-plan:older#gpt-5.6-luna')],
+      'none',
+    )
+    assert.match(saved.textContent, /Saved connection 1/)
+    assert.match(saved.textContent, /Saved connection 2/)
+  })
+
   it('renders a cloud agent run as an unpriced cloud row instead of dropping it (#2448)', () => {
     const host = document.createElement('div')
     // A Cursor / Claude Cloud Agent run records its model as `remote-agent:<provider>`

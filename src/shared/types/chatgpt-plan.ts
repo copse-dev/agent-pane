@@ -19,6 +19,7 @@ export interface ChatGptPlanModel {
 export interface ChatGptPlanClient {
   status: () => Promise<ChatGptPlanStatus>
   signIn: (clientId?: string) => Promise<ChatGptPlanStatus>
+  refreshAccount: (clientId: string) => Promise<ChatGptPlanStatus>
   cancelSignIn: () => Promise<void>
   selectAccount: (clientId: string) => Promise<ChatGptPlanStatus>
   signOut: (clientId: string) => Promise<{ status: ChatGptPlanStatus; revoked: boolean }>

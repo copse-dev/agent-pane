@@ -528,6 +528,13 @@
           0
         ]
       },
+      "chat-gpt-plan:refresh-account": {
+        "api": "chatGptPlan.refreshAccount",
+        "args": [
+          1,
+          1
+        ]
+      },
       "chat-gpt-plan:select-account": {
         "api": "chatGptPlan.selectAccount",
         "args": [

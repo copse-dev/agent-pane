@@ -153,8 +153,20 @@ export class ChatGptPlanService {
     })
   }
 
+  async refreshAccount(clientId: string): Promise<ChatGptPlanStatus> {
+    await this.credentials(clientId, true)
+    return this.status()
+  }
+
   /** Main-process only. Pin the registration rather than looking up the active account. */
-  credentials(clientId: string): Promise<NonNullable<ChatGptRegistration['credentials']>> {
+  credentials(
+    clientId: string,
+    forceRefresh = false,
+  ): Promise<NonNullable<ChatGptRegistration['credentials']>> {
+    // Headless ACP/eval hosts bypass Electron's per-profile single-instance lock.
+    // Until cross-process token rotation is supported, keep this prototype desktop-only.
+    if (process.argv.includes('--acp') || process.env['COPSE_AGENT_EVAL'] === '1')
+      throw new Error('ChatGPT plan connections are available only in the Copse desktop client.')
     if (getExplicitSettingsProfile())
       throw new Error('ChatGPT plan credentials are unavailable in an explicit settings profile.')
     return runSerialized(this.queueKey, async () => {
@@ -166,7 +178,7 @@ export class ChatGptPlanService {
         throw new Error(
           'ChatGPT plan permission was not granted. Continue with ChatGPT to enable it.',
         )
-      if (account.credentials.expiresAt <= Date.now() + 60_000) {
+      if (forceRefresh || account.credentials.expiresAt <= Date.now() + 60_000) {
         const replacement = await refreshChatGptTokens(
           clientId,
           account.credentials.refreshToken,

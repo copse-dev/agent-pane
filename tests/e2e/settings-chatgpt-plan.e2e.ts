@@ -12,6 +12,15 @@ describe('native ChatGPT plan connection settings', () => {
       usageEvents: [
         {
           at: Date.now(),
+          model: 'chatgpt-plan:oaiapp_second#gpt-5.6-luna',
+          source: 'agent',
+          inputTokens: 1000,
+          outputTokens: 200,
+          threadId: 'fixture-second-thread',
+          projectId: 'e2e-chatgpt-plan',
+        },
+        {
+          at: Date.now(),
           model: 'chatgpt-plan:oaiapp_fixture#gpt-5.6-luna',
           source: 'agent',
           inputTokens: 447300,
@@ -69,9 +78,12 @@ describe('native ChatGPT plan connection settings', () => {
     await row.waitForExist()
     await expect(row.$('td')).toHaveText(/GPT-5\.6[- ]Luna · ChatGPT plan/)
     await expect(row).not.toHaveText('oaiapp_', { containing: true })
+    await expect($('.usage-model-group')).toHaveText('Saved connection 1', { containing: true })
+    await expect($('.usage-model-group')).toHaveText('Saved connection 2', { containing: true })
+    await expect($('#usage-period-body button')).toHaveText('Manage ChatGPT usage')
     await browser.execute(() => {
       document.querySelector('.usage-model-group')?.scrollIntoView({ block: 'center' })
     })
-    await saveElementScreenshot('.usage-model-group', 'settings-chatgpt-plan-usage.png')
+    await saveElementScreenshot('#usage-period-body', 'settings-chatgpt-plan-usage.png')
   })
 })

@@ -1085,6 +1085,8 @@ const api: ApiClient = {
   chatGptPlan: {
     status: () => ipcRenderer.invoke('chat-gpt-plan:status'),
     signIn: (clientId?: string) => ipcRenderer.invoke('chat-gpt-plan:sign-in', clientId),
+    refreshAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:refresh-account', clientId),
     cancelSignIn: () => ipcRenderer.invoke('chat-gpt-plan:cancel-sign-in'),
     selectAccount: (clientId: string) =>
       ipcRenderer.invoke('chat-gpt-plan:select-account', clientId),

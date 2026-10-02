@@ -16,7 +16,7 @@ function planRequestError(error: unknown, secrets: readonly string[]): Error {
     const code = redactSecrets(error.code ?? '', secrets)
     if (code === 'subscription_sharing_usage_limit_exceeded')
       return new Error(
-        'ChatGPT plan usage limit reached. Manage your plan or this app’s limit in ChatGPT Settings → Usage.',
+        'ChatGPT plan usage limit reached. Review your plan or Copse’s allowance.\n\n[Manage usage](https://chatgpt.com/settings/usage)',
         { cause },
       )
     if (code === 'subscription_sharing_user_not_eligible')

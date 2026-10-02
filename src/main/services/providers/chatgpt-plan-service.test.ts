@@ -5,6 +5,7 @@ import { request as httpRequest } from 'node:http'
 import { ChatGptPlanService } from './chatgpt-plan-service.ts'
 import {
   verifyChatGptIdentity,
+  revokeChatGptTokens,
   validateChatGptCallback,
   type ChatGptOAuthDependencies,
 } from './chatgpt-plan-oauth.ts'
@@ -28,10 +29,12 @@ function jwt(
   clientId = 'oaiapp_copse',
   subject = 'user-1',
   expires = Date.now() / 1000 + 3600,
+  claims: Record<string, unknown> = {},
+  headerClaims: Record<string, unknown> = {},
 ): string {
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'test-key' })).toString(
-    'base64url',
-  )
+  const header = Buffer.from(
+    JSON.stringify({ alg: 'RS256', kid: 'test-key', ...headerClaims }),
+  ).toString('base64url')
   const payload = Buffer.from(
     JSON.stringify({
       iss: 'https://auth.openai.com',
@@ -40,6 +43,7 @@ function jwt(
       exp: expires,
       nonce,
       email: 'user@example.com',
+      ...claims,
     }),
   ).toString('base64url')
   const signature = sign(
@@ -300,6 +304,83 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
     )
   })
 
+  it('retries transient revocation errors while retaining the token and refuses an off-issuer endpoint', async () => {
+    let attempts = 0
+    const revoked = await revokeChatGptTokens('client', 'secret-refresh', async (input, init) => {
+      if (
+        (input instanceof Request ? input.url : input.toString()).includes('openid-configuration')
+      )
+        return Response.json({
+          issuer: 'https://auth.openai.com',
+          revocation_endpoint: 'https://auth.openai.com/oauth/revoke',
+        })
+      attempts++
+      assert.ok(init?.body instanceof URLSearchParams)
+      assert.equal(init.body.get('token'), 'secret-refresh')
+      assert.equal(init.redirect, 'error')
+      if (attempts === 1) throw new Error('network failure')
+      return new Response('', { status: attempts === 2 ? 503 : 200 })
+    })
+    assert.equal(revoked, true)
+    assert.equal(attempts, 3)
+    let reads = 0
+    assert.equal(
+      await revokeChatGptTokens('client', 'secret-refresh', async () => {
+        reads++
+        return Response.json({
+          issuer: 'https://auth.openai.com',
+          revocation_endpoint: 'https://attacker.invalid/revoke',
+        })
+      }),
+      false,
+    )
+    assert.equal(reads, 1)
+  })
+
+  it('rejects unsupported critical JWT extensions before reading signing keys', async () => {
+    await assert.rejects(
+      verifyChatGptIdentity(
+        jwt('nonce', undefined, undefined, undefined, {}, { crit: ['unknown'] }),
+        'oaiapp_copse',
+        'nonce',
+        async () => {
+          throw new Error('Must not read keys')
+        },
+      ),
+      /Invalid ChatGPT identity token/,
+    )
+  })
+
+  it('checks the authorized party for multiple audiences and rejects future identities', async () => {
+    const fetcher: typeof fetch = async () => Response.json({ keys: [publicKey] })
+    for (const claims of [
+      { aud: ['oaiapp_copse', 'other'] },
+      { aud: ['oaiapp_copse', 'other'], azp: 'other' },
+      { azp: 'other' },
+      { nbf: Date.now() / 1000 + 3600 },
+    ]) {
+      await assert.rejects(
+        verifyChatGptIdentity(
+          jwt('nonce', undefined, undefined, undefined, claims),
+          'oaiapp_copse',
+          'nonce',
+          fetcher,
+        ),
+        /validation/,
+      )
+    }
+    const identity = await verifyChatGptIdentity(
+      jwt('nonce', undefined, undefined, undefined, {
+        aud: ['oaiapp_copse', 'other'],
+        azp: 'oaiapp_copse',
+      }),
+      'oaiapp_copse',
+      'nonce',
+      fetcher,
+    )
+    assert.equal(identity.subject, 'user-1')
+  })
+
   it('serializes concurrent refreshes and atomically persists the rotated refresh token', async () => {
     const store = memoryStore(savedState())
     let refreshes = 0
@@ -332,6 +413,54 @@ describe('ChatGPT plan OAuth and account lifecycle', () => {
       },
     })
     assert.equal((await restarted.credentials('oaiapp_copse')).accessToken, 'rotated-access')
+  })
+
+  it('refuses credentials in headless hosts that bypass the per-profile single-instance lock', async () => {
+    const original = process.argv
+    const service = new ChatGptPlanService(memoryStore(savedState()), {
+      openBrowser: async (): Promise<void> => {},
+      fetch: async (): Promise<Response> => {
+        throw new Error('Must not refresh')
+      },
+    })
+    try {
+      process.argv = [...original, '--acp']
+      assert.throws(() => service.credentials('oaiapp_copse'), /desktop client/)
+    } finally {
+      process.argv = original
+    }
+  })
+
+  it('refreshes a valid connection on request without exposing credentials or switching accounts', async () => {
+    const state = savedState()
+    const account = state.accounts.at(0)
+    assert.ok(account?.credentials)
+    account.credentials.expiresAt = Date.now() + 3_600_000
+    const store = memoryStore(state)
+    let refreshes = 0
+    const service = new ChatGptPlanService(store, {
+      openBrowser: async (): Promise<void> => {},
+      fetch: async (_input, init): Promise<Response> => {
+        refreshes++
+        assert.ok(init?.body instanceof URLSearchParams)
+        assert.equal(init.body.get('client_id'), 'oaiapp_copse')
+        assert.equal(init.body.get('refresh_token'), 'refresh-before')
+        return Response.json({
+          access_token: 'renewed',
+          refresh_token: 'rotated',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        })
+      },
+    })
+    await service.credentials('oaiapp_copse')
+    assert.equal(refreshes, 0)
+    const publicStatus = await service.refreshAccount('oaiapp_copse')
+    assert.equal(refreshes, 1)
+    assert.equal(publicStatus.activeClientId, 'oaiapp_copse')
+    assert.equal(JSON.stringify(publicStatus).includes('renewed'), false)
+    assert.equal((await service.credentials('oaiapp_copse')).accessToken, 'renewed')
+    assert.equal(store.read().accounts.at(0)?.credentials?.refreshToken, 'rotated')
   })
 
   it('lists the OAuth catalog in server order, filters hidden models, and keeps accounts separate', async () => {

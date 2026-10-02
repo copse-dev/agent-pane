@@ -1410,6 +1410,10 @@ export function registerAllHandlers(
       parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
     )
   })
+  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
   ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
     assertMainFrameSender(event, win)
     getChatGptPlanService().cancelSignIn()

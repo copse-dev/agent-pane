@@ -192,3 +192,57 @@ a direct Manage usage action on usage-limit errors; and clearer account distinct
 in Usage when multiple registrations use the same model. Containers, automatic
 best-value routing and hosted Responses tools remain explicitly outside this
 prototype. CI must resolve or confirm the recorded host-only validation failures.
+
+## Follow-up task brief
+
+Acceptance: provide a supported manual connection-refresh action using the same
+serialized rotation path as automatic renewal, verify it with the existing live
+account, request the repository's independent review, and complete first-use and
+usage-management polish with focused UI evidence. A second supported account is
+unavailable (the user's other account is Enterprise); live multiple-account
+verification remains explicitly unverified, with automated isolation coverage.
+
+Auth review scope: normal desktop instances hold Electron's per-profile
+single-instance lock. Headless ACP/eval hosts bypass that lock, so this prototype
+now refuses their ChatGPT-plan credentials rather than allowing two processes
+to race a rotated refresh token. Cross-process refresh support is outside scope.
+
+## Auth and UX follow-up evidence
+
+The auth audit added authorized-party and not-before identity checks, rejection of
+unsupported critical JWT extensions, cancellation during signing-key retrieval,
+and bounded retries for transient revocation failures. The supported Refresh
+connection action exercises the same serialized token rotation as automatic
+renewal and returns only public metadata over main-frame IPC. Account options
+stay expanded across refresh. Headless hosts cannot read these credentials.
+
+The isolated real-account client displayed Connection refreshed; a new GPT-5.6-Luna
+chat then returned exactly renewal verified without tool calls. This verifies the
+live refresh grant plus inference, not elapsed-time expiry. Automatic expiry and
+account isolation retain automated coverage. No second supported real account is
+available, so that live check remains unverified.
+
+Onboarding now explains plan/credit usage once, persisted via a validated public
+boolean preference. Sign-in uses the official ChatGPT mark from
+https://developers.openai.com/assets/siwc/chatgpt-logo-white.svg unchanged.
+Usage management is available in settings, beside the plan model picker, near
+the ledger and as the primary action in a usage-limit callout. Multiple usage
+registrations show connection labels rather than raw IDs; malformed historical
+selections remain readable. Unknown saved connections are numbered within the
+current view; known accounts use their persisted registration order.
+
+Focused final tests: 74 passed (auth, settings, model picker, usage, protocol and
+button contract). Browser visual: 1 spec / 3 tests passed, including the hidden
+control on other provider routes. Electron settings/usage: 1 spec / 2 tests
+passed. Final build and check:local passed. Screenshots were inspected: official
+sign-in button, welcome, expanded maintenance actions, compact composer, limit
+recovery and multi-registration ledger. The full check completed with 12,300
+passed, 3 skipped and the same 9 host/toolchain failures documented above. A
+repeat on the final footer styling and the complete Electron tier are running;
+these results will be handed off explicitly. No full local gate was deferred.
+
+Independent repository review will be requested on the pushed follow-up via the
+copse-review label; it is not yet a completed security review. CI on the initial
+PR head passed its main check/CI Passed gates. Final-head CI and review remain
+pending. Logs: .tmp/chatgpt-followup-{focused-final,static-final,gate,gate-final,
+demo-final,e2e-final,e2e-all,context-rerun}.log.

@@ -52,6 +52,8 @@ const identitySchema = z.object({
   iss: z.literal(ISSUER),
   aud: z.union([z.string(), z.array(z.string())]),
   sub: z.string().min(1),
+  azp: z.string().optional(),
+  nbf: z.number().optional(),
   exp: z.number(),
   nonce: z.string(),
   email: z.string().optional(),
@@ -64,6 +66,7 @@ export async function verifyChatGptIdentity(
   clientId: string,
   nonce: string,
   fetcher: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<{ subject: string; label: string }> {
   const parts = token.split('.')
   const [headerPart, payloadPart, signaturePart] = parts
@@ -71,7 +74,9 @@ export async function verifyChatGptIdentity(
     throw new Error('Invalid ChatGPT identity token.')
   const header = safeJsonParse(
     Buffer.from(headerPart, 'base64url').toString('utf8'),
-    decodeWithSchema(z.object({ alg: z.literal('RS256'), kid: z.string().min(1) })),
+    decodeWithSchema(
+      z.object({ alg: z.literal('RS256'), kid: z.string().min(1), crit: z.never().optional() }),
+    ),
   )
   const identity = safeJsonParse(
     Buffer.from(payloadPart, 'base64url').toString('utf8'),
@@ -79,7 +84,14 @@ export async function verifyChatGptIdentity(
   )
   if (!header || !identity) throw new Error('Invalid ChatGPT identity token.')
   const audience = typeof identity.aud === 'string' ? [identity.aud] : identity.aud
-  if (!audience.includes(clientId) || identity.nonce !== nonce || identity.exp <= Date.now() / 1000)
+  if (
+    !audience.includes(clientId) ||
+    (audience.length > 1 && identity.azp !== clientId) ||
+    (identity.azp !== undefined && identity.azp !== clientId) ||
+    identity.nonce !== nonce ||
+    identity.exp <= Date.now() / 1000 ||
+    (identity.nbf !== undefined && identity.nbf > Date.now() / 1000)
+  )
     throw new Error('ChatGPT identity validation failed.')
   const keys = await jsonRequest(
     fetcher,
@@ -96,6 +108,11 @@ export async function verifyChatGptIdentity(
         }),
       ),
     }),
+    {
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
+        : AbortSignal.timeout(20_000),
+    },
   )
   const key = keys.keys.find((entry) => entry.kid === header.kid)
   if (
@@ -248,6 +265,7 @@ export async function authorizeChatGpt(
       result.clientId,
       nonce,
       dependencies.fetch,
+      options.signal,
     )
     options.signal.throwIfAborted()
     return { clientId: result.clientId, tokens, ...identity }
@@ -280,26 +298,38 @@ export async function revokeChatGptTokens(
   refreshToken: string,
   fetcher: typeof fetch,
 ): Promise<boolean> {
+  const signal = AbortSignal.timeout(20_000)
+  let endpoint: URL
   try {
     const discovery = await jsonRequest(
       fetcher,
       `${ISSUER}/.well-known/openid-configuration`,
       z.object({ issuer: z.literal(ISSUER), revocation_endpoint: z.url() }),
+      { signal },
     )
-    const endpoint = new URL(discovery.revocation_endpoint)
+    endpoint = new URL(discovery.revocation_endpoint)
     if (endpoint.origin !== ISSUER || endpoint.username || endpoint.password) return false
-    const response = await fetcher(endpoint, {
-      method: 'POST',
-      redirect: 'error',
-      signal: AbortSignal.timeout(20_000),
-      body: new URLSearchParams({
-        token: refreshToken,
-        token_type_hint: 'refresh_token',
-        client_id: clientId,
-      }),
-    })
-    return response.status === 200
   } catch {
     return false
   }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetcher(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        signal,
+        body: new URLSearchParams({
+          token: refreshToken,
+          token_type_hint: 'refresh_token',
+          client_id: clientId,
+        }),
+      })
+      if (response.status === 200) return true
+      if (response.status < 500) return false
+    } catch {
+      if (signal.aborted) return false
+    }
+    if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250 * 2 ** attempt))
+  }
+  return false
 }

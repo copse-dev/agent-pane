@@ -20,6 +20,8 @@ import { fetchModelOptions } from '../model-options.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
 import { parseAcpAgentConfigs } from '@shared/acp.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
+import { parseModelSelection } from '@copse/llm/model-selection.ts'
+import type { ChatGptPlanAccount } from '@shared/types/chatgpt-plan.ts'
 import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
@@ -416,6 +418,7 @@ export function renderModelTable(
   title: string,
   rows: UsagePeriodSummary['cloudModels'],
   emptyText: string,
+  accounts: readonly ChatGptPlanAccount[] = [],
 ): void {
   const section = document.createElement('div')
   section.className = 'usage-model-group'
@@ -460,6 +463,14 @@ export function renderModelTable(
   `
   const tbody = table.querySelector('tbody')
   if (!tbody) throw new Error('usage table is missing its tbody')
+  const registrations = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const plan = parseModelSelection(row.model)
+        return plan.namespace === 'chatgpt-plan' && plan.agent ? [plan.agent] : []
+      }),
+    ),
+  ]
   for (const row of rows) {
     const tr = document.createElement('tr')
     // "~" prefix flags counts we estimated locally because the agent (e.g. an ACP
@@ -473,6 +484,17 @@ export function renderModelTable(
     const modelLabel = row.estimatedTokens
       ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>`
       : model
+    const plan = parseModelSelection(row.model)
+    const accountIndex =
+      plan.namespace === 'chatgpt-plan'
+        ? accounts.findIndex((account) => account.clientId === plan.agent)
+        : -1
+    const accountLabel =
+      plan.namespace === 'chatgpt-plan' && plan.agent && registrations.length > 1
+        ? accountIndex >= 0
+          ? `Connection ${String(accountIndex + 1)}`
+          : `Saved connection ${String(registrations.indexOf(plan.agent) + 1)}`
+        : ''
     const costLabel = row.isLocal
       ? 'free (local)'
       : !row.pricingKnown
@@ -483,7 +505,7 @@ export function renderModelTable(
               : ''
           }`
     tr.innerHTML = `
-      <td><code>${modelLabel}</code></td>
+      <td><code>${modelLabel}</code>${accountLabel ? `<br><span class="field-hint">${accountLabel}</span>` : ''}</td>
       <td>${approx}${formatTokenCount(row.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row.outputTokens)}</td>
       <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '-'}</td>
@@ -501,6 +523,8 @@ function renderPeriodSummary(
   summary: UsagePeriodSummary,
   period: UsagePeriodKey,
   meta: Pick<UsageSummary, 'ledgerEventCount' | 'trackingStartedAt'>,
+  accounts: readonly ChatGptPlanAccount[],
+  api: ApiClient,
 ): void {
   host.replaceChildren()
 
@@ -528,11 +552,22 @@ function renderPeriodSummary(
     host.append(note)
   }
 
+  if (summary.cloudModels.some((row) => row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX))) {
+    const usage = document.createElement('button')
+    usage.type = 'button'
+    usage.className = 'ui-btn ui-btn-primary'
+    usage.textContent = 'Manage ChatGPT usage'
+    usage.addEventListener('click', () => {
+      void api.shell.openExternal('https://chatgpt.com/settings/usage')
+    })
+    host.append(usage)
+  }
   renderModelTable(
     host,
     'Cloud models',
     summary.cloudModels,
     'No cloud model usage in this period.',
+    accounts,
   )
   renderModelTable(
     host,
@@ -620,6 +655,7 @@ export function createUsageSection(
   const labelEl = qsRequired(root, '#usage-period-label')
   const tabBtns = root.querySelectorAll<HTMLButtonElement>('.usage-period-btn')
   let activePeriod: UsagePeriodKey = 'day'
+  let cachedAccounts: ChatGptPlanAccount[] = []
   let cachedSummary: UsageSummary | null = null
   let cachedPlanSnapshot: PlanUsageSnapshot | null = null
   let ledgerRefreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -670,10 +706,17 @@ export function createUsageSection(
     })
     labelEl.textContent = PERIOD_LABELS[period]
     if (cachedSummary) {
-      renderPeriodSummary(bodyEl, cachedSummary[period], period, {
-        ledgerEventCount: cachedSummary.ledgerEventCount,
-        trackingStartedAt: cachedSummary.trackingStartedAt,
-      })
+      renderPeriodSummary(
+        bodyEl,
+        cachedSummary[period],
+        period,
+        {
+          ledgerEventCount: cachedSummary.ledgerEventCount,
+          trackingStartedAt: cachedSummary.trackingStartedAt,
+        },
+        cachedAccounts,
+        api,
+      )
     }
   }
 
@@ -742,6 +785,11 @@ export function createUsageSection(
   }
 
   async function refresh(): Promise<void> {
+    try {
+      cachedAccounts = (await api.chatGptPlan.status()).accounts
+    } catch {
+      cachedAccounts = []
+    }
     if (!cachedSummary) {
       bodyEl.textContent = 'Loading usage…'
     }

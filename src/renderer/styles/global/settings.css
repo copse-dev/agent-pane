@@ -2898,3 +2898,18 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .openai-connection-card details > .provider-capability {
   margin-top: var(--spacing-md);
 }
+
+/* Official ChatGPT mark on the neutral sign-in button, independent of app tint. */
+.chatgpt-sign-in {
+  background: #000;
+  color: #fff;
+  border: 1px solid #fff;
+  gap: 8px;
+}
+.chatgpt-sign-in:hover:not(:disabled) {
+  background: #202020;
+  color: #fff;
+}
+.chatgpt-sign-in img {
+  flex: none;
+}

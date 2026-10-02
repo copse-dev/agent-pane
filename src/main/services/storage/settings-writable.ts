@@ -184,6 +184,8 @@ export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   acknowledgedProductAnnouncements: announcementHistorySchema,
   model: z.string().max(256),
+  // Acknowledgement of the one-time ChatGPT plan onboarding notice.
+  chatGptPlanWelcomeSeen: z.boolean(),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
   // Whole-UI multiplier for design tokens (--ui-scale). Independent of
