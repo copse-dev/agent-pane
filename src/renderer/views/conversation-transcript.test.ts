@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addMessageCanvasArtefact, createThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addMessageCanvasArtefact,
+  appendAcpContentBlock,
+  createThread,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -391,4 +396,58 @@ describe('assistant inline visualization references', () => {
     drag(oldSurface)
     assert.equal(oldSurface.childElementCount, 0, 'the removed surface no longer handles input')
   })
+})
+
+describe('assistant response image gallery', () => {
+  it('groups images added to one live response and opens at the chosen image', () => {
+    patchPreviewDialog()
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Three captures')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const sources = [
+      'data:image/png;base64,AAAA',
+      'data:image/png;base64,BBBB',
+      'data:image/png;base64,CCCC',
+    ]
+    for (const dataUrl of sources) {
+      appendAcpContentBlock(store, messageId, 'message', {
+        type: 'image',
+        dataUrl,
+        mimeType: 'image/png',
+      })
+    }
+
+    const images = host.querySelectorAll<HTMLImageElement>(
+      '.msg-assistant .acp-message-content .acp-content-image',
+    )
+    assert.equal(images.length, 3)
+    images[1]?.click()
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.dataset['previewKind'], 'image-gallery')
+    assert.equal(dialog.querySelector('.image-expand-image')?.getAttribute('src'), sources[1])
+    assert.equal(dialog.querySelector('.image-expand-counter')?.textContent, '2 / 3')
+    assert.equal(dialog.querySelectorAll('.image-expand-thumbnail').length, 3)
+    dialog.close()
+  })
+})
+
+it('shows the explainer title while preserving its revision key for opening', () => {
+  const identity = 'Explainer Three Searches One Answer Ab12cd34'
+  const threadId = mountWithAssistantMessage('Here is the explanation.', identity)
+  const opened: { threadId: string; title: string }[] = []
+  setArtefactShowHandler((thread, title) => {
+    opened.push({ threadId: thread, title })
+  })
+  assert.equal(
+    document.querySelector('.canvas-inline-artefact .canvas-preview-title')?.textContent,
+    'Three Searches One Answer',
+  )
+  document.querySelector<HTMLButtonElement>('.canvas-inline-artefact .canvas-preview-open')?.click()
+  assert.deepEqual(opened, [{ threadId, title: identity }])
 })

@@ -41,6 +41,17 @@ describe('tool call turn rollup', () => {
       'Verified the settings fix',
     )
 
+    // Successful work and reasoning stay collapsed; the failed read is shown
+    // open beside the run so its diagnostic needs no click.
+    await expect(rollups[0]!).not.toHaveAttribute('open')
+    const failure = $(
+      '[data-message-id="msg-assistant-search"] > .tool-card[data-tool-id="tc-read-2"]',
+    )
+    await expect(failure).toHaveAttribute('open')
+    await expect(failure.$('.tool-result')).toHaveText(expect.stringContaining('ENOENT'))
+    await expect(rollups[0]!.$('[data-tool-id="tc-read-2"]')).not.toExist()
+    await expect($$('.message-reasoning[open]')).toBeElementsArrayOfSize(0)
+
     // The run renders on its anchor — the first segment of the burst — and the
     // members it absorbed render no cards of their own.
     await expect(
@@ -116,7 +127,7 @@ describe('tool call turn rollup', () => {
   it('expands the run into one step per message, each with its own reasoning and tools', async () => {
     const run = await $('.tool-card-rollup[data-rollup-key="run"]')
     await run.scrollIntoView()
-    // The failed run opens automatically so the diagnostic is immediately visible.
+    await run.$('summary.tool-card-header').click()
     await expect(run).toHaveAttribute('open')
 
     // One step per persisted message, in the order they streamed, each headed
@@ -134,16 +145,19 @@ describe('tool call turn rollup', () => {
       'Read settings template paths',
     )
 
-    // Expand the mixed-success step: its reasoning and tool rows live inside it,
-    // not on the run and not on the message bubble.
+    // Expand the mixed-success step: its reasoning and successful tool rows
+    // live inside it, not on the run and not on the message bubble.
     const mixed = steps[1]!
     await mixed.scrollIntoView()
-    // The failed step opens with its parent for the same reason.
+    // Steps stay closed even when their message had a failure (shown beside).
+    await expect(mixed).not.toHaveAttribute('open')
+    await mixed.$('summary.tool-card-header').click()
     await expect(mixed).toHaveAttribute('open')
     await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
     await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
     // Completed reasoning is a separate, initially closed disclosure inside
     // the step. Open it before asserting the text a user can actually read.
+    await expect(mixed.$('.message-reasoning')).not.toHaveAttribute('open')
     const closedBackground = await mixed.$('.message-reasoning').getCSSProperty('background-image')
     expect(closedBackground.value).toBe('none')
     await mixed.$('.message-reasoning-summary').click()
@@ -200,19 +214,17 @@ describe('tool call turn rollup', () => {
     )
     await expect(mixed.$('.tool-card-group .tool-name')).toHaveText('Read files')
     await expect(mixed.$('.tool-card-group .tool-count')).toHaveText('×2')
-    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText('Read file')
-    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"]')).toHaveAttribute(
-      'data-status',
-      'error',
-    )
+    await expect(mixed.$('[data-tool-id="tc-read-2"]')).not.toExist()
 
     // The run adds exactly one rail: the run body, then the step body. Groups
     // below a step inset without a rule of their own.
     const railDepth = await browser.execute(() => {
-      const errored = document.querySelector('.tool-card[data-tool-id="tc-read-2"]')
-      if (!errored) return null
+      const group = document.querySelector(
+        '[data-step-message-id="msg-assistant-reads"] .tool-card-group',
+      )
+      if (!group) return null
       let rails = 0
-      for (let el = errored.parentElement; el; el = el.parentElement) {
+      for (let el = group.parentElement; el; el = el.parentElement) {
         if (el.classList.contains('msg')) break
         if (getComputedStyle(el).borderLeftStyle !== 'none') rails += 1
       }
@@ -226,7 +238,7 @@ describe('tool call turn rollup', () => {
         '.tool-card-step[data-status="error"] .tool-card-group[data-status="done"] > .tool-card-header > .tool-status-icon',
       )
       const failure = document.querySelector(
-        '.tool-card-step[data-status="error"] .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
+        '.msg > .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
       )
       return {
         success: success ? getComputedStyle(success).color : null,

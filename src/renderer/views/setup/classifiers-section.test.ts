@@ -7,6 +7,7 @@ import type {
   ClassifierProfileStatus,
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
+import type { LocalClassifierOverview, LocalClassifierStatus } from '@shared/local-classifiers.ts'
 import { createClassifiersSection } from './classifiers-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import {
@@ -36,6 +37,19 @@ const RESULT: ClassifierResult = {
   answers: { color: { type: 'choice', choice: 'red', probabilities: { red: 0.95, blue: 0.05 } } },
 }
 
+const WINNOW_SERVER: LocalClassifierStatus = {
+  id: 'winnow',
+  label: 'Winnow-12B',
+  presetId: 'winnow',
+  baseUrl: 'http://127.0.0.1:8091/v1',
+  phase: 'not-installed',
+  downloadGb: 12.5,
+  source: 'https://github.com/EldanRing/winnow-inference.git',
+  needs: ['git', 'python3'],
+  missing: [],
+  saved: false,
+}
+
 function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
   section: ReturnType<typeof createClassifiersSection>
   state: {
@@ -50,6 +64,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     removals: string[]
     screening: string | null
     screenings: Array<string | null>
+    local: LocalClassifierOverview
+    localCalls: string[]
   }
 } {
   const state = {
@@ -68,6 +84,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     failure: null as string | null,
     keyFailure: null as string | null,
     removals: new Array<string>(),
+    local: { servers: [], hosted: [] } as LocalClassifierOverview,
+    localCalls: new Array<string>(),
   }
   const api: Parameters<typeof createClassifiersSection>[0] = {
     classifiers: {
@@ -102,6 +120,25 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         if (state.failure) throw new Error(state.failure)
         state.screening = id
         return state.screening
+      },
+    },
+    localClassifiers: {
+      status: async () => structuredClone(state.local),
+      install: async (id) => {
+        state.localCalls.push(`install:${id}`)
+        return structuredClone(state.local)
+      },
+      start: async (id) => {
+        state.localCalls.push(`start:${id}`)
+        return structuredClone(state.local)
+      },
+      stop: async (id) => {
+        state.localCalls.push(`stop:${id}`)
+        return structuredClone(state.local)
+      },
+      connect: async (id) => {
+        state.localCalls.push(`connect:${id}`)
+        return structuredClone(state.local)
       },
     },
     settings: {
@@ -484,5 +521,73 @@ describe('classifier connections settings', () => {
     assert.equal(state.profiles.length, 0)
     assert.equal(section.root.querySelector('.classifier-form'), null)
     assert.match(section.root.textContent, /Classifier and its saved key removed/)
+  })
+
+  it('offers a download for a server that is not installed, and only installs after confirming', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [WINNOW_SERVER], hosted: [] }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.match(row.textContent, /about 12\.5 GB download/)
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-install').click()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, [])
+    clickActiveConfirmDialogCancel()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, [])
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-install').click()
+    await setImmediate()
+    clickActiveConfirmDialogConfirm()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['install:winnow'])
+  })
+
+  it('disables the download and names a missing tool', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [{ ...WINNOW_SERVER, missing: ['python3'] }], hosted: [] }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.match(row.textContent, /needs python3 on your PATH/)
+    assert.equal(qsRequired<HTMLButtonElement>(row, '.classifier-local-install').disabled, true)
+  })
+
+  it('offers to add a connection for a server it detected running', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [{ ...WINNOW_SERVER, phase: 'external' }], hosted: [] }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-local-id="winnow"]')
+    assert.match(row.textContent, /Detected running on http:\/\/127\.0\.0\.1:8091\/v1/)
+    assert.equal(row.querySelector('.classifier-local-install'), null)
+    qsRequired<HTMLButtonElement>(row, '.classifier-local-connect').click()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['connect:winnow'])
+  })
+
+  it('starts an installed server and stops one it is running', async () => {
+    const { section, state } = setup([])
+    state.local = { servers: [{ ...WINNOW_SERVER, phase: 'installed' }], hosted: [] }
+    await section.refresh()
+    qsRequired<HTMLButtonElement>(section.root, '.classifier-local-start').click()
+    await setImmediate()
+    state.local = { servers: [{ ...WINNOW_SERVER, phase: 'running', saved: true }], hosted: [] }
+    await section.refresh()
+    qsRequired<HTMLButtonElement>(section.root, '.classifier-local-stop').click()
+    await setImmediate()
+    assert.deepEqual(state.localCalls, ['start:winnow', 'stop:winnow'])
+  })
+
+  it('opens a draft for a hosted classifier whose key is already in the environment', async () => {
+    const { section, state } = setup([])
+    state.local = {
+      servers: [],
+      hosted: [{ presetId: 'typesafe', label: 'TypeSafe / Jev', envVar: 'TYPESAFE_API_KEY' }],
+    }
+    await section.refresh()
+    const row = qsRequired(section.root, '[data-hosted-id="typesafe"]')
+    assert.match(row.textContent, /TYPESAFE_API_KEY is set in your environment/)
+    qsRequired<HTMLButtonElement>(row, '.classifier-hosted-setup').click()
+    assert.equal(field(section.root, 'Model').value, 'jev-latest')
+    assert.equal(state.keys.length, 0)
+    assert.equal(state.saves.length, 0)
   })
 })

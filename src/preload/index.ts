@@ -255,6 +255,7 @@ const api: ApiClient = {
   agent: {
     run: (projectId: string, threadId: string, prompt: string) =>
       ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    runMachine: (request) => ipcRenderer.invoke('agent:run-machine', request),
     describeImages: (
       projectId: string,
       threadId: string,
@@ -738,6 +739,8 @@ const api: ApiClient = {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
+    backfillPrRefs: (projectId: string, threadIds: string[]) =>
+      ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (
@@ -1010,6 +1013,13 @@ const api: ApiClient = {
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
     screening: () => ipcRenderer.invoke('classifiers:screening'),
     setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
+  },
+  localClassifiers: {
+    status: () => ipcRenderer.invoke('local-classifiers:status'),
+    install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
+    start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
+    stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

@@ -70,7 +70,7 @@ describe('concise thread view in the conversation', () => {
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-working'], ['msg-concise']])
+    assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-steps'], ['msg-concise']])
   })
 
   it('re-applies to rendered messages when the setting flips', () => {
@@ -81,7 +81,7 @@ describe('concise thread view in the conversation', () => {
 
     store.setState({ conciseThreadsEnabled: true })
     store.emit('settings_changed')
-    assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-working'], ['msg-concise']])
+    assert.deepEqual(conciseClasses(), [['msg-concise', 'msg-concise-steps'], ['msg-concise']])
 
     store.setState({ conciseThreadsEnabled: false })
     store.emit('settings_changed')

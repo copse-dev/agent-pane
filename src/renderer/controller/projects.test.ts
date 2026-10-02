@@ -6,6 +6,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import {
   addProject,
+  applyCachedSidebarPrRefs,
   attachProjectThreadCache,
   getSidebarThreads,
   isProjectSwitchInFlight,
@@ -243,6 +244,37 @@ test('switching away compacts the outgoing project, keeping its rows but not its
   )
   // ...but the transcript the scrape read is gone.
   assert.equal(row.messages, undefined)
+})
+
+test('visible PR discovery updates a previously active project sidebar row', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+  })
+  attachProjectThreadCache(store)
+  store.emit('threads_changed')
+  const api = makeApi({
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  const ref = {
+    owner: 'copse-dev',
+    repo: 'agent-pane',
+    number: 8,
+    url: 'https://github.com/copse-dev/agent-pane/pull/8',
+  }
+  assert.equal(applyCachedSidebarPrRefs('a', [{ threadId: 't-a', prRefs: [ref] }]), true)
+  assert.deepEqual(getSidebarThreads(store, 'a')[0]?.prRefs, [ref])
+  assert.equal(getSidebarThreads(store, 'a')[0]?.messages, undefined)
 })
 
 test('switchProject carries chunks that land while activation is in flight', async () => {
@@ -559,9 +591,9 @@ test('switchProject passes sshHost through to workspace.set', async () => {
       { id: 'local', path: '/local', name: 'Local' },
       {
         id: 'remote',
-        path: '/etc/ddg',
-        name: 'ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/srv/app',
+        name: 'app',
+        sshHost: 'remote-dev-testing-016',
       },
     ],
     activeProjectId: 'local',
@@ -587,7 +619,7 @@ test('switchProject passes sshHost through to workspace.set', async () => {
     sshWorkspace: {
       getStates: async () => [
         {
-          hostId: 'euw-serp-dev-testing16',
+          hostId: 'remote-dev-testing-016',
           status: 'connected',
           label: 'dev',
           target: 'dev',
@@ -599,7 +631,7 @@ test('switchProject passes sshHost through to workspace.set', async () => {
 
   switchProject(store, api, 'remote')
   await waitUntil(() => store.getState().activeProjectId === 'remote')
-  assert.deepEqual(sets.at(-1), { path: '/etc/ddg', sshHost: 'euw-serp-dev-testing16' })
+  assert.deepEqual(sets.at(-1), { path: '/srv/app', sshHost: 'remote-dev-testing-016' })
 })
 
 test('restoreProject does not emit projects_changed before threads are loaded', async () => {
