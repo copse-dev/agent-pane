@@ -6,11 +6,18 @@ import { errorMessage } from '@shared/errors.ts'
 import { resolveIssueRef } from '@shared/git/issue-ref.ts'
 import { parseReviewVerdict, type RoadmapReviewVerdict } from '@shared/roadmap/review.ts'
 import type { GhIssueSummary } from '@shared/types/git.ts'
-import type { LLMProvider, ModelUsage } from '@shared/types'
+import {
+  isImageAttachment,
+  parseKnowledgeAttachments,
+  ATTACHMENTS_FIELD,
+  type KnowledgeAttachment,
+} from '@shared/knowledge/attachments.ts'
+import type { LLMMessage, LLMProvider, ModelUsage } from '@shared/types'
 import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
-import { completeTextWithUsage } from './providers/llm-complete-text.ts'
+import { completeMessagesWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import { readKnowledgeAttachmentDataUrl } from './storage/knowledge-attachments.ts'
 import {
   getKnowledgeNote,
   loadKnowledgeNotes,
@@ -46,6 +53,8 @@ const DEEP_REVIEW_TIMEOUT_MS = 60_000
 const BULK_COMMIT_MAX = 80
 const DEEP_COMMIT_MAX = 200
 const LINKED_ISSUE_LIMIT = 8
+/** Images a deep check attaches; more would cost context without changing the verdict. */
+const DEEP_REVIEW_MAX_IMAGES = 4
 
 /** Characters of each evidence section the prompt carries, before any trimming. */
 export interface ReviewSectionChars {
@@ -189,6 +198,16 @@ export function reviewSectionChars(
   }
 }
 
+function attachmentsBlock(attachments: KnowledgeAttachment[], sentImages: number): string {
+  if (attachments.length === 0) return ''
+  const names = attachments.map((a) => `- ${a.name} (${a.mimeType})`).join('\n')
+  const sent =
+    sentImages > 0
+      ? `The first ${String(sentImages)} image attachment(s) are attached to this message.`
+      : 'Attachment contents are not included.'
+  return `\nATTACHMENTS:\n${names}\n${sent}\n`
+}
+
 function reviewPrompt(
   note: { body: string; status: string | null; fields: Record<string, string> },
   pinned: GhIssueSummary | null,
@@ -196,6 +215,8 @@ function reviewPrompt(
   commits: string,
   depth: RoadmapReviewDepth,
   sections: ReviewSectionChars,
+  attachments: KnowledgeAttachment[],
+  sentImages: number,
 ): string {
   const notesField = note.fields['notes'] ?? ''
   const commitLabel =
@@ -215,6 +236,7 @@ function reviewPrompt(
     `ROADMAP STATUS: ${note.status ?? 'ready'}\n` +
     `PROMPT:\n${note.body.slice(0, sections.prompt)}\n` +
     (notesField ? `\nNOTES:\n${notesField.slice(0, sections.notes)}\n` : '') +
+    attachmentsBlock(attachments, sentImages) +
     (pinned
       ? `\nPINNED ISSUE #${String(pinned.number)} [${issueState(pinned)}]: ${pinned.title}\n${pinned.body.slice(0, sections.issue)}\n`
       : '\nPINNED ISSUE: (none)\n') +
@@ -229,6 +251,10 @@ interface ReviewPromptInput {
   linked: RoadmapReviewIssueEvidence[]
   commits: string
   depth: RoadmapReviewDepth
+  /** Every attachment on the item, named in the prompt. */
+  attachments?: KnowledgeAttachment[]
+  /** Image payloads sent alongside the prompt (deep checks only). */
+  images?: string[]
 }
 
 /**
@@ -250,16 +276,44 @@ export async function completeReviewPrompt(
       ? [contextWindow, FALLBACK_CONTEXT_WINDOW]
       : [contextWindow]
   const { note, pinned, linked, commits, depth } = input
-  for (const [index, window] of windows.entries()) {
+  const attachments = input.attachments ?? []
+  let images = input.images ?? []
+  for (let index = 0; index < windows.length; index++) {
+    const window = windows[index] ?? contextWindow
     const sections = reviewSectionChars(window, depth)
     try {
-      return await completeTextWithUsage(
-        provider,
-        reviewPrompt(note, pinned, linked, commits, depth, sections),
-        timeoutMs,
+      const prompt = reviewPrompt(
+        note,
+        pinned,
+        linked,
+        commits,
+        depth,
+        sections,
+        attachments,
+        images.length,
       )
+      const messages: LLMMessage[] = [
+        {
+          role: 'user',
+          content:
+            images.length > 0
+              ? [
+                  { type: 'text', text: prompt },
+                  ...images.map((dataUrl) => ({ type: 'image' as const, dataUrl })),
+                ]
+              : prompt,
+        },
+      ]
+      return await completeMessagesWithUsage(provider, messages, timeoutMs)
     } catch (err) {
-      if (!isContextOverflowMessage(errorMessage(err))) throw err
+      if (!isContextOverflowMessage(errorMessage(err))) {
+        // A text-only small-tasks model rejects image parts. The images are
+        // supporting evidence, so judge without them rather than failing the check.
+        if (images.length === 0) throw err
+        images = []
+        index--
+        continue
+      }
       if (index === windows.length - 1) {
         throw new Error(
           contextOverflowAdvice({
@@ -472,10 +526,18 @@ export async function reviewRoadmapItem(
   // read from the wrong model of the two is what the retry inside
   // completeReviewPrompt exists to absorb.
   const contextWindow = await resolveContextWindow(model)
+  const attachments = parseKnowledgeAttachments(note.fields[ATTACHMENTS_FIELD])
+  const images =
+    depth === 'deep'
+      ? attachments
+          .filter(isImageAttachment)
+          .slice(0, DEEP_REVIEW_MAX_IMAGES)
+          .flatMap((att) => readKnowledgeAttachmentDataUrl(note.id, att) ?? [])
+      : []
   const timeout = depth === 'deep' ? DEEP_REVIEW_TIMEOUT_MS : BULK_REVIEW_TIMEOUT_MS
   const { text, usage } = await completeReviewPrompt(
     route.provider,
-    { note, pinned, linked, commits, depth },
+    { note, pinned, linked, commits, depth, attachments, images },
     model,
     contextWindow,
     timeout,
