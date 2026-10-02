@@ -1,5 +1,11 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type {
+  HostedClassifierHint,
+  LocalClassifierClient,
+  LocalClassifierOverview,
+  LocalClassifierStatus,
+} from '@shared/local-classifiers.ts'
+import type {
   ClassifierClient,
   ClassifierProfile,
   ClassifierProfileStatus,
@@ -19,6 +25,7 @@ import { unwrapIpcErrorText } from '../../ipc-error-message.ts'
 
 interface ClassifiersSectionApi {
   classifiers: ClassifierClient
+  localClassifiers: LocalClassifierClient
   settings: Pick<ApiClient['settings'], 'setKey'>
 }
 
@@ -79,6 +86,25 @@ function describeResult(result: ClassifierResult): string {
   return `${answers.join(' · ')} · ${String(Math.round(result.elapsedMs))} ms · ${result.model}`
 }
 
+function describeLocal(server: LocalClassifierStatus): string {
+  switch (server.phase) {
+    case 'not-installed':
+      return server.missing.length > 0
+        ? `Not installed · needs ${server.missing.join(' and ')} on your PATH`
+        : `Not installed · about ${String(server.downloadGb)} GB download`
+    case 'installing':
+      return `Installing… ${server.progress ?? ''}`.trim()
+    case 'installed':
+      return 'Installed · not running'
+    case 'starting':
+      return `Loading the model… ${server.progress ?? ''}`.trim()
+    case 'running':
+      return `Running · started by Copse on ${server.baseUrl}`
+    case 'external':
+      return `Detected running on ${server.baseUrl}`
+  }
+}
+
 /** Explicitly saved connections; opening settings never makes an inference call. */
 export function createClassifiersSection(api: ClassifiersSectionApi): ClassifiersSection {
   const chips = el('div', { class: 'provider-chips', 'aria-label': 'Classifier profiles' })
@@ -86,6 +112,10 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   const status = el('p', { class: 'classifier-status', role: 'status', 'aria-live': 'polite' })
   const screening = el('select', { name: 'classifierScreening' })
   const background = el('select', { name: 'classifierBackground' })
+  const localHost = el('div', {
+    class: 'classifier-local',
+    'aria-label': 'Local classifier servers',
+  })
   const root = el(
     'fieldset',
     { class: 'classifiers-section' },
@@ -117,6 +147,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted.",
       ),
     ),
+    localHost,
     chips,
     formHost,
     status,
@@ -168,6 +199,208 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       render()
     })
     chips.append(add)
+  }
+
+  function startDraft(preset: ClassifierProfile | undefined): void {
+    const id = `${preset?.id ?? 'custom'}-${crypto.randomUUID().slice(0, 8)}`
+    const draft: ClassifierProfile = preset
+      ? { ...preset, id, connection: { ...preset.connection } }
+      : {
+          id,
+          label: 'Custom classifier',
+          model: '',
+          timeoutMs: 30_000,
+          connection: { type: 'http', protocol: 'systemone', baseUrl: '', auth: 'bearer' },
+        }
+    drafts.set(id, draft)
+    selectedId = id
+    render()
+  }
+
+  let overview: LocalClassifierOverview = { servers: [], hosted: [] }
+  let poll: ReturnType<typeof setInterval> | undefined
+  let localBusy = false
+
+  function stopPolling(): void {
+    if (poll !== undefined) clearInterval(poll)
+    poll = undefined
+  }
+
+  /** A server Copse is setting up or loading changes by itself, so watch it until it settles. */
+  function syncPolling(): void {
+    const active = overview.servers.some(
+      (server) => server.phase === 'installing' || server.phase === 'starting',
+    )
+    if (active && poll === undefined) {
+      poll = setInterval(() => {
+        // A closed settings dialog stops watching; reopening Classifiers restarts it.
+        if (root.closest('dialog')?.open === false) {
+          stopPolling()
+          return
+        }
+        void refreshLocal()
+      }, 1500)
+    } else if (!active) stopPolling()
+  }
+
+  async function reloadProfiles(): Promise<void> {
+    profiles = await api.classifiers.list()
+    renderScreening()
+    renderBackground()
+    renderChips()
+  }
+
+  async function applyLocal(next: LocalClassifierOverview): Promise<void> {
+    const savedBefore = overview.servers.filter((server) => server.saved).length
+    overview = next
+    renderLocal()
+    syncPolling()
+    // A finished install saves its connection; show it without a reopen.
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles()
+      // Land on the connection that was just added rather than the empty form.
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.()
+        selectedId = profiles[0]?.profile.id ?? null
+        render()
+      }
+    }
+  }
+
+  async function refreshLocal(): Promise<void> {
+    if (localBusy) return
+    try {
+      await applyLocal(await api.localClassifiers.status())
+    } catch (error) {
+      stopPolling()
+      setInlineStatus(status, 'error', classifierErrorMessage(error))
+    }
+  }
+
+  async function localAction(action: () => Promise<LocalClassifierOverview>): Promise<void> {
+    if (localBusy) return
+    localBusy = true
+    try {
+      await applyLocal(await action())
+    } catch (error) {
+      setInlineStatus(status, 'error', classifierErrorMessage(error))
+    } finally {
+      localBusy = false
+    }
+  }
+
+  async function confirmInstall(server: LocalClassifierStatus): Promise<void> {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(', ')} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: 'Download and run',
+    })
+    if (approved) await localAction(() => api.localClassifiers.install(server.id))
+  }
+
+  function localButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
+    const button = el(
+      'button',
+      { type: 'button', class: `ui-btn ui-btn-secondary ${className}` },
+      label,
+    )
+    button.addEventListener('click', onClick)
+    return button
+  }
+
+  function localRow(server: LocalClassifierStatus): HTMLElement {
+    const actions = el('div', { class: 'provider-actions' })
+    switch (server.phase) {
+      case 'not-installed': {
+        const install = localButton('Download and run', 'classifier-local-install', () => {
+          void confirmInstall(server)
+        })
+        install.disabled = server.missing.length > 0
+        actions.append(install)
+        break
+      }
+      case 'installing':
+      case 'starting':
+        actions.append(
+          localButton('Cancel', 'classifier-local-stop', () => {
+            void localAction(() => api.localClassifiers.stop(server.id))
+          }),
+        )
+        break
+      case 'installed':
+        actions.append(
+          localButton('Start', 'classifier-local-start', () => {
+            void localAction(() => api.localClassifiers.start(server.id))
+          }),
+        )
+        break
+      case 'running':
+        actions.append(
+          localButton('Stop', 'classifier-local-stop', () => {
+            void localAction(() => api.localClassifiers.stop(server.id))
+          }),
+        )
+        break
+      case 'external':
+        break
+    }
+    if ((server.phase === 'running' || server.phase === 'external') && !server.saved) {
+      actions.append(
+        localButton('Add connection', 'classifier-local-connect', () => {
+          void localAction(() => api.localClassifiers.connect(server.id))
+        }),
+      )
+    }
+    return el(
+      'div',
+      { class: 'classifier-local-row', 'data-local-id': server.id, 'data-phase': server.phase },
+      el(
+        'div',
+        { class: 'classifier-local-info' },
+        el('strong', {}, server.label),
+        el(
+          'span',
+          { class: 'field-hint' },
+          describeLocal(server),
+          server.saved ? ' · connection saved' : '',
+        ),
+        server.error
+          ? el('span', { class: 'field-hint classifier-local-error' }, server.error)
+          : '',
+      ),
+      actions,
+    )
+  }
+
+  function hostedRow(hint: HostedClassifierHint): HTMLElement {
+    const setUp = localButton('Set up', 'classifier-hosted-setup', () => {
+      if (busy) return
+      captureDraft?.()
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId))
+    })
+    return el(
+      'div',
+      { class: 'classifier-local-row', 'data-hosted-id': hint.presetId },
+      el(
+        'div',
+        { class: 'classifier-local-info' },
+        el('strong', {}, hint.label),
+        el(
+          'span',
+          { class: 'field-hint' },
+          el('code', {}, hint.envVar),
+          ' is set in your environment',
+        ),
+      ),
+      el('div', { class: 'provider-actions' }, setUp),
+    )
+  }
+
+  function renderLocal(): void {
+    clear(localHost)
+    for (const server of overview.servers) localHost.append(localRow(server))
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint))
+    localHost.hidden = localHost.childElementCount === 0
   }
 
   function renderScreening(): void {
@@ -272,20 +505,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         'Configure classifier',
       )
       add.addEventListener('click', () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value)
-        const id = `${preset?.id ?? 'custom'}-${crypto.randomUUID().slice(0, 8)}`
-        const draft: ClassifierProfile = preset
-          ? { ...preset, id, connection: { ...preset.connection } }
-          : {
-              id,
-              label: 'Custom classifier',
-              model: '',
-              timeoutMs: 30_000,
-              connection: { type: 'http', protocol: 'systemone', baseUrl: '', auth: 'bearer' },
-            }
-        drafts.set(id, draft)
-        selectedId = id
-        render()
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value))
       })
       formHost.append(
         el(
@@ -673,6 +893,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         api.classifiers.background(),
       ])
       selectedId ??= profiles[0]?.profile.id ?? null
+      void refreshLocal()
       if (
         selectedId !== null &&
         !drafts.has(selectedId) &&
@@ -685,5 +906,6 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     }
   }
   render()
+  renderLocal()
   return { root, refresh }
 }

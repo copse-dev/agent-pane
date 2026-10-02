@@ -1044,6 +1044,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       background: () => resolved(null),
       setBackground: unsupported,
     },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported,
+    },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {

@@ -23,6 +23,7 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
@@ -1356,6 +1357,27 @@ export function registerAllHandlers(
   ipcMain.handle('classifiers:set-background', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return setBackgroundClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
+  })
+
+  ipcMain.handle('local-classifiers:status', (event) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().overview()
+  })
+  ipcMain.handle('local-classifiers:install', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().install(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:start', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().start(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {
