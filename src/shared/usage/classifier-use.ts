@@ -50,8 +50,6 @@ export interface ThreadClassifierUse {
   rows: ClassifierUseRow[]
 }
 
-export const EMPTY_CLASSIFIER_USE: ThreadClassifierUse = { calls: 0, rows: [] }
-
 const isClassifierSubject = memberOf(CLASSIFIER_SUBJECTS)
 
 interface Tally {
