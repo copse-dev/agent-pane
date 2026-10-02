@@ -38849,7 +38849,10 @@ function conciseThreadScenario(id, label, model, {
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        messages: multiTurn ? [
+          ...conciseMultiTurnMessages(model),
+          ...live ? conciseThreadMessages(model, true) : []
+        ] : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -40231,6 +40234,12 @@ var init_demo_scenarios = __esm({
         "Concise thread view across several turns",
         "claude-opus-5-5",
         { multiTurn: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi-working",
+        "Concise thread view with finished turns and a live one",
+        "claude-opus-5-5",
+        { multiTurn: true, live: true }
       ),
       conciseThreadScenario(
         "concise-thread-full",
@@ -59191,6 +59200,19 @@ var init_presets = __esm({
         }
       },
       {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
         id: "kev",
         label: "Kev (local)",
         model: "kev-latest",
@@ -59716,6 +59738,8 @@ function createClassifiersSection(api2) {
           "Custom connections use ",
           el("code", {}, "COPSE_CLASSIFIER_*"),
           " variables. ",
+          el("code", {}, "LIQUID_API_KEY"),
+          ", ",
           el("code", {}, "TYPESAFE_API_KEY"),
           " and ",
           el("code", {}, "FEATHERLESS_API_KEY"),
@@ -72251,6 +72275,31 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
+  function captureListScrollAnchor() {
+    const listRect = list.getBoundingClientRect();
+    for (const row2 of list.querySelectorAll(".activity-row")) {
+      const rowKey2 = row2.dataset["rowKey"];
+      if (!rowKey2) continue;
+      const rowRect = row2.getBoundingClientRect();
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey: rowKey2, viewportTop: rowRect.top };
+      }
+    }
+    return null;
+  }
+  function restoreListScrollAnchor(anchor2, fallbackScrollTop) {
+    if (anchor2) {
+      const row2 = [...list.querySelectorAll(".activity-row")].find(
+        (candidate) => candidate.dataset["rowKey"] === anchor2.rowKey
+      );
+      if (row2) {
+        const delta = row2.getBoundingClientRect().top - anchor2.viewportTop;
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta;
+        return;
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
+  }
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
@@ -72274,7 +72323,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
     }
     const opener = selectedOpener();
-    if (opener) opener.focus();
+    if (opener) opener.focus({ preventScroll: true });
     else closeButton.focus();
   }
   function armSettle() {
@@ -72297,6 +72346,8 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     const at3 = now();
     lastRenderAt = at3;
     const focus = captureFocus();
+    const previousListScrollTop = list.scrollTop;
+    const listScrollAnchor = captureListScrollAnchor();
     const groups = deriveActivity({
       threads: collectActivityThreads(store2),
       approvals: sources3.approvals.pending(),
@@ -72340,6 +72391,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
       children.push(...populated.map((group) => groupElement(group, at3)));
       list.replaceChildren(...children);
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
     dialog2.dataset["needsYou"] = String(needCount);
@@ -80568,6 +80620,21 @@ function isConciseStepsMessage(msg) {
 function isConciseWorkingMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
 }
+function turnStartId(messages, messageId) {
+  const at3 = messages.findIndex((msg) => msg.id === messageId);
+  for (let i2 = at3; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
+function liveTurnStartId(messages) {
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
   msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
@@ -84040,10 +84107,30 @@ function mountConversation(root, store2, api2) {
     list,
     scrollToBottomBtn
   );
+  let expandedConciseTurnId = null;
+  function conciseEnabledFor(thread, messageId) {
+    const enabled = store2.getState().conciseThreadsEnabled;
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled;
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId;
+  }
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
+  function toggleConciseTurnExpansion() {
+    const thread = getActiveThread(store2);
+    if (!thread || !isConciseTurnExpandable(thread)) return false;
+    const turn = liveTurnStartId(thread.messages);
+    if (turn === null) return false;
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null;
+    syncConciseThreadClasses();
+    scrollToBottom();
+    return true;
+  }
+  function isConciseTurnExpandable(thread) {
+    return thread.status === "running" && store2.getState().conciseThreadsEnabled && isConciseThread(thread);
+  }
   activityBar.addEventListener("click", () => {
+    if (toggleConciseTurnExpansion()) return;
     const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
@@ -84052,6 +84139,12 @@ function mountConversation(root, store2, api2) {
     const key = details.dataset["disclosureKey"];
     if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
+  });
+  activityBar.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (activityBar.getAttribute("role") !== "button") return;
+    event.preventDefault();
+    toggleConciseTurnExpansion();
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
@@ -84532,6 +84625,20 @@ function mountConversation(root, store2, api2) {
     const thread = getActiveThread(store2);
     const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
     const label = conciseLabel ?? requested;
+    const expandable = thread !== void 0 && isConciseTurnExpandable(thread);
+    const expanded = expandable && expandedConciseTurnId !== null;
+    activityBar.setAttribute("role", expandable ? "button" : "status");
+    activityBar.classList.toggle("agent-activity-expandable", expandable);
+    activityBar.classList.toggle("agent-activity-expanded", expanded);
+    if (expandable) {
+      activityBar.tabIndex = 0;
+      activityBar.setAttribute("aria-expanded", String(expanded));
+      activityBar.title = expanded ? "Hide this turn\u2019s steps" : "Show this turn\u2019s steps";
+    } else {
+      activityBar.removeAttribute("tabindex");
+      activityBar.removeAttribute("aria-expanded");
+      activityBar.removeAttribute("title");
+    }
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
     if (label.startsWith("Reasoning\u2026") && [
@@ -84713,7 +84820,7 @@ function mountConversation(root, store2, api2) {
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
-    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
+    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const isInterrupted = (call) => userInterruption(call) !== void 0;
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
@@ -84869,7 +84976,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -85077,11 +85184,11 @@ function mountConversation(root, store2, api2) {
   function syncConciseThreadClasses() {
     const thread = getActiveThread(store2);
     if (!thread) return;
-    const enabled = store2.getState().conciseThreadsEnabled;
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
     list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
-      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
-      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+      const id = msgEl.dataset["messageId"] ?? "";
+      const msg = byId.get(id);
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id));
     });
     syncFromStore();
   }
@@ -85171,7 +85278,7 @@ function mountConversation(root, store2, api2) {
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
-    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -85568,6 +85675,10 @@ function mountConversation(root, store2, api2) {
           card.remove();
         });
       } else {
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null;
+          syncConciseThreadClasses();
+        }
         setActivity(null);
         list.querySelectorAll(".message-reasoning-live").forEach((details) => {
           setReasoningDisclosureTitle(details, false);
