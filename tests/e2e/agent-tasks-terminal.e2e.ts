@@ -242,7 +242,9 @@ describe('agent tasks in terminal tab', () => {
     await waitForAgentIdle(30_000)
 
     const panelText = await panel.getText()
-    expect(panelText).toContain('\n15000\n')
+    // Where the live stream stops depends on pipe chunk sizes (one large read
+    // can carry it past the cap early on Linux); the ~43 KiB head always streams.
+    expect(panelText).toContain('\n5000\n')
     expect(panelText.trimEnd().endsWith('[output truncated]')).toBe(true)
     expect(panelText).not.toContain('\n30000')
 
