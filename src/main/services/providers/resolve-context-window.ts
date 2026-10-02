@@ -1,6 +1,7 @@
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@copse/llm/model-catalog.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { extraProviderContextWindow, isExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
@@ -18,11 +19,7 @@ function localModelId(model: string): string | null {
     const configured = getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
     if (configured.startsWith('lmstudio:')) return configured.slice('lmstudio:'.length)
     // Provider-prefixed / cloud role choices must not be sent to LM Studio.
-    if (
-      configured.includes(':') ||
-      configured.startsWith('claude-') ||
-      configured.startsWith('gpt-')
-    ) {
+    if (configured.includes(':') || firstPartyProviderOf(configured) !== null) {
       return LM_STUDIO_MODEL_IDS.chat
     }
     return configured || null

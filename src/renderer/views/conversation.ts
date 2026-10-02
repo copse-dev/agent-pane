@@ -4225,6 +4225,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    // A skipped review still carries the only durable explanation for a
+    // below-threshold diff or declined spend prompt. createReviewCardEl keeps
+    // that state to one compact annotation line rather than dropping it.
     if (!msg?.review || !msgEl) return
     const card = createReviewCardEl(msg.review, api, () => {
       retryReview(store, api, threadId, messageId)

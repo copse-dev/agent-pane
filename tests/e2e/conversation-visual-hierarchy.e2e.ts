@@ -153,7 +153,7 @@ describe('conversation visual hierarchy', () => {
     expect(layout.reasoningBorderWidth).toBe('0px')
     expect(layout.doneToolHeight).toBeLessThan(36)
     expect(layout.answerFontSize).toBe('16px')
-    expect(layout.answerTopBorder).toBe('1px')
+    expect(layout.answerTopBorder).toBe('0px')
     expect(layout.titlebarBorderColor).toMatch(/rgba\([^)]*, 0\)|transparent/)
     expect(layout.selectedRadius).toBe('0px')
     // Review and comparison are annotations on the turn, not part of the answer,
