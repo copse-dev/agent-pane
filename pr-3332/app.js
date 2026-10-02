@@ -59700,8 +59700,15 @@ function providerWindows(snapshot, provider) {
 function resolvePlanInclusion(provider, modelId, snapshot) {
   const windows = providerWindows(snapshot, provider);
   if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
   const govern = new Set(governingWindowIds(provider, modelId));
-  const applicable = windows.filter((w2) => govern.has(w2.id));
+  let applicable = windows.filter((w2) => govern.has(w2.id));
+  if (availability === true) {
+    const pool = windows.filter((w2) => w2.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
   if (applicable.length === 0) return null;
   const binding = applicable.reduce(
     (tightest, w2) => w2.usedPercent > tightest.usedPercent ? w2 : tightest
@@ -59712,8 +59719,13 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
   };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
 }
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
