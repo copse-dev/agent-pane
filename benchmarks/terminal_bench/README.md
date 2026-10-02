@@ -449,6 +449,12 @@ Optional tuning variables:
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `client`; `client` sends the product's curated
+  per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
+  none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
+  two modes are not comparable. Each trial records the mode and values in
+  `agent/model-parameters.json` and on every `provider-requests.jsonl` line)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)

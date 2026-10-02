@@ -9,8 +9,6 @@ import {
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
-import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
-import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
@@ -26,6 +24,13 @@ import {
   loadTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
+import {
+  TERMINAL_MODEL_PARAMETERS_ENV,
+  buildTerminalProviders,
+  resolveTerminalModelParameters,
+  terminalModelParametersMode,
+  writeTerminalModelParametersRecord,
+} from './lib/terminal-bench-model-parameters.mts'
 import { BenchTranscript } from './lib/bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
@@ -370,17 +375,18 @@ export async function runTerminalBenchAgent(): Promise<void> {
   )
   const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
   const agentDirectory = dirname(parsed.threadDir)
-  const baseProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, { baseURL: baseUrl, apiKey, includeUsage: true })
-    : createLMStudioProvider(baseUrl, parsed.model, apiKey)
-  const forcedWriteProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, {
-        baseURL: baseUrl,
-        apiKey,
-        includeUsage: true,
-        extraBody: { tool_choice: { type: 'function', function: { name: 'write_file' } } },
-      })
-    : undefined
+  const modelParameters = resolveTerminalModelParameters(
+    terminalModelParametersMode(process.env[TERMINAL_MODEL_PARAMETERS_ENV]),
+    parsed.model,
+  )
+  writeTerminalModelParametersRecord(agentDirectory, modelParameters)
+  const { base: baseProvider, forcedWrite: forcedWriteProvider } = buildTerminalProviders({
+    baseUrl,
+    model: parsed.model,
+    apiKey,
+    forcesRequestedOutputRecovery: profile.forcesRequestedOutputRecovery,
+    record: modelParameters,
+  })
   let recoveryOutputPaths: string[] = []
   const adaptiveProvider: LLMProvider = {
     stream(messages, tools, signal) {
@@ -392,6 +398,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const provider = recordTerminalBenchProviderRequests(
     adaptiveProvider,
     join(agentDirectory, 'provider-requests.jsonl'),
+    { mode: modelParameters.mode, params: modelParameters.params },
   )
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model

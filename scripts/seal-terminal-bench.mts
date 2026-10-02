@@ -407,6 +407,10 @@ for (const { resultPath, result } of storedTrials) {
         process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim(),
         '120',
       ),
+      modelParameters: nonEmptyStringOr(
+        process.env['COPSE_TERMINAL_MODEL_PARAMETERS']?.trim(),
+        'client',
+      ),
       maxCommandTimeoutSeconds: nonEmptyStringOr(
         process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim(),
         '600',

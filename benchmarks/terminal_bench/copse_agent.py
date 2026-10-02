@@ -201,6 +201,7 @@ class CopseTerminalAgent(BaseAgent):
             "stop_reason": None,
             "trace": trace_path.name,
             "provider_requests": "provider-requests.jsonl",
+            "model_parameters": "model-parameters.json",
             "applied_nudges": "applied-nudges.jsonl",
             "hook_runs": "hook-runs.jsonl",
             "stream_stats": "stream-stats.jsonl",
