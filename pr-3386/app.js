@@ -73272,6 +73272,7 @@ function mountThreadSidebar(root, store2, api2, sources3) {
   let limit = 40;
   let sshWorkspaceEnabled = false;
   let renaming = null;
+  let renderedSignature = "";
   const collapsed = /* @__PURE__ */ new Set();
   const timings = trackRunTimings(store2, Date.now);
   const data = createThreadBrowserData(store2, api2, scheduleRender);
@@ -73558,7 +73559,8 @@ function mountThreadSidebar(root, store2, api2, sources3) {
     if (save && next) {
       setThreadTitle(store2, threadId, next);
       maybeRenameThreadBranch(store2, api2, threadId);
-    } else render();
+    }
+    render();
     for (const row2 of list.querySelectorAll("[data-entry-key]")) {
       if (row2.dataset["entryKey"] === key) row2.focus();
     }
@@ -73589,6 +73591,7 @@ function mountThreadSidebar(root, store2, api2, sources3) {
   }
   function render() {
     if (disposed) return;
+    if (renaming && list.querySelector(".chat-title-rename")) return;
     data.load();
     const state = store2.getState();
     const targetProjectId = state.expandedProjectId ?? state.activeProjectId;
@@ -73771,6 +73774,14 @@ function mountThreadSidebar(root, store2, api2, sources3) {
       });
       nodes.push(showMore);
     }
+    const signature = nodes.map((node2) => node2.outerHTML).join("\n");
+    if (signature === renderedSignature) {
+      const liveHeader = list.querySelector('[data-group="changes"] .thread-browser-group-header');
+      if (liveHeader && workToggle.parentElement !== liveHeader) liveHeader.append(workToggle);
+      if (focusKey === "work-toggle") workToggle.focus();
+      return;
+    }
+    renderedSignature = signature;
     list.replaceChildren(...nodes);
     prBackfill.observe(backfillRows);
     if (focusKey === "work-toggle") workToggle.focus();
@@ -73867,6 +73878,9 @@ function mountThreadSidebar(root, store2, api2, sources3) {
     const metadata = el("span", { class: "thread-browser-meta", title: stateLabel }, stateLabel);
     const glyph = question ? messageQuestionIcon : approval || waitingSince !== void 0 ? handIcon : thread.status === "running" ? runningStatusIcon : thread.status === "error" ? warningIcon : checkIcon;
     row2.dataset["state"] = waitingSince !== void 0 ? "waiting" : thread.status;
+    row2.classList.toggle("is-running", thread.status === "running");
+    row2.classList.toggle("is-unread", thread.unreadAt !== void 0 && !selected);
+    row2.classList.toggle("needs-attention", waitingSince !== void 0);
     const titleLine = el("span", { class: "thread-browser-title-line" }, title);
     const prRollup = prStatus.rollup(thread);
     if (prRollup) {
