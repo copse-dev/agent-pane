@@ -18,26 +18,26 @@ describe('projectDedupKey', () => {
 describe('projectDisplayName', () => {
   it('includes the full remote path for SSH projects, even when name is basename-only', () => {
     assert.equal(
-      formatSshProjectName('euw-serp-dev-testing16', '/etc/ddg'),
-      'euw-serp-dev-testing16:/etc/ddg',
+      formatSshProjectName('remote-dev-testing-016', '/srv/app'),
+      'remote-dev-testing-016:/srv/app',
     )
     assert.equal(
       projectDisplayName({
         id: 'a',
-        path: '/etc/ddg',
-        name: 'euw-serp-dev-testing16:ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/srv/app',
+        name: 'remote-dev-testing-016:app',
+        sshHost: 'remote-dev-testing-016',
       }),
-      'euw-serp-dev-testing16:/etc/ddg',
+      'remote-dev-testing-016:/srv/app',
     )
     assert.equal(
       projectDisplayName({
         id: 'b',
-        path: '/home/ubuntu/ddg',
-        name: 'euw-serp-dev-testing16:ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/home/ubuntu/app',
+        name: 'remote-dev-testing-016:app',
+        sshHost: 'remote-dev-testing-016',
       }),
-      'euw-serp-dev-testing16:/home/ubuntu/ddg',
+      'remote-dev-testing-016:/home/ubuntu/app',
     )
     assert.equal(projectDisplayName({ id: 'c', path: '/local', name: 'local' }), 'local')
   })
