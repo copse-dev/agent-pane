@@ -83,7 +83,7 @@ var init_automations_plugin = __esm({
     automationsPlugin = definePlugin(
       {
         name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        description: "Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.",
         trust: "first-party",
         stability: "experimental",
         ui: [
@@ -157,6 +157,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-opus-5-5": {
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-sonnet-4-6": {
         inputPricePerMTok: 3,
         outputPricePerMTok: 15,
@@ -166,6 +174,14 @@ var init_model_catalog_generated = __esm({
         maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 2.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
+      "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.2,
@@ -323,6 +339,28 @@ var init_model_catalog_generated = __esm({
         },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
+      },
+      "gpt-6.1-sol": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.1,
+        cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 5,
+            cacheReadPricePerMTok: 0.05,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 20,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 5
+          }
+        },
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
       }
     };
   }
@@ -411,8 +449,8 @@ function humanizeModelName(labelOrId) {
   }, "");
 }
 function modelDisplayName(labelOrId) {
-  const canonical = canonicalModelLabel(labelOrId);
-  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical;
+  const canonical2 = canonicalModelLabel(labelOrId);
+  return canonical2 === labelOrId ? humanizeModelName(labelOrId) : canonical2;
 }
 function claudeName(family, version2, rest) {
   if (rest !== "" && !/^\s/.test(rest)) return null;
@@ -591,13 +629,211 @@ var init_model_selection = __esm({
   }
 });
 
+// packages/llm/src/model-families.ts
+function hasModelIdPrefix(id, prefix) {
+  return id === prefix || id.startsWith(prefix) && BOUNDARY.test(id.slice(prefix.length));
+}
+function findFamily(modelId) {
+  let best;
+  for (const entry of FAMILIES) {
+    if (!hasModelIdPrefix(modelId, entry.match)) continue;
+    if (best === void 0 || entry.match.length > best.match.length) best = entry;
+  }
+  return best;
+}
+function withFeatures(features) {
+  return { ...NO_FEATURES, ...features };
+}
+function nonFirstPartyTransport(namespace) {
+  switch (namespace) {
+    case "openrouter":
+    case "extra-provider":
+      return "openai-compatible";
+    case "lmstudio":
+      return "local";
+    case "acp":
+    case "remote-agent":
+    case "plugin-model":
+    case "auto":
+      return "host-routed";
+    case "cloud":
+      return "unknown";
+  }
+}
+function routeGated(features, firstParty) {
+  if (firstParty) return features;
+  return {
+    ...features,
+    supportsStrictTools: false,
+    supportsVerbosity: false,
+    supportsParallelToolCallsControl: false,
+    supportsServerCompaction: false
+  };
+}
+function resolveModelFamily(model) {
+  const selection2 = typeof model === "string" ? parseModelSelection(model) : model;
+  const { namespace } = selection2;
+  if (!CLOUD_ROUTED.has(namespace)) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: nonFirstPartyTransport(namespace),
+      provider: null,
+      family: null,
+      known: false
+    };
+  }
+  const direct = namespace === "cloud";
+  const entry = findFamily(selection2.modelId);
+  if (entry !== void 0) {
+    return {
+      ...routeGated(withFeatures(entry.features), direct),
+      namespace,
+      transport: direct ? entry.transport : "openai-compatible",
+      provider: direct ? entry.provider : null,
+      family: entry.match,
+      known: true
+    };
+  }
+  const fallback = FIRST_PARTY_FALLBACKS.find(
+    (candidate) => selection2.modelId.startsWith(candidate.prefix)
+  );
+  if (direct && fallback !== void 0) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: fallback.transport,
+      provider: fallback.provider,
+      family: null,
+      known: false
+    };
+  }
+  return {
+    ...NO_FEATURES,
+    namespace,
+    transport: direct ? "unknown" : "openai-compatible",
+    provider: null,
+    family: null,
+    known: false
+  };
+}
+function firstPartyProviderOf(model) {
+  return resolveModelFamily(model).provider;
+}
+var NO_FEATURES, GPT_REASONING_FEATURES, O_SERIES_FEATURES, CLAUDE_MID_SYSTEM, FAMILIES, FIRST_PARTY_FALLBACKS, BOUNDARY, CLOUD_ROUTED;
+var init_model_families = __esm({
+  "packages/llm/src/model-families.ts"() {
+    init_model_selection();
+    NO_FEATURES = {
+      supportsStrictTools: false,
+      supportsVerbosity: false,
+      supportsParallelToolCallsControl: false,
+      supportsServerCompaction: false,
+      prefersApplyPatch: false,
+      acceptsDeveloperRole: false,
+      acceptsMidConversationSystem: false
+    };
+    GPT_REASONING_FEATURES = {
+      supportsStrictTools: true,
+      supportsVerbosity: true,
+      supportsParallelToolCallsControl: true,
+      prefersApplyPatch: true,
+      acceptsDeveloperRole: true
+    };
+    O_SERIES_FEATURES = {
+      supportsStrictTools: true,
+      acceptsDeveloperRole: true
+    };
+    CLAUDE_MID_SYSTEM = { acceptsMidConversationSystem: true };
+    FAMILIES = [
+      // Anthropic. Mid-conversation `system` messages: Opus 5 / 4.8, Fable 5, Mythos 5.
+      // `claude-sonnet-5-5` — the default model — does not take one, so leading-system
+      // placement is the common path, not an edge case.
+      {
+        match: "claude-opus-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-opus-4-8",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-opus-4-7", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-haiku-4-5", provider: "anthropic", transport: "anthropic" },
+      {
+        match: "claude-fable-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-mythos-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-mythos-preview", provider: "anthropic", transport: "anthropic" },
+      // OpenAI, Responses API.
+      {
+        match: "gpt-5",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6-astra",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6.1-sol",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      { match: "o1", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o3", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o4", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      // OpenAI, Chat Completions: non-reasoning models gain nothing from Responses.
+      {
+        match: "gpt-4o",
+        provider: "openai",
+        transport: "openai-chat",
+        features: {
+          supportsStrictTools: true,
+          supportsParallelToolCallsControl: true,
+          acceptsDeveloperRole: true
+        }
+      },
+      // Open-weights models OpenAI publishes. Not a first-party API model — it is
+      // reached through aggregators or local servers, never `developer`-role aware —
+      // and the entry exists to stop the broad `gpt-` fallback claiming its features.
+      { match: "gpt-oss", provider: "openai", transport: "openai-chat" }
+    ];
+    FIRST_PARTY_FALLBACKS = [
+      { prefix: "claude-", provider: "anthropic", transport: "anthropic" },
+      { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
+    ];
+    BOUNDARY = /^[-.:@]/;
+    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+  }
+});
+
 // packages/llm/src/model-catalog.ts
 function getModelInfo(model) {
   return MODEL_CATALOG[model] ?? null;
 }
 function inferCloudModelProvider(model) {
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
+  const { provider } = resolveModelFamily(model);
+  if (provider !== null) return provider;
   throw new Error(`Unknown cloud model provider for '${model}'`);
 }
 function cloudModelDisplayLabel(model) {
@@ -609,19 +845,22 @@ var init_model_catalog = __esm({
   "packages/llm/src/model-catalog.ts"() {
     init_model_catalog_generated();
     init_model_label();
-    init_model_selection();
-    DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6";
+    init_model_families();
+    DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-sonnet-5",
+      "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
@@ -635,12 +874,15 @@ var init_model_catalog = __esm({
       "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
+      "claude-sonnet-5-5": "Claude Sonnet 5.5",
+      "claude-opus-5-5": "Claude Opus 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
@@ -669,6 +911,9 @@ function isEmptyModelParameters(params) {
 }
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
+}
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
 }
 function claudeSupport(modelId) {
   const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
@@ -699,16 +944,16 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
       temperatureMax: 2
     };
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: "openai-effort",
@@ -740,8 +985,9 @@ function modelParameterSupport(model) {
     };
   }
   if (selection2.namespace === "cloud") {
-    if (selection2.modelId.startsWith("claude")) return claudeSupport(selection2.modelId);
-    if (selection2.modelId.startsWith("gpt")) return openAiSupport(selection2.modelId);
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
     return {
       reasoning: [],
       reasoningWire: "none",
@@ -831,10 +1077,11 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
+    init_model_families();
     init_model_selection();
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -878,12 +1125,14 @@ var init_model_parameters = __esm({
       "claude-opus-4-5"
     ];
     CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-fable-5",
       "claude-mythos-5",
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -895,7 +1144,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -918,6 +1167,16 @@ var init_model_parameters = __esm({
       repetitionPenalty: { min: 0, max: 2, neutral: 1 }
     };
     RECOMMENDATIONS = [
+      {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
       {
         match: "glm-5.3-flash",
         label: "Copse\u2019s experimental balanced agent profile",
@@ -21521,6 +21780,259 @@ var init_parse_agent_run_payload = __esm({
   }
 });
 
+// packages/llm/src/agent-roles.ts
+function getAgentRole(id) {
+  return AGENT_ROLES.find((role) => role.id === id) ?? null;
+}
+var AGENT_ROLES, AGENT_ROLE_IDS;
+var init_agent_roles = __esm({
+  "packages/llm/src/agent-roles.ts"() {
+    AGENT_ROLES = [
+      {
+        id: "coder",
+        label: "Coder",
+        description: "Writing new code \u2014 the chat default when coding",
+        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
+      },
+      {
+        id: "debugger",
+        label: "Debugger",
+        description: "Fixing bugs through careful, iterative analysis",
+        wants: ["swe-bench", "livecodebench", "gpqa"]
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Post-turn diff review and maintainability",
+        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "security-auditor",
+        label: "Security auditor",
+        description: "Finding vulnerabilities with low false negatives",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "judge",
+        label: "Judge",
+        description: "Accept/reject a patch or answer against a rubric",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "test-gen",
+        label: "Test generator",
+        description: "Unit, integration, and property tests",
+        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
+      },
+      {
+        id: "refactor",
+        label: "Refactorer",
+        description: "Behaviour-preserving changes",
+        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
+      },
+      {
+        id: "planner",
+        label: "Planner",
+        description: "Breaking work into prioritised tasks",
+        wants: ["gpqa", "mmlu-pro", "arena"]
+      },
+      {
+        id: "advisor",
+        label: "Advisor",
+        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
+        wants: ["gpqa", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        description: "READMEs, comments, and API docs",
+        wants: ["mmlu-pro", "arena"]
+      },
+      {
+        id: "research",
+        label: "Research assistant",
+        description: "API/framework lookup and synthesis (exploration subagent)",
+        wants: ["mmlu-pro", "gpqa", "arena"]
+      },
+      {
+        id: "tool-use",
+        label: "Tool-use agent",
+        description: "Calling tools correctly with structured output",
+        wants: ["tau-bench", "multipl-e"]
+      },
+      {
+        id: "small-tasks",
+        label: "Small tasks",
+        description: "Thread titles and other lightweight prompts",
+        wants: ["arena"]
+      },
+      {
+        id: "safety",
+        label: "Instruct / safety",
+        description: "Classifies shell commands when the OS sandbox is off",
+        wants: ["arena"]
+      }
+    ];
+    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
+  }
+});
+
+// packages/llm/src/dynamic-model.ts
+function minIntellectSelector(threshold) {
+  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
+}
+function roleModelSelector(role) {
+  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
+}
+function isDynamicModel(value) {
+  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
+}
+function parseDynamicModel(value) {
+  if (typeof value !== "string") return null;
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "auto") return null;
+  const body = selection2.id;
+  if (body === "best-value") return { kind: "best-value" };
+  if (body === "best-intellect") return { kind: "best-intellect" };
+  if (body === "best-local") return { kind: "best-local" };
+  if (body === "cheapest") return { kind: "cheapest" };
+  if (body === "balanced") return { kind: "balanced" };
+  if (body.startsWith(MIN_INTELLECT_INFIX)) {
+    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
+    if (!Number.isFinite(threshold) || threshold <= 0) return null;
+    return { kind: "min-intellect", threshold };
+  }
+  if (body.startsWith(ROLE_INFIX)) {
+    const role = getAgentRole(body.slice(ROLE_INFIX.length));
+    return role ? { kind: "role", role: role.id } : null;
+  }
+  return null;
+}
+function dynamicModelLabel(value) {
+  const selector = parseDynamicModel(value);
+  if (!selector) return null;
+  switch (selector.kind) {
+    case "best-value":
+      return "Best value";
+    case "best-intellect":
+      return "Most capable";
+    case "best-local":
+      return "Best on-device";
+    case "cheapest":
+      return "Cheapest";
+    case "balanced":
+      return "Balanced";
+    case "min-intellect":
+      return `At least ${String(selector.threshold)} intelligence`;
+    case "role":
+      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
+  }
+}
+function dynamicModelChoices() {
+  const choices = [
+    {
+      value: BEST_VALUE_MODEL_SELECTOR,
+      label: "Best value",
+      description: "Best intelligence per pound across your plans, providers, and local server",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_INTELLECT_MODEL_SELECTOR,
+      label: "Most capable",
+      description: "Highest intelligence available, ignoring price",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_LOCAL_MODEL_SELECTOR,
+      label: "Best on-device",
+      description: "Strongest model loaded on your machine",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: CHEAPEST_MODEL_SELECTOR,
+      label: "Cheapest",
+      description: "Lowest token price; plans and local count as free",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: "Balanced",
+      description: "Strong capability at a fair price; favors plans",
+      group: AUTOMATIC_GROUP
+    }
+  ];
+  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
+    choices.push({
+      value: minIntellectSelector(threshold),
+      label: `At least ${String(threshold)} intelligence`,
+      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
+      group: INTELLIGENCE_GROUP
+    });
+  }
+  for (const role of AGENT_ROLES) {
+    choices.push({
+      value: roleModelSelector(role.id),
+      label: role.label,
+      description: role.description,
+      group: ROLE_GROUP
+    });
+  }
+  return choices;
+}
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var init_dynamic_model = __esm({
+  "packages/llm/src/dynamic-model.ts"() {
+    init_agent_roles();
+    init_model_selection();
+    init_reserved_prefixes();
+    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
+    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
+    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
+    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    MIN_INTELLECT_INFIX = "min-intellect:";
+    ROLE_INFIX = "role:";
+    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
+    AUTOMATIC_GROUP = "Automatic";
+    INTELLIGENCE_GROUP = "Minimum intelligence";
+    ROLE_GROUP = "By role";
+  }
+});
+
+// packages/agent/src/plugins/advisor-strategy-plugin.ts
+var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
+var init_advisor_strategy_plugin = __esm({
+  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
+    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
+    ADVISOR_MODEL_SETTING_ID = "advisorModel";
+    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    advisorStrategyPlugin = definePlugin(
+      {
+        name: ADVISOR_STRATEGY_PLUGIN_ID,
+        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
+        settings: {
+          [ADVISOR_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID
+          }
+        },
+        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
+      },
+      {
+        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
+      }
+    );
+  }
+});
+
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
@@ -21596,6 +22108,16 @@ var init_trace_player = __esm({
     DEFAULT_CHARS_PER_SECOND = 240;
     DEFAULT_SLICE_CHARS = 12;
     DEFAULT_STEP_PAUSE_MS = 260;
+  }
+});
+
+// packages/llm/src/model-capabilities.ts
+var init_model_capabilities = __esm({
+  "packages/llm/src/model-capabilities.ts"() {
+    init_model_catalog();
+    init_model_families();
+    init_model_parameters();
+    init_model_selection();
   }
 });
 
@@ -23495,10 +24017,64 @@ var init_review_reports = __esm({
   }
 });
 
+// src/shared/patch/apply-patch.ts
+function normalizePatchPath(raw) {
+  return raw.trim().replace(/^(?:\.\/)+/, "");
+}
+function summarizePatch(patchText) {
+  const summaries = [];
+  let current = null;
+  for (const raw of patchText.split(/\r?\n/)) {
+    const trimmed2 = raw.trim();
+    if (trimmed2.startsWith(ADD)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(ADD.length)),
+        op: "add",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(DELETE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(DELETE.length)),
+        op: "delete",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(UPDATE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(UPDATE.length)),
+        op: "update",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (current !== null && raw.trimEnd().startsWith(MOVE)) {
+      current.op = "move";
+      current.movePath = normalizePatchPath(raw.trimEnd().slice(MOVE.length));
+    } else if (current !== null && raw.startsWith("+")) {
+      current.additions += 1;
+    } else if (current !== null && raw.startsWith("-") && current.op !== "add") {
+      current.deletions += 1;
+    }
+  }
+  return summaries.filter((summary) => summary.path !== "");
+}
+var ADD, DELETE, UPDATE, MOVE;
+var init_apply_patch = __esm({
+  "src/shared/patch/apply-patch.ts"() {
+    ADD = "*** Add File: ";
+    DELETE = "*** Delete File: ";
+    UPDATE = "*** Update File: ";
+    MOVE = "*** Move to: ";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
-  const canonical = CANONICAL_WORDS.get(word);
-  if (canonical !== void 0) return canonical;
+  const canonical2 = CANONICAL_WORDS.get(word);
+  if (canonical2 !== void 0) return canonical2;
   const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
   if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
   for (const separator of ["-", ":"]) {
@@ -23579,14 +24155,17 @@ function tenseFromStatus(status) {
   return status === "running" ? "running" : "done";
 }
 function parseMcp(name) {
-  if (!name.startsWith(MCP_PREFIX)) return null;
-  const rest = name.slice(MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return null;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
 }
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[name];
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
@@ -23603,8 +24182,14 @@ function stringArg(args, key) {
 function fileEditPath(args) {
   return stringArg(args, "path");
 }
+function getApplyPatchFiles(tc2) {
+  const input2 = stringArg(tc2.args, "input");
+  return input2 === null ? [] : summarizePatch(input2);
+}
 function getToolEditPath(tc2) {
-  const key = FILE_EDIT_PATH_ARG[tc2.name];
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
   return stringArg(tc2.args, key);
 }
@@ -23632,40 +24217,53 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  if (tc2.name === "write_file" || tc2.name === "str_replace") {
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
   }
-  if (tc2.name === "delete_file") {
+  if (name === "apply_patch") {
+    const files = getApplyPatchFiles(tc2);
+    if (files.length === 1) {
+      const only = files[0]?.path ?? "";
+      return tense === "running" ? `Patching ${only}` : `Patched ${only}`;
+    }
+    if (files.length > 1) {
+      return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
+    }
+  }
+  if (name === "delete_file") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
-  if (tc2.name === "rename_file") {
+  if (name === "rename_file") {
     const from = stringArg(tc2.args, "from");
     const to = stringArg(tc2.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
   }
-  if (tc2.name === "make_directory") {
+  if (name === "make_directory") {
     const path = fileEditPath(tc2.args);
     if (path) {
       return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
     }
   }
-  if (tc2.name === "task") {
+  if (name === "task") {
     const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
   }
-  if (tc2.name === "run_shell" || tc2.kind === "execute") {
+  if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (tc2.title) return tc2.title;
+    if (title) return title;
   }
-  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
-  return getToolDisplayName(tc2.name, tense);
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
   const builtIn = TOOL_TO_GROUP.get(name);
@@ -23754,13 +24352,17 @@ function summarizeToolTurn(toolCalls, items) {
   } else {
     base = `Used ${String(n2)} tools`;
   }
-  if (failed > 0 && status !== "running") {
+  if (failed > 0) {
     return `${base} \xB7 ${String(failed)} failed`;
   }
   return base;
 }
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
   const subagents = [];
   const proposals = [];
   const regular = [];
@@ -23771,14 +24373,18 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
       toolCalls: regular
     });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
   } else {
     result.push(...grouped);
   }
@@ -23802,31 +24408,26 @@ function summarizeToolRun(run2) {
     parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
   }
   parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
   return parts.join(" \xB7 ");
 }
 function summarizeToolRunStep(step, children) {
   const polished = step.summary?.trim();
   if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
   const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== "running") {
-    return `${polished} \xB7 ${String(failed)} failed`;
-  }
-  return polished;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
 }
 function buildToolRunDisplayItems(run2, opts) {
   if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const children = run2.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls);
-    return {
-      type: "step",
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls
-    };
-  });
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
   return [
     {
       type: "rollup",
@@ -23834,12 +24435,14 @@ function buildToolRunDisplayItems(run2, opts) {
       label: summarizeToolRun(run2),
       children,
       toolCalls: run2.toolCalls
-    }
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
   ];
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
     init_thread_proposal2();
@@ -23883,6 +24486,7 @@ var init_tool_display = __esm({
       get_ci_failure_logs: { running: "Fetching CI failure logs", done: "Fetched CI failure logs" },
       write_file: { running: "Writing file", done: "Wrote file" },
       str_replace: { running: "Replacing in file", done: "Replaced in file" },
+      apply_patch: { running: "Applying patch", done: "Applied patch" },
       delete_file: { running: "Deleting file", done: "Deleted file" },
       rename_file: { running: "Renaming file", done: "Renamed file" },
       make_directory: { running: "Creating directory", done: "Created directory" },
@@ -23948,7 +24552,14 @@ var init_tool_display = __esm({
         label: { running: "Checking git", done: "Checked git" }
       },
       writing: {
-        tools: ["write_file", "str_replace", "delete_file", "rename_file", "make_directory"],
+        tools: [
+          "write_file",
+          "str_replace",
+          "apply_patch",
+          "delete_file",
+          "rename_file",
+          "make_directory"
+        ],
         label: { running: "Editing files", done: "Edited files" }
       },
       shell: {
@@ -23968,7 +24579,6 @@ var init_tool_display = __esm({
       search: "searching",
       fetch: "web"
     };
-    MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
     RUN_ROLLUP_KEY = "run";
@@ -24326,7 +24936,11 @@ function attachThreadHydration(store2, api2) {
   hydrateActive();
   const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
     const state = store2.getState();
-    if (state.activeProjectId !== projectId || refs.length === 0) return;
+    if (refs.length === 0) return;
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
+      return;
+    }
     const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
     if (!state.threads.some((t2) => byThread.has(t2.id))) return;
     store2.setState({
@@ -24353,6 +24967,7 @@ var init_thread_hydration = __esm({
     init_perf();
     init_thread_helpers();
     init_artefact_previews();
+    init_projects();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
@@ -24449,7 +25064,7 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
@@ -24498,7 +25113,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
   );
   if (!queued) {
     void run2;
@@ -24961,6 +25576,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -25017,19 +25641,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
@@ -25648,6 +26276,17 @@ function gitPullRequestIcon(className = DEFAULT) {
     className
   );
 }
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
 function penLineIcon(className = DEFAULT) {
   return outlineIcon(
     "pen-line",
@@ -25708,7 +26347,7 @@ var init_icons = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -25732,14 +26371,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -25779,7 +26418,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -26070,7 +26709,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -26151,12 +26790,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -26232,7 +26871,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -26253,7 +26892,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -26531,7 +27170,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -26540,7 +27179,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -26690,7 +27329,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -26701,17 +27340,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -26807,7 +27446,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -26843,7 +27482,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -26938,7 +27577,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -26952,7 +27591,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -27088,7 +27727,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -27099,17 +27738,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -27876,7 +28515,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -27893,7 +28532,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -27914,7 +28553,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -27927,7 +28566,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -27953,7 +28592,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -28005,7 +28644,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -28037,7 +28676,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -28076,7 +28715,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -28098,13 +28737,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -28137,7 +28776,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -28147,17 +28786,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -28210,13 +28849,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -28419,7 +29058,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -28448,7 +29087,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -28467,7 +29106,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -28486,7 +29125,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -28684,7 +29323,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -28695,7 +29334,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -28790,12 +29429,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -29092,7 +29731,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -29109,7 +29748,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -29159,7 +29798,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -29169,7 +29808,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -29388,7 +30027,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -29408,7 +30047,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -29504,7 +30143,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -29514,7 +30153,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -29963,7 +30602,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -29981,7 +30620,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -30013,14 +30652,14 @@ function canonicalize(value, base) {
 function canonicalizePrefixes(prefixes) {
   const out = [];
   for (const prefix of prefixes) {
-    const canonical = canonicalize(prefix);
-    if (canonical !== null)
-      out.push(canonical);
+    const canonical2 = canonicalize(prefix);
+    if (canonical2 !== null)
+      out.push(canonical2);
   }
   return out;
 }
-function isUnderAllowedPrefix(canonical, prefixes) {
-  return prefixes.some((prefix) => canonical.startsWith(prefix));
+function isUnderAllowedPrefix(canonical2, prefixes) {
+  return prefixes.some((prefix) => canonical2.startsWith(prefix));
 }
 function resolveHref(raw, defaultOrigin) {
   const absolute = canonicalize(raw);
@@ -30067,8 +30706,8 @@ function enforceImage(node2, policy) {
   node2.removeAttribute("src");
   addBlockedClass(node2, policy.blockedImageClass);
 }
-function isDataUrl(canonical) {
-  return canonical.slice(0, 5).toLowerCase() === "data:";
+function isDataUrl(canonical2) {
+  return canonical2.slice(0, 5).toLowerCase() === "data:";
 }
 function applyLinkImagePolicy(node2, tagName) {
   const policy = resolvedPolicy();
@@ -30081,7 +30720,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -30089,16 +30728,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -30145,7 +30784,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -30169,7 +30808,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -30238,7 +30877,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -30320,7 +30959,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -30358,7 +30997,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -30368,7 +31007,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -30542,7 +31181,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -30556,7 +31195,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -30671,14 +31310,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -30730,7 +31369,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -30915,7 +31554,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -30944,11 +31583,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -30997,13 +31636,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -31047,13 +31686,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -31094,11 +31733,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -31148,14 +31787,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -31261,7 +31900,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -31274,7 +31913,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -31319,7 +31958,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -31328,18 +31967,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -31441,7 +32080,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -31449,7 +32088,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -31636,7 +32275,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -32872,7 +33511,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -33314,7 +33953,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -33582,9 +34221,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -33718,30 +34357,35 @@ function openRemoteFolderDialog(api2) {
   );
   const draft = emptySshHostDraft();
   const idInput = el("input", {
+    type: "text",
     name: "remoteFolderHostId",
     class: "remote-folder-host-id",
     placeholder: "my-server",
     "aria-label": "Host id"
   });
   const labelInput = el("input", {
+    type: "text",
     name: "remoteFolderHostLabel",
     class: "remote-folder-host-label",
     placeholder: "Production",
     "aria-label": "Host label"
   });
   const hostInput = el("input", {
+    type: "text",
     name: "remoteFolderHostHost",
     class: "remote-folder-host-host",
     placeholder: "example.com or ~/.ssh/config alias",
     "aria-label": "Hostname"
   });
   const userInput = el("input", {
+    type: "text",
     name: "remoteFolderHostUser",
     class: "remote-folder-host-user",
     placeholder: "ubuntu",
     "aria-label": "SSH user"
   });
   const portInput = el("input", {
+    type: "text",
     name: "remoteFolderHostPort",
     class: "remote-folder-host-port",
     placeholder: "22",
@@ -33749,6 +34393,7 @@ function openRemoteFolderDialog(api2) {
     "aria-label": "SSH port"
   });
   const identityInput = el("input", {
+    type: "text",
     name: "remoteFolderHostIdentity",
     class: "remote-folder-host-identity",
     placeholder: "~/.ssh/id_ed25519",
@@ -34119,6 +34764,20 @@ function getSidebarThreads(store2, projectId) {
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
 }
+function applyCachedSidebarPrRefs(projectId, refs) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return false;
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
+  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    })
+  );
+  return true;
+}
 function isProjectSwitchInFlight(store2, projectId) {
   const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
@@ -34431,8 +35090,8 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
   if (enabled !== true) {
     throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
   }
-  const canonical = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical);
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
   let id;
   if (existing) {
     id = existing.id;
@@ -34444,11 +35103,11 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
     store2.setState({
       projects: [
         ...store2.getState().projects,
-        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId }
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
       ]
     });
   }
-  return activateAndWait(store2, api2, id, canonical, hostId);
+  return activateAndWait(store2, api2, id, canonical2, hostId);
 }
 function activateAndWait(store2, api2, id, path, sshHost) {
   activate(store2, api2, id, path, sshHost, null);
@@ -34973,7 +35632,10 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     dismiss();
   };
   const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
+    if (e3.key !== "Escape") return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    dismiss();
   };
   const dialog2 = withinDialog?.closest("dialog");
   (dialog2 ?? document.body).append(menu);
@@ -35053,15 +35715,167 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
-  if (!src) return;
+function expandableImageSource(image) {
+  const authoredSrc = image.getAttribute("src");
+  const authoredSrcset = image.getAttribute("srcset");
+  if (!authoredSrc?.trim() && !authoredSrcset?.trim()) return "";
+  return image.currentSrc || image.src;
+}
+function imageTitle(item) {
+  return item.alt.trim() || "Expanded attachment";
+}
+function openImageGalleryViewer(items, initialIndex, returnFocus2) {
+  let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  const viewer = el("div", {
+    class: "image-expand-viewer",
+    role: "group",
+    "aria-roledescription": "carousel",
+    tabindex: "-1"
+  });
+  const stage = el("div", { class: "image-expand-stage" });
+  const imageEl = el("img", { class: "image-expand-image", alt: "" });
+  attachImageCopyMenu(imageEl);
+  const previousButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-prev",
+      "aria-label": "Previous image"
+    },
+    arrowLeftIcon("ui-icon ui-icon-sm")
+  );
+  const nextButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-next",
+      "aria-label": "Next image"
+    },
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  const previousZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-prev" },
+    previousButton
+  );
+  const nextZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-next" },
+    nextButton
+  );
+  stage.append(imageEl, previousZone, nextZone);
+  const thumbnailButtons = items.map((item, index) => {
+    const thumbnail2 = el("img", {
+      class: "image-expand-thumbnail-image",
+      src: item.src,
+      alt: "",
+      loading: "lazy"
+    });
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "image-expand-thumbnail",
+        "aria-label": "Show image " + String(index + 1) + " of " + String(items.length),
+        "aria-selected": "false",
+        role: "tab"
+      },
+      thumbnail2
+    );
+    button.addEventListener("click", () => {
+      currentIndex = index;
+      render();
+    });
+    return button;
+  });
+  const thumbnailStrip = el(
+    "div",
+    { class: "image-expand-thumbnails", role: "tablist", "aria-label": "Attached images" },
+    ...thumbnailButtons
+  );
+  const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  viewer.append(counter, stage, footer);
+  const render = () => {
+    const item = items[currentIndex];
+    if (!item) return;
+    const label = imageTitle(item);
+    imageEl.src = item.src;
+    imageEl.alt = label;
+    imageEl.dataset["imageIndex"] = String(currentIndex);
+    imageEl.setAttribute(
+      "aria-label",
+      label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    viewer.setAttribute(
+      "aria-label",
+      "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    counter.textContent = String(currentIndex + 1) + " / " + String(items.length);
+    previousButton.disabled = currentIndex === 0;
+    nextButton.disabled = currentIndex === items.length - 1;
+    previousButton.setAttribute("aria-disabled", String(previousButton.disabled));
+    nextButton.setAttribute("aria-disabled", String(nextButton.disabled));
+    for (const [index, button] of thumbnailButtons.entries()) {
+      const selected = index === currentIndex;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    }
+    thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  const move = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+    currentIndex = nextIndex;
+    render();
+  };
+  previousButton.addEventListener("click", () => {
+    move(currentIndex - 1);
+  });
+  nextButton.addEventListener("click", () => {
+    move(currentIndex + 1);
+  });
+  viewer.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex - 1);
+      viewer.focus({ preventScroll: true });
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex + 1);
+      viewer.focus({ preventScroll: true });
+    }
+  });
+  render();
+  const initialItem = items[currentIndex];
+  if (!initialItem) return;
+  const session = openAttachmentPreview({
+    kind: "image-gallery",
+    title: "Attached images \xB7 " + String(items.length),
+    ariaLabel: "Image preview: " + imageTitle(initialItem),
+    content: viewer,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
+    onClose: () => {
+      imageEl.removeAttribute("src");
+      for (const button of thumbnailButtons) {
+        button.querySelector("img")?.removeAttribute("src");
+      }
+    }
+  });
+  queueMicrotask(() => {
+    if (session.isActive()) viewer.focus({ preventScroll: true });
+  });
+}
+function openSingleImage(src, alt, returnFocus2) {
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
   attachImageCopyMenu(imageEl);
   openAttachmentPreview({
     kind: "image",
     title: alt,
-    ariaLabel: `Image preview: ${alt}`,
+    ariaLabel: "Image preview: " + alt,
     content: imageEl,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
@@ -35070,26 +35884,52 @@ function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
     }
   });
 }
-function attachImageExpand(img, alt) {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
+  if (!src) return;
+  openSingleImage(src, alt, returnFocus2);
+}
+function openImageGallery(items, initialIndex = 0, returnFocus2) {
+  const usableItems = [];
+  let usableIndex = 0;
+  for (const [index, item] of items.entries()) {
+    if (item.src.length === 0) continue;
+    if (index < initialIndex) usableIndex += 1;
+    usableItems.push(item);
+  }
+  if (usableItems.length === 0) return;
+  if (usableItems.length === 1) {
+    const item = usableItems[0];
+    if (item) openSingleImage(item.src, item.alt, returnFocus2);
+    return;
+  }
+  openImageGalleryViewer(usableItems, usableIndex, returnFocus2);
+}
+function attachImageExpand(img, alt, gallery, galleryIndex) {
   if (img.dataset["imageExpand"] === "true") return;
   img.dataset["imageExpand"] = "true";
   attachImageCopyMenu(img);
   img.classList.add("image-expandable");
   img.setAttribute("role", "button");
   img.setAttribute("tabindex", "0");
-  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
+  img.setAttribute("aria-label", alt ? "Expand " + alt : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    const src = img.currentSrc || img.src;
-    openImageExpand(src, label, () => {
+    const src = expandableImageSource(img);
+    if (!src) return;
+    const focusTarget = () => {
       if (img.isConnected) return img;
       for (const candidate of document.querySelectorAll("img.image-expandable")) {
-        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+        if (candidate.getAttribute("aria-label") === "Expand " + label && expandableImageSource(candidate) === src) {
           return candidate;
         }
       }
       return null;
-    });
+    };
+    if (gallery && gallery.length > 1) {
+      openImageGallery(gallery, galleryIndex ?? 0, focusTarget);
+      return;
+    }
+    openImageExpand(src, label, focusTarget);
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -35107,6 +35947,7 @@ var init_image_expand = __esm({
   "src/renderer/attachments/image-expand.ts"() {
     init_context_menu();
     init_helpers();
+    init_icons();
     init_toast();
     init_attachment_preview();
   }
@@ -35804,14 +36645,644 @@ url: http://localhost:61025/index.html
   }
 });
 
+// src/shared/demo-site-tour.ts
+function earlierThreads(minutesAgo) {
+  return [
+    {
+      id: "demo-site-tour-coming-soon",
+      title: "Crumb & Bloom coming soon",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-coming-soon-user",
+          role: "user",
+          content: "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4
+        },
+        {
+          id: "demo-site-tour-coming-soon-assistant",
+          role: "assistant",
+          content: "Built the coming-soon page in `index.html`, `styles.css`, and `script.js`.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+    },
+    {
+      id: "demo-site-tour-menu-photos",
+      title: "Compress the menu photos",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-menu-photos-user",
+          role: "user",
+          content: "The menu photos are slow on mobile. Can you compress them?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4
+        },
+        {
+          id: "demo-site-tour-menu-photos-assistant",
+          role: "assistant",
+          content: 'Converted the six menu photos to WebP and added `loading="lazy"`.',
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+    }
+  ];
+}
+function siteTourScenario(id, label, thread, extra = {}) {
+  return {
+    id,
+    label,
+    project: CRUMB_AND_BLOOM,
+    settings: SITE_TOUR_SETTINGS,
+    threads: [thread, ...earlierThreads(30)],
+    ...extra
+  };
+}
+var SITE_TOUR_TIME, SITE_TOUR_MODEL, CRUMB_AND_BLOOM, SITE_TOUR_SETTINGS, SITE_TOUR_GITHUB_MCP, SITE_TOUR_TOOL_PERMISSIONS, SEASONAL_PR_BODY, SIGNUP_THREAD, SITE_TOUR_SCENARIOS;
+var init_demo_site_tour = __esm({
+  "src/shared/demo-site-tour.ts"() {
+    SITE_TOUR_TIME = Date.UTC(2026, 8, 14, 10, 30, 0);
+    SITE_TOUR_MODEL = "claude-opus-5-5";
+    CRUMB_AND_BLOOM = {
+      id: "demo-crumb-and-bloom",
+      name: "Crumb & Bloom",
+      path: "/demo/crumb-and-bloom"
+    };
+    SITE_TOUR_SETTINGS = {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model: SITE_TOUR_MODEL
+    };
+    SITE_TOUR_GITHUB_MCP = {
+      name: "github",
+      transport: "http",
+      state: "connected",
+      toolCount: 5,
+      tools: [
+        "search_issues",
+        "get_pull_request",
+        "create_issue",
+        "add_issue_comment",
+        "merge_pull_request"
+      ],
+      source: "/demo/crumb-and-bloom/.mcp.json",
+      origin: "project",
+      originDetail: ".mcp.json",
+      userEnabled: true,
+      configDisabled: false
+    };
+    SITE_TOUR_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            }
+          ]
+        },
+        {
+          id: "mcp:project:github",
+          name: "github",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/crumb-and-bloom/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:github:search-issues",
+              executionName: "mcp__github__search_issues",
+              name: "Search issues",
+              description: "Search issues and pull requests in a repository.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:get-pull-request",
+              executionName: "mcp__github__get_pull_request",
+              name: "Get pull request",
+              description: "Read a pull request, its diff, and its review comments.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:create-issue",
+              executionName: "mcp__github__create_issue",
+              name: "Create issue",
+              description: "Open a new issue in a repository.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:add-issue-comment",
+              executionName: "mcp__github__add_issue_comment",
+              name: "Add issue comment",
+              description: "Comment on an issue or pull request.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:merge-pull-request",
+              executionName: "mcp__github__merge_pull_request",
+              name: "Merge pull request",
+              description: "Merge a pull request into its base branch.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
+    SEASONAL_PR_BODY = [
+      "Adds a seasonal flavours section below the hero.",
+      "",
+      "- Reads the current menu from `flavours.json`, so the bakery can swap flavours without touching markup",
+      "- Pauses the flavour ticker for visitors who prefer reduced motion",
+      "- Keeps the section to a single column on narrow screens"
+    ].join("\n");
+    SIGNUP_THREAD = {
+      id: "demo-site-tour-signup",
+      title: "Send signups to the newsletter",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-signup-user-1",
+          role: "user",
+          content: "Where does the email signup get handled?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 4 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-1",
+          role: "assistant",
+          content: "In `script.js`: the form\u2019s submit handler checks the address, then shows the confirmation note under the form. Nothing is sent anywhere yet, so the address only lives in the page.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 3 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-user-2",
+          role: "user",
+          content: "Send new signups to the newsletter list instead of only showing the note.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 2 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-2",
+          role: "assistant",
+          content: "The submit handler now posts the address to the newsletter endpoint and only shows the confirmation note once the request succeeds. A failed request keeps what the visitor typed and offers to try again.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - 4 * 6e4,
+      updatedAt: SITE_TOUR_TIME - 6e4
+    };
+    SITE_TOUR_SCENARIOS = [
+      siteTourScenario("site-fork-resend", "Copse.dev tour: fork and resend a prompt", SIGNUP_THREAD, {
+        // The site the thread is about, open in the Browser pane beside it.
+        staticSite: "sites/cupcakes",
+        settings: {
+          ...SITE_TOUR_SETTINGS,
+          layout: { projectsPaneWidth: 240, filesPaneWidth: 560 }
+        }
+      }),
+      siteTourScenario("site-subagent", "Copse.dev tour: an expanded subagent", {
+        id: "demo-site-tour-accessibility",
+        title: "Accessibility audit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [
+          {
+            id: "demo-site-tour-accessibility-user",
+            role: "user",
+            content: "Check the coming-soon page for accessibility problems before we launch.",
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 3 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-assistant",
+            role: "assistant",
+            content: "I asked an explore agent to audit the markup and styles.",
+            toolCalls: [
+              {
+                id: "demo-site-tour-accessibility-explore",
+                name: "explore",
+                args: { query: "Audit index.html and styles.css for accessibility gaps" },
+                status: "done",
+                result: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                subagent: {
+                  id: "demo-site-tour-accessibility-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Audit index.html and styles.css for accessibility gaps",
+                  summary: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                  model: SITE_TOUR_MODEL,
+                  messages: [
+                    {
+                      id: "demo-site-tour-accessibility-explore-1",
+                      role: "assistant",
+                      content: "Reading the page structure and the stylesheet.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-read-html",
+                          name: "read_file",
+                          args: { path: "index.html" },
+                          status: "done",
+                          result: "<!doctype html>\n"
+                        },
+                        {
+                          id: "demo-site-tour-accessibility-read-css",
+                          name: "read_file",
+                          args: { path: "styles.css" },
+                          status: "done",
+                          result: ":root {\n"
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-2",
+                      role: "assistant",
+                      content: "Checking whether the ticker animation respects **reduced motion**.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-grep",
+                          name: "grep_search",
+                          args: { pattern: "prefers-reduced-motion" },
+                          status: "done",
+                          result: "No matches."
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-3",
+                      role: "assistant",
+                      content: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                      toolCalls: []
+                    }
+                  ]
+                }
+              }
+            ],
+            createdAt: SITE_TOUR_TIME - 2 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-findings",
+            role: "assistant",
+            content: [
+              "Two things to fix before launch:",
+              "",
+              "- The flavour ticker keeps scrolling for visitors who prefer reduced motion.",
+              "- The signup field relies on its placeholder, so it has no visible label.",
+              "",
+              "Want me to fix both?"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 6e4
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME - 3 * 6e4,
+        updatedAt: SITE_TOUR_TIME - 6e4
+      }),
+      siteTourScenario("site-archive-attachment", "Copse.dev tour: attach a zip archive", {
+        // Empty: the spec drops the archive into this thread's composer.
+        id: "demo-site-tour-brand-kit",
+        title: "Swap in the new brand kit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME,
+        updatedAt: SITE_TOUR_TIME
+      }),
+      // Settings opens over the same conversation the fork shot uses.
+      siteTourScenario("site-providers", "Copse.dev tour: provider settings", SIGNUP_THREAD),
+      siteTourScenario(
+        "site-create-pr",
+        "Copse.dev tour: create a pull request",
+        {
+          id: "demo-site-tour-seasonal",
+          title: "Add seasonal flavours",
+          status: "idle",
+          gitBranch: "seasonal-flavours",
+          model: SITE_TOUR_MODEL,
+          messages: [
+            {
+              id: "demo-site-tour-seasonal-user",
+              role: "user",
+              content: "Add a seasonal flavours section under the hero that reads from flavours.json, and make sure the ticker respects reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 3 * 6e4
+            },
+            {
+              id: "demo-site-tour-seasonal-assistant",
+              role: "assistant",
+              content: "Added the seasonal flavours section and committed it on `seasonal-flavours`. The ticker now pauses for visitors who prefer reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 6e4
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME - 3 * 6e4,
+          updatedAt: SITE_TOUR_TIME - 6e4
+        },
+        {
+          changeStats: { additions: 86, deletions: 12 },
+          followUps: [
+            { id: "create-pr", label: "Create PR", action: "create-pr" },
+            { id: "review", label: "Review changes", action: "review" }
+          ],
+          prBody: SEASONAL_PR_BODY
+        }
+      ),
+      siteTourScenario(
+        "site-mcp-permissions",
+        "Copse.dev tour: per-tool MCP permissions",
+        {
+          id: "demo-site-tour-triage",
+          title: "Triage launch issues",
+          status: "idle",
+          gitBranch: "main",
+          model: SITE_TOUR_MODEL,
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME,
+          updatedAt: SITE_TOUR_TIME
+        },
+        {
+          mcpServers: [SITE_TOUR_GITHUB_MCP],
+          toolPermissions: SITE_TOUR_TOOL_PERMISSIONS
+        }
+      )
+    ];
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+function conciseThreadMessages(model, live) {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: "user",
+      content: "Fix the settings form so Save stays aligned on narrow windows.",
+      toolCalls: [],
+      createdAt: FIXED_TIME
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: "assistant",
+      model,
+      reasoning: "The Save button is absolutely positioned; check the form layout first.",
+      content: "Let me look at how the settings form lays out its footer.",
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: "read_file",
+          args: { path: "src/renderer/views/settings-dialog.ts" },
+          status: "done",
+          result: "export function mountSettings() { \u2026 }"
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: "str_replace",
+          args: { path: "src/renderer/styles/settings.css" },
+          status: "done",
+          result: "Replaced 1 occurrence.",
+          editStats: { additions: 4, deletions: 2 }
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: "error",
+          result: "Error: settings-forms.test.ts expected footer to use grid"
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: live ? "running" : "done",
+          result: live ? null : "\u2139 pass 12"
+        }
+      ],
+      createdAt: FIXED_TIME + 1e3
+    },
+    ...live ? [] : [
+      {
+        id: `concise-step-2-${model}`,
+        role: "assistant",
+        model,
+        content: "Capturing the narrow layout to confirm.",
+        toolCalls: [
+          {
+            id: `concise-shot-${model}`,
+            name: "browser_screenshot",
+            args: { width: 480 },
+            status: "done",
+            result: "Captured the settings dialog at 480px.",
+            images: [
+              {
+                dataUrl: CONCISE_SCREENSHOT,
+                name: "settings-480px.png",
+                kind: "screenshot"
+              }
+            ]
+          }
+        ],
+        createdAt: FIXED_TIME + 2e3
+      },
+      {
+        id: `concise-summary-${model}`,
+        role: "assistant",
+        model,
+        content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
+        toolCalls: [
+          {
+            id: `concise-audit-${model}`,
+            name: "workspace_edit_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
+        createdAt: FIXED_TIME + 3e3
+      }
+    ]
+  ];
+}
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model,
+      conciseThreadsEnabled: enabled
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Concise thread view",
+        status: live ? "running" : "idle",
+        model,
+        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ]
+  };
+}
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
+    init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -36024,6 +37495,20 @@ var init_demo_scenarios = __esm({
         { chunk: { type: "done", stopReason: "end_turn" }, delayMs: 300 }
       ]
     };
+    CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+        '<rect width="480" height="270" fill="#f4f1ea"/>',
+        '<rect width="480" height="36" fill="#2f3a2f"/>',
+        '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+        '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+        '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+        '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+        "</svg>"
+      ].join("")
+    )}`;
     DEMO_SCENARIOS = [
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -36302,6 +37787,37 @@ var init_demo_scenarios = __esm({
           error: null,
           continuedFrom: null
         }
+      },
+      {
+        id: "balanced-model-label",
+        label: "Balanced model rule label",
+        project: project("demo-balanced-model-label-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:balanced"
+        },
+        threads: [
+          {
+            id: "demo-balanced-model-label-thread",
+            title: "Balanced model label",
+            status: "idle",
+            model: "auto:balanced",
+            messages: [
+              {
+                id: "demo-balanced-model-label-user",
+                role: "user",
+                content: "Keep this conversation on the balanced model rule.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       },
       {
         id: "footer-compact",
@@ -37125,7 +38641,59 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
-      }
+      },
+      conciseThreadScenario(
+        "concise-thread",
+        "Concise thread view for a capable model",
+        "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-full",
+        "Full thread view for a model below the concise gate",
+        "gpt-4o"
+      ),
+      conciseThreadScenario(
+        "concise-thread-working",
+        "Concise thread view while a capable model works",
+        "claude-opus-5-5",
+        { live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-disabled",
+        "Full thread view for a capable model while the experiment is off",
+        "claude-opus-5-5",
+        { enabled: false }
+      ),
+      {
+        id: "roadmap-chat-min-width",
+        label: "Roadmap side panel minimum chat width",
+        project: project("demo-roadmap-chat-min-width-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: { filesPaneWidth: 4e3 }
+        },
+        threads: [
+          {
+            id: "demo-roadmap-chat-min-width-thread",
+            title: "Roadmap layout bounds",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+      ...SITE_TOUR_SCENARIOS
     ];
   }
 });
@@ -37146,9 +38714,7 @@ function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
   if (colon > 0) return model.slice(0, colon);
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
-  return void 0;
+  return firstPartyProviderOf(model) ?? void 0;
 }
 function stringArg2(args, key) {
   if (!isRecord(args)) return void 0;
@@ -37185,7 +38751,8 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -37314,6 +38881,7 @@ function createDemoApi(scenario, options = {}) {
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -37408,6 +38976,7 @@ function createDemoApi(scenario, options = {}) {
         emitChunk(threadId, { type: "done", stopReason: "end_turn" });
         return resolvedVoid();
       },
+      runMachine: () => resolved("completed"),
       describeImages: () => resolved({ text: "Demo image description." }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -37443,8 +39012,8 @@ function createDemoApi(scenario, options = {}) {
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...scenario.followUps ?? []])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -37535,7 +39104,7 @@ function createDemoApi(scenario, options = {}) {
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -37574,8 +39143,16 @@ function createDemoApi(scenario, options = {}) {
         return resolvedVoid();
       }
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) => resolved({
+        path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+        name: archive.name,
+        sizeBytes: archive.bytes?.byteLength ?? 0
+      })
+    },
     threads: {
       loadProject: (projectId) => resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -37585,6 +39162,7 @@ function createDemoApi(scenario, options = {}) {
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => void 0,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
@@ -37725,6 +39303,13 @@ function createDemoApi(scenario, options = {}) {
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -37943,6 +39528,11 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe
     },
     appRun: {
@@ -38009,7 +39599,7 @@ function createDemoApi(scenario, options = {}) {
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -38131,8 +39721,10 @@ var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_automations_plugin();
     init_parse_agent_run_payload();
+    init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
+    init_model_capabilities();
     init_token_estimate();
     init_files();
     init_unknown_value3();
@@ -38267,22 +39859,22 @@ var init_demo_api = __esm({
         settings: []
       },
       {
-        id: "copse.advisor-strategy",
+        id: ADVISOR_STRATEGY_PLUGIN_ID,
         trust: "first-party",
         stability: "experimental",
         name: "Advisor strategy",
         version: "0.3.1",
-        description: "Pairs a second model with the executor to review strategy before long or risky work starts.",
+        description: "Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.",
         enabled: true,
-        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["consult_advisor"] },
+        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
         settings: [
           {
-            id: "maxReviewCycles",
-            kind: "number",
-            title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
-            default: 2,
-            value: 2
+            id: ADVISOR_MODEL_SETTING_ID,
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID,
+            value: DEFAULT_ADVISOR_MODEL_ID
           }
         ]
       },
@@ -38650,9 +40242,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -38947,6 +40539,12 @@ var init_apple_development = __esm({
   }
 });
 
+// src/shared/types/machine-dispatch.ts
+var init_machine_dispatch = __esm({
+  "src/shared/types/machine-dispatch.ts"() {
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -38968,6 +40566,7 @@ var init_types = __esm({
     init_guarded_yolo();
     init_automations();
     init_apple_development();
+    init_machine_dispatch();
   }
 });
 
@@ -38995,6 +40594,7 @@ function createStore(initial) {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -39581,7 +41181,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       maxlength: "80"
     });
     const explanation = el("p", { class: "app-run-notice" });
-    const apply2 = el("button", {
+    const apply3 = el("button", {
       type: "button",
       class: "ui-btn ui-btn-primary app-run-setup-apply"
     });
@@ -39594,17 +41194,17 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     const sync = () => {
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       const download2 = selected && !selected.installed;
-      apply2.textContent = download2 ? "Download selected image" : "Create device";
+      apply3.textContent = download2 ? "Download selected image" : "Create device";
       explanation.textContent = download2 ? "Downloads this system image into your Android SDK. Review any license agreement in Android Studio before continuing." : "Uses an installed runtime. Your existing devices are kept.";
-      apply2.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
+      apply3.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
     };
     runtime.addEventListener("change", sync);
     name.addEventListener("input", sync);
     dismiss.addEventListener("click", () => {
       setupHost.hidden = true;
     });
-    apply2.addEventListener("click", () => {
-      apply2.disabled = true;
+    apply3.addEventListener("click", () => {
+      apply3.disabled = true;
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       void api2.appRun.setup(owner, {
         platform,
@@ -39641,7 +41241,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       el("label", {}, "Device type", deviceType),
       el("label", {}, "Name", name),
       explanation,
-      el("div", { class: "app-run-actions" }, apply2, installApple, dismiss)
+      el("div", { class: "app-run-actions" }, apply3, installApple, dismiss)
     );
     sync();
   }
@@ -41007,225 +42607,6 @@ var init_app_icon_variants = __esm({
   }
 });
 
-// packages/llm/src/agent-roles.ts
-function getAgentRole(id) {
-  return AGENT_ROLES.find((role) => role.id === id) ?? null;
-}
-var AGENT_ROLES, AGENT_ROLE_IDS;
-var init_agent_roles = __esm({
-  "packages/llm/src/agent-roles.ts"() {
-    AGENT_ROLES = [
-      {
-        id: "coder",
-        label: "Coder",
-        description: "Writing new code \u2014 the chat default when coding",
-        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
-      },
-      {
-        id: "debugger",
-        label: "Debugger",
-        description: "Fixing bugs through careful, iterative analysis",
-        wants: ["swe-bench", "livecodebench", "gpqa"]
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Post-turn diff review and maintainability",
-        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "security-auditor",
-        label: "Security auditor",
-        description: "Finding vulnerabilities with low false negatives",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "judge",
-        label: "Judge",
-        description: "Accept/reject a patch or answer against a rubric",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "test-gen",
-        label: "Test generator",
-        description: "Unit, integration, and property tests",
-        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
-      },
-      {
-        id: "refactor",
-        label: "Refactorer",
-        description: "Behaviour-preserving changes",
-        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
-      },
-      {
-        id: "planner",
-        label: "Planner",
-        description: "Breaking work into prioritised tasks",
-        wants: ["gpqa", "mmlu-pro", "arena"]
-      },
-      {
-        id: "advisor",
-        label: "Advisor",
-        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
-        wants: ["gpqa", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        description: "READMEs, comments, and API docs",
-        wants: ["mmlu-pro", "arena"]
-      },
-      {
-        id: "research",
-        label: "Research assistant",
-        description: "API/framework lookup and synthesis (exploration subagent)",
-        wants: ["mmlu-pro", "gpqa", "arena"]
-      },
-      {
-        id: "tool-use",
-        label: "Tool-use agent",
-        description: "Calling tools correctly with structured output",
-        wants: ["tau-bench", "multipl-e"]
-      },
-      {
-        id: "small-tasks",
-        label: "Small tasks",
-        description: "Thread titles and other lightweight prompts",
-        wants: ["arena"]
-      },
-      {
-        id: "safety",
-        label: "Instruct / safety",
-        description: "Classifies shell commands when the OS sandbox is off",
-        wants: ["arena"]
-      }
-    ];
-    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
-  }
-});
-
-// packages/llm/src/dynamic-model.ts
-function minIntellectSelector(threshold) {
-  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
-}
-function roleModelSelector(role) {
-  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
-}
-function isDynamicModel(value) {
-  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
-}
-function parseDynamicModel(value) {
-  if (typeof value !== "string") return null;
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "auto") return null;
-  const body = selection2.id;
-  if (body === "best-value") return { kind: "best-value" };
-  if (body === "best-intellect") return { kind: "best-intellect" };
-  if (body === "best-local") return { kind: "best-local" };
-  if (body === "cheapest") return { kind: "cheapest" };
-  if (body === "balanced") return { kind: "balanced" };
-  if (body.startsWith(MIN_INTELLECT_INFIX)) {
-    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
-    if (!Number.isFinite(threshold) || threshold <= 0) return null;
-    return { kind: "min-intellect", threshold };
-  }
-  if (body.startsWith(ROLE_INFIX)) {
-    const role = getAgentRole(body.slice(ROLE_INFIX.length));
-    return role ? { kind: "role", role: role.id } : null;
-  }
-  return null;
-}
-function dynamicModelLabel(value) {
-  const selector = parseDynamicModel(value);
-  if (!selector) return null;
-  switch (selector.kind) {
-    case "best-value":
-      return "Best value";
-    case "best-intellect":
-      return "Most capable";
-    case "best-local":
-      return "Best on-device";
-    case "cheapest":
-      return "Cheapest";
-    case "balanced":
-      return "Balanced";
-    case "min-intellect":
-      return `At least ${String(selector.threshold)} intelligence`;
-    case "role":
-      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
-  }
-}
-function dynamicModelChoices() {
-  const choices = [
-    {
-      value: BEST_VALUE_MODEL_SELECTOR,
-      label: "Best value",
-      description: "Best intelligence per pound across your plans, providers, and local server",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_INTELLECT_MODEL_SELECTOR,
-      label: "Most capable",
-      description: "Highest intelligence available, ignoring price",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_LOCAL_MODEL_SELECTOR,
-      label: "Best on-device",
-      description: "Strongest model loaded on your machine",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: CHEAPEST_MODEL_SELECTOR,
-      label: "Cheapest",
-      description: "Lowest token price; plans and local count as free",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BALANCED_MODEL_SELECTOR,
-      label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
-      group: AUTOMATIC_GROUP
-    }
-  ];
-  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
-    choices.push({
-      value: minIntellectSelector(threshold),
-      label: `At least ${String(threshold)} intelligence`,
-      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
-      group: INTELLIGENCE_GROUP
-    });
-  }
-  for (const role of AGENT_ROLES) {
-    choices.push({
-      value: roleModelSelector(role.id),
-      label: role.label,
-      description: role.description,
-      group: ROLE_GROUP
-    });
-  }
-  return choices;
-}
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
-var init_dynamic_model = __esm({
-  "packages/llm/src/dynamic-model.ts"() {
-    init_agent_roles();
-    init_model_selection();
-    init_reserved_prefixes();
-    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
-    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
-    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
-    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
-    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
-    MIN_INTELLECT_INFIX = "min-intellect:";
-    ROLE_INFIX = "role:";
-    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
-    AUTOMATIC_GROUP = "Automatic";
-    INTELLIGENCE_GROUP = "Minimum intelligence";
-    ROLE_GROUP = "By role";
-  }
-});
-
 // src/shared/lm-studio-defaults.ts
 function isBestValueChatModel(model) {
   return model === BEST_VALUE_CHAT_MODEL;
@@ -41427,8 +42808,8 @@ function canonicalAcpAgentId(id) {
   return LEGACY_ACP_AGENT_IDS[id] ?? id;
 }
 function findAcpCatalogEntry(id) {
-  const canonical = canonicalAcpAgentId(id);
-  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+  const canonical2 = canonicalAcpAgentId(id);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical2);
 }
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
@@ -45766,6 +47147,46 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
           asOf: "2026-07-18"
+        }
+      ],
+      "gpt-6-1-sol": [
+        {
+          value: 51.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-high": [
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-low": [
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-medium": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-xhigh": [
+        {
+          value: 51,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+          asOf: "2026-09-30"
         }
       ],
       "gpt-6-astra": [
@@ -51040,6 +52461,7 @@ var init_model_intellect_generated = __esm({
       "anthropic/claude-haiku-4-5": "claude-haiku-4-5",
       "anthropic/claude-opus-4-8": "claude-opus-4-8",
       "anthropic/claude-opus-5": "claude-opus-5",
+      "anthropic/claude-opus-5-5": "claude-opus-5-5",
       "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
       "anthropic/claude-sonnet-5": "claude-sonnet-5",
       "Claude Fable 5": "claude-fable-5",
@@ -51047,6 +52469,7 @@ var init_model_intellect_generated = __esm({
       "claude-fable-5-latest": "claude-fable-5",
       "claude-haiku-4-5-latest": "claude-haiku-4-5",
       "claude-opus-4-8-latest": "claude-opus-4-8",
+      "claude-opus-5-5-latest": "claude-opus-5-5",
       "claude-opus-5-latest": "claude-opus-5",
       "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
       "claude-sonnet-5-latest": "claude-sonnet-5",
@@ -51073,6 +52496,8 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Sol": "gpt-5.6-sol",
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
+      "GPT-6.1 Sol": "gpt-6-1-sol",
+      "gpt-6.1-sol": "gpt-6-1-sol",
       "Grok 4.5": "grok-4.5",
       "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
@@ -51101,8 +52526,10 @@ var init_model_intellect_generated = __esm({
       "openai/gpt-5.6-luna": "gpt-5.6-luna",
       "openai/gpt-5.6-sol": "gpt-5.6-sol",
       "openai/gpt-5.6-terra": "gpt-5.6-terra",
+      "openai/gpt-6.1-sol": "gpt-6-1-sol",
       "Opus 4.8": "claude-opus-4-8",
       "Opus 5": "claude-opus-5",
+      "Opus 5.5": "claude-opus-5-5",
       "phi-4": "microsoft/phi-4",
       "Phi-4": "microsoft/phi-4",
       "qwen2-5-coder-32b-instruct": "qwen/qwen2.5-coder-32b",
@@ -52449,40 +53876,6 @@ var init_orchestration_strategy = __esm({
   }
 });
 
-// packages/agent/src/plugins/advisor-strategy-plugin.ts
-var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
-var init_advisor_strategy_plugin = __esm({
-  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
-    init_dynamic_model();
-    init_plugin_manifest();
-    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
-    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
-    ADVISOR_MODEL_SETTING_ID = "advisorModel";
-    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
-    advisorStrategyPlugin = definePlugin(
-      {
-        name: ADVISOR_STRATEGY_PLUGIN_ID,
-        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
-        settings: {
-          [ADVISOR_MODEL_SETTING_ID]: {
-            kind: "model",
-            title: "Advisor model",
-            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
-            default: DEFAULT_ADVISOR_MODEL_ID
-          }
-        },
-        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
-      },
-      {
-        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
-      }
-    );
-  }
-});
-
 // src/shared/file-bytes.ts
 function fileExtension(name) {
   const dot = name.lastIndexOf(".");
@@ -52980,11 +54373,9 @@ function dataPolicyForModelPath(modelId, providers = [], opts = {}) {
     const bySlug = dataPolicyForProvider({ id: slug2 });
     if (bySlug) return { policy: bySlug, local: false };
   }
-  if (id.startsWith("claude")) {
-    return { policy: dataPolicyForProvider({ id: "anthropic" }), local: false };
-  }
-  if (id.startsWith("gpt")) {
-    return { policy: dataPolicyForProvider({ id: "openai" }), local: false };
+  const firstParty = firstPartyProviderOf(id);
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false };
   }
   if (id.toLowerCase().includes("grok")) {
     return {
@@ -53008,6 +54399,7 @@ function isNoTrainingModelPath(modelId, opts = {}) {
 var POLICIES_BY_SLUG, POLICIES_BY_HOST;
 var init_data_policies = __esm({
   "packages/llm/src/data-policies.ts"() {
+    init_model_families();
     init_provider_metadata2();
     POLICIES_BY_SLUG = /* @__PURE__ */ new Map();
     POLICIES_BY_HOST = /* @__PURE__ */ new Map();
@@ -53362,7 +54754,11 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
     }
   }
   let blockedMakers = parseBlockedModelMakers(null);
@@ -53479,6 +54875,13 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e3) {
+  if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
+  if (e3.key.length !== 1) return false;
+  if (e3.key === " ") return false;
+  const code = e3.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
 function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
   if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
   return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
@@ -53896,20 +55299,35 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   filter.addEventListener("input", () => {
     renderMenu(cachedOptions);
   });
-  menu.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e3) {
+    if (!open2 || e3.isComposing) return false;
     if (e3.key === "ArrowDown") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(1);
-    } else if (e3.key === "ArrowUp") {
+      return true;
+    }
+    if (e3.key === "ArrowUp") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(-1);
-    } else if (e3.key === "Enter" && (e3.target === filter || e3.target instanceof HTMLElement && e3.target.matches(".model-picker-option"))) {
+      return true;
+    }
+    if (e3.key === "Enter" && enterAppliesHighlight(e3.target)) {
       e3.preventDefault();
+      e3.stopPropagation();
       if (view === "group") {
         if (activeValue !== null) selectGroupValue(activeValue);
       } else selectOption(activeValue);
-    } else if (e3.key === "Escape") {
+      return true;
+    }
+    if (e3.key === "Escape") {
       e3.preventDefault();
       e3.stopPropagation();
       if (view === "group") {
@@ -53920,35 +55338,68 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         setOpen(false);
         if (!recentMode) trigger.focus();
       }
-    } else if (e3.key === "ArrowLeft" && view === "group") {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "group") {
       e3.preventDefault();
       e3.stopPropagation();
       activeValue = null;
       setView(homeView);
-    } else if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("all");
-    } else if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("recent");
+      return true;
     }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value = e3.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value += e3.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e3) => {
+    handleOpenMenuKeydown(e3);
   });
   cleanups.push(
     on(document, "click", (e3) => {
       if (!open2) return;
       if (!(e3.target instanceof Node) || !wrap.contains(e3.target)) setOpen(false);
     }),
-    on(document, "keydown", (e3) => {
-      const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
-      if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-        e3.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (e3.key === "Escape" && open2) setOpen(false);
-    })
+    on(
+      document,
+      "keydown",
+      (e3) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e3.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e3.target instanceof Node && menu.contains(e3.target)) return;
+        handleOpenMenuKeydown(e3);
+      },
+      { capture: true }
+    )
   );
   const removalObserver = new MutationObserver(() => {
     if (document.contains(wrap)) return;
@@ -54335,6 +55786,18 @@ var init_disclosure_summary = __esm({
 });
 
 // src/renderer/views/setup/custom-providers-section.ts
+function apiStyleSelect(current = "chat-completions") {
+  const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
+  select.append(
+    el("option", { value: "chat-completions" }, "Chat Completions"),
+    el("option", { value: "responses" }, "Responses")
+  );
+  select.value = current;
+  return select;
+}
+function selectedApiStyle(select) {
+  return select.value === "responses" ? "responses" : "chat-completions";
+}
 function privacyBadgeEl(badge) {
   return el("span", { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label);
 }
@@ -54537,6 +56000,7 @@ function createCustomProvidersSection(api2, opts = {}) {
         },
         chipLabel(key)
       );
+      chip2.dataset["provider"] = key;
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
@@ -54773,10 +56237,24 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: '{ "provider": { "require_parameters": true } }'
     });
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : "";
+    const apiStyle = apiStyleSelect(provider.apiStyle);
     const advanced = el(
       "details",
       { class: "provider-advanced" },
       disclosureSummary("Advanced"),
+      ...provider.builtin ? [] : [
+        el(
+          "label",
+          {},
+          "API format",
+          apiStyle,
+          el(
+            "span",
+            { class: "field-hint" },
+            "Choose Responses only when this endpoint implements the OpenAI Responses API."
+          )
+        )
+      ],
       el(
         "label",
         { class: "checkbox-label" },
@@ -54827,6 +56305,7 @@ function createCustomProvidersSection(api2, opts = {}) {
           await api2.settings.saveExtraProvider({
             slug: provider.id,
             ...provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() },
+            ...provider.builtin ? {} : { apiStyle: selectedApiStyle(apiStyle) },
             models: editor.read(),
             includeUsage: usageBox.checked,
             ...Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {},
@@ -54893,6 +56372,7 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: "API key (optional)",
       autocomplete: "off"
     });
+    const apiStyle = apiStyleSelect();
     const addBtn = el("button", { type: "button", class: "provider-save" }, "Add provider");
     const status = el("span", { class: "key-status" });
     let slugEdited = false;
@@ -54933,7 +56413,8 @@ function createCustomProvidersSection(api2, opts = {}) {
           const next = await api2.settings.saveExtraProvider({
             ...slug2 ? { slug: slug2 } : {},
             ...label ? { label } : {},
-            baseUrl
+            baseUrl,
+            apiStyle: selectedApiStyle(apiStyle)
           });
           const savedRecord = next.find((p2) => p2.id === slug2);
           let keyFailure = null;
@@ -54990,6 +56471,17 @@ function createCustomProvidersSection(api2, opts = {}) {
         )
       ),
       el("label", {}, "API key", keyInput),
+      el(
+        "label",
+        {},
+        "API format",
+        apiStyle,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Most compatible endpoints use Chat Completions. Choose Responses only when documented."
+        )
+      ),
       el("div", { class: "provider-actions provider-form-footer" }, addBtn, status)
     );
   }
@@ -56132,6 +57624,18 @@ var init_presets = __esm({
         }
       },
       {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
         id: "semif",
         label: "SemIf (local)",
         model: "Qwen/Qwen3.5-4B",
@@ -56187,11 +57691,31 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -56212,6 +57736,7 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    localHost,
     chips,
     formHost,
     status
@@ -56261,6 +57786,186 @@ function createClassifiersSection(api2) {
       render();
     });
     chips.append(add2);
+  }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
   }
   function renderScreening() {
     clear(screening);
@@ -56317,18 +58022,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -56658,6 +58352,7 @@ function createClassifiersSection(api2) {
         api2.classifiers.screening()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -56666,6 +58361,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -57549,13 +59245,14 @@ function createModelRoutingSection(api2, options = {}) {
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
   if (!trimmed2) return "";
-  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+  if (trimmed2.includes(":") || firstPartyProviderOf(trimmed2) !== null) {
     return trimmed2;
   }
   return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
+    init_model_capabilities();
     init_preferred_models();
     init_array_utils2();
     init_lm_studio_defaults();
@@ -58045,8 +59742,8 @@ var init_model_card_cache = __esm({
 function canonicalAnchors() {
   const out = /* @__PURE__ */ new Map();
   for (const [modelId, entries2] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
+    const canonical2 = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical2) out.set(modelId, canonical2.value);
   }
   return out;
 }
@@ -58064,12 +59761,12 @@ function verifyLiveCohort(liveModels, reportedVersion) {
   for (const live of liveModels) {
     const modelId = resolveIntellectModelId(live.id);
     if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
+    const canonical2 = anchors.get(modelId);
+    if (canonical2 === void 0) continue;
     anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
+    const drift = Math.abs(live.intellect - canonical2);
     maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical: canonical2, live: live.intellect });
   }
   const version2 = normalizeIndexVersion(reportedVersion);
   const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
@@ -58180,8 +59877,15 @@ function providerWindows(snapshot, provider) {
 function resolvePlanInclusion(provider, modelId, snapshot) {
   const windows = providerWindows(snapshot, provider);
   if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
   const govern = new Set(governingWindowIds(provider, modelId));
-  const applicable = windows.filter((w2) => govern.has(w2.id));
+  let applicable = windows.filter((w2) => govern.has(w2.id));
+  if (availability === true) {
+    const pool = windows.filter((w2) => w2.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
   if (applicable.length === 0) return null;
   const binding = applicable.reduce(
     (tightest, w2) => w2.usedPercent > tightest.usedPercent ? w2 : tightest
@@ -58192,8 +59896,13 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
   };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
 }
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
@@ -61205,6 +62914,303 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
+  }
+});
+
+// src/renderer/views/branch-ci-editor.ts
+function mountBranchCiEditor(options) {
+  const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
+  let pluginEnabled = options.pluginEnabled;
+  let definitions = [];
+  let editingId = null;
+  const section = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const rows = el("div", { class: "automation-list" });
+  section.append(sectionHeading, rows);
+  const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
+  const name = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-name",
+    required: true,
+    maxlength: "160",
+    placeholder: "Investigate failing CI"
+  });
+  const branch = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-branch",
+    required: true,
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const model = el("select", { class: "automation-input automation-ci-model", required: true });
+  const prompt = el("textarea", {
+    class: "automation-input automation-ci-prompt",
+    required: true,
+    maxlength: "100000",
+    placeholder: "Investigate the failed CI run and report the cause\u2026"
+  });
+  const worktrees = el(
+    "select",
+    { class: "automation-input automation-ci-worktrees" },
+    el("option", { value: "1" }, "1 \u2014 wait for prior work"),
+    el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+  );
+  const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const summary = el("p", { class: "automation-hint automation-ci-summary" });
+  const preview = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-preview"
+    },
+    "Test match"
+  );
+  const save = el(
+    "button",
+    {
+      type: "submit",
+      class: "ui-btn ui-btn-primary automation-ci-save"
+    },
+    "Save automation"
+  );
+  const cancel = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-cancel"
+    },
+    "Cancel"
+  );
+  form.append(
+    title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
+    el("label", { class: "automation-label" }, "Name", name),
+    el("label", { class: "automation-label" }, "Branch", branch),
+    el("label", { class: "automation-label" }, "Model", model),
+    el("label", { class: "automation-label" }, "Task", prompt),
+    el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
+    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    summary,
+    el("div", { class: "automation-form-actions" }, preview, cancel, save)
+  );
+  root.append(section, form);
+  const modelPicker = mountModelSelectPicker(model, {
+    loadOptions: (current) => fetchDynamicModelOptions(current),
+    ariaLabel: "CI automation model",
+    loadOnMount: false
+  });
+  function updateSummary() {
+    const selected = branch.value.trim() || "this branch";
+    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  }
+  branch.addEventListener("input", updateSummary);
+  function close() {
+    editingId = null;
+    form.hidden = true;
+    heading.hidden = false;
+    scheduleList.hidden = false;
+    section.hidden = false;
+  }
+  async function open2(definition, draft) {
+    hideStatus();
+    editingId = definition?.id ?? null;
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
+    branch.value = definition?.trigger.branch ?? "";
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    updateSummary();
+    heading.hidden = true;
+    scheduleList.hidden = true;
+    scheduleForm.hidden = true;
+    section.hidden = true;
+    form.hidden = false;
+    name.focus();
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
+    const available = await fetchDynamicModelOptions(defaultModel);
+    const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
+    await modelPicker.refresh(selected);
+  }
+  function render() {
+    clear(rows);
+    if (definitions.length === 0) {
+      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      return;
+    }
+    for (const definition of definitions) {
+      const row2 = el("article", {
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
+        "data-ci-automation-id": definition.id
+      });
+      const copy = el(
+        "div",
+        { class: "automation-row-copy" },
+        el("div", { class: "automation-row-title" }, definition.name),
+        el(
+          "div",
+          { class: "automation-row-meta" },
+          el(
+            "span",
+            {},
+            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
+          ),
+          el("span", {}, modelDisplayLabel(definition.model)),
+          el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
+        ),
+        el(
+          "div",
+          { class: "automation-row-last-run" },
+          definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
+        )
+      );
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn"
+        },
+        "Edit"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn"
+        },
+        "Delete"
+      );
+      remove.addEventListener("click", () => {
+        if (!projectId) return;
+        void showConfirmDialog({
+          message: `Delete \u201C${definition.name}\u201D?`,
+          detail: "Already-created tasks are kept.",
+          confirmLabel: "Delete CI event",
+          danger: true
+        }).then(async (confirmed) => {
+          if (!confirmed) return;
+          await api2.automations.removeBranchCi(projectId, definition.id);
+          await refresh();
+        }).catch((error62) => {
+          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+        });
+      });
+      row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
+      rows.append(row2);
+    }
+  }
+  async function refresh() {
+    if (!projectId) return;
+    definitions = await api2.automations.listBranchCi(projectId);
+    render();
+  }
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
+  cancel.addEventListener("click", close);
+  preview.addEventListener("click", () => {
+    if (!projectId || !branch.value.trim()) return;
+    preview.disabled = true;
+    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+      (result) => {
+        showStatus(
+          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+        );
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+      }
+    ).finally(() => {
+      preview.disabled = false;
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!projectId) return;
+    hideStatus();
+    save.disabled = true;
+    const input2 = {
+      ...editingId ? { id: editingId } : {},
+      name: name.value,
+      branch: branch.value,
+      prompt: prompt.value,
+      model: model.value,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    };
+    void api2.automations.upsertBranchCi(projectId, input2).then(
+      async () => {
+        close();
+        await refresh();
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+      }
+    ).finally(() => {
+      save.disabled = false;
+    });
+  });
+  return {
+    refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
+    reveal(id) {
+      const definition = definitions.find((candidate) => candidate.id === id);
+      if (!definition) return false;
+      void open2(definition);
+      return true;
+    },
+    hideForSchedule() {
+      form.hidden = true;
+      section.hidden = true;
+    },
+    showList() {
+      form.hidden = true;
+      section.hidden = false;
+    },
+    setPluginEnabled(value) {
+      pluginEnabled = value;
+      render();
+    }
+  };
+}
+var init_branch_ci_editor = __esm({
+  "src/renderer/views/branch-ci-editor.ts"() {
+    init_lm_studio_defaults();
+    init_helpers();
+    init_ipc_error_message();
+    init_model_options();
+    init_model_picker();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -61289,7 +63295,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
-    el("div", { class: "plugin-settings-heading" }, "Schedules"),
+    el("div", { class: "plugin-settings-heading" }, "Automations"),
     el(
       "button",
       {
@@ -61297,7 +63303,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -61305,14 +63311,25 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const scope = el(
     "p",
     { class: "automation-scope" },
-    project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
+    project2 ? `Project: ${project2.name} \xB7 Copse must be running` : "Open a project to configure automations."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const attention = el("div", {
+    class: "automation-attention",
+    role: "status",
+    hidden: true
+  });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
-  const form = el("form", { class: "automation-form", hidden: true });
+  const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -61423,7 +63440,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -61432,6 +63449,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -61451,7 +63469,19 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, status, list, form);
+  root.append(heading, scope, notice, attention, status, list, form);
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api: api2,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
+  });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "Automation model",
@@ -61477,6 +63507,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function closeForm() {
     editingId = null;
+    ciEditor.showList();
     form.hidden = true;
     list.hidden = false;
     heading.hidden = false;
@@ -61656,21 +63687,24 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
-  async function openForm(schedule) {
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
-    const configuredModel = schedule?.model.trim() ?? "";
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    ciEditor.hideForSchedule();
     form.hidden = false;
     nameInput.focus();
     const options = await fetchDynamicModelOptions(defaultModel);
@@ -61679,6 +63713,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function renderList() {
     clear(list);
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
+    attention.hidden = blocked.length === 0;
+    attention.textContent = blocked.length === 0 ? "" : `${String(blocked.length)} automation${blocked.length === 1 ? "" : "s"} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`;
     if (!projectId) return;
     if (schedules.length === 0) {
       list.append(el("div", { class: "automation-empty" }, "No schedules for this project yet."));
@@ -61686,7 +63723,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -61711,6 +63748,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
+      if (schedule.lastWorktreeLimitAt !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message" },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
       const actions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
@@ -61777,7 +63823,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pendingReveal = void 0;
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
     if (!schedule) {
-      showStatus("That automation is no longer scheduled. Its finished runs stay in the sidebar.");
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          "That automation is no longer scheduled or configured. Its finished runs stay in the sidebar."
+        );
       return;
     }
     void openForm(schedule).then(() => {
@@ -61789,7 +63838,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api2.automations.list(projectId),
-        api2.automations.permissionOptions(projectId)
+        api2.automations.permissionOptions(projectId),
+        ciEditor.refresh()
       ]);
       schedules = loadedSchedules;
       availablePermissions = loadedPermissions;
@@ -61804,6 +63854,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
@@ -61819,6 +63879,21 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    if (!nameInput.value.trim()) {
+      showStatus("Enter a name before saving.", true);
+      nameInput.focus();
+      return;
+    }
+    if (!promptInput.value.trim()) {
+      showStatus("Enter a prompt before saving.", true);
+      promptInput.focus();
+      return;
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus("Choose a model before saving.", true);
+      modelPicker.openMenu();
+      return;
+    }
     const cron = cronFromScheduleControls();
     if (cron === null) {
       showStatus("Choose a valid schedule before saving.", true);
@@ -61849,12 +63924,27 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       saveButton.removeAttribute("disabled");
     });
   });
+  const unsubscribeTriggered = api2.automations.onTriggered(
+    (event) => {
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
+      void refresh();
+    }
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return;
+    removalObserver.disconnect();
+    unsubscribeTriggered();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
   void refresh();
   return Object.assign(root, {
     setPluginEnabled(enabled) {
       pluginEnabled = enabled;
       notice.textContent = pluginNotice();
       renderList();
+      ciEditor.setPluginEnabled(enabled);
     }
   });
 }
@@ -61868,6 +63958,7 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_branch_ci_editor();
     init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
@@ -63077,6 +65168,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -63907,7 +65999,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -64151,6 +66243,23 @@ function mountSettingsDialog(store2, api2) {
               and are off by default.
             </p>
 
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
+
             <fieldset>
               <legend>Mobile Companion</legend>
               <p class="field-hint">
@@ -64189,6 +66298,20 @@ function mountSettingsDialog(store2, api2) {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box \u2014 press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
               </p>
             </fieldset>
 
@@ -64253,6 +66376,18 @@ function mountSettingsDialog(store2, api2) {
                 Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
+            </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading\u2026</span>
+              </div>
             </fieldset>
           </section>
 
@@ -64522,6 +66657,7 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
+    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -64631,8 +66767,8 @@ function mountSettingsDialog(store2, api2) {
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
-          void refreshPlugins();
         }
+        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -65566,6 +67702,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -65601,9 +67748,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -65971,55 +68120,81 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
+  let pluginEntries = null;
+  function renderPluginLists() {
+    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
+    if (!pluginEntries) return;
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? "#experimental-plugins-list" : "#plugins-list"
+      );
+      const entries2 = pluginEntries.filter(
+        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
+      );
+      listEl.replaceChildren();
+      let lastEnabled = null;
+      for (const entry of entries2) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement("h4");
+          heading.className = "plugins-group-heading";
+          heading.textContent = entry.enabled ? "Active" : "Inactive";
+          listEl.append(heading);
+          lastEnabled = entry.enabled;
+        }
+        listEl.append(entry.row);
+      }
+      if (entries2.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "plugins-empty";
+        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
+        listEl.append(empty);
+      }
+    }
+  }
   async function refreshPlugins() {
-    const listEl = qsRequired(overlay, "#plugins-list");
-    const statusEl = qsRequired(overlay, "#plugins-reload-status");
-    statusEl.textContent = "Loading\u2026";
+    const statusEls = overlay.querySelectorAll(".plugins-load-status");
+    const setStatus = (text2) => {
+      statusEls.forEach((el3) => {
+        el3.textContent = text2;
+      });
+    };
+    setStatus("Loading\u2026");
     try {
       const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
         api2.bundledSkillPlugins.list().catch(() => [])
       ]);
-      listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "plugins-empty";
-        empty.textContent = "No plugins installed.";
-        listEl.append(empty);
-      } else {
-        const entries2 = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin)
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin)
-          })),
-          ...bundledPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: plugin.enabled && !plugin.suppressed,
-            render: () => makeBundledSkillPluginRow(plugin)
-          }))
-        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-        let lastEnabled = null;
-        for (const entry of entries2) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement("h4");
-            heading.className = "plugins-group-heading";
-            heading.textContent = entry.enabled ? "Active" : "Inactive";
-            listEl.append(heading);
-            lastEnabled = entry.enabled;
-          }
-          listEl.append(entry.render());
-        }
-      }
-      statusEl.textContent = "";
+      const entries2 = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === "experimental",
+          render: () => makePluginRow(plugin)
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: () => makeCursorPluginRow(plugin)
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: () => makeBundledSkillPluginRow(plugin)
+        }))
+      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+      pluginEntries = entries2.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render()
+      }));
+      renderPluginLists();
+      setStatus("");
     } catch {
-      statusEl.textContent = "Failed to load plugins.";
+      setStatus("Failed to load plugins.");
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -66230,8 +68405,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -66574,6 +68748,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
+    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -66853,6 +69028,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
         animateAgentAvatars: data.get("animateAgentAvatars") === "on",
+        conciseThreadsEnabled: data.get("conciseThreadsEnabled") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -66914,6 +69090,7 @@ var init_settings_dialog = __esm({
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -67006,6 +69183,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -69275,14 +71453,14 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -69512,9 +71690,16 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
+  const prBackfillRequested = /* @__PURE__ */ new Map();
+  const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
+  const prBackfillRetryTimers = /* @__PURE__ */ new Set();
+  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
+  let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
+  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
+  let orphanScanGeneration = 0;
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
@@ -69577,8 +71762,21 @@ function mountProjectsPane(root, store2, api2) {
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
+        const previous = prLifecycleCache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        prLifecycleCache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (generation !== prStatusGeneration) return;
+          const entry = prLifecycleCache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          prLifecycleCache.set(key, { ...entry, checks });
+        });
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached2 = prLifecycleCache.get(key);
@@ -69592,6 +71790,12 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function ciFailingForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    });
   }
   function rollupForThread(thread) {
     const refs = sidebarPrRefs(thread);
@@ -69733,8 +71937,20 @@ function mountProjectsPane(root, store2, api2) {
     }
     return section;
   }
+  function refreshOrphansIfProjectSetChanged() {
+    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
+    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
+      return;
+    }
+    knownProjectIds = nextIds;
+    refreshOrphans();
+  }
   function refreshOrphans() {
-    void listOrphanProjects(api2).then((next) => {
+    const generation = ++orphanScanGeneration;
+    void listOrphanProjects(api2).then((scanned) => {
+      if (generation !== orphanScanGeneration) return;
+      const known = new Set(store2.getState().projects.map((project2) => project2.id));
+      const next = scanned.filter((orphan) => !known.has(orphan.id));
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
         return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
@@ -69742,6 +71958,7 @@ function mountProjectsPane(root, store2, api2) {
       orphans = next;
       if (changed) render();
     }).catch((err2) => {
+      if (generation !== orphanScanGeneration) return;
       showErrorToast("Could not scan recoverable threads", err2);
     });
   }
@@ -69965,7 +72182,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
     clear(list);
+    const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
@@ -70104,7 +72324,12 @@ function mountProjectsPane(root, store2, api2) {
       const prRollup = rollupForThread(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+        );
+      }
+      if (thread.prRefs === void 0) {
+        prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
       }
       if (canMutate) {
         const del = el(
@@ -70563,6 +72788,66 @@ function mountProjectsPane(root, store2, api2) {
       else list.append(renderProjectEntry(node2.project));
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
+      const rowThreads = new Map(
+        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+      );
+      const observer = new IntersectionObserver((entries2) => {
+        if (prBackfillObserver !== observer) return;
+        const pending = /* @__PURE__ */ new Map();
+        for (const entry of entries2) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          const thread = rowThreads.get(entry.target);
+          if (!thread) continue;
+          const requested = prBackfillRequested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
+          prBackfillRequested.set(thread.projectId, requested);
+          if (requested.has(thread.threadId)) continue;
+          requested.add(thread.threadId);
+          const rows = pending.get(thread.projectId) ?? [];
+          rows.push({ threadId: thread.threadId, row: entry.target });
+          pending.set(thread.projectId, rows);
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId);
+          for (let i2 = 0; i2 < rows.length; i2 += 10) {
+            const batch = rows.slice(i2, i2 + 10);
+            const threadIds = batch.map(({ threadId }) => threadId);
+            void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
+              for (const threadId of threadIds) {
+                prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`);
+              }
+            }).catch((err2) => {
+              let attempt = 1;
+              for (const threadId of threadIds) {
+                const key = `${projectId}\0${threadId}`;
+                const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
+                prBackfillRetryAttempts.set(key, nextAttempt);
+                attempt = Math.max(attempt, nextAttempt);
+              }
+              const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
+              const timer = setTimeout(() => {
+                prBackfillRetryTimers.delete(timer);
+                for (const { threadId } of batch) requested?.delete(threadId);
+                const currentObserver = prBackfillObserver;
+                if (!currentObserver) return;
+                for (const { threadId } of batch) {
+                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
+                  if (row2?.isConnected) currentObserver.observe(row2);
+                }
+              }, delay);
+              prBackfillRetryTimers.add(timer);
+              console.warn("[threads] visible PR-ref backfill failed:", err2);
+            });
+          }
+        }
+      });
+      prBackfillObserver = observer;
+      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -70582,15 +72867,21 @@ function mountProjectsPane(root, store2, api2) {
     }),
     store2.on("attention_changed", render),
     store2.on("attention_changed", syncActivityButton),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store2.on("projects_changed", refreshOrphans)
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store2.on("projects_changed", refreshOrphansIfProjectSetChanged)
   ];
   render();
   refreshOrphans();
   return () => {
     contentFilter.cancel();
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
+    prBackfillRetryTimers.clear();
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
+    prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
     renamingGroup = null;
@@ -71291,7 +73582,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -73847,6 +76140,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -73859,7 +76153,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -73872,7 +76166,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -73883,6 +76177,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -73919,7 +76214,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -73929,6 +76224,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -73971,7 +76267,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
@@ -74889,7 +77188,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -75073,7 +77372,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -75600,9 +77899,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -76154,12 +78453,12 @@ function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
 function forgetImageRead(read) {
   if (imageReads.get(read.key) === read) imageReads.delete(read.key);
 }
-function whenImageRead(read, apply2) {
+function whenImageRead(read, apply3) {
   if (read.src !== void 0) {
-    apply2(read.src);
+    apply3(read.src);
     return;
   }
-  read.promise.then(apply2, () => {
+  read.promise.then(apply3, () => {
   });
 }
 function messageIdOf(node2) {
@@ -77393,6 +79692,43 @@ var init_github_link_steering = __esm({
 });
 
 // packages/llm/src/intellect-lookup.ts
+function localCapabilityFor(idOrLabel) {
+  const direct = getLocalModelCapability(idOrLabel);
+  if (direct) return direct;
+  if (idOrLabel.startsWith(LMSTUDIO_MODEL_PREFIX)) {
+    return getLocalModelCapability(idOrLabel.slice(LMSTUDIO_MODEL_PREFIX.length));
+  }
+  return null;
+}
+function canonical(score) {
+  return {
+    value: score.value,
+    scale: "canonical",
+    estimated: score.estimated === true,
+    basis: score.basis ?? score.source
+  };
+}
+function resolveModelIntellect(idOrLabel) {
+  const local = localCapabilityFor(idOrLabel);
+  if (local) {
+    const quantAdjusted = localBenchmarkScore(local, "aa-intelligence");
+    if (quantAdjusted) return canonical(quantAdjusted);
+  }
+  const measured = getIntellectScore(idOrLabel);
+  if (measured) return canonical(measured);
+  if (local) {
+    const composite = compositeIntellect(local);
+    if (composite) {
+      return {
+        value: composite.value,
+        scale: "composite",
+        estimated: true,
+        basis: composite.basis
+      };
+    }
+  }
+  return null;
+}
 var init_intellect_lookup = __esm({
   "packages/llm/src/intellect-lookup.ts"() {
     init_composite_intellect();
@@ -77844,6 +80180,11 @@ function statusLabel(status) {
       return "Review";
   }
 }
+function skippedReviewReason(summary) {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, "");
+  if (!reason) return "No review ran.";
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+}
 function shouldCollapseCleanReview(review) {
   return review.status === "done" && review.issuesFound === false;
 }
@@ -77862,6 +80203,11 @@ function appendReviewHeader(panel, review, onRetry) {
   if (review.status === "error" && onRetry) {
     header.append(createRetryButton(onRetry));
   }
+  if (review.status === "skipped") {
+    header.append(
+      el("span", { class: "review-panel-skipped-summary" }, skippedReviewReason(review.summary))
+    );
+  }
   panel.append(header);
 }
 function createReviewCardEl(review, api2, onRetry) {
@@ -77872,7 +80218,7 @@ function createReviewCardEl(review, api2, onRetry) {
     ...review.issuesFound !== void 0 ? { "data-issues-found": review.issuesFound ? "true" : "false" } : {}
   });
   appendReviewHeader(panel, review, onRetry);
-  if (review.status === "running") return panel;
+  if (review.status === "running" || review.status === "skipped") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
   const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
 
@@ -78120,6 +80466,76 @@ var init_visual_evidence_card = __esm({
     init_image_expand();
     init_helpers();
     init_icons();
+  }
+});
+
+// src/renderer/views/concise-thread.ts
+function isConciseThreadModel(model) {
+  if (!model) return false;
+  const cached2 = conciseByModel.get(model);
+  if (cached2 !== void 0) return cached2;
+  const intellect = resolveModelIntellect(model);
+  const concise = intellect?.scale === "canonical" && intellect.value > CONCISE_THREAD_MIN_INTELLECT;
+  conciseByModel.set(model, concise);
+  return concise;
+}
+function messageModel(msg) {
+  return msg.model ?? msg.requestedModel;
+}
+function isConciseMessage(msg) {
+  return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
+}
+function isConciseStepsMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
+}
+function syncConciseMessageClasses(msgEl, msg, enabled) {
+  msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
+  msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+  msgEl.classList.toggle("msg-concise-steps", enabled && isConciseStepsMessage(msg));
+}
+function isConciseThread(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const msg = thread.messages[i2];
+    if (msg?.role === "assistant") return isConciseMessage(msg);
+  }
+  return isConciseThreadModel(thread.model);
+}
+function runningToolCall(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const toolCalls = thread.messages[i2]?.toolCalls ?? [];
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (tc2?.status === "running" || tc2?.subagent?.status === "running") return tc2;
+    }
+  }
+  return null;
+}
+function shellCommand(tc2) {
+  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
+  return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
+}
+function conciseActivityLabel(thread) {
+  if (thread.status !== "running") return null;
+  const tc2 = runningToolCall(thread);
+  if (!tc2) return null;
+  const command = shellCommand(tc2);
+  const base = `${command ? `Running ${command}` : getToolCallLabel({ ...tc2, status: "running" })}\u2026`;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  return todoLabel ? `${base} (${todoLabel})` : base;
+}
+var CONCISE_THREAD_MIN_INTELLECT, conciseByModel;
+var init_concise_thread = __esm({
+  "src/renderer/views/concise-thread.ts"() {
+    init_intellect_lookup();
+    init_todo_logic();
+    init_tool_display();
+    init_unknown_value3();
+    CONCISE_THREAD_MIN_INTELLECT = 50;
+    conciseByModel = /* @__PURE__ */ new Map();
   }
 });
 
@@ -79927,6 +82343,42 @@ function statusIcon3(status) {
   if (status === "interrupted") return minusIcon("ui-icon ui-icon-sm");
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
+function createPatchFilesSection(tc2) {
+  if (tc2.name !== "apply_patch") return null;
+  const files = getApplyPatchFiles(tc2);
+  if (files.length === 0) return null;
+  return el(
+    "ul",
+    { class: "tool-patch-files", "aria-label": "Files in patch" },
+    ...files.map((file2) => {
+      const target = file2.movePath ?? file2.path;
+      return el(
+        "li",
+        {},
+        el(
+          "button",
+          {
+            type: "button",
+            class: "tool-patch-file",
+            "data-op": file2.op,
+            "data-edit-path": target,
+            "data-tooltip": "View changes"
+          },
+          el("span", { class: "tool-patch-op" }, PATCH_OP_LABEL[file2.op]),
+          el(
+            "span",
+            { class: "tool-patch-path" },
+            file2.movePath === void 0 ? file2.path : `${file2.path} \u2192 ${file2.movePath}`
+          ),
+          ...file2.op === "delete" ? [] : [
+            el("span", { class: "tool-stat tool-stat-add" }, `+${String(file2.additions)}`),
+            el("span", { class: "tool-stat tool-stat-del" }, `-${String(file2.deletions)}`)
+          ]
+        )
+      );
+    })
+  );
+}
 function createToolArgsSection(args) {
   const rendered = renderToolArgs(args);
   if (!rendered.trim()) return null;
@@ -80048,6 +82500,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const buildBody2 = () => {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc2)),
       ...appendIfPresent(argsSection),
       ...userInterruption(tc2) !== void 0 ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
@@ -80571,6 +83024,10 @@ function createGroupToolCard(item) {
   }
   return card;
 }
+function rollupHeaderCount(item) {
+  const only = item.children.length === 1 ? item.children[0] : void 0;
+  return only?.type === "group" && only.toolCalls.length === item.toolCalls.length ? item.toolCalls.length : void 0;
+}
 function createRollupToolCard(item, api2, threadId, store2) {
   const status = cardStatus2(item.toolCalls);
   const card = el("details", {
@@ -80579,7 +83036,7 @@ function createRollupToolCard(item, api2, threadId, store2) {
     "data-status": status,
     "data-tool-count": String(item.toolCalls.length)
   });
-  const count = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+  const count = rollupHeaderCount(item);
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
     const childCard = createToolCard(child, api2, threadId, store2);
@@ -80617,7 +83074,7 @@ function createToolCard(item, api2, threadId, store2) {
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
 }
 function toolCardKey(item) {
-  if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "rollup") return "r:activity";
   if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
@@ -80741,8 +83198,10 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
       card.dataset["stepMessageId"] = item.messageId;
+    } else {
+      card.dataset["rollupKey"] = item.key;
     }
-    const count = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
     replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
     let body = Array.from(card.children).find(
       (node2) => node2 instanceof HTMLElement && node2.classList.contains("tool-rollup-body")
@@ -80764,16 +83223,17 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
 }
 function createMessageImages(images) {
   const wrap = el("div", { class: "message-images" });
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: "Attached image" }));
+  images.forEach((dataUrl, index) => {
     const img = el("img", {
       class: "message-image",
       src: dataUrl,
       alt: "Attached image",
       loading: "lazy"
     });
-    attachImageExpand(img, "Attached image");
+    attachImageExpand(img, "Attached image", gallery, index);
     wrap.append(img);
-  }
+  });
   return wrap;
 }
 function acpResourceLabel(uri, title) {
@@ -80786,7 +83246,7 @@ function acpResourceLabel(uri, title) {
     return tail;
   }
 }
-function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls) {
+function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls, imageGallery) {
   if (block.type === "text") return null;
   if (block.type === "image") {
     const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
@@ -80811,7 +83271,7 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
       alt: label2,
       loading: "lazy"
     });
-    attachImageExpand(img, label2);
+    attachImageExpand(img, label2, imageGallery?.items, imageGallery?.index);
     return img;
   }
   if (block.type === "audio") {
@@ -80870,8 +83330,13 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
   );
 }
 function createAcpContentBlocks(blocks, context, workspaceRoot) {
+  const images = context === "message" ? blocks.flatMap(
+    (block) => block.type === "image" ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : "Agent image" }] : []
+  ) : [];
+  let imageIndex = 0;
   const nodes = blocks.flatMap((block) => {
-    const node2 = createAcpContentBlock(block, context, workspaceRoot);
+    const gallery = context === "message" && block.type === "image" ? { items: images, index: imageIndex++ } : void 0;
+    const node2 = createAcpContentBlock(block, context, workspaceRoot, void 0, gallery);
     return node2 ? [node2] : [];
   });
   if (nodes.length === 0) return null;
@@ -81185,16 +83650,8 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? "",
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot
-      )
-    );
+  if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
+    body.append(buildReasoningEl(msg.reasoning ?? "", false, msg.reasoningBlocks, workspaceRoot));
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -81223,6 +83680,9 @@ function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   }
   if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
+}
+function hasReasoningContent(reasoning, blocks) {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -81323,10 +83783,9 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
+function buildReasoningEl(reasoning, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
-    class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
-    open: open2
+    class: `message-reasoning${live ? " message-reasoning-live" : ""}`
   });
   const summary = el(
     "summary",
@@ -81377,12 +83836,12 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
@@ -81391,7 +83850,6 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
       renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
-  if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
 function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
@@ -81403,7 +83861,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(reasoning ?? "", live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
     if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
@@ -81415,25 +83873,27 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
   });
 }
 function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
+  let anchorTrail = card.querySelector(
+    ":scope > .tool-rollup-body > .message-reasoning"
+  );
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
+    if (!details && anchorTrail && step.messageId === run2.anchorId) {
+      details = anchorTrail;
+      anchorTrail = null;
+      body.prepend(details);
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? "",
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot
-      );
+      details = buildReasoningEl(step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
       body.prepend(details);
       continue;
     }
@@ -81442,6 +83902,7 @@ function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
       renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
+  anchorTrail?.remove();
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -81506,7 +83967,7 @@ function mountConversation(root, store2, api2) {
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
   activityBar.addEventListener("click", () => {
-    const trails = list.querySelectorAll(".msg-assistant .message-reasoning");
+    const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
     details.dataset["userToggled"] = "1";
@@ -81534,7 +83995,7 @@ function mountConversation(root, store2, api2) {
     store2.emit("code_block_run_requested", { id, command, projectId, threadId });
   });
   list.addEventListener("click", (e3) => {
-    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats") : null;
+    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats, .tool-patch-file") : null;
     const path = statsBtn?.dataset["editPath"];
     if (!path) return;
     e3.preventDefault();
@@ -81986,21 +84447,28 @@ function mountConversation(root, store2, api2) {
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
-  function setActivity(label) {
-    if (!label) {
+  function setActivity(requested) {
+    if (!requested) {
       activityBar.hidden = true;
       return;
     }
+    const thread = getActiveThread(store2);
+    const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
+    const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && [
+      ...list.querySelectorAll(
+        ".msg:not(.msg-concise) .message-reasoning.message-reasoning-live"
+      )
+    ].some((details) => !details.parentElement?.closest("details:not([open]), [hidden]"))) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
     }
     activityBar.classList.toggle(
       "agent-activity-clickable",
-      !!list.querySelector(".msg-assistant .message-reasoning")
+      !!list.querySelector(REOPENABLE_REASONING)
     );
     activityBar.hidden = false;
     if (changed) scrollToBottom();
@@ -82107,6 +84575,8 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (item.type === "rollup" || item.type === "step") {
+      card.open = false;
     } else if (failed) {
       card.open = true;
       autoOpenedDisclosures.add(key);
@@ -82165,8 +84635,15 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run2, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
@@ -82315,6 +84792,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
+    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -82519,6 +84997,17 @@ function mountConversation(root, store2, api2) {
     }
     syncAvatarMotion();
   }
+  function syncConciseThreadClasses() {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const enabled = store2.getState().conciseThreadsEnabled;
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
+    list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+    });
+    syncFromStore();
+  }
   function syncAvatarMotion() {
     const thread = getActiveThread(store2);
     if (!thread || thread.status !== "running" || !store2.getState().animateAgentAvatars) {
@@ -82604,6 +85093,8 @@ function mountConversation(root, store2, api2) {
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -82828,6 +85319,7 @@ function mountConversation(root, store2, api2) {
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
+      syncConciseThreadClasses();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -83076,7 +85568,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -83131,6 +85623,7 @@ var init_conversation = __esm({
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
+    init_concise_thread();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -83154,6 +85647,7 @@ var init_conversation = __esm({
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     markedTranscripts = /* @__PURE__ */ new WeakSet();
+    PATCH_OP_LABEL = { add: "Added", update: "Edited", delete: "Deleted", move: "Moved" };
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -83178,6 +85672,7 @@ var init_conversation = __esm({
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
+    REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
   }
 });
@@ -94139,9 +96634,12 @@ var init_read_terminal = __esm({
 // src/renderer/controller/code-block-runs.ts
 async function sendCodeBlockRunResult(store2, api2, result) {
   const { projectId, threadId, shell: shell3 } = result;
-  if (store2.getState().activeProjectId !== projectId) return false;
+  const completion = result.completion;
+  if (completion && result.exitCode !== 0) return false;
+  const targetIsCurrent = () => getThreadProjectId(store2, threadId) === projectId && (completion !== void 0 || store2.getState().activeProjectId === projectId);
+  if (!targetIsCurrent()) return false;
   await ensureThreadMessages(projectId, threadId);
-  if (store2.getState().activeProjectId !== projectId) return false;
+  if (!targetIsCurrent()) return false;
   const thread = getThreadById(store2, threadId);
   if (!thread || needsHydration(thread)) return false;
   const readTerminalEnabled = await api2.settings.get(READ_TERMINAL_ENABLED_SETTING).catch(() => false);
@@ -94151,7 +96649,7 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     api2.git.promptState(projectId, threadId)
   ]);
   if (branchResult.status === "rejected") return false;
-  if (store2.getState().activeProjectId !== projectId) return false;
+  if (!targetIsCurrent()) return false;
   const currentBranch = branchResult.value;
   const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
   const current = getThreadById(store2, threadId);
@@ -94160,32 +96658,61 @@ async function sendCodeBlockRunResult(store2, api2, result) {
     isolatedWorktree: current.worktree !== void 0
   }))
     return false;
+  const messageText = completion?.prompt ?? "";
   const content = buildTextWithAttachments(
-    "",
+    messageText,
     [],
     [{ label: `Shell: ${shell3.label}`, content: shell3.content }]
   );
   const workingBrief = nextWorkingBrief(current.workingBrief, content);
-  if (workingBrief && workingBrief !== current.workingBrief) {
-    setThreadWorkingBrief(store2, threadId, workingBrief);
-  }
+  const workingBriefChanged = workingBrief !== void 0 && workingBrief !== current.workingBrief;
   const payload = {
     content,
     invokedSkills: [],
     priorTodos: current.todos ?? [],
     ...workingBrief !== void 0 ? { workingBrief } : {}
   };
+  const shellAttachment = { kind: "shell", label: shell3.label, content: shell3.content };
+  const messageMeta = {
+    ...promptState ? {
+      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+      dirty: promptState.dirty
+    } : {}
+  };
+  if (completion) {
+    const machineResult = await api2.agent.runMachine({
+      projectId,
+      threadId,
+      operationId: completion.operationId,
+      turnTreeId: completion.turnTreeId,
+      payload: JSON.stringify(refreshAgentRunPayload(store2, threadId, payload)),
+      display: {
+        content: messageText,
+        attachments: [shellAttachment],
+        ...messageMeta
+      }
+    });
+    if (machineResult === "completed" || machineResult === "duplicate") {
+      if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
+      return true;
+    }
+    addMessage(
+      store2,
+      threadId,
+      "error",
+      machineResult === "budget-exhausted" ? "Git recovery completed, but the automatic follow-up did not start because this turn reached its auto-continuation budget. Send a message to continue." : "Git recovery completed, but the thread advanced before the automatic follow-up could start. Send a message to continue."
+    );
+    return false;
+  }
+  if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
   const messageId = addMessage(
     store2,
     threadId,
     "user",
-    "",
+    messageText,
     void 0,
-    [{ kind: "shell", label: shell3.label, content: shell3.content }],
-    promptState ? {
-      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
-      dirty: promptState.dirty
-    } : void 0
+    [shellAttachment],
+    messageMeta
   );
   const queued = { messageId, payload, createdAt: Date.now() };
   if (getThreadById(store2, threadId)?.status === "running") {
@@ -95044,6 +97571,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let status = null;
   let detached = null;
   let reattaching = false;
+  const recoveryRuns = /* @__PURE__ */ new Map();
   let refreshTimer = null;
   let branchToCopy = null;
   let branches = [];
@@ -95160,13 +97688,14 @@ function mountFooterBranchStatus(host, store2, api2) {
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
-    reattachButton.disabled = reattaching;
+    const recoveryRunning = activeRecoveryRunId() !== null;
+    reattachButton.disabled = reattaching || recoveryRunning;
     if (current.uncommittedPick) {
       reattachButton.setAttribute(
         "aria-label",
         `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`
       );
-      reattachButton.textContent = "Commit and continue";
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Commit and continue";
       return;
     }
     if (current.recovery === "bisect") {
@@ -95174,7 +97703,7 @@ function mountFooterBranchStatus(host, store2, api2) {
         "aria-label",
         `Reset the bisect and return to ${current.branch} in a terminal`
       );
-      reattachButton.textContent = "Reset bisect";
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Reset bisect";
       return;
     }
     if (current.recovery) {
@@ -95182,7 +97711,7 @@ function mountFooterBranchStatus(host, store2, api2) {
         "aria-label",
         `Continue the ${current.recovery} on ${current.branch} in a terminal`
       );
-      reattachButton.textContent = `Continue ${current.recovery}`;
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : `Continue ${current.recovery}`;
       return;
     }
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
@@ -95190,6 +97719,13 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
+  }
+  function recoveryKey(projectId, threadId) {
+    return `${projectId}\0${threadId}`;
+  }
+  function activeRecoveryRunId() {
+    const owner = getActiveThreadOwner(store2);
+    return owner ? recoveryRuns.get(recoveryKey(owner.projectId, owner.threadId)) ?? null : null;
   }
   async function readDetachedAttachment(owner) {
     try {
@@ -95203,9 +97739,23 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || reattaching) return;
+    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return;
     if (current.recovery) {
-      store2.emit("request_terminal_command", recoveryCommand(current, current.recovery));
+      const runId = globalThis.crypto.randomUUID();
+      recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
+      renderReattach();
+      store2.emit("code_block_run_requested", {
+        id: runId,
+        command: recoveryCommand(current, current.recovery),
+        projectId: owner.projectId,
+        threadId: owner.threadId,
+        completion: {
+          type: "continue",
+          prompt: "Continue after the Git recovery command completed.",
+          operationId: `git-recovery:${runId}`,
+          turnTreeId: getThreadById(store2, owner.threadId)?.currentEpoch ?? owner.threadId
+        }
+      });
       return;
     }
     reattaching = true;
@@ -95496,6 +98046,18 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   });
   const unsubs = [
+    store2.on("code_block_run_finished", (result) => {
+      const key = recoveryKey(result.projectId, result.threadId);
+      if (result.id !== recoveryRuns.get(key)) return;
+      recoveryRuns.delete(key);
+      if (result.exitCode !== 0) {
+        showErrorToast(
+          "Could not continue the Git operation",
+          new Error(result.output.trim() || "The recovery command failed")
+        );
+      }
+      refreshNow();
+    }),
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
@@ -95776,15 +98338,22 @@ function footerNaturalWidth(footer) {
   const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -95919,9 +98488,7 @@ function threadHasExportableContent(thread) {
 function providerFromModelId(modelId) {
   const colon = modelId.indexOf(":");
   if (colon > 0) return modelId.slice(0, colon);
-  if (modelId.startsWith("claude")) return "anthropic";
-  if (modelId.startsWith("gpt")) return "openai";
-  return "unknown";
+  return firstPartyProviderOf(modelId) ?? "unknown";
 }
 function providersFromUsage(usage) {
   const models = usage.byModel ? Object.keys(usage.byModel) : [];
@@ -95985,6 +98552,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
+    init_model_families();
     THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
@@ -97707,18 +100275,18 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       );
     }
     if (!isLive2(run2) && run2.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
-      const apply2 = el(
+      const apply3 = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
         `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
       );
-      apply2.addEventListener("click", () => {
-        apply2.disabled = true;
+      apply3.addEventListener("click", () => {
+        apply3.disabled = true;
         void adopt(run2.record?.runtimeId ?? "", null).finally(() => {
-          apply2.disabled = false;
+          apply3.disabled = false;
         });
       });
-      actions.push(apply2);
+      actions.push(apply3);
     }
     if (!isLive2(run2)) {
       const again = el(
@@ -100309,12 +102877,12 @@ function watchEditorTheme(onChange, root = document.documentElement) {
   };
 }
 function installMonacoEditorTheme(monaco) {
-  const apply2 = (tokens) => {
+  const apply3 = (tokens) => {
     monaco.editor.defineTheme(COPSE_MONACO_THEME, monacoThemeFromTokens(tokens));
     monaco.editor.setTheme(COPSE_MONACO_THEME);
   };
-  apply2(readEditorThemeTokens());
-  return watchEditorTheme(apply2);
+  apply3(readEditorThemeTokens());
+  return watchEditorTheme(apply3);
 }
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
@@ -110370,7 +112938,8 @@ ${output2}` : "Terminal output: (none)"
         tabId: tab.id,
         label: `${tab.label} \xB7 exit ${exitLabel}`,
         content
-      }
+      },
+      ...request.completion ? { completion: request.completion } : {}
     });
   }
   function publishMeta(tab) {
@@ -112747,6 +115316,27 @@ function collectLinkedPrs(store2) {
   }
   return refs;
 }
+function indexThreadLinks(store2) {
+  const links = /* @__PURE__ */ new Map();
+  for (const thread of store2.getState().threads) {
+    for (const ref of thread.prRefs ?? []) {
+      const key = githubPrKey(ref);
+      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
+    }
+  }
+  const activeThread = getActiveThread(store2);
+  if (activeThread) {
+    for (const message2 of activeThread.messages) {
+      for (const ref of extractGithubPrUrls(message2.content)) {
+        const key = githubPrKey(ref);
+        if (!links.has(key)) {
+          links.set(key, { threadId: activeThread.id, title: activeThread.title });
+        }
+      }
+    }
+  }
+  return links;
+}
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
@@ -112803,6 +115393,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
+  let threadLinks = indexThreadLinks(store2);
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -113158,18 +115749,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       void api2.shell.openExternal(prUrl);
     });
     const agent = agentLinks.get(githubPrKey(selectedPr));
-    const openThreadBtn = agent ? el(
+    const producingThread = threadLinks.get(githubPrKey(selectedPr));
+    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
+    const openThreadBtn = producingThreadId ? el(
       "button",
       {
         type: "button",
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
+        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
       },
-      el("span", {}, `Open ${agentProviderLabel(agent.provider)} agent thread`)
+      el(
+        "span",
+        {},
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+      )
     ) : null;
-    if (openThreadBtn && agent) {
+    if (openThreadBtn && producingThreadId) {
       openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, agent.threadId);
+        switchThread(store2, producingThreadId);
       });
     }
     const newThreadBtn = el(
@@ -113560,6 +116157,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
     }
     const gen = ++agentLinksGen;
+    threadLinks = indexThreadLinks(store2);
     ghStatus = await api2.gh.status();
     const entries2 = await api2.gh.agentPrLinks().catch(() => []);
     if (gen !== agentLinksGen) return;
@@ -113667,6 +116265,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
+      threadLinks = indexThreadLinks(store2);
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -113679,9 +116278,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }),
     store2.on("threads_changed", () => {
       if (!prsModeActive(store2)) return;
+      threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
+      if (selectedPr && prDetails) renderMeta();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -116796,6 +119397,17 @@ function shareableWebContentsId(tab) {
     return null;
   }
 }
+function downloadableArtefact(tab) {
+  return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
+}
+function seededArtefact(value) {
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
+  if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { title, mimeType, body };
+}
 function isBrowserPopoutSeed(seed) {
   if (!seed || typeof seed !== "object") return false;
   return "tabs" in seed && Array.isArray(seed.tabs);
@@ -117012,6 +119624,46 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
   const pendingArtefactReopens = /* @__PURE__ */ new Map();
+  let pendingBackgroundArtefacts = [];
+  let lastThreadScope = activeThreadScope();
+  function activeThreadScope() {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return `${activeProjectId ?? ""}\0${activeThreadId ?? ""}`;
+  }
+  function artefactThreadId(artefact) {
+    return artefact.owner?.threadId ?? artefact.threadId;
+  }
+  function artefactBelongsToActiveThread(artefact) {
+    const threadId = artefactThreadId(artefact);
+    if (!threadId) return true;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return threadId === activeThreadId && (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId);
+  }
+  function pendingArtefactIdentity(artefact) {
+    return `${artefact.owner?.projectId ?? ""}\0${artefactThreadId(artefact) ?? ""}\0${artefact.title}`;
+  }
+  function queueBackgroundArtefact(artefact) {
+    const identity = pendingArtefactIdentity(artefact);
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity
+    );
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact;
+    else pendingBackgroundArtefacts.push(artefact);
+  }
+  function flushBackgroundArtefacts() {
+    const ready3 = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread);
+    if (ready3.length === 0) return;
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact)
+    );
+    for (const artefact of ready3) openArtefact(artefact);
+  }
+  function onThreadMaybeChanged() {
+    const nextScope = activeThreadScope();
+    if (nextScope === lastThreadScope) return;
+    lastThreadScope = nextScope;
+    flushBackgroundArtefacts();
+  }
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -117344,6 +119996,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function openArtefact(artefact) {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact);
+      return;
+    }
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(
       artefact.title,
@@ -117371,6 +120027,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
     tab.artefactContentReady = true;
+    tab.artefact = artefact;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -117475,6 +120132,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       downloadIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Export PDF")
     );
+    const downloadCanvasItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Download canvas")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -117493,6 +120156,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem
@@ -117553,6 +120217,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -117592,6 +120257,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        downloadCanvasItem.disabled = downloadableArtefact(tab) === null || !api2?.browser.exportArtefact;
         exportPdfItem.disabled = shareableId === null || !api2?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api2?.shell;
         inspectorItem.disabled = !tab.webview;
@@ -117634,6 +120300,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
       }).catch((error62) => {
         showErrorToast("Could not export PDF", error62);
+      });
+    });
+    downloadCanvasItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const artefact = downloadableArtefact(tab);
+      const exportArtefact = api2?.browser.exportArtefact;
+      if (!artefact || !exportArtefact) return;
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body
+      }).then((filePath) => {
+        if (filePath) showToast(`Downloaded canvas to ${filePath}`);
+      }).catch((error62) => {
+        showErrorToast("Could not download canvas", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -117771,7 +120452,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
-          artefactProjectId: tab.artefactProjectId
+          artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact ? {
+            title: tab.artefact.title,
+            mimeType: tab.artefact.mimeType,
+            body: tab.artefact.body
+          } : null
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -117803,6 +120489,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
+        tab.artefact = seededArtefact(entry.artefact);
       }
       if (entry.url && entry.url !== "about:blank") {
         tab.pendingUrl = entry.url;
@@ -117923,6 +120610,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
+    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
     store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
@@ -117978,6 +120667,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
@@ -136658,6 +139348,7 @@ function mountProcessManagerDialog(api2, store2) {
     status.textContent = "Loading processes\u2026";
     updated.textContent = "";
     open2();
+    closeButton.focus({ preventScroll: true });
     void refresh();
     timer = setInterval(() => void refresh(), 1e3);
   };
@@ -137022,9 +139713,11 @@ function startAgentController(store2, api2) {
           "user",
           userContentToText(chunk.content),
           void 0,
-          void 0,
+          chunk.attachments,
           {
-            origin: chunk.origin
+            origin: chunk.origin,
+            ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
+            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {}
           }
         );
         break;
@@ -137555,10 +140248,45 @@ function isPendingAutomation(thread) {
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
   async function startThread(threadId) {
     const initial = getThreadById(store2, threadId);
     const projectId = store2.getState().activeProjectId;
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
     const prompt = initial.draftPrompt?.trim();
     if (!prompt) return;
     starting.add(threadId);
@@ -137567,6 +140295,22 @@ function attachAutomationController(store2, api2) {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
       if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api2.agent.prepareCheckout(
           projectId,
@@ -137579,7 +140323,27 @@ function attachAutomationController(store2, api2) {
         applyPreparedThreadCheckout(store2, threadId, prepared);
       }
       const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) return;
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
@@ -137625,16 +140389,21 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
   startPendingForActiveProject();
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
     unsubscribeTrigger();
     unsubscribeWorkspace();
   };
 }
+var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -138283,6 +141052,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -138298,6 +141068,7 @@ async function loadStartupSettings(settings) {
     settings.get("theme"),
     settings.get("fontSize"),
     settings.get("animateAgentAvatars"),
+    settings.get("conciseThreadsEnabled"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -138314,6 +141085,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -138900,6 +141672,7 @@ function handlePanelShortcut(store2, api2, action) {
 }
 function registerPanelKeyboardShortcuts(store2, api2) {
   document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
@@ -138917,6 +141690,7 @@ var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
     init_thread_helpers();
     init_panels();
+    init_dialog_shell();
   }
 });
 
@@ -139009,7 +141783,10 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs
+// node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs
+function _OverloadYield(e3, d3) {
+  this.v = e3, this.k = d3;
+}
 function _arrayLikeToArray(r2, a3) {
   (null == a3 || a3 > r2.length) && (a3 = r2.length);
   for (var e3 = 0, n2 = Array(a3); e3 < a3; e3++) n2[e3] = r2[e3];
@@ -139023,8 +141800,10 @@ function _iterableToArrayLimit(r2, l2) {
   if (null != t2) {
     var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
-      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
+      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) {
+        if (Object(t2) !== t2) return;
+        f4 = false;
+      } else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
@@ -139050,42 +141829,68 @@ function _unsupportedIterableToArray(r2, a3) {
     return "Object" === t2 && r2.constructor && (t2 = r2.constructor.name), "Map" === t2 || "Set" === t2 ? Array.from(r2) : "Arguments" === t2 || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t2) ? _arrayLikeToArray(r2, a3) : void 0;
   }
 }
+function AsyncGenerator(e3) {
+  var t2, n2;
+  function resume(t3, n3) {
+    try {
+      var r2 = e3[t3](n3), o3 = r2.value, u2 = o3 instanceof _OverloadYield;
+      Promise.resolve(u2 ? o3.v : o3).then(function(n4) {
+        if (u2) {
+          var i2 = "return" === t3 && o3.k ? t3 : "next";
+          if (!o3.k || n4.done) return resume(i2, n4);
+          n4 = e3[i2](n4).value;
+        }
+        settle2(!!r2.done, n4);
+      }, function(e4) {
+        resume("throw", e4);
+      });
+    } catch (e4) {
+      settle2(2, e4);
+    }
+  }
+  function settle2(e4, r2) {
+    2 === e4 ? t2.reject(r2) : t2.resolve({
+      value: r2,
+      done: e4
+    }), (t2 = t2.next) ? resume(t2.key, t2.arg) : n2 = null;
+  }
+  this._invoke = function(e4, r2) {
+    return new Promise(function(o3, u2) {
+      var i2 = {
+        key: e4,
+        arg: r2,
+        resolve: o3,
+        reject: u2,
+        next: null
+      };
+      n2 ? n2 = n2.next = i2 : (t2 = n2 = i2, resume(e4, r2));
+    });
+  }, "function" != typeof e3.return && (this.return = void 0);
+}
 function unapply(func) {
   return function(thisArg) {
-    if (thisArg instanceof RegExp) {
-      thisArg.lastIndex = 0;
-    }
-    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-      args[_key3 - 1] = arguments[_key3];
-    }
+    if (thisArg instanceof RegExp) thisArg.lastIndex = 0;
+    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) args[_key3 - 1] = arguments[_key3];
     return apply(func, thisArg, args);
   };
 }
 function unconstruct(Func) {
   return function() {
-    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
-      args[_key4] = arguments[_key4];
-    }
+    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) args[_key4] = arguments[_key4];
     return construct(Func, args);
   };
 }
 function addToSet(set2, array2) {
   let transformCaseFunc = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : stringToLowerCase;
-  if (setPrototypeOf) {
-    setPrototypeOf(set2, null);
-  }
-  if (!arrayIsArray(array2)) {
-    return set2;
-  }
+  if (setPrototypeOf) setPrototypeOf(set2, null);
+  if (!arrayIsArray(array2)) return set2;
   let l2 = array2.length;
   while (l2--) {
     let element = array2[l2];
     if (typeof element === "string") {
       const lcElement = transformCaseFunc(element);
       if (lcElement !== element) {
-        if (!isFrozen(array2)) {
-          array2[l2] = lcElement;
-        }
+        if (!isFrozen(array2)) array2[l2] = lcElement;
         element = lcElement;
       }
     }
@@ -139094,12 +141899,7 @@ function addToSet(set2, array2) {
   return set2;
 }
 function cleanArray(array2) {
-  for (let index = 0; index < array2.length; index++) {
-    const isPropertyExist = objectHasOwnProperty(array2, index);
-    if (!isPropertyExist) {
-      array2[index] = null;
-    }
-  }
+  for (let index = 0; index < array2.length; index++) if (!objectHasOwnProperty(array2, index)) array2[index] = null;
   return array2;
 }
 function clone2(object2) {
@@ -139108,44 +141908,31 @@ function clone2(object2) {
     var _ref3 = _slicedToArray(_ref2, 2);
     const property = _ref3[0];
     const value = _ref3[1];
-    const isPropertyExist = objectHasOwnProperty(object2, property);
-    if (isPropertyExist) {
-      if (arrayIsArray(value)) {
-        newObject[property] = cleanArray(value);
-      } else if (value && typeof value === "object" && value.constructor === Object) {
-        newObject[property] = clone2(value);
-      } else {
-        newObject[property] = value;
-      }
+    if (objectHasOwnProperty(object2, property)) {
+      if (arrayIsArray(value)) newObject[property] = cleanArray(value);
+      else if (value && typeof value === "object" && value.constructor === Object) newObject[property] = clone2(value);
+      else newObject[property] = value;
     }
   }
   return newObject;
 }
 function stringifyValue(value) {
   switch (typeof value) {
-    case "string": {
+    case "string":
       return value;
-    }
-    case "number": {
+    case "number":
       return numberToString(value);
-    }
-    case "boolean": {
+    case "boolean":
       return booleanToString(value);
-    }
-    case "bigint": {
+    case "bigint":
       return bigintToString ? bigintToString(value) : "0";
-    }
-    case "symbol": {
+    case "symbol":
       return symbolToString ? symbolToString(value) : "Symbol()";
-    }
-    case "undefined": {
+    case "undefined":
       return objectToString(value);
-    }
     case "function":
     case "object": {
-      if (value === null) {
-        return objectToString(value);
-      }
+      if (value === null) return objectToString(value);
       const valueAsRecord = value;
       const valueToString = lookupGetter(valueAsRecord, "toString");
       if (typeof valueToString === "function") {
@@ -139154,21 +141941,16 @@ function stringifyValue(value) {
       }
       return objectToString(value);
     }
-    default: {
+    default:
       return objectToString(value);
-    }
   }
 }
 function lookupGetter(object2, prop) {
   while (object2 !== null) {
     const desc = getOwnPropertyDescriptor(object2, prop);
     if (desc) {
-      if (desc.get) {
-        return unapply(desc.get);
-      }
-      if (typeof desc.value === "function") {
-        return unapply(desc.value);
-      }
+      if (desc.get) return unapply(desc.get);
+      if (typeof desc.value === "function") return unapply(desc.value);
     }
     object2 = getPrototypeOf(object2);
   }
@@ -139188,7 +141970,7 @@ function isRegex(value) {
 function createDOMPurify() {
   let window2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : getGlobal();
   const DOMPurify = (root) => createDOMPurify(root);
-  DOMPurify.version = "3.4.15";
+  DOMPurify.version = "3.4.16";
   DOMPurify.removed = [];
   if (!window2 || !window2.document || window2.document.nodeType !== NODE_TYPE.document || !window2.Element) {
     DOMPurify.isSupported = false;
@@ -139198,8 +141980,8 @@ function createDOMPurify() {
   const originalDocument = document2;
   const currentScript = originalDocument.currentScript;
   window2.DocumentFragment;
-  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter, _window$NamedNodeMap = window2.NamedNodeMap;
-  _window$NamedNodeMap === void 0 ? window2.NamedNodeMap || window2.MozNamedAttrMap : _window$NamedNodeMap;
+  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter;
+  window2.NamedNodeMap === void 0 && (window2.NamedNodeMap || window2.MozNamedAttrMap);
   window2.HTMLFormElement;
   const DOMParser2 = window2.DOMParser, trustedTypes = window2.trustedTypes;
   const ElementPrototype = Element2.prototype;
@@ -139222,9 +142004,7 @@ function createDOMPurify() {
   };
   if (typeof HTMLTemplateElement === "function") {
     const template = document2.createElement("template");
-    if (template.content && template.content.ownerDocument) {
-      document2 = template.content.ownerDocument;
-    }
+    if (template.content && template.content.ownerDocument) document2 = template.content.ownerDocument;
   }
   let trustedTypesPolicy;
   let emptyHTML = "";
@@ -139232,9 +142012,7 @@ function createDOMPurify() {
   let defaultTrustedTypesPolicyResolved = false;
   let IN_TRUSTED_TYPES_POLICY = 0;
   const _assertNotInTrustedTypesPolicy = function _assertNotInTrustedTypesPolicy2() {
-    if (IN_TRUSTED_TYPES_POLICY > 0) {
-      throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
-    }
+    if (IN_TRUSTED_TYPES_POLICY > 0) throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
   };
   const _createTrustedHTML = function _createTrustedHTML2(html2) {
     _assertNotInTrustedTypesPolicy();
@@ -139268,9 +142046,20 @@ function createDOMPurify() {
   const MUSTACHE_EXPR$1 = MUSTACHE_EXPR, ERB_EXPR$1 = ERB_EXPR, TMPLIT_EXPR$1 = TMPLIT_EXPR, DATA_ATTR$1 = DATA_ATTR, ARIA_ATTR$1 = ARIA_ATTR, IS_SCRIPT_OR_DATA$1 = IS_SCRIPT_OR_DATA, ATTR_WHITESPACE$1 = ATTR_WHITESPACE, CUSTOM_ELEMENT$1 = CUSTOM_ELEMENT;
   let IS_ALLOWED_URI$1 = IS_ALLOWED_URI;
   let ALLOWED_TAGS2 = null;
-  const DEFAULT_ALLOWED_TAGS = addToSet({}, [...html$1, ...svg$1, ...svgFilters, ...mathMl$1, ...text]);
+  const DEFAULT_ALLOWED_TAGS = addToSet({}, [
+    ...html$1,
+    ...svg$1,
+    ...svgFilters,
+    ...mathMl$1,
+    ...text
+  ]);
   let ALLOWED_ATTR2 = null;
-  const DEFAULT_ALLOWED_ATTR = addToSet({}, [...html, ...svg, ...mathMl, ...xml]);
+  const DEFAULT_ALLOWED_ATTR = addToSet({}, [
+    ...html,
+    ...svg,
+    ...mathMl,
+    ...xml
+  ]);
   let CUSTOM_ELEMENT_HANDLING = Object.seal(create(null, {
     tagNameCheck: {
       writable: true,
@@ -139347,15 +142136,6 @@ function createDOMPurify() {
     "noscript",
     "plaintext",
     "script",
-    // <selectedcontent> mirrors the selected <option>'s subtree, cloned by
-    // the UA (customizable <select>) — including any on* handlers — and the
-    // engine re-mirrors synchronously whenever a removal changes which
-    // option/selectedcontent is current, even inside DOMPurify's inert
-    // DOMParser document. Hoisting its children on removal re-inserts a fresh
-    // mirror target ahead of the walk, which the engine refills, looping
-    // forever (DoS) and amplifying output. Dropping its content on removal
-    // (rather than hoisting) breaks that cascade; the content is a duplicate
-    // of the option, which is sanitized on its own. See campaign-3 F1/F6.
     "selectedcontent",
     "style",
     "svg",
@@ -139366,21 +142146,59 @@ function createDOMPurify() {
     "xmp"
   ]);
   let DATA_URI_TAGS = null;
-  const DEFAULT_DATA_URI_TAGS = addToSet({}, ["audio", "video", "img", "source", "image", "track"]);
+  const DEFAULT_DATA_URI_TAGS = addToSet({}, [
+    "audio",
+    "video",
+    "img",
+    "source",
+    "image",
+    "track"
+  ]);
   let URI_SAFE_ATTRIBUTES = null;
-  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, ["alt", "class", "for", "id", "label", "name", "pattern", "placeholder", "role", "summary", "title", "value", "style", "xmlns"]);
+  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, [
+    "alt",
+    "class",
+    "for",
+    "id",
+    "label",
+    "name",
+    "pattern",
+    "placeholder",
+    "role",
+    "summary",
+    "title",
+    "value",
+    "style",
+    "xmlns"
+  ]);
   const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
   let NAMESPACE = HTML_NAMESPACE;
   let IS_EMPTY_INPUT = false;
   let ALLOWED_NAMESPACES = null;
-  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [MATHML_NAMESPACE, SVG_NAMESPACE, HTML_NAMESPACE], stringToString);
-  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze(["mi", "mo", "mn", "ms", "mtext"]);
+  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [
+    MATHML_NAMESPACE,
+    SVG_NAMESPACE,
+    HTML_NAMESPACE
+  ], stringToString);
+  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze([
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext"
+  ]);
   let MATHML_TEXT_INTEGRATION_POINTS = addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS);
   const DEFAULT_HTML_INTEGRATION_POINTS = freeze(["annotation-xml"]);
   let HTML_INTEGRATION_POINTS = addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS);
-  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, ["title", "style", "font", "a", "script"]);
+  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, [
+    "title",
+    "style",
+    "font",
+    "a",
+    "script"
+  ]);
   let PARSER_MEDIA_TYPE = null;
   const SUPPORTED_PARSER_MEDIA_TYPES = ["application/xhtml+xml", "text/html"];
   const DEFAULT_PARSER_MEDIA_TYPE = "text/html";
@@ -139392,25 +142210,14 @@ function createDOMPurify() {
   };
   const _parseConfig = function _parseConfig2() {
     let cfg = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : {};
-    if (CONFIG && CONFIG === cfg) {
-      return;
-    }
-    if (!cfg || typeof cfg !== "object") {
-      cfg = {};
-    }
+    if (CONFIG && CONFIG === cfg) return;
+    if (!cfg || typeof cfg !== "object") cfg = {};
     cfg = clone2(cfg);
-    PARSER_MEDIA_TYPE = // eslint-disable-next-line unicorn/prefer-includes
-    SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
+    PARSER_MEDIA_TYPE = SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
     transformCaseFunc = PARSER_MEDIA_TYPE === "application/xhtml+xml" ? stringToString : stringToLowerCase;
-    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, {
-      transform: stringToString
-    });
+    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, { transform: transformCaseFunc });
+    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, { transform: transformCaseFunc });
+    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, { transform: stringToString });
     URI_SAFE_ATTRIBUTES = _resolveSetOption(cfg, "ADD_URI_SAFE_ATTR", DEFAULT_URI_SAFE_ATTRIBUTES, {
       transform: transformCaseFunc,
       base: DEFAULT_URI_SAFE_ATTRIBUTES
@@ -139419,15 +142226,9 @@ function createDOMPurify() {
       transform: transformCaseFunc,
       base: DEFAULT_DATA_URI_TAGS
     });
-    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, {
-      transform: transformCaseFunc
-    });
-    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), {
-      transform: transformCaseFunc
-    });
-    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), {
-      transform: transformCaseFunc
-    });
+    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, { transform: transformCaseFunc });
+    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), { transform: transformCaseFunc });
+    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), { transform: transformCaseFunc });
     USE_PROFILES = objectHasOwnProperty(cfg, "USE_PROFILES") ? cfg.USE_PROFILES && typeof cfg.USE_PROFILES === "object" ? clone2(cfg.USE_PROFILES) : cfg.USE_PROFILES : false;
     ALLOW_ARIA_ATTR = cfg.ALLOW_ARIA_ATTR !== false;
     ALLOW_DATA_ATTR = cfg.ALLOW_DATA_ATTR !== false;
@@ -139446,36 +142247,16 @@ function createDOMPurify() {
     IN_PLACE = cfg.IN_PLACE || false;
     IS_ALLOWED_URI$1 = isRegex(cfg.ALLOWED_URI_REGEXP) ? cfg.ALLOWED_URI_REGEXP : IS_ALLOWED_URI;
     NAMESPACE = typeof cfg.NAMESPACE === "string" ? cfg.NAMESPACE : HTML_NAMESPACE;
-    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "MATHML_TEXT_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS)
-      // Default built-in map
-    );
-    HTML_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "HTML_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS)
-      // Default built-in map
-    );
+    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(cfg, "MATHML_TEXT_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS));
+    HTML_INTEGRATION_POINTS = _resolveObjectOption(cfg, "HTML_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS));
     const customElementHandling = _resolveObjectOption(cfg, "CUSTOM_ELEMENT_HANDLING", () => create(null));
     CUSTOM_ELEMENT_HANDLING = create(null);
-    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") {
-      CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
-    }
+    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
     seal(CUSTOM_ELEMENT_HANDLING);
-    if (SAFE_FOR_TEMPLATES) {
-      ALLOW_DATA_ATTR = false;
-    }
-    if (RETURN_DOM_FRAGMENT) {
-      RETURN_DOM = true;
-    }
+    if (SAFE_FOR_TEMPLATES) ALLOW_DATA_ATTR = false;
+    if (RETURN_DOM_FRAGMENT) RETURN_DOM = true;
     if (USE_PROFILES) {
       ALLOWED_TAGS2 = addToSet({}, text);
       ALLOWED_ATTR2 = create(null);
@@ -139502,48 +142283,36 @@ function createDOMPurify() {
     EXTRA_ELEMENT_HANDLING.tagCheck = null;
     EXTRA_ELEMENT_HANDLING.attributeCheck = null;
     if (objectHasOwnProperty(cfg, "ADD_TAGS")) {
-      if (typeof cfg.ADD_TAGS === "function") {
-        EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
-      } else if (arrayIsArray(cfg.ADD_TAGS)) {
-        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) {
-          ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-        }
+      if (typeof cfg.ADD_TAGS === "function") EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
+      else if (arrayIsArray(cfg.ADD_TAGS)) {
+        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
         addToSet(ALLOWED_TAGS2, cfg.ADD_TAGS, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_ATTR")) {
-      if (typeof cfg.ADD_ATTR === "function") {
-        EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
-      } else if (arrayIsArray(cfg.ADD_ATTR)) {
-        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) {
-          ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-        }
+      if (typeof cfg.ADD_ATTR === "function") EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
+      else if (arrayIsArray(cfg.ADD_ATTR)) {
+        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
         addToSet(ALLOWED_ATTR2, cfg.ADD_ATTR, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_FORBID_CONTENTS") && arrayIsArray(cfg.ADD_FORBID_CONTENTS)) {
-      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) {
-        FORBID_CONTENTS = clone2(FORBID_CONTENTS);
-      }
+      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) FORBID_CONTENTS = clone2(FORBID_CONTENTS);
       addToSet(FORBID_CONTENTS, cfg.ADD_FORBID_CONTENTS, transformCaseFunc);
     }
-    if (KEEP_CONTENT) {
-      ALLOWED_TAGS2["#text"] = true;
-    }
-    if (WHOLE_DOCUMENT) {
-      addToSet(ALLOWED_TAGS2, ["html", "head", "body"]);
-    }
+    if (KEEP_CONTENT) ALLOWED_TAGS2["#text"] = true;
+    if (WHOLE_DOCUMENT) addToSet(ALLOWED_TAGS2, [
+      "html",
+      "head",
+      "body"
+    ]);
     if (ALLOWED_TAGS2.table) {
       addToSet(ALLOWED_TAGS2, ["tbody"]);
       delete FORBID_TAGS.tbody;
     }
     if (cfg.TRUSTED_TYPES_POLICY) {
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
-      }
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
-      }
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
       const previousTrustedTypesPolicy = trustedTypesPolicy;
       trustedTypesPolicy = cfg.TRUSTED_TYPES_POLICY;
       try {
@@ -139556,85 +142325,55 @@ function createDOMPurify() {
       trustedTypesPolicy = void 0;
       emptyHTML = "";
     } else {
-      if (trustedTypesPolicy === void 0) {
-        trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
-      }
-      if (trustedTypesPolicy && typeof emptyHTML === "string") {
-        emptyHTML = _createTrustedHTML("");
-      }
+      if (trustedTypesPolicy === void 0) trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
+      if (trustedTypesPolicy && typeof emptyHTML === "string") emptyHTML = _createTrustedHTML("");
     }
-    if (freeze) {
-      freeze(cfg);
-    }
+    if (freeze) freeze(cfg);
     CONFIG = cfg;
   };
-  const ALL_SVG_TAGS = addToSet({}, [...svg$1, ...svgFilters, ...svgDisallowed]);
+  const ALL_SVG_TAGS = addToSet({}, [
+    ...svg$1,
+    ...svgFilters,
+    ...svgDisallowed
+  ]);
   const ALL_MATHML_TAGS = addToSet({}, [...mathMl$1, ...mathMlDisallowed]);
   const _checkSvgNamespace = function _checkSvgNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "svg";
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE) {
-      return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "svg";
+    if (parent.namespaceURI === MATHML_NAMESPACE) return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
     return Boolean(ALL_SVG_TAGS[tagName]);
   };
   const _checkMathMlNamespace = function _checkMathMlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "math";
-    }
-    if (parent.namespaceURI === SVG_NAMESPACE) {
-      return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "math";
+    if (parent.namespaceURI === SVG_NAMESPACE) return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
     return Boolean(ALL_MATHML_TAGS[tagName]);
   };
   const _checkHtmlNamespace = function _checkHtmlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
+    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) return false;
+    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) return false;
     return !ALL_MATHML_TAGS[tagName] && (COMMON_SVG_AND_HTML_ELEMENTS[tagName] || !ALL_SVG_TAGS[tagName]);
   };
   const _checkValidNamespace = function _checkValidNamespace2(element) {
     let parent = getParentNode(element);
-    if (!parent || !parent.tagName) {
-      parent = {
-        namespaceURI: NAMESPACE,
-        tagName: "template"
-      };
-    }
+    if (!parent || !parent.tagName) parent = {
+      namespaceURI: NAMESPACE,
+      tagName: "template"
+    };
     const tagName = stringToLowerCase(element.tagName);
     const parentTagName = stringToLowerCase(parent.tagName);
-    if (!ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return false;
-    }
-    if (element.namespaceURI === SVG_NAMESPACE) {
-      return _checkSvgNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === MATHML_NAMESPACE) {
-      return _checkMathMlNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === HTML_NAMESPACE) {
-      return _checkHtmlNamespace(tagName, parent, parentTagName);
-    }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return true;
-    }
+    if (!ALLOWED_NAMESPACES[element.namespaceURI]) return false;
+    if (element.namespaceURI === SVG_NAMESPACE) return _checkSvgNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === MATHML_NAMESPACE) return _checkMathMlNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === HTML_NAMESPACE) return _checkHtmlNamespace(tagName, parent, parentTagName);
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) return true;
     return false;
   };
   const _forceRemove = function _forceRemove2(node2) {
-    arrayPush(DOMPurify.removed, {
-      element: node2
-    });
+    arrayPush(DOMPurify.removed, { element: node2 });
     try {
       getParentNode(node2).removeChild(node2);
     } catch (_3) {
       remove(node2);
-      if (!getParentNode(node2)) {
-        throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
-      }
+      if (!getParentNode(node2)) throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
     }
   };
   const _stripAttributeNode = function _stripAttributeNode2(element, attribute, name) {
@@ -139663,34 +142402,25 @@ function createDOMPurify() {
       });
     }
     const attributes = getAttributes(root);
-    if (attributes) {
-      for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
-        const attribute = attributes[i2];
-        const name = attribute && attribute.name;
-        if (typeof name === "string") {
-          _stripAttributeNode(root, attribute, name);
-        }
-      }
+    if (attributes) for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
+      const attribute = attributes[i2];
+      const name = attribute && attribute.name;
+      if (typeof name === "string") _stripAttributeNode(root, attribute, name);
     }
   };
   const _removeAttribute = function _removeAttribute2(name, element, attr) {
-    if (!attr) {
-      try {
-        attr = element.getAttributeNode(name);
-      } catch (_3) {
-        attr = null;
-      }
+    if (!attr) try {
+      attr = element.getAttributeNode(name);
+    } catch (_3) {
+      attr = null;
     }
     arrayPush(DOMPurify.removed, {
       attribute: attr || null,
       from: element
     });
     try {
-      if (attr) {
-        removeAttributeNode(element, attr);
-      } else {
-        element.removeAttribute(name);
-      }
+      if (attr) removeAttributeNode(element, attr);
+      else element.removeAttribute(name);
     } catch (_3) {
       try {
         element.removeAttribute(name);
@@ -139698,30 +142428,23 @@ function createDOMPurify() {
       }
     }
     if (name === "is") {
-      if (RETURN_DOM || RETURN_DOM_FRAGMENT) {
-        try {
-          _forceRemove(element);
-        } catch (_3) {
-        }
-      } else {
-        try {
-          element.setAttribute(name, "");
-        } catch (_3) {
-        }
+      if (RETURN_DOM || RETURN_DOM_FRAGMENT) try {
+        _forceRemove(element);
+      } catch (_3) {
+      }
+      else try {
+        element.setAttribute(name, "");
+      } catch (_3) {
       }
     }
   };
   const _stripDisallowedAttributes = function _stripDisallowedAttributes2(element) {
     const attributes = getAttributes(element);
-    if (!attributes) {
-      return;
-    }
+    if (!attributes) return;
     for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
       const attribute = attributes[i2];
       const name = attribute && attribute.name;
-      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) {
-        continue;
-      }
+      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) continue;
       _stripAttributeNode(element, attribute, name);
     }
   };
@@ -139729,31 +142452,18 @@ function createDOMPurify() {
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
-      const nodeType = _readNodeType(node2);
-      if (nodeType === NODE_TYPE.element) {
-        _stripDisallowedAttributes(node2);
-      }
+      if (_readNodeType(node2) === NODE_TYPE.element) _stripDisallowedAttributes(node2);
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _isPatchLinkageAttribute = function _isPatchLinkageAttribute2(lcName, lcTag) {
-    if (!SAFE_FOR_XML) {
-      return false;
-    }
-    if (lcName === "patchsrc") {
-      return true;
-    }
+    if (!SAFE_FOR_XML) return false;
+    if (lcName === "patchsrc") return true;
     return lcName === "for" && lcTag !== "label" && lcTag !== "output";
   };
   const _neutralizePatchLinkage = function _neutralizePatchLinkage2(root) {
-    if (!SAFE_FOR_XML) {
-      return;
-    }
+    if (!SAFE_FOR_XML) return;
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
@@ -139769,41 +142479,28 @@ function createDOMPurify() {
         const element = node2;
         const lcTag = transformCaseFunc(_readNodeName(node2));
         try {
-          if (element.hasAttribute && element.hasAttribute("patchsrc")) {
-            element.removeAttribute("patchsrc");
-          }
-          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) {
-            element.removeAttribute("for");
-          }
+          if (element.hasAttribute && element.hasAttribute("patchsrc")) element.removeAttribute("patchsrc");
+          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) element.removeAttribute("for");
         } catch (_3) {
         }
       }
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _initDocument = function _initDocument2(dirty) {
     let doc = null;
     let leadingWhitespace = null;
-    if (FORCE_BODY) {
-      dirty = "<remove></remove>" + dirty;
-    } else {
+    if (FORCE_BODY) dirty = "<remove></remove>" + dirty;
+    else {
       const matches2 = stringMatch(dirty, /^[\r\n\t ]+/);
       leadingWhitespace = matches2 && matches2[0];
     }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) {
-      dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
-    }
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
     const dirtyPayload = trustedTypesPolicy ? _createTrustedHTML(dirty) : dirty;
-    if (NAMESPACE === HTML_NAMESPACE) {
-      try {
-        doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
-      } catch (_3) {
-      }
+    if (NAMESPACE === HTML_NAMESPACE) try {
+      doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
+    } catch (_3) {
     }
     if (!doc || !doc.documentElement) {
       doc = implementation.createDocument(NAMESPACE, "template", null);
@@ -139813,23 +142510,13 @@ function createDOMPurify() {
       }
     }
     const body = doc.body || doc.documentElement;
-    if (dirty && leadingWhitespace) {
-      body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
-    }
-    if (NAMESPACE === HTML_NAMESPACE) {
-      return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
-    }
+    if (dirty && leadingWhitespace) body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
+    if (NAMESPACE === HTML_NAMESPACE) return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
     return WHOLE_DOCUMENT ? doc.documentElement : body;
   };
   const _createNodeIterator = function _createNodeIterator2(root) {
     const doc = getOwnerDocument ? getOwnerDocument(root) : root.ownerDocument;
-    return createNodeIterator.call(
-      doc || root,
-      root,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION,
-      null
-    );
+    return createNodeIterator.call(doc || root, root, NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION, null);
   };
   const _stripTemplateExpressions = function _stripTemplateExpressions2(value) {
     value = stringReplace(value, MUSTACHE_EXPR$1, " ");
@@ -139841,73 +142528,25 @@ function createDOMPurify() {
     var _node$querySelectorAl;
     node2.normalize();
     const doc = getOwnerDocument ? getOwnerDocument(node2) : node2.ownerDocument;
-    const walker = createNodeIterator.call(
-      doc || node2,
-      node2,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION,
-      null
-    );
+    const walker = createNodeIterator.call(doc || node2, node2, NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION, null);
     let currentNode = walker.nextNode();
     while (currentNode) {
       currentNode.data = _stripTemplateExpressions(currentNode.data);
       currentNode = walker.nextNode();
     }
     const templates = (_node$querySelectorAl = node2.querySelectorAll) === null || _node$querySelectorAl === void 0 ? void 0 : _node$querySelectorAl.call(node2, "template");
-    if (templates) {
-      arrayForEach(templates, (tmpl) => {
-        if (_isDocumentFragment(tmpl.content)) {
-          _scrubTemplateExpressions2(tmpl.content);
-        }
-      });
-    }
+    if (templates) arrayForEach(templates, (tmpl) => {
+      if (_isDocumentFragment(tmpl.content)) _scrubTemplateExpressions2(tmpl.content);
+    });
   };
   const _isClobbered = function _isClobbered2(element) {
     const realTagName = getNodeName ? getNodeName(element) : null;
-    if (typeof realTagName !== "string") {
-      return false;
-    }
-    if (transformCaseFunc(realTagName) !== "form") {
-      return false;
-    }
-    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || // Realm-safe NamedNodeMap detection: equality against the cached
-    // prototype getter. Clobbered .attributes (e.g. <input name="attributes">)
-    // makes the direct read diverge from the cached read; a clean form
-    // (same-realm OR foreign-realm) has both reads pointing at the same
-    // canonical NamedNodeMap.
-    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || // A form descendant named "removeAttributeNode" or "getAttributeNode"
-    // shadows these Attr-node methods via [LegacyOverrideBuiltIns].
-    // _removeAttribute() / _stripAttributeNode() reach for
-    // element.removeAttributeNode(attr) first; when it is shadowed the call
-    // throws and the name-based fallback element.removeAttribute(name)
-    // ASCII-lowercases its lookup key in an HTML document, silently missing
-    // a case-preserved event-handler attribute (e.g. an ONANIMATIONSTART
-    // that reached the sanitizer through an XML/XHTML parse). Flag the form
-    // so it is removed wholesale, exactly as for the other shadowed methods.
-    typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
-    // returns the integer 1 for any Element regardless of realm; direct
-    // read on a clobbered form (e.g. <input name="nodeType">) returns
-    // the named child element. Cheap addition — nodeType is read from
-    // an internal slot, no serialization cost — and removes a residual
-    // clobbering surface used by several mXSS / PI / comment branches
-    // in _sanitizeElements that compare currentNode.nodeType directly.
-    element.nodeType !== getNodeType(element) || // HTMLFormElement has [LegacyOverrideBuiltIns]: a descendant named
-    // "childNodes" shadows the prototype getter. Direct reads of
-    // form.childNodes from a clobbered form return the named child
-    // instead of the real NodeList, so any walk that reads it directly
-    // skips the form's real children. Compare the direct read to the
-    // cached Node.prototype getter — when the form's named-property
-    // getter intercepts the read, the two values differ and we flag
-    // the form. This catches every clobbering child type (input,
-    // select, etc.) regardless of whether the named child happens to
-    // carry a numeric .length, which a typeof-based probe would miss
-    // (e.g. HTMLSelectElement.length is a defined unsigned-long).
-    element.childNodes !== getChildNodes(element);
+    if (typeof realTagName !== "string") return false;
+    if (transformCaseFunc(realTagName) !== "form") return false;
+    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || element.nodeType !== getNodeType(element) || element.childNodes !== getChildNodes(element);
   };
   const _isDocumentFragment = function _isDocumentFragment2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return getNodeType(value) === NODE_TYPE.documentFragment;
     } catch (_3) {
@@ -139915,9 +142554,7 @@ function createDOMPurify() {
     }
   };
   const _isNode = function _isNode2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return typeof getNodeType(value) === "number";
     } catch (_3) {
@@ -139925,44 +142562,28 @@ function createDOMPurify() {
     }
   };
   function _executeHooks(hooks2, currentNode, data) {
-    if (hooks2.length === 0) {
-      return;
-    }
+    if (hooks2.length === 0) return;
     arrayForEach(hooks2, (hook) => {
       hook.call(DOMPurify, currentNode, data, CONFIG);
     });
   }
   const _isUnsafeNode = function _isUnsafeNode2(currentNode, tagName) {
-    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) {
-      return true;
-    }
-    if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) {
-      return true;
-    }
+    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) return true;
+    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) return true;
+    if (currentNode.nodeType === NODE_TYPE.processingInstruction) return true;
+    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) return true;
     return false;
   };
   const _matchesNameCheck = function _matchesNameCheck2(check2, name) {
-    if (check2 instanceof RegExp) {
-      return regExpTest(check2, name);
-    }
+    if (check2 instanceof RegExp) return regExpTest(check2, name);
     if (check2 instanceof Function) {
-      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-        args[_key - 2] = arguments[_key];
-      }
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
       return Boolean(check2(name, ...args));
     }
     return false;
   };
   const _sanitizeDisallowedNode = function _sanitizeDisallowedNode2(currentNode, tagName, root) {
-    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) {
-      return false;
-    }
+    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) return false;
     if (KEEP_CONTENT && !FORBID_CONTENTS[tagName]) {
       const parentNode = getParentNode(currentNode);
       const childNodes = getChildNodes(currentNode);
@@ -139978,25 +142599,17 @@ function createDOMPurify() {
     return true;
   };
   const _forkSharedAllowlist = function _forkSharedAllowlist2(hookList, set2, defaultSet, setConfigSet) {
-    if (hookList.length === 0) {
-      return set2;
-    }
+    if (hookList.length === 0) return set2;
     return set2 === defaultSet || set2 === setConfigSet ? clone2(set2) : set2;
   };
   const _handleHookDetachedNode = function _handleHookDetachedNode2(currentNode, root) {
-    if (currentNode === root || getParentNode(currentNode) !== null) {
-      return false;
-    }
-    if (IN_PLACE) {
-      _neutralizeSubtree(currentNode);
-    }
+    if (currentNode === root || getParentNode(currentNode) !== null) return false;
+    if (IN_PLACE) _neutralizeSubtree(currentNode);
     return true;
   };
   const _sanitizeElements = function _sanitizeElements2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeElements, currentNode, null);
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isClobbered(currentNode)) {
       _forceRemove(currentNode);
       return true;
@@ -140007,9 +142620,7 @@ function createDOMPurify() {
       tagName,
       allowedTags: ALLOWED_TAGS2
     });
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isUnsafeNode(currentNode, tagName)) {
       _forceRemove(currentNode);
       return true;
@@ -140018,11 +142629,11 @@ function createDOMPurify() {
       const removed = _sanitizeDisallowedNode(currentNode, tagName, root);
       if (removed === false) {
         _executeHooks(hooks.afterSanitizeElements, currentNode, null);
+        if (_handleHookDetachedNode(currentNode, root)) return true;
       }
       return removed;
     }
-    const nt2 = _readNodeType(currentNode);
-    if (nt2 === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
+    if (_readNodeType(currentNode) === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
       _forceRemove(currentNode);
       return true;
     }
@@ -140033,81 +142644,53 @@ function createDOMPurify() {
     if (SAFE_FOR_TEMPLATES && currentNode.nodeType === NODE_TYPE.text) {
       const content = _stripTemplateExpressions(currentNode.textContent);
       if (currentNode.textContent !== content) {
-        arrayPush(DOMPurify.removed, {
-          element: currentNode.cloneNode()
-        });
+        arrayPush(DOMPurify.removed, { element: currentNode.cloneNode() });
         currentNode.textContent = content;
       }
     }
     _executeHooks(hooks.afterSanitizeElements, currentNode, null);
-    return false;
+    return _handleHookDetachedNode(currentNode, root);
   };
   const _isValidAttribute = function _isValidAttribute2(lcTag, lcName, value) {
-    if (FORBID_ATTR[lcName]) {
-      return false;
-    }
-    if (_isPatchLinkageAttribute(lcName, lcTag)) {
-      return false;
-    }
-    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) {
-      return false;
-    }
+    if (FORBID_ATTR[lcName]) return false;
+    if (_isPatchLinkageAttribute(lcName, lcTag)) return false;
+    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) return false;
     const nameIsPermitted = ALLOWED_ATTR2[lcName] || EXTRA_ELEMENT_HANDLING.attributeCheck instanceof Function && EXTRA_ELEMENT_HANDLING.attributeCheck(lcName, lcTag);
-    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (!nameIsPermitted) {
-      return (
-        // Condition a) covers a basically valid custom element tag name whose
-        // tag passes the configured tagNameCheck and whose attribute name
-        // passes the configured attributeNameCheck ...
-        _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || // Condition b) covers an `is` attribute whose value passes the
-        // configured tagNameCheck while customized built-in elements are
-        // allowed.
-        lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value)
-      );
-    }
-    if (URI_SAFE_ATTRIBUTES[lcName]) {
-      return true;
-    }
-    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
-    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) {
-      return true;
-    }
-    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
+    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) return true;
+    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) return true;
+    if (!nameIsPermitted) return _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value);
+    if (URI_SAFE_ATTRIBUTES[lcName]) return true;
+    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
+    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) return true;
+    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
     return !value;
   };
-  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, ["annotation-xml", "color-profile", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "missing-glyph"]);
+  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, [
+    "annotation-xml",
+    "color-profile",
+    "font-face",
+    "font-face-format",
+    "font-face-name",
+    "font-face-src",
+    "font-face-uri",
+    "missing-glyph"
+  ]);
   const _isBasicCustomElement = function _isBasicCustomElement2(tagName) {
     return !RESERVED_CUSTOM_ELEMENT_NAMES[stringToLowerCase(tagName)] && regExpTest(CUSTOM_ELEMENT$1, tagName);
   };
   const _applyTrustedTypesToAttribute = function _applyTrustedTypesToAttribute2(lcTag, lcName, namespaceURI, value) {
-    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) {
-      switch (trustedTypes.getAttributeType(lcTag, lcName)) {
-        case "TrustedHTML": {
-          return _createTrustedHTML(value);
-        }
-        case "TrustedScriptURL": {
-          return _createTrustedScriptURL(value);
-        }
-      }
+    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) switch (trustedTypes.getAttributeType(lcTag, lcName)) {
+      case "TrustedHTML":
+        return _createTrustedHTML(value);
+      case "TrustedScriptURL":
+        return _createTrustedScriptURL(value);
     }
     return value;
   };
   const _setAttributeValue = function _setAttributeValue2(currentNode, name, namespaceURI, value) {
     try {
-      if (namespaceURI) {
-        currentNode.setAttributeNS(namespaceURI, name, value);
-      } else {
-        currentNode.setAttribute(name, value);
-      }
+      if (namespaceURI) currentNode.setAttributeNS(namespaceURI, name, value);
+      else currentNode.setAttribute(name, value);
       if (_isClobbered(currentNode)) {
         _forceRemove(currentNode);
         return false;
@@ -140118,12 +142701,11 @@ function createDOMPurify() {
       return false;
     }
   };
-  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode) {
+  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeAttributes, currentNode, null);
+    if (_handleHookDetachedNode(currentNode, root)) return;
     const attributes = currentNode.attributes;
-    if (!attributes || _isClobbered(currentNode)) {
-      return;
-    }
+    if (!attributes || _isClobbered(currentNode)) return;
     ALLOWED_ATTR2 = _forkSharedAllowlist(hooks.uponSanitizeAttribute, ALLOWED_ATTR2, DEFAULT_ALLOWED_ATTR, SET_CONFIG_ALLOWED_ATTR);
     const hookEvent = {
       attrName: "",
@@ -140160,9 +142742,7 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (hookEvent.forceKeepAttr) {
-        continue;
-      }
+      if (hookEvent.forceKeepAttr) continue;
       if (!hookEvent.keepAttr) {
         _removeAttribute(name, currentNode, attr);
         continue;
@@ -140171,22 +142751,18 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (SAFE_FOR_TEMPLATES) {
-        value = _stripTemplateExpressions(value);
-      }
+      if (SAFE_FOR_TEMPLATES) value = _stripTemplateExpressions(value);
       if (!_isValidAttribute(lcTag, lcName, value)) {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
       value = _applyTrustedTypesToAttribute(lcTag, lcName, namespaceURI, value);
       if (value !== initValue) {
-        const cleanWrite = _setAttributeValue(currentNode, name, namespaceURI, value);
-        if (cleanWrite && recreatedNamedProp) {
-          arrayPop(DOMPurify.removed);
-        }
+        if (_setAttributeValue(currentNode, name, namespaceURI, value) && recreatedNamedProp) arrayPop(DOMPurify.removed);
       }
     }
     _executeHooks(hooks.afterSanitizeAttributes, currentNode, null);
+    _handleHookDetachedNode(currentNode, root);
   };
   const _sanitizeShadowDOM2 = function _sanitizeShadowDOM(fragment) {
     let shadowNode = null;
@@ -140195,10 +142771,8 @@ function createDOMPurify() {
     while (shadowNode = shadowIterator.nextNode()) {
       _executeHooks(hooks.uponSanitizeShadowNode, shadowNode, null);
       _sanitizeElements(shadowNode, fragment);
-      _sanitizeAttributes(shadowNode);
-      if (_isDocumentFragment(shadowNode.content)) {
-        _sanitizeShadowDOM2(shadowNode.content);
-      }
+      _sanitizeAttributes(shadowNode, fragment);
+      if (_isDocumentFragment(shadowNode.content)) _sanitizeShadowDOM2(shadowNode.content);
       if (_readNodeType(shadowNode) === NODE_TYPE.element) {
         const innerSr = getShadowRoot(shadowNode);
         if (_isDocumentFragment(innerSr)) {
@@ -140221,40 +142795,31 @@ function createDOMPurify() {
         continue;
       }
       const node2 = item.node;
-      const nodeType = _readNodeType(node2);
-      const isElement = nodeType === NODE_TYPE.element;
+      const isElement = _readNodeType(node2) === NODE_TYPE.element;
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push({
-            node: childNodes[i2],
-            shadow: null
-          });
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push({
+        node: childNodes[i2],
+        shadow: null
+      });
       if (isElement) {
         const rootName = getNodeName ? getNodeName(node2) : null;
         if (typeof rootName === "string" && transformCaseFunc(rootName) === "template") {
           const content = node2.content;
-          if (_isDocumentFragment(content)) {
-            stack.push({
-              node: content,
-              shadow: null
-            });
-          }
+          if (_isDocumentFragment(content)) stack.push({
+            node: content,
+            shadow: null
+          });
         }
       }
       if (isElement) {
         const sr2 = getShadowRoot(node2);
-        if (_isDocumentFragment(sr2)) {
-          stack.push({
-            node: null,
-            shadow: sr2
-          }, {
-            node: sr2,
-            shadow: null
-          });
-        }
+        if (_isDocumentFragment(sr2)) stack.push({
+          node: null,
+          shadow: sr2
+        }, {
+          node: sr2,
+          shadow: null
+        });
       }
     }
   };
@@ -140265,30 +142830,18 @@ function createDOMPurify() {
     let currentNode = null;
     let returnNode = null;
     IS_EMPTY_INPUT = !dirty;
-    if (IS_EMPTY_INPUT) {
-      dirty = "<!-->";
-    }
+    if (IS_EMPTY_INPUT) dirty = "<!-->";
     if (typeof dirty !== "string" && !_isNode(dirty)) {
       dirty = stringifyValue(dirty);
-      if (typeof dirty !== "string") {
-        throw typeErrorCreate("dirty is not a string, aborting");
-      }
+      if (typeof dirty !== "string") throw typeErrorCreate("dirty is not a string, aborting");
     }
-    if (!DOMPurify.isSupported) {
-      return dirty;
-    }
+    if (!DOMPurify.isSupported) return dirty;
     if (SET_CONFIG) {
       ALLOWED_TAGS2 = SET_CONFIG_ALLOWED_TAGS;
       ALLOWED_ATTR2 = SET_CONFIG_ALLOWED_ATTR;
-    } else {
-      _parseConfig(cfg);
-    }
-    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-    }
-    if (hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-    }
+    } else _parseConfig(cfg);
+    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
+    if (hooks.uponSanitizeAttribute.length > 0) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
     DOMPurify.removed = [];
     const inPlace = IN_PLACE && typeof dirty !== "string" && _isNode(dirty);
     if (inPlace) {
@@ -140314,83 +142867,57 @@ function createDOMPurify() {
     } else if (_isNode(dirty)) {
       body = _initDocument("<!---->");
       importedNode = body.ownerDocument.importNode(dirty, true);
-      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") {
-        body = importedNode;
-      } else if (importedNode.nodeName === "HTML") {
-        body = importedNode;
-      } else {
-        body.appendChild(importedNode);
-      }
+      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") body = importedNode;
+      else if (importedNode.nodeName === "HTML") body = importedNode;
+      else body.appendChild(importedNode);
       _sanitizeAttachedShadowRoots(body);
     } else {
-      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && // eslint-disable-next-line unicorn/prefer-includes
-      dirty.indexOf("<") === -1) {
-        return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
-      }
+      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && dirty.indexOf("<") === -1) return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
       body = _initDocument(dirty);
-      if (!body) {
-        return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
-      }
+      if (!body) return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
     }
-    if (body && FORCE_BODY) {
-      _forceRemove(body.firstChild);
-    }
+    if (body && FORCE_BODY) _forceRemove(body.firstChild);
     const walkRoot = inPlace ? dirty : body;
     try {
       const nodeIterator = _createNodeIterator(walkRoot);
       while (currentNode = nodeIterator.nextNode()) {
         _sanitizeElements(currentNode, walkRoot);
-        _sanitizeAttributes(currentNode);
-        if (_isDocumentFragment(currentNode.content)) {
-          _sanitizeShadowDOM2(currentNode.content);
-        }
+        _sanitizeAttributes(currentNode, walkRoot);
+        if (_isDocumentFragment(currentNode.content)) _sanitizeShadowDOM2(currentNode.content);
       }
     } catch (error62) {
       if (inPlace) {
         _neutralizeRoot(dirty);
         arrayForEach(DOMPurify.removed, (entry) => {
-          if (entry.element) {
-            _neutralizeSubtree(entry.element);
-          }
+          if (entry.element) _neutralizeSubtree(entry.element);
         });
       }
       throw error62;
     }
     if (inPlace) {
+      let rootWasRemoved = false;
       arrayForEach(DOMPurify.removed, (entry) => {
         if (entry.element) {
+          if (entry.element === dirty) rootWasRemoved = true;
           _neutralizeSubtree(entry.element);
         }
       });
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(dirty);
-      }
+      if (rootWasRemoved) throw typeErrorCreate("a node selected for removal could not be safely returned; refusing to sanitize in place");
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(dirty);
       return dirty;
     }
     if (RETURN_DOM) {
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(body);
-      }
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(body);
       if (RETURN_DOM_FRAGMENT) {
         returnNode = createDocumentFragment.call(body.ownerDocument);
-        while (body.firstChild) {
-          returnNode.appendChild(body.firstChild);
-        }
-      } else {
-        returnNode = body;
-      }
-      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) {
-        returnNode = importNode.call(originalDocument, returnNode, true);
-      }
+        while (body.firstChild) returnNode.appendChild(body.firstChild);
+      } else returnNode = body;
+      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) returnNode = importNode.call(originalDocument, returnNode, true);
       return returnNode;
     }
     let serializedHTML = WHOLE_DOCUMENT ? body.outerHTML : body.innerHTML;
-    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) {
-      serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
-    }
-    if (SAFE_FOR_TEMPLATES) {
-      serializedHTML = _stripTemplateExpressions(serializedHTML);
-    }
+    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
+    if (SAFE_FOR_TEMPLATES) serializedHTML = _stripTemplateExpressions(serializedHTML);
     return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(serializedHTML) : serializedHTML;
   };
   DOMPurify.setConfig = function() {
@@ -140409,26 +142936,18 @@ function createDOMPurify() {
     emptyHTML = "";
   };
   DOMPurify.isValidAttribute = function(tag, attr, value) {
-    if (!CONFIG) {
-      _parseConfig({});
-    }
+    if (!CONFIG) _parseConfig({});
     const lcTag = transformCaseFunc(tag);
     const lcName = transformCaseFunc(attr);
     return _isValidAttribute(lcTag, lcName, value);
   };
   DOMPurify.addHook = function(entryPoint, hookFunction) {
-    if (typeof hookFunction !== "function") {
-      return;
-    }
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (typeof hookFunction !== "function") return;
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     arrayPush(hooks[entryPoint], hookFunction);
   };
   DOMPurify.removeHook = function(entryPoint, hookFunction) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return void 0;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     if (hookFunction !== void 0) {
       const index = arrayLastIndexOf(hooks[entryPoint], hookFunction);
       return index === -1 ? void 0 : arraySplice(hooks[entryPoint], index, 1)[0];
@@ -140436,9 +142955,7 @@ function createDOMPurify() {
     return arrayPop(hooks[entryPoint]);
   };
   DOMPurify.removeHooks = function(entryPoint) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     hooks[entryPoint] = [];
   };
   DOMPurify.removeAllHooks = function() {
@@ -140446,9 +142963,18 @@ function createDOMPurify() {
   };
   return DOMPurify;
 }
-var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify;
+var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify_default;
 var init_purify_es = __esm({
-  "node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs"() {
+  "node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs"() {
+    AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+      return this;
+    }, AsyncGenerator.prototype.next = function(e3) {
+      return this._invoke("next", e3);
+    }, AsyncGenerator.prototype.throw = function(e3) {
+      return this._invoke("throw", e3);
+    }, AsyncGenerator.prototype.return = function(e3) {
+      return this._invoke("return", e3);
+    };
     entries = Object.entries;
     setPrototypeOf = Object.setPrototypeOf;
     isFrozen = Object.isFrozen;
@@ -140460,36 +142986,26 @@ var init_purify_es = __esm({
     _ref = typeof Reflect !== "undefined" && Reflect;
     apply = _ref.apply;
     construct = _ref.construct;
-    if (!freeze) {
-      freeze = function freeze2(x2) {
-        return x2;
-      };
-    }
-    if (!seal) {
-      seal = function seal2(x2) {
-        return x2;
-      };
-    }
-    if (!apply) {
-      apply = function apply2(func, thisArg) {
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
-        }
-        return func.apply(thisArg, args);
-      };
-    }
-    if (!construct) {
-      construct = function construct2(Func) {
-        for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-          args[_key2 - 1] = arguments[_key2];
-        }
-        return new Func(...args);
-      };
-    }
+    if (!freeze) freeze = function freeze2(x2) {
+      return x2;
+    };
+    if (!seal) seal = function seal2(x2) {
+      return x2;
+    };
+    if (!apply) apply = function apply2(func, thisArg) {
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
+      return func.apply(thisArg, args);
+    };
+    if (!construct) construct = function construct2(Func) {
+      for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) args[_key2 - 1] = arguments[_key2];
+      return new Func(...args);
+    };
     arrayForEach = unapply(Array.prototype.forEach);
+    Array.prototype.indexOf;
     arrayLastIndexOf = unapply(Array.prototype.lastIndexOf);
     arrayPop = unapply(Array.prototype.pop);
     arrayPush = unapply(Array.prototype.push);
+    Array.prototype.slice;
     arraySplice = unapply(Array.prototype.splice);
     arrayIsArray = Array.isArray;
     stringToLowerCase = unapply(String.prototype.toLowerCase);
@@ -140506,31 +143022,662 @@ var init_purify_es = __esm({
     objectToString = unapply(Object.prototype.toString);
     regExpTest = unapply(RegExp.prototype.test);
     typeErrorCreate = unconstruct(TypeError);
-    html$1 = freeze(["a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "content", "data", "datalist", "dd", "decorator", "del", "details", "dfn", "dialog", "dir", "div", "dl", "dt", "element", "em", "fieldset", "figcaption", "figure", "font", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "img", "input", "ins", "kbd", "label", "legend", "li", "main", "map", "mark", "marquee", "menu", "menuitem", "meter", "nav", "nobr", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "search", "section", "select", "shadow", "slot", "small", "source", "spacer", "span", "strike", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr"]);
-    svg$1 = freeze(["svg", "a", "altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "enterkeyhint", "exportparts", "filter", "font", "g", "glyph", "glyphref", "hkern", "image", "inputmode", "line", "lineargradient", "marker", "mask", "metadata", "mpath", "part", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "stop", "style", "switch", "symbol", "text", "textpath", "title", "tref", "tspan", "view", "vkern"]);
-    svgFilters = freeze(["feBlend", "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence"]);
-    svgDisallowed = freeze(["animate", "color-profile", "cursor", "discard", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "foreignobject", "hatch", "hatchpath", "mesh", "meshgradient", "meshpatch", "meshrow", "missing-glyph", "script", "set", "solidcolor", "unknown", "use"]);
-    mathMl$1 = freeze(["math", "menclose", "merror", "mfenced", "mfrac", "mglyph", "mi", "mlabeledtr", "mmultiscripts", "mn", "mo", "mover", "mpadded", "mphantom", "mroot", "mrow", "ms", "mspace", "msqrt", "mstyle", "msub", "msup", "msubsup", "mtable", "mtd", "mtext", "mtr", "munder", "munderover", "mprescripts"]);
-    mathMlDisallowed = freeze(["maction", "maligngroup", "malignmark", "mlongdiv", "mscarries", "mscarry", "msgroup", "mstack", "msline", "msrow", "semantics", "annotation", "annotation-xml", "mprescripts", "none"]);
+    html$1 = freeze([
+      "a",
+      "abbr",
+      "acronym",
+      "address",
+      "area",
+      "article",
+      "aside",
+      "audio",
+      "b",
+      "bdi",
+      "bdo",
+      "big",
+      "blink",
+      "blockquote",
+      "body",
+      "br",
+      "button",
+      "canvas",
+      "caption",
+      "center",
+      "cite",
+      "code",
+      "col",
+      "colgroup",
+      "content",
+      "data",
+      "datalist",
+      "dd",
+      "decorator",
+      "del",
+      "details",
+      "dfn",
+      "dialog",
+      "dir",
+      "div",
+      "dl",
+      "dt",
+      "element",
+      "em",
+      "fieldset",
+      "figcaption",
+      "figure",
+      "font",
+      "footer",
+      "form",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "head",
+      "header",
+      "hgroup",
+      "hr",
+      "html",
+      "i",
+      "img",
+      "input",
+      "ins",
+      "kbd",
+      "label",
+      "legend",
+      "li",
+      "main",
+      "map",
+      "mark",
+      "marquee",
+      "menu",
+      "menuitem",
+      "meter",
+      "nav",
+      "nobr",
+      "ol",
+      "optgroup",
+      "option",
+      "output",
+      "p",
+      "picture",
+      "pre",
+      "progress",
+      "q",
+      "rp",
+      "rt",
+      "ruby",
+      "s",
+      "samp",
+      "search",
+      "section",
+      "select",
+      "shadow",
+      "slot",
+      "small",
+      "source",
+      "spacer",
+      "span",
+      "strike",
+      "strong",
+      "style",
+      "sub",
+      "summary",
+      "sup",
+      "table",
+      "tbody",
+      "td",
+      "template",
+      "textarea",
+      "tfoot",
+      "th",
+      "thead",
+      "time",
+      "tr",
+      "track",
+      "tt",
+      "u",
+      "ul",
+      "var",
+      "video",
+      "wbr"
+    ]);
+    svg$1 = freeze([
+      "svg",
+      "a",
+      "altglyph",
+      "altglyphdef",
+      "altglyphitem",
+      "animatecolor",
+      "animatemotion",
+      "animatetransform",
+      "circle",
+      "clippath",
+      "defs",
+      "desc",
+      "ellipse",
+      "enterkeyhint",
+      "exportparts",
+      "filter",
+      "font",
+      "g",
+      "glyph",
+      "glyphref",
+      "hkern",
+      "image",
+      "inputmode",
+      "line",
+      "lineargradient",
+      "marker",
+      "mask",
+      "metadata",
+      "mpath",
+      "part",
+      "path",
+      "pattern",
+      "polygon",
+      "polyline",
+      "radialgradient",
+      "rect",
+      "stop",
+      "style",
+      "switch",
+      "symbol",
+      "text",
+      "textpath",
+      "title",
+      "tref",
+      "tspan",
+      "view",
+      "vkern"
+    ]);
+    svgFilters = freeze([
+      "feBlend",
+      "feColorMatrix",
+      "feComponentTransfer",
+      "feComposite",
+      "feConvolveMatrix",
+      "feDiffuseLighting",
+      "feDisplacementMap",
+      "feDistantLight",
+      "feDropShadow",
+      "feFlood",
+      "feFuncA",
+      "feFuncB",
+      "feFuncG",
+      "feFuncR",
+      "feGaussianBlur",
+      "feImage",
+      "feMerge",
+      "feMergeNode",
+      "feMorphology",
+      "feOffset",
+      "fePointLight",
+      "feSpecularLighting",
+      "feSpotLight",
+      "feTile",
+      "feTurbulence"
+    ]);
+    svgDisallowed = freeze([
+      "animate",
+      "color-profile",
+      "cursor",
+      "discard",
+      "font-face",
+      "font-face-format",
+      "font-face-name",
+      "font-face-src",
+      "font-face-uri",
+      "foreignobject",
+      "hatch",
+      "hatchpath",
+      "mesh",
+      "meshgradient",
+      "meshpatch",
+      "meshrow",
+      "missing-glyph",
+      "script",
+      "set",
+      "solidcolor",
+      "unknown",
+      "use"
+    ]);
+    mathMl$1 = freeze([
+      "math",
+      "menclose",
+      "merror",
+      "mfenced",
+      "mfrac",
+      "mglyph",
+      "mi",
+      "mlabeledtr",
+      "mmultiscripts",
+      "mn",
+      "mo",
+      "mover",
+      "mpadded",
+      "mphantom",
+      "mroot",
+      "mrow",
+      "ms",
+      "mspace",
+      "msqrt",
+      "mstyle",
+      "msub",
+      "msup",
+      "msubsup",
+      "mtable",
+      "mtd",
+      "mtext",
+      "mtr",
+      "munder",
+      "munderover",
+      "mprescripts"
+    ]);
+    mathMlDisallowed = freeze([
+      "maction",
+      "maligngroup",
+      "malignmark",
+      "mlongdiv",
+      "mscarries",
+      "mscarry",
+      "msgroup",
+      "mstack",
+      "msline",
+      "msrow",
+      "semantics",
+      "annotation",
+      "annotation-xml",
+      "mprescripts",
+      "none"
+    ]);
     text = freeze(["#text"]);
-    html = freeze(["accept", "action", "align", "alt", "autocapitalize", "autocomplete", "autopictureinpicture", "autoplay", "background", "bgcolor", "border", "capture", "cellpadding", "cellspacing", "checked", "cite", "class", "clear", "color", "cols", "colspan", "command", "commandfor", "controls", "controlslist", "coords", "crossorigin", "datetime", "decoding", "default", "dir", "disabled", "disablepictureinpicture", "disableremoteplayback", "download", "draggable", "enctype", "enterkeyhint", "exportparts", "face", "for", "headers", "height", "hidden", "high", "href", "hreflang", "id", "inert", "inputmode", "integrity", "ismap", "kind", "label", "lang", "list", "loading", "loop", "low", "max", "maxlength", "media", "method", "min", "minlength", "multiple", "muted", "name", "nonce", "noshade", "novalidate", "nowrap", "open", "optimum", "part", "pattern", "placeholder", "playsinline", "popover", "popovertarget", "popovertargetaction", "poster", "preload", "pubdate", "radiogroup", "readonly", "rel", "required", "rev", "reversed", "role", "rows", "rowspan", "spellcheck", "scope", "selected", "shape", "size", "sizes", "slot", "span", "srclang", "start", "src", "srcset", "step", "style", "summary", "tabindex", "title", "translate", "type", "usemap", "valign", "value", "width", "wrap", "xmlns"]);
-    svg = freeze(["accent-height", "accumulate", "additive", "alignment-baseline", "amplitude", "ascent", "attributename", "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin", "bias", "by", "class", "clip", "clippathunits", "clip-path", "clip-rule", "color", "color-interpolation", "color-interpolation-filters", "color-profile", "color-rendering", "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dominant-baseline", "dur", "edgemode", "elevation", "end", "exponent", "fill", "fill-opacity", "fill-rule", "filter", "filterunits", "flood-color", "flood-opacity", "font-family", "font-size", "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx", "fy", "g1", "g2", "glyph-name", "glyphref", "gradientunits", "gradienttransform", "height", "href", "id", "image-rendering", "in", "in2", "intercept", "k", "k1", "k2", "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lang", "lengthadjust", "letter-spacing", "kernelmatrix", "kernelunitlength", "lighting-color", "local", "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth", "maskcontentunits", "maskunits", "max", "mask", "mask-type", "media", "method", "mode", "min", "name", "numoctaves", "offset", "operator", "opacity", "order", "orient", "orientation", "origin", "overflow", "paint-order", "path", "pathlength", "patterncontentunits", "patterntransform", "patternunits", "pointer-events", "points", "preservealpha", "preserveaspectratio", "primitiveunits", "r", "rx", "ry", "radius", "refx", "refy", "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed", "shape-rendering", "slope", "specularconstant", "specularexponent", "spreadmethod", "startoffset", "stddeviation", "stitchtiles", "stop-color", "stop-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "stroke", "stroke-width", "style", "surfacescale", "systemlanguage", "tabindex", "tablevalues", "targetx", "targety", "transform", "transform-origin", "text-anchor", "text-decoration", "text-orientation", "text-rendering", "textlength", "type", "u1", "u2", "unicode", "values", "vector-effect", "viewbox", "visibility", "version", "vert-adv-y", "vert-origin-x", "vert-origin-y", "width", "word-spacing", "wrap", "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "xmlns", "y", "y1", "y2", "z", "zoomandpan"]);
-    mathMl = freeze(["accent", "accentunder", "align", "bevelled", "close", "columnalign", "columnlines", "columnspacing", "columnspan", "denomalign", "depth", "dir", "display", "displaystyle", "encoding", "fence", "frame", "height", "href", "id", "largeop", "length", "linethickness", "lquote", "lspace", "mathbackground", "mathcolor", "mathsize", "mathvariant", "maxsize", "minsize", "movablelimits", "notation", "numalign", "open", "rowalign", "rowlines", "rowspacing", "rowspan", "rspace", "rquote", "scriptlevel", "scriptminsize", "scriptsizemultiplier", "selection", "separator", "separators", "stretchy", "subscriptshift", "supscriptshift", "symmetric", "voffset", "width", "xmlns"]);
-    xml = freeze(["xlink:href", "xml:id", "xlink:title", "xml:space", "xmlns:xlink"]);
+    html = freeze([
+      "accept",
+      "action",
+      "align",
+      "alt",
+      "autocapitalize",
+      "autocomplete",
+      "autopictureinpicture",
+      "autoplay",
+      "background",
+      "bgcolor",
+      "border",
+      "capture",
+      "cellpadding",
+      "cellspacing",
+      "checked",
+      "cite",
+      "class",
+      "clear",
+      "color",
+      "cols",
+      "colspan",
+      "command",
+      "commandfor",
+      "controls",
+      "controlslist",
+      "coords",
+      "crossorigin",
+      "datetime",
+      "decoding",
+      "default",
+      "dir",
+      "disabled",
+      "disablepictureinpicture",
+      "disableremoteplayback",
+      "download",
+      "draggable",
+      "enctype",
+      "enterkeyhint",
+      "exportparts",
+      "face",
+      "for",
+      "headers",
+      "height",
+      "hidden",
+      "high",
+      "href",
+      "hreflang",
+      "id",
+      "inert",
+      "inputmode",
+      "integrity",
+      "ismap",
+      "kind",
+      "label",
+      "lang",
+      "list",
+      "loading",
+      "loop",
+      "low",
+      "max",
+      "maxlength",
+      "media",
+      "method",
+      "min",
+      "minlength",
+      "multiple",
+      "muted",
+      "name",
+      "nonce",
+      "noshade",
+      "novalidate",
+      "nowrap",
+      "open",
+      "optimum",
+      "part",
+      "pattern",
+      "placeholder",
+      "playsinline",
+      "popover",
+      "popovertarget",
+      "popovertargetaction",
+      "poster",
+      "preload",
+      "pubdate",
+      "radiogroup",
+      "readonly",
+      "rel",
+      "required",
+      "rev",
+      "reversed",
+      "role",
+      "rows",
+      "rowspan",
+      "spellcheck",
+      "scope",
+      "selected",
+      "shape",
+      "size",
+      "sizes",
+      "slot",
+      "span",
+      "srclang",
+      "start",
+      "src",
+      "srcset",
+      "step",
+      "style",
+      "summary",
+      "tabindex",
+      "title",
+      "translate",
+      "type",
+      "usemap",
+      "valign",
+      "value",
+      "width",
+      "wrap",
+      "xmlns"
+    ]);
+    svg = freeze([
+      "accent-height",
+      "accumulate",
+      "additive",
+      "alignment-baseline",
+      "amplitude",
+      "ascent",
+      "attributename",
+      "attributetype",
+      "azimuth",
+      "basefrequency",
+      "baseline-shift",
+      "begin",
+      "bias",
+      "by",
+      "class",
+      "clip",
+      "clippathunits",
+      "clip-path",
+      "clip-rule",
+      "color",
+      "color-interpolation",
+      "color-interpolation-filters",
+      "color-profile",
+      "color-rendering",
+      "cx",
+      "cy",
+      "d",
+      "dx",
+      "dy",
+      "diffuseconstant",
+      "direction",
+      "display",
+      "divisor",
+      "dominant-baseline",
+      "dur",
+      "edgemode",
+      "elevation",
+      "end",
+      "exponent",
+      "fill",
+      "fill-opacity",
+      "fill-rule",
+      "filter",
+      "filterunits",
+      "flood-color",
+      "flood-opacity",
+      "font-family",
+      "font-size",
+      "font-size-adjust",
+      "font-stretch",
+      "font-style",
+      "font-variant",
+      "font-weight",
+      "fx",
+      "fy",
+      "g1",
+      "g2",
+      "glyph-name",
+      "glyphref",
+      "gradientunits",
+      "gradienttransform",
+      "height",
+      "href",
+      "id",
+      "image-rendering",
+      "in",
+      "in2",
+      "intercept",
+      "k",
+      "k1",
+      "k2",
+      "k3",
+      "k4",
+      "kerning",
+      "keypoints",
+      "keysplines",
+      "keytimes",
+      "lang",
+      "lengthadjust",
+      "letter-spacing",
+      "kernelmatrix",
+      "kernelunitlength",
+      "lighting-color",
+      "local",
+      "marker-end",
+      "marker-mid",
+      "marker-start",
+      "markerheight",
+      "markerunits",
+      "markerwidth",
+      "maskcontentunits",
+      "maskunits",
+      "max",
+      "mask",
+      "mask-type",
+      "media",
+      "method",
+      "mode",
+      "min",
+      "name",
+      "numoctaves",
+      "offset",
+      "operator",
+      "opacity",
+      "order",
+      "orient",
+      "orientation",
+      "origin",
+      "overflow",
+      "paint-order",
+      "path",
+      "pathlength",
+      "patterncontentunits",
+      "patterntransform",
+      "patternunits",
+      "pointer-events",
+      "points",
+      "preservealpha",
+      "preserveaspectratio",
+      "primitiveunits",
+      "r",
+      "rx",
+      "ry",
+      "radius",
+      "refx",
+      "refy",
+      "repeatcount",
+      "repeatdur",
+      "restart",
+      "result",
+      "rotate",
+      "scale",
+      "seed",
+      "shape-rendering",
+      "slope",
+      "specularconstant",
+      "specularexponent",
+      "spreadmethod",
+      "startoffset",
+      "stddeviation",
+      "stitchtiles",
+      "stop-color",
+      "stop-opacity",
+      "stroke-dasharray",
+      "stroke-dashoffset",
+      "stroke-linecap",
+      "stroke-linejoin",
+      "stroke-miterlimit",
+      "stroke-opacity",
+      "stroke",
+      "stroke-width",
+      "style",
+      "surfacescale",
+      "systemlanguage",
+      "tabindex",
+      "tablevalues",
+      "targetx",
+      "targety",
+      "transform",
+      "transform-origin",
+      "text-anchor",
+      "text-decoration",
+      "text-orientation",
+      "text-rendering",
+      "textlength",
+      "type",
+      "u1",
+      "u2",
+      "unicode",
+      "values",
+      "vector-effect",
+      "viewbox",
+      "visibility",
+      "version",
+      "vert-adv-y",
+      "vert-origin-x",
+      "vert-origin-y",
+      "width",
+      "word-spacing",
+      "wrap",
+      "writing-mode",
+      "xchannelselector",
+      "ychannelselector",
+      "x",
+      "x1",
+      "x2",
+      "xmlns",
+      "y",
+      "y1",
+      "y2",
+      "z",
+      "zoomandpan"
+    ]);
+    mathMl = freeze([
+      "accent",
+      "accentunder",
+      "align",
+      "bevelled",
+      "close",
+      "columnalign",
+      "columnlines",
+      "columnspacing",
+      "columnspan",
+      "denomalign",
+      "depth",
+      "dir",
+      "display",
+      "displaystyle",
+      "encoding",
+      "fence",
+      "frame",
+      "height",
+      "href",
+      "id",
+      "largeop",
+      "length",
+      "linethickness",
+      "lquote",
+      "lspace",
+      "mathbackground",
+      "mathcolor",
+      "mathsize",
+      "mathvariant",
+      "maxsize",
+      "minsize",
+      "movablelimits",
+      "notation",
+      "numalign",
+      "open",
+      "rowalign",
+      "rowlines",
+      "rowspacing",
+      "rowspan",
+      "rspace",
+      "rquote",
+      "scriptlevel",
+      "scriptminsize",
+      "scriptsizemultiplier",
+      "selection",
+      "separator",
+      "separators",
+      "stretchy",
+      "subscriptshift",
+      "supscriptshift",
+      "symmetric",
+      "voffset",
+      "width",
+      "xmlns"
+    ]);
+    xml = freeze([
+      "xlink:href",
+      "xml:id",
+      "xlink:title",
+      "xml:space",
+      "xmlns:xlink"
+    ]);
     MUSTACHE_EXPR = seal(/{{[\w\W]*|^[\w\W]*}}/g);
     ERB_EXPR = seal(/<%[\w\W]*|^[\w\W]*%>/g);
     TMPLIT_EXPR = seal(/\${[\w\W]*/g);
     DATA_ATTR = seal(/^data-[\-\w.\u00B7-\uFFFF]+$/);
     ARIA_ATTR = seal(/^aria-[\-\w]+$/);
-    IS_ALLOWED_URI = seal(
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-      // eslint-disable-line no-useless-escape
-    );
+    IS_ALLOWED_URI = seal(/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i);
     IS_SCRIPT_OR_DATA = seal(/^(?:\w+script|data):/i);
-    ATTR_WHITESPACE = seal(
-      /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
-      // eslint-disable-line no-control-regex
-    );
+    ATTR_WHITESPACE = seal(/[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g);
     DOCTYPE_NAME = seal(/^html$/i);
     CUSTOM_ELEMENT = seal(/^[a-z][.\w]*(-[.\w]+)+$/i);
     ELEMENT_MARKUP_PROBE = seal(/<[/\w!]/g);
@@ -140543,18 +143690,24 @@ var init_purify_es = __esm({
       text: 3,
       cdataSection: 4,
       entityReference: 5,
-      // Deprecated
       entityNode: 6,
-      // Deprecated
       processingInstruction: 7,
       comment: 8,
       document: 9,
       documentType: 10,
       documentFragment: 11,
       notation: 12
-      // Deprecated
     };
-    LITERAL_TEXT_ELEMENT_NAMES = ["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"];
+    LITERAL_TEXT_ELEMENT_NAMES = [
+      "style",
+      "script",
+      "xmp",
+      "iframe",
+      "noembed",
+      "noframes",
+      "plaintext",
+      "noscript"
+    ];
     LITERAL_TEXT_ELEMENTS = freeze(addToSet({}, LITERAL_TEXT_ELEMENT_NAMES));
     LITERAL_TEXT_CLOSE = (function() {
       const map2 = {};
@@ -140567,14 +143720,10 @@ var init_purify_es = __esm({
       return typeof window === "undefined" ? null : window;
     };
     _createTrustedTypesPolicy = function _createTrustedTypesPolicy2(trustedTypes, purifyHostElement) {
-      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") {
-        return null;
-      }
+      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") return null;
       let suffix = null;
       const ATTR_NAME = "data-tt-policy-suffix";
-      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) {
-        suffix = purifyHostElement.getAttribute(ATTR_NAME);
-      }
+      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) suffix = purifyHostElement.getAttribute(ATTR_NAME);
       const policyName = "dompurify" + (suffix ? "#" + suffix : "");
       try {
         return trustedTypes.createPolicy(policyName, {
@@ -140610,11 +143759,11 @@ var init_purify_es = __esm({
       const value = objectHasOwnProperty(cfg, key) ? cfg[key] : void 0;
       return value && typeof value === "object" ? clone2(value) : makeFallback();
     };
-    purify = createDOMPurify();
+    purify_default = createDOMPurify();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -140623,7 +143772,7 @@ function installHook() {
   if (hookInstalled)
     return;
   hookInstalled = true;
-  purify.addHook("uponSanitizeElement", (node2, data) => {
+  purify_default.addHook("uponSanitizeElement", (node2, data) => {
     activeOnElement?.(node2, data.tagName);
   });
 }
@@ -140638,12 +143787,12 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
       sanitize(html2, config2) {
-        return withGate(config2, () => purify.sanitize(html2, {
+        return withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr]
         }));
@@ -140654,7 +143803,7 @@ var init_sanitize_dompurify = __esm({
       // DOMPurify parses in body context, so content must be body-context-safe
       // (see the sanitizeInto contract in sanitize.ts).
       sanitizeInto(target, html2, config2) {
-        const fragment = withGate(config2, () => purify.sanitize(html2, {
+        const fragment = withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr],
           RETURN_DOM_FRAGMENT: true
@@ -147436,7 +150585,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -147447,7 +150596,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -147588,6 +150737,7 @@ async function boot() {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
@@ -147825,6 +150975,12 @@ function updateFilesPane() {
 function registerKeyboardShortcuts() {
   document.addEventListener("keydown", (e3) => {
     const meta3 = e3.ctrlKey || e3.metaKey;
+    if (meta3 && e3.key === "w") {
+      e3.preventDefault();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
+      return;
+    }
+    if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
       openNewThread(store);
@@ -147863,10 +151019,6 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       if (uiScaleAction === "reset") void resetUiScale(store, api);
       else void bumpUiScale(store, api, uiScaleAction === "in" ? 1 : -1);
-    }
-    if (meta3 && e3.key === "w") {
-      e3.preventDefault();
-      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e3.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -148116,5 +151268,6 @@ export default require_main();
    *)
 
 dompurify/dist/purify.es.mjs:
-  (*! @license DOMPurify 3.4.15 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.15/LICENSE *)
+  (*! @license DOMPurify 3.4.16 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.16/LICENSE *)
+  (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)
 */
