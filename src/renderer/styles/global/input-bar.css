@@ -1199,6 +1199,9 @@
 .footer-usage-popover-row.is-classifier {
   align-items: flex-start;
 }
+.footer-usage-popover-row.is-classifier + .footer-usage-popover-row.is-classifier {
+  margin-top: 4px;
+}
 .footer-usage-popover-value {
   color: var(--text-muted);
   margin-left: auto;
