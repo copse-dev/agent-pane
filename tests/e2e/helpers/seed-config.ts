@@ -2303,8 +2303,8 @@ export function seedHookCardsFixture(
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
     activeThreadId: threadId,
-    developerMode: options?.developerMode ?? true,
   })
+  seedDeveloperModeSetting(options?.developerMode ?? true)
 }
 
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
