@@ -54,6 +54,19 @@ describe('model maker execution policy', () => {
   })
 })
 
+describe('native ChatGPT plan provider routing', () => {
+  it('preserves role selections and rejects unsupported container descriptions rather than billing an API key', async () => {
+    const model = 'chatgpt-plan:oaiapp_account#gpt-6.1-sol'
+    assert.equal(normalizeRoleModelSelection(model), model)
+    await assert.rejects(describeProvider(model), /prototype runs on this desktop/)
+    const provider = await buildProvider(model)
+    await assert.rejects(async () => {
+      for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], []))
+        assert.ok(chunk)
+    }, /Reconnect this ChatGPT account/)
+  })
+})
+
 describe('lm-studio-models source integrity', () => {
   it('contains no embedded null bytes', () => {
     const src = readFileSync(SOURCE_PATH)

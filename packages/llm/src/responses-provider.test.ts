@@ -17,6 +17,8 @@ interface CapturedRequest {
   include?: readonly string[]
   prompt_cache_key?: string
   store?: boolean
+  temperature?: number
+  metadata?: unknown
 }
 
 type TestEvent =
@@ -120,6 +122,176 @@ function collectImageDetails(value: unknown, found: string[] = []): string[] {
   }
   return found
 }
+
+describe('ChatGPT plan Responses contract', () => {
+  it('namespaces local tools, maps system instructions, and omits unsupported overrides', async () => {
+    const provider = new ResponsesProvider('gpt-6.1-sol', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+      params: { temperature: 0.5, topP: 0.7, reasoning: 'high' },
+      maxOutputTokens: 100,
+      serverTools: [{ type: 'web_search' }],
+      extraBody: { store: true, metadata: { leaked: true }, temperature: 1 },
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (body) => {
+        request = body
+      },
+      [
+        {
+          type: 'response.completed',
+          response: {
+            output: [],
+            usage: {
+              input_tokens: 10,
+              output_tokens: 3,
+              input_tokens_details: { cached_tokens: 0 },
+            },
+          },
+        },
+      ],
+    )
+    const chunks = await collect(provider, [{ role: 'system', content: 'Use Copse tools.' }])
+    assert.ok(request)
+    assert.equal(request.store, false)
+    assert.equal(request.stream, true)
+    assert.equal(request.temperature, undefined)
+    assert.equal(request.metadata, undefined)
+    assert.equal(request.max_output_tokens, undefined)
+    assert.deepEqual(request.input, [{ role: 'developer', content: 'Use Copse tools.' }])
+    assert.deepEqual(
+      request.tools.map((tool) => [tool['type'], tool['name']]),
+      [['namespace', 'copse']],
+    )
+    assert.equal(request.reasoning?.effort, 'high')
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('normalizes legacy numeric bounds inside namespaced tool schemas without mutating them', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-luna', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (body) => {
+        request = body
+      },
+      [
+        {
+          type: 'response.completed',
+          response: {
+            output: [],
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              input_tokens_details: { cached_tokens: 0 },
+            },
+          },
+        },
+      ],
+    )
+    const parameters = {
+      type: 'object',
+      properties: {
+        runId: { type: 'integer', minimum: 0, exclusiveMinimum: true },
+        limit: { type: 'integer', maximum: 100, exclusiveMaximum: false },
+        nested: {
+          anyOf: [{ type: 'number', maximum: 1, exclusiveMaximum: true }, { type: 'null' }],
+        },
+        modern: { type: 'number', exclusiveMinimum: 2 },
+      },
+    }
+    const original = structuredClone(parameters)
+    for await (const _chunk of provider.stream(
+      [{ role: 'user', content: 'test' }],
+      [
+        {
+          name: 'get_ci_failure_logs',
+          description: 'Read CI failure logs',
+          parameters,
+        },
+      ],
+    )) {
+      /* Drain the request. */
+    }
+    assert.ok(request)
+    assert.deepEqual(request.tools, [
+      {
+        type: 'namespace',
+        name: 'copse',
+        description: 'Copse local tools',
+        tools: [
+          {
+            type: 'function',
+            name: 'get_ci_failure_logs',
+            description: 'Read CI failure logs',
+            strict: false,
+            parameters: {
+              type: 'object',
+              properties: {
+                runId: { type: 'integer', exclusiveMinimum: 0 },
+                limit: { type: 'integer', maximum: 100 },
+                nested: { anyOf: [{ type: 'number', exclusiveMaximum: 1 }, { type: 'null' }] },
+                modern: { type: 'number', exclusiveMinimum: 2 },
+              },
+            },
+          },
+        ],
+      },
+    ])
+    assert.deepEqual(parameters, original)
+  })
+
+  it('replays namespaced calls and tool outputs as full stateless input', () => {
+    const input = toResponsesInput(
+      [
+        {
+          role: 'assistant',
+          content: [{ id: 'call-1', name: 'read_file', args: { path: 'index.ts' } }],
+        },
+        { role: 'tool', toolResults: [{ toolCallId: 'call-1', result: 'contents' }] },
+      ],
+      new Map(),
+      true,
+    )
+    assert.deepEqual(input, [
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'read_file',
+        namespace: 'copse',
+        arguments: '{"path":"index.ts"}',
+      },
+      { type: 'function_call_output', call_id: 'call-1', output: 'contents' },
+    ])
+  })
+
+  it('fails on a truncated stream and never retries a partially delivered response', async () => {
+    const provider = new ResponsesProvider('gpt-6.1-sol', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+    })
+    let calls = 0
+    withFakeStream(provider, () => {
+      calls++
+    }, [{ type: 'response.output_text.delta', delta: 'partial' }])
+    await assert.rejects(collect(provider), /before response.completed/)
+    assert.equal(calls, 1)
+    assert.throws(
+      () =>
+        new ResponsesProvider('model', {
+          apiKey: 'oauth-token',
+          chatGptPlan: true,
+          baseURL: 'https://example.com/v1',
+        }),
+      /public OpenAI API/,
+    )
+  })
+})
 
 describe('ResponsesProvider input mapping', () => {
   it('maps messages, function calls, and function outputs to Responses items', () => {

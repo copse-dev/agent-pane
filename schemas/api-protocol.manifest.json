@@ -514,6 +514,48 @@
           3
         ]
       },
+      "chat-gpt-plan:cancel-sign-in": {
+        "api": "chatGptPlan.cancelSignIn",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "chat-gpt-plan:models": {
+        "api": "chatGptPlan.models",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "chat-gpt-plan:select-account": {
+        "api": "chatGptPlan.selectAccount",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "chat-gpt-plan:sign-in": {
+        "api": "chatGptPlan.signIn",
+        "args": [
+          0,
+          1
+        ]
+      },
+      "chat-gpt-plan:sign-out": {
+        "api": "chatGptPlan.signOut",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "chat-gpt-plan:status": {
+        "api": "chatGptPlan.status",
+        "args": [
+          0,
+          0
+        ]
+      },
       "classifiers:background": {
         "api": "classifiers.background",
         "args": [

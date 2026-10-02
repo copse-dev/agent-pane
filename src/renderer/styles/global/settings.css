@@ -2864,3 +2864,37 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.openai-connection-card {
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.openai-connection-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+.openai-connection-heading h4 {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+.openai-connection-card p {
+  margin: 0;
+}
+.openai-connection-card summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) 0;
+}
+.openai-connection-card details[open] > summary {
+  margin-bottom: var(--spacing-sm);
+}
+.openai-connection-card details > .provider-capability {
+  margin-top: var(--spacing-md);
+}

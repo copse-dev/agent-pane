@@ -1053,6 +1053,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       stop: unsupported,
       connect: unsupported,
     },
+    chatGptPlan: {
+      status: () => resolved({ accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () => resolved({ clientId: null, models: [] }),
+    },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {

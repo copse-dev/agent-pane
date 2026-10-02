@@ -25,6 +25,7 @@ import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.
 import { openAiParameterFields, type ModelParameters } from './model-parameters.ts'
 import { markOpenRouterCacheBreakpoints } from './openrouter-prompt-cache.ts'
 import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
+import { normalizeOpenAIToolSchema } from './openai-tool-schema.ts'
 
 /** A function tool as sent on Chat Completions, plus OpenRouter's block-cache marker. */
 type WireFunctionTool = ChatCompletionFunctionTool & { cache_control?: { type: 'ephemeral' } }

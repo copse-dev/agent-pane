@@ -164,6 +164,7 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     manage: () => Promise<void>
     onChat: (

@@ -175,6 +175,45 @@ describe('providers panel', () => {
     assert.equal(openai?.querySelector('.provider-chip-dot'), null)
   })
 
+  it('leads with configured OpenAI access and keeps API and ACP controls in expanders', async () => {
+    state.keys['openai'] = 'fixture-key'
+    const panel = createProvidersPanel(stubApi(state), {
+      showOpenAiServiceTier: true,
+      deviceAutoSetup: false,
+    })
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'openai')
+    assert.deepEqual(
+      [...panel.root.querySelectorAll('.openai-connection-heading h4')].map(
+        (heading) => heading.textContent,
+      ),
+      ['OpenAI API', 'ChatGPT plan', 'Codex ACP'],
+    )
+    assert.match(panel.root.textContent, /Copse’s agent and tools/)
+    assert.match(panel.root.textContent, /Codex’s agent/)
+    const apiDetails = panel.root.querySelector<HTMLDetailsElement>(
+      '[data-testid="openai-api-details"]',
+    )
+    const codexDetails = panel.root.querySelector<HTMLDetailsElement>(
+      '[data-testid="openai-codex-details"]',
+    )
+    assert.ok(apiDetails)
+    assert.ok(codexDetails)
+    assert.equal(apiDetails.open, false)
+    assert.equal(codexDetails.open, false)
+    assert.ok(apiDetails.querySelector('[name="openAiServiceTier"]'))
+    assert.match(apiDetails.textContent, /Applies to OpenAI API-key requests/)
+    apiDetails.open = true
+    apiDetails.dispatchEvent(new Event('toggle'))
+    clickChip(panel.root, 'anthropic')
+    clickChip(panel.root, 'openai')
+    assert.equal(
+      panel.root.querySelector<HTMLDetailsElement>('[data-testid="openai-api-details"]')?.open,
+      true,
+    )
+  })
+
   it('shows the global OpenAI tier only in the OpenAI provider form', async () => {
     state.settings['openAiServiceTier'] = ''
     const panel = createProvidersPanel(stubApi(state), { showOpenAiServiceTier: true })

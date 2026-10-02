@@ -19,6 +19,8 @@ import {
 import { fetchModelOptions } from '../model-options.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
 import { parseAcpAgentConfigs } from '@shared/acp.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
+import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -465,7 +467,9 @@ export function renderModelTable(
     const approx = row.estimatedTokens ? '~' : ''
     // Escape the model id: for ACP it embeds a value the external agent supplied
     // (`acp:<id>#<model>`), so it's untrusted data going into innerHTML.
-    const model = escapeHtml(row.model)
+    const model = escapeHtml(
+      row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel(row.model) : row.model,
+    )
     const modelLabel = row.estimatedTokens
       ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>`
       : model

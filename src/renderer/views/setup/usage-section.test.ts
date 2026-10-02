@@ -312,6 +312,20 @@ describe('renderModelTable alignment', () => {
     assert.match(estimate.getAttribute('title') ?? '', /no published catalog rate/)
   })
 
+  it('uses the friendly ChatGPT plan label and leaves the ledger key and counts intact', () => {
+    const host = document.createElement('div')
+    const model = 'chatgpt-plan:oaiapp_private-registration#gpt-5.6-luna'
+    const usage = row(model, { pricingKnown: false })
+    renderModelTable(host, 'Cloud models', [usage], 'none')
+    const cells = [...host.querySelectorAll('tbody td')].map((cell) => cell.textContent)
+    assert.equal(cells[0], 'GPT-5.6 Luna · ChatGPT plan')
+    assert.equal(cells[1], '1.0k')
+    assert.equal(cells[2], '200')
+    assert.equal(cells[5], 'unpriced')
+    assert.equal(host.textContent.includes('oaiapp_'), false)
+    assert.equal(usage.model, model)
+  })
+
   it('renders a cloud agent run as an unpriced cloud row instead of dropping it (#2448)', () => {
     const host = document.createElement('div')
     // A Cursor / Claude Cloud Agent run records its model as `remote-agent:<provider>`

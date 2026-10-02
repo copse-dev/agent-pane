@@ -458,6 +458,7 @@ export const isRendererWritableSettingKey = keyOf(RENDERER_WRITABLE_SETTING_SCHE
 export function isSecretSettingKey(key: string): boolean {
   return (
     key === 'apiKey' ||
+    key === 'chatgptPlanCredentials' ||
     key.startsWith('apiKey.') ||
     key === 'vncUsername' ||
     key.startsWith('vncUsername.')

@@ -4,10 +4,12 @@ import type {
   Response,
   ResponseInput,
   ResponseStreamEvent,
+  ResponseCreateParamsStreaming,
   Tool,
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
 import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
+import { normalizeOpenAIToolSchema } from './openai-tool-schema.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import {
@@ -56,6 +58,7 @@ export class ResponsesProvider implements LLMProvider {
    * schema. Cleared for the rest of the run if OpenAI refuses a strict schema.
    */
   private strictTools: boolean
+  private readonly chatGptPlan: boolean
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   get requestedServiceTier(): ServiceTier | undefined {
@@ -96,8 +99,14 @@ export class ResponsesProvider implements LLMProvider {
       encryptedReasoning?: boolean
       /** First-party OpenAI only; see {@link ResponsesProvider.strictTools}. */
       strictTools?: boolean
+      /** Restricted OAuth plan route: fixed endpoint and request contract. */
+      chatGptPlan?: boolean
     },
   ) {
+    if (opts.chatGptPlan && opts.baseURL && opts.baseURL !== 'https://api.openai.com/v1') {
+      throw new Error('ChatGPT plan credentials can only be sent to the public OpenAI API.')
+    }
+    this.chatGptPlan = opts.chatGptPlan ?? false
     this.model = model
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
@@ -116,9 +125,22 @@ export class ResponsesProvider implements LLMProvider {
     this.reasoningByToolCall = reasoningReplayFor(model, opts.promptCacheKey)
     this.strictTools = opts.strictTools ?? false
     this.client = new OpenAI({
-      ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+      ...(this.chatGptPlan
+        ? { baseURL: 'https://api.openai.com/v1', organization: null, project: null }
+        : opts.baseURL
+          ? { baseURL: opts.baseURL }
+          : {}),
       apiKey: opts.apiKey,
       defaultHeaders: withAppAttribution(),
+      ...(this.chatGptPlan
+        ? {
+            fetch: (
+              input: Parameters<typeof globalThis.fetch>[0],
+              init?: RequestInit,
+            ): ReturnType<typeof globalThis.fetch> =>
+              globalThis.fetch(input, { ...init, redirect: 'error' }),
+          }
+        : {}),
       // Keep one retry owner. Otherwise the SDK's two internal retries multiply
       // yieldStreamWithRetry's bounded attempts for every pre-stream failure.
       maxRetries: 0,
@@ -137,60 +159,73 @@ export class ResponsesProvider implements LLMProvider {
           requestTools: Tool[]
           restoreArgs: (toolName: string, args: unknown) => unknown
         } => {
-          const prepared = prepareStrictTools(tools, self.strictTools)
+          const prepared = prepareStrictTools(tools, self.chatGptPlan ? false : self.strictTools)
           const localTools: FunctionTool[] = prepared.tools.map((tool) => ({
             type: 'function',
             name: tool.name,
             description: tool.description,
-            parameters: tool.parameters,
-            strict: tool.strict,
+            parameters: self.chatGptPlan
+              ? normalizeOpenAIToolSchema(tool.parameters)
+              : tool.parameters,
+            strict: self.chatGptPlan ? false : tool.strict,
           }))
-          return {
-            requestTools: [...self.serverTools, ...localTools],
-            restoreArgs: prepared.restoreArgs,
-          }
+          const requestTools: Tool[] = self.chatGptPlan
+            ? localTools.length
+              ? [
+                  {
+                    type: 'namespace',
+                    name: 'copse',
+                    description: 'Copse local tools',
+                    tools: localTools,
+                  },
+                ]
+              : []
+            : [...self.serverTools, ...localTools]
+          return { requestTools, restoreArgs: prepared.restoreArgs }
         }
         let { requestTools, restoreArgs } = buildTools()
-        const input = toResponsesInput(messages, self.reasoningByToolCall)
+        const input = toResponsesInput(messages, self.reasoningByToolCall, self.chatGptPlan)
         const reportCache = self.cacheDiagnostics.begin(
           input.find((item) => 'role' in item && item.role !== 'user') ?? null,
           requestTools,
           input,
         )
-        let ceiling = self.maxOutputTokens
+        let ceiling = self.chatGptPlan ? undefined : self.maxOutputTokens
         let droppedCeiling = false
         for (;;) {
           let response
           try {
-            response = await self.client.responses.create(
-              {
-                model: self.model,
-                input,
-                stream: true,
-                tools: requestTools,
-                ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
-                // Without this, `store: false` leaves nothing to replay: OpenAI
-                // holds no server-side copy, so the encrypted blob has to come back
-                // on the response itself or the reasoning is gone.
-                ...(self.encryptedReasoning
-                  ? { include: ['reasoning.encrypted_content' as const] }
+            const request: ResponseCreateParamsStreaming = {
+              model: self.model,
+              input,
+              stream: true,
+              tools: requestTools,
+              ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
+              // Without this, `store: false` leaves nothing to replay: OpenAI
+              // holds no server-side copy, so the encrypted blob has to come back
+              // on the response itself or the reasoning is gone.
+              ...(self.encryptedReasoning
+                ? { include: ['reasoning.encrypted_content' as const] }
+                : {}),
+              ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+              ...(!self.chatGptPlan ? serviceTierBody(self.serviceTier) : {}),
+              ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
+              // Last, so an explicit extraBody entry still wins — that field is
+              // the user's own escape hatch for provider-specific overrides.
+              ...(!self.chatGptPlan
+                ? self.tuned
+                : self.tuned.reasoning
+                  ? { reasoning: self.tuned.reasoning }
                   : {}),
-                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-                ...serviceTierBody(self.serviceTier),
-                ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
-                // Last, so an explicit extraBody entry still wins — that field is
-                // the user's own escape hatch for provider-specific overrides.
-                ...self.tuned,
-                // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
-                // so merge it back with the summary request or OpenAI streams no
-                // reasoning summaries once the user tunes a level.
-                ...(self.reasoningSummaries && self.tuned.reasoning
-                  ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
-                  : {}),
-                ...(self.extraBody ?? {}),
-              },
-              { signal },
-            )
+              // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
+              // so merge it back with the summary request or OpenAI streams no
+              // reasoning summaries once the user tunes a level.
+              ...(self.reasoningSummaries && self.tuned.reasoning
+                ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
+                : {}),
+              ...(!self.chatGptPlan ? (self.extraBody ?? {}) : { store: false }),
+            }
+            response = await self.client.responses.create(request, { signal })
           } catch (err) {
             if (self.strictTools && isStrictSchemaRejectedError(err)) {
               self.strictTools = false
@@ -211,7 +246,11 @@ export class ResponsesProvider implements LLMProvider {
           let yielded = false
           let ceilingRejected = false
           let usage: ModelUsage | null = null
+          let completed = false
           for await (const event of response) {
+            if (event.type === 'response.completed') completed = true
+            if (self.chatGptPlan && event.type === 'response.incomplete')
+              throw new Error('ChatGPT plan response was incomplete.')
             // Some endpoints reject the ceiling in the stream instead of the
             // request. Retrying is only safe before anything reached the caller.
             if (!yielded && !droppedCeiling && ceiling !== undefined) {
@@ -241,6 +280,8 @@ export class ResponsesProvider implements LLMProvider {
             }
           }
           if (!ceilingRejected) {
+            if (self.chatGptPlan && !completed)
+              throw new Error('ChatGPT plan stream ended before response.completed.')
             reportCache(usage)
             return
           }
@@ -248,7 +289,7 @@ export class ResponsesProvider implements LLMProvider {
           ceiling = undefined
         }
       },
-      { ...(signal ? { signal } : {}) },
+      { ...(signal ? { signal } : {}), ...(self.chatGptPlan ? { maxAttempts: 1 } : {}) },
     )
   }
 
@@ -382,10 +423,11 @@ function* usageChunks(
 export function toResponsesInput(
   messages: LLMMessage[],
   reasoningByToolCall: ReadonlyMap<string, ReasoningItem[]> = new Map(),
+  chatGptPlan = false,
 ): ResponseInput {
   return messages.flatMap((message): ResponseInput => {
     if (message.role === 'system') {
-      return [{ role: 'system', content: message.content }]
+      return [{ role: chatGptPlan ? 'developer' : 'system', content: message.content }]
     }
     if (message.role === 'developer') {
       return [{ role: 'developer', content: message.content }]
@@ -414,6 +456,7 @@ export function toResponsesInput(
         call_id: call.id,
         name: call.name,
         arguments: JSON.stringify(call.args),
+        ...(chatGptPlan ? { namespace: 'copse' } : {}),
       }))
       // The reasoning that produced this turn goes back ahead of the calls it
       // produced, in its original position, which is what lets the model carry a
