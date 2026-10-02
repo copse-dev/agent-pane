@@ -909,6 +909,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     id: 'balanced-model-label',
     label: 'Balanced model rule label',
+    trace: {
+      id: 'balanced-model-resolution',
+      label: 'Balanced resolves before the first token',
+      prompt: 'Show the concrete model for this turn.',
+      steps: [
+        {
+          chunk: {
+            type: 'turn_parameters',
+            model: 'claude-sonnet-4-6',
+            parameters: {},
+            requestedModel: 'auto:balanced',
+          },
+        },
+        { delayMs: 5000, chunk: { type: 'text', text: 'This turn runs on Claude Sonnet 4.6.' } },
+        { chunk: { type: 'done', stopReason: 'end_turn' } },
+      ],
+    },
     project: project('demo-balanced-model-label-project'),
     settings: {
       onboardingCompleted: true,
