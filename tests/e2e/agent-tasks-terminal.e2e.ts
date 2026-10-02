@@ -196,4 +196,57 @@ describe('agent tasks in terminal tab', () => {
     expect(selected.text).not.toContain('"content"')
     await saveAppScreenshot('agent-tasks-acp-updates.png')
   })
+
+  it('caps over-limit output: the panel stops at the marker and the model keeps the mid-stream error', async () => {
+    // ~169 KB of output with one failure line in the middle: past the 100 KiB
+    // run_shell cap, so the middle is dropped. The model-facing result must keep
+    // the failure line and say how much was dropped; the live panel streams the
+    // first part of the output verbatim and ends at the truncation marker.
+    const command = "seq 1 15000; echo 'src/cap.ts:7:3 error: mid-stream failure'; seq 15001 30000"
+    const scenario = await installMockScenario({
+      title: 'Over-cap shell output',
+      turns: [
+        {
+          user: 'Run the long sequence and tell me if anything failed.',
+          responses: [
+            { toolCalls: [{ name: 'run_shell', args: { command } }] },
+            {
+              text: 'One failure was reported in the middle of the output.',
+              expectToolResults: [
+                {
+                  name: 'run_shell',
+                  includes:
+                    'from that span kept below. Re-run with a narrower command (grep -n, sed -n, head/tail, or redirect to a file) to see the dropped part.]\nsrc/cap.ts:7:3 error: mid-stream failure\n[end of kept lines]\n',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Run the long sequence and tell me if anything failed.')
+    await submitComposer()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.$('.approval-approve').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+
+    const taskTab = await $('.agent-task-tab*=seq 1 15000')
+    await taskTab.waitForExist({ timeout: 30_000 })
+    await expect(taskTab).toHaveAttribute('data-status', 'done', { wait: 30_000 })
+    await taskTab.click()
+    // Earlier tasks keep their (hidden) panels; pick this command's.
+    const panel = await $('.agent-task-output-panel*=seq 1 15000')
+    await panel.waitForDisplayed({ timeout: 10_000 })
+    await waitForAgentIdle(30_000)
+
+    const panelText = await panel.getText()
+    expect(panelText).toContain('\n15000\n')
+    expect(panelText.trimEnd().endsWith('[output truncated]')).toBe(true)
+    expect(panelText).not.toContain('\n30000')
+
+    await saveAppScreenshot('agent-tasks-over-cap-output.png')
+    await scenario.assertComplete()
+  })
 })

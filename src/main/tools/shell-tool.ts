@@ -60,6 +60,7 @@ import {
 } from '../services/security/socket-firewall.ts'
 import {
   CappedOutputAccumulator,
+  COMMAND_OUTPUT_MAX_BYTES,
   stripTerminalControlSequences,
 } from '../services/exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
@@ -72,6 +73,10 @@ import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
 import { worktreePreparationShellEnvironment } from '../services/worktree-preparation.ts'
+
+/** Tells the model how to reach output dropped from the middle of an over-cap run. */
+const RUN_SHELL_TRUNCATION_HINT =
+  'Re-run with a narrower command (grep -n, sed -n, head/tail, or redirect to a file) to see the dropped part.'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -134,7 +139,10 @@ async function runShellOnce(
         return
       }
 
-      const outputAcc = new CappedOutputAccumulator()
+      const outputAcc = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, {
+        evidence: true,
+        hint: RUN_SHELL_TRUNCATION_HINT,
+      })
       let settled = false
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer): void => {
