@@ -3591,6 +3591,51 @@ describe('input bar footer classifier use', () => {
     assert.equal(asks, before)
   })
 
+  it('re-reads when the hover opens, so a call recorded after the last refresh shows', async () => {
+    // The shell-tier shadow check records after its answer arrives, with no
+    // message or status change to trigger a fetch.
+    let asks = 0
+    const { host } = mountWith(async () => {
+      asks += 1
+      return asks === 1 ? { calls: 0, rows: [] } : classifierUse
+    })
+    await settle()
+    assert.equal(asks, 1)
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    await settle()
+    assert.equal(asks, 2)
+    assert.match(
+      host.querySelector('.context-wheel-popover')?.textContent ?? '',
+      /Classifiers · 2 calls/,
+    )
+  })
+
+  it('does not stack fetches while one is still in flight', async () => {
+    let asks = 0
+    const release: Array<() => void> = []
+    const { host } = mountWith(
+      () =>
+        new Promise((resolve) => {
+          asks += 1
+          release.push(() => {
+            resolve(classifierUse)
+          })
+        }),
+    )
+    await settle()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('focusin'))
+    assert.equal(asks, 1, 'the mount fetch is still pending, so hover does not add another')
+    for (const done of release) done()
+    await settle()
+    wheel.dispatchEvent(new Event('mouseenter'))
+    assert.equal(asks, 2)
+  })
+
   it('shows no classifier section when the thread asked none', async () => {
     const { host } = mountWith(async () => ({ calls: 0, rows: [] }))
     await settle()

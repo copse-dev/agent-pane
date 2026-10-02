@@ -1479,13 +1479,16 @@ export function mountInputBar(
   // What the classifiers did for the active thread. It lives in the thread's
   // decision log in main, so it is fetched over IPC — only when something that
   // can add a classifier call has moved (the thread, its status, a new message,
-  // or a new tool call on the last one), never per streamed chunk.
+  // or a new tool call on the last one), never per streamed chunk. Some calls
+  // land with no such event: the shell-tier shadow check is fire-and-forget and
+  // records after its answer arrives, so the hover also re-reads when it opens.
   let classifierUse: ThreadClassifierUse | null = null
   let classifierUseKey = ''
   let classifierUseThreadId: string | null = null
   let classifierUseSeq = 0
+  let classifierUseInFlight = false
 
-  function refreshClassifierUse(thread: Thread | undefined): void {
+  function refreshClassifierUse(thread: Thread | undefined, force = false): void {
     const projectId = store.getState().activeProjectId
     if (!thread || projectId === null) {
       classifierUse = null
@@ -1496,22 +1499,32 @@ export function mountInputBar(
     }
     const last = thread.messages.at(-1)
     const key = `${projectId}:${thread.id}:${thread.status}:${String(thread.messages.length)}:${String(last?.toolCalls.length ?? 0)}`
-    if (key === classifierUseKey) return
+    if (force ? classifierUseInFlight : key === classifierUseKey) return
     // Another thread's figures must not show while this one's are in flight.
     if (thread.id !== classifierUseThreadId) classifierUse = null
     classifierUseThreadId = thread.id
     classifierUseKey = key
     const seq = ++classifierUseSeq
+    classifierUseInFlight = true
     api.usage.getThreadClassifierUse(projectId, thread.id).then(
       (use) => {
+        classifierUseInFlight = false
         // A newer fetch (or a thread switch) has superseded this answer.
         if (seq !== classifierUseSeq) return
         classifierUse = use
         updateFooter()
       },
-      () => undefined,
+      () => {
+        classifierUseInFlight = false
+      },
     )
   }
+
+  const rereadClassifierUse = (): void => {
+    refreshClassifierUse(getActiveThread(store), true)
+  }
+  contextWheel.root.addEventListener('mouseenter', rereadClassifierUse)
+  contextWheel.root.addEventListener('focusin', rereadClassifierUse)
 
   function updateFooter(): void {
     const thread = getActiveThread(store)
