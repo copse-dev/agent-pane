@@ -50,17 +50,27 @@ export function listProjectDirs(root: string): string[] {
 }
 
 /**
+ * `child` resolved beneath `root`, or null when it names `root` itself, escapes
+ * it (`..`, an absolute path), or carries a NUL byte. Purely lexical: it does not
+ * follow symlinks.
+ */
+export function resolveStrictlyInside(root: string, child: string): string | null {
+  if (child.includes('\0')) return null
+  const resolvedRoot = resolve(root)
+  const candidate = resolve(resolvedRoot, child)
+  const rel = relative(resolvedRoot, candidate)
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
+  return candidate
+}
+
+/**
  * Per-project directory under the store (`<root>/<projectId>`). The durable
  * decision log writes per-project files, so a project id that escapes the root is
  * rejected rather than resolved.
  */
 export function resolveProjectDir(root: string, projectId: string): string {
-  const resolvedRoot = resolve(root)
-  const candidate = resolve(resolvedRoot, projectId)
-  const rel = relative(resolvedRoot, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new Error('Project id resolves outside the workspace store')
-  }
+  const candidate = resolveStrictlyInside(root, projectId)
+  if (candidate === null) throw new Error('Project id resolves outside the workspace store')
   return candidate
 }
 

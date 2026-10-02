@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
   Message,
@@ -65,7 +65,7 @@ import { collectThreadPrRefs } from './thread-pr-status.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
-import { resolveProjectDir, threadStoreEnvironment } from './environment.ts'
+import { resolveProjectDir, resolveStrictlyInside, threadStoreEnvironment } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 
@@ -102,6 +102,8 @@ const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
+/** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
+const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
@@ -121,7 +123,13 @@ export interface AgentTurnEpoch {
 }
 
 function threadDir(projectId: string, threadId: string): string {
-  return join(projectDir(projectId), threadId)
+  const project = projectDir(projectId)
+  const dir = resolveStrictlyInside(project, threadId)
+  // A thread id names exactly one directory directly under its project.
+  if (dir === null || dirname(dir) !== project) {
+    throw new Error('Thread id resolves outside its project store')
+  }
+  return dir
 }
 
 function catalogPath(projectId: string): string {
@@ -145,6 +153,26 @@ function metaOf(thread: Thread): ThreadMeta {
   // Persisting it would write a field that is meaningless on the next launch.
   const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
   return meta
+}
+
+/**
+ * Absolute path of a spine ref inside `dir`, or null when it would land outside
+ * {@link REF_DIRS}. Refs are built from ids that model endpoints and ACP agents
+ * supply, and on load they are read back from a spine file on disk, so every ref
+ * is checked here before it touches the filesystem. The check is lexical.
+ */
+function contentFilePath(dir: string, ref: string): string | null {
+  const full = resolveStrictlyInside(dir, ref)
+  if (full === null) return null
+  const [top, ...rest] = relative(resolvePath(dir), full).split(sep)
+  return top !== undefined && REF_DIRS.includes(top) && rest.length > 0 ? full : null
+}
+
+/** {@link contentFilePath} for a write: an escaping ref fails the whole write. */
+function contentFilePathForWrite(dir: string, ref: string): string {
+  const full = contentFilePath(dir, ref)
+  if (full === null) throw new Error('Refusing to write a thread file outside its directory')
+  return full
 }
 
 function writeFileEnsuringDir(fullPath: string, contents: string): void {
@@ -332,7 +360,12 @@ function writeThread(projectId: string, thread: Thread): void {
   mkdirSync(dir, { recursive: true })
 
   const { spine, files } = explodeThread(thread.messages, sha256)
-  for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
+  // Resolve every path before writing any, so a bad ref leaves nothing behind.
+  const targets = files.map((file) => ({
+    path: contentFilePathForWrite(dir, file.ref),
+    contents: file.contents,
+  }))
+  for (const target of targets) writeFileEnsuringDir(target.path, target.contents)
   const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
   writeFileSync(join(dir, EVENTS_FILE), body)
@@ -443,12 +476,15 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
     }
 
     // A subagent's spine must be read before the next round can walk its refs.
+    // A ref outside the thread's ref dirs is never read: it stays absent,
+    // so the fold fails with `Missing thread file` and the thread is skipped.
     const nestedSpines = await mapConcurrent(nested, async (prefix) => {
-      const raw = await readOrNull(join(dir, prefix + EVENTS_FILE))
-      return { prefix, raw }
+      const path = contentFilePath(dir, prefix + EVENTS_FILE)
+      return { prefix, raw: path === null ? null : await readOrNull(path) }
     })
     await mapConcurrent(fileRefs, async (ref) => {
-      const body = await readOrNull(join(dir, ref))
+      const path = contentFilePath(dir, ref)
+      const body = path === null ? null : await readOrNull(path)
       if (body !== null) contents.set(ref, body)
     })
 
@@ -945,7 +981,8 @@ function firstUserContent(dir: string): string {
   const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
   const line = spine.find((l) => l.role === 'user')
   if (!line) return ''
-  const raw = safeRead(join(dir, line.content.ref))
+  const path = contentFilePath(dir, line.content.ref)
+  const raw = path === null ? null : safeRead(path)
   if (raw === null) return ''
   return parseOkfMessage(raw)?.body ?? ''
 }
@@ -1533,12 +1570,16 @@ async function appendMessageUnqueued(
   const dir = threadDir(projectId, threadId)
   await fsPromises.mkdir(dir, { recursive: true })
   const { line, files } = explodeMessage(message, sha256)
+  const targets = files.map((file) => ({
+    path: contentFilePathForWrite(dir, file.ref),
+    contents: file.contents,
+  }))
   // Keep each referenced-file write inside this queued operation. Sequential
   // awaits are deliberate: Promise.all rejects before its surviving siblings
   // settle, which could release the project queue while a failed batch still
   // has writes in flight.
-  for (const file of files) {
-    await writeFileEnsuringDirAsync(join(dir, file.ref), file.contents)
+  for (const target of targets) {
+    await writeFileEnsuringDirAsync(target.path, target.contents)
   }
   // File bodies are unreachable until a spine line refers to them. Check the
   // in-memory run owner before beginning the visible commit.
@@ -1612,7 +1653,7 @@ export function appendHookRun(
     const dir = threadDir(projectId, threadId)
     await fsPromises.mkdir(dir, { recursive: true })
     for (const blob of blobs) {
-      const full = join(dir, blob.ref)
+      const full = contentFilePathForWrite(dir, blob.ref)
       try {
         await fsPromises.access(full)
       } catch {
@@ -1693,7 +1734,7 @@ export function appendSpineDecision(
     const dir = threadDir(projectId, threadId)
     await fsPromises.mkdir(dir, { recursive: true })
     if (detailContents !== undefined && line.type === 'decision' && line.detail) {
-      await writeFileEnsuringDirAsync(join(dir, line.detail.ref), detailContents)
+      await writeFileEnsuringDirAsync(contentFilePathForWrite(dir, line.detail.ref), detailContents)
     }
     await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })

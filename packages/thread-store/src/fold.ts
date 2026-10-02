@@ -89,6 +89,43 @@ export interface ExplodedMessage {
 const EVENTS_FILE = 'events.jsonl'
 const EVIDENCE_UNAVAILABLE_REASON = 'Evidence image is unavailable.'
 
+/** Ids written into file names verbatim: short, and nothing a path could interpret. */
+const PLAIN_ID_SEGMENT = /^[A-Za-z0-9_-]{1,128}$/
+const SEGMENT_SAFE_BYTE = /^[A-Za-z0-9_-]$/
+const MAX_ESCAPED_SEGMENT = 160
+
+function fnv1a32(bytes: Uint8Array, seed: number): string {
+  let h = seed
+  for (const byte of bytes) h = Math.imul(h ^ byte, 0x01000193)
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/**
+ * The file-name form of a message, tool-call, or subagent id. Those ids arrive
+ * from model endpoints and ACP agents, so they are untrusted input to a path.
+ *
+ * A plain id (`[A-Za-z0-9_-]`, at most 128 characters — every id Copse and the
+ * mainstream providers mint) is used unchanged, so existing threads keep their
+ * exact file names. Anything else is marked with a leading `~` and each UTF-8
+ * byte outside that set becomes `~XX` (upper-case hex); the result can hold no
+ * separator, NUL, or `.`/`..` segment, and is injective because a plain id never
+ * contains `~`. An escaped form that would still be too long for a file name is
+ * replaced by `~h` plus a 64-bit digest.
+ */
+export function idPathSegment(id: string): string {
+  if (PLAIN_ID_SEGMENT.test(id)) return id
+  const bytes = new TextEncoder().encode(id)
+  let escaped = '~'
+  for (const byte of bytes) {
+    const char = String.fromCharCode(byte)
+    escaped += SEGMENT_SAFE_BYTE.test(char)
+      ? char
+      : `~${byte.toString(16).toUpperCase().padStart(2, '0')}`
+  }
+  if (escaped.length <= MAX_ESCAPED_SEGMENT) return escaped
+  return `~h${fnv1a32(bytes, 0x811c9dc5)}${fnv1a32(bytes, 0x050c5d1f)}`
+}
+
 function contentRef(ref: string, content: string, hash: HashFn): ContentRef {
   return { ref, sha256: hash(content) }
 }
@@ -145,12 +182,20 @@ function utf8ByteLength(text: string): number {
 }
 
 function toolArgsBlobPath(toolCallId: string): string {
-  return `blobs/${toolCallId}.args.json`
+  return `blobs/${idPathSegment(toolCallId)}.args.json`
 }
 
-/** True when spine `args` is the spilled blob ref for this tool call (not a coincidental object). */
+/**
+ * True when spine `args` is the spilled blob ref for this tool call (not a
+ * coincidental object). Threads written before ids were escaped spelled an
+ * unusual id raw, so that spelling is still recognised; the store refuses to
+ * read it if it resolves outside the thread directory.
+ */
 export function isToolArgsBlobRef(toolCallId: string, value: unknown): value is ContentRef {
-  return isContentRef(value) && value.ref === toolArgsBlobPath(toolCallId)
+  return (
+    isContentRef(value) &&
+    (value.ref === toolArgsBlobPath(toolCallId) || value.ref === `blobs/${toolCallId}.args.json`)
+  )
 }
 
 function serializeToolArgsJson(args: unknown): string {
@@ -226,7 +271,7 @@ function explodeToolCall(
 
   let result: ContentRef | null = null
   if (tc.result !== null) {
-    const ref = `blobs/${tc.id}.result.txt`
+    const ref = `blobs/${idPathSegment(tc.id)}.result.txt`
     files.push({ ref, contents: tc.result })
     result = contentRef(ref, tc.result, hash)
   }
@@ -234,7 +279,7 @@ function explodeToolCall(
   let images: SpineToolResultImage[] | undefined
   if (tc.images !== undefined && tc.images.length > 0) {
     images = tc.images.map((image, i) => {
-      const ref = `blobs/${tc.id}-img-${String(i)}.dataurl`
+      const ref = `blobs/${idPathSegment(tc.id)}-img-${String(i)}.dataurl`
       files.push({ ref, contents: image.dataUrl })
       return {
         dataUrl: { ref, sha256: hash(image.dataUrl) },
@@ -247,7 +292,7 @@ function explodeToolCall(
   let content: ContentRef | undefined
   if (tc.content !== undefined) {
     const serialized = JSON.stringify(tc.content)
-    const ref = `blobs/${tc.id}.acp-content.json`
+    const ref = `blobs/${idPathSegment(tc.id)}.acp-content.json`
     files.push({ ref, contents: serialized })
     content = contentRef(ref, serialized, hash)
   }
@@ -283,7 +328,8 @@ function explodeToolCall(
   }
 
   if (tc.subagent) {
-    const prefix = `subagents/${tc.subagent.id}/`
+    const segment = idPathSegment(tc.subagent.id)
+    const prefix = `subagents/${segment}/`
     const subLines: SpineMessageLine[] = []
     for (const msg of tc.subagent.messages) {
       const exploded = explodeOne(msg, hash)
@@ -293,6 +339,8 @@ function explodeToolCall(
     files.push({ ref: prefix + EVENTS_FILE, contents: serializeSpine(subLines) })
     spine.subagent = {
       ref: prefix,
+      // The directory name is the id unless it had to be escaped.
+      ...(segment !== tc.subagent.id ? { id: tc.subagent.id } : {}),
       kind: tc.subagent.kind,
       status: tc.subagent.status,
       prompt: tc.subagent.prompt,
@@ -314,7 +362,8 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   const files: FileToWrite[] = []
   const createdAt = msg.createdAt
 
-  const contentPath = `messages/${msg.id}.md`
+  const segment = idPathSegment(msg.id)
+  const contentPath = `messages/${segment}.md`
   files.push({
     contents: serializeOkfMessage(
       { type: 'Message', role: msg.role, id: msg.id, createdAt: createdAt ?? 0 },
@@ -334,7 +383,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   }
 
   if (msg.reasoning !== undefined) {
-    const ref = `messages/${msg.id}.reasoning.md`
+    const ref = `messages/${segment}.reasoning.md`
     files.push({
       contents: serializeOkfMessage(
         { type: 'Reasoning', role: msg.role, id: msg.id, createdAt: createdAt ?? 0 },
@@ -347,14 +396,14 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
 
   if (msg.contentBlocks !== undefined) {
     const serialized = JSON.stringify(msg.contentBlocks)
-    const ref = `blobs/${msg.id}.acp-content.json`
+    const ref = `blobs/${segment}.acp-content.json`
     files.push({ ref, contents: serialized })
     line.contentBlocks = contentRef(ref, serialized, hash)
   }
 
   if (msg.reasoningBlocks !== undefined) {
     const serialized = JSON.stringify(msg.reasoningBlocks)
-    const ref = `blobs/${msg.id}.acp-reasoning.json`
+    const ref = `blobs/${segment}.acp-reasoning.json`
     files.push({ ref, contents: serialized })
     line.reasoningBlocks = contentRef(ref, serialized, hash)
   }
@@ -362,7 +411,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.images !== undefined && msg.images.length > 0) {
     const images: ImageRef[] = []
     msg.images.forEach((dataUrl, i) => {
-      const ref = `blobs/${msg.id}-img-${String(i)}.dataurl`
+      const ref = `blobs/${segment}-img-${String(i)}.dataurl`
       files.push({ ref, contents: dataUrl })
       images.push({ ref, sha256: hash(dataUrl) })
     })
@@ -384,7 +433,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     line.attachments = msg.attachments.map((attachment, i) => {
       const { content, ...metadata } = attachment
       if (content === undefined) return metadata
-      const ref = `blobs/${msg.id}-attachment-${String(i)}.txt`
+      const ref = `blobs/${segment}-attachment-${String(i)}.txt`
       files.push({ ref, contents: content })
       return { ...metadata, content: contentRef(ref, content, hash) }
     })
@@ -614,7 +663,7 @@ function foldSubagent(
 
   const usage: ModelUsage | undefined = ref.usage
   return {
-    id: ref.ref.replace(/^subagents\//, '').replace(/\/$/, ''),
+    id: ref.id ?? ref.ref.replace(/^subagents\//, '').replace(/\/$/, ''),
     kind: ref.kind,
     status: ref.status,
     prompt: ref.prompt,
