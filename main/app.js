@@ -57621,6 +57621,19 @@ var init_presets = __esm({
         }
       },
       {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
         id: "kev",
         label: "Kev (local)",
         model: "kev-latest",
@@ -58146,6 +58159,8 @@ function createClassifiersSection(api2) {
           "Custom connections use ",
           el("code", {}, "COPSE_CLASSIFIER_*"),
           " variables. ",
+          el("code", {}, "LIQUID_API_KEY"),
+          ", ",
           el("code", {}, "TYPESAFE_API_KEY"),
           " and ",
           el("code", {}, "FEATHERLESS_API_KEY"),
