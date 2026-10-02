@@ -21,7 +21,7 @@ describe('controlSocketPath', () => {
     const dir = mkdtempSync('/tmp/copse-cm-')
     try {
       setSshControlDirForTests(dir)
-      const hostId = 'euw-serp-dev-testing16'
+      const hostId = 'remote-dev-testing-016'
       const path = controlSocketPath(hostId)
       assert.equal(controlSocketFileName(hostId).length, '0123456789abcdef.sock'.length)
       assert.ok(
@@ -41,10 +41,10 @@ describe('controlSocketPath', () => {
 
   it('stays under budget for the macOS Application Support path that used to break', () => {
     // Simulate the old layout length; the new helper must not place sockets there.
-    const legacy = `/Users/jonathankingston/Library/Application Support/copse-panel/ssh/euw-serp-dev-testing16.sock`
+    const legacy = `/Users/alexandra-morgan/Library/Application Support/copse-panel/ssh/remote-dev-testing-016.sock`
     assert.ok(Buffer.byteLength(legacy, 'utf8') > CONTROL_SOCKET_PATH_BUDGET)
 
-    const path = controlSocketPath('euw-serp-dev-testing16')
+    const path = controlSocketPath('remote-dev-testing-016')
     assert.doesNotMatch(path, /Application Support/)
     assert.ok(Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET)
     assert.ok(Buffer.byteLength(`${path}.fUyzwh1gIvt57SO8`, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX)

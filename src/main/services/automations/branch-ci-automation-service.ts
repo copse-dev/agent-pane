@@ -141,8 +141,13 @@ function failed(run: BranchCiRun): boolean {
     ['failure', 'timed_out', 'action_required'].includes(run.conclusion ?? '')
   )
 }
-async function ghJson<T>(root: string, args: string[], schema: z.ZodType<T>): Promise<T> {
-  const result = await runGh(args, { cwd: root, timeout_ms: 15_000 })
+async function ghJson<T>(
+  root: string,
+  args: string[],
+  schema: z.ZodType<T>,
+  gh: typeof runGh = runGh,
+): Promise<T> {
+  const result = await gh(args, { cwd: root, timeout_ms: 15_000 })
   if (result.code !== 0) throw new Error(result.stderr.trim() || 'GitHub request failed')
   const parsed = safeJsonParse(result.stdout, decodeWithSchema(schema))
   if (parsed === null) throw new Error('GitHub returned invalid CI data')
@@ -161,18 +166,48 @@ async function snapshotFor(definition: BranchCiAutomation): Promise<BranchCiSnap
   if (!root) throw new Error('Project is unavailable')
   const repository = await repositoryForProject(definition.projectId)
   if (repository !== definition.trigger.repository) throw new Error('Project repository changed')
+  return readBranchCiSnapshot(root, repository, definition.trigger.branch)
+}
+
+export async function readBranchCiSnapshot(
+  root: string,
+  repository: string,
+  branchName: string,
+  gh: typeof runGh = runGh,
+): Promise<BranchCiSnapshot> {
   const [host, owner, name] = repository.split('/')
   if (!host || !owner || !name) throw new Error('Invalid repository identity')
   const slug = `${owner}/${name}`
-  const branch = encodeURIComponent(definition.trigger.branch)
-  const [head, runs] = await Promise.all([
-    ghJson(root, ['api', `repos/${slug}/branches/${branch}`, '--hostname', host], headSchema),
-    ghJson(
-      root,
-      ['api', `repos/${slug}/actions/runs?branch=${branch}&per_page=100`, '--hostname', host],
-      runsSchema,
-    ),
-  ])
+  const branch = encodeURIComponent(branchName)
+  const head = await ghJson(
+    root,
+    [
+      'api',
+      `repos/${slug}/branches/${branch}`,
+      '--hostname',
+      host,
+      '--jq',
+      '{commit: {sha: .commit.sha}}',
+    ],
+    headSchema,
+    gh,
+  )
+  // Only the current head can trigger this automation. A creation-date cutoff would
+  // miss older runs rerun on an unchanged head. Project inside gh, before the command
+  // output cap: full workflow records can exceed it even on a single page.
+  const runs = await ghJson(
+    root,
+    [
+      'api',
+      `repos/${slug}/actions/runs?branch=${branch}&head_sha=${head.commit.sha}&per_page=100`,
+      '--hostname',
+      host,
+      '--jq',
+      '{workflow_runs: [.workflow_runs[] | {id, run_attempt, head_branch, head_sha, status, conclusion, updated_at, html_url, name}]}',
+    ],
+    runsSchema,
+    gh,
+  )
   return { headSha: head.commit.sha, runs: runs.workflow_runs }
 }
 
