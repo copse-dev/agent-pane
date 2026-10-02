@@ -29,7 +29,12 @@ import {
   MCP_TOOL_PREFIX,
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
-import { extractMcpImages, flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
+import {
+  extractMcpImages,
+  flattenMcpContent,
+  sanitizeMcpInputSchema,
+  type FlattenOptions,
+} from './mcp-schema.ts'
 import { createBundledMcpServers, CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { getActiveRunThread } from '../thread-models.ts'
@@ -40,7 +45,11 @@ import {
 } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
-import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
+import {
+  appendFlatCapped,
+  COMMAND_OUTPUT_MAX_BYTES,
+  truncateToolOutput,
+} from '../exec/subprocess-output-cap.ts'
 import {
   cursorPluginsRoot,
   discoverCursorPluginRoots,
@@ -441,6 +450,20 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
   }
 }
 
+/** Cap on the text an MCP tool result hands the model (same as run_shell output). */
+export const MCP_TOOL_OUTPUT_MAX_BYTES = COMMAND_OUTPUT_MAX_BYTES
+
+/**
+ * The model-facing text of an MCP tool result: its content flattened, then
+ * capped head + tail. Servers are untrusted and many wrap build or test tools,
+ * so error / warning / location lines from a dropped middle are kept.
+ */
+export function mcpToolResultText(content: unknown, options: FlattenOptions): string {
+  return truncateToolOutput(flattenMcpContent(content, options), MCP_TOOL_OUTPUT_MAX_BYTES, {
+    evidence: true,
+  })
+}
+
 /**
  * List a connected MCP client's tools and register each into the tool registry.
  * Shared by external (stdio/http) servers and bundled in-process servers so the
@@ -527,7 +550,7 @@ function registerListedTools(
           )
         }
         const images = extractMcpImages(result.content)
-        const text = flattenMcpContent(result.content, {
+        const text = mcpToolResultText(result.content, {
           summarizeUiResources,
           imagesAttached: images.length > 0,
         })
