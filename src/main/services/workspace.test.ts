@@ -450,10 +450,10 @@ describe('allowed workspace roots', () => {
   it('resolveSshHostForWorkspaceRoot prefers explicit host then matching project path', () => {
     storageSet('activeProjectId', null)
     storageSet('projects', [
-      { id: 'p1', path: '/etc/ddg', name: 'ddg', sshHost: 'euw-serp-dev-testing16' },
+      { id: 'p1', path: '/srv/app', name: 'app', sshHost: 'remote-dev-testing-016' },
     ])
-    assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg', 'explicit-host'), 'explicit-host')
-    assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg'), 'euw-serp-dev-testing16')
+    assert.equal(resolveSshHostForWorkspaceRoot('/srv/app', 'explicit-host'), 'explicit-host')
+    assert.equal(resolveSshHostForWorkspaceRoot('/srv/app'), 'remote-dev-testing-016')
     assert.equal(resolveSshHostForWorkspaceRoot('/etc/other'), undefined)
   })
 
@@ -465,14 +465,14 @@ describe('allowed workspace roots', () => {
     storageSet('projects', [
       {
         id: 'remote',
-        path: '/etc/ddg',
-        name: 'ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/srv/app',
+        name: 'app',
+        sshHost: 'remote-dev-testing-016',
       },
       { id: 'local', path: '/Users/me/debugging/agent-pane', name: 'agent-pane' },
     ])
     assert.equal(resolveSshHostForWorkspaceRoot('/Users/me/debugging/agent-pane'), undefined)
-    assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg'), 'euw-serp-dev-testing16')
+    assert.equal(resolveSshHostForWorkspaceRoot('/srv/app'), 'remote-dev-testing-016')
   })
 
   it('registers and asserts local roots even when an SSH project is the active target', async () => {
@@ -480,25 +480,25 @@ describe('allowed workspace roots', () => {
     // probe the picked Mac path through the remote PathBackend ("does not exist").
     await setSetting('sshWorkspaceEnabled', true)
     await setSetting('sshWorkspaceHosts', [
-      { id: 'euw-serp-dev-testing16', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+      { id: 'remote-dev-testing-016', label: 'Dev', host: 'dev.example.com', user: 'alice' },
     ])
     storageSet('activeProjectId', 'remote')
     storageSet('projects', [
       {
         id: 'remote',
-        path: '/etc/ddg',
-        name: 'ddg',
-        sshHost: 'euw-serp-dev-testing16',
+        path: '/srv/app',
+        name: 'app',
+        sshHost: 'remote-dev-testing-016',
       },
     ])
-    cleanupRoot = setWorkspaceRootForTest('/etc/ddg')
+    cleanupRoot = setWorkspaceRootForTest('/srv/app')
     try {
       const local = mkdtempSync(join(tmpdir(), 'copse-local-while-ssh-'))
       const registered = await registerAllowedWorkspaceRoot(local)
       await assert.doesNotReject(() => assertAllowedWorkspaceRoot(registered))
       await seedAllowedWorkspaceRoots([
         { path: local },
-        { path: '/etc/ddg', sshHost: 'euw-serp-dev-testing16' },
+        { path: '/srv/app', sshHost: 'remote-dev-testing-016' },
       ])
       await assert.doesNotReject(() => assertAllowedWorkspaceRoot(registered))
     } finally {

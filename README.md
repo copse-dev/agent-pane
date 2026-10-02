@@ -11,7 +11,7 @@ Copse brings agent chat, an editor, terminal, git tools, and a browser into one 
 Copse has no hosted backend of its own. Connect your preferred cloud provider directly, use a local model, or combine the two.
 
 <p align="center">
-  <a href="https://github.com/copse-dev/agent-pane"><strong>View on GitHub</strong></a>
+  <a href="https://github.com/copse-dev/copse-releases/releases"><strong>Download for macOS</strong></a>
   ·
   <a href="https://copse.dev/">Website</a>
   ·
@@ -20,7 +20,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 
 ![Copse building a site: the project, the agent conversation, and its proposed changes ready to accept](tests/e2e/screenshots/landing-cupcake-changes.png)
 
-> Copse is currently distributed from source. The supported app target is macOS 26 or newer on Apple Silicon and Intel Macs. Linux and Windows can be used for source development, but are not supported release targets yet.
+> Copse is in public beta. The signed, notarized app runs on macOS 26 or newer, on Apple Silicon and Intel Macs. Linux and Windows can be used for source development, but are not supported release targets yet.
 
 ## Why Copse?
 
@@ -32,6 +32,15 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 - **Work your way.** Attach files, editor selections, or screen recordings; search code by meaning; fork conversations; queue follow-up messages; and hand exploration to subagents.
 
 ## Get started
+
+### Download the app
+
+1. Open [Copse releases](https://github.com/copse-dev/copse-releases/releases) and, under **Assets** of the newest release, download `Copse-<version>-arm64.dmg` for Apple Silicon or `Copse-<version>-x64.dmg` for Intel.
+2. Open the DMG, drag Copse to Applications, and open it. It requires macOS 26 or newer.
+
+Copse checks for updates when it starts and asks before downloading one. The [install guide](docs/user/install.md) covers choosing a download and what to do if it does not open.
+
+### Build from source
 
 You need [Node.js](https://nodejs.org/) 24 or newer, and on macOS the Xcode command-line tools (`xcode-select --install`) so the bundled terminal's native module can compile. Everything else is provisioned for you: `make` enables Corepack, which supplies the pinned `pnpm@10.34.5` from `packageManager`. Both `nvm use` and `fnm use` select the exact LTS release pinned in `.nvmrc`.
 
@@ -58,7 +67,7 @@ Electron’s extracted app bundle and the vendored gortex binary are shared unde
 needs its own install — `make run` or `pnpm install` — to link `node_modules` and
 those caches.
 
-Then:
+### First steps
 
 1. Open a project folder.
 2. Choose a model during setup. You can enter a provider API key, scan your environment for an existing key, or connect a local model server.

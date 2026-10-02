@@ -43,7 +43,11 @@ import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
-import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
+import {
+  spawnConfigSshTarget,
+  spawnRemoteAcpTransport,
+  type AcpSshTarget,
+} from './acp-ssh-transport.ts'
 import {
   localOpenFileLimitLabel,
   watchAgentStderr,
@@ -107,6 +111,12 @@ export interface AcpAgentSpawnConfig {
   env?: Record<string, string>
   /** Absolute workspace root passed as the ACP session `cwd`. */
   cwd: string
+  /**
+   * Where the turn decided this agent runs: an SSH target, or `null` for this
+   * machine. Resolved once per turn so spawning, pooling and permission
+   * handling agree; when absent the live ACP-over-SSH setting decides.
+   */
+  sshTarget?: AcpSshTarget | null
   /**
    * Selected model as the `SessionConfigValueId` of the agent's `category:
    * "model"` config option. Applied via `session/set_config_option` before the
@@ -949,7 +959,7 @@ async function spawnTransport(
   // When the active project is an SSH workspace and the user opted in, spawn the
   // agent on the remote host (stdio over SSH) instead of locally — see
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
-  const sshTarget = acpSshTarget(config.cwd)
+  const sshTarget = spawnConfigSshTarget(config)
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
@@ -1144,7 +1154,13 @@ export async function openAcpSession(
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
     // agents without the capability simply don't get the bridge this session.
-    if (config.nativeBridge && mcpCapabilities?.http === true) {
+    // Never to a remote (ACP-over-SSH) agent: the URL names this machine's
+    // loopback, and the bearer token must not leave it (the pool already skips
+    // starting a bridge for one; this keeps a caller-supplied bridge local too).
+    const remote = spawnConfigSshTarget(config) !== null
+    if (config.nativeBridge && remote) {
+      console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
+    } else if (config.nativeBridge && mcpCapabilities?.http === true) {
       mcpServers.push({
         type: 'http',
         name: BRIDGE_MCP_SERVER_NAME,

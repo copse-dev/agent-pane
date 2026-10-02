@@ -55,7 +55,21 @@ describe('Process manager agent activity', function () {
     assert.equal((await activity.getCSSProperty('border-top-left-radius')).value, '6px')
     await saveAppScreenshot('process-manager-agent-working.png')
 
-    await dialog.$('[aria-label="Close process manager"]').click()
+    // While the agent is running, the global stop shortcut must not swallow
+    // modal keyboard events: Escape closes the Process Manager, and Enter
+    // activates its focused activity row.
+    await browser.keys('Escape')
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await activity.waitForDisplayed({ timeout: 10_000 })
+    await browser.keys('Tab')
+    await expect(activity).toBeFocused()
+    await browser.keys('Enter')
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', threadId)
+
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     await dialog.waitForDisplayed({ timeout: 10_000 })

@@ -62,6 +62,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
       patches.push(patch)
       thread = { ...thread, ...patch }
     },
+    warmupModel: async () => undefined,
     inspect: async () => ({
       isGitRepository: true,
       currentBranch: 'main',
@@ -92,6 +93,95 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
 }
 
 describe('first-message checkout transaction', () => {
+  it('starts model loading before inspection and allocates without waiting for it', async () => {
+    const loading = Promise.withResolvers<undefined>()
+    const events: string[] = []
+    let loaded = false
+    const { prepare } = fixture({
+      warmupModel: async (model) => {
+        events.push(`warm:${model ?? ''}`)
+        await loading.promise
+        loaded = true
+      },
+      inspect: async () => {
+        events.push('inspect')
+        return {
+          isGitRepository: true,
+          currentBranch: 'main',
+          defaultBranch: 'main',
+          isDirty: false,
+          hasSubmodules: false,
+        }
+      },
+      allocate: async ({ baseBranch }) => {
+        events.push('allocate')
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/warmup',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+    try {
+      const result = await prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Go',
+        choice: 'worktree',
+        model: 'lmstudio:chat',
+      })
+      assert.equal(result.checkoutMode, 'worktree')
+      assert.deepEqual(events, ['warm:lmstudio:chat', 'inspect', 'allocate'])
+      assert.equal(loaded, false)
+    } finally {
+      loading.resolve(undefined)
+    }
+  })
+
+  it('keeps checkout usable when warming the persisted model fails', async () => {
+    const models: Array<string | undefined> = []
+    const { prepare } = fixture({
+      getThread: async () => blankThread({ model: 'lmstudio:persisted' }),
+      warmupModel: async (model) => {
+        models.push(model)
+        throw new Error('LM Studio is offline')
+      },
+    })
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Go',
+      choice: 'shared',
+    })
+    assert.equal(result.checkoutMode, 'shared')
+    assert.deepEqual(models, ['lmstudio:persisted'])
+  })
+
+  it('does not warm a model for previews or an unpersisted thread', async () => {
+    let warms = 0
+    const { prepare, preview } = fixture({
+      getThread: async () => null,
+      warmupModel: async () => {
+        warms += 1
+      },
+    })
+    await preview({ projectId: 'project-1', choice: 'worktree', model: 'lmstudio:chat' })
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Go',
+        choice: 'worktree',
+        model: 'lmstudio:chat',
+      }),
+      /not persisted/,
+    )
+    assert.equal(warms, 0)
+  })
+
   it('previews the same authoritative automatic policy used during preparation', async () => {
     const { preview } = fixture()
     assert.deepEqual(await preview({ projectId: 'project-1', choice: 'automatic' }), {

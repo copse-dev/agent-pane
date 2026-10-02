@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Get Copse running on a supported Mac, or build it from source.
+description: Download Copse for macOS 26 or newer, or build it from source.
 ---
 
 # Install
@@ -9,19 +9,42 @@ The supported app is **macOS 26 or newer** on Apple Silicon (`arm64`) and Intel
 (`x64`). Linux and Windows can run a source build for development. They are not
 supported release targets.
 
-## Signed download (when a release is published)
+## Download the app
 
-1. Open the [GitHub Releases](https://github.com/copse-dev/agent-pane/releases)
-   page and download the DMG for your architecture.
-2. Open the DMG and drag Copse to Applications.
-3. Launch Copse. macOS Gatekeeper should accept a signed, notarized build.
+Copse is in public beta. Every release is signed with a Developer ID and
+notarized by Apple.
 
-If the download URL 404s or asks you to sign in, the repository is still
-private — use the source path below, or wait for a public release.
+1. Open [Copse releases](https://github.com/copse-dev/copse-releases/releases).
+   The newest release is at the top.
+2. Under **Assets**, download the DMG for your Mac:
+   - `Copse-<version>-arm64.dmg` for Apple Silicon (M-series chips).
+   - `Copse-<version>-x64.dmg` for Intel.
+
+   Not sure which you have? Apple menu → **About This Mac**: a **Chip** line
+   means Apple Silicon, a **Processor** line means Intel.
+
+3. Open the DMG and drag Copse to Applications.
+4. Open Copse from Applications. The first time, macOS asks whether to open an
+   app downloaded from the internet; choose **Open**.
 
 **You should see** the Copse window with a prompt to open a project folder.
 
-If it does not launch, see [Troubleshooting](troubleshooting.md).
+You do not need to download later releases by hand. Copse checks for a newer
+release each time it starts, and **Copse → Check for Updates…** checks on
+demand. It shows what changed and asks before downloading; a downloaded update
+installs when you choose **Restart now**, or the next time you quit.
+
+### If it does not open
+
+- **"You can't use this version of the application with this version of
+  macOS"**: Copse needs macOS 26 or newer. Update macOS, or build from source
+  below.
+- **"Copse can't be opened" or "is damaged"**: delete the copy in Applications,
+  download the DMG again from the releases page above, and reinstall. Do not
+  remove the quarantine attribute or bypass Gatekeeper; a notarized download
+  opens without that.
+
+For anything else, see [Troubleshooting](troubleshooting.md).
 
 ## From source
 

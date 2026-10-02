@@ -294,9 +294,13 @@ describe('thread-store PR-ref cache', () => {
       thread('old', { messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')] }),
     )
     await saveProjectThread('p', thread('plain', { messages: [userMsg('m2', 'no links here')] }))
+    await saveProjectThread(
+      'p',
+      thread('unseen', { messages: [userMsg('m3', 'https://github.com/acme/widget/pull/6')] }),
+    )
 
     const batches: Array<{ threadId: string; prRefs: GithubPrRef[] }> = []
-    await backfillThreadPrRefs('p', (refs) => batches.push(...refs))
+    await backfillThreadPrRefs('p', ['old', 'plain'], (refs) => batches.push(...refs))
 
     assert.deepEqual(
       batches.map((b) => b.threadId),
@@ -307,6 +311,7 @@ describe('thread-store PR-ref cache', () => {
     // A thread with no links must still be marked as scanned, or the backfill
     // would re-read the whole project on every open forever.
     assert.deepEqual(metaOnDisk(root, 'p', 'plain')['prRefs'], [])
+    assert.equal(metaOnDisk(root, 'p', 'unseen')['prRefs'], undefined)
   })
 
   it('invalidates a warm metadata snapshot when the background backfill writes', async () => {
@@ -317,7 +322,7 @@ describe('thread-store PR-ref cache', () => {
     const [before] = await loadProjectThreadMetas('p')
     assert.equal(before?.prRefs, undefined)
 
-    await backfillThreadPrRefs('p', () => undefined)
+    await backfillThreadPrRefs('p', ['old'], () => undefined)
 
     const [after] = await loadProjectThreadMetas('p')
     assert.equal(after?.prRefs?.[0]?.number, 5)
@@ -339,7 +344,7 @@ describe('thread-store PR-ref cache', () => {
     const hold = runSerialized('thread-store:p', async () => {
       await gate
     })
-    const backfill = backfillThreadPrRefs('p', () => undefined)
+    const backfill = backfillThreadPrRefs('p', ['old'], () => undefined)
 
     try {
       for (let i = 0; i < 5; i++) await loadProjectThreads('p2')
@@ -363,11 +368,34 @@ describe('thread-store PR-ref cache', () => {
       'p',
       thread('old', { messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')] }),
     )
-    await backfillThreadPrRefs('p', () => undefined)
+    await backfillThreadPrRefs('p', ['old'], () => undefined)
 
     const second: Array<{ threadId: string; prRefs: GithubPrRef[] }> = []
-    await backfillThreadPrRefs('p', (refs) => second.push(...refs))
+    await backfillThreadPrRefs('p', ['old'], (refs) => second.push(...refs))
 
     assert.deepEqual(second, [], 'a second pass must be a no-op')
+  })
+
+  it('rejects an unreadable transcript so a repaired visible row can retry', async (t) => {
+    t.mock.method(console, 'warn', () => undefined)
+    const legacy = thread('broken', {
+      messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')],
+    })
+    await saveProjectThread('p', legacy)
+    rmSync(join(root, 'p', 'broken', 'messages', 'm1.md'))
+
+    await assert.rejects(
+      backfillThreadPrRefs('p', ['broken'], () => undefined),
+      /Could not backfill PR refs for broken/,
+    )
+    assert.equal(metaOnDisk(root, 'p', 'broken')['prRefs'], undefined)
+
+    await saveProjectThread('p', legacy)
+    await backfillThreadPrRefs('p', ['broken'], () => undefined)
+    const repaired = metaOnDisk(root, 'p', 'broken')['prRefs']
+    assert.ok(Array.isArray(repaired))
+    const first: unknown = repaired[0]
+    assert.ok(typeof first === 'object' && first !== null)
+    assert.equal(Reflect.get(first, 'number'), 5)
   })
 })

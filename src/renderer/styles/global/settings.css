@@ -706,9 +706,10 @@ dialog.settings-overlay::backdrop {
 }
 /* Every text-entry type, not just text/password/number: a Base URL field
    (`type="url"`) that missed this list stretched the full column and sat a few
-   px off its siblings. An `<input>` in Settings always names its type, so the
-   attribute selectors below are the whole field family. */
+   px off its siblings. The selector list includes the HTML default text type,
+   so dynamically mounted fields cannot silently stretch the form. */
 .settings-content label select,
+.settings-content label input:not([type]),
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
 .settings-content label input[type='number'],
@@ -716,19 +717,23 @@ dialog.settings-overlay::backdrop {
 .settings-content label input[type='email'],
 .settings-content label input[type='search'] {
   width: 100%;
-  max-width: 480px;
   /* Fields are the section's other main target. `forms.css` sizes them from
      `--spacing-sm` alone, which lands a ~30px control; match the nav rows and
      the action buttons so nothing in the form is fiddlier than the chrome
      around it. */
   min-height: var(--action-min-height);
 }
+.settings-content label select {
+  max-width: 480px;
+}
+.settings-content label input:not([type]),
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
 .settings-content label input[type='number'],
 .settings-content label input[type='url'],
 .settings-content label input[type='email'],
 .settings-content label input[type='search'] {
+  max-width: 360px;
   padding-inline: var(--spacing-md);
 }
 /* select only gets the roomier left inset: a `padding-inline` shorthand here
@@ -836,6 +841,37 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-family: var(--font-mono, monospace);
   margin-left: auto;
+}
+
+/* Classifiers: servers found on this machine and keys found in the environment,
+   one row each, above the saved connections. */
+.classifier-local {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.classifier-local-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+}
+.classifier-local-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.classifier-local-info .field-hint {
+  overflow-wrap: anywhere;
+}
+.classifier-local-error {
+  color: var(--danger);
 }
 
 /* Providers panel: chip row selects one provider; its form shows below. */
