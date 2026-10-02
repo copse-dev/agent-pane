@@ -16,6 +16,7 @@ describe('browser-hosted Balanced choice without usage charges', () => {
     await picker.$('.model-picker-trigger').click()
 
     const option = picker.$('.model-picker-option[data-value="auto:balanced-included"]')
+    await option.scrollIntoView({ block: 'nearest' })
     await expect(option).toBeDisplayed()
     await expect(option).toHaveText(expect.stringContaining('Balanced (no usage charges)'))
     await expect(option).toHaveText(expect.stringContaining('zero-priced routes'))
