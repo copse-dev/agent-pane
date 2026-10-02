@@ -5,6 +5,8 @@
 export const FETCH_TIMEOUTS = {
   /** Quick liveness/list calls to a local model server. */
   modelList: 4_000,
+  /** Best-effort loading of a local model into memory before a turn starts. */
+  modelLoad: 120_000,
   /** Cloud API key validation round-trips. */
   apiKeyValidation: 8_000,
   /** Cursor Cloud Agent list / get calls for external-thread discovery. */
