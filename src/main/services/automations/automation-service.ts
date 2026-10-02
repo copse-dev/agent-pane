@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
   AutomationPermission,
+  AutomationProblem,
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
@@ -9,6 +10,7 @@ import type {
   Thread,
 } from '@shared/types'
 import { automationPermissionKey } from '@shared/types'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
@@ -128,11 +130,22 @@ function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean
   return parsed !== null && parsed.server.length > 0 && parsed.tool.length > 0
 }
 
+function isAutomationProblem(value: unknown): value is AutomationProblem {
+  return (
+    isRecord(value) &&
+    typeof value['at'] === 'number' &&
+    Number.isFinite(value['at']) &&
+    (value['kind'] === 'failed' || value['kind'] === 'pending-start') &&
+    typeof value['message'] === 'string'
+  )
+}
+
 function isSchedule(value: unknown): value is AutomationSchedule {
   if (!isRecord(value)) return false
   const maxLiveWorktrees = value['maxLiveWorktrees']
   const lastWorktreeLimitAt = value['lastWorktreeLimitAt']
   const permissions = value['permissions']
+  const lastProblem = value['lastProblem']
   return (
     typeof value['id'] === 'string' &&
     typeof value['projectId'] === 'string' &&
@@ -149,6 +162,7 @@ function isSchedule(value: unknown): value is AutomationSchedule {
       (typeof lastWorktreeLimitAt === 'number' && Number.isFinite(lastWorktreeLimitAt))) &&
     (permissions === undefined ||
       (Array.isArray(permissions) && permissions.every(isAutomationPermission))) &&
+    (lastProblem === undefined || isAutomationProblem(lastProblem)) &&
     typeof value['createdAt'] === 'number' &&
     typeof value['updatedAt'] === 'number'
   )
@@ -230,9 +244,29 @@ export function createAutomationService(
   const inFlight = new Set<string>()
   const attemptedMinutes = new Map<string, number>()
 
-  function logTriggerFailure(schedule: AutomationSchedule, error: unknown): void {
+  async function recordProblem(
+    schedule: AutomationSchedule,
+    problem: AutomationProblem,
+  ): Promise<void> {
+    try {
+      await storageUpdate(STORAGE_KEY, (raw) => {
+        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+        return schedules.map((candidate) =>
+          candidate.projectId === schedule.projectId && candidate.id === schedule.id
+            ? { ...candidate, lastProblem: problem }
+            : candidate,
+        )
+      })
+    } catch (error) {
+      // The ledger is a courtesy; never let it turn a skipped run into a crash.
+      console.error('[automations] Could not record a trigger problem:', error)
+    }
+  }
+
+  async function logTriggerFailure(schedule: AutomationSchedule, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[automations] Failed to create task for “${schedule.name}”: ${message}`)
+    await recordProblem(schedule, { at: dependencies.now(), kind: 'failed', message })
   }
 
   async function replaceSchedule(next: AutomationSchedule): Promise<void> {
@@ -277,6 +311,7 @@ export function createAutomationService(
           lastCreatedThreadId: threadId,
         }
         delete updated.lastWorktreeLimitAt
+        delete updated.lastProblem
         return updated
       })
     })
@@ -381,11 +416,18 @@ export function createAutomationService(
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
-      const busy = scheduleThreads.find(
-        (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-      )
+      const busy = scheduleThreads.find((thread) => automationRunBlock(thread) !== null)
 
       if (busy) {
+        if (automationRunBlock(busy) === 'pending-start') {
+          await recordProblem(schedule, {
+            at: triggeredAt,
+            kind: 'pending-start',
+            message:
+              'An earlier run was created but never started, so this one was skipped. ' +
+              'Open the project to start it, or send or discard its draft.',
+          })
+        }
         return {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -546,6 +588,7 @@ export function createAutomationService(
         maxLiveWorktrees === (existing.maxLiveWorktrees ?? 1)
           ? { lastWorktreeLimitAt: existing.lastWorktreeLimitAt }
           : {}),
+        ...(existing?.lastProblem !== undefined ? { lastProblem: existing.lastProblem } : {}),
       }
       await replaceSchedule(schedule)
       // The minute tick reads schedule settings from storage. Editing fields such
@@ -639,7 +682,7 @@ export function createAutomationService(
           } catch (error) {
             // Isolate failures so one project cannot prevent other matching
             // schedules from running. Do not retry repeatedly in the same minute.
-            logTriggerFailure(schedule, error)
+            await logTriggerFailure(schedule, error)
           }
         }),
       )
