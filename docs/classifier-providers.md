@@ -85,6 +85,18 @@ COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:s
 COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- winnow
 ```
 
+**Settings → Classifiers** does the same from the app. Opening it probes the loopback ports of the
+servers below (a TCP connect, no request) and lists each as not installed, installed, or already
+running; a running one gets **Add connection**, which saves the preset profile. **Download and run**
+asks first, naming the size, source repository and required tools, then sets the server up in the
+same cache at the same pinned revision, starts it on loopback, and saves its connection when it
+accepts connections. It needs `git` plus `uv` (Kev) or `python3` (Winnow) on `PATH`, and the button
+stays disabled and names the missing tool otherwise. Copse stops servers it started when it quits and
+leaves ones started elsewhere alone; **Cancel** stops an install or load in progress. Nothing is
+downloaded or started until you confirm, and the connection is not chosen for safety screening
+automatically. A hosted preset whose provider key (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`) is
+already in the environment is offered as **Set up**; the key's value is never shown or copied.
+
 The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
 about 12.5 GB text-only). Every later run reuses the cache and downloads nothing. The checkout,
 virtual environment or native build, uv package cache (`UV_CACHE_DIR`), Hugging Face cache

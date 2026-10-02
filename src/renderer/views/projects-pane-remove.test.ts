@@ -23,6 +23,20 @@ function thread(id: string, title: string): Thread {
   }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let settle: ((value: T) => void) | undefined
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve
+  })
+  return {
+    promise,
+    resolve: (value): void => {
+      if (!settle) throw new Error('Deferred promise was not initialized')
+      settle(value)
+    },
+  }
+}
+
 afterEach(() => {
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
@@ -42,6 +56,9 @@ describe('projects pane remove-from-sidebar (component)', () => {
       storage?: Record<string, unknown>
       onStorageSet?: (key: string, value: unknown) => void
       workspaceOpen?: () => Promise<string | null>
+      loadProject?: (projectId: string) => Promise<Thread[]>
+      onListOrphans?: () => void
+      listOrphans?: () => Promise<OrphanProjectStore[]>
     } = {},
   ): ApiClient {
     const storage: Record<string, unknown> = { ...(opts.storage ?? {}) }
@@ -64,13 +81,16 @@ describe('projects pane remove-from-sidebar (component)', () => {
         },
         threads: {
           ...base['threads'],
-          loadProject: async (): Promise<Thread[]> => [],
+          loadProject: opts.loadProject ?? (async (): Promise<Thread[]> => []),
           create: async (): Promise<void> => undefined,
           appendMessage: async (): Promise<void> => undefined,
           updateMeta: async (): Promise<void> => undefined,
           delete: async (): Promise<void> => undefined,
           catalog: async (): Promise<never[]> => [],
-          listOrphans: async (): Promise<OrphanProjectStore[]> => orphans,
+          listOrphans: async (): Promise<OrphanProjectStore[]> => {
+            opts.onListOrphans?.()
+            return opts.listOrphans ? opts.listOrphans() : [...orphans]
+          },
         },
       } satisfies ApiClient
     })()
@@ -152,6 +172,133 @@ describe('projects pane remove-from-sidebar (component)', () => {
     assert.equal(document.querySelector('.context-menu'), null, 'menu dismisses after click')
     const names = Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent)
     assert.deepEqual(names, ['Alpha'])
+  })
+
+  it('scans orphan stores on mount and project removal, not on project switches', async () => {
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t-a', 'Thread A')],
+      activeThreadId: 't-a',
+    })
+    const orphans: OrphanProjectStore[] = []
+    let scans = 0
+    mount(
+      store,
+      makeApi(orphans, {
+        loadProject: async (projectId) => [thread(`t-${projectId}`, `Thread ${projectId}`)],
+        onListOrphans: () => {
+          scans += 1
+        },
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(scans, 1, 'mount discovers recoverable stores')
+
+    const beta = document.querySelector<HTMLButtonElement>('[data-project-id="b"] .project-row')
+    assert.ok(beta)
+    beta.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.getState().activeProjectId, 'b')
+    assert.equal(
+      document.querySelector('[data-project-id="b"] .chat-title')?.textContent,
+      'Thread b',
+    )
+    assert.equal(scans, 1, 'expansion and completed activation do not rescan')
+
+    const alpha = document.querySelector<HTMLButtonElement>('[data-project-id="a"] .project-row')
+    assert.ok(alpha)
+    alpha.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.getState().activeProjectId, 'a')
+    assert.equal(scans, 1, 'switching back also uses the existing orphan result')
+
+    orphans.push({ id: 'b', threadCount: 1, sampleTitles: ['Thread b'], updatedAt: 1 })
+    const betaToRemove = document.querySelector<HTMLButtonElement>(
+      '[data-project-id="b"] .project-row',
+    )
+    assert.ok(betaToRemove)
+    betaToRemove.dispatchEvent(
+      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+    )
+    const remove = document.querySelector<HTMLButtonElement>('.context-menu-item')
+    assert.ok(remove)
+    remove.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(scans, 2, 'removing a project rechecks recoverable stores')
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Thread b')
+  })
+
+  it('does not show a recovered project from a stale orphan scan', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+    })
+    const orphans: OrphanProjectStore[] = [
+      { id: 'b', threadCount: 1, sampleTitles: ['Recovered thread'], updatedAt: 1 },
+    ]
+    let scans = 0
+    mount(
+      store,
+      makeApi(orphans, {
+        onListOrphans: () => {
+          scans += 1
+        },
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Recovered thread')
+
+    store.setState({
+      projects: [...store.getState().projects, { id: 'b', path: '/b', name: 'Beta' }],
+    })
+    store.emit('projects_changed')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(scans, 2)
+    assert.equal(document.querySelector('.orphan-name'), null)
+  })
+
+  it('keeps the newest result when orphan scans finish out of order', async () => {
+    const first = deferred<OrphanProjectStore[]>()
+    const second = deferred<OrphanProjectStore[]>()
+    let scans = 0
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+    })
+    mount(
+      store,
+      makeApi([], {
+        listOrphans: () => {
+          scans += 1
+          return scans === 1 ? first.promise : second.promise
+        },
+      }),
+    )
+
+    store.setState({ projects: [{ id: 'a', path: '/a', name: 'Alpha' }] })
+    store.emit('projects_changed')
+    assert.equal(scans, 2)
+
+    second.resolve([{ id: 'b', threadCount: 1, sampleTitles: ['Thread b'], updatedAt: 2 }])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Thread b')
+
+    first.resolve([])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Thread b')
   })
 
   it('renders a quarantined project notice and recoverable orphan stores', async () => {

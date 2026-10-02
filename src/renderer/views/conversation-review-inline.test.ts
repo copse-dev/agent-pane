@@ -69,6 +69,37 @@ describe('post-turn review renders inline in the transcript (component)', () => 
     )
   })
 
+  it('keeps a skipped review explanation in one compact annotation line', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Edited one file.')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    setMessageReview(store, threadId, messageId, {
+      status: 'skipped',
+      summary: 'Review skipped — spending on Claude Sonnet was not approved.',
+    })
+    const skipped = document.querySelector<HTMLElement>('[data-review-card]')
+    assert.ok(skipped, 'the skip explanation must remain in the transcript')
+    assert.equal(skipped.getAttribute('data-status'), 'skipped')
+    assert.equal(skipped.querySelector('.review-panel-title')?.textContent, 'Review skipped')
+    assert.equal(
+      skipped.querySelector('.review-panel-skipped-summary')?.textContent,
+      'Spending on Claude Sonnet was not approved.',
+    )
+    assert.equal(skipped.querySelector('.review-panel-body'), null, 'the compact skip has no body')
+    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`)
+    assert.equal(msgEl?.nextElementSibling, skipped, 'the explanation stays anchored to its turn')
+
+    // A later real review on the same message replaces the compact skip cleanly.
+    setMessageReview(store, threadId, messageId, { status: 'done', summary: 'Looks correct.' })
+    const card = document.querySelector('[data-review-card]')
+    assert.ok(card, 'a done review following a skip renders normally')
+  })
+
   it('keeps a single card per message across status transitions', () => {
     const store = createStore()
     const threadId = createThread(store)

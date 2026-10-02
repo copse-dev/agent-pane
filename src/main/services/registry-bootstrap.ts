@@ -29,6 +29,7 @@ import { runShellTool } from '../tools/shell-tool.ts'
 import { preflightWorktreeTool, prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
+import { applyPatchTool } from '../tools/apply-patch-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
@@ -98,6 +99,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(readFileTool)
   registry.register(writeFileTool)
   registry.register(strReplaceTool)
+  registry.register(applyPatchTool)
   registry.register(stagedDiffsTool)
   registry.register(readStagedDiffTool)
   registry.register(deleteFileTool)

@@ -8,7 +8,9 @@ export const PREVIEW_CSP = [
   "media-src 'self' data: blob:",
   "connect-src 'self'",
   "frame-src 'none'",
-  "worker-src 'none'",
+  // Self-contained drawing workers inherit this policy and the data: document's
+  // opaque origin. No remote worker script, eval, or network origin is allowed.
+  'worker-src blob:',
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",

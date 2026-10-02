@@ -1,4 +1,6 @@
+import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { randomUUID } from 'node:crypto'
+import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import {
@@ -68,6 +70,7 @@ import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -443,6 +446,7 @@ const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]
 }
 
 function instructionContextPathsForTool(name: string, args: unknown): string[] {
+  if (name === 'apply_patch') return isRecord(args) ? patchTouchedPaths(args['input']) : []
   const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
   if (!fields || !isRecord(args)) return []
   return fields.flatMap((field) => {
@@ -551,8 +555,8 @@ function continuationBudgetChunk(
 }
 
 function providerIdForModel(model: string): string {
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty !== null) return firstParty
   const colon = model.indexOf(':')
   return colon > 0 ? model.slice(0, colon) : model
 }
@@ -753,6 +757,19 @@ export interface RunAgentResult {
 }
 
 export async function runAgent(
+  threadId: string,
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  options?: RunAgentOptions,
+): Promise<RunAgentResult> {
+  return runWithInlineCanvas(threadId, host, (inlineHost) =>
+    runAgentWithInlineCanvas(threadId, userPrompt, priorMessages, inlineHost, registry, options),
+  )
+}
+
+async function runAgentWithInlineCanvas(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
