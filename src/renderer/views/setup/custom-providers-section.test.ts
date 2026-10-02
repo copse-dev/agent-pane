@@ -178,3 +178,24 @@ describe('custom providers: plaintext storage policy', () => {
     assert.equal(keyWrites, 2)
   })
 })
+
+describe('local providers: running-server detection', () => {
+  it('marks a local server configured when its endpoint answers, with no key saved', async () => {
+    const base = stubApi([], [])
+    const api: ApiClient = {
+      ...base,
+      lmStudio: {
+        ...base.lmStudio,
+        // Only the Ollama default (port 11434) is "running".
+        test: async (url?: string) =>
+          url?.includes(':11434') ? { ok: true, models: ['llama3'] } : { ok: false, error: 'down' },
+      },
+    }
+    const section = createCustomProvidersSection(api, { variant: 'local', embedded: true })
+    await section.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(section.isConfigured('ollama'), true)
+    assert.equal(section.isConfigured('jan'), false)
+  })
+})
