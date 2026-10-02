@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { STARTER_AGENT_MD, scaffoldProject } from './project-scaffold.ts'
@@ -35,5 +35,28 @@ describe('scaffoldProject', () => {
     assert.deepEqual(git(project, ['ls-files']).split('\n'), ['AGENT.md', 'README.md'])
     // The first-send "uncommitted changes" banner keys off this being empty.
     assert.equal(git(project, ['status', '--porcelain']), '')
+  })
+
+  it('commits the starter files even when global excludes ignore them', async () => {
+    const xdg = join(temp, 'xdg')
+    await mkdir(join(xdg, 'git'), { recursive: true })
+    await writeFile(join(xdg, 'git', 'ignore'), 'AGENT.md\nREADME.md\n')
+    const saved = { home: process.env['HOME'], xdg: process.env['XDG_CONFIG_HOME'] }
+    process.env['HOME'] = temp
+    process.env['XDG_CONFIG_HOME'] = xdg
+    try {
+      const project = join(temp, 'ignored')
+      await mkdir(project)
+      await scaffoldProject(project, 'ignored', true)
+      assert.deepEqual(git(project, ['ls-files']).split('\n'), ['AGENT.md', 'README.md'])
+    } finally {
+      for (const [key, value] of [
+        ['HOME', saved.home],
+        ['XDG_CONFIG_HOME', saved.xdg],
+      ] as const) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
   })
 })

@@ -74,7 +74,9 @@ export async function scaffoldProject(
     return result.stdout.trim()
   }
   await gitStep('initialise a Git repository', ['init', '-b', 'main'])
-  await gitStep('stage the starter files', ['add', '-A'])
+  // Forced: a user's global excludes file may match these names, and a plain
+  // `add -A` would then commit an empty tree while still reporting success.
+  await gitStep('stage the starter files', ['add', '-f', '--', 'AGENT.md', 'README.md'])
   const tree = await gitStep('write the initial tree', ['write-tree'])
   const commit = await gitStep('create the initial commit', [
     '-c',
