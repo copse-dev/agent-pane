@@ -217,8 +217,11 @@ renewal and returns only public metadata over main-frame IPC. Account options
 stay expanded across refresh. Headless hosts cannot read these credentials.
 
 The isolated real-account client displayed Connection refreshed; a new GPT-5.6-Luna
-chat then returned exactly renewal verified without tool calls. This verifies the
-live refresh grant plus inference, not elapsed-time expiry. Automatic expiry and
+chat explicitly selected the ChatGPT plan route and returned exactly plan renewal
+verified without tool calls. The persisted model and resolved route both identify
+the plan registration. An earlier new-chat check used Codex ACP and was excluded
+from this evidence. This verifies the live refresh grant plus plan inference, not
+elapsed-time expiry. Automatic expiry and
 account isolation retain automated coverage. No second supported real account is
 available, so that live check remains unverified.
 
@@ -237,12 +240,23 @@ control on other provider routes. Electron settings/usage: 1 spec / 2 tests
 passed. Final build and check:local passed. Screenshots were inspected: official
 sign-in button, welcome, expanded maintenance actions, compact composer, limit
 recovery and multi-registration ledger. The full check completed with 12,300
-passed, 3 skipped and the same 9 host/toolchain failures documented above. A
-repeat on the final footer styling and the complete Electron tier are running;
-these results will be handed off explicitly. No full local gate was deferred.
+passed, 3 skipped and the same 9 host/toolchain failures documented above, including
+the repeat on final footer styling. Full Electron: 341 passed / 348 specs, with
+seven failures. Context-wheel-running-hover and onboarding-scan-import passed
+isolated reruns (1 and 2 tests respectively). The remaining failures were
+follow-up-suggestions timeouts, Git commit/signing approval diagnostics, missing
+settings hook dry-run summary and the VNC font-stack expectation. No full local
+gate was deferred. The independent Linux ground run passed the full unit tier.
 
-Independent repository review will be requested on the pushed follow-up via the
-copse-review label; it is not yet a completed security review. CI on the initial
-PR head passed its main check/CI Passed gates. Final-head CI and review remain
-pending. Logs: .tmp/chatgpt-followup-{focused-final,static-final,gate,gate-final,
-demo-final,e2e-final,e2e-all,context-rerun}.log.
+Product commit c5966bc94b passed GitHub main check/CI Passed. Independent
+repository correctness review and a separate local read-only security lens both
+reported zero findings. Both reviews omitted 18 low-signal files and truncated
+18 diffs; this is limited review evidence, not a production security certification.
+The security lens inspected OAuth, encrypted storage, service, IPC, routing and
+Responses transport. Its uncertainty about cipher startup and callback binding
+was checked directly: main installs the cipher at module scope, the store fails
+closed without it, and the callback explicitly listens on 127.0.0.1. No adversarial
+reproducer was run because there were no candidates. Logs:
+.tmp/chatgpt-followup-{focused-final,static-final,gate,gate-final,demo-final,
+e2e-final,e2e-all,context-rerun,onboarding-rerun}.log; security report:
+.tmp/chatgpt-security-review.json. This final evidence update changes no product code.
