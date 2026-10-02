@@ -6,6 +6,7 @@ export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-al
 export type TerminalBenchProfileId = (typeof TERMINAL_BENCH_PROFILE_IDS)[number]
 export type TerminalBenchProfileVersionedId =
   | 'main-legacy@1'
+  | 'main-legacy@2'
   | 'pr-1149@1'
   | 'product-aligned@1'
   | 'product-aligned@2'
@@ -31,6 +32,8 @@ export interface TerminalBenchProfile {
   warnsOnValidationEvidence: boolean
   nonzeroShellResultIsError: boolean
   reasoningPolicy: TerminalBenchReasoningPolicy
+  /** Run one read-only /tests and /app probe before the first model turn. */
+  preflightProbe: boolean
 }
 
 export const MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE =
@@ -46,6 +49,11 @@ export const MAIN_LEGACY_STUCK_TOOL_RECOVERY_NUDGE =
 
 export const MAIN_LEGACY_SYSTEM_PROMPT = `You are an autonomous terminal agent working inside a persistent task environment.
 Use run_shell to inspect the environment, edit files, and validate your work. Commands run in the same environment and their effects persist. Start by checking /tests directly; when it is readable, inspect its relevant verifier tests before implementing and run them before finishing. Treat /tests as authoritative over similarly named files elsewhere, including /app/tests. Work directly on the task; do not merely explain a possible solution. Prefer concrete action after brief inspection: create a draft, test it, and iterate instead of repeatedly reconsidering the plan. Before installing dependencies, check for existing lightweight tools and use the task's local evidence first; do not download large optional packages or model weights unless the verifier requires them and no smaller approach can solve the task. Preserve original inputs before opening damaged, forensic, or stateful data with a program that may checkpoint, recover, migrate, or rewrite it. While iterating, never move, delete, or overwrite original task inputs: work on copies and perform required final moves only after validation. Keep large inputs in files and reuse or edit existing scripts instead of embedding the same data in successive shell commands. Check file sizes and use targeted search or bounded ranges for large source, documentation, and log files; do not print them wholesale. Bound expensive searches to a small representative range first, then expand only when the result justifies it. Avoid long sleep commands while waiting for work: use short bounded polls and make progress between checks. Recover from failed commands, keep verification focused, and continue until the requested outcome is complete or you have exhausted practical approaches. There is no user available for follow-up questions.`
+
+export const MAIN_LEGACY_V2_SYSTEM_PROMPT = MAIN_LEGACY_SYSTEM_PROMPT.replace(
+  'Start by checking /tests directly; when it is readable, inspect its relevant verifier tests before implementing and run them before finishing.',
+  'The task message ends with an environment_preflight block listing /tests and /app and quoting readable /tests files; use it instead of searching for those facts again. When it reports /tests missing or unreadable, accept that and do not search the filesystem for verifier files. When /tests is readable, inspect its relevant verifier tests before implementing and run them before finishing.',
+)
 
 export const PR_1149_REASONING_RUNAWAY_RECOVERY_NUDGE =
   'You spent the entire response planning without taking action, and it was cut off. ' +
@@ -88,7 +96,10 @@ interface LegacyHashDefinition {
   nonzeroShellResultIsError: boolean
 }
 
-type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash'> & { hashPayload: unknown }
+type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash' | 'preflightProbe'> & {
+  preflightProbe?: true
+  hashPayload: unknown
+}
 
 function legacyDefinition(
   definition: LegacyHashDefinition,
@@ -117,6 +128,34 @@ const MAIN_LEGACY_V1 = legacyDefinition(
   },
   'none',
 )
+
+const MAIN_LEGACY_V2_BASE = {
+  id: 'main-legacy' as const,
+  version: 2 as const,
+  versionedId: 'main-legacy@2' as const,
+  systemPrompt: MAIN_LEGACY_V2_SYSTEM_PROMPT,
+  reasoningRunawayRecoveryNudge: MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE,
+  stuckToolRecoveryNudge: MAIN_LEGACY_STUCK_TOOL_RECOVERY_NUDGE,
+  exposesWriteFile: false,
+  forcesRequestedOutputRecovery: false,
+  warnsOnValidationEvidence: false,
+  nonzeroShellResultIsError: false,
+}
+
+const MAIN_LEGACY_V2: ProfileDefinition = {
+  ...MAIN_LEGACY_V2_BASE,
+  writeFilePolicy: 'none',
+  reasoningPolicy: 'fixed-cap',
+  preflightProbe: true,
+  hashPayload: {
+    hashSchema: 4,
+    profile: MAIN_LEGACY_V2_BASE,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      preflight: 'readonly-tests-app-probe-8k-appended-to-first-user-message-v1',
+    },
+  },
+}
 
 const PR_1149_V1 = legacyDefinition(
   {
@@ -206,6 +245,7 @@ const PRODUCT_ALIGNED_V3: ProfileDefinition = {
 
 const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = {
   'main-legacy@1': MAIN_LEGACY_V1,
+  'main-legacy@2': MAIN_LEGACY_V2,
   'pr-1149@1': PR_1149_V1,
   'product-aligned@1': PRODUCT_ALIGNED_V1,
   'product-aligned@2': PRODUCT_ALIGNED_V2,
@@ -283,5 +323,9 @@ export function terminalBenchProfile(
     ? candidate
     : CURRENT_PROFILE_VERSIONS[parseTerminalBenchProfileId(candidate)]
   const { hashPayload: _, ...definition } = DEFINITIONS[versionedId]
-  return { ...definition, contentHash: profileHash(DEFINITIONS[versionedId]) }
+  return {
+    ...definition,
+    preflightProbe: definition.preflightProbe ?? false,
+    contentHash: profileHash(DEFINITIONS[versionedId]),
+  }
 }
