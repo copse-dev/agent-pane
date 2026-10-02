@@ -55,8 +55,8 @@ Host tunnel
 describe('resolveSshIncludePath', () => {
   it('resolves relative includes against the including file directory', () => {
     assert.equal(
-      resolveSshIncludePath('ddg/*', '/home/alice/.ssh/config'),
-      '/home/alice/.ssh/ddg/*',
+      resolveSshIncludePath('team/*', '/home/alice/.ssh/config'),
+      '/home/alice/.ssh/team/*',
     )
   })
 })
@@ -66,25 +66,25 @@ describe('readSshConfigAliases', () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-ssh-config-'))
     try {
       const sshDir = join(root, '.ssh')
-      const ddgDir = join(sshDir, 'ddg')
-      mkdirSync(ddgDir, { recursive: true })
-      writeFileSync(join(sshDir, 'config'), 'Include ddg/*\nHost top\n  HostName top.example\n')
+      const teamDir = join(sshDir, 'team')
+      mkdirSync(teamDir, { recursive: true })
+      writeFileSync(join(sshDir, 'config'), 'Include team/*\nHost top\n  HostName top.example\n')
       writeFileSync(
-        join(ddgDir, 'euw-serp-dev-testing16'),
-        `Host euw-serp-dev-testing16
+        join(teamDir, 'remote-dev-testing-016'),
+        `Host remote-dev-testing-016
   HostName 127.0.0.1
   Port 25196
-  User jkingston
-  IdentityFile ~/.ssh/ddg-dev
+  User alice
+  IdentityFile ~/.ssh/team-dev
 `,
       )
       const aliases = readSshConfigAliases(join(sshDir, 'config'))
       const names = aliases.map((a) => a.alias).sort()
-      assert.deepEqual(names, ['euw-serp-dev-testing16', 'top'])
-      const nested = aliases.find((a) => a.alias === 'euw-serp-dev-testing16')
+      assert.deepEqual(names, ['remote-dev-testing-016', 'top'])
+      const nested = aliases.find((a) => a.alias === 'remote-dev-testing-016')
       assert.ok(nested)
       assert.equal(nested.port, 25196)
-      assert.equal(nested.user, 'jkingston')
+      assert.equal(nested.user, 'alice')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
