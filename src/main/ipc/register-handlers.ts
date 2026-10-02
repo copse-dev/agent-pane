@@ -3292,19 +3292,6 @@ export function registerAllHandlers(
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
     })
-    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
-      assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([
-        {
-          agent: codex,
-          action: 'upgrade',
-          fromVersion: '1.1.0',
-          toVersion: '1.1.7',
-        },
-      ])
-    })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       // Scanning is a property of the host, and the CI image has neither `ss` nor

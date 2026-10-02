@@ -249,9 +249,11 @@ describe('ACP package install approval', () => {
   it('requires explicit approval and names every global package', async () => {
     let body = ''
     let title = ''
+    let showWhileSettingsOpen = false
     setApprovalHandler(async (request) => {
       title = request.title
       body = request.body
+      showWhileSettingsOpen = request.showWhileSettingsOpen === true
       return { approved: false, remember: false }
     })
     const changes: AcpPackageChange[] = [
@@ -264,24 +266,36 @@ describe('ACP package install approval', () => {
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
     assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
     assert.match(body, /lifecycle scripts disabled/)
+    assert.equal(showWhileSettingsOpen, true)
   })
 
-  it('describes upgrades with from→to versions', () => {
-    const { title, body } = formatAcpPackageApproval([
-      {
-        agent: codex,
-        action: 'upgrade',
-        fromVersion: '1.1.0',
-        toVersion: '1.1.7',
-      },
-    ])
-    assert.equal(title, 'Update ACP adapters globally?')
-    assert.match(body, /@agentclientprotocol\/codex-acp \(1\.1\.0 → 1\.1\.7\)/)
-    assert.match(body, /Socket Firewall \(sfw\)/)
+  it('updates an already installed adapter without asking for approval', async () => {
+    let requests = 0
+    setApprovalHandler(async () => {
+      requests += 1
+      return { approved: false, remember: false }
+    })
+    assert.equal(
+      await requestAcpPackageInstallApproval([
+        {
+          agent: codex,
+          action: 'upgrade',
+          fromVersion: '1.1.0',
+          toVersion: '1.1.7',
+        },
+      ]),
+      true,
+    )
+    assert.equal(requests, 0)
   })
 
-  it('uses a combined title when installing and upgrading together', () => {
-    const { title, body } = formatAcpPackageApproval([
+  it('asks only for missing adapters when installs and upgrades coexist', async () => {
+    let body = ''
+    setApprovalHandler(async (request) => {
+      body = request.body
+      return { approved: false, remember: false }
+    })
+    const changes: AcpPackageChange[] = [
       { agent: claude, action: 'install' },
       {
         agent: codex,
@@ -289,10 +303,11 @@ describe('ACP package install approval', () => {
         fromVersion: '1.1.0',
         toVersion: '1.1.7',
       },
-    ])
-    assert.equal(title, 'Install or update ACP adapters?')
-    assert.match(body, /claude-agent-acp \(new install\)/)
-    assert.match(body, /codex-acp \(1\.1\.0 → 1\.1\.7\)/)
+    ]
+    assert.equal(await requestAcpPackageInstallApproval(changes), false)
+    assert.match(body, /claude-agent-acp/)
+    assert.doesNotMatch(body, /codex-acp/)
+    assert.equal(formatAcpPackageApproval(changes).title, 'Install ACP adapters globally?')
   })
 })
 

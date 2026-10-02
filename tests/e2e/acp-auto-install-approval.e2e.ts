@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('ACP adapter auto-install approval', () => {
   before(async () => {
@@ -17,9 +17,11 @@ describe('ACP adapter auto-install approval', () => {
     resetUserData()
   })
 
-  it('discloses the possible global Socket Firewall install', async function () {
+  it('shows the install approval above open Settings with Socket Firewall disclosure', async function () {
     this.timeout(60_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await browser.execute(() => {
       const bridge = (
         window as unknown as {
@@ -42,35 +44,17 @@ describe('ACP adapter auto-install approval', () => {
     expect(body).toContain('first install it globally')
     expect(body).toContain('lifecycle scripts disabled')
 
-    await saveElementScreenshot('#approval-dialog', 'acp-auto-install-approval.png')
+    const state = await browser.execute(() => ({
+      settingsOpen: document.querySelector<HTMLDialogElement>('#settings-dialog')?.open,
+      approvalModal: document
+        .querySelector<HTMLDialogElement>('#approval-dialog')
+        ?.matches(':modal'),
+    }))
+    expect(state).toEqual({ settingsOpen: true, approvalModal: true })
+
+    await saveAppScreenshot('acp-auto-install-approval.png')
     await dialog.$('.approval-reject').click()
-  })
-
-  it('discloses an outdated adapter upgrade with from→to versions', async function () {
-    this.timeout(60_000)
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.execute(() => {
-      const bridge = (
-        window as unknown as {
-          __copseE2e?: { requestAcpPackageUpgradeApproval: () => Promise<unknown> }
-        }
-      ).__copseE2e
-      if (!bridge?.requestAcpPackageUpgradeApproval) {
-        throw new Error('__copseE2e.requestAcpPackageUpgradeApproval unavailable')
-      }
-      void bridge.requestAcpPackageUpgradeApproval()
-    })
-
-    const dialog = await $('#approval-dialog')
-    await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Update ACP adapters globally?')
-
-    const body = await dialog.$('.approval-body').getText()
-    expect(body).toContain('@agentclientprotocol/codex-acp (1.1.0 → 1.1.7)')
-    expect(body).toContain('Socket Firewall (sfw)')
-    expect(body).toContain('lifecycle scripts disabled')
-
-    await saveElementScreenshot('#approval-dialog', 'acp-auto-upgrade-approval.png')
-    await dialog.$('.approval-reject').click()
+    await expect(dialog).not.toBeDisplayed()
+    await expect($('#settings-dialog')).toBeDisplayed()
   })
 })
