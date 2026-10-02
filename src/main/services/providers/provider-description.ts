@@ -26,18 +26,13 @@ import {
   createProvider,
 } from '@copse/llm/create-provider.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
-import {
-  REASONING_LEVELS,
-  VERBOSITY_LEVELS,
-  type ModelParameters,
-} from '@copse/llm/model-parameters.ts'
+import { REASONING_LEVELS, type ModelParameters } from '@copse/llm/model-parameters.ts'
 import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 
 /** `ModelParameters` as a schema; every field optional, absent meaning "send nothing". */
 const modelParametersSchema = z
   .object({
     reasoning: z.enum(REASONING_LEVELS).optional(),
-    verbosity: z.enum(VERBOSITY_LEVELS).optional(),
     maxOutputTokens: z.number().optional(),
     temperature: z.number().optional(),
     topP: z.number().optional(),

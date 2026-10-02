@@ -12,6 +12,7 @@ import {
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
   restoreRetiredThreadWorktree,
+  restoreMissingThreadWorktree,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
@@ -236,6 +237,14 @@ export async function reattachThreadCheckout(
   const input = await activeThreadWorktreeInput(projectId, threadId)
   if (!input) throw new Error('Only an active thread worktree can be reattached')
   return reattachThreadWorktree(input)
+}
+
+/** Restore an externally removed checkout only after the user clicks in its owning thread. */
+export async function restoreThreadCheckout(projectId: string, threadId: string): Promise<void> {
+  const input = await activeThreadWorktreeInput(projectId, threadId)
+  if (!input) throw new Error('Only an isolated thread worktree can be restored')
+  const worktree = await restoreMissingThreadWorktree(input)
+  await syncAdoptedWorktreeBranch(projectId, threadId, worktree)
 }
 
 async function resolveThreadExecutionContextUncached(

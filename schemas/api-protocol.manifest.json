@@ -920,6 +920,13 @@
           2
         ]
       },
+      "git:restore-worktree": {
+        "api": "git.restoreWorktree",
+        "args": [
+          2,
+          2
+        ]
+      },
       "git:session-backup": {
         "api": "git.sessionBackup",
         "args": [

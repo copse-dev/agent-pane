@@ -23,6 +23,7 @@ const COPY_FEEDBACK_MS = 1600
 let nextPickerId = 0
 
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
+type RecoveryAttachment = Exclude<ThreadWorktreeAttachment, { state: 'attached' }>
 
 function detachedTitle(detached: DetachedAttachment): string {
   if (detached.uncommittedPick) {
@@ -140,7 +141,7 @@ export function mountFooterBranchStatus(
 
   let status: GitBranchStatus | null = null
   /** Set when branch status failed because the thread's own checkout lost its branch. */
-  let detached: (DetachedAttachment & { threadId: string }) | null = null
+  let detached: (RecoveryAttachment & { threadId: string }) | null = null
   let reattaching = false
   const recoveryRuns = new Map<string, string>()
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -186,7 +187,13 @@ export function mountFooterBranchStatus(
    * else the thread's binding, else the checkout.
    */
   function getDisplayBranch(): string | null {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null
+    return (
+      activeBaseBranch() ??
+      getActiveThreadBranch() ??
+      getActiveThread()?.worktree?.branch ??
+      status?.currentBranch ??
+      null
+    )
   }
 
   /**
@@ -303,6 +310,17 @@ export function mountFooterBranchStatus(
     reattachButton.hidden = !shown
     trigger.classList.toggle('is-detached', shown)
     if (!shown) return
+    if (current.state === 'missing') {
+      const title =
+        current.reason ??
+        'Worktree removed. Restore committed files from the retained branch to continue this chat. Dependencies and local-only files are not restored.'
+      trigger.title = title
+      reattachButton.title = title
+      reattachButton.disabled = reattaching || current.reason !== null
+      reattachButton.setAttribute('aria-label', `Restore worktree for ${current.branch}`)
+      reattachButton.textContent = reattaching ? 'Restoring…' : 'Restore worktree'
+      return
+    }
     const title = detachedTitle(current)
     trigger.title = title
     reattachButton.title = title
@@ -337,7 +355,7 @@ export function mountFooterBranchStatus(
   }
 
   /** The detached state, only while it still describes the active thread. */
-  function activeDetached(): DetachedAttachment | null {
+  function activeDetached(): RecoveryAttachment | null {
     return detached?.threadId === store.getState().activeThreadId ? detached : null
   }
 
@@ -352,10 +370,10 @@ export function mountFooterBranchStatus(
 
   async function readDetachedAttachment(
     owner: ActiveThreadOwner,
-  ): Promise<DetachedAttachment | null> {
+  ): Promise<RecoveryAttachment | null> {
     try {
       const attachment = await api.git.worktreeAttachment(owner.projectId, owner.threadId)
-      return attachment.state === 'detached' ? attachment : null
+      return attachment.state !== 'attached' ? attachment : null
     } catch (error) {
       reportBranchFailure('inspect worktree attachment', error)
       return null
@@ -366,7 +384,7 @@ export function mountFooterBranchStatus(
     const owner = getActiveThreadOwner(store)
     const current = activeDetached()
     if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return
-    if (current.recovery) {
+    if (current.state === 'detached' && current.recovery) {
       // A reattach would strand the half-applied state, so finish the
       // operation in the thread's scoped background shell. A successful
       // completion emits a machine-originated "continue" turn below.
@@ -390,6 +408,12 @@ export function mountFooterBranchStatus(
     reattaching = true
     renderReattach()
     try {
+      if (current.state === 'missing') {
+        await api.git.restoreWorktree(owner.projectId, owner.threadId)
+        showToast(`Restored worktree for ${current.branch}. You can continue this chat.`)
+        store.emit('git_branch_changed')
+        return
+      }
       const result = await api.git.reattachWorktree(owner.projectId, owner.threadId)
       showToast(
         result.backupBranch
@@ -398,7 +422,12 @@ export function mountFooterBranchStatus(
       )
       store.emit('git_branch_changed')
     } catch (error) {
-      showErrorToast('Could not reattach the checkout', error)
+      showErrorToast(
+        current.state === 'missing'
+          ? 'Could not restore the worktree'
+          : 'Could not reattach the checkout',
+        error,
+      )
     } finally {
       reattaching = false
       refreshNow()
@@ -594,7 +623,7 @@ export function mountFooterBranchStatus(
     const threadBranch = getActiveThreadBranch()
     branches = []
     defaultBranch = null
-    let nextDetached: (DetachedAttachment & { threadId: string }) | null = null
+    let nextDetached: (RecoveryAttachment & { threadId: string }) | null = null
     try {
       const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
       if (token !== refreshToken) return

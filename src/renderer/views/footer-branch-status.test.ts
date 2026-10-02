@@ -137,6 +137,53 @@ describe('footer branch status', () => {
       throw new Error('Thread worktree is on a detached HEAD')
     }
 
+    it('restores a missing checkout from its own thread and clears the recovery action', async () => {
+      let restored = false
+      const calls: string[] = []
+      const host = mountDetached({
+        branchStatus: async () => {
+          if (!restored) throw new Error('Thread worktree is missing')
+          return { currentBranch: 'copse/thread-branch', pr: null }
+        },
+        worktreeAttachment: async () => ({
+          state: 'missing',
+          branch: 'copse/thread-branch',
+          reason: null,
+        }),
+        restoreWorktree: async (projectId, threadId) => {
+          calls.push(`${projectId}/${threadId}`)
+          restored = true
+        },
+      })
+      await settle()
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.textContent, 'Restore worktree')
+      assert.match(button.title, /local-only files are not restored/)
+      button.click()
+      await settle()
+      await settle()
+      assert.deepEqual(calls, ['project-1/thread-1'])
+      assert.equal(button.hidden, true)
+      assert.match(document.querySelector('.toast-info')?.textContent ?? '', /continue this chat/)
+    })
+
+    it('keeps unavailable recovery visible with a reason and disables restoration', async () => {
+      const host = mountDetached({
+        branchStatus: detachedStatus,
+        worktreeAttachment: async () => ({
+          state: 'missing',
+          branch: 'copse/thread-branch',
+          reason: 'The saved branch is no longer available.',
+        }),
+      })
+      await settle()
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.disabled, true)
+      assert.match(button.title, /no longer available/)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []

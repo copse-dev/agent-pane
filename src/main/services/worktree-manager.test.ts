@@ -17,7 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
@@ -40,6 +40,7 @@ import {
   removeRegisteredWorktreeCheckout,
   renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
+  restoreMissingThreadWorktree,
   retireDeletedThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
@@ -154,6 +155,108 @@ describe('worktree manager', () => {
     for (const path of cleanups.splice(0).reverse()) {
       await rm(path, { recursive: true, force: true })
     }
+  })
+
+  for (const pruned of [false, true]) {
+    it(`restores the retained thread tip after external deletion (pruned=${String(pruned)})`, async () => {
+      const { repo } = await setup()
+      const worktree = await allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-restore',
+        projectRoot: repo,
+        prompt: 'Recover this chat',
+        baseBranch: 'main',
+      })
+      const input = {
+        projectId: 'project-1',
+        threadId: 'thread-restore',
+        projectRoot: repo,
+        worktree,
+      }
+      await writeFile(join(worktree.path, 'saved.txt'), 'thread-only committed work\n')
+      git(worktree.path, ['add', 'saved.txt'])
+      git(worktree.path, ['commit', '-qm', 'thread work'])
+      const tip = git(worktree.path, ['rev-parse', 'HEAD']).trim()
+      await rm(worktree.path, { recursive: true, force: true })
+      if (pruned) {
+        git(repo, ['worktree', 'prune', '--expire', 'now'])
+        await rm(dirname(worktree.path), { recursive: true })
+      }
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'missing',
+        branch: worktree.branch,
+        reason: null,
+      })
+      const restored = await restoreMissingThreadWorktree(input)
+      assert.equal(git(restored.path, ['rev-parse', 'HEAD']).trim(), tip)
+      assert.equal(
+        await readFile(join(restored.path, 'saved.txt'), 'utf8'),
+        'thread-only committed work\n',
+      )
+      assert.equal(git(repo, ['branch', '--show-current']).trim(), 'main')
+      assert.deepEqual(await inspectThreadWorktreeAttachment({ ...input, worktree: restored }), {
+        state: 'attached',
+      })
+      await assert.rejects(restoreMissingThreadWorktree(input), /already exists/)
+    })
+  }
+
+  it('refuses existing files and redirected restore destinations', async () => {
+    const { temp, repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-restore',
+      projectRoot: repo,
+      prompt: 'Recover this chat',
+      baseBranch: 'main',
+    })
+    const input = {
+      projectId: 'project-1',
+      threadId: 'thread-restore',
+      projectRoot: repo,
+      worktree,
+    }
+    git(repo, ['worktree', 'remove', worktree.path])
+    await mkdir(worktree.path)
+    await writeFile(join(worktree.path, 'keep.txt'), 'do not overwrite')
+    await assert.rejects(restoreMissingThreadWorktree(input))
+    assert.equal(await readFile(join(worktree.path, 'keep.txt'), 'utf8'), 'do not overwrite')
+    await rm(worktree.path, { recursive: true })
+    await symlink(join(temp, 'missing-outside'), worktree.path)
+    await assert.rejects(restoreMissingThreadWorktree(input), /symlink/)
+    assert.equal((await lstat(worktree.path)).isSymbolicLink(), true)
+    await unlink(worktree.path)
+    await rm(dirname(worktree.path), { recursive: true })
+    await symlink(join(temp, 'missing-parent-outside'), dirname(worktree.path))
+    await assert.rejects(restoreMissingThreadWorktree(input), /dangling symlink/)
+  })
+
+  it('does not restore from the base when the retained thread branch is missing or held elsewhere', async () => {
+    const { temp, repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-restore',
+      projectRoot: repo,
+      prompt: 'Recover this chat',
+      baseBranch: 'main',
+    })
+    const input = {
+      projectId: 'project-1',
+      threadId: 'thread-restore',
+      projectRoot: repo,
+      worktree,
+    }
+    git(repo, ['worktree', 'remove', worktree.path])
+    const elsewhere = join(temp, 'other-checkout')
+    git(repo, ['worktree', 'add', elsewhere, worktree.branch])
+    await assert.rejects(restoreMissingThreadWorktree(input), /already checked out/)
+    git(repo, ['worktree', 'remove', elsewhere])
+    git(repo, ['branch', '-D', worktree.branch])
+    const state = await inspectThreadWorktreeAttachment(input)
+    assert.equal(state.state, 'missing')
+    assert.match(state.reason ?? '', /no longer available/)
+    await assert.rejects(restoreMissingThreadWorktree(input), /no longer available/)
+    await assert.rejects(lstat(worktree.path), /ENOENT/)
   })
 
   it('allocates, lists, validates, and safely retires a clean linked checkout', async () => {
