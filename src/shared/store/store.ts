@@ -38,6 +38,8 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
+    sidebarThreadSort: 'activity',
+    sidebarThreadSortReverse: false,
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial,
