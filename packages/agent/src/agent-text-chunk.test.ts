@@ -161,6 +161,38 @@ describe('planAgentTextChunk', () => {
     })
   })
 
+  it('keeps a table row together when a tool call cuts it mid-row', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: '|---|---|\n| 40 ×' },
+      ' 100 | 5.5–6.2 ms | 823 |',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('keeps a dangling bold marker with the text that closes it', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'rows\n\n- **' },
+      'Why the sidebar is cheap:** it renders',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('keeps text inside an open code fence in the same bubble', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Run:\n```sh\npnpm test' },
+      '\nDone',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('rejoins a hyphenated word split by a tool call', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'about 5–10 sidebar-' },
+      'relevant events',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('threads currentText through the returned state on append', () => {
     const { state } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: false, currentText: 'Hello' },

@@ -38,10 +38,24 @@ function continuesSentence(prevText: string, text: string): boolean {
   if (!first) return false
   if ("'’,;)…–—".includes(first)) return true
   if (first >= 'a' && first <= 'z') {
+    // A hyphen at the very end of a word ("sidebar-") is itself the join.
+    if (text === trimmedStart && /[A-Za-z]-$/.test(prevText)) return true
     const hasWordBoundary = text !== trimmedStart || /\s$/.test(prevText)
     return hasWordBoundary
   }
   return false
+}
+
+// The prior text stops inside a markdown construct that cannot render on its
+// own: an unclosed code fence, a table row cut before its closing pipe, or a
+// dangling emphasis/code marker. Splitting here strands the markers as literal
+// text in one bubble and a headless fragment in the next.
+function endsInsideMarkup(text: string): boolean {
+  if (/\n$/.test(text)) return false
+  if ((text.match(/^ {0,3}(```|~~~)/gm) ?? []).length % 2 === 1) return true
+  const lastLine = text.slice(text.lastIndexOf('\n') + 1).trim()
+  if (lastLine.startsWith('|') && !lastLine.endsWith('|')) return true
+  return /(\*\*|__|~~|[*_`])$/.test(lastLine)
 }
 
 export function planAgentTextChunk(
@@ -64,12 +78,13 @@ export function planAgentTextChunk(
   // Continuation heuristic: a tool call interrupted the model mid-sentence. If
   // the pre-tool text has no boundary and this chunk resumes the sentence, keep
   // it in the same bubble instead of stranding the fragment in its own message.
+  // Text cut inside a table row, code fence or emphasis marker always resumes.
   const isMidSentenceContinuation =
     !isWhitespaceOnly &&
     state.msgId !== null &&
     state.toolSinceText &&
-    !endsAtBoundary(currentText) &&
-    continuesSentence(currentText, text)
+    (endsInsideMarkup(currentText) ||
+      (!endsAtBoundary(currentText) && continuesSentence(currentText, text)))
 
   const needsNewMessage = (!state.msgId || state.toolSinceText) && !isMidSentenceContinuation
   if (!isWhitespaceOnly && needsNewMessage) {
