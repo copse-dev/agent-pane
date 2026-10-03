@@ -16,7 +16,7 @@ import {
 } from '@shared/threads/spine-schema.ts'
 import { hookCardFromSpineLine, type HookCard } from '@shared/hooks/hook-card.ts'
 import { fingerprintToolset, type ToolsetFingerprint } from '@shared/threads/toolset-fingerprint.ts'
-import { safeJsonStringify } from '@shared/safe-json.ts'
+import { safeJsonParse, safeJsonStringify } from '@shared/safe-json.ts'
 import { appendHookRun } from './thread-store.ts'
 import { storageGet } from './storage/storage.ts'
 
@@ -100,11 +100,6 @@ function smallestMembersFirst(value: unknown, ancestors: Set<object> = new Set()
     return { value, size: json === undefined ? 0 : json.length }
   }
   if (ancestors.has(value)) throw new TypeError('cyclic capture payload')
-  const toJSON: unknown = Reflect.get(value, 'toJSON')
-  if (typeof toJSON === 'function') {
-    const replaced: unknown = Reflect.apply(toJSON, value, [])
-    return smallestMembersFirst(replaced, ancestors)
-  }
   ancestors.add(value)
   try {
     if (Array.isArray(value)) {
@@ -118,10 +113,10 @@ function smallestMembersFirst(value: unknown, ancestors: Set<object> = new Set()
       sized: smallestMembersFirst(Reflect.get(value, key), ancestors),
     }))
     members.sort((a, b) => a.sized.size - b.sized.size || a.index - b.index)
-    const rebuilt: Record<string, unknown> = {}
+    const entries: [string, unknown][] = members.map((member) => [member.key, member.sized.value])
+    const rebuilt = Object.fromEntries(entries)
     let size = 1
     for (const member of members) {
-      rebuilt[member.key] = member.sized.value
       size += member.key.length + 4 + member.sized.size
     }
     return { value: rebuilt, size }
@@ -136,7 +131,12 @@ function smallestMembersFirst(value: unknown, ancestors: Set<object> = new Set()
  */
 function capturePayloadJson(payload: unknown): string | null {
   try {
-    return captureJson(smallestMembersFirst(payload).value)
+    // Let native JSON serialization apply toJSON keys, self returns and boxed
+    // primitives once, then reorder only the resulting JSON data.
+    const json = safeJsonStringify(payload)
+    if (json === undefined) return null
+    const normalized = safeJsonParse(json, (value) => value)
+    return captureJson(smallestMembersFirst(normalized).value)
   } catch {
     return null
   }

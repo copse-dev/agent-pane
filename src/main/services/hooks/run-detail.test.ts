@@ -81,6 +81,42 @@ describe('hooks:run-detail — the raw record behind a hook card', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('captures own proto fields and native toJSON key and self-return semantics', async () => {
+    let calls = 0
+    const selfReturning = {
+      label: 'self',
+      toJSON(): unknown {
+        calls++
+        return this
+      },
+    }
+    const payload = {
+      nested: {
+        toJSON(key: string): unknown {
+          return { suppliedKey: key }
+        },
+      },
+      selfReturning,
+    }
+    Object.defineProperty(payload, '__proto__', { value: { preserved: true }, enumerable: true })
+    recordFunctionHookRun({
+      event: 'beforeFinalize',
+      hookId: 'json-semantics',
+      startedAt: 100,
+      durationMs: 1,
+      payload,
+      outcome: { injectContext: 'context' },
+    })
+    await flushStore()
+    const detail = await readHookRunDetail(PROJECT, THREAD, recordedRunId(root))
+    assert.ok(detail.payload)
+    assert.ok(detail.payload.includes('"__proto__"'))
+    assert.ok(detail.payload.includes('"preserved": true'))
+    assert.ok(detail.payload.includes('"suppliedKey": "nested"'))
+    assert.ok(detail.payload.includes('"label": "self"'))
+    assert.equal(calls, 1)
+  })
+
   it('returns the context a function hook injected, not just its length', async () => {
     setHookRunStep(2)
     recordFunctionHookRun({
