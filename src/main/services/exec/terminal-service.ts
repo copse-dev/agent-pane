@@ -301,7 +301,7 @@ async function spawnShell(
     id: randomUUID(),
     pty: ptyProcess,
     owner,
-    output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
+    output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, { evidence: true }),
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
     projectId: meta?.projectId ?? null,
@@ -459,7 +459,7 @@ export function __testInjectTerminalSession(opts: {
   outputText: string
 }): string {
   const id = randomUUID()
-  const output = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES)
+  const output = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, { evidence: true })
   output.append(opts.outputText)
   const session: TerminalSession = {
     id,
