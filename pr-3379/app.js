@@ -72028,7 +72028,7 @@ function mountProjectsPane(root, store2, api2) {
       dismissBtn.addEventListener("click", () => {
         void dismissOrphanProject(api2, orphan.id).then(() => {
           orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          render();
+          render(true);
           showToast("Recoverable threads hidden. They remain on disk.");
         }).catch((err2) => {
           showErrorToast("Could not dismiss recoverable threads", err2);
@@ -72304,7 +72304,8 @@ function mountProjectsPane(root, store2, api2) {
     }
     return entries2;
   }
-  function render() {
+  function render(preserveScroll = false) {
+    const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
     clear(list);
@@ -72313,6 +72314,7 @@ function mountProjectsPane(root, store2, api2) {
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
+      if (preserveScroll) list.scrollTop = scrollTop;
       return;
     }
     function renderThreadRow(project2, thread, options = {}) {
@@ -72991,6 +72993,7 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    if (preserveScroll) list.scrollTop = scrollTop;
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -72999,7 +73002,9 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store2.on("thread_status_changed", render),
+    store2.on("thread_status_changed", () => {
+      render();
+    }),
     store2.on("workspace_changed", () => {
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
