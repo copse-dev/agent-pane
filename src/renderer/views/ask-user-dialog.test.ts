@@ -155,6 +155,85 @@ describe('ask_user dialog (component)', () => {
     // modal methods are shimmed per-mount via mount()
   })
 
+  it('queues Claude reauthentication until Settings and its cleanup confirmation both close', async () => {
+    const { api, harness } = stubApi()
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
+    const settings = document.createElement('dialog')
+    const cleanup = document.createElement('dialog')
+    document.body.append(settings, cleanup)
+    settings.showModal()
+    cleanup.showModal()
+    harness.emit({
+      id: 'claude-login',
+      questions: [{ question: 'Claude’s saved sign-in has expired. Run `claude /login`?' }],
+    })
+    assert.equal(dialog().open, false)
+    assert.deepEqual(
+      requests.pending().map((req) => req.id),
+      ['claude-login'],
+    )
+    cleanup.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false, 'Settings still owns the foreground')
+    assert.deepEqual(harness.responses, [], 'deferral must not answer or decline sign-in')
+    settings.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.match(
+      document.querySelector('.ask-user-question')?.textContent ?? '',
+      /sign-in has expired/,
+    )
+    at(inputs(), 0).value = 'Not now'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'claude-login', answers: ['Not now'] }])
+  })
+
+  it('removes a reauthentication request cancelled while another dialog is open', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'cancelled-login', questions: [{ question: 'Sign in again?' }] })
+    harness.cancel('cancelled-login')
+    blocker.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('shows a deferred request after a blocking dialog is removed', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'deferred', questions: [{ question: 'Still need an answer?' }] })
+    assert.equal(dialog().open, false)
+    blocker.remove()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('waits for Escape release before presenting a deferred question', async () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    const blocker = document.createElement('dialog')
+    document.body.append(blocker)
+    blocker.showModal()
+    harness.emit({ id: 'deferred-login', questions: [{ question: 'Sign in again?' }] })
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+    blocker.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    document.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Escape' }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, true)
+    assert.deepEqual(harness.responses, [])
+  })
+
   it('renders a question and returns the typed answer on submit', () => {
     const { api, harness } = stubApi()
     mount(api)
@@ -461,6 +540,25 @@ describe('ask_user dialog thread scoping', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     resetAttention()
+  })
+
+  it('rechecks thread focus when a question deferred by Settings becomes eligible', async () => {
+    const { api, harness } = stubApi()
+    mountScoped(api)
+    const settings = document.createElement('dialog')
+    document.body.append(settings)
+    settings.showModal()
+    harness.emit({ id: 'login', threadId: 'focused', questions: [{ question: 'Sign in again?' }] })
+    focusThread('other')
+    settings.close()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(dialog().open, false)
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+    focusThread('focused')
+    assert.equal(dialog().open, true)
+    at(inputs(), 0).value = 'Not now'
+    submitForm()
+    assert.deepEqual(harness.responses, [{ id: 'login', answers: ['Not now'] }])
   })
 
   it('withdraws the open question when the user switches away from its thread', () => {
