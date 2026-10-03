@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -25,6 +26,7 @@ describe('remove project from sidebar', () => {
     resetUserData()
     seedProjectSwitchFixture(process.cwd())
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const beta = await projectRow('Project B')

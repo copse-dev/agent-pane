@@ -110,7 +110,7 @@ describe('Debug trace', function () {
 
     // The new thread is active and named after the one it is about, so it is
     // findable in the sidebar before it has ever been sent.
-    await expect($('.chats-list .chat-row.selected .chat-title')).toHaveText(
+    await expect($('.thread-browser-list .chat-row.selected .chat-title')).toHaveText(
       `Debug: ${THREAD_TITLE}`,
     )
 

@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
@@ -119,6 +120,7 @@ describe('automation attention grouping', function () {
       },
     })
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -331,7 +333,9 @@ describe('automation attention grouping', function () {
             return `started thread absent from loadProject (${String(loaded.length)} thread(s))`
           return JSON.stringify({
             activeProjectSelected:
-              document.querySelector('.chat-row.selected[data-thread-id="regular-chat"]') !== null,
+              document.querySelector(
+                '.thread-project-manager .chat-row.selected[data-thread-id="regular-chat"]',
+              ) !== null,
             status: thread.status ?? '<unset>',
             // The three `isPendingAutomation` terms, so a silent early return
             // names the term that rejected it.

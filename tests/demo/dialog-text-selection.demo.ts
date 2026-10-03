@@ -6,7 +6,9 @@ describe('native dialog text selection', () => {
   it('keeps Activity approval chrome non-selectable without disabling the action', async () => {
     await browser.url('/?scenario=approval-light-accent')
     await $('#approval-dialog').waitForDisplayed()
-    await $('.projects-activity-btn').click()
+    // The default thread sidebar opens Activity from its header menu.
+    await $('.thread-browser-more').click()
+    await $('.context-menu-item=Activity').click()
     await $('#activity-panel').waitForDisplayed()
     const approve = $('#activity-panel .activity-approve')
     await approve.waitForEnabled()

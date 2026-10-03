@@ -143,10 +143,12 @@ describe('switching between isolated running threads', () => {
   it('keeps thread A running and persisted when switching to thread B', async function () {
     this.timeout(150_000)
 
-    const aRow = $(`.chat-row[data-thread-id="${THREAD_A}"]`)
-    const bRow = $(`.chat-row[data-thread-id="${THREAD_B}"]`)
-    await aRow.waitForDisplayed({ timeout: 15_000 })
-    await bRow.waitForDisplayed({ timeout: 15_000 })
+    // Rows are rebuilt when a thread starts running or is selected, so look
+    // them up again for each action rather than holding an element handle.
+    const aRow = `.chat-row[data-thread-id="${THREAD_A}"]`
+    const bRow = `.chat-row[data-thread-id="${THREAD_B}"]`
+    await $(aRow).waitForDisplayed({ timeout: 15_000 })
+    await $(bRow).waitForDisplayed({ timeout: 15_000 })
 
     // Keep A in its real provider turn while selecting the second checkout.
     // Both turns leave an actual directory listing in their persisted history.
@@ -160,7 +162,11 @@ describe('switching between isolated running threads', () => {
     ])
     await $('.submit-btn').click()
     await browser.waitUntil(
-      async () => aRow.getAttribute('class').then((value) => value.includes('is-running')),
+      () =>
+        browser.execute(
+          (selector) => document.querySelector(selector)?.classList.contains('is-running') ?? false,
+          aRow,
+        ),
       {
         timeout: 15_000,
         timeoutMsg: 'thread A did not enter a running state',
@@ -176,7 +182,7 @@ describe('switching between isolated running threads', () => {
       timeoutMsg: 'thread A was not present in the main-process run registry',
     })
 
-    await bRow.click()
+    await $(bRow).click()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', THREAD_B)
 
     // Switching the active thread must leave A in the main-process run registry.

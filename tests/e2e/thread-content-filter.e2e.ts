@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import type { Message, Thread } from '../../src/shared/types/index.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -73,6 +74,7 @@ describe('sidebar user-request search', () => {
       ],
     })
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30000 })
   })
 
@@ -81,12 +83,12 @@ describe('sidebar user-request search', () => {
   })
 
   it('finds persisted user requests beyond the first page in date order and opens a match', async () => {
-    await expect($('.chat-row[data-thread-id="old-request"]')).not.toExist()
+    await expect($('.thread-project-manager .chat-row[data-thread-id="old-request"]')).not.toExist()
     await $('.projects-search-btn').click()
     await setFilterValue('needle')
     await browser.waitUntil(
       async () =>
-        (await $$('.chat-title').map((row) => row.getText())).join('|') ===
+        (await $$('.thread-project-manager .chat-title').map((row) => row.getText())).join('|') ===
           'Needle title match|Recent request|Older follow-up request' &&
         !(await $('.thread-filter-status').isExisting()),
       {
@@ -94,33 +96,43 @@ describe('sidebar user-request search', () => {
         timeoutMsg: 'Expected title and user-request matches in newest-first order',
       },
     )
-    await expect($('.chat-row[data-thread-id="assistant-only"]')).not.toExist()
-    await expect($('.chat-row[data-thread-id="automatic-only"]')).not.toExist()
-    await expect($('.chat-row[data-thread-id="elsewhere"]')).not.toExist()
+    await expect(
+      $('.thread-project-manager .chat-row[data-thread-id="assistant-only"]'),
+    ).not.toExist()
+    await expect(
+      $('.thread-project-manager .chat-row[data-thread-id="automatic-only"]'),
+    ).not.toExist()
+    await expect($('.thread-project-manager .chat-row[data-thread-id="elsewhere"]')).not.toExist()
     await saveElementScreenshot('#pane-projects', 'sidebar-thread-content-filter.png')
 
-    await $('.chat-row[data-thread-id="old-request"]').click()
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Older follow-up request')
+    await $('.thread-project-manager .chat-row[data-thread-id="old-request"]').click()
+    await expect($('.thread-project-manager .chat-row.selected .chat-title')).toHaveText(
+      'Older follow-up request',
+    )
     await expect($('.messages-list')).toHaveText(expect.stringContaining('A later needle request'))
 
     await setFilterValue('no-such-request')
     await expect($('.chats-list .sidebar-empty')).toHaveText('No matching threads')
     await setFilterValue('')
-    await expect($('.chat-row[data-thread-id="welcome"]')).toExist()
+    await expect($('.thread-project-manager .chat-row[data-thread-id="welcome"]')).toExist()
   })
 
   it('clears the old search when switching workspaces and searches only the newly opened workspace', async () => {
     await setFilterValue('needle')
     await $('.project-entry[data-project-id="other-workspace"] .project-row').click()
     await expect($('.projects-search-row')).not.toBeDisplayed()
-    await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
+    await expect($('.thread-project-manager .chat-row .chat-title')).toHaveText(
+      'Other workspace request',
+    )
     await $('.projects-search-btn').click()
     await setFilterValue('needle')
-    await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
+    await expect($('.thread-project-manager .chat-row .chat-title')).toHaveText(
+      'Other workspace request',
+    )
     await browser.waitUntil(async () => !(await $('.thread-filter-status').isExisting()), {
       timeout: 15000,
     })
-    await expect($$('.chat-row')).toBeElementsArrayOfSize(1)
+    await expect($$('.thread-project-manager .chat-row')).toBeElementsArrayOfSize(1)
     await browser.keys('Escape')
     await expect($('.projects-search-row')).not.toBeDisplayed()
   })

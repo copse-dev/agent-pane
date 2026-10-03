@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { openProjectManager } from './helpers/project-manager.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -29,7 +30,8 @@ describe('fork a thread and resend the last message', function () {
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const sourceRow = await $('.chat-row.selected')
+    await openProjectManager()
+    const sourceRow = await $('.thread-project-manager .chat-row.selected')
     const sourceThreadId = await sourceRow.getAttribute('data-thread-id')
     await sourceRow.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
@@ -37,10 +39,14 @@ describe('fork a thread and resend the last message', function () {
     await $('.context-menu-item*=Fork a copy').click()
 
     await browser.waitUntil(
-      async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== sourceThreadId,
+      async () =>
+        (await $('.thread-project-manager .chat-row.selected').getAttribute('data-thread-id')) !==
+        sourceThreadId,
       { timeout: 10_000, timeoutMsg: 'expected the whole-thread fork to become active' },
     )
-    const forkedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    const forkedThreadId = await $('.thread-project-manager .chat-row.selected').getAttribute(
+      'data-thread-id',
+    )
     if (!forkedThreadId) throw new Error('forked thread has no id')
     const historyPath = join(e2eWorkspaceDir(), projectId, forkedThreadId, 'agent-history.json')
 

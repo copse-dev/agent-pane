@@ -180,7 +180,7 @@ describe('Process manager', function () {
     await browser.pause(1_200)
     assert.equal(await dialog.getAttribute('data-sampled-at'), lastSample)
 
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await browser.waitUntil(
       async () =>
         (await $('.chat-row.selected').getAttribute('data-thread-id')) !== originalThreadId,

@@ -103,8 +103,8 @@ async function openCenteredPortraitChrome(): Promise<void> {
     rightPanelPosition: 'bottom',
   })
   await browser.reloadSession()
-  await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
-  await $('.project-new-thread-btn').click()
+  await $('.thread-browser [aria-label="New thread"]').waitForClickable({ timeout: 30_000 })
+  await $('.thread-browser [aria-label="New thread"]').click()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await pinPortraitAppShell()
   await setProjectsWidth(200)

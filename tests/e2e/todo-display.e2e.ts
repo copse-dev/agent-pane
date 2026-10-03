@@ -17,7 +17,7 @@ async function openRightPanel(): Promise<void> {
 
 async function clickThreadByTitle(title: string): Promise<void> {
   await browser.execute((threadTitle) => {
-    const rows = [...document.querySelectorAll('.chats-list .chat-row')]
+    const rows = [...document.querySelectorAll('.thread-browser-list .chat-row')]
     const row = rows.find((r) => r.querySelector('.chat-title')?.textContent === threadTitle)
     row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   }, title)
@@ -142,7 +142,7 @@ describe('todo plan display', () => {
 
     await openRightPanel()
     await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
-    await expect($('#pane-projects .chats-list')).toBeDisplayed()
+    await expect($('#pane-projects .thread-browser-list')).toBeDisplayed()
     await expect($('#file-tree-host')).toBeDisplayed()
 
     await saveThreePaneScreenshot('todo-no-plan.png')

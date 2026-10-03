@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { BEST_VALUE_CHAT_MODEL } from '../../src/shared/lm-studio-defaults.ts'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-automation-trigger-problem'
-const PROJECT_MENU = `.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`
+// The per-project menu button lives in the project manager behind "Projects".
+const PROJECT_MENU = `.thread-project-manager .project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`
 
 function schedule(id: string, name: string, lastProblem?: Record<string, unknown>): object {
   return {
@@ -64,6 +66,7 @@ describe('automation trigger problems in the project modal', function () {
 
   it('says why the latest attempt did not run, only on the schedules that had a problem', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openProjectManager()
     await $(PROJECT_MENU).click()
     await $('.context-menu-item=Automations').click()
     const dialog = $('#automation-dialog')

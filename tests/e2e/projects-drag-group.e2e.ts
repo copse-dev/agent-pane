@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, seedProjectGroupsFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
@@ -23,12 +24,13 @@ describe('projects sidebar groups', () => {
     resetUserData()
   })
 
-  it('drags a project into a group and keeps it parented across a relaunch', async () => {
+  it('drags a project into a group', async () => {
     resetUserData()
     const { projectIds, groupId } = seedProjectGroupsFixture(process.cwd(), { withGroup: true })
     const [alpha] = projectIds
     if (!alpha) throw new Error('fixture did not seed three projects')
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.project-group-row').waitForExist({ timeout: 10_000 })
 
@@ -48,8 +50,11 @@ describe('projects sidebar groups', () => {
     await waitForSidebarShape(['Beta', 'Client work > Gamma', 'Client work > Alpha'])
     await expect($('.project-group-count')).toHaveText('2')
     await saveElementScreenshot('#pane-projects', 'projects-group-after.png')
+  })
 
+  it('restores the project group membership after a relaunch', async () => {
     await browser.reloadSession()
+    await openProjectManager()
     await $('.project-group-row').waitForExist({ timeout: 30_000 })
     await waitForSidebarShape(['Beta', 'Client work > Gamma', 'Client work > Alpha'])
     await saveElementScreenshot('#pane-projects', 'projects-group-persisted.png')
@@ -59,6 +64,7 @@ describe('projects sidebar groups', () => {
     resetUserData()
     seedProjectGroupsFixture(process.cwd(), { withGroup: true })
     await browser.reloadSession()
+    await openProjectManager()
     // Wait for the composer, not just for a group row to exist. `main.ts` mounts
     // the panes and only then restores the project, so a group row appears while
     // the sidebar is still being rebuilt, and a click into that window lands on a

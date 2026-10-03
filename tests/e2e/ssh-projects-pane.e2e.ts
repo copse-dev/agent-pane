@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -15,6 +16,7 @@ describe('SSH remote project entry point', () => {
     seedEmptyProject(process.cwd(), 'e2e-ssh-projects-pane')
     seedSshWorkspaceSettings()
     await browser.reloadSession()
+    await openProjectManager()
   })
 
   after(() => {
@@ -31,12 +33,16 @@ describe('SSH remote project entry point', () => {
     const newThreadButton = await $('.project-new-thread-btn')
     await expect(newThreadButton).toBeDisplayed()
     await newThreadButton.click()
-    const threadRow = await $('.chat-row')
+    const threadRow = await $('.thread-project-manager .chat-row')
     await expect(threadRow).toBeDisplayed()
     await threadRow.moveTo()
 
     const actionCenters = await browser.execute(() =>
-      ['.projects-add-btn', '.project-new-thread-btn', '.chat-menu-btn'].map((selector) => {
+      [
+        '.thread-project-manager .projects-add-btn',
+        '.thread-project-manager .project-new-thread-btn',
+        '.thread-project-manager .chat-menu-btn',
+      ].map((selector) => {
         const action = document.querySelector<HTMLElement>(selector)
         if (!action) throw new Error(`Missing sidebar action: ${selector}`)
         const rect = action.getBoundingClientRect()
@@ -50,7 +56,7 @@ describe('SSH remote project entry point', () => {
 
     await saveElementScreenshot('#pane-projects', 'ssh-projects-pane.png')
 
-    const addButton = await $('.projects-add-btn')
+    const addButton = await $('.thread-project-manager .projects-add-btn')
     await expect(addButton).toHaveAttribute('aria-label', 'Add project')
     await expect(addButton).toHaveAttribute(
       'data-tooltip',

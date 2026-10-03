@@ -45,6 +45,8 @@ test('compacting keeps the row fields and drops the transcript', () => {
   assert.equal(compacted.messages, undefined)
   assert.equal(compacted.automation?.scheduleId, 'health')
   assert.equal(compacted.unreadAt, 20)
+  assert.equal(compacted.createdAt, 1)
+  assert.equal(compacted.updatedAt, 2)
 })
 
 test('compacting carries the PR scrape over, so the status chip survives it', () => {
@@ -111,6 +113,36 @@ test('cached refs union with the live scrape, so a tool-recorded PR shows on a h
     sidebarPrRefs(withCache).map((ref) => ref.number),
     [12, 44],
   )
+})
+
+test('an unloaded transcript retains remote-agent PR metadata and unions cached refs', () => {
+  const unloaded: SidebarThread = {
+    ...thread({
+      messages: [message('stale', 'https://github.com/copse-dev/agent-pane/pull/12')],
+      remoteAgentLink: {
+        provider: 'cursor',
+        agentId: 'bc-1',
+        repo: 'copse-dev/agent-pane',
+        prUrl: 'https://github.com/copse-dev/agent-pane/pull/99',
+        createdAt: 1,
+      },
+    }),
+    messagesLoaded: false,
+    prRefs: [99, 44].map((number) => ({
+      url: `https://github.com/copse-dev/agent-pane/pull/${String(number)}`,
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      number,
+    })),
+  }
+
+  assert.deepEqual(
+    sidebarPrRefs(unloaded).map((ref) => ref.number),
+    [99, 44],
+  )
+  const compacted = compactSidebarThread(unloaded)
+  assert.equal(compacted.messages, undefined)
+  assert.deepEqual(sidebarPrRefs(compacted), sidebarPrRefs(unloaded))
 })
 
 test('a live thread re-reads its messages, so a link streamed in mid-turn is found', () => {

@@ -215,7 +215,7 @@ describe('staged diff approval UI', () => {
     )
     await saveAppScreenshot('staged-diff-rapid-selection.png')
 
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await browser.waitUntil(async () => !(await $('.git-changes-section-proposed').isDisplayed()), {
       timeout: 10_000,
@@ -226,7 +226,7 @@ describe('staged diff approval UI', () => {
     const showMore = await $('.chats-show-more')
     if (await showMore.isExisting()) await showMore.click()
     await browser.execute(() => {
-      const rows = [...document.querySelectorAll('.chats-list .chat-row')]
+      const rows = [...document.querySelectorAll('.thread-browser-list .chat-row')]
       const row = rows.find((candidate) => !candidate.classList.contains('selected'))
       row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

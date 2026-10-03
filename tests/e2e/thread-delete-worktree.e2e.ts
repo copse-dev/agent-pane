@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -117,6 +118,7 @@ describe('thread deletion → worktree retirement', function () {
     })
 
     await browser.reloadSession()
+    await openProjectManager()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
@@ -134,7 +136,7 @@ describe('thread deletion → worktree retirement', function () {
   })
 
   async function deleteFromSidebar(threadId: string): Promise<void> {
-    const row = $(`.chat-row[data-thread-id="${threadId}"]`)
+    const row = $(`.thread-project-manager .chat-row[data-thread-id="${threadId}"]`)
     await row.waitForDisplayed({ timeout: 30_000 })
     // Open the row menu through the same hover control a person uses.
     await row.moveTo()
@@ -148,9 +150,11 @@ describe('thread deletion → worktree retirement', function () {
 
   it('removes the clean worktree and keeps the dirty one for Settings', async () => {
     for (const threadId of [KEEP_THREAD_ID, CLEAN_THREAD_ID, DIRTY_THREAD_ID]) {
-      await $(`.chat-row[data-thread-id="${threadId}"]`).waitForDisplayed({ timeout: 30_000 })
+      await $(`.thread-project-manager .chat-row[data-thread-id="${threadId}"]`).waitForDisplayed({
+        timeout: 30_000,
+      })
     }
-    await expect($$('.chat-row[data-thread-id]')).toBeElementsArrayOfSize(3)
+    await expect($$('.thread-project-manager .chat-row[data-thread-id]')).toBeElementsArrayOfSize(3)
     assert.ok(registeredWorktrees(projectRoot).includes(cleanRoot))
     assert.ok(registeredWorktrees(projectRoot).includes(dirtyRoot))
 
@@ -182,7 +186,7 @@ describe('thread deletion → worktree retirement', function () {
     assert.notEqual(git(projectRoot, ['branch', '--list', DIRTY_BRANCH]), '')
     assert.ok(existsSync(join(workspaceDir, PROJECT_ID, KEEP_THREAD_ID)))
 
-    await $('[aria-label="Settings"]').click()
+    await $('.thread-project-manager [aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="storage"]').click()
     const row = $(`.sources-row[data-worktree-path="${dirtyRoot}"]`)
     await row.waitForDisplayed({ timeout: 30_000 })

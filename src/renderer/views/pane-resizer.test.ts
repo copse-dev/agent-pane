@@ -104,9 +104,10 @@ describe('pane resizer', () => {
     })
     mountPaneResizers(body, store, apiStub())
 
-    // 1000px body - 240px Projects = 760px shared by chat and the panel.
-    assert.equal(store.getState().layout.filesPaneWidth, Math.floor((760 * 2) / 3))
-    assert.equal(body.style.getPropertyValue('--files-width'), '506px')
+    const sharedWidth = body.clientWidth - DEFAULT_LAYOUT.projectsPaneWidth
+    const panelWidth = Math.floor((sharedWidth * 2) / 3)
+    assert.equal(store.getState().layout.filesPaneWidth, panelWidth)
+    assert.equal(body.style.getPropertyValue('--files-width'), `${String(panelWidth)}px`)
   })
 
   it('preserves the chat share while widening the Projects pane', () => {

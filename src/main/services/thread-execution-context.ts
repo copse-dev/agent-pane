@@ -138,6 +138,31 @@ export function resolveThreadExecutionContext(
   return pending
 }
 
+/**
+ * Resolve a thread's checkout for read-only inspection (the thread browser's
+ * Git status). It validates ownership and the registered checkout exactly as
+ * {@link resolveThreadExecutionContext} does, including a paused Git
+ * recovery, but never restores a retired worktree or records branch changes.
+ */
+export function inspectThreadExecutionContext(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadExecutionContextDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext> {
+  return resolveThreadExecutionContextUncached(projectId, threadId, {
+    getProjectRoot: dependencies.getProjectRoot,
+    getThreadMeta: dependencies.getThreadMeta,
+    validateWorktree: dependencies.validateWorktree ?? validateThreadWorktree,
+    validateWorktreeRecovery:
+      dependencies.validateWorktreeRecovery ?? validateThreadWorktreeRecovery,
+    restoreWorktree: ({ worktree }) => {
+      if (worktree.retiredAt !== undefined)
+        return Promise.reject(new Error('Thread worktree is retired'))
+      return Promise.resolve(worktree)
+    },
+  })
+}
+
 /** Resolve the same validated checkout for a terminal as for the rest of the thread. */
 export async function resolveThreadTerminalExecutionContext(
   projectId: string,

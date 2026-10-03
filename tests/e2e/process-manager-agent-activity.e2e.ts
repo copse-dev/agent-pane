@@ -92,7 +92,7 @@ describe('Process manager agent activity', function () {
     await browser.keys('Escape')
 
     await dialog.$('[aria-label="Close process manager"]').click()
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await browser.waitUntil(
       async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== threadId,
       { timeout: 10_000 },

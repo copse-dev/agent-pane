@@ -1252,7 +1252,11 @@ export interface ApiClient {
   }
   git: {
     isAvailable: (projectId: string, threadId: string) => Promise<boolean>
-    status: (projectId: string, threadId: string) => Promise<GitStatusResult | null>
+    status: (
+      projectId: string,
+      threadId: string,
+      inspectOnly?: boolean,
+    ) => Promise<GitStatusResult | null>
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
     changeStats: (
       projectId: string,
