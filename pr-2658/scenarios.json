@@ -40,6 +40,10 @@
     "label": "Semantic search subagent markdown"
   },
   {
+    "id": "approval-thread-switch-scroll",
+    "label": "Switch between threads awaiting permission"
+  },
+  {
     "id": "approval-light-accent",
     "label": "Light-theme approval with a bright accent"
   },
@@ -50,6 +54,22 @@
   {
     "id": "approval-grouped-shell-commands",
     "label": "Grouped outside-sandbox command approval"
+  },
+  {
+    "id": "product-announcements-fresh",
+    "label": "Product announcements — fresh"
+  },
+  {
+    "id": "product-announcements-existing",
+    "label": "Product announcements — existing"
+  },
+  {
+    "id": "product-announcements-update",
+    "label": "Product announcements — update"
+  },
+  {
+    "id": "product-announcements-seen",
+    "label": "Product announcements — seen"
   },
   {
     "id": "update-prompt-changelog",
