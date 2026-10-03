@@ -86,6 +86,56 @@ function addFinishedAssistant(
 }
 
 describe('explicit failed-turn recovery', () => {
+  it('offers an interrupted restart before any assistant output and continues only on click', () => {
+    const { store, api, runs } = setup()
+    const threadId = createThread(store)
+    const userId = addMessage(store, threadId, 'user', 'Upload the report')
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((thread) =>
+          thread.id === threadId ? { ...thread, interruptedTurnAt: Date.now() } : thread,
+        ),
+    })
+
+    assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), userId), {
+      interruptedByRestart: true,
+    })
+    assert.equal(runs.length, 0)
+    assert.equal(
+      recoverFailedTurn(store, api, 'project-1', threadId, userId, 'current-model'),
+      true,
+    )
+    assert.equal(runs.length, 1)
+    assert.equal(getThreadById(store, threadId)?.interruptedTurnAt, undefined)
+    assert.equal(
+      parseAgentRunPayload(runs[0]?.payload ?? '').userContent,
+      INTERRUPTED_TURN_CONTINUATION,
+    )
+  })
+
+  it('does not offer restart recovery after a completed turn or newer message', () => {
+    const { store } = setup()
+    const threadId = createThread(store)
+    const userId = addMessage(store, threadId, 'user', 'Check the build')
+    const interruptedAt = Date.now()
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((thread) =>
+          thread.id === threadId ? { ...thread, interruptedTurnAt: interruptedAt } : thread,
+        ),
+    })
+    const completedId = addFinishedAssistant(
+      store,
+      threadId,
+      'Build passed',
+      outcome('completed', 'local', 'model-a'),
+    )
+    assert.equal(turnRecoveryForMessage(getThreadById(store, threadId), completedId), null)
+    assert.equal(turnRecoveryForMessage(getThreadById(store, threadId), userId), null)
+  })
+
   it('continues from persisted history instead of repeating the side-effecting prompt', () => {
     const { store, api, runs } = setup()
     const threadId = createThread(store)

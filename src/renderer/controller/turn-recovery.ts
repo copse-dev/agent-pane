@@ -14,6 +14,7 @@ export type FailedTurnRecoveryMode = 'current-model' | 'last-known-good'
 export interface FailedTurnRecovery {
   /** A route that completed an earlier turn. It may no longer be available now. */
   lastKnownGoodModel?: string
+  interruptedByRestart?: true
 }
 
 /**
@@ -35,14 +36,16 @@ export function turnRecoveryForMessage(
 
   const failedIndex = thread.messages.length - 1
   const failed = thread.messages[failedIndex]
+  if (!failed || failed.id !== failedMessageId) return null
   if (
-    !failed ||
-    failed.id !== failedMessageId ||
-    failed.role !== 'assistant' ||
-    failed.turnOutcome?.status !== 'failed'
+    thread.interruptedTurnAt !== undefined &&
+    failed.createdAt <= thread.interruptedTurnAt &&
+    (failed.role === 'user' || failed.role === 'assistant') &&
+    failed.turnOutcome === undefined
   ) {
-    return null
+    return { interruptedByRestart: true }
   }
+  if (failed.role !== 'assistant' || failed.turnOutcome?.status !== 'failed') return null
 
   if (failed.turnOutcome.source !== 'provider') return {}
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
