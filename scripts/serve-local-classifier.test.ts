@@ -20,7 +20,7 @@ describe('persistent classifier cache', () => {
     else process.env['COPSE_CLASSIFIER_CACHE'] = originalCache
   })
 
-  it('returns an existing checkout to the exact pinned revision before setup', () => {
+  it('returns an existing checkout to the exact pinned revision before setup', async () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-classifier-cache-'))
     roots.push(root)
     const repository = join(root, 'repository')
@@ -51,7 +51,7 @@ describe('persistent classifier cache', () => {
       serve: () => [],
       port: 1,
     }
-    prepareClassifierCache('fixture', spec)
+    await prepareClassifierCache('fixture', spec)
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), pinned)
     assert.equal(
       readFileSync(marker, 'utf8'),
@@ -59,7 +59,7 @@ describe('persistent classifier cache', () => {
     )
   })
 
-  it('refuses tracked modifications in a managed checkout', () => {
+  it('refuses tracked modifications in a managed checkout', async () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-classifier-cache-'))
     roots.push(root)
     const repository = join(root, 'repository')
@@ -85,8 +85,8 @@ describe('persistent classifier cache', () => {
       serve: () => [],
       port: 1,
     }
-    assert.throws(
-      () => prepareClassifierCache('fixture', spec),
+    await assert.rejects(
+      prepareClassifierCache('fixture', spec),
       /tracked modifications; refusing to run unpinned code/u,
     )
   })

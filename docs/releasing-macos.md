@@ -41,7 +41,7 @@ package contains the other architecture's application or native helper:
 
 | Artifact                                 | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
-| `Copse-<ver>-<arch>.dmg`                 | First-install disk image.                    |
+| `Copse-<ver>-<arch>.dmg`                 | First-install disk image, notarized.         |
 | `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | Payload and differential-update metadata.    |
 | `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
 | `SHA256SUMS`                             | Checksums for every promoted artifact.       |
@@ -113,8 +113,10 @@ Monday. Publishing is the only routine manual step:
    `Unreleased` above it, and drop the previous version's section. The PR
    auto-merges when `CI Passed` is green. The week is skipped, with a notice on
    the run, when the current version has not been published yet or `Unreleased`
-   is empty. To hold a release, disable auto-merge on the PR; to change its
-   notes, edit the `## <version>` section on the PR branch.
+   is empty. A version whose release run failed is never published, so the
+   schedule will not cut past it; see [Failed releases](#failed-releases). To
+   hold a release, disable auto-merge on the PR; to change its notes, edit the
+   `## <version>` section on the PR branch.
 2. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
    `main` to `release`, or dispatch it early. Merging requires the full
    `CI Passed` tier. The promotion PR's head is `promote/main`, pinned to the
@@ -137,7 +139,9 @@ Monday. Publishing is the only routine manual step:
    `Release (macOS)` run ID. The publisher verifies the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
    then creates a prerelease for beta or a normal/latest release for stable in
-   `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
+   `copse-dev/copse-releases`. It first commits `LATEST.md` there, naming the
+   release, and tags that commit: GitHub dates and orders releases by the
+   tagged commit, so each release needs its own. It never rebuilds. GitHub artifact attestation is
    added automatically once the source repository is public; until then the
    signed build, immutable Actions artifact, and published SHA256 manifest are
    the integrity chain available on this GitHub Team plan. Publishing is what
@@ -163,11 +167,19 @@ section in `CHANGELOG.md`.
 
 A version is cut exactly once. If its release run fails, fix forward and bump to
 the next version rather than re-cutting the same one: the publisher refuses to
-replace an existing release, and downgrade is not a supported rollback. The
-weekly bump waits for the failed version to be published, so abandoning one is a
-manual bump: move the abandoned `## <version>` section's entries back into
-`Unreleased` (the bump drops earlier version sections), then run
-`node scripts/release-bump.mts`.
+replace an existing release, and downgrade is not a supported rollback.
+
+A failed `Release (macOS)` run opens an `area:release` issue named
+`Release (macOS) failed for <tag>`, or comments on it if a retry fails too.
+Close it once a later release is published.
+
+The weekly bump waits for the current version to be published, which a failed
+version never will be. To abandon it once the fix has merged, dispatch
+`Bump release version` with the next version (for example `0.1.0-beta.12` past a
+failed `0.1.0-beta.11`). An explicit version cuts past an unpublished one and
+passes `--carry-forward` to the bump, which folds the abandoned version's notes
+into the new section instead of dropping them, and the bump PR says so. Locally,
+the same is `node scripts/release-bump.mts --carry-forward <version>`.
 
 A manual dispatch of `Release (macOS)` accepts only an existing matching tag
 reachable from `release`; it does not provide a bypass around those gates.
@@ -192,12 +204,24 @@ Keychain. `release:dry` reads signing/notarization values from the environment;
 it does not upload. `npm run pack:mac` creates a quick unsigned `.app` directory
 for development and is not distributable.
 
-Validate a signed app bundle rather than the enclosing DMG:
+Validate the signed app bundle:
 
 ```bash
 spctl -a -vvv -t install "release/mac-arm64/Copse.app"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
 xcrun stapler validate "release/mac-arm64/Copse.app"
+```
+
+`Release (macOS)` also signs, notarizes, and staples the DMG itself, then
+rebuilds its blockmap from the stapled bytes
+([`scripts/rebuild-dmg-blockmap.mts`](../scripts/rebuild-dmg-blockmap.mts)). A
+local `dist:mac` or `release:dry` signs and notarizes only the app. To check a
+released DMG:
+
+```bash
+codesign --verify --strict --verbose=2 Copse-<ver>-arm64.dmg
+spctl -a -vvv -t open --context context:primary-signature Copse-<ver>-arm64.dmg
+xcrun stapler validate Copse-<ver>-arm64.dmg
 ```
 
 After downloading an Actions artifact or the files from a GitHub Release into

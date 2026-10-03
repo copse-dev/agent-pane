@@ -140,7 +140,14 @@ interface BrowserHtmlPageContents {
 }
 
 const PAGE_HTML_SCRIPT = `(() => {
-  const documentElement = document.documentElement;
+  const documentElement = document.documentElement?.cloneNode(true);
+  if (documentElement) {
+    let head = documentElement.querySelector('head');
+    if (!head) { head = document.createElement('head'); documentElement.prepend(head); }
+    let base = head.querySelector('base[href]');
+    if (!base) { base = document.createElement('base'); head.prepend(base); }
+    base.setAttribute('href', document.baseURI);
+  }
   return {
     title: document.title,
     url: location.href,
