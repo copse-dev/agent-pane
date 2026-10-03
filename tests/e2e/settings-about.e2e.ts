@@ -100,16 +100,18 @@ describe('Settings → About', () => {
       'Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases.',
     )
 
-    await select.selectByAttribute('value', 'beta')
+    // Re-selecting the current option fires no change, so only a build that
+    // starts on Stable switches to Beta first; both then switch to Stable.
     if (installed === 'stable') {
+      await select.selectByAttribute('value', 'beta')
       await expect(updates.$('.about-update-status')).toHaveText(
         'Copse now updates to beta releases.',
       )
+      await browser.waitUntil(async () => (await savedChannel()) === 'beta', {
+        timeout: 5_000,
+        timeoutMsg: 'choosing Beta was not saved',
+      })
     }
-    await browser.waitUntil(async () => (await savedChannel()) === 'beta', {
-      timeout: 5_000,
-      timeoutMsg: 'choosing Beta was not saved',
-    })
 
     // Switching to Stable saves the choice and says what happens next for
     // this build: at once on a stable build, at the next stable from a beta.
