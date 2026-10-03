@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { readShardWeights } from './test-oracle.mts'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -71,7 +72,7 @@ describe('ci.yml workflow invariants', () => {
     return args.filter((_arg, index) => index % 2 === 1)
   }
 
-  it('spreads the full eligible suite without losing coverage or clustering explainer specs', () => {
+  it('balances the full eligible suite by recorded duration without losing coverage', () => {
     const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
       encoding: 'utf8',
     })
@@ -82,18 +83,35 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
     const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
     assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
-    const sizes = buckets.map((bucket) => bucket.length)
-    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1)
-    const family = ['thread-explainer-drawing', 'thread-explainer-scenes', 'thread-explainer']
-    const owners = family.map((name) =>
-      buckets.findIndex((bucket) => bucket.includes(`tests/e2e/${name}.e2e.ts`)),
+    // The 720s attempt watchdog needs headroom on every shard, not on average:
+    // round-robin by count let the slowest shard run ~180s past the fastest.
+    // This bound replaces #3355's rule that the explainer specs never share a
+    // worker, which stood in for it.
+    const weights = readShardWeights()
+    const loads = buckets.map((bucket) =>
+      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? 0), 0),
     )
-    assert.equal(
-      new Set(owners).size,
-      family.length,
-      'long animation cases must not share a worker',
+    assert.ok(
+      Math.max(...loads) - Math.min(...loads) < 30,
+      `recorded shard durations should be within 30s: ${loads.map(Math.round).join(', ')}`,
     )
-    assert.ok(owners.every((owner) => owner >= 0))
+  })
+
+  it('records a duration for every spec the full suite runs', () => {
+    const weights = readShardWeights()
+    const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
+      encoding: 'utf8',
+    })
+    const missing = listed.stdout
+      .trim()
+      .split('\n')
+      .filter((spec) => !weights.has(spec))
+    // A new spec is placed at the median weight, so a few gaps are harmless;
+    // many mean the weights are stale and the balance is drifting.
+    assert.ok(
+      missing.length <= 20,
+      `run \`pnpm run e2e:shard-weights\` to record ${String(missing.length)} unweighted specs`,
+    )
   })
 
   it('keeps subset plans scoped and safely handles an empty slice', () => {

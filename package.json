@@ -11,6 +11,7 @@
     "dev": "node scripts/dev.mts",
     "oracle": "node scripts/test-oracle.mts",
     "check:oracle": "node scripts/check-oracle.mts",
+    "e2e:shard-weights": "node scripts/e2e-shard-weights.mts",
     "check:screenshots": "node scripts/check-screenshots.mts",
     "check:e2e-syntax": "node scripts/check-e2e-syntax.mts",
     "check:e2e-exclusions": "node scripts/check-e2e-exclusions.mts",
