@@ -15,6 +15,7 @@ export interface StartupSettings {
   theme: unknown
   fontSize: unknown
   animateAgentAvatars: unknown
+  conciseThreadsEnabled: unknown
   uiScale: unknown
   uiAccentColor: unknown
   uiTintColor: unknown
@@ -41,6 +42,7 @@ export async function loadStartupSettings(
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -56,6 +58,7 @@ export async function loadStartupSettings(
     settings.get('theme'),
     settings.get('fontSize'),
     settings.get('animateAgentAvatars'),
+    settings.get('conciseThreadsEnabled'),
     settings.get('uiScale'),
     settings.get('uiAccentColor'),
     settings.get('uiTintColor'),
@@ -73,6 +76,7 @@ export async function loadStartupSettings(
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,

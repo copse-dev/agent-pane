@@ -6,6 +6,7 @@ import {
   bellIcon,
   chevronRightIcon,
   closeIcon,
+  gitMergeIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
   plusIcon,
@@ -16,6 +17,7 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, ProjectGroup } from '@shared/types'
+import type { GhPrChecksState } from '@shared/types/git.ts'
 import {
   archiveThread,
   deleteThread,
@@ -49,11 +51,16 @@ import {
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
-import { createThreadFilter } from '../controller/thread-filter.ts'
-import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import {
+  createThreadFilter,
+  filterText,
+  residentRequestMatches,
+} from '../controller/thread-filter.ts'
+import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
@@ -127,14 +134,16 @@ function runningStatus(label: string): SVGSVGElement {
 }
 
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
-  const label = describeThreadPrStatus(rollup)
-  const icon = gitPullRequestIcon('ui-icon ui-icon-sm')
+function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
+  const label = ciFailing
+    ? `${describeThreadPrStatus(rollup)}; checks are failing`
+    : describeThreadPrStatus(rollup)
+  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -185,6 +194,64 @@ function automationSetupBtn(
     open()
   })
   return btn
+}
+
+/** One schedule's run/setup actions, addressed the way the sidebar groups are. */
+interface AutomationMenuTarget {
+  project: Project
+  scheduleName: string
+  scheduleId: string
+}
+
+/**
+ * Fire a schedule immediately through the same IPC the editor's Run-now
+ * button uses. The outcome surfaces as a toast: this runs from a menu that
+ * has already closed, so unlike the editor there is no inline status element
+ * to write into. A coalesced run says why, as the editor's status line does.
+ */
+function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
+  void api.automations
+    .runNow(target.project.id, target.scheduleId)
+    .then((event) => {
+      showToast(
+        event.disposition === 'started'
+          ? `Started “${target.scheduleName}”.`
+          : event.coalescedReason === 'worktree-limit'
+            ? `“${target.scheduleName}” has reached its live worktree limit.`
+            : `“${target.scheduleName}” is already pending or running.`,
+      )
+    })
+    .catch((error: unknown) => {
+      showErrorToast(
+        `Could not run “${target.scheduleName}”`,
+        ipcErrorMessage(error, 'The run could not start'),
+      )
+    })
+}
+
+/**
+ * One schedule's shared right-click actions, rendered on the sidebar's
+ * schedule headings. "Run now" is the editor's Run-now button, reached
+ * without opening the dialog.
+ */
+function automationMenuEntries(
+  api: ApiClient,
+  target: AutomationMenuTarget,
+  openSetup: () => void,
+): ContextMenuEntry[] {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: 'Run now',
+      onSelect: (): void => {
+        startRunNow(api, target)
+      },
+    },
+    {
+      label: 'Automation setup…',
+      onSelect: openSetup,
+    },
+  ]
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -254,8 +321,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // (which render() clears on every update) so its focus and value survive
   // re-renders while the user is typing.
   let threadFilter = ''
+  // The workspace whose threads the open filter is narrowing.
+  let filteredProjectId = store.getState().activeProjectId
+  // Scan progress can report a match per transcript; coalesce those into one
+  // sidebar render per frame.
+  let renderFrameQueued = false
   const contentFilter = createThreadFilter(store, api, () => {
-    render()
+    if (renderFrameQueued) return
+    renderFrameQueued = true
+    requestAnimationFrame(() => {
+      renderFrameQueued = false
+      render()
+    })
   })
   const searchInput = el('input', {
     type: 'text',
@@ -286,7 +363,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
   })
   searchInput.addEventListener('input', () => {
-    threadFilter = searchInput.value.trim().toLowerCase()
+    threadFilter = filterText(searchInput.value.trim())
+    filteredProjectId = store.getState().activeProjectId
     contentFilter.search(threadFilter)
     render()
   })
@@ -369,6 +447,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
+  const prBackfillRequested = new Map<string, Set<string>>()
+  const prBackfillRetryAttempts = new Map<string, number>()
+  const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
+  let prBackfillRowsByKey = new Map<string, Element>()
+  let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
   // every schedule regardless of which project it belongs to. Expansion is
@@ -379,6 +462,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
+  // Project selection and expansion also emit `projects_changed`, but only a
+  // change to the project ids can alter which thread stores are orphaned.
+  let knownProjectIds = new Set(store.getState().projects.map((project) => project.id))
+  let orphanScanGeneration = 0
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
   let renaming: { threadId: string; draft: string } | null = null
@@ -398,7 +485,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
   // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
-  const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
+  const prLifecycleCache = new Map<
+    string,
+    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+  >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
 
@@ -473,8 +563,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         .then((details) => {
           if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
-          lifecycleChanged = prLifecycleCache.get(key)?.state !== state
-          prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
+          const previous = prLifecycleCache.get(key)
+          lifecycleChanged = previous?.state !== state
+          // CI only matters while the PR is open; the dot is the one extra cue.
+          prLifecycleCache.set(key, {
+            state,
+            ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
+            fetchedAt: Date.now(),
+          })
+          if (state !== 'open') return undefined
+          return api.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+            if (generation !== prStatusGeneration) return
+            const entry = prLifecycleCache.get(key)
+            if (!entry) return
+            if (entry.checks !== checks) lifecycleChanged = true
+            prLifecycleCache.set(key, { ...entry, checks })
+          })
         })
         .catch(() => {
           if (generation !== prStatusGeneration) return
@@ -490,6 +594,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (lifecycleChanged) render()
         })
     }
+  }
+
+  function ciFailingForThread(thread: SidebarThread): boolean {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref))
+      return entry?.state === 'open' && entry.checks === 'failure'
+    })
   }
 
   function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
@@ -652,9 +763,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return section
   }
 
+  function refreshOrphansIfProjectSetChanged(): void {
+    const nextIds = new Set(store.getState().projects.map((project) => project.id))
+    if (
+      nextIds.size === knownProjectIds.size &&
+      [...nextIds].every((id) => knownProjectIds.has(id))
+    ) {
+      return
+    }
+    knownProjectIds = nextIds
+    refreshOrphans()
+  }
+
   function refreshOrphans(): void {
+    const generation = ++orphanScanGeneration
     void listOrphanProjects(api)
-      .then((next) => {
+      .then((scanned) => {
+        if (generation !== orphanScanGeneration) return
+        // Recovery can emit before its new project id reaches main-process
+        // config. Exclude ids already known to the renderer from that stale scan.
+        const known = new Set(store.getState().projects.map((project) => project.id))
+        const next = scanned.filter((orphan) => !known.has(orphan.id))
         const changed =
           next.length !== orphans.length ||
           next.some((o, i) => {
@@ -671,6 +800,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (changed) render()
       })
       .catch((err: unknown) => {
+        if (generation !== orphanScanGeneration) return
         showErrorToast('Could not scan recoverable threads', err)
       })
   }
@@ -947,7 +1077,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(): void {
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
     clear(list)
+    const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
@@ -1067,6 +1200,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           ...(scheduleId
             ? [
                 {
+                  label: 'Run now',
+                  onSelect: (): void => {
+                    startRunNow(api, {
+                      project,
+                      scheduleName: thread.automation?.scheduleName ?? thread.title,
+                      scheduleId,
+                    })
+                  },
+                },
+                {
                   label: 'Automation setup…',
                   onSelect: (): void => {
                     openAutomationDialog(store, api, { projectId: project.id, scheduleId })
@@ -1100,7 +1243,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const prRollup = rollupForThread(thread)
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
-        chatRow.append(chatPrStatus(prRollup))
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === 'open' && ciFailingForThread(thread)),
+        )
+      }
+
+      if (thread.prRefs === undefined) {
+        prBackfillRows.push({ row: chatRow, projectId: project.id, threadId: thread.id })
       }
 
       if (canMutate) {
@@ -1188,6 +1337,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       toggle.addEventListener('click', () => {
         automationsSectionExpanded = !automationsSectionExpanded
         render()
+      })
+      toggle.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        showContextMenu(e.clientX, e.clientY, [
+          {
+            label: 'New automation…',
+            onSelect: (): void => {
+              openAutomationDialog(store, api, { createNew: true })
+            },
+          },
+        ])
       })
       section.append(
         el(
@@ -1287,6 +1448,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               }),
             ),
           )
+          scheduleToggle.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            showContextMenu(
+              e.clientX,
+              e.clientY,
+              automationMenuEntries(
+                api,
+                {
+                  project,
+                  scheduleName,
+                  scheduleId,
+                },
+                () => {
+                  openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                },
+              ),
+            )
+          })
           if (scheduleRevealed) {
             const runRows = el('div', { class: 'automation-schedule-runs' })
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns
@@ -1503,13 +1683,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const matchingThreads = isFiltering
         ? sidebarThreads.filter(
             (t) =>
-              (t.title || 'New Thread').toLowerCase().includes(threadFilter) ||
+              filterText(t.title || 'New Thread').includes(threadFilter) ||
               contentFilter.matches.has(t.id) ||
-              t.messages?.some(
-                (message) =>
-                  isHumanUserPrompt(message) &&
-                  message.content.toLowerCase().includes(threadFilter),
-              ),
+              residentRequestMatches(t.messages ?? [], threadFilter),
           )
         : sidebarThreads
       // Automation runs are collated in the workspace-level Automations section
@@ -1569,7 +1745,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             'Some threads could not be searched',
           ),
         )
-      } else if (isFiltering && matchingThreads.length === 0) {
+      } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
 
@@ -1620,6 +1796,70 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())
+
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
+    )
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
+      const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
+        prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
+      )
+      const observer = new IntersectionObserver((entries) => {
+        if (prBackfillObserver !== observer) return
+        const pending = new Map<string, Array<{ threadId: string; row: Element }>>()
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          observer.unobserve(entry.target)
+          const thread = rowThreads.get(entry.target)
+          if (!thread) continue
+          const requested = prBackfillRequested.get(thread.projectId) ?? new Set<string>()
+          prBackfillRequested.set(thread.projectId, requested)
+          if (requested.has(thread.threadId)) continue
+          requested.add(thread.threadId)
+          const rows = pending.get(thread.projectId) ?? []
+          rows.push({ threadId: thread.threadId, row: entry.target })
+          pending.set(thread.projectId, rows)
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId)
+          for (let i = 0; i < rows.length; i += 10) {
+            const batch = rows.slice(i, i + 10)
+            const threadIds = batch.map(({ threadId }) => threadId)
+            void api.threads
+              .backfillPrRefs(projectId, threadIds)
+              .then(() => {
+                for (const threadId of threadIds) {
+                  prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`)
+                }
+              })
+              .catch((err: unknown) => {
+                let attempt = 1
+                for (const threadId of threadIds) {
+                  const key = `${projectId}\0${threadId}`
+                  const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1
+                  prBackfillRetryAttempts.set(key, nextAttempt)
+                  attempt = Math.max(attempt, nextAttempt)
+                }
+                const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
+                const timer = setTimeout(() => {
+                  prBackfillRetryTimers.delete(timer)
+                  for (const { threadId } of batch) requested?.delete(threadId)
+                  const currentObserver = prBackfillObserver
+                  if (!currentObserver) return
+                  for (const { threadId } of batch) {
+                    const row = prBackfillRowsByKey.get(`${projectId}\0${threadId}`)
+                    if (row?.isConnected) currentObserver.observe(row)
+                  }
+                }, delay)
+                prBackfillRetryTimers.add(timer)
+                console.warn('[threads] visible PR-ref backfill failed:', err)
+              })
+          }
+        }
+      })
+      prBackfillObserver = observer
+      for (const { row } of prBackfillRows) observer.observe(row)
+    }
   }
 
   const unsubs = [
@@ -1631,7 +1871,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', render),
     store.on('workspace_changed', () => {
-      closeThreadFilter()
+      // Only a switch to another workspace invalidates the filter; adding or
+      // removing some other project leaves the open one's search intact.
+      if (store.getState().activeProjectId !== filteredProjectId) closeThreadFilter()
+      else if (threadFilter) contentFilter.search(threadFilter)
       // Drop cached PR lifecycles when the workspace changes so we don't paint
       // another project's GitHub state onto the new sidebar.
       prStatusGeneration += 1
@@ -1641,16 +1884,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('attention_changed', render),
     store.on('attention_changed', syncActivityButton),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store.on('projects_changed', refreshOrphans),
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store.on('projects_changed', refreshOrphansIfProjectSetChanged),
   ]
 
   render()
   refreshOrphans()
   return () => {
     contentFilter.cancel()
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
+    prBackfillRetryTimers.clear()
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
+    prBackfillRowsByKey.clear()
     prStatusGeneration += 1
+    orphanScanGeneration += 1
     dismissContextMenu()
     renaming = null
     renamingGroup = null

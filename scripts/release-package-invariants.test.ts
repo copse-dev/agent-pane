@@ -75,6 +75,34 @@ describe('release package invariants', () => {
     assert.doesNotMatch(generator, /iconutil failed/)
   })
 
+  it('centers the drag targets and arrow in the DMG content area', () => {
+    const build = record(packageJson['build'], 'package.json build')
+    const dmg = record(build['dmg'], 'package.json build.dmg')
+    assert.equal(dmg['background'], 'build/dmg-background.png')
+    assert.deepEqual(dmg['contents'], [
+      { x: 130, y: 140, type: 'file' },
+      { x: 410, y: 140, type: 'link', path: '/Applications' },
+    ])
+  })
+
+  it('ships the Mermaid bootstrap only inlined in its hash-pinned frame', () => {
+    const build = record(packageJson['build'], 'package.json build')
+    const files = build['files']
+    assert.ok(Array.isArray(files))
+    assert.ok(files.includes('!dist/renderer/mermaid-frame.js'))
+  })
+
+  it('keeps only the English Chromium locales the English-only UI uses', () => {
+    const build = record(packageJson['build'], 'package.json build')
+    const mac = record(build['mac'], 'package.json build.mac')
+    assert.deepEqual(mac['electronLanguages'], ['en'])
+  })
+
+  it('prunes Windows and Linux native payloads from the macOS app before signing', () => {
+    const afterPack = readFileSync(resolve('scripts/after-pack.cjs'), 'utf8')
+    assert.match(afterPack, /pruneForeignMacosPayloads\(join\(resources, 'node_modules'\)/)
+  })
+
   it('removes the unused native keyring architecture before signing', () => {
     const afterPack = readFileSync(resolve('scripts/after-pack.cjs'), 'utf8')
     assert.match(afterPack, /unusedKeyringPackageArch/)

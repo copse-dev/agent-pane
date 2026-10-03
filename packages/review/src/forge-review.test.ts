@@ -426,6 +426,157 @@ describe('forge review', () => {
     ])
   })
 
+  it('adds a configurable feedback label after posting findings', async () => {
+    const { fetch, calls } = fakeFetch([200, 200])
+    const posted = await postForgeReview(target, report(), {
+      toolVersion: 'test',
+      fetch,
+      feedbackLabel: 'review-has-feedback',
+    })
+    assert.equal(posted.feedbackLabel, 'review-has-feedback')
+    assert.equal(posted.feedbackLabelError, undefined)
+    assert.deepEqual(
+      calls.map((call) => [call.url, call.body]),
+      [
+        ['https://api.github.com/repos/copse-dev/agent-pane/pulls/42/reviews', calls[0]?.body],
+        [
+          'https://api.github.com/repos/copse-dev/agent-pane/issues/42/labels',
+          { labels: ['review-has-feedback'] },
+        ],
+      ],
+    )
+  })
+
+  it('does not add a feedback label when there are no findings to post', async () => {
+    const { fetch, calls } = fakeFetch([])
+    const posted = await postForgeReview(target, report({ findings: [] }), {
+      toolVersion: 'test',
+      fetch,
+      feedbackLabel: 'review-has-feedback',
+      skipWhenEmpty: true,
+    })
+    assert.equal(posted.notPosted, 'no findings')
+    assert.equal(posted.feedbackLabel, undefined)
+    assert.ok(calls.every((call) => !call.url.endsWith('/labels')))
+  })
+
+  it('resolves and adds a configurable Forgejo feedback label', async () => {
+    const calls: Call[] = []
+    const fetch: FetchLike = (url, init) => {
+      const body: unknown = JSON.parse(init.body ?? '{}')
+      assert.ok(typeof body === 'object' && body !== null)
+      calls.push({ url, headers: init.headers, body: { ...body } })
+      if (url.endsWith('/pulls/42/reviews')) {
+        return Promise.resolve({
+          status: 201,
+          text: () => Promise.resolve(JSON.stringify({ id: 9, html_url: 'u', user: null })),
+        })
+      }
+      if (url.endsWith('/labels?limit=50&page=1')) {
+        return Promise.resolve({
+          status: 200,
+          text: () => Promise.resolve(JSON.stringify([{ id: 17, name: 'review-has-feedback' }])),
+        })
+      }
+      return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
+    }
+    const posted = await postForgeReview(
+      { ...target, forge: 'forgejo', apiBase: 'https://code.example.org/' },
+      report(),
+      { toolVersion: 'test', fetch, feedbackLabel: 'review-has-feedback' },
+    )
+    assert.equal(posted.feedbackLabel, 'review-has-feedback')
+    assert.deepEqual(
+      calls.map((call) => [call.url, call.body]),
+      [
+        [
+          'https://code.example.org/api/v1/repos/copse-dev/agent-pane/pulls/42/reviews',
+          calls[0]?.body,
+        ],
+        ['https://code.example.org/api/v1/repos/copse-dev/agent-pane/labels?limit=50&page=1', {}],
+        [
+          'https://code.example.org/api/v1/repos/copse-dev/agent-pane/issues/42/labels',
+          { labels: [17] },
+        ],
+      ],
+    )
+  })
+
+  it('resolves a Forgejo feedback label beyond the first 500 repository labels', async () => {
+    const calls: Call[] = []
+    const fetch: FetchLike = (url, init) => {
+      const body: unknown = JSON.parse(init.body ?? '{}')
+      assert.ok(typeof body === 'object' && body !== null)
+      calls.push({ url, headers: init.headers, body: { ...body } })
+      if (url.endsWith('/pulls/42/reviews')) {
+        return Promise.resolve({
+          status: 201,
+          text: () => Promise.resolve(JSON.stringify({ id: 9, html_url: 'u', user: null })),
+        })
+      }
+      const pageMatch = /\/labels\?limit=50&page=(\d+)$/.exec(url)
+      if (pageMatch !== null) {
+        const page = Number(pageMatch[1])
+        const labels =
+          page <= 10
+            ? Array.from({ length: 50 }, (_unused, index) => ({
+                id: (page - 1) * 50 + index + 1,
+                name: `label-${String((page - 1) * 50 + index + 1)}`,
+              }))
+            : [{ id: 501, name: 'review-has-feedback' }]
+        return Promise.resolve({
+          status: 200,
+          text: () => Promise.resolve(JSON.stringify(labels)),
+        })
+      }
+      return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
+    }
+
+    const posted = await postForgeReview(
+      { ...target, forge: 'forgejo', apiBase: 'https://code.example.org/' },
+      report(),
+      { toolVersion: 'test', fetch, feedbackLabel: 'review-has-feedback' },
+    )
+
+    assert.equal(posted.feedbackLabel, 'review-has-feedback')
+    assert.equal(posted.feedbackLabelError, undefined)
+    assert.equal(calls.filter((call) => call.url.includes('/labels?limit=50&page=')).length, 11)
+    assert.deepEqual(calls.at(-1)?.body, { labels: [501] })
+  })
+
+  it('stops when Forgejo repeats a full label page', async () => {
+    const labels = Array.from({ length: 50 }, (_unused, index) => ({
+      id: index + 1,
+      name: `label-${String(index + 1)}`,
+    }))
+    let labelPageCalls = 0
+    const fetch: FetchLike = (url) => {
+      if (url.endsWith('/pulls/42/reviews')) {
+        return Promise.resolve({
+          status: 201,
+          text: () => Promise.resolve(JSON.stringify({ id: 9, html_url: 'u', user: null })),
+        })
+      }
+      if (url.includes('/labels?limit=50&page=')) {
+        labelPageCalls += 1
+        return Promise.resolve({
+          status: 200,
+          text: () => Promise.resolve(JSON.stringify(labels)),
+        })
+      }
+      return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
+    }
+
+    const posted = await postForgeReview(
+      { ...target, forge: 'forgejo', apiBase: 'https://code.example.org/' },
+      report(),
+      { toolVersion: 'test', fetch, feedbackLabel: 'review-has-feedback' },
+    )
+
+    assert.match(posted.feedbackLabelError ?? '', /repeated a full label page/)
+    assert.equal(labelPageCalls, 2)
+  })
+
   it("supersedes its own earlier reviews on a re-run and leaves everyone else's alone", async () => {
     const sha = 'c'.repeat(40)
     const reviews = [

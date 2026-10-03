@@ -1,6 +1,12 @@
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type {
+  LLMMessage,
+  MachineDispatchResult,
+  MachineTurnDisplay,
+  StreamChunk,
+  UserContent,
+} from '@shared/types'
 import {
   SPINE_SCHEMA_VERSION,
   type MachineContinuationResult,
@@ -57,9 +63,8 @@ export interface AgentDispatchRequest {
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
+  display?: MachineTurnDisplay
 }
-
-export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budget-exhausted'
 
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
@@ -334,15 +339,27 @@ export class AgentDispatcher {
     await this.epochWrites.get(key)
     for (;;) {
       const active = this.active.get(key)
-      if (!active) break
+      if (!active) {
+        // Claim before loading or persisting machine bookkeeping. Otherwise a
+        // foreground dispatch can take the thread during either await, after
+        // the continuation has already consumed budget and recorded a start.
+        return this.dispatchExclusively(request, key, (host) =>
+          this.executeClaimedMachine(request, key, host),
+        )
+      }
       try {
         await active
       } catch {
         // A failed foreground turn still releases the per-thread dispatch slot.
       }
     }
-    this.assertDispatchable(request.projectId, request.threadId)
+  }
 
+  private async executeClaimedMachine(
+    request: MachineAgentDispatchRequest,
+    key: string,
+    host: AgentHost<StreamChunk>,
+  ): Promise<MachineDispatchResult> {
     let epoch = this.epochs.get(key)
     if (!epoch) {
       const persisted = await this.dependencies.loadEpoch(request.projectId, request.threadId)
@@ -350,6 +367,14 @@ export class AgentDispatcher {
         epoch = persisted
         this.epochs.set(key, persisted)
       }
+    }
+    // Threads created before renderer epochs were persisted used the thread id
+    // as their turn-tree key. Preserve that one legacy fallback without
+    // allowing an arbitrary stale completion to establish a new epoch.
+    if (!epoch && request.turnTreeId === request.threadId) {
+      epoch = { turnTreeId: request.threadId, continuationUsed: 0 }
+      await this.dependencies.saveEpoch(request.projectId, request.threadId, epoch)
+      this.epochs.set(key, epoch)
     }
     if (epoch?.turnTreeId !== request.turnTreeId) {
       await this.recordMachineFinish(request, 'stale', epoch?.continuationUsed)
@@ -366,19 +391,29 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
-      this.host.emit(request.threadId, {
+      const display = request.display
+      host.emit(request.threadId, {
         type: 'machine_turn_start',
-        content: request.payload.userContent,
+        content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
+        ...(display?.attachments ? { attachments: display.attachments } : {}),
+        ...(display?.startingCommit !== undefined
+          ? { startingCommit: display.startingCommit }
+          : {}),
+        ...(display?.dirty !== undefined ? { dirty: display.dirty } : {}),
       })
-      turnOutcome = await this.dispatchInternal({
-        ...request,
-        payload: {
-          ...request.payload,
-          turnTreeId: request.turnTreeId,
-          continuationBudgetUsed: nextEpoch.continuationUsed,
+      turnOutcome = await this.execute(
+        {
+          ...request,
+          payload: {
+            ...request.payload,
+            turnTreeId: request.turnTreeId,
+            continuationBudgetUsed: nextEpoch.continuationUsed,
+          },
         },
-      })
+        key,
+        host,
+      )
     } catch (error) {
       await this.recordMachineFinish(request, 'failed', nextEpoch.continuationUsed)
       throw error
@@ -421,11 +456,6 @@ export class AgentDispatcher {
       result,
       ...(turnOutcome !== undefined ? { turnOutcome } : {}),
     })
-  }
-
-  private async dispatchInternal(request: AgentDispatchRequest): Promise<TurnOutcome | undefined> {
-    const key = dispatchKey(request.projectId, request.threadId)
-    return this.dispatchExclusively(request, key, (host) => this.execute(request, key, host))
   }
 
   /**

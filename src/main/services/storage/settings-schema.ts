@@ -63,6 +63,7 @@ export const storedExtraProviderSchema = z.object({
   label: z.string().max(256).optional(),
   baseUrl: providerBaseUrlSchema.optional(),
   keyPrefix: z.string().max(64).optional(),
+  apiStyle: z.enum(['chat-completions', 'responses']).optional(),
   models: z.array(extraProviderModelSchema).max(256).optional(),
   fallbackContextWindow: z.number().int().positive().optional(),
   includeUsage: z.boolean().optional(),
@@ -107,6 +108,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // The classifier connection that screens shell commands and terminal reads.
   // A key of its own, so builds that predate it still read `classifierProviders`.
   safetyScreeningClassifier: z.string().regex(/^[a-z0-9-]{1,53}$/),
+  // The classifier connection that answers background questions (roadmap
+  // complexity and category) before the small-tasks model.
+  backgroundClassifier: z.string().regex(/^[a-z0-9-]{1,53}$/),
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
   localServerUrl: z.string().max(2048),

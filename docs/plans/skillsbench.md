@@ -125,6 +125,16 @@ Hash the entire mounted skill bundle, not only `SKILL.md`. Skills may include sc
 assets, or other files that materially change the trial. Record every `read_skill` path and the hash
 of the bytes returned so the trajectory proves which version the model actually saw.
 
+### Offline eligibility decision (#1309)
+
+Exclude tasks whose own upstream `solve.sh` requires egress; do not stage solution dependencies.
+Staging them would change what the benchmark measures and make results incomparable with upstream.
+The pinned dataset descriptor declares this policy set before any cohort runs. For v1.1 it contains
+`data-to-d3`, whose reference solution runs `npm install d3@6.7.0` and aborts under the same
+no-network policy applied to agent trials. The runner rejects a requested study exclusion before
+launching either an oracle or an agent. Oracle eligibility still detects unrelated infrastructure
+incompatibilities, but cannot redefine this predeclared egress set after outcomes are inspected.
+
 ## Implementation slices
 
 ### Slice 1 — compatibility and deterministic conformance
@@ -246,10 +256,17 @@ Every trial capsule records:
   image, sandbox/permission settings, and BenchFlow version;
 - input/output tokens, model requests, tool calls, commands, elapsed time, stop reason, failure
   category, final outputs, verifier artifacts, raw event trace, and thread-store transcript.
+- the predeclared minimum-work policy, scored-or-void status, void reason, and raw verifier reward;
+  a void trial has no official reward and cannot enter an aggregate as a zero.
 
 Reports group by profile, task, category, difficulty, and attempt. The report generator must make it
 impossible to combine different dataset revisions, profile hashes, model configurations, or
 permission policies into one unlabeled aggregate.
+
+`minimum-work-v1` voids a trial below 1,000 input tokens or with no tool calls. The 982-token
+`dialogue-parser` trial that motivated the floor ended after two tool calls with no runner or
+verifier error; its root cause remains unexplained. Keep that fact visible rather than treating the
+floor as a diagnosis or changing it after a cohort has run.
 
 ## Decision rules
 

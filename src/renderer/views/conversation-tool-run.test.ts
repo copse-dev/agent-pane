@@ -10,6 +10,7 @@ import {
   setMessageContent,
   setMessageRunSummary,
   setMessageTurnOutcome,
+  setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -84,6 +85,110 @@ afterEach(() => {
 })
 
 describe('cross-message tool runs (component)', () => {
+  it('keeps each step’s live reasoning closed and settles every trail on stop', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, ids.at(-1) ?? '', 'Still checking.')
+    appendReasoning(store, ids[1] ?? '', 'Earlier thought.')
+    const trails = [...host.querySelectorAll<HTMLDetailsElement>('.message-reasoning')]
+    assert.deepEqual(
+      trails.map(
+        (trail) => trail.closest<HTMLElement>('.tool-card-step')?.dataset['stepMessageId'],
+      ),
+      [ids[1], ids.at(-1)],
+    )
+    assert.ok(trails.every((trail) => !trail.open))
+    setThreadStatus(store, threadId, 'idle')
+    assert.equal(host.querySelector('.message-reasoning-live'), null)
+  })
+
+  it('removes departed reasoning when a run shortens to one message', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const first = addMessage(store, threadId, 'assistant', '')
+    addReads(store, first, 2)
+    appendReasoning(store, first, 'First thought.')
+    const second = addMessage(store, threadId, 'assistant', '')
+    addReads(store, second, 1)
+    appendReasoning(store, second, 'Second thought.')
+    const host = mount(store)
+    setMessageContent(store, second, 'A new update.')
+    const firstBubble = qsRequired(host, `[data-message-id="${first}"]`)
+    assert.equal(firstBubble.querySelector('.tool-card-step'), null)
+    assert.equal(firstBubble.querySelectorAll('.message-reasoning-text').length, 1)
+    assert.equal(
+      firstBubble.querySelector('.message-reasoning-text')?.textContent,
+      'First thought.',
+    )
+  })
+
+  it('keeps a live activity indicator when reasoning is inside a closed rollup', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, ids.at(-1) ?? '', 'Still checking.')
+    store.emit('agent_activity', threadId, 'Reasoning…')
+    assert.equal(qsRequired(host, '.agent-activity').hidden, false)
+    assert.equal(qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup').open, false)
+  })
+
+  it('keeps the live rollup and its reasoning disclosure open as a second message joins', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    const first = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, first, 'Initial reasoning.')
+    addReads(store, first, 1)
+    const rollup = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(rollup.dataset['rollupKey'], 'turn')
+    qsRequired(rollup, 'summary').click()
+    const reasoning = qsRequired<HTMLDetailsElement>(rollup, '.message-reasoning')
+    qsRequired(reasoning, 'summary').click()
+    const next = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, next, 'Next thought.')
+    addReads(store, next, 1)
+    // The same disclosure becomes the run: no replacement, no re-collapse.
+    assert.ok(host.querySelector('.tool-card-rollup') === rollup, 'rollup identity survives')
+    assert.equal(host.querySelectorAll('.tool-card-rollup').length, 1)
+    assert.equal(rollup.dataset['rollupKey'], 'run')
+    assert.equal(rollup.open, true)
+    // The anchor's trail moves onto its own step, still open.
+    const anchorStep = qsRequired(rollup, `.tool-card-step[data-step-message-id="${first}"]`)
+    assert.ok(
+      anchorStep.querySelector(':scope > .tool-rollup-body > .message-reasoning') === reasoning,
+      'reasoning identity survives',
+    )
+    assert.equal(reasoning.open, true)
+    assert.equal(rollup.querySelector(':scope > .tool-rollup-body > .message-reasoning'), null)
+    const nextStep = qsRequired(rollup, `.tool-card-step[data-step-message-id="${next}"]`)
+    assert.equal(qsRequired<HTMLDetailsElement>(nextStep, '.message-reasoning').open, false)
+  })
+
+  it('shows a failure beside the run without opening successful work or reasoning', () => {
+    const { store, threadId } = seedRun()
+    const host = mount(store)
+    const last = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, last, 'Checking the failing command.')
+    addReads(store, last, 1, 'error')
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    const failure = qsRequired<HTMLDetailsElement>(host, `.msg > [data-tool-id="${last}-0"]`)
+    assert.equal(run.open, false)
+    assert.equal(run.querySelector(`[data-tool-id="${last}-0"]`), null)
+    assert.equal(failure.open, true)
+    assert.match(failure.textContent, /ENOENT/)
+    const step = qsRequired<HTMLDetailsElement>(
+      run,
+      `.tool-card-step[data-step-message-id="${last}"]`,
+    )
+    assert.equal(step.open, false)
+    assert.equal(qsRequired<HTMLDetailsElement>(step, '.message-reasoning').open, false)
+    qsRequired(failure, 'summary').click()
+    updateToolCall(store, last, `${last}-0`, { result: 'Error: still missing' })
+    assert.equal(failure.open, false, 'explicit failure collapse survives updates')
+  })
+
   it('collapses a burst spanning five messages into one run summary', () => {
     const { store, ids } = seedRun()
     const host = mount(store)
@@ -327,6 +432,11 @@ describe('cross-message tool runs (component)', () => {
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
     assert.equal(run.open, false)
     assert.equal(run.dataset['status'], 'interrupted')
+    // Settled, not pending: the folded run must not wear the running glyph.
+    assert.equal(
+      run.querySelector(':scope > summary .tool-status-icon svg')?.getAttribute('data-icon'),
+      'minus',
+    )
     assert.equal(
       run.querySelector(':scope > summary .tool-name')?.textContent,
       'Used 18 tools · 5 steps · Interrupted',
@@ -380,6 +490,93 @@ describe('cross-message tool runs (component)', () => {
     )
   })
 
+  it('labels a Stop pressed with a prompt already queued as a Stop, not a send-now', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    // The prompt was queued mid-run, so its timestamp precedes the abort, and
+    // the drain placed it right after the cancelled turn — exactly what a
+    // send-now looks like. The recorded abort cause tells them apart.
+    addMessage(store, threadId, 'user', 'Queued while the run was going.')
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'stop',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now() + 1_000,
+    })
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted by you.',
+    )
+  })
+
+  it('credits a recorded send-now even when the prompt landed after the abort settled', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'send_now',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now() - 1_000,
+    })
+    addMessage(store, threadId, 'user', 'Change the markdown reference instead.')
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted when you sent a new message.',
+    )
+  })
+
+  it('folds an already-rendered failure once the user-cancel outcome lands', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    const host = mount(store)
+    // The host's cancelled-call update arrives before the turn outcome.
+    assert.equal(qsRequired(host, '.tool-card-rollup').dataset['status'], 'error')
+
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'stop',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now(),
+    })
+    store.emit('message_done', last)
+    assert.equal(qsRequired(host, '.tool-card-rollup').dataset['status'], 'interrupted')
+  })
+
   it('keeps a genuine tool failure visible beside a user interruption', () => {
     const { store, threadId, ids } = seedRun()
     const last = ids.at(-1)
@@ -404,11 +601,23 @@ describe('cross-message tool runs (component)', () => {
     const host = mount(store)
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
     assert.equal(run.dataset['status'], 'error')
-    assert.equal(run.open, true)
+    // Background activity stays quiet; the failure itself is shown beside it.
+    assert.equal(run.open, false)
     assert.equal(
       run.querySelector(':scope > summary .tool-name')?.textContent,
       'Used 18 tools · 5 steps · 1 failed · Interrupted',
     )
+    // The interrupted call is not a failure: it stays in its step.
+    assert.ok(
+      run.querySelector(
+        `.tool-card-step[data-step-message-id="${last}"] [data-tool-id="${last}-0"]`,
+      ),
+    )
+    assert.equal(run.querySelector(`[data-tool-id="${last}-1"]`), null)
+    const failure = qsRequired<HTMLDetailsElement>(host, `.msg > [data-tool-id="${last}-1"]`)
+    assert.equal(failure.dataset['status'], 'error')
+    assert.equal(failure.open, true)
+    assert.match(failure.textContent, /ENOENT/)
   })
 
   it('leaves an ordinary single-message turn on the per-message rollup', () => {

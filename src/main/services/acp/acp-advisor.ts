@@ -1,4 +1,5 @@
 import type { ModelUsage } from '@shared/types'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
   openAcpSession,
   runAcpSessionPrompt,
@@ -9,6 +10,7 @@ import {
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acpTurnUsage, permissionResponseFor } from './acp-agent-service.ts'
 import { gateRemoteAcpEnvForward } from './acp-remote-env-gate.ts'
+import { acpSshTarget } from './acp-ssh-transport.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 
 /**
@@ -29,6 +31,27 @@ import { getAgentExecutionRoot } from '../execution-root.ts'
 export interface AcpAdvisorResult {
   text: string
   usage: ModelUsage
+}
+
+/**
+ * Pin the advisor's local-vs-SSH placement before its environment consent
+ * gate. The gate and the eventual spawn must inspect the same answer: otherwise
+ * enabling ACP-over-SSH between them could forward configured provider keys to
+ * the remote host without showing the remote-forward prompt.
+ */
+export function buildAcpAdvisorSpawnConfig(
+  agent: AcpAgentConfig,
+  cwd: string,
+): AcpAgentSpawnConfig {
+  const sandbox = resolveAcpSandbox(agent)
+  return {
+    command: agent.command,
+    cwd,
+    sshTarget: acpSshTarget(cwd),
+    ...(agent.args ? { args: agent.args } : {}),
+    ...(agent.env ? { env: agent.env } : {}),
+    ...(sandbox ? { sandbox } : {}),
+  }
 }
 
 /**
@@ -64,7 +87,7 @@ export async function runAcpAdvisorSession(
     const turn = acpTurnUsage(stop.usage, prompt, text)
     return { text, usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens } }
   } finally {
-    open.dispose()
+    await open.dispose()
   }
 }
 
@@ -89,14 +112,7 @@ export async function runAcpAdvisorPrompt(options: {
   if (!cwd) {
     throw new Error('Open a folder before consulting an ACP advisor.')
   }
-  const sandbox = resolveAcpSandbox(agent)
-  const config: AcpAgentSpawnConfig = {
-    command: agent.command,
-    cwd,
-    ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
-    ...(sandbox ? { sandbox } : {}),
-  }
+  const config = buildAcpAdvisorSpawnConfig(agent, cwd)
   // Same consent rule as a session turn: configured provider keys reach a
   // remote SSH host only if the user approves the forward (no-op locally).
   await gateRemoteAcpEnvForward(agent.id, config, options.signal)

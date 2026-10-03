@@ -30,7 +30,8 @@ overrides:
   '@hono/node-server': 2.0.11
   '@xmldom/xmldom@0.8': 0.8.15
   adm-zip: ^0.6.1
-  brace-expansion: 5.0.9
+  basic-ftp: 6.2.1
+  brace-expansion: 5.0.12
   minimatch: 10.2.5
   deepmerge-ts: 8.0.0
   dompurify: ^3.4.13
@@ -43,8 +44,8 @@ overrides:
   hono: 4.13.5
   ip-address: 10.3.1
   extract-zip: file:packages/extract-zip
-  undici@6: 6.28.0
-  undici@7: 7.29.0
+  undici@6: 6.28.1
+  undici@7: 7.29.1
 
 # Dependabot's `cooldown.default-days: 7` (.github/dependabot.yml) runs pnpm
 # with --config.minimumReleaseAge=10080, which makes pnpm refuse to resolve
@@ -59,6 +60,7 @@ minimumReleaseAgeExclude:
   - '@hono/node-server'
   - '@xmldom/xmldom'
   - adm-zip
+  - basic-ftp
   - brace-expansion
   - minimatch
   - deepmerge-ts
@@ -116,3 +118,35 @@ minimumReleaseAgeExclude:
 #    Guarded by `project-sandbox/acp-trustd.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+
+# GHSA-86w9-cpqp-85rv (node-forge <=1.4.0, RSA PKCS#1 v1.5 signature
+# verification accepts extra DigestAlgorithm elements) has no patched release,
+# and the latest @anthropic-ai/sandbox-runtime still depends on node-forge
+# ^1.4.0, so no override or bump clears it. It is only reachable by calling
+# forge's RSA verify on attacker-supplied signatures. sandbox-runtime uses
+# node-forge solely to build the local CA and leaf certificates for its
+# `network.mitmProxy` mode (signing goes through native crypto), never calls
+# verify, and Copse never enables `mitmProxy`. Remove this once node-forge
+# publishes a patched version.
+#
+# GHSA-ch52-4w7c-c8xp (http-cache-semantics <=4.2.0, max-stale can reuse
+# security-zeroed shared-cache responses) has no patched npm release as of
+# 2026-10-03. It is only pulled in by @electron/get via got/cacheable-request
+# for electron-builder and electron-chromedriver. @electron/get uses got.stream
+# without enabling got's HTTP cache; its on-disk artifact cache is separate.
+# Copse does not run a shared HTTP response cache. Remove the exception when
+# a patched release is available, or reassess before enabling HTTP caching.
+#
+# GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, recursive AST walkers can exhaust the
+# stack on deeply nested patterns) also has no patched npm release as of
+# 2026-10-03. Copse uses micromatch's matching/isMatch APIs, which call
+# picomatch directly, not braces' parse/compile/expand walkers. The remaining
+# consumers are Mocha's chokidar watch mode and type-coverage's fast-glob,
+# which process developer-controlled watch/source patterns. Reassess before
+# using micromatch.parse/braces/braceExpand or passing untrusted patterns to
+# those build tools, and remove the exception when a patched release exists.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-86w9-cpqp-85rv
+    - GHSA-ch52-4w7c-c8xp
+    - GHSA-vfj7-8cjw-p6xm

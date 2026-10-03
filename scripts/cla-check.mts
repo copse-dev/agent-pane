@@ -34,6 +34,12 @@
 // bot Co-authored-by trailers are skipped; they only ever add authors, and the
 // commit's own author is checked separately.
 //
+// An outside person who opens a pull request must always have signed, whoever
+// its commits name as their authors. Commit identities are self-declared: a
+// commit can claim a maintainer's email and GitHub will link it to their
+// account, so checking authors alone would let an unsigned opener through.
+// The opener is the one identity GitHub authenticates.
+//
 // A trusted opener is a person with push access, or one of this repository's
 // automation Apps (TRUSTED_AUTOMATION) opening from a branch in this
 // repository. Any other bot or App is untrusted, even from a branch here:
@@ -50,9 +56,15 @@ export const SIGN_PHRASE = 'I have read the Copse CLA Document and I hereby sign
 export const COMMENT_MARKER = '<!-- copse-cla-check -->'
 export const SIGNATURES_PATH = '.github/cla-signatures.json'
 
-/** Trailers and commit addresses our agents, bots and release tooling use. */
+/**
+ * Trailers and commit addresses our agents, bots and release tooling use:
+ * Claude (`@anthropic.com`), Cursor (`@cursor.com`), Codex (`codex@` and
+ * `noreply@openai.com`), Copse's own agent and git identities (`noreply@` and
+ * `copse@copse.dev`, `copse@localhost` for app-made commits, `copse@copse.invalid`
+ * for container runs) and GitHub bot accounts.
+ */
 export const NON_AUTHOR_EMAIL =
-  /@anthropic\.com$|@cursor\.com$|^noreply@copse\.dev$|\[bot\]@users\.noreply\.github\.com$/i
+  /@anthropic\.com$|@cursor\.com$|^(?:codex|noreply)@openai\.com$|^(?:noreply|copse)@copse\.dev$|^copse@localhost$|^copse@copse\.invalid$|\[bot\]@users\.noreply\.github\.com$/i
 const NOREPLY_ID = /^(\d+)\+([^@]+)@users\.noreply\.github\.com$/i
 const CO_AUTHOR_TRAILER = /^Co-authored-by:.*<([^>]+)>\s*$/gim
 
@@ -404,6 +416,13 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     async function checkPerson(user: ClaUser, sha: string): Promise<void> {
       if (signedIds.has(user.id) || (await canPush(user.login))) return
       if (!unsigned.has(user.login)) unsigned.set(user.login, sha)
+    }
+
+    // The opener is authenticated; commit authors are not. An outside person
+    // opening the pull request signs for it whatever identities its commits
+    // claim. (An untrusted bot cannot sign; its agent commits fail below.)
+    if (!trusted && pr.user && !isBot(pr.user)) {
+      await checkPerson(pr.user, pr.head.sha.slice(0, 9))
     }
 
     // An agent or bot wrote this commit (its address can map to an account,

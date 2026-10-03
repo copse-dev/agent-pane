@@ -11,13 +11,14 @@ const fullCheck = expectString(scripts['check'], 'check script')
 describe('local validation gate', () => {
   it('runs every non-unit check from the full gate in order', () => {
     assert.deepEqual(localCheck.split(' && '), [
+      'pnpm run check:e2e-syntax',
       'pnpm run typecheck',
+      'pnpm run type-coverage',
       'pnpm run lint',
       'pnpm run format:check',
       'pnpm run demo:site:check',
       'pnpm run check:dead-code',
       'pnpm run check:oracle',
-      'pnpm run check:e2e-syntax',
       'pnpm run check:e2e-exclusions',
     ])
   })

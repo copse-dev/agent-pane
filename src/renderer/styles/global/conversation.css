@@ -319,6 +319,26 @@
 .agent-activity-clickable:hover {
   color: var(--text-primary);
 }
+/* A running concise turn: the row opens that turn's steps in the full view. */
+.agent-activity-expandable {
+  cursor: pointer;
+}
+.agent-activity-expandable:hover {
+  color: var(--text-primary);
+}
+.agent-activity-expandable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.agent-activity-expandable .agent-activity-label::after {
+  content: '›';
+  display: inline-block;
+  margin-inline-start: var(--spacing-xs);
+  transition: transform 0.15s ease;
+}
+.agent-activity-expanded .agent-activity-label::after {
+  transform: rotate(90deg);
+}
 .msg {
   width: min(100%, var(--chat-content-max));
   margin-inline: auto;
@@ -336,6 +356,37 @@
      .messages-list column the flex layout shrinks and clips messages — they
      appear "collapsed". Keep every message at its content height. */
   flex-shrink: 0;
+}
+/* Concise thread view (views/concise-thread.ts): a capable model's bubbles
+   show only what its work produced. Tool cards — and with them the tool errors
+   the model recovered from — and reasoning trails stay out of the transcript;
+   the activity row carries the live state. Cards that ask the user stay. */
+.msg-concise > .tool-card:not(.thread-proposal, .reviewer-input-card),
+.msg-concise .message-reasoning,
+.msg-concise .acp-terminal-reference {
+  display: none;
+}
+/* A bubble carrying tool calls is process: its text narrates the steps, so
+   only its produced output (screenshots, evidence, canvas previews) remains.
+   That holds while a tool runs and once the turn moved on to a later bubble;
+   the turn's last bubble stays in full when it finished, even with audit calls. */
+:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant))
+  > .message-body
+  > :not(.message-visual-evidence, .message-canvas-previews) {
+  display: none;
+}
+/* With no produced output at all, the bubble takes no room. (Selectors here
+   must not nest :has(): that is invalid CSS and drops the whole rule.) */
+:is(.msg-concise-working, .msg-concise-steps:has(~ .msg-assistant)):not(
+  :has(
+    > .tool-result-content > :not([hidden], .acp-terminal-reference),
+    > .thread-proposal,
+    > .reviewer-input-card,
+    > .message-body > .message-visual-evidence,
+    > .message-body > .message-canvas-previews
+  )
+) {
+  display: none;
 }
 /* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
    that marks commentary, but fade it toward the center over a solid etched
@@ -713,8 +764,14 @@
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
   padding-block: var(--spacing-lg);
-  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
+}
+/* Concise results are the transcript's compact summary, so they do not need
+   the full reading-view breathing room. The base message padding still keeps
+   adjacent results legible without creating blank bands between them. */
+.msg-concise.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
+  margin-block: 0;
+  padding-block: var(--spacing-xs);
 }
 /* Keep the same reading rhythm while text streams and when tools share its
    message. Constrain prose inside the existing chat column so inserting a tool
@@ -1162,6 +1219,16 @@ span.acp-resource-title {
   width: 2ch;
   text-align: center;
   user-select: none;
+}
+/* The sign is decorative for assistive tech; this names the change instead,
+   so a screen reader hears "Added" / "Deleted" rather than nothing. */
+.acp-diff-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .acp-diff-add {
   background: color-mix(in srgb, var(--success) 14%, transparent);

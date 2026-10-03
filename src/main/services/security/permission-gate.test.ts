@@ -38,9 +38,10 @@ import {
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { clearReadOutsideProjectGrants } from './read-outside-grant.ts'
+import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
 import { readDecisionLog } from './decision-log-store.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -63,7 +64,10 @@ import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/aut
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -356,6 +360,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(await ensureToolPermitted({ toolName: 'write_file', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'run_shell', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'str_replace', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'apply_patch', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'read_file', args: {} }), true)
     })
   })
@@ -470,7 +475,7 @@ describe('ensureToolPermitted', () => {
         }),
         false,
       )
-      assert.equal(title, 'Mark pull request ready for review?')
+      assert.equal(title, 'Mark pull request ready for review on GitHub?')
       assert.equal(body, 'acme/widgets#1478')
       assert.doesNotMatch(body, /\{/)
       assert.doesNotMatch(title, /gh_pr_mark_ready/)
@@ -757,7 +762,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -776,7 +781,9 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(approvalBody, 'printf hello')
-      assert.match(approvalFooter, /network access is temporarily widened/i)
+      assert.match(approvalFooter, /network allowlist is temporarily widened/i)
+      assert.match(approvalFooter, /this command could inherit that access/i)
+      assert.match(approvalFooter, /before running them at the same time/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
       // The cause is what makes this prompt countable in the D0/U0 report: an
       // artifact of ASRT's process-global allowlist, which a per-runtime
@@ -793,7 +800,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalFooter = ''
     setApprovalHandler(async (request) => {
@@ -802,7 +809,8 @@ describe('ensureToolPermitted', () => {
     })
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
-      assert.match(approvalFooter, /widened for ACP agent: codex/)
+      assert.match(approvalFooter, /widened for agent: codex/)
+      assert.match(approvalFooter, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
       release()
@@ -819,7 +827,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -848,7 +856,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
@@ -877,7 +885,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -907,7 +915,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -1148,6 +1156,154 @@ describe('custom tool permission', () => {
   })
 })
 
+describe('ensureShellCommandPermitted — SSH workspace execution target', () => {
+  // Commands in an SSH workspace are spawned on the remote host with no
+  // sandbox (project-sandbox/spawn.ts), so the gate must judge them as it does
+  // on a platform without one, even while THIS machine's sandbox is active.
+  // Every case passes `sandboxEnabled: true` — the local containment the
+  // caller reports — and compares a local workspace with a remote one.
+  const LOCAL_ROOT = '/tmp/copse-gate-local-project'
+  const REMOTE_ROOT = '/remote/project'
+  const AMBIGUOUS = 'gh api repos/copse-dev/agent-pane/pulls'
+  const OPAQUE_HEREDOC = "python3 - <<'EOF'\nimport os\nprint(os.getcwd())\nEOF"
+  const PLAIN_READ = 'rg TODO src'
+
+  async function useSshProject(opts: { executionEnabled?: boolean } = {}): Promise<() => void> {
+    await setSetting('sshWorkspaceEnabled', opts.executionEnabled ?? true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'remote-p1')
+    storageSet('projects', [{ id: 'remote-p1', path: REMOTE_ROOT, sshHost: 'dev' }])
+    const restore = setWorkspaceRootForTest(REMOTE_ROOT)
+    return () => {
+      restore()
+      storageSet('activeProjectId', null)
+      storageSet('projects', [])
+    }
+  }
+
+  async function runGate(
+    command: string,
+    target: 'local' | 'ssh' | 'ssh-unroutable',
+  ): Promise<{ permitted: boolean; prompts: (string | undefined)[] }> {
+    setPermissionGateForTests(null)
+    await setSetting('safetyClassifierEnabled', false)
+    const restore =
+      target === 'local'
+        ? setWorkspaceRootForTest(LOCAL_ROOT)
+        : await useSshProject({ executionEnabled: target === 'ssh' })
+    const prompts: (string | undefined)[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request.cause)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    try {
+      const permitted = await ensureShellCommandPermitted(command, {
+        sandboxEnabled: true,
+        autoRun: true,
+      })
+      return { permitted, prompts }
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
+  }
+
+  it('does not let a thread read grant cover a read on the SSH host', async () => {
+    // The grant's eligibility is judged against this machine's home and root,
+    // which say nothing about the remote account's files, so a remote read must
+    // ask on its own merits rather than ride a grant made for local paths.
+    const READ = 'cat /home/alice/.bash_history'
+    const thread = 'thread-ssh-read-grant'
+    clearReadOutsideProjectGrants()
+    grantReadOutsideProject(thread)
+    try {
+      const local = await runWithActiveRunIdentity(thread, () => runGate(READ, 'local'))
+      assert.deepEqual(local, { permitted: true, prompts: [] }, 'the grant covers a local read')
+      const remote = await runWithActiveRunIdentity(thread, () => runGate(READ, 'ssh'))
+      assert.equal(remote.permitted, false)
+      assert.equal(remote.prompts.length, 1, 'the SSH read asks despite the grant')
+    } finally {
+      clearReadOutsideProjectGrants()
+    }
+  })
+
+  it('auto-runs an ambiguous command locally but prompts for it on the SSH host', async () => {
+    assert.deepEqual(await runGate(AMBIGUOUS, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(AMBIGUOUS, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('auto-runs an opaque interpreter heredoc locally but prompts for it on the SSH host', async () => {
+    assert.deepEqual(await runGate(OPAQUE_HEREDOC, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(OPAQUE_HEREDOC, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('applies the unsandboxed policy to a plain read on the SSH host', async () => {
+    // Without an OS sandbox even a read can run repository-controlled code
+    // (a configured pager, a wrapper script on PATH), so it prompts too.
+    assert.deepEqual(await runGate(PLAIN_READ, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(PLAIN_READ, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('fails closed when the active project is remote but cannot route over SSH', async () => {
+    // The spawn refuses this state; the gate must not fall back to "local and
+    // contained" for it either.
+    const unroutable = await runGate(AMBIGUOUS, 'ssh-unroutable')
+    assert.equal(unroutable.permitted, false)
+    assert.deepEqual(unroutable.prompts, ['shell-no-containment'])
+  })
+  it("keeps a turn on its own project's target when the window switches projects", async () => {
+    // A turn in a local project, with the user switching the window to an SSH
+    // project between the gate's decision and the spawn. Both must still see
+    // the turn's own (local) project, or a command approved as contained
+    // would run on the remote host.
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('projects', [
+      { id: 'local-p1', path: LOCAL_ROOT },
+      { id: 'remote-p1', path: REMOTE_ROOT, sshHost: 'dev' },
+    ])
+    const turn = (projectId: string, root: string): ThreadExecutionContext => ({
+      projectId,
+      threadId: 'thread-1',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    })
+    const restoreRoot = setWorkspaceRootForTest(REMOTE_ROOT)
+    try {
+      storageSet('activeProjectId', 'remote-p1')
+      assert.equal(spawnRunsOnSshTarget(LOCAL_ROOT), true, 'outside a turn the window decides')
+      runWithThreadExecutionContext(turn('local-p1', LOCAL_ROOT), () => {
+        assert.equal(spawnRunsOnSshTarget(LOCAL_ROOT), false)
+      })
+      // And the reverse: an SSH turn stays remote after a switch to a local project.
+      storageSet('activeProjectId', 'local-p1')
+      runWithThreadExecutionContext(turn('remote-p1', REMOTE_ROOT), () => {
+        assert.equal(spawnRunsOnSshTarget(REMOTE_ROOT), true)
+      })
+    } finally {
+      restoreRoot()
+      storageSet('activeProjectId', null)
+      storageSet('projects', [])
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
+  })
+})
+
 describe('run_background arg helpers', () => {
   it('reads command and the port-binding opt-in, tolerating malformed args', () => {
     assert.equal(backgroundCommandFromArgs({ command: 'npm run dev' }), 'npm run dev')
@@ -1348,7 +1504,7 @@ describe('ensureTerminalPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -1995,7 +2151,7 @@ describe('decideShellPermission', () => {
 describe('formatGithubWritePrompt', () => {
   it('uses a question title and PR target body', () => {
     assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
-      title: 'Mark pull request ready for review?',
+      title: 'Mark pull request ready for review on GitHub?',
       body: 'PR #1478',
     })
     assert.deepEqual(
@@ -2009,7 +2165,7 @@ describe('formatGithubWritePrompt', () => {
 
   it('falls back to JSON when args are not a PR target', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
-    assert.equal(prompt.title, 'Re-run failed CI?')
+    assert.equal(prompt.title, 'Re-run failed CI on GitHub?')
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
 

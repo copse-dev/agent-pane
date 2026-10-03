@@ -21,6 +21,7 @@ import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/con
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { markSendNowAbort } from './send-now-aborts.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -155,7 +156,7 @@ function setMessageHookOrigin(
   store.setState({ threads })
 }
 
-function refreshPayload(
+export function refreshAgentRunPayload(
   store: AppStore,
   threadId: string,
   { reviewContext: _stale, ...payload }: AgentRunPayload,
@@ -243,7 +244,7 @@ export function dispatchAgentRun(
   const run = api.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshPayload(store, threadId, payload)),
+    JSON.stringify(refreshAgentRunPayload(store, threadId, payload)),
   )
   if (!queued) {
     void run
@@ -557,6 +558,7 @@ export function sendQueuedMessageNow(
     // Abort the live run (local or remote); its `done` chunk drains the reordered
     // queue head. Remote follow-up create retries on `409 agent_busy` until the
     // cancelled run settles — see `createRemoteRun` in remote-agent-client.ts.
+    markSendNowAbort(threadId)
     void api.agent.abort(threadId)
   } else {
     drainMessageQueue(store, api, threadId)

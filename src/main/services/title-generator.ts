@@ -1,17 +1,14 @@
 import { mockScenarioTitle } from '@copse/llm/mock-script.ts'
 import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
+  resolveSmallTasksRoute,
+  smallTasksRoutes,
+  type SmallTasksRoute,
 } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import { cleanThreadTitle, threadTitlePrompt } from '@shared/thread-title.ts'
 
-// Trim model output down to a single clean title line.
-function cleanTitle(out: string): string | null {
-  const firstLine = out.trim().split('\n')[0] ?? ''
-  const title = firstLine.replace(/^["'#\s-]+|["'.\s]+$/g, '').slice(0, 60)
-  return title || null
-}
+export { threadTitlePrompt } from '@shared/thread-title.ts'
 
 function recordSmallTasksUsage(
   model: string,
@@ -26,45 +23,58 @@ function recordSmallTasksUsage(
   })
 }
 
-/**
- * Input cap for the title prompt. A re-title sends the opening message plus the
- * most recent few (each already trimmed by the caller), so the cap has to fit a
- * handful of messages rather than one.
- */
-const THREAD_TITLE_INPUT_CAP = 1500
+export interface ThreadTitleCompletion {
+  title: string
+  model: string
+}
 
-/** The prompt {@link suggestThreadTitle} sends; `text` is the user's side of the thread. */
-export function threadTitlePrompt(text: string): string {
-  return (
-    'Reply with ONLY a concise 3-5 word title in Title Case for the following request. ' +
-    'If several messages are shown, they are one conversation: title it by its ' +
-    'overall goal, not just the latest message. ' +
-    'No quotes, no trailing punctuation.\n\nRequest:\n' +
-    text.slice(0, THREAD_TITLE_INPUT_CAP)
-  )
+type RecordRouteUsage = (
+  model: string,
+  usage: { inputTokens: number; outputTokens: number },
+) => void
+
+/**
+ * Try title routes in order, including malformed-output failover. Every
+ * attempt's tokens go to `recordUsage` — a rejected answer or a timed-out
+ * stream still spent them.
+ */
+export async function completeThreadTitleWithRoutes(
+  text: string,
+  routes: AsyncIterable<SmallTasksRoute>,
+  recordUsage: RecordRouteUsage = recordSmallTasksUsage,
+): Promise<ThreadTitleCompletion | null> {
+  const prompt = threadTitlePrompt(text)
+  for await (const route of routes) {
+    try {
+      const { text: output } = await completeTextWithUsage(
+        route.provider,
+        prompt,
+        20_000,
+        (usage) => {
+          recordUsage(route.model, usage)
+        },
+      )
+      const title = cleanThreadTitle(output)
+      if (title) return { title, model: route.model }
+    } catch {
+      // The selected local model may build successfully while its server is
+      // stopped or that model is unloaded. Advance to the chat route.
+    }
+  }
+  return null
 }
 
 // Generate a short thread title from the user's side of the thread — the first
 // message alone on a new thread, or the opening plus recent messages when the
 // caller is re-titling a thread that has moved on. Uses the configured
-// small-tasks model; returns null on failure so the caller can fall back to a
-// heuristic.
+// small-tasks model, then the chat model if inference fails; returns null when
+// neither route can produce a valid title.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
   if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return mockScenarioTitle(text)
   }
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
-
-  const prompt = threadTitlePrompt(text)
-  try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
-    return cleanTitle(out)
-  } catch {
-    return null
-  }
+  const completion = await completeThreadTitleWithRoutes(text, smallTasksRoutes())
+  return completion?.title ?? null
 }
 
 // Trim model output to a single clean phrase (sentence case left as-is).
@@ -81,9 +91,8 @@ function cleanPhrase(out: string, max = 64): string | null {
 // than two commands are supplied (nothing to roll up).
 export async function suggestCommandSummary(commands: string[]): Promise<string | null> {
   if (!Array.isArray(commands) || commands.length < 2) return null
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const list = commands
     .slice(0, 12)
@@ -97,8 +106,8 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
     'Commands:\n' +
     list
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(text)
   } catch {
     return null
@@ -112,9 +121,8 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
  */
 export async function suggestToolTurnSummary(actions: string[]): Promise<string | null> {
   if (!Array.isArray(actions) || actions.length < 2) return null
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const list = actions
     .slice(0, 16)
@@ -128,8 +136,8 @@ export async function suggestToolTurnSummary(actions: string[]): Promise<string 
     'No quotes, no trailing punctuation, no tool counts.\n\nActions:\n' +
     list
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(text, 72)
   } catch {
     return null
@@ -140,9 +148,8 @@ export async function suggestToolTurnSummary(actions: string[]): Promise<string 
 // the configured small-tasks model; returns null on failure so the caller can
 // keep the default "Terminal N" label.
 export async function suggestTerminalTitle(text: string): Promise<string | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const prompt =
     'Reply with ONLY a concise 2-4 word label in Title Case describing what this ' +
@@ -150,9 +157,9 @@ export async function suggestTerminalTitle(text: string): Promise<string | null>
     '"Git Status", "Dev Server"). No quotes, no trailing punctuation.\n\nTerminal output:\n' +
     text.slice(-1500)
   try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
-    return cleanTitle(out)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
+    return cleanPhrase(out, 60)
   } catch {
     return null
   }
@@ -180,15 +187,14 @@ export function roadmapTitlePrompt(text: string): string {
 // returns null on failure so the caller can fall back to the plain truncation
 // (roadmapTitleFromPrompt in tools/roadmap-tools.ts).
 export async function suggestRoadmapTitle(text: string): Promise<string | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const prompt = roadmapTitlePrompt(text)
   try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
-    return cleanTitle(out)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
+    return cleanPhrase(out, 60)
   } catch {
     return null
   }

@@ -70,6 +70,7 @@ import { canonicalModelLabel, modelDisplayName } from '@copse/llm/model-label.ts
 import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -625,25 +626,45 @@ export async function fetchModelOptions(
         disabled: true,
       })
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` })
+      const dynamicLabel = dynamicModelLabel(current)
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`,
+      })
     }
   }
 
+  // A maker block applies to the upstream model, not the service carrying it.
+  // Keep a stale selected row visible but disabled so the picker explains why
+  // the saved choice cannot run instead of silently displaying another model.
+  let blockedMakers = parseBlockedModelMakers(null)
+  try {
+    blockedMakers = parseBlockedModelMakers(await api.settings.get('blockedModelMakers'))
+  } catch {
+    /* the main-process guard still rejects blocked routes */
+  }
+  const visibleOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers)
+    if (!maker) return [option]
+    if (option.value !== current) return []
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }]
+  })
+
   // Only when nothing at all is configured (no cloud key, no provider, no local
   // server — and no Settings best-value row) do we surface a guiding message.
-  const concreteCount = options.filter(
+  const concreteCount = visibleOptions.filter(
     (o) =>
       !isBestValueChatModel(o.value) && o.value !== '' && !o.value.startsWith(AUTO_MODEL_PREFIX),
   ).length
   if (concreteCount === 0) {
-    options.push({
+    visibleOptions.push({
       value: '',
       label: 'No models available — add a provider or API key in Settings',
       disabled: true,
     })
   }
 
-  return options
+  return visibleOptions
 }
 
 function autoModelOption(label: string): ModelOption {

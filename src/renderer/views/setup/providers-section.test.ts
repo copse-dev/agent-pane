@@ -1,7 +1,7 @@
 import '../../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { ApiClient, ExtraProvider } from '../../../preload/api.d.ts'
+import type { ApiClient, ExtraProvider, StoredExtraProvider } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
 import { createProvidersPanel } from './providers-section.ts'
@@ -15,6 +15,7 @@ interface StubState {
   agents: AcpAgentConfig[]
   detectCalls: number
   autoSetupCalls: number
+  savedExtraProvider?: Omit<StoredExtraProvider, 'slug'> & { slug?: string }
   setKeyResult?:
     | { ok: true }
     | {
@@ -50,6 +51,12 @@ function stubApi(state: StubState): ApiClient {
         return { ok: true }
       },
       extraProviders: async (): Promise<ExtraProvider[]> => state.extraProviders,
+      saveExtraProvider: async (
+        record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
+      ): Promise<ExtraProvider[]> => {
+        state.savedExtraProvider = record
+        return state.extraProviders
+      },
     },
     acp: {
       ...base.acp,
@@ -199,6 +206,41 @@ describe('providers panel', () => {
 
     clickChip(panel.root, 'openai')
     assert.equal(panel.root.querySelector('[name="openAiServiceTier"]'), null)
+  })
+
+  it('lets a custom provider choose and persist the Responses API format', async () => {
+    state.extraProviders = [
+      {
+        id: 'acme',
+        label: 'Acme',
+        prefix: 'acme:',
+        baseUrl: 'https://api.acme.example/v1',
+        builtin: false,
+        local: false,
+        keyLabel: 'Acme API key',
+        keyPlaceholder: 'API key',
+        keyHint: 'For Acme.',
+        fallbackContextWindow: 128_000,
+        models: [],
+      },
+    ]
+    const panel = createProvidersPanel(stubApi(state), {})
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'acme')
+
+    const apiStyle = panel.root.querySelector<HTMLSelectElement>('[name="providerApiStyle"]')
+    assert.ok(apiStyle)
+    assert.equal(apiStyle.value, 'chat-completions')
+    assert.deepEqual(
+      [...apiStyle.options].map((option) => option.value),
+      ['chat-completions', 'responses'],
+    )
+    apiStyle.value = 'responses'
+    panel.root.querySelector<HTMLButtonElement>('.provider-save')?.click()
+    await flush()
+
+    assert.equal(state.savedExtraProvider?.apiStyle, 'responses')
   })
 
   it('writes a chosen OpenAI tier but preserves semantically equivalent legacy bytes', async () => {

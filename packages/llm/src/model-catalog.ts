@@ -18,7 +18,7 @@ import { canonicalModelLabel } from './model-label.ts'
 import type { ModelPricing } from './model-pricing.ts'
 // A leaf module — safe here, where importing `extra-providers.ts` for the same
 // parsing (→ pareto-frontier.ts → this module) would cycle.
-import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
+import { resolveModelFamily } from './model-families.ts'
 
 export interface ModelInfo extends ModelPricing {
   /** Max input tokens (context window) at standard pricing. */
@@ -33,19 +33,22 @@ export type CloudModelProvider = 'anthropic' | 'openai'
  * Cloud model ids this app ships. Each id must exist verbatim as a key in
  * LiteLLM's catalog so the sync script can resolve it.
  */
-export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
+export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-5-5'
 
 export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
   'claude-fable-5-1',
   'claude-fable-5',
   'claude-sonnet-5',
+  'claude-sonnet-4-6',
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
+  'gpt-6.1-sol',
   'gpt-6-astra',
   'gpt-5.5',
   'gpt-5',
@@ -69,8 +72,8 @@ export function getModelInfo(model: string): ModelInfo | null {
 }
 
 export function inferCloudModelProvider(model: string): CloudModelProvider {
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
+  const { provider } = resolveModelFamily(model)
+  if (provider !== null) return provider
   throw new Error(`Unknown cloud model provider for '${model}'`)
 }
 
@@ -84,12 +87,15 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-fable-5-1': 'Claude Fable 5.1',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-opus-5-5': 'Claude Opus 5.5',
   'claude-opus-5': 'Claude Opus 5',
   'claude-opus-4-8': 'Claude Opus 4.8',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
   'gpt-5.6-sol': 'GPT-5.6 Sol',
   'gpt-5.6-terra': 'GPT-5.6 Terra',
   'gpt-5.6-luna': 'GPT-5.6 Luna',
+  'gpt-6.1-sol': 'GPT-6.1 Sol',
   'gpt-6-astra': 'GPT-6 Astra',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5': 'GPT-5',
@@ -120,27 +126,20 @@ export function anthropicMaxOutputTokens(model: string): number {
 }
 
 /**
- * Model families that accept a `{ role: 'system' }` entry *inside* `messages` —
+ * Whether the model accepts a `{ role: 'system' }` entry *inside* `messages` —
  * the operator channel for instructions that arrive mid-conversation (steering,
- * hook-injected context). Matched by prefix so dated snapshots and suffixed
- * routing ids resolve too.
+ * hook-injected context). Data lives in `model-families.ts` (dated snapshots and
+ * suffixed routing ids resolve there too).
  *
- * Anything absent from this list must keep current-turn operator instructions
- * in the leading system prompt; sending a mid-conversation system message to a
- * model that doesn't support it is a 400. Notably `claude-sonnet-4-6` — the
- * default cloud model — does not support it, so leading-system placement is the
- * common path, not an edge case.
+ * Anything without it must keep current-turn operator instructions in the leading
+ * system prompt; sending a mid-conversation system message to a model that
+ * doesn't support it is a 400. Notably `claude-sonnet-5-5` — the default cloud
+ * model — does not support it, so leading-system placement is the common path,
+ * not an edge case.
  */
-const MID_CONVERSATION_SYSTEM_PREFIXES = [
-  'claude-opus-5',
-  'claude-opus-4-8',
-  'claude-fable-5',
-  'claude-mythos-5',
-] as const
-
 /** Whether `model` accepts mid-conversation `{ role: 'system' }` messages. */
 export function supportsMidConversationSystem(model: string): boolean {
-  return MID_CONVERSATION_SYSTEM_PREFIXES.some((prefix) => model.startsWith(prefix))
+  return resolveModelFamily(model).acceptsMidConversationSystem
 }
 
 /** Where current-turn operator instructions belong for one stored model selection. */
@@ -148,16 +147,6 @@ export type OperatorInstructionPlacement =
   | 'trailing-developer'
   | 'trailing-system'
   | 'leading-system'
-
-/**
- * Namespaces that put a first-party cloud model id on the wire, so a family
- * check against that id means something.
- *
- * The rest cannot: `lmstudio` serves local weights, where a GGUF may be named
- * after a model it is merely distilled from, and `remote-agent` / `acp` /
- * `plugin-model` hand the turn to something that owns its own prompt.
- */
-const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
 
 /**
  * Select the strongest operator-instruction channel the resolved model is known
@@ -170,12 +159,11 @@ const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter'
  * even when their model name happens to begin with `gpt` or `claude`.
  */
 export function operatorInstructionPlacement(model: string): OperatorInstructionPlacement {
-  const selection = parseModelSelection(model)
-  if (!CLOUD_ROUTED.has(selection.namespace)) return 'leading-system'
-  if (selection.modelId.startsWith('gpt-') && !selection.modelId.startsWith('gpt-oss-')) {
-    return 'trailing-developer'
-  }
-  if (supportsMidConversationSystem(selection.modelId)) return 'trailing-system'
+  // Local and agent namespaces resolve with every flag off (see `model-families.ts`),
+  // so they fall through to leading-system without a namespace check here.
+  const resolved = resolveModelFamily(model)
+  if (resolved.acceptsDeveloperRole) return 'trailing-developer'
+  if (resolved.acceptsMidConversationSystem) return 'trailing-system'
   return 'leading-system'
 }
 
@@ -195,6 +183,5 @@ export function operatorInstructionPlacement(model: string): OperatorInstruction
  * (`…claude-opus-5:beta`) resolve too.
  */
 export function isOpus5Model(model: string): boolean {
-  const selection = parseModelSelection(model)
-  return CLOUD_ROUTED.has(selection.namespace) && selection.modelId.startsWith('claude-opus-5')
+  return resolveModelFamily(model).family === 'claude-opus-5'
 }

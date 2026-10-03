@@ -5,6 +5,7 @@ import {
   PROTOCOL_VERSION,
   type ClientConnection,
   type ContentBlock,
+  type LoadSessionResponse,
   type AvailableCommand,
   type McpCapabilities,
   type McpServer,
@@ -23,7 +24,7 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { Writable } from 'node:stream'
+import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type {
@@ -42,13 +43,25 @@ import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
-import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
+import {
+  spawnConfigSshTarget,
+  spawnRemoteAcpTransport,
+  type AcpSshTarget,
+} from './acp-ssh-transport.ts'
 import {
   localOpenFileLimitLabel,
   watchAgentStderr,
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import {
+  acpReattachMethods,
+  noReattachMethodFailure,
+  splitLoadReplay,
+  type AcpCarryOverFailure,
+  type AcpReattachMethod,
+  type AcpSessionCarryOver,
+} from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -98,6 +111,12 @@ export interface AcpAgentSpawnConfig {
   env?: Record<string, string>
   /** Absolute workspace root passed as the ACP session `cwd`. */
   cwd: string
+  /**
+   * Where the turn decided this agent runs: an SSH target, or `null` for this
+   * machine. Resolved once per turn so spawning, pooling and permission
+   * handling agree; when absent the live ACP-over-SSH setting decides.
+   */
+  sshTarget?: AcpSshTarget | null
   /**
    * Selected model as the `SessionConfigValueId` of the agent's `category:
    * "model"` config option. Applied via `session/set_config_option` before the
@@ -477,7 +496,7 @@ export async function spawnAcpAgentProcess(
     const release = acquireSandboxNetworkScope({
       domains: overlay.network?.allowedDomains ?? [],
       allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
-      label: `ACP agent: ${config.command}`,
+      label: `agent: ${config.command}`,
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])
@@ -655,10 +674,10 @@ export interface AcpTurnStop {
   usage?: Usage | null
 }
 
-/** The session state returned by either `session/new` or `session/resume`. */
+/** The session state returned by `session/new`, `session/resume`, or `session/load`. */
 export interface ManagedAcpSession {
   sessionId: string
-  response: NewSessionResponse | ResumeSessionResponse
+  response: NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 }
 
 /**
@@ -724,6 +743,8 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Whether this agent advertised the optional `session/resume` capability. */
   canResume: boolean
+  /** Whether this agent advertised `loadSession`. */
+  canLoad: boolean
   /**
    * Whether this agent advertised `promptCapabilities.image` — when true,
    * Copse forwards attached images as ACP image content blocks (issue #831).
@@ -735,6 +756,18 @@ export interface OpenAcpSession {
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
+  /** How a prior session was restored, when one was. */
+  restoredBy: AcpReattachMethod | null
+  /**
+   * Why a carry-over this connection was asked for did not happen; null when
+   * none was asked for or it succeeded.
+   */
+  carryOverFailure: AcpCarryOverFailure | null
+  /**
+   * Whether this session holds conversation the agent would lose by being
+   * replaced: it was restored from one that did, or has been prompted.
+   */
+  hasHistory: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
   /**
@@ -771,7 +804,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
-  dispose: () => void
+  dispose: () => Promise<void>
 }
 
 /**
@@ -818,7 +851,7 @@ export function refreshAcpSessionState(
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
 export interface AcpTransport {
   stream: Stream
-  dispose: () => void
+  dispose: () => void | Promise<void>
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
   resourceFault?: () => AcpAgentResourceFault | null
 }
@@ -926,7 +959,7 @@ async function spawnTransport(
   // When the active project is an SSH workspace and the user opted in, spawn the
   // agent on the remote host (stdio over SSH) instead of locally — see
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
-  const sshTarget = acpSshTarget(config.cwd)
+  const sshTarget = spawnConfigSshTarget(config)
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
@@ -946,13 +979,11 @@ async function spawnTransport(
   }
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderr = captureAcpChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   return {
     stream: ndJsonStream(writable, readable),
-    dispose: (): void => {
-      void shutdownAcpChild(child)
-    },
+    dispose: () => shutdownAcpChild(child),
     resourceFault: stderr.resourceFault,
   }
 }
@@ -1017,7 +1048,7 @@ export async function openAcpSession(
   config: AcpAgentSpawnConfig,
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
-  resumeSessionId?: string,
+  carryOver?: AcpSessionCarryOver,
   trace: AcpWireSink | null = null,
   signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
@@ -1100,11 +1131,13 @@ export async function openAcpSession(
 
   const connection = app.connect(stream)
   let disposed = false
-  const dispose = (): void => {
-    if (disposed) return
+  let disposal: Promise<void> | null = null
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal
     disposed = true
     connection.close()
-    transport.dispose()
+    disposal = Promise.resolve(transport.dispose())
+    return disposal
   }
 
   try {
@@ -1121,7 +1154,13 @@ export async function openAcpSession(
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
     // agents without the capability simply don't get the bridge this session.
-    if (config.nativeBridge && mcpCapabilities?.http === true) {
+    // Never to a remote (ACP-over-SSH) agent: the URL names this machine's
+    // loopback, and the bearer token must not leave it (the pool already skips
+    // starting a bridge for one; this keeps a caller-supplied bridge local too).
+    const remote = spawnConfigSshTarget(config) !== null
+    if (config.nativeBridge && remote) {
+      console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
+    } else if (config.nativeBridge && mcpCapabilities?.http === true) {
       mcpServers.push({
         type: 'http',
         name: BRIDGE_MCP_SERVER_NAME,
@@ -1136,23 +1175,68 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
+    const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
-    let resumed = false
-    if (resumeSessionId && canResume) {
-      try {
-        const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
-          connection.agent.request(methods.agent.session.resume, {
-            sessionId: resumeSessionId,
-            cwd: config.cwd,
-            mcpServers,
-          }),
-        )
-        session = { sessionId: resumeSessionId, response }
-        resumed = true
-      } catch {
-        // A session can expire while its client is disconnected. Fall back to a
-        // fresh session below; the pool will replay Copse's transcript once.
+    let restoredBy: AcpReattachMethod | null = null
+    let carryOverFailure: AcpCarryOverFailure | null = null
+    if (carryOver) {
+      const caps = { resume: canResume, load: canLoad }
+      const moved = carryOver.cwd !== config.cwd
+      const attempts = acpReattachMethods(caps, moved)
+      if (attempts.length === 0) carryOverFailure = noReattachMethodFailure(caps, moved)
+      for (const method of attempts) {
+        const sessionId = carryOver.sessionId
+        try {
+          if (method === 'resume') {
+            const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
+              connection.agent.request(methods.agent.session.resume, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            session = { sessionId, response }
+          } else {
+            const response: LoadSessionResponse = await perfSpan('ttft:acp-session-load', () =>
+              connection.agent.request(methods.agent.session.load, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            // The agent replays the conversation before answering. Copse's own
+            // transcript already shows it, so drop the replay rather than let
+            // the update pump render the thread a second time — but only after
+            // it proved the agent found the conversation it was asked for.
+            const replay = splitLoadReplay(pendingUpdates.get(sessionId) ?? [])
+            pendingUpdates.set(sessionId, replay.keep)
+            if (carryOver.hasHistory && !replay.foundConversation) {
+              carryOverFailure = 'history-missing'
+              continue
+            }
+            session = { sessionId, response }
+          }
+          restoredBy = method
+          carryOverFailure = null
+          break
+        } catch (err) {
+          // A session can expire while its client is disconnected. Try the next
+          // method, then fall back to a fresh session below; the caller replays
+          // Copse's transcript into it once.
+          // The agent's message usually names the session; session IDs stay
+          // out of logs (docs/plans/acp-session-continuity.md).
+          carryOverFailure = 'rejected'
+          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
+            sessionId,
+            '<session>',
+          )
+          console.warn(
+            `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
+          )
+        }
       }
+      // A failed load may have queued a replay nobody will read.
+      if (!session) pendingUpdates.delete(carryOver.sessionId)
     }
     if (!session) {
       const response = await perfSpan('ttft:acp-session-new', () =>
@@ -1189,10 +1273,14 @@ export async function openAcpSession(
       handlers,
       mcpCapabilities,
       canResume,
+      canLoad,
       promptImage,
       availableCommands: [],
       sessionInfo: {},
-      resumed,
+      resumed: restoredBy !== null,
+      restoredBy,
+      carryOverFailure,
+      hasHistory: restoredBy !== null && carryOver?.hasHistory === true,
       appliedModel: undefined,
       desiredConfigOptions: config.configOptions,
       appliedConfigOptions,
@@ -1214,7 +1302,7 @@ export async function openAcpSession(
     startAcpUpdatePump(open)
     return open
   } catch (err) {
-    dispose()
+    await dispose()
     throw err
   }
 }
@@ -1339,6 +1427,7 @@ export async function runAcpSessionPrompt(
       )
     }
 
+    open.hasHistory = true
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
@@ -1349,7 +1438,7 @@ export async function runAcpSessionPrompt(
     if (outcome === 'grace-expired') {
       // The agent never acknowledged the cancel. Tear the session down so the
       // stuck process can't keep the turn alive; the pool respawns next turn.
-      open.dispose()
+      await open.dispose()
       return { stopReason: 'cancelled' }
     }
     return outcome
@@ -1378,7 +1467,7 @@ export async function probeAcpAgent(
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderr = captureAcpChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })

@@ -1,12 +1,18 @@
 import { el, clear } from '../dom/helpers.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
-import { chatAgentIdentity, customAgentId, namedAgentTitles } from './chat-agent-identity.ts'
+import {
+  agentRouteModel,
+  chatAgentIdentity,
+  customAgentId,
+  namedAgentTitles,
+} from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
   checkIcon,
   closeIcon,
   gitBranchIcon,
+  minusIcon,
   moreHorizontalIcon,
   warningIcon,
   zapIcon,
@@ -77,7 +83,11 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  type ImageExpandItem,
+} from '../attachments/image-expand.ts'
 import {
   acpWorkspaceRoot,
   hydrateAcpResourceImages,
@@ -96,6 +106,7 @@ import {
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
+  getApplyPatchFiles,
   getToolCallLabel,
   getToolEditPath,
   RUN_ROLLUP_KEY,
@@ -110,9 +121,17 @@ import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
+import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
+import {
+  conciseActivityLabel,
+  liveTurnStartId,
+  turnStartId,
+  isConciseThread,
+  syncConciseMessageClasses,
+} from './concise-thread.ts'
 import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
@@ -149,69 +168,82 @@ import { recoverFailedTurn, turnRecoveryForMessage } from '../controller/turn-re
 import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
-import type { QueuedUserMessage } from '@shared/types'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
 type InterruptionCause = 'message' | 'user'
 
 // The host records cancelled ACP calls as errors so the next model does not
 // assume they completed. Their transcript presentation can still distinguish a
-// user interruption from a tool failure using the turn outcome.
+// user interruption from a tool failure using the turn outcome. Every call of a
+// user-cancelled turn is keyed here; {@link userInterruption} checks live
+// whether the call was actually cut off, since tool calls update in place.
 const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
 
+// Transcripts already walked. Adding, moving or removing a message and landing
+// a turn outcome all replace `thread.messages`, so a list is only walked again
+// after a change that can move an interruption. `renderToolCards` runs once per
+// message; walking the whole thread on every call was quadratic per rebuild.
+const markedTranscripts = new WeakSet<readonly Message[]>()
+
+function interruptionCause(outcome: TurnOutcome, next: Message | undefined): InterruptionCause {
+  if (next?.role !== 'user' || next.origin !== undefined) return 'user'
+  // The renderer that aborted the run recorded how: a prompt queued mid-run and
+  // drained after an explicit Stop is adjacent too, and must not be blamed.
+  if (outcome.userAbort !== undefined) return outcome.userAbort === 'send_now' ? 'message' : 'user'
+  // Turns recorded before `userAbort`: send-now queues the human bubble before
+  // the abort settles, while a prompt sent after a Stop has a later timestamp.
+  return next.createdAt <= outcome.endedAt ? 'message' : 'user'
+}
+
 function markUserInterruptedCalls(thread: Thread | undefined): void {
-  if (!thread) return
+  if (!thread || markedTranscripts.has(thread.messages)) return
+  markedTranscripts.add(thread.messages)
   let turnCalls: ToolCall[] = []
   for (const [index, message] of thread.messages.entries()) {
     if (message.role !== 'assistant') turnCalls = []
     else turnCalls.push(...message.toolCalls)
     if (!message.turnOutcome) continue
     const next = thread.messages[index + 1]
-    // Send-now queues the human bubble before the abort settles. A prompt sent
-    // after an explicit Stop is also adjacent in the saved transcript, but its
-    // timestamp is later and must not be blamed for the earlier interruption.
-    const humanPrompt =
-      next?.role === 'user' &&
-      next.origin === undefined &&
-      next.createdAt <= message.turnOutcome.endedAt
+    const userCancelled =
+      message.turnOutcome.status === 'cancelled' &&
+      message.turnOutcome.source === 'user' &&
+      !(next?.role === 'user' && next.origin !== undefined)
+    const cause = userCancelled ? interruptionCause(message.turnOutcome, next) : null
     for (const call of turnCalls) {
-      if (!isHostInterruptedToolCall(call)) continue
-      if (
-        message.turnOutcome.status === 'cancelled' &&
-        message.turnOutcome.source === 'user' &&
-        !(next?.role === 'user' && next.origin !== undefined)
-      ) {
-        userInterruptedCalls.set(call, humanPrompt ? 'message' : 'user')
-      } else {
-        userInterruptedCalls.delete(call)
-      }
+      if (cause) userInterruptedCalls.set(call, cause)
+      else userInterruptedCalls.delete(call)
     }
     turnCalls = []
   }
 }
 
+function userInterruption(call: ToolCall): InterruptionCause | undefined {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : undefined
+}
+
 function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
   if (toolCalls.some((call) => call.status === 'running')) return 'running'
-  if (toolCalls.some((call) => call.status === 'error' && !userInterruptedCalls.has(call))) {
+  if (toolCalls.some((call) => call.status === 'error' && userInterruption(call) === undefined)) {
     return 'error'
   }
-  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return 'interrupted'
+  if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
   return 'done'
 }
 
 function interruptionLabel(call: ToolCall): string {
-  return userInterruptedCalls.get(call) === 'message'
+  return userInterruption(call) === 'message'
     ? 'Interrupted when you sent a new message.'
     : 'Interrupted by you.'
 }
 
 function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[]): void {
-  const interrupted = calls.find((call) => userInterruptedCalls.has(call))
+  const interrupted = calls.find((call) => userInterruption(call) !== undefined)
   const current = body.querySelector<HTMLElement>(':scope > .tool-interruption-note')
   if (!interrupted) {
     current?.remove()
@@ -225,12 +257,58 @@ function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[
 function statusIcon(status: ToolCardStatus): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
   if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
+  // Settled but cut short: never the in-progress glyph, or a folded
+  // interrupted run reads as still pending.
+  if (status === 'interrupted') return minusIcon('ui-icon ui-icon-sm')
   return moreHorizontalIcon('ui-icon ui-icon-sm')
 }
 
 // The disclosure is omitted entirely when there are no arguments to show — e.g.
 // external ACP agents run no-argument commands (grep/search with the query in
 // the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+const PATCH_OP_LABEL = { add: 'Added', update: 'Edited', delete: 'Deleted', move: 'Moved' } as const
+
+/** Per-file rows for an `apply_patch` card: what each file gets, with line counts. */
+function createPatchFilesSection(tc: ToolCall): HTMLElement | null {
+  if (tc.name !== 'apply_patch') return null
+  const files = getApplyPatchFiles(tc)
+  if (files.length === 0) return null
+  return el(
+    'ul',
+    { class: 'tool-patch-files', 'aria-label': 'Files in patch' },
+    ...files.map((file) => {
+      const target = file.movePath ?? file.path
+      return el(
+        'li',
+        {},
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-patch-file',
+            'data-op': file.op,
+            'data-edit-path': target,
+            'data-tooltip': 'View changes',
+          },
+          el('span', { class: 'tool-patch-op' }, PATCH_OP_LABEL[file.op]),
+          el(
+            'span',
+            { class: 'tool-patch-path' },
+            file.movePath === undefined ? file.path : `${file.path} → ${file.movePath}`,
+          ),
+          // A delete names no lines, so its counts would read as a misleading +0 -0.
+          ...(file.op === 'delete'
+            ? []
+            : [
+                el('span', { class: 'tool-stat tool-stat-add' }, `+${String(file.additions)}`),
+                el('span', { class: 'tool-stat tool-stat-del' }, `-${String(file.deletions)}`),
+              ]),
+        ),
+      )
+    }),
+  )
+}
+
 function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   const rendered = renderToolArgs(args)
   if (!rendered.trim()) return null
@@ -417,8 +495,9 @@ function appendStandardToolSections(
   const buildBody = (): void => {
     const argsSection = createToolArgsSection(tc.args)
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc)),
       ...appendIfPresent(argsSection),
-      ...(userInterruptedCalls.has(tc)
+      ...(userInterruption(tc) !== undefined
         ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
         : []),
       createToolResultSection(
@@ -889,7 +968,14 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 function subagentHeaderMarker(): HTMLElement {
   return el(
     'span',
-    { class: 'tool-subagent-marker', 'aria-label': 'Subagent', 'data-tooltip': 'Subagent' },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: 'tool-subagent-marker',
+      role: 'img',
+      'aria-label': 'Subagent',
+      'data-tooltip': 'Subagent',
+    },
     gitBranchIcon('ui-icon ui-icon-sm'),
   )
 }
@@ -1177,6 +1263,20 @@ function createGroupToolCard(
 }
 
 /**
+ * A rollup that holds exactly one group repeats that group's count on its own
+ * header. Not when failures sit beside it: the group then covers only part of
+ * the calls the label counts.
+ */
+function rollupHeaderCount(
+  item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
+): number | undefined {
+  const only = item.children.length === 1 ? item.children[0] : undefined
+  return only?.type === 'group' && only.toolCalls.length === item.toolCalls.length
+    ? item.toolCalls.length
+    : undefined
+}
+
+/**
  * One quiet summary row for a turn's tooling (`Used 12 tools` / `Read files`).
  * Nested cards stay available on expand but don't each paint their own chrome.
  */
@@ -1193,10 +1293,7 @@ function createRollupToolCard(
     'data-status': status,
     'data-tool-count': String(item.toolCalls.length),
   })
-  const count =
-    item.children.length === 1 && item.children[0]?.type === 'group'
-      ? item.toolCalls.length
-      : undefined
+  const count = rollupHeaderCount(item)
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
     const childCard = createToolCard(child, api, threadId, store)
@@ -1262,7 +1359,10 @@ const toolCardSignatures = new WeakMap<HTMLElement, string>()
 const toolGroupItemSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
-  if (item.type === 'rollup') return `r:${item.key}`
+  // One identity for a message's rollup, whether it is still one message's
+  // `turn` or has become a cross-message `run`: the disclosure is patched in
+  // place (keeping its open state) instead of being replaced as messages join.
+  if (item.type === 'rollup') return 'r:activity'
   if (item.type === 'step') return `s:${item.key}`
   if (item.type === 'group') return `g:${item.key}`
   return `t:${item.toolCall.id}`
@@ -1275,14 +1375,14 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
 function toolCallSignature(call: ToolCall): string {
-  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null })
+  return renderSignature({ call, interruption: userInterruption(call) ?? null })
 }
 
 function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
   const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
   const base = renderSignature({
     item,
-    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null),
+    interruptions: calls.map((call) => userInterruption(call) ?? null),
   })
   return extra === undefined ? base : `${base}|${extra}`
 }
@@ -1423,11 +1523,10 @@ function reconcileToolCard(
     card.dataset['toolCount'] = String(item.toolCalls.length)
     if (item.type === 'step') {
       card.dataset['stepMessageId'] = item.messageId
+    } else {
+      card.dataset['rollupKey'] = item.key
     }
-    const count =
-      item.type === 'rollup' && item.children.length === 1 && item.children[0]?.type === 'group'
-        ? item.toolCalls.length
-        : undefined
+    const count = item.type === 'rollup' ? rollupHeaderCount(item) : undefined
     replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
     let body = Array.from(card.children).find(
       (node): node is HTMLElement =>
@@ -1451,16 +1550,17 @@ function reconcileToolCard(
 
 function createMessageImages(images: string[]): HTMLElement {
   const wrap = el('div', { class: 'message-images' })
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: 'Attached image' }))
+  images.forEach((dataUrl, index) => {
     const img = el('img', {
       class: 'message-image',
       src: dataUrl,
       alt: 'Attached image',
       loading: 'lazy',
     })
-    attachImageExpand(img, 'Attached image')
+    attachImageExpand(img, 'Attached image', gallery, index)
     wrap.append(img)
-  }
+  })
   return wrap
 }
 
@@ -1481,6 +1581,7 @@ function createAcpContentBlock(
   context: 'message' | 'reasoning' | 'tool',
   workspaceRoot: string | null,
   previewImageDataUrls?: ReadonlySet<string>,
+  imageGallery?: { items: readonly ImageExpandItem[]; index: number },
 ): HTMLElement | null {
   if (block.type === 'text') return null
   if (block.type === 'image') {
@@ -1506,7 +1607,7 @@ function createAcpContentBlock(
       alt: label,
       loading: 'lazy',
     })
-    attachImageExpand(img, label)
+    attachImageExpand(img, label, imageGallery?.items, imageGallery?.index)
     return img
   }
   if (block.type === 'audio') {
@@ -1581,8 +1682,21 @@ function createAcpContentBlocks(
   context: 'message' | 'reasoning',
   workspaceRoot: string | null,
 ): HTMLElement | null {
+  const images: ImageExpandItem[] =
+    context === 'message'
+      ? blocks.flatMap((block) =>
+          block.type === 'image'
+            ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : 'Agent image' }]
+            : [],
+        )
+      : []
+  let imageIndex = 0
   const nodes = blocks.flatMap((block) => {
-    const node = createAcpContentBlock(block, context, workspaceRoot)
+    const gallery =
+      context === 'message' && block.type === 'image'
+        ? { items: images, index: imageIndex++ }
+        : undefined
+    const node = createAcpContentBlock(block, context, workspaceRoot, undefined, gallery)
     return node ? [node] : []
   })
   if (nodes.length === 0) return null
@@ -1590,6 +1704,7 @@ function createAcpContentBlocks(
 }
 
 const acpDiffLineSigns = { context: ' ', add: '+', del: '-' } as const
+const acpDiffLineNames = { add: 'Added: ', del: 'Deleted: ' } as const
 
 /**
  * An ACP edit as a unified line diff: the workspace-relative path and +/- counts
@@ -1604,9 +1719,13 @@ function createAcpToolDiff(
   const additions = lines.filter((line) => line.kind === 'add').length
   const deletions = lines.filter((line) => line.kind === 'del').length
   const hasChanges = additions > 0 || deletions > 0
+  // The line diff normalises CRLF, so texts that still differ changed only
+  // their line endings; saying "No changes" there would be false.
+  const unchangedLabel =
+    (item.oldText ?? '') === item.newText ? 'No changes' : 'Only line endings changed'
   const body = hasChanges
     ? el('div', { class: 'acp-tool-diff-lines' })
-    : el('div', { class: 'acp-content-label' }, 'No changes')
+    : el('div', { class: 'acp-content-label' }, unchangedLabel)
   const details = el(
     'details',
     { class: 'acp-tool-diff' },
@@ -1646,16 +1765,16 @@ function createAcpToolDiff(
           ),
         ]
       }
-      const accessibility =
-        line.kind === 'add'
-          ? { 'aria-label': `Added line: ${line.text}` }
-          : line.kind === 'del'
-            ? { 'aria-label': `Deleted line: ${line.text}` }
-            : {}
+      // Visually hidden text rather than an `aria-label`: naming a generic
+      // `div` is prohibited, so screen readers may drop the label and with it
+      // the only cue (the sign is aria-hidden) that a line was added or removed.
       const row = el(
         'div',
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        ...(line.kind === 'context'
+          ? []
+          : [el('span', { class: 'acp-diff-sr' }, acpDiffLineNames[line.kind])]),
         el('span', { class: 'acp-diff-text' }, line.text),
       )
       return line.noNewlineAtEnd
@@ -2008,18 +2127,10 @@ function appendMessageContent(
   // summary heading. History renders as settled ("Reasoned").
   if (
     msg.role === 'assistant' &&
-    (msg.reasoning || msg.reasoningBlocks?.length) &&
+    hasReasoningContent(msg.reasoning, msg.reasoningBlocks) &&
     opts?.nestReasoningInTools !== true
   ) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? '',
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot,
-      ),
-    )
+    body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks, workspaceRoot))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   // Attach before markdown so ACP transport-noise disclosure can find a parent
@@ -2055,6 +2166,18 @@ function syncAcpMessageContent(
   }
   if (current) replaceAcpResourceBlock(current, replacement)
   else body.append(replacement)
+}
+
+/**
+ * Whether a message has any reasoning worth a disclosure. Whitespace-only text
+ * (blank thought chunks streamed by some ACP agents) counts as none, matching
+ * run derivation, so a blank trail can't paint an empty "Reasoned" block.
+ */
+function hasReasoningContent(
+  reasoning: string | undefined,
+  blocks: readonly AcpContentBlock[] | undefined,
+): boolean {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -2225,22 +2348,19 @@ function countChipPlaceholders(text: string): number {
 }
 
 /**
- * A `<details>` disclosure holding the model's reasoning trail. `open` reflects
- * whether the answer is still pending so live reasoning is visible by default but
- * past turns stay collapsed. Title tense follows status (`Reasoning` / `Reasoned`).
+ * A compact, initially closed disclosure holding the model's reasoning trail.
+ * Title tense follows status (`Reasoning` / `Reasoned`).
  * A click on the summary marks it user-controlled so later streaming updates
  * never fight the user's choice.
  */
 function buildReasoningEl(
   reasoning: string,
-  open: boolean,
   live: boolean,
   blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
   workspaceRoot: string | null = null,
 ): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
-    open,
   })
   const summary = el(
     'summary',
@@ -2330,12 +2450,12 @@ function syncReasoningEl(
   )
   const host = rollupBody ?? body
   let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? '', true, live, msg.reasoningBlocks, workspaceRoot)
+    details = buildReasoningEl(msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     host.prepend(details)
   } else {
     if (details.parentElement !== host) host.prepend(details)
@@ -2344,8 +2464,6 @@ function syncReasoningEl(
       renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     setReasoningDisclosureTitle(details, live)
   }
-  // Keep the trail open while it is still live, unless the user collapsed it.
-  if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
 }
 
 /**
@@ -2371,7 +2489,7 @@ function syncNestedRollupReasoning(
     return
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? '', true, live, reasoningBlocks, workspaceRoot)
+    details = buildReasoningEl(reasoning ?? '', live, reasoningBlocks, workspaceRoot)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks, workspaceRoot)
@@ -2400,25 +2518,31 @@ function syncRunStepReasoning(
   liveStepId: string | null,
   workspaceRoot: string | null,
 ): void {
+  // The rollup is reused when its message becomes a run's anchor, so it may
+  // still carry the trail it nested as a single message. In a run that trail
+  // belongs on the anchor's step: move it there rather than rebuild it, so its
+  // open state and rendered markdown survive the new message arriving.
+  let anchorTrail = card.querySelector<HTMLDetailsElement>(
+    ':scope > .tool-rollup-body > .message-reasoning',
+  )
   for (const step of run.steps) {
     const body = card.querySelector<HTMLElement>(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`,
     )
     if (!body) continue
     let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
+    if (!details && anchorTrail && step.messageId === run.anchorId) {
+      details = anchorTrail
+      anchorTrail = null
+      body.prepend(details)
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove()
       continue
     }
     const live = step.messageId === liveStepId
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? '',
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot,
-      )
+      details = buildReasoningEl(step.reasoning ?? '', live, step.reasoningBlocks, workspaceRoot)
       body.prepend(details)
       continue
     }
@@ -2427,6 +2551,7 @@ function syncRunStepReasoning(
       renderReasoningText(textEl, step.reasoning ?? '', live, step.reasoningBlocks, workspaceRoot)
     setReasoningDisclosureTitle(details, live)
   }
+  anchorTrail?.remove()
 }
 
 /**
@@ -2484,6 +2609,8 @@ const TOOL_AUTO_COMPACT_DELAY_MS = 750
 // typical viewport — then fill the rest of the history backwards in the
 // background, one chunk of this size per animation frame.
 const INITIAL_RENDER_WINDOW = 40
+/** Reasoning trails the activity row can reopen; a concise bubble's are hidden. */
+const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasoning'
 const BACKFILL_CHUNK_SIZE = 30
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -2509,7 +2636,26 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     arrowDownIcon('ui-icon'),
   )
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn)
+  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
+    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
+  )
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn,
+  )
+
+  // The concise turn the user opened to debug, by its prompt's id. UI-only: it is
+  // never persisted, and only that turn renders in full (as with the setting off).
+  let expandedConciseTurnId: string | null = null
+  /** The experimental setting as it applies to one message: off inside the expanded turn. */
+  function conciseEnabledFor(thread: Thread | undefined, messageId: string): boolean {
+    const enabled = store.getState().conciseThreadsEnabled
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId
+  }
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -2517,8 +2663,32 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // Non-reasoning activity can still reopen the latest trail (for example while
   // the answer is being written). During reasoning, the live disclosure itself
   // replaces this standalone row.
+  /**
+   * In a running concise turn the row is the only trace of the work, so it opens
+   * that one turn in the full view (tool cards, reasoning) and closes it again.
+   * Returns false when the row is not expandable, leaving the click to its
+   * other job.
+   */
+  function toggleConciseTurnExpansion(): boolean {
+    const thread = getActiveThread(store)
+    if (!thread || !isConciseTurnExpandable(thread)) return false
+    const turn = liveTurnStartId(thread.messages)
+    if (turn === null) return false
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null
+    syncConciseThreadClasses()
+    scrollToBottom()
+    return true
+  }
+  function isConciseTurnExpandable(thread: Thread): boolean {
+    return (
+      thread.status === 'running' &&
+      store.getState().conciseThreadsEnabled &&
+      isConciseThread(thread)
+    )
+  }
   activityBar.addEventListener('click', () => {
-    const trails = list.querySelectorAll<HTMLDetailsElement>('.msg-assistant .message-reasoning')
+    if (toggleConciseTurnExpansion()) return
+    const trails = list.querySelectorAll<HTMLDetailsElement>(REOPENABLE_REASONING)
     const details = trails[trails.length - 1]
     if (!details) return
     details.dataset['userToggled'] = '1'
@@ -2526,6 +2696,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const key = details.dataset['disclosureKey']
     if (key) disclosurePreferences.set(key, true)
     details.scrollIntoView({ block: 'nearest' })
+  })
+  activityBar.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    if (activityBar.getAttribute('role') !== 'button') return
+    event.preventDefault()
+    toggleConciseTurnExpansion()
   })
   // Queued follow-ups live in a pinned panel below the scroll area so they stay
   // visible at the bottom of the screen instead of getting buried under the
@@ -2550,12 +2726,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
   })
 
-  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Clicking a file edit's +/- counts (or a row of an apply_patch card) reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
   list.addEventListener('click', (e) => {
     const statsBtn =
-      e.target instanceof Element ? e.target.closest<HTMLElement>('.tool-edit-stats') : null
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('.tool-edit-stats, .tool-patch-file')
+        : null
     const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()
@@ -3090,10 +3268,32 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom()
   })
 
-  function setActivity(label: string | null): void {
-    if (!label) {
+  function setActivity(requested: string | null): void {
+    if (!requested) {
       activityBar.hidden = true
       return
+    }
+    // A concise turn hides its tool cards, so the row names the current item.
+    const thread = getActiveThread(store)
+    const conciseLabel =
+      thread && store.getState().conciseThreadsEnabled && isConciseThread(thread)
+        ? conciseActivityLabel(thread)
+        : null
+    const label = conciseLabel ?? requested
+    // While a concise turn runs, the row opens that turn's steps.
+    const expandable = thread !== undefined && isConciseTurnExpandable(thread)
+    const expanded = expandable && expandedConciseTurnId !== null
+    activityBar.setAttribute('role', expandable ? 'button' : 'status')
+    activityBar.classList.toggle('agent-activity-expandable', expandable)
+    activityBar.classList.toggle('agent-activity-expanded', expanded)
+    if (expandable) {
+      activityBar.tabIndex = 0
+      activityBar.setAttribute('aria-expanded', String(expanded))
+      activityBar.title = expanded ? 'Hide this turn’s steps' : 'Show this turn’s steps'
+    } else {
+      activityBar.removeAttribute('tabindex')
+      activityBar.removeAttribute('aria-expanded')
+      activityBar.removeAttribute('title')
     }
     // Assigning textContent replaces the text node even when the string is
     // identical, and the row is aria-live, so an unconditional write re-announces
@@ -3105,10 +3305,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
-    // never show two live "Reasoning…" labels in the transcript.
+    // never show two live "Reasoning…" labels in the transcript. A concise
+    // bubble hides its reasoning, so there the row stays the live signal.
     if (
       label.startsWith('Reasoning…') &&
-      list.querySelector('.message-reasoning.message-reasoning-live')
+      [
+        ...list.querySelectorAll(
+          '.msg:not(.msg-concise) .message-reasoning.message-reasoning-live',
+        ),
+      ].some((details) => !details.parentElement?.closest('details:not([open]), [hidden]'))
     ) {
       activityBar.hidden = true
       scrollToBottom()
@@ -3117,7 +3322,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Only advertise the row as clickable once there's a reasoning trail to open.
     activityBar.classList.toggle(
       'agent-activity-clickable',
-      !!list.querySelector('.msg-assistant .message-reasoning'),
+      !!list.querySelector(REOPENABLE_REASONING),
     )
     activityBar.hidden = false
     // Snapping on an unchanged row would cut short the streamed text's glide.
@@ -3261,9 +3466,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   function labelUserInterruptions(item: ToolCallDisplayItem): void {
     const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
-    if (calls.some((call) => userInterruptedCalls.has(call))) {
+    if (calls.some((call) => userInterruption(call) !== undefined)) {
       const failed = calls.filter(
-        (call) => call.status === 'error' && !userInterruptedCalls.has(call),
+        (call) => call.status === 'error' && userInterruption(call) === undefined,
       ).length
       const base = item.label.replace(/ · \d+ failed$/, '')
       item.label = `${base}${failed ? ` · ${String(failed)} failed` : ''} · Interrupted`
@@ -3310,6 +3515,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (preference !== undefined) {
       card.open = preference
+    } else if (item.type === 'rollup' || item.type === 'step') {
+      // Background activity stays quiet, including while it runs and when a
+      // call failed: failures render beside the rollup, already open.
+      card.open = false
     } else if (failed) {
       // Failed tools stay expanded so the error body is visible without a click.
       // Compaction already skips data-status=error; auto-open here covers the
@@ -3410,16 +3619,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // selector deliberately checks the live DOM, so a retained subagent card or
     // a canvas preview added later makes the bubble visible again automatically.
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
+    // Tool calls arriving mid-stream turn a concise bubble's text into narration.
+    const message = activeThread?.messages.find((m) => m.id === msgId)
+    if (message) syncConciseMessageClasses(msgEl, message, conciseEnabledFor(activeThread, msgId))
 
     const nestReasoning =
       run === undefined &&
       (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
       shouldNestReasoningInTools(toolCalls)
+    // User-interrupted calls fold into the rollup; genuine failures sit beside it.
+    const isInterrupted = (call: ToolCall): boolean => userInterruption(call) !== undefined
     const items = run
       ? isRunMember
         ? buildSubagentDisplayItems(toolCalls)
-        : [...buildToolRunDisplayItems(run), ...buildSubagentDisplayItems(toolCalls)]
+        : [
+            ...buildToolRunDisplayItems(run, { isInterrupted }),
+            ...buildSubagentDisplayItems(toolCalls),
+          ]
       : buildToolCallDisplayItems(toolCalls, {
+          isInterrupted,
           ...(nestReasoning || (messageKey !== null && liveRollupMessages.has(messageKey))
             ? { forceRollup: true }
             : {}),
@@ -3660,6 +3878,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
@@ -3901,6 +4120,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
         .catch((error: unknown) => {
           console.warn('[conversation] Could not load named agent identities', error)
+          // Let the next sync ask again rather than leaving named headers off
+          // until some unrelated settings change resets the flag.
+          if (revision === agentNamesRevision) agentNamesRequested = false
         })
     }
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
@@ -3920,6 +4142,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     let prevLabel: string | undefined
     let prevAgentKey: string | undefined
     for (const msg of thread.messages) {
+      // A user turn ends an agent's stretch: its next reply gets its own marker,
+      // so the one that animates sits beside the latest reply rather than at the
+      // agent's first reply far up the transcript (and offscreen, hence static).
+      if (msg.role === 'user') prevAgentKey = undefined
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
@@ -3948,10 +4174,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
       // The identity marker already names bare agent selections. Keep model and
       // parameter boundaries for native replies and explicit agent model choices.
-      if (show && model && text && text !== prevLabel && (!identity || model.includes('#'))) {
+      const routeModel = identity && model ? agentRouteModel(model) : undefined
+      if (show && model && text && text !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = identity
-          ? formatPrimaryChatModelLabel(model.slice(model.indexOf('#') + 1), msg.parameters)
+        label.textContent = routeModel
+          ? formatPrimaryChatModelLabel(routeModel, msg.parameters)
           : text
         if (header) {
           if (label.parentElement !== header) header.append(label)
@@ -3964,6 +4191,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       prevAgentKey = identity?.key
     }
     syncAvatarMotion()
+  }
+
+  /**
+   * Re-apply the concise view to every rendered message, for when the
+   * experimental setting flips; the activity row picks it up on its next label.
+   */
+  function syncConciseThreadClasses(): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
+    list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((msgEl) => {
+      const id = msgEl.dataset['messageId'] ?? ''
+      const msg = byId.get(id)
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id))
+    })
+    syncFromStore()
   }
 
   function syncAvatarMotion(): void {
@@ -4039,6 +4282,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    // A skipped review still carries the only durable explanation for a
+    // below-threshold diff or declined spend prompt. createReviewCardEl keeps
+    // that state to one compact annotation line rather than dropping it.
     if (!msg?.review || !msgEl) return
     const card = createReviewCardEl(msg.review, api, () => {
       retryReview(store, api, threadId, messageId)
@@ -4080,7 +4326,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const state = store.getState()
     const projectId = state.activeProjectId
     const thread = state.threads.find((candidate) => candidate.id === threadId)
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
+    // A failed turn keeps its text even in the concise view; the outcome lands
+    // after the bubble was built, and this runs whenever it may have changed.
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId)
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId))
     const recovery = turnRecoveryForMessage(thread, messageId)
     if (!projectId || !msgEl || !recovery) return
 
@@ -4389,6 +4639,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       agentNamesRequested = false
       agentNamesRevision++
       syncModelLabels()
+      syncConciseThreadClasses()
     }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
@@ -4581,6 +4832,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           card.remove()
         })
       } else {
+        // The turn is over: its summary is the answer, so it returns to the concise view.
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null
+          syncConciseThreadClasses()
+        }
         setActivity(null)
         list.querySelectorAll<HTMLDetailsElement>('.message-reasoning-live').forEach((details) => {
           setReasoningDisclosureTitle(details, false)
@@ -4629,6 +4885,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    appleSuggestions.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

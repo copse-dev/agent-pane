@@ -99,6 +99,7 @@ function preparationCacheEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     YARN_GLOBAL_FOLDER: join(root, 'yarn', 'global'),
     BUN_INSTALL_CACHE_DIR: join(root, 'bun'),
     UV_CACHE_DIR: join(root, 'uv'),
+    PIP_CACHE_DIR: join(root, 'pip'),
     GOMODCACHE: join(root, 'go', 'mod'),
     GOCACHE: join(root, 'go', 'build'),
     GOPATH: join(root, 'go', 'path'),
@@ -271,7 +272,15 @@ function environmentForPlan(
   const inherited =
     plan.ecosystem === 'cargo'
       ? Object.fromEntries(Object.entries(env).filter(([key]) => !/^(?:CARGO|RUST)/.test(key)))
-      : { ...env }
+      : plan.ecosystem === 'pip'
+        ? Object.fromEntries(
+            Object.entries(env).filter(
+              ([key]) =>
+                !key.startsWith('PIP_') ||
+                ['PIP_INDEX_URL', 'PIP_EXTRA_INDEX_URL', 'PIP_TRUSTED_HOST'].includes(key),
+            ),
+          )
+        : { ...env }
   const rustBin =
     plan.ecosystem === 'cargo' ? resolveInstalledRustToolchainBin(plan.root, env) : null
   const result: NodeJS.ProcessEnv = {
@@ -284,6 +293,15 @@ function environmentForPlan(
           UV_PROJECT_ENVIRONMENT: join(plan.root, '.venv'),
           UV_PYTHON_DOWNLOADS: 'never',
           UV_OFFLINE: offline ? 'true' : 'false',
+          PYTHONDONTWRITEBYTECODE: '1',
+        }
+      : {}),
+    ...(plan.ecosystem === 'pip'
+      ? {
+          PIP_CACHE_DIR: join(copseCacheDir(env), 'pip'),
+          PIP_CONFIG_FILE: '/dev/null',
+          PIP_DISABLE_PIP_VERSION_CHECK: '1',
+          PIP_NO_INPUT: '1',
           PYTHONDONTWRITEBYTECODE: '1',
         }
       : {}),

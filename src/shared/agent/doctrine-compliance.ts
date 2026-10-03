@@ -62,6 +62,7 @@ export interface DoctrineComplianceReport {
 const MUTATING_TOOLS = new Set([
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',
@@ -72,6 +73,7 @@ const MUTATING_TOOLS = new Set([
 const EDIT_TOOLS = new Set([
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',

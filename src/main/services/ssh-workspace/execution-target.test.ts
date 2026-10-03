@@ -147,13 +147,13 @@ describe('getActiveExecutionTarget', () => {
     storageSet('activeProjectId', 'stale')
     storageSet('projects', [
       { id: 'stale', path: '/local/old', name: 'Old' },
-      { id: 'p1', path: '/etc/ddg', name: 'ddg', sshHost: 'dev' },
+      { id: 'p1', path: '/srv/app', name: 'app', sshHost: 'dev' },
     ])
-    setWorkspaceRootForTest('/etc/ddg')
+    setWorkspaceRootForTest('/srv/app')
     assert.deepEqual(getActiveExecutionTarget(), {
       kind: 'ssh',
       hostId: 'dev',
-      remoteRoot: '/etc/ddg',
+      remoteRoot: '/srv/app',
     })
   })
 

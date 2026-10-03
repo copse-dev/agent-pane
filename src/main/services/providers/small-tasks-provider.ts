@@ -5,6 +5,7 @@ import {
   lmStudioChatModelValue,
 } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from '../storage/settings.ts'
+import { resolveDynamicModelId } from './dynamic-model.ts'
 import { buildProvider, type BuildProviderOptions } from './provider-selection.ts'
 import { routedModelSetting } from './role-models.ts'
 
@@ -19,49 +20,75 @@ const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks
  */
 const SMALL_TASK_OPTIONS: BuildProviderOptions = { maxReasoning: 'low' }
 
+function mockLlmActive(): boolean {
+  return process.env['COPSE_PANEL_MOCK_LLM'] === '1'
+}
+
+export interface SmallTasksRoute {
+  provider: LLMProvider
+  model: string
+}
+
 /** Resolve the configured small-tasks model (empty = auto local default). */
 export function resolveSmallTasksModelId(): string {
   const configured = routedModelSetting('smallTasksModel')
   return configured || AUTO_LOCAL_DEFAULT
 }
 
-/** A built small-tasks provider and the model it will actually call. */
-export interface SmallTasksRoute {
-  provider: LLMProvider
-  /**
-   * The model this provider calls: the small-tasks model, or the chat model
-   * when the small-tasks model could not be built. Usage belongs to this id.
-   */
-  model: string
+async function buildSmallTasksRoute(selection: string): Promise<SmallTasksRoute> {
+  const model = await resolveDynamicModelId(selection)
+  return {
+    provider: await buildProvider(model, undefined, SMALL_TASK_OPTIONS),
+    model,
+  }
 }
 
 /**
- * Resolve the small-tasks provider together with the model it routes to, so a
- * caller can attribute usage to the model that answered rather than to the
- * configured small-tasks model it fell back from.
+ * Resolve the selected chat model as a backup for a failed small-tasks request.
+ * The exclusion prevents a configured shared model from being called twice.
+ */
+export async function resolveSmallTasksFallbackRoute(
+  excludeModel?: string,
+): Promise<SmallTasksRoute | null> {
+  if (mockLlmActive()) return null
+  try {
+    const selection = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+    const model = await resolveDynamicModelId(selection)
+    if (model === excludeModel) return null
+    return {
+      provider: await buildProvider(model, undefined, SMALL_TASK_OPTIONS),
+      model,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Provider route for thread titles, follow-ups, and other lightweight prompts.
+ * Construction failures fall back immediately; callers that need inference-time
+ * failover can request {@link resolveSmallTasksFallbackRoute} after a failed call.
  */
 export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> {
   // Scenario fixtures own their chat replies. Auxiliary labels use the callers'
   // normal heuristic fallbacks instead of consuming a conversation response.
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return null
-  const modelId = resolveSmallTasksModelId()
+  if (mockLlmActive()) return null
   try {
-    return { provider: await buildProvider(modelId, undefined, SMALL_TASK_OPTIONS), model: modelId }
+    return await buildSmallTasksRoute(resolveSmallTasksModelId())
   } catch {
-    const chatModel = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
-    if (chatModel === modelId) return null
-    try {
-      return {
-        provider: await buildProvider(chatModel, undefined, SMALL_TASK_OPTIONS),
-        model: chatModel,
-      }
-    } catch {
-      return null
-    }
+    return resolveSmallTasksFallbackRoute()
   }
 }
 
-/** Provider for thread titles, follow-ups, and other lightweight prompts. */
-export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
-  return (await resolveSmallTasksRoute())?.provider ?? null
+/**
+ * The small-tasks route, then the chat model only after it fails. An async
+ * generator stays paused after the primary yield, so the chat route is resolved
+ * only when a caller asks for it — after the local/configured model failed.
+ */
+export async function* smallTasksRoutes(): AsyncIterable<SmallTasksRoute> {
+  const primary = await resolveSmallTasksRoute()
+  if (!primary) return
+  yield primary
+  const fallback = await resolveSmallTasksFallbackRoute(primary.model)
+  if (fallback) yield fallback
 }

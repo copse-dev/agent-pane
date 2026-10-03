@@ -22,7 +22,12 @@ import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { acpSshTarget, isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import {
+  acpSshTarget,
+  isAcpOverSshEnabled,
+  spawnConfigSshTarget,
+  type AcpSshTarget,
+} from './acp-ssh-transport.ts'
 import { gateRemoteAcpEnvForward, remoteAcpAuthRequiredHint } from './acp-remote-env-gate.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
@@ -40,11 +45,16 @@ import {
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
-import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
+import {
+  isAcpPermissionRemembered,
+  rememberAcpPermission,
+  type AcpGrantLocation,
+} from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
   permissionKindLabel,
@@ -396,12 +406,22 @@ export async function runAcpAgentFromSettings(
   const executionContext = getThreadExecutionContext()
 
   const sandbox = resolveAcpSandbox(agent)
-  // Inside an unattended container the container is the sandbox
-  // (`docs/plans/thread-in-container.md`, decision A5): the agent spawns
-  // without a seatbelt of its own, but for every decision that asks "is this
-  // agent's process contained?" the answer is yes.
-  const contained = currentRunIsUnattendedContainer(getActiveRunThread())
-  const sandboxed = willSandboxAcpAgent(sandbox) || contained
+  // Where the agent runs, read from the ACP-over-SSH setting exactly once. The
+  // spawn config carries this answer to the session pool and transport, so
+  // toggling the setting mid-turn cannot spawn remotely while the permission
+  // checks below still treat the agent as locally sandboxed.
+  const sshTarget = acpSshTarget(cwd)
+  // One containment answer for the whole turn: the session mode preset, the
+  // read/search and Codex code-mode auto-approvals, and execute gating all read
+  // it, so a remote (ACP-over-SSH) agent can never be treated as seatbelted.
+  const { sandboxed, contained, remote } = resolveAcpRunContainment({
+    cwd,
+    sshTarget,
+    localSandbox: willSandboxAcpAgent(sandbox),
+    unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
+  })
+  // Remembered grants are per SSH host: each is its own trust boundary.
+  const remoteHostId = sshTarget?.hostId
   const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
@@ -436,6 +456,7 @@ export async function runAcpAgentFromSettings(
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
+    sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
@@ -499,7 +520,14 @@ export async function runAcpAgentFromSettings(
     onChunk,
     requestPermission: (req, rpcSignal) =>
       respondToPermission(
-        { id: agent.id, title: agent.title, sandboxed, contained },
+        {
+          id: agent.id,
+          title: agent.title,
+          sandboxed,
+          contained,
+          remote,
+          ...(remoteHostId !== undefined ? { remoteHostId } : {}),
+        },
         req,
         cwd,
         projectRoot,
@@ -538,7 +566,7 @@ export async function runAcpAgentFromSettings(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
-    const { entry, fresh } = await perfSpan(
+    const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
         acquireAcpSession({
@@ -550,6 +578,14 @@ export async function runAcpAgentFromSettings(
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
+    if (handover) {
+      // The agent's previous session (its tool results, file reads, reasoning)
+      // did not survive the restart; the transcript preamble below restores only
+      // the conversation text. Say so in the thread — straight to the caller's
+      // sink, not `onChunk`, so the note neither joins the assistant history
+      // replayed into later turns nor counts as progress that blocks a retry.
+      options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
+    }
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -624,7 +660,7 @@ export async function runAcpAgentFromSettings(
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     // An agent on a remote host answering "Authentication required" needs
     // remote-side remedies; replace the dead-end message with ones that work.
-    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, cwd, options.agentId) ?? err, {
+    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err, {
       assistantText,
       usage: turn
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
@@ -696,6 +732,51 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
+}
+
+/** How far a turn's ACP agent process is contained, resolved once per turn. */
+export interface AcpRunContainment {
+  /**
+   * The process runs inside a boundary Copse controls — the local project
+   * sandbox, or an unattended container. Gates the `acceptEdits` preset, the
+   * read/search and Codex code-mode auto-approvals, and whether execute requests
+   * are judged as sandbox-contained.
+   */
+  sandboxed: boolean
+  /** Inside an unattended container (decision A5 of thread-in-container.md). */
+  contained: boolean
+  /**
+   * The agent runs on an SSH host (docs/plans/acp-over-ssh.md). The remote
+   * transport never applies the local seatbelt, so a remote agent is never
+   * `sandboxed`, whatever this machine's sandbox state.
+   */
+  remote: boolean
+}
+
+/**
+ * Resolve {@link AcpRunContainment} for a turn in `cwd`. `localSandbox` is
+ * whether a LOCAL spawn would be seatbelted (`willSandboxAcpAgent`), which says
+ * nothing about a remote spawn: `spawnTransport` routes an ACP SSH target to the
+ * SSH transport before its sandbox branch, so the same condition decides here.
+ * Pass the turn's already-resolved `sshTarget` so containment and the spawn
+ * share one answer; when omitted it is read from the live setting.
+ */
+export function resolveAcpRunContainment(input: {
+  cwd: string
+  sshTarget?: AcpSshTarget | null
+  localSandbox: boolean
+  unattendedContainer: boolean
+}): AcpRunContainment {
+  if (spawnConfigSshTarget(input)) return { sandboxed: false, contained: false, remote: true }
+  // Inside an unattended container the container is the sandbox
+  // (`docs/plans/thread-in-container.md`, decision A5): the agent spawns
+  // without a seatbelt of its own, but for every decision that asks "is this
+  // agent's process contained?" the answer is yes.
+  return {
+    sandboxed: input.localSandbox || input.unattendedContainer,
+    contained: input.unattendedContainer,
+    remote: false,
+  }
 }
 
 /**
@@ -783,6 +864,27 @@ async function respondToAcpExecutePermission(
   return permissionResponseFor(req.options, approved)
 }
 
+/** The agent facts a permission answer depends on: identity plus {@link AcpRunContainment}. */
+interface AcpPermissionAgent {
+  id: string
+  title: string
+  sandboxed: boolean
+  contained?: boolean
+  remote?: boolean
+  /** The SSH host a remote agent runs on; remembered grants are scoped to it. */
+  remoteHostId?: string
+}
+
+/**
+ * Where a remembered grant for this agent lives: locally, or on its own SSH
+ * host. `null` for a remote agent whose host is unknown — it neither reuses a
+ * grant nor stores one, so it always asks.
+ */
+function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null {
+  if (agent.remote !== true) return { kind: 'local' }
+  return agent.remoteHostId ? { kind: 'remote', hostId: agent.remoteHostId } : null
+}
+
 /**
  * Map the external agent's `session/request_permission` to Copse's approval
  * dialog, then translate the user's yes/no back to one of the agent-provided
@@ -794,7 +896,7 @@ async function respondToAcpExecutePermission(
  * agent-side session stops asking within the turn.
  */
 async function respondToPermission(
-  agent: { id: string; title: string; sandboxed: boolean; contained?: boolean },
+  agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
   root: string | null = getAgentExecutionRoot(),
   projectRoot: string | null = getAgentProjectRoot(),
@@ -802,7 +904,8 @@ async function respondToPermission(
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const kind = req.toolCall.kind ?? 'other'
-  if (isAcpPermissionRemembered(agent.id, kind)) {
+  const grantLocation = acpGrantLocationFor(agent)
+  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -819,8 +922,11 @@ async function respondToPermission(
   // execution* — so this ACP prompt only duplicates that gate. Auto-approve when
   // the request is identifiably one of ours, so they sail through like the
   // native tools do. See isBridgedNativeToolTitle for why the title is a sound
-  // (if best-effort) signal and why forgery isn't in scope.
+  // (if best-effort) signal and why forgery isn't in scope. A remote agent is
+  // never offered the bridge (acp-session-pool.ts), so nothing would re-gate a
+  // call that merely claims a bridged title: it keeps the ordinary prompt.
   if (
+    agent.remote !== true &&
     getSetting<boolean>('acpAutoApproveNativeBridgeTools', true) &&
     isBridgedNativeToolTitle(req.toolCall.title)
   ) {
@@ -852,7 +958,13 @@ async function respondToPermission(
   // use. Nothing the agent overwrites is unrecoverable, so the per-edit modal
   // adds friction without adding protection. Shell/web/other still prompt: a
   // stash makes overwritten files recoverable, not a `rm -rf` or a network call.
-  if (WRITE_TOOL_KINDS.has(kind) && getSetting<boolean>('acpAutoApproveEditsWithBackup', true)) {
+  // Not for a remote (ACP-over-SSH) agent: it edits the SSH host's checkout,
+  // which a backup of this machine's worktree cannot restore.
+  if (
+    agent.remote !== true &&
+    WRITE_TOOL_KINDS.has(kind) &&
+    getSetting<boolean>('acpAutoApproveEditsWithBackup', true)
+  ) {
     if (await ensureWorktreeRecoverable(root)) {
       return permissionResponseFor(req.options, true)
     }
@@ -899,7 +1011,9 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember) void rememberAcpPermission(agent.id, kind)
+    if (approved && remember && grantLocation) {
+      void rememberAcpPermission(agent.id, kind, grantLocation)
+    }
     return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
   } finally {
     tracked?.unregister()
@@ -1245,7 +1359,7 @@ function messageLine(message: LLMMessage): string {
 
 /** @internal Test seam for permission-cancel wiring (PR1). */
 export function respondToPermissionForTest(
-  agent: { id: string; title: string; sandboxed: boolean },
+  agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
   root: string | null,
   projectRoot: string | null,

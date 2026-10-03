@@ -7,6 +7,9 @@ import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { storageDelete, storageSet } from '../storage/storage.ts'
+import { pluginSettingsKey } from '../plugins/plugin-settings-read.ts'
+import { ANIMATED_EXPLAINERS_SETTING_ID } from '@copse/agent/canvas-settings.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { mcpToolName } from './mcp-config.ts'
@@ -38,15 +41,36 @@ describe('reloadMcpServersForPluginToggle', () => {
   after(async () => {
     await shutdownMcpServers()
     setDefaultPluginRegistry(null)
+    storageDelete(pluginSettingsKey(MCP_UI_CANVAS_PLUGIN_ID))
     if (previousEvalFlag === undefined) delete process.env['COPSE_AGENT_EVAL']
     else process.env['COPSE_AGENT_EVAL'] = previousEvalFlag
   })
 
   beforeEach(async () => {
     await shutdownMcpServers()
+    storageDelete(pluginSettingsKey(MCP_UI_CANVAS_PLUGIN_ID))
     plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     tools = new ToolRegistry()
+  })
+
+  it('opts existing Canvas users into explainers and revokes them live without removing HTML Canvas', async () => {
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    await loadMcpServers(tools)
+    const preview = mcpToolName(CANVAS_SERVER_NAME, 'preview_explainer')
+    const render = mcpToolName(CANVAS_SERVER_NAME, 'render_explainer')
+    assert.equal(tools.has(RENDER_TOOL), true)
+    assert.equal(tools.has(preview), false)
+    assert.equal(tools.has(render), false)
+    for (const enabled of [true, false]) {
+      storageSet(pluginSettingsKey(MCP_UI_CANVAS_PLUGIN_ID), {
+        [ANIMATED_EXPLAINERS_SETTING_ID]: enabled,
+      })
+      await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+      assert.equal(tools.has(preview), enabled)
+      assert.equal(tools.has(render), enabled)
+      assert.equal(tools.has(RENDER_TOOL), true)
+    }
   })
 
   it('drops render_html_artefact as soon as the canvas plugin is disabled', async () => {

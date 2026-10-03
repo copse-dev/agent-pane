@@ -51,8 +51,9 @@ import {
   failRunningReviewReport,
   getReviewReportTarget,
 } from './review-report-target.ts'
+import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
-import type { UsageDelta } from '@shared/types'
+import type { TurnOutcome, UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import { userContentToText } from '@shared/remote-agent-stream.ts'
 import { mark as perfMark } from '../perf.ts'
@@ -183,9 +184,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           'user',
           userContentToText(chunk.content),
           undefined,
-          undefined,
+          chunk.attachments,
           {
             origin: chunk.origin,
+            ...(chunk.startingCommit !== undefined ? { startingCommit: chunk.startingCommit } : {}),
+            ...(chunk.dirty !== undefined ? { dirty: chunk.dirty } : {}),
           },
         )
         break
@@ -437,6 +440,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...(chunk.subagentUsage ? { subagentUsage: true } : {}),
           ...(chunk.cacheReadTokens !== undefined
             ? { cacheReadTokens: chunk.cacheReadTokens }
             : {}),
@@ -628,7 +632,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // the turn. A provider can fail before its first token, so create an
         // otherwise-empty bubble rather than dropping the only durable record.
         st.msgId ??= addAssistantMessage(store, threadId)
-        setMessageTurnOutcome(store, threadId, st.msgId, chunk.outcome)
+        // Main cannot tell a Stop from a send-now; the renderer that issued
+        // the abort can, and the transcript labels the interruption from it.
+        const userCancelled =
+          chunk.outcome.status === 'cancelled' && chunk.outcome.source === 'user'
+        const outcome: TurnOutcome = userCancelled
+          ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? 'send_now' : 'stop' }
+          : chunk.outcome
+        setMessageTurnOutcome(store, threadId, st.msgId, outcome)
         break
       }
       case 'done': {
@@ -649,6 +660,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           )
           clearReviewReportTarget(store, threadId)
         }
+        // A send-now that raced a run already finishing leaves an unused mark.
+        takeSendNowAbort(threadId)
         setThreadStatus(store, threadId, 'idle')
         maybeRenameThreadBranch(store, api, threadId)
         // Not emitActivity: the state entry is gone, and recording the label on
