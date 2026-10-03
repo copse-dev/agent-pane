@@ -150,7 +150,8 @@ async function verifyHead(github: QueueGateGitHub, input: Input, entry: Entry): 
     field(data, 'draft') !== false ||
     field(base, 'ref') !== input.baseRef.slice('refs/heads/'.length) ||
     field(field(base, 'repo'), 'full_name') !== `${input.owner}/${input.repo}` ||
-    field(field(data, 'head'), 'sha') !== entry.prHead
+    field(field(data, 'head'), 'sha') !== entry.prHead ||
+    field(field(field(data, 'head'), 'repo'), 'full_name') !== `${input.owner}/${input.repo}`
   ) {
     throw new Error('Queued pull request no longer matches its admitted head and base')
   }

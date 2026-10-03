@@ -35,7 +35,7 @@ function pull(head = prHead): unknown {
   return {
     state: 'open',
     draft: false,
-    head: { sha: head },
+    head: { sha: head, repo: { full_name: 'copse-dev/agent-pane' } },
     base: { ref: 'main', repo: { full_name: 'copse-dev/agent-pane' } },
   }
 }
@@ -145,7 +145,7 @@ describe('merge queue decision bridge', () => {
     const current = {
       state: 'open',
       draft: false,
-      head: { sha: prHead },
+      head: { sha: prHead, repo: { full_name: 'copse-dev/agent-pane' } },
       base: { ref: 'main', repo: { full_name: 'copse-dev/agent-pane' } },
     }
     await refuses({ pulls: [{ ...current, state: 'closed' }] }, /admitted head/)
@@ -154,6 +154,23 @@ describe('merge queue decision bridge', () => {
       { pulls: [{ ...current, base: { ...current.base, ref: 'release' } }] },
       /admitted head/,
     )
+  })
+  it('refuses fork or unavailable source repositories before approving queue decisions', async () => {
+    for (const repo of [{ full_name: 'external/agent-pane' }, null, {}]) {
+      await refuses(
+        {
+          pulls: [
+            {
+              state: 'open',
+              draft: false,
+              head: { sha: prHead, repo },
+              base: { ref: 'main', repo: { full_name: 'copse-dev/agent-pane' } },
+            },
+          ],
+        },
+        /admitted head/,
+      )
+    }
   })
   it('refuses a PR head changed immediately before publishing', async () => {
     await refuses({ pulls: [pull(), pull('d'.repeat(40))] }, /admitted head/)

@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -207,6 +208,105 @@ describe('ci.yml workflow invariants', () => {
       /head\.repo\.full_name != github\.repository/,
       'e2e must have no fork branch at all — the `if` guard skips forks and the runner expression fails closed',
     )
+  })
+
+  it('pins every queue candidate runner to hosted even when both fleets are opted in', () => {
+    // Run the actual routing expressions with opt-in values, rather than just
+    // checking that a merge_group clause appears somewhere in the job.
+    const optedIn = {
+      SELF_HOSTED_CHECKS: 'copse-checks',
+      SELF_HOSTED_E2E: 'copse-e2e',
+      LM_EVAL_RUNNER: 'private-model-fleet',
+    }
+    const route = (name: string, event: string, sameRepo: boolean): unknown => {
+      const job = jobBlock(name)
+      const binding = job.match(/^ {4}runs-on: (.+)$/m)?.[1]
+      assert.ok(binding, `${name} needs a runner`)
+      if (binding === 'ubuntu-latest') return binding
+      const folded = job.match(/^ {4}runs-on: >-\n((?: {6}.+\n)+)/m)?.[1]
+      const expression = (folded ?? binding).trim()
+      assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
+      // These routing expressions use only equality, boolean short-circuiting,
+      // context member reads and fromJSON. Unsupported constructs fail here.
+      const source = expression.slice(4, -3)
+      assert.match(source, /^[a-zA-Z0-9_.'"[\], ()&|=!\s-]+$/)
+      const result: unknown = runInNewContext(
+        source,
+        {
+          github: {
+            event_name: event,
+            repository: 'copse-dev/agent-pane',
+            event: {
+              pull_request: {
+                head: {
+                  repo: { full_name: sameRepo ? 'copse-dev/agent-pane' : 'fork/agent-pane' },
+                },
+              },
+            },
+          },
+          vars: optedIn,
+          fromJSON: (value: string): unknown => JSON.parse(value),
+        },
+        { timeout: 100 },
+      )
+      // Normalize arrays across VM realms without trusting their element type.
+      return Array.isArray(result) ? Array.from(result) : result
+    }
+    const checkRoutes = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)]
+      .flatMap((match) => (match[1] ? [match[1]] : []))
+      .filter((name) => jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'))
+    assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
+    for (const name of checkRoutes) {
+      for (const sameRepo of [false, true]) {
+        assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-latest', name)
+      }
+      assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
+    }
+    assert.equal(route('precheck', 'pull_request', false), 'ubuntu-latest')
+    assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
+    for (const sameRepo of [false, true]) {
+      assert.deepEqual(route('e2e', 'merge_group', sameRepo), ['ubuntu-latest'])
+    }
+    assert.deepEqual(route('e2e', 'schedule', true), ['ubuntu-latest'])
+    assert.deepEqual(route('e2e', 'push', true), ['self-hosted', 'copse-e2e'])
+    assert.equal(route('e2e', 'pull_request', false), false)
+  })
+
+  it('keeps queue candidate jobs read-only and excludes privileged model and write jobs', () => {
+    assert.match(workflow, /^permissions:\n {2}contents: read$/m)
+    for (const name of ['precheck', 'check', 'bench', 'build', 'e2e', 'review-cell']) {
+      const job = jobBlock(name)
+      assert.doesNotMatch(job, /secrets\.|contents: write|statuses: write|pull-requests: write/)
+      const credentials = job.match(/persist-credentials: ([^\n]+)/)?.[1]
+      assert.ok(credentials, `${name} must explicitly prevent persisting queue credentials`)
+      assert.ok(
+        credentials === 'false' || credentials.includes("github.event_name != 'merge_group'"),
+      )
+    }
+    for (const name of [
+      'bench-agent-model',
+      'doctrine-eval-model',
+      'eval-tool-preference',
+      'scratch-path-eval-model',
+    ]) {
+      const job = jobBlock(name)
+      assert.match(job, /if: >-\n {6}github\.event_name != 'merge_group' &&\n/)
+      assert.match(job, /secrets\.LM_STUDIO_API_KEY/)
+    }
+    const jobs = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].flatMap((match) =>
+      match[1] ? [match[1]] : [],
+    )
+    for (const name of jobs) {
+      const job = jobBlock(name)
+      if (!job.includes('secrets.')) continue
+      assert.ok(
+        /^ {4}if: github\.event_name == 'pull_request' &&/m.test(job) ||
+          /if: >-\n {6}github\.event_name != 'merge_group' &&\n/.test(job),
+        `${name} must reject queue events before any secret-bearing steps`,
+      )
+    }
+    assert.match(jobBlock('autoformat'), /if: github\.event_name == 'pull_request' &&/)
+    assert.match(jobBlock('screenshot-artifacts'), /github\.event_name == 'pull_request'/)
   })
 
   it('retains runner diagnostics when an e2e attempt loses its browser session', () => {

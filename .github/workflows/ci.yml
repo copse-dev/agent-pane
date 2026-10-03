@@ -42,6 +42,10 @@ on:
   merge_group:
     types: [checks_requested]
 
+# Candidate code, including merge groups with fork commits, gets no write token.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   # Nightly schedule must not cancel an in-flight tip push/PR: cron can fire
@@ -117,7 +121,9 @@ jobs:
   # Fork PRs run only the `precheck` safe tier, forced onto a GitHub-hosted
   # runner with a read-only token. Every heavier job that executes repository
   # code keeps its same-repo `if` guard, so untrusted commits never run on the
-  # self-hosted fleet.
+  # self-hosted fleet. Merge groups have no PR-origin field and may contain
+  # fork commits, so every candidate job is pinned to hosted even with fleet
+  # variables enabled. Secret-bearing real-model jobs never run for queues.
 
   # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
   # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
@@ -134,12 +140,12 @@ jobs:
     # public-repo hosted runner (16 GiB) that headroom is no longer scarce; the
     # retries stay because opting back onto the fleet must not silently regress.
     #
-    # Fork PRs are pinned to GitHub-hosted: this is the one job that executes
+    # Queue groups and fork PRs are pinned to GitHub-hosted. This job executes
     # fork code (typecheck/lint run the PR's package scripts and plugins), and
     # it must never reach the self-hosted fleet — same invariant gitleaks.yml
     # states for its standalone fork scan. Hosted minutes are free once the
     # repository is public, so this costs nothing on the runs it applies to.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -176,8 +182,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
-          # Same-repo runs keep credentials for the oracle's base ref fetches.
-          persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          # Queues also leave no token; public history/base fetches need none.
+          persist-credentials: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
       # Full history of the commit under test, for the oracle's base diff and the
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
@@ -533,7 +539,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release'
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -671,10 +677,12 @@ jobs:
     # self-hosted check fleet (see the routing note above). History: coverage/esbuild has died with "service was stopped" on
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # Preparation tests exercise the real kernel boundary and must not skip it.
       - name: Install sandbox dependencies for unit integration tests
@@ -844,10 +852,12 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). No Electron/display need.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
@@ -918,6 +928,7 @@ jobs:
   bench-agent-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -952,6 +963,7 @@ jobs:
   doctrine-eval-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -998,6 +1010,7 @@ jobs:
   eval-tool-preference:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -1071,6 +1084,7 @@ jobs:
   scratch-path-eval-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -1136,7 +1150,7 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Produces the dist artifact consumed by the e2e shards below.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
@@ -1146,6 +1160,8 @@ jobs:
     # get a byte-identical dist without each rebuilding it.
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
@@ -1252,7 +1268,9 @@ jobs:
     # mistyped variable is "runs on hosted", not "never runs".
     #
     # Runner is still picked by TRUST and still fails closed:
-    #   - Nightly `schedule` and trusted push/same-repo PRs default to hosted.
+    #   - Nightly `schedule` and all merge groups always use hosted.
+    #     Queue commits may include forks; opt-in never grants fleet access.
+    #   - Trusted push/same-repo PRs default to hosted and may opt into the fleet.
     #   - The opt-in label set requires BOTH `self-hosted` AND `copse-e2e`, so an
     #     opted-in job lands only on the Linux Docker runners, never the macOS
     #     `self-hosted` boxes (which lack `copse-e2e`).
@@ -1262,8 +1280,8 @@ jobs:
     #     label) so the job fails closed instead of dispatching untrusted code
     #     anywhere — including onto a free hosted runner.
     runs-on: >-
-      ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
-          ((github.event_name == 'push' || github.event_name == 'merge_group' ||
+      ${{ (github.event_name == 'schedule' || github.event_name == 'merge_group') && fromJSON('["ubuntu-latest"]') ||
+          ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
            && (vars.SELF_HOSTED_E2E == 'copse-e2e'
@@ -1319,6 +1337,8 @@ jobs:
       COPSE_E2E_HEADLESS: '0'
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
       # and prune Docker images because shards hit "No space left on device" on
@@ -1862,7 +1882,7 @@ jobs:
     if: >-
       !cancelled() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
     # cold runner, not the steady state.
