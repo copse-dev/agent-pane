@@ -1,0 +1,1570 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Explainer</title>
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'unsafe-inline'; worker-src blob:; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
+  />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      margin: 0;
+      background: #171c22;
+      color: #eef1f0;
+      font:
+        14px system-ui,
+        sans-serif;
+    }
+    main {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      max-width: 1280px;
+      margin: auto;
+    }
+    canvas {
+      flex: 1;
+      min-height: 0;
+      height: 0;
+      object-fit: contain;
+      display: block;
+      width: 100%;
+      aspect-ratio: 16/9;
+    }
+    nav {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+    }
+    button {
+      color: inherit;
+      background: #29333b;
+      border: 1px solid #52606b;
+      border-radius: 7px;
+      padding: 7px 13px;
+      cursor: pointer;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid #9ee7c5;
+      outline-offset: 3px;
+    }
+    input {
+      flex: 1;
+      min-width: 40px;
+      accent-color: #9ee7c5;
+    }
+    output {
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    details {
+      max-height: 40vh;
+      overflow: auto;
+      flex-shrink: 0;
+      padding: 0 16px 16px;
+      color: #d0d8d5;
+    }
+    summary {
+      cursor: pointer;
+    }
+    li {
+      margin: 12px 0;
+      line-height: 1.55;
+    }
+    strong {
+      display: block;
+      color: #fff;
+    }
+    p {
+      line-height: 1.5;
+    }
+    #error {
+      margin: 0;
+      padding: 8px 16px;
+      color: #ffd2c8;
+    }
+    #caption {
+      display: none;
+      flex-shrink: 0;
+      margin: 0;
+      padding: 6px 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    @media (max-width: 600px) {
+      #caption {
+        display: block;
+      }
+    }
+    #style {
+      font-size: 12px;
+      color: #b5c6bd;
+      margin-left: auto;
+    }
+    @media (max-width: 480px) {
+      #style {
+        display: none;
+      }
+      nav {
+        flex-shrink: 0;
+        gap: 6px;
+        padding: 8px;
+      }
+      button {
+        padding: 7px;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+  <main>
+    <canvas
+      id="scene"
+      width="1280"
+      height="720"
+      role="img"
+      aria-label="Animated explanation; written transcript below"
+    ></canvas>
+    <p id="caption"></p>
+    <nav aria-label="Playback">
+      <button id="play" type="button">Play</button
+      ><input
+        id="seek"
+        aria-label="Playback position"
+        type="range"
+        min="0"
+        max="18"
+        step="0.1"
+        value="0"
+      /><output id="time">0:00 / 0:18</output><span id="style"></span>
+    </nav>
+    <p id="error" role="status" hidden></p>
+    <details>
+      <summary>Read the narration</summary>
+      <ol id="transcript"></ol>
+      <p id="source"></p>
+    </details>
+  </main>
+  <script id="story" type="application/json">
+    __COPSE_EXPLAINER_STORY__
+  </script>
+  <script>
+    ;(function (root) {
+      'use strict'
+      const clamp = (v) => Math.max(0, Math.min(1, v))
+      const ease = (v) => {
+        v = clamp(v)
+        return v * v * (3 - 2 * v)
+      }
+      const mix = (a, b, t) => a + (b - a) * t
+      function complete(state, action) {
+        const get = (id) => state.objects.find((o) => o.id === id)
+        if (action.type === 'copy' || action.type === 'apply') {
+          const from = get(action.from),
+            to = get(action.to)
+          to.visible = true
+          to.content = from.content
+          to.conflict = from.conflict
+          to.choices = from.choices
+          to.status = action.type === 'copy' ? 'Independent copy' : 'Applied'
+          if (action.type === 'apply') from.visible = false
+          else state.links.push({ from: action.from, to: action.to, label: 'copy' })
+        } else if (action.type === 'merge') {
+          const sources = action.from.map(get),
+            to = get(action.to)
+          to.visible = true
+          to.choices = [...new Set(sources.flatMap((s) => (s.conflict ? s.choices : [s.content])))]
+          to.conflict = to.choices.length > 1
+          to.content = to.conflict ? '' : to.choices[0]
+          to.status = to.conflict ? 'Needs a decision' : 'Combined'
+        } else if (action.type === 'edit') {
+          const target = get(action.target)
+          target.previousContent = target.content
+          target.content = action.content
+          target.conflict = false
+          target.choices = []
+          target.status = 'Changed here'
+        } else if (action.type === 'discard') {
+          get(action.target).visible = false
+          if (action.to) get(action.to).discarded = (get(action.to).discarded || 0) + 1
+        } else if (action.type === 'appear') get(action.target).visible = true
+        else if (action.type === 'move')
+          Object.assign(get(action.target), { x: action.x, y: action.y })
+        else if (action.type === 'connect') state.links.push(action)
+      }
+      function stateAt(story, seconds) {
+        const state = {
+          objects: story.objects.map((o) => ({ ...o, opacity: o.visible ? 1 : 0 })),
+          links: [],
+          ghosts: [],
+          motions: [],
+          scene: 0,
+          progress: 0,
+        }
+        let at = 0
+        for (let i = 0; i < story.scenes.length; i++) {
+          const duration = story.beatDurations[i]
+          if (seconds >= at + duration || seconds >= story.duration) {
+            for (const a of story.scenes[i].actions) complete(state, a)
+            state.scene = i
+            state.progress = 1
+            at += duration
+            continue
+          }
+          state.scene = i
+          state.progress = clamp((seconds - at) / duration)
+          break
+        }
+        state.objects.forEach((o) => {
+          o.opacity = o.visible ? 1 : 0
+        })
+        if (seconds >= story.duration) return state
+        const q = ease((state.progress - 0.12) / 0.64)
+        const get = (id) => state.objects.find((o) => o.id === id)
+        for (const a of story.scenes[state.scene].actions) {
+          if (a.type === 'copy' || a.type === 'apply') {
+            const from = get(a.from),
+              to = get(a.to),
+              dest = { x: to.x, y: to.y }
+            state.motions.push({
+              from: { ...from },
+              to: dest,
+              label: a.type === 'copy' ? 'COPY' : 'APPLY',
+              q,
+            })
+            if (a.type === 'copy') {
+              to.visible = true
+              to.opacity = clamp(q * 5)
+              to.content = from.content
+              to.x = mix(from.x, dest.x, q)
+              to.y = mix(from.y, dest.y, q) - Math.sin(q * Math.PI) * 8
+              to.status = q > 0.95 ? 'Independent copy' : 'Copying'
+              to.conflict = from.conflict
+              to.choices = from.choices
+            } else {
+              state.ghosts.push({
+                ...from,
+                x: mix(from.x, to.x, q),
+                y: mix(from.y, to.y, q) - Math.sin(q * Math.PI) * 8,
+                opacity: Math.sin(q * Math.PI),
+                scale: 0.72,
+              })
+              from.opacity = 1 - q
+              if (q > 0.8) {
+                to.content = from.content
+                to.status = 'Applied'
+                to.conflict = from.conflict
+                to.choices = from.choices
+              }
+            }
+          } else if (a.type === 'discard') {
+            const target = get(a.target),
+              bin = a.to ? get(a.to) : { x: target.x, y: 96 }
+            state.motions.push({ from: { ...target }, to: { ...bin }, q, label: 'DISCARD' })
+            target.x = mix(target.x, bin.x, q)
+            target.y = mix(target.y, bin.y, q)
+            target.scale = 1 - q * 0.75
+            target.opacity = 1 - q
+            if (a.to && q > 0.85) bin.discarded = (bin.discarded || 0) + 1
+          } else if (a.type === 'merge') {
+            const to = get(a.to)
+            for (const id of a.from) {
+              const from = get(id)
+              state.ghosts.push({
+                ...from,
+                x: mix(from.x, to.x, q),
+                y: mix(from.y, to.y, q),
+                opacity: Math.sin(q * Math.PI),
+                scale: 0.65,
+              })
+              state.motions.push({ from: { ...from }, to: { ...to }, q, label: 'COMPARE' })
+            }
+            if (q > 0.75) {
+              complete(state, a)
+              to.opacity = clamp((q - 0.75) * 4)
+            }
+          } else if (a.type === 'edit') {
+            const target = get(a.target)
+            target.editProgress = q
+            target.previousContent = target.content
+            if (q > 0.45) {
+              target.content = a.content
+              target.status = 'Changed here'
+              target.conflict = false
+              target.choices = []
+            }
+          } else if (a.type === 'appear') {
+            const target = get(a.target)
+            target.visible = true
+            target.opacity = q
+            target.scale = mix(0.82, 1, q)
+          } else if (a.type === 'move') {
+            const target = get(a.target)
+            target.x = mix(target.x, a.x, q)
+            target.y = mix(target.y, a.y, q)
+          } else if (a.type === 'highlight') get(a.target).focus = Math.sin(q * Math.PI)
+          else if (a.type === 'connect' && q > 0) state.links.push({ ...a, opacity: q })
+        }
+        return state
+      }
+      function render(canvas, story, seconds, styles) {
+        const c = canvas.getContext('2d'),
+          s = styles.find((v) => v.id === story.style) || styles[0]
+        const state = stateAt(story, s.id === 'felt' ? Math.floor(seconds * 12) / 12 : seconds)
+        const colors = { blue: '#86c6e9', coral: '#efa18e', green: '#94d3b4', gold: '#f3d58c' }
+        const point = (o) => ({ x: o.x * 12.8, y: 175 + o.y * 4.15 })
+        const rr = (x, y, w, h, color, stroke, radius = 12) => {
+          c.beginPath()
+          c.roundRect(x, y, w, h, radius)
+          if (color) {
+            c.fillStyle = color
+            c.fill()
+          }
+          if (stroke) {
+            c.strokeStyle = stroke
+            c.lineWidth = s.id === 'comic' ? 3 : 1.5
+            c.stroke()
+          }
+        }
+        const text = (value, x, y, size, color = s.ink, align = 'center', weight = 600) => {
+          c.font = `${weight} ${size}px ${s.id === 'kinetic' ? 'Arial Black' : 'system-ui'}, sans-serif`
+          c.textAlign = align
+          c.textBaseline = 'middle'
+          c.fillStyle = color
+          c.fillText(value, x, y)
+        }
+        const wrapped = (value, x, y, width, size, color, maxLines = 2, align = 'center') => {
+          c.font = `600 ${size}px system-ui, sans-serif`
+          const lines = []
+          let line = ''
+          // Split long unbroken tokens too, so file values cannot escape the card.
+          const words = String(value)
+            .split(/\s+/)
+            .flatMap((word) => word.match(/.{1,22}/g) || [])
+          for (const word of words) {
+            const next = line ? line + ' ' + word : word
+            if (c.measureText(next).width > width && line) {
+              lines.push(line)
+              line = word
+            } else line = next
+          }
+          if (line) lines.push(line)
+          if (lines.length > maxLines && size > 15)
+            return wrapped(value, x, y, width, size - 2, color, maxLines, align)
+          lines
+            .slice(0, maxLines)
+            .forEach((v, i) =>
+              text(
+                v,
+                x,
+                y + (i - (Math.min(lines.length, maxLines) - 1) / 2) * (size + 6),
+                size,
+                color,
+                align,
+              ),
+            )
+        }
+        const arrow = (from, to, opacity, label, dashed = false) => {
+          const a = point(from),
+            b = point(to),
+            angle = Math.atan2(b.y - a.y, b.x - a.x)
+          const distance = Math.hypot(b.x - a.x, b.y - a.y)
+          if (distance < 145) return
+          const x1 = a.x + Math.cos(angle) * 88,
+            y1 = a.y + Math.sin(angle) * 70
+          const x2 = b.x - Math.cos(angle) * 91,
+            y2 = b.y - Math.sin(angle) * 70
+          c.save()
+          c.globalAlpha = opacity
+          c.strokeStyle = s.ink
+          c.lineWidth = 2.5
+          c.setLineDash(dashed ? [5, 7] : [])
+          c.beginPath()
+          c.moveTo(x1, y1)
+          c.lineTo(x2, y2)
+          c.stroke()
+          c.setLineDash([])
+          c.beginPath()
+          c.moveTo(x2 - Math.cos(angle - 0.5) * 10, y2 - Math.sin(angle - 0.5) * 10)
+          c.lineTo(x2, y2)
+          c.lineTo(x2 - Math.cos(angle + 0.5) * 10, y2 - Math.sin(angle + 0.5) * 10)
+          c.stroke()
+          if (label) {
+            rr((x1 + x2) / 2 - 48, (y1 + y2) / 2 - 12, 96, 24, s.bg)
+            text(label, (x1 + x2) / 2, (y1 + y2) / 2, 12)
+          }
+          c.restore()
+        }
+        function object(o) {
+          if (!o.visible || o.opacity <= 0) return
+          const p = point(o),
+            color = colors[o.color],
+            ink = '#203941'
+          c.save()
+          c.translate(p.x, p.y)
+          c.globalAlpha = o.opacity
+          const scale = (o.scale || 1) * (1 + (o.focus || 0) * 0.045)
+          c.scale(scale, scale)
+          if (o.kind === 'workspace') {
+            if (s.id === 'mailroom' || s.id === 'workshop') {
+              c.beginPath()
+              c.moveTo(-165, 98)
+              c.lineTo(0, 135)
+              c.lineTo(165, 98)
+              c.lineTo(0, 62)
+              c.closePath()
+              c.fillStyle = color
+              c.fill()
+              rr(-146, 105, 12, 50, ink)
+              rr(134, 105, 12, 50, ink)
+            }
+            rr(-166, -145, 332, 265, color + '24', color, s.id === 'felt' ? 34 : 18)
+            rr(-140, -132, 280, 36, color, undefined, 8)
+            wrapped(o.label, 0, -114, 264, 18, ink)
+            if (o.content) wrapped(o.content, 0, 99, 270, 14, s.ink)
+          } else if (o.kind === 'bin') {
+            rr(-42, -45, 84, 100, color, ink, 5)
+            rr(-49, -56, 98, 13, ink)
+            for (let i = -1; i <= 1; i++) rr(i * 23 - 2, -27, 4, 61, ink + '55')
+            if (o.discarded) {
+              rr(-29, -81, 58, 40, '#fff9e7', ink, 3)
+              text('×', 0, -61, 29, '#a44836')
+            }
+            wrapped(o.label, 0, 78, 180, 17, s.ink)
+          } else if (o.kind === 'worker') {
+            c.beginPath()
+            c.arc(0, -35, 24, 0, Math.PI * 2)
+            c.fillStyle = color
+            c.fill()
+            rr(-38, -4, 76, 65, color, ink, 20)
+            rr(-50, 25, 100, 53, s.paper, ink)
+            wrapped(o.label, 0, 96, 185, 17, s.ink)
+          } else if (o.kind === 'hub') {
+            c.beginPath()
+            c.arc(0, 0, 50, 0, Math.PI * 2)
+            c.fillStyle = color
+            c.fill()
+            wrapped(o.label, 0, 0, 82, 17, ink, 3)
+          } else {
+            rr(-78 + 6, -73 + 9, 156, 146, '#00000020', undefined, 9)
+            rr(
+              -78,
+              -73,
+              156,
+              146,
+              s.paper,
+              o.conflict ? '#ca6956' : s.id === 'comic' ? ink : undefined,
+              s.id === 'felt' ? 20 : 9,
+            )
+            rr(-78, -73, 156, 36, color, undefined, s.id === 'felt' ? 16 : 8)
+            wrapped(o.label, 0, -55, 145, 15, ink)
+            if (o.conflict) {
+              o.choices.slice(0, 2).forEach((choice, i) => {
+                rr(-65, -24 + i * 33, 130, 27, i ? '#eec3ab' : '#bbdced', undefined, 4)
+                wrapped(choice, 0, -10 + i * 33, 121, 15, ink, 1)
+              })
+              text('!  Choose a result', 0, 56, 13, '#953d30')
+            } else {
+              for (let i = 0; i < 2; i++) rr(-56, -23 + i * 11, i ? 65 : 112, 3, '#20394130')
+              if (o.previousContent && o.editProgress < 0.45) {
+                wrapped(o.previousContent, 0, 15, 137, 16, '#92523f')
+                rr(-61, 14, 122 * clamp(o.editProgress / 0.45), 2, '#b45039')
+              } else {
+                rr(-67, 0, 134, 36, o.status ? color + '68' : '#20394109', undefined, 4)
+                wrapped(o.content || 'contents', 0, 18, 123, 16, ink)
+              }
+              if (o.status) wrapped(o.status, 0, 56, 140, 12, '#315746', 1)
+            }
+            if (s.id === 'folded') {
+              c.beginPath()
+              c.moveTo(55, -73)
+              c.lineTo(78, -50)
+              c.lineTo(55, -50)
+              c.closePath()
+              c.fillStyle = '#ffffff80'
+              c.fill()
+            }
+            if (s.id === 'felt') {
+              c.setLineDash([3, 5])
+              c.strokeStyle = '#fffef4'
+              c.strokeRect(-69, -65, 138, 128)
+              c.setLineDash([])
+            }
+          }
+          c.restore()
+        }
+        c.save()
+        c.setTransform(canvas.width / 1280, 0, 0, canvas.height / 720, 0, 0)
+        c.clearRect(0, 0, 1280, 720)
+        c.fillStyle = s.bg
+        c.fillRect(0, 0, 1280, 720)
+        // Quiet material texture belongs to the style, not to the story's mechanism.
+        c.fillStyle = s.ink + '09'
+        for (let x = 20; x < 1280; x += 34)
+          for (let y = 172; y < 590; y += 34) c.fillRect(x, y, 1.5, 1.5)
+        text(story.project.toUpperCase(), 40, 34, 16, s.ink, 'left', 750)
+        text(s.name.toUpperCase(), 1240, 34, 14, s.ink, 'right')
+        wrapped(story.title, 40, 86, 1200, 34, s.ink, 2, 'left')
+        text(
+          `${String(state.scene + 1).padStart(2, '0')} / ${String(story.scenes.length).padStart(2, '0')}   ${story.scenes[state.scene].title}`,
+          40,
+          145,
+          21,
+          s.ink,
+          'left',
+        )
+        state.objects.filter((o) => o.kind === 'workspace').forEach(object)
+        for (const link of state.links) {
+          const a = state.objects.find((o) => o.id === link.from),
+            b = state.objects.find((o) => o.id === link.to)
+          if (a.visible && b.visible) arrow(a, b, (link.opacity ?? 1) * 0.35, link.label, true)
+        }
+        state.motions.forEach((m) => arrow(m.from, m.to, Math.sin(m.q * Math.PI) * 0.8, m.label))
+        state.objects.filter((o) => o.kind !== 'workspace').forEach(object)
+        state.ghosts.forEach(object)
+        rr(28, 600, 1224, 92, '#f8faf7', undefined, 14)
+        wrapped(story.scenes[state.scene].caption, 640, 646, 1150, 27, '#203941', 2)
+        const width = 1200 / story.scenes.length
+        story.scenes.forEach((_, i) =>
+          rr(
+            40 + i * width,
+            705,
+            width - 7,
+            4,
+            i < state.scene ? s.accent : i === state.scene ? s.accent : s.ink + '35',
+            undefined,
+            2,
+          ),
+        )
+        c.restore()
+        return state.scene
+      }
+      root.SceneExplainer = { stateAt, render }
+    })(typeof window !== 'undefined' ? window : globalThis)
+  </script>
+  <script>
+    ;(function (root) {
+      'use strict'
+      const STYLES = [
+        {
+          id: 'paper',
+          name: 'Paper desk',
+          note: 'Write · inspect · stamp',
+          bg: '#064d49',
+          ink: '#fff8e7',
+          paper: '#fff9e7',
+          accent: '#19ef9a',
+          colors: ['#ffe398', '#b8dff7', '#edcaff'],
+        },
+        {
+          id: 'mailroom',
+          name: 'Isometric mailroom',
+          note: 'Assign · search · gather',
+          bg: '#f2edda',
+          ink: '#173d35',
+          paper: '#fffdf1',
+          accent: '#0abd82',
+          colors: ['#8bcaf4', '#f5a8d0', '#40dba9'],
+        },
+        {
+          id: 'comic',
+          name: 'Editorial comic',
+          note: 'Act · react · resolve',
+          bg: '#fff0f2',
+          ink: '#272d3b',
+          paper: '#fffefd',
+          accent: '#1e8d81',
+          colors: ['#84d6cc', '#ffda81', '#eba998'],
+        },
+        {
+          id: 'felt',
+          name: 'Felt stop-motion',
+          note: 'Place · sort · stitch',
+          bg: '#eff1e7',
+          ink: '#34495c',
+          paper: '#e8dccc',
+          accent: '#6a957d',
+          colors: ['#a6cdda', '#f3d68c', '#dd9d88'],
+        },
+        {
+          id: 'travel',
+          name: 'Travel poster',
+          note: 'Pack · carry · arrive',
+          bg: '#a8d9dc',
+          ink: '#153f54',
+          paper: '#fff3d3',
+          accent: '#ebba3c',
+          colors: ['#1d6179', '#ed875d', '#ecc44f'],
+        },
+        {
+          id: 'kinetic',
+          name: 'Kinetic print',
+          note: 'Emphasise · collide · resolve',
+          bg: '#f9d633',
+          ink: '#182138',
+          paper: '#fffdf0',
+          accent: '#214ee3',
+          colors: ['#244ee1', '#ed5542', '#171d30'],
+        },
+        {
+          id: 'workshop',
+          name: 'Miniature workshop',
+          note: 'Build · separate · assemble',
+          bg: '#e5daf0',
+          ink: '#4d3b5d',
+          paper: '#f7f0fb',
+          accent: '#85639e',
+          colors: ['#edaa8d', '#84c5b8', '#b69bd6'],
+        },
+        {
+          id: 'folded',
+          name: 'Folded paper',
+          note: 'Branch · move · combine',
+          bg: '#191c29',
+          ink: '#eeeae3',
+          paper: '#eeebe2',
+          accent: '#a9d7c1',
+          colors: ['#e99c88', '#abd8c2', '#c7b2e9'],
+        },
+        {
+          id: 'signal',
+          name: 'Signal lab',
+          note: 'Trace · compare · confirm',
+          bg: '#071b20',
+          ink: '#d7f8ed',
+          paper: '#12383d',
+          accent: '#85dfc7',
+          colors: ['#bbec9a', '#6ed9d0', '#edce78'],
+        },
+      ]
+      const PATTERNS = {
+        review: {
+          name: 'Review changes',
+          title: 'Keep the changes you want',
+          labels: ['login.ts', 'api.ts', 'styles.css'],
+          beats: [
+            {
+              title: 'What changed?',
+              caption: 'Several files changed. Inspect each edit before deciding what to keep.',
+            },
+            {
+              title: 'Review each change',
+              caption: 'Compare the changes. Accept the useful edits and reject the unwanted one.',
+            },
+            {
+              title: 'Keep what works',
+              caption: 'Two edits stay. The rejected edit returns to its original state.',
+            },
+          ],
+        },
+        parallel: {
+          name: 'Divide and gather',
+          title: 'Give each worker a clear job',
+          labels: ['Interface', 'API', 'Authentication'],
+          beats: [
+            {
+              title: 'One worker, many areas',
+              caption: 'Searching one area at a time leaves the other areas waiting.',
+            },
+            {
+              title: 'Split the investigation',
+              caption: 'Give each worker a separate area. They investigate at the same time.',
+            },
+            {
+              title: 'Bring evidence together',
+              caption: 'Each worker returns a short report. Review the findings together.',
+            },
+          ],
+        },
+        context: {
+          name: 'Make room',
+          title: 'A long chat. A smaller working space.',
+          labels: ['Instructions', 'Older output', 'Recent work'],
+          beats: [
+            {
+              title: 'The space fills up',
+              caption: 'The conversation grows, but the next model request has limited room.',
+            },
+            {
+              title: 'Choose what stays',
+              caption: 'Trim older tool output while retaining instructions and recent work.',
+            },
+            {
+              title: 'Keep the goal in view',
+              caption: 'The visible conversation is separate from the model’s working context.',
+            },
+          ],
+        },
+        routing: {
+          name: 'Choose a route',
+          title: 'Where does the request go?',
+          labels: ['Your device', 'Cloud model', 'Tool service'],
+          beats: [
+            {
+              title: 'Build the request',
+              caption: 'The prompt and selected context form a model request.',
+            },
+            {
+              title: 'Follow the selected route',
+              caption:
+                'The request goes to the model you choose: on your device or with a cloud provider.',
+            },
+            {
+              title: 'Check each destination',
+              caption: 'Model requests and tool requests can have different destinations.',
+            },
+          ],
+        },
+        sequence: {
+          name: 'Three-step process',
+          title: 'Show how it works',
+          labels: ['Input', 'Process', 'Result'],
+          beats: [
+            {
+              title: 'Start here',
+              caption: 'Describe the starting situation and the problem to solve.',
+            },
+            { title: 'Make a change', caption: 'Describe the action that changes the situation.' },
+            {
+              title: 'See the result',
+              caption: 'Describe the visible outcome and why it matters.',
+            },
+          ],
+        },
+      }
+      const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x))
+      const ease = (x) => {
+        x = clamp(x)
+        return x * x * (3 - 2 * x)
+      }
+      const mix = (a, b, p) => a + (b - a) * p
+      function render(canvas, p, time, options = {}) {
+        if (p.scenes) return root.SceneExplainer.render(canvas, p, time, STYLES)
+        const c = canvas.getContext('2d'),
+          s = STYLES.find((x) => x.id === p.style) || STYLES[0]
+        let t = (clamp(time, 0, p.duration) / p.duration) * 18
+        if (p.beatDurations) {
+          let at = 0
+          for (let i = 0; i < 3; i++) {
+            if (time < at + p.beatDurations[i] || i === 2) {
+              t = i * 6 + clamp((time - at) / p.beatDurations[i]) * 6
+              break
+            }
+            at += p.beatDurations[i]
+          }
+        }
+        if (s.id === 'felt') t = Math.floor(t * 12) / 12
+        const beat = Math.min(2, Math.floor(t / 6))
+        c.save()
+        c.setTransform(canvas.width / 1280, 0, 0, canvas.height / 720, 0, 0)
+        c.clearRect(0, 0, 1280, 720)
+        c.fillStyle = s.bg
+        c.fillRect(0, 0, 1280, 720)
+        const rr = (x, y, w, h, r, color, stroke) => {
+          c.beginPath()
+          c.roundRect(x, y, w, h, r)
+          if (color) {
+            c.fillStyle = color
+            c.fill()
+          }
+          if (stroke) {
+            c.strokeStyle = stroke
+            c.lineWidth = 2
+            c.stroke()
+          }
+        }
+        const line = (pts, color = s.ink, width = 3) => {
+          c.beginPath()
+          pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)))
+          c.strokeStyle = color
+          c.lineWidth = width
+          c.lineCap = 'round'
+          c.lineJoin = 'round'
+          c.stroke()
+        }
+        const text = (
+          str,
+          x,
+          y,
+          size = 26,
+          color = s.ink,
+          align = 'center',
+          weight = 600,
+          maxWidth,
+        ) => {
+          c.font = `${weight} ${size}px ${s.id === 'signal' ? 'ui-monospace, monospace' : '"Avenir Next", "Segoe UI", sans-serif'}`
+          c.fillStyle = color
+          c.textAlign = align
+          c.textBaseline = 'middle'
+          if (maxWidth) c.fillText(str, x, y, maxWidth)
+          else c.fillText(str, x, y)
+        }
+        function wrap(str, x, y, width, size = 26, color = s.ink, maxLines = 2, align = 'center') {
+          c.font = `600 ${size}px "Avenir Next", "Segoe UI", sans-serif`
+          let lines = [],
+            lineText = ''
+          for (const word of str.split(/\s+/)) {
+            const test = lineText ? lineText + ' ' + word : word
+            if (c.measureText(test).width > width && lineText) {
+              lines.push(lineText)
+              lineText = word
+            } else lineText = test
+          }
+          if (lineText) lines.push(lineText)
+          if (lines.length > maxLines) {
+            const last = lines.slice(maxLines - 1).join(' ')
+            lines = lines.slice(0, maxLines - 1)
+            let end = last
+            while (c.measureText(end + '…').width > width && end.length) end = end.slice(0, -1)
+            lines.push(end + '…')
+          }
+          lines.forEach((v, i) =>
+            text(
+              v,
+              x,
+              y + (i - (lines.length - 1) / 2) * (size + 8),
+              size,
+              color,
+              align,
+              600,
+              width,
+            ),
+          )
+        }
+        const group = (x, y, a, fn, scale = 1) => {
+          c.save()
+          c.translate(x, y)
+          c.rotate(a)
+          c.scale(scale, scale)
+          fn()
+          c.restore()
+        }
+        const tick = (x, y, col = s.accent) =>
+          line(
+            [
+              [x - 13, y],
+              [x - 3, y + 10],
+              [x + 18, y - 15],
+            ],
+            col,
+            5,
+          )
+        function card(x, y, label, i = 0, angle = 0, scale = 1, state = '') {
+          group(
+            x,
+            y,
+            angle,
+            () => {
+              const w = 196,
+                h = 202
+              rr(-w / 2 + 7, -h / 2 + 9, w, h, 12, '#00000020')
+              rr(
+                -w / 2,
+                -h / 2,
+                w,
+                h,
+                s.id === 'felt' ? 25 : 8,
+                s.id === 'travel' ? s.colors[i % 3] : s.paper,
+                s.id === 'comic' ? s.ink : null,
+              )
+              if (s.id === 'felt') {
+                c.setLineDash([3, 7])
+                c.strokeStyle = '#ffffffb0'
+                c.lineWidth = 2
+                c.strokeRect(-w / 2 + 9, -h / 2 + 9, w - 18, h - 18)
+                c.setLineDash([])
+              }
+              if (s.id === 'folded') {
+                c.fillStyle = s.colors[i % 3]
+                c.beginPath()
+                c.moveTo(58, -101)
+                c.lineTo(98, -61)
+                c.lineTo(58, -61)
+                c.fill()
+              }
+              if (s.id !== 'travel') rr(-98, -101, 196, 38, 8, s.colors[i % 3])
+              let ink = ['folded', 'paper'].includes(s.id)
+                ? '#21372f'
+                : s.id === 'signal'
+                  ? s.ink
+                  : s.id === 'travel'
+                    ? '#fff8dc'
+                    : s.ink
+              wrap(label, 0, -63, 176, 24, ink, 2)
+              for (let j = 0; j < 3; j++) rr(-72, -14 + j * 26, [142, 122, 92][j], 7, 3, ink + '40')
+              if (state === 'edit') {
+                line(
+                  [
+                    [-67, -3],
+                    [-48, 12],
+                    [-31, -3],
+                    [-12, 12],
+                    [4, -3],
+                    [22, 12],
+                    [42, -3],
+                    [65, 12],
+                  ],
+                  '#ec6d97',
+                  5,
+                )
+              }
+              if (state === 'accept' || state === 'reject' || state === 'restore') {
+                rr(-85, 21, 170, 35, 4, state === 'accept' ? '#d2f3db' : '#ffe0df')
+                text(
+                  state === 'accept'
+                    ? 'KEEP EDIT'
+                    : state === 'reject'
+                      ? 'REVERT EDIT'
+                      : 'ORIGINAL',
+                  0,
+                  39,
+                  19,
+                  state === 'accept' ? '#136144' : '#973c55',
+                )
+              }
+              if (state === 'found') tick(58, 69, s.id === 'travel' ? '#fff9e7' : s.accent)
+            },
+            scale,
+          )
+        }
+        function label(str, x, y, color = s.ink, bg = s.paper) {
+          c.font = '650 20px "Avenir Next", sans-serif'
+          const w = Math.min(340, c.measureText(str).width + 30)
+          rr(x - w / 2, y - 18, w, 36, 8, bg)
+          text(str, x, y, 20, color, 'center', 650, w - 18)
+        }
+        function shelf(x = 166, y = 362) {
+          rr(
+            x - 117,
+            y - 135,
+            234,
+            272,
+            10,
+            s.id === 'paper' ? '#126a60' : s.id === 'signal' ? '#123c40' : '#c9bfaa',
+          )
+          for (let j = 0; j < 3; j++) {
+            line(
+              [
+                [x - 110, y - 45 + j * 82],
+                [x + 110, y - 45 + j * 82],
+              ],
+              s.ink + '50',
+              3,
+            )
+            for (let i = 0; i < 6; i++)
+              rr(x - 98 + i * 34, y - 120 + j * 83, 25, 65, 3, s.colors[i % 3])
+          }
+          label('Full conversation', x, y - 165, s.ink, s.bg)
+        }
+        function folder(x, y, title, scale = 1) {
+          group(
+            x,
+            y,
+            0,
+            () => {
+              rr(-124, -56, 96, 39, 7, s.colors[0])
+              rr(-124, -38, 248, 114, 12, s.accent)
+              wrap(
+                title,
+                0,
+                17,
+                217,
+                24,
+                ['paper', 'folded', 'signal'].includes(s.id) ? '#103c35' : s.ink,
+              )
+            },
+            scale,
+          )
+        }
+        function iso(x, y, w, d, h, color) {
+          const poly = (pts, col) => {
+            c.beginPath()
+            pts.forEach((v, i) => (i ? c.lineTo(...v) : c.moveTo(...v)))
+            c.closePath()
+            c.fillStyle = col
+            c.fill()
+          }
+          poly(
+            [
+              [x, y],
+              [x + w, y - w * 0.38],
+              [x + w + d, y - w * 0.38 + d * 0.38],
+              [x + d, y + d * 0.38],
+            ],
+            color,
+          )
+          poly(
+            [
+              [x, y],
+              [x + d, y + d * 0.38],
+              [x + d, y + d * 0.38 + h],
+              [x, y + h],
+            ],
+            color,
+          )
+          c.fillStyle = '#00000012'
+          c.fill()
+          poly(
+            [
+              [x + d, y + d * 0.38],
+              [x + w + d, y - w * 0.38 + d * 0.38],
+              [x + w + d, y - w * 0.38 + d * 0.38 + h],
+              [x + d, y + d * 0.38 + h],
+            ],
+            color,
+          )
+          c.fillStyle = '#00000023'
+          c.fill()
+        }
+        function cart(x, y, i, caption) {
+          iso(x - 25, y, 48, 34, 28, s.colors[i])
+          c.fillStyle = s.ink
+          ;[x - 13, x + 38].forEach((xx) => {
+            c.beginPath()
+            c.arc(xx, y + 34, 6, 0, Math.PI * 2)
+            c.fill()
+          })
+          if (caption) label(caption, x + 17, y - 34, s.ink, s.paper)
+        }
+        // Each story has a deterministic timeline; style changes leave its meaning intact.
+        function flat() {
+          if (s.id === 'mailroom' || s.id === 'workshop') {
+            iso(84, 470, 790, 285, 29, s.id === 'workshop' ? '#c6b1da' : '#d0c6ac')
+            iso(112, 454, 740, 260, 13, s.id === 'workshop' ? '#f0e7f8' : '#e4dcc7')
+          }
+
+          if (s.id === 'felt') {
+            rr(62, 181, 1156, 389, 42, '#789d8660')
+            c.setLineDash([3, 9])
+            c.strokeStyle = '#ffffff70'
+            c.lineWidth = 2
+            c.strokeRect(82, 200, 1116, 350)
+            c.setLineDash([])
+          }
+          if (s.id === 'comic') {
+            rr(46, 548, 1188, 15, 5, '#df987f')
+            line(
+              [
+                [82, 563],
+                [82, 588],
+              ],
+              s.ink,
+              6,
+            )
+            line(
+              [
+                [1189, 563],
+                [1189, 588],
+              ],
+              s.ink,
+              6,
+            )
+          }
+          if (s.id === 'travel') {
+            rr(428, 201, 765, 370, 29, s.accent)
+            rr(450, 223, 721, 328, 18, '#f8d66c')
+            rr(680, 176, 236, 31, 9, s.ink)
+            rr(704, 184, 188, 16, 3, s.bg)
+            rr(472, 213, 25, 346, 4, s.ink)
+            rr(1128, 213, 25, 346, 4, s.ink)
+          }
+          if (p.pattern === 'context') {
+            shelf()
+            label(
+              s.id === 'travel' ? 'Next model request' : 'Working context',
+              815,
+              184,
+              s.ink,
+              s.bg,
+            )
+            const q = ease((t - 10) / 2)
+            card(mix(497, 647, q), 397, p.labels[0], 0, -0.05, 1, t > 13 ? 'found' : '')
+            card(mix(1060, 984, q), 397, p.labels[2], 1, 0.05, 1, t > 13 ? 'found' : '')
+            for (let i = 0; i < 3; i++) {
+              const enter = ease((t - 0.4 - i * 0.45) / 1.4),
+                leave = ease((t - 6.4 - i * 0.65) / 2.6)
+              if (leave === 1) continue
+              card(
+                mix(mix(163, 775 + i * 12, enter), 163, leave),
+                mix(385, 400 - i * 34, enter) - Math.sin(leave * Math.PI) * 105,
+                p.labels[1],
+                2,
+                (i - 1) * 0.04,
+                mix(0.38, 1, enter) * (1 - leave * 0.65),
+              )
+            }
+          } else if (p.pattern === 'review') {
+            const q = ease((t - 13) / 2.6)
+            if (t >= 6 && t < 13.7) {
+              rr(77, 212, 1126, 303, 18, s.accent + '38', s.accent)
+              label(
+                'Review the changes',
+                640,
+                198,
+                ['paper', 'folded'].includes(s.id) ? '#173e34' : s.ink,
+                s.accent,
+              )
+            }
+            folder(640, 523, p.project, 0.8)
+            for (let i = 0; i < 3; i++) {
+              const e = ease((t - 0.5 - i * 0.5) / 1.2),
+                decision = ease((t - 6.5 - i * 1.6) / 0.7)
+              const state =
+                t < 6
+                  ? e > 0.6
+                    ? 'edit'
+                    : ''
+                  : decision > 0.4
+                    ? i === 2
+                      ? t > 12
+                        ? 'restore'
+                        : 'reject'
+                      : 'accept'
+                    : ''
+              card(
+                mix(281 + i * 358, 640, q),
+                mix(356, 520, q),
+                p.labels[i],
+                i,
+                (i - 1) * 0.025 * (1 - q),
+                1 - q * 0.8,
+                state,
+              )
+              if (t >= 6 && t < 12 && decision > 0 && decision < 1) {
+                group(281 + i * 358, 255 - 70 * Math.sin(decision * Math.PI), -0.1, () => {
+                  rr(-12, -32, 24, 67, 4, '#985b49')
+                  rr(-62, 24, 124, 26, 5, s.colors[i])
+                })
+              }
+            }
+            if (t > 15.8) label('2 edits kept · 1 reverted', 640, 415, s.ink, s.paper)
+          } else if (p.pattern === 'parallel') {
+            const spread = ease((t - 5.8) / 1.2),
+              gather = ease((t - 12.2) / 2.5)
+            folder(640, 540, t < 12 ? 'Investigation' : 'Collected findings', 0.8)
+            for (let i = 0; i < 3; i++) {
+              const x = 281 + i * 357,
+                y = 362
+              line(
+                [
+                  [640, 533],
+                  [x, 490],
+                ],
+                s.accent + '90',
+                3,
+              )
+              card(x, y, p.labels[i], i, (i - 1) * 0.035, 1, t > 9.8 ? 'found' : '')
+              const progress = t < 6 ? (i === 0 ? ease(t / 5) : 0) : ease((t - 6) / 4)
+              rr(x - 76, y + 64, 152, 6, 3, s.ink + '20')
+              rr(x - 76, y + 64, 152 * progress, 6, 3, s.id === 'paper' ? '#167251' : s.accent)
+              label(
+                t < 6 ? (i === 0 ? 'Searching' : 'Waiting') : 'Worker ' + (i + 1),
+                mix(280, x, spread),
+                204,
+                s.ink,
+                s.bg,
+              )
+              if (t > 12.2 && gather < 1) {
+                card(
+                  mix(x, 640, gather),
+                  mix(399, 518, gather) - Math.sin(gather * Math.PI) * 65,
+                  'Report',
+                  i,
+                  0,
+                  0.37,
+                )
+              }
+            }
+            if (t > 15) label('Review the combined evidence', 640, 530, s.ink, s.paper)
+          } else if (p.pattern === 'routing') {
+            const xs = [262, 641, 1019]
+            for (let i = 0; i < 3; i++) {
+              card(xs[i], 382, p.labels[i], i, 0, 0.91)
+              if (i > 0)
+                line(
+                  [
+                    [xs[i - 1] + 110, 380],
+                    [xs[i] - 115, 380],
+                  ],
+                  s.accent,
+                  4,
+                )
+            }
+            const travel = t < 6 ? 0 : t < 12 ? ease((t - 6) / 3) : ease((t - 12) / 3)
+            const x = t < 6 ? 262 : t < 12 ? mix(262, 641, travel) : mix(641, 1019, travel)
+            label(t < 12 ? 'Model request' : 'Tool request', x, 230, s.ink, s.paper)
+            card(x, 382, 'Request', 0, -0.06, 0.42)
+          } else {
+            for (let i = 0; i < 3; i++) {
+              const x = 282 + i * 355,
+                active = beat === i
+              card(
+                x,
+                375,
+                p.labels[i],
+                i,
+                active ? Math.sin(t * 2) * 0.015 : 0,
+                active ? 1.1 : 0.85,
+                beat > i ? 'found' : '',
+              )
+              if (i < 2)
+                line(
+                  [
+                    [x + 126, 375],
+                    [x + 224, 375],
+                  ],
+                  s.accent,
+                  4,
+                )
+            }
+            const q = ease((t - beat * 6) / 3)
+            rr(232 + beat * 355, 522, 100 * q, 7, 3, s.accent)
+          }
+        }
+        function isometric() {
+          const workshop = s.id === 'workshop'
+          iso(134, 431, 714, 242, 23, workshop ? '#ccb9dd' : '#d6cdb3')
+          const rows = [
+            { x: 256, y: 385 },
+            { x: 397, y: 326 },
+            { x: 538, y: 267 },
+          ]
+          for (let i = 0; i < 3; i++) {
+            const { x, y } = rows[i]
+            for (let j = 0; j < 5; j++) {
+              let filled = t < 6 ? i === 0 && j < t * 0.82 : t < 12 ? j < (t - 6) * 1.1 : true
+              iso(
+                x + j * 98,
+                y + j * 37,
+                80,
+                56,
+                56,
+                filled ? s.colors[i] : workshop ? '#d7c7e4' : '#cec5a9',
+              )
+            }
+          }
+          for (let i = 0; i < 3; i++) {
+            const { x, y } = rows[i]
+            label(p.labels[i], x + 470, y + 132, s.ink, s.paper)
+          }
+          const q = ease((t - 6) / 1.2)
+          for (let i = 0; i < (t < 6 ? 1 : 3); i++) {
+            const { x, y } = rows[i]
+            const walk = t < 6 ? ease(t / 5) : t < 12 ? ease((t - 6) / 4) : 1 - ease((t - 12) / 3)
+            cart(
+              x - 30 + walk * 395,
+              y + walk * 145 + 42,
+              i,
+              t < 6 ? 'One worker' : t < 12 ? 'Worker ' + (i + 1) : 'Report',
+            )
+          }
+          if (t >= 12) {
+            const reveal = ease((t - 13) / 1.2)
+            group(
+              330,
+              288,
+              0,
+              () => {
+                rr(-171, -85, 342, 170, 14, s.paper, s.accent)
+                text(
+                  p.pattern === 'review'
+                    ? 'REVIEW COMPLETE'
+                    : p.pattern === 'context'
+                      ? 'WORKING SET'
+                      : p.pattern === 'routing'
+                        ? 'DESTINATION CHECK'
+                        : 'FINDINGS TOGETHER',
+                  0,
+                  -49,
+                  19,
+                  s.ink,
+                )
+                wrap(p.beats[2].title, 0, 2, 300, 29, s.ink)
+                tick(127, 52)
+              },
+              reveal,
+            )
+          }
+          if (p.pattern !== 'parallel') {
+            label(PATTERNS[p.pattern].name, 355, 192, s.ink, s.paper)
+          }
+        }
+        function kinetic() {
+          const action = [p.beats[0].title, p.beats[1].title, p.beats[2].title][beat]
+          wrap(action.toUpperCase(), 65, 264, 600, 70, s.accent, 3, 'left')
+          for (let i = 0; i < 3; i++) {
+            const baseX = 869 + (i - 1) * 70,
+              baseY = 357 + (i - 1) * 46
+            const offset = Math.sin(ease((t - beat * 6) / 1.2) * Math.PI) * 45
+            card(
+              baseX + offset,
+              baseY,
+              p.labels[i],
+              i,
+              (i - 1) * 0.12,
+              0.9,
+              beat === 0 ? 'edit' : beat === 2 ? 'found' : '',
+            )
+          }
+          text(['01', '02', '03'][beat], 98, 524, 108, s.ink, 'left', 850)
+          line(
+            [
+              [261, 533],
+              [1200, 533],
+            ],
+            s.ink,
+            7,
+          )
+        }
+        function signal() {
+          c.strokeStyle = '#234247'
+          c.lineWidth = 1
+          for (let x = 40; x < 1280; x += 40) {
+            c.beginPath()
+            c.moveTo(x, 168)
+            c.lineTo(x, 576)
+            c.stroke()
+          }
+          for (let y = 176; y < 570; y += 40) {
+            c.beginPath()
+            c.moveTo(40, y)
+            c.lineTo(1240, y)
+            c.stroke()
+          }
+          for (let i = 0; i < 3; i++) {
+            const y = 252 + i * 124
+            label(p.labels[i], 172, y, s.ink, s.paper)
+            line(
+              [
+                [330, y],
+                [1160, y],
+              ],
+              '#34545a',
+              2,
+            )
+            const progress =
+              p.pattern === 'context' && i === 1
+                ? 1 - ease((t - 6) / 5)
+                : p.pattern === 'parallel' && t < 6 && i > 0
+                  ? 0
+                  : ease((t - i * 0.4) / 11)
+            for (let j = 0; j < 8; j++) {
+              rr(348 + j * 93, y - 18, 72, 36, 3, j / 8 < progress ? s.colors[i] : '#1f373c')
+            }
+            if (t > 13 && !(p.pattern === 'context' && i === 1)) tick(1178, y, s.colors[i])
+          }
+          label(p.beats[beat].title, 640, 562, s.ink, s.paper)
+        }
+        text(p.project.toUpperCase(), 48, 43, 19, s.ink, 'left', 700)
+        text(s.name.toUpperCase(), 1230, 43, 17, s.ink, 'right', 600)
+        wrap(p.title, 48, 110, 1160, 42, s.ink, 2, 'left')
+        if (s.id === 'kinetic') kinetic()
+        else if ((s.id === 'mailroom' || s.id === 'workshop') && p.pattern === 'parallel')
+          isometric()
+        else if (s.id === 'signal') signal()
+        else {
+          flat()
+          if (s.id === 'comic' && p.pattern === 'context') {
+            // A small reader keeps the metaphor human without competing with the objects.
+            c.fillStyle = '#d99773'
+            c.beginPath()
+            c.arc(1210, 439, 20, 0, Math.PI * 2)
+            c.fill()
+            rr(1187, 462, 48, 85, 15, '#eaa78e')
+            line(
+              [
+                [1203, 448],
+                [1217, 448],
+              ],
+              s.ink,
+              2,
+            )
+          }
+        }
+        const dark = ['paper', 'folded', 'signal'].includes(s.id)
+        rr(28, 586, 1224, 112, 14, dark ? '#ffffffed' : '#122d36')
+        for (let i = 0; i < 3; i++) {
+          rr(
+            43 + i * 112,
+            624,
+            105,
+            27,
+            13,
+            beat === i ? s.accent : dark ? '#183d3315' : '#ffffff17',
+          )
+          text(
+            ['1 Problem', '2 Action', '3 Result'][i],
+            95 + i * 112,
+            638,
+            14,
+            beat === i ? (s.id === 'kinetic' ? '#fff' : '#123b32') : dark ? '#315248' : '#d4e4de',
+            'center',
+            700,
+          )
+        }
+        wrap(
+          p.beats[beat].caption,
+          805,
+          643,
+          798,
+          Math.min(p.captionSize, p.beats[beat].caption.length > 125 ? 25 : 30),
+          dark ? '#143e36' : '#f5fbf5',
+          3,
+        )
+        rr(29, 704, 1222 * clamp(t / 18), 4, 2, s.accent)
+        if (options.narrated) text('AI NARRATION', 1208, 588, 12, s.ink, 'right')
+        c.restore()
+        return beat
+      }
+      const api = { STYLES, PATTERNS, render }
+      if (typeof module !== 'undefined') module.exports = api
+      else root.Explainer = api
+    })(typeof window !== 'undefined' ? window : globalThis)
+  </script>
+  <script>
+    __COPSE_EXPLAINER_DRAWING_RUNTIME__
+  </script>
+  <script>
+    'use strict'
+    const story = JSON.parse(document.getElementById('story').textContent)
+    const canvas = document.getElementById('scene'),
+      play = document.getElementById('play'),
+      seek = document.getElementById('seek'),
+      time = document.getElementById('time')
+    document.title = story.title
+    canvas.setAttribute(
+      'aria-label',
+      story.title + ' — animated explanation; written transcript below',
+    )
+    document.getElementById('style').textContent =
+      story.drawing?.styleName || Explainer.STYLES.find((s) => s.id === story.style).name
+    for (const beat of story.beats) {
+      const li = document.createElement('li'),
+        strong = document.createElement('strong')
+      strong.textContent = beat.title
+      li.append(strong, document.createTextNode(beat.caption))
+      document.getElementById('transcript').append(li)
+    }
+    document.getElementById('source').textContent = story.source
+    seek.max = story.duration
+    let position = 0,
+      playing = false,
+      last = 0,
+      frame = 0,
+      pending = null,
+      queued = false,
+      failure = null
+    const clock = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+    function draw() {
+      let start = 0,
+        beatIndex = 0
+      while (
+        beatIndex < story.beatDurations.length - 1 &&
+        position >= start + story.beatDurations[beatIndex]
+      ) {
+        start += story.beatDurations[beatIndex++]
+      }
+      const caption = document.getElementById('caption')
+      if (caption.textContent !== story.beats[beatIndex].caption)
+        caption.textContent = story.beats[beatIndex].caption
+      seek.value = position
+      time.textContent = clock(position) + ' / ' + clock(story.duration)
+      play.textContent = playing ? 'Pause' : position >= story.duration ? 'Replay' : 'Play'
+      play.setAttribute('aria-pressed', String(playing))
+      if (failure) return Promise.reject(failure)
+      if (!story.drawing) {
+        Explainer.render(canvas, story, position)
+        return Promise.resolve()
+      }
+      if (pending) {
+        queued = true
+        return pending
+      }
+      pending = CreativeExplainer.render(canvas, story, position)
+        .catch((error) => {
+          failure = error
+          playing = false
+          cancelAnimationFrame(frame)
+          const message = document.getElementById('error')
+          message.textContent = 'This drawing could not play. Ask for a revised explanation.'
+          message.hidden = false
+          canvas.dataset.error = String(error).slice(0, 500)
+          play.textContent = 'Unavailable'
+          play.disabled = true
+          seek.disabled = true
+          throw error
+        })
+        .finally(() => {
+          pending = null
+          if (queued && !failure) {
+            queued = false
+            return draw()
+          }
+        })
+      return pending
+    }
+    async function tick(now) {
+      if (!playing) return
+      position = Math.min(story.duration, position + (now - last) / 1000)
+      last = now
+      if (position >= story.duration) playing = false
+      try {
+        await draw()
+      } catch {
+        return
+      }
+      if (playing) frame = requestAnimationFrame(tick)
+    }
+    function pause() {
+      playing = false
+      cancelAnimationFrame(frame)
+      draw().catch(() => {})
+    }
+    play.addEventListener('click', () => {
+      if (playing) {
+        pause()
+        return
+      }
+      if (position >= story.duration) position = 0
+      playing = true
+      last = performance.now()
+      draw()
+        .then(() => {
+          if (playing) frame = requestAnimationFrame(tick)
+        })
+        .catch(() => {})
+    })
+    seek.addEventListener('input', () => {
+      position = Number(seek.value)
+      last = performance.now()
+      draw().catch(() => {})
+    })
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) pause()
+    })
+    window.addEventListener('pagehide', () => {
+      playing = false
+      cancelAnimationFrame(frame)
+      if (story.drawing) CreativeExplainer.dispose(canvas)
+    })
+    window.renderFrame = (seconds) => {
+      playing = false
+      cancelAnimationFrame(frame)
+      position = Math.max(0, Math.min(story.duration, Number(seconds) || 0))
+      return draw()
+    }
+    window.explainerReady = draw()
+    window.explainerReady.catch(() => {})
+  </script>
+</html>

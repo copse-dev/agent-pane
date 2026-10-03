@@ -350,6 +350,28 @@ describe('CLA evaluation', () => {
     assert.match(result.unresolved.join('\n'), /opened by helper\[bot\]/)
   })
 
+  it('makes an outside opener sign even when every commit claims a maintainer', async () => {
+    // A commit's author email is self-declared, and GitHub links it to the
+    // maintainer's account; only the opener is authenticated.
+    const commits = [commit(maintainer, 'jk@example.com')]
+    const spoofed = await evaluate({
+      pr: pull(4022, outsider, commits, { fork: true }),
+      commits,
+    })
+    assert.equal(stateOf(spoofed.result), 'failure')
+    assert.ok(spoofed.result.kind === 'evaluated')
+    assert.deepEqual(
+      spoofed.result.unsigned.map((u) => u.login),
+      ['eve'],
+    )
+
+    const signed = await evaluate(
+      { pr: pull(4023, outsider, commits, { fork: true }), commits },
+      { signatures: { signatures: [{ id: outsider.id, emails: [] }] } },
+    )
+    assert.equal(stateOf(signed.result), 'success')
+  })
+
   it('fails an outside unsigned human author, even on a maintainer pull request', async () => {
     const commits = [commit(outsider, 'eve@example.com')]
     for (const opener of [outsider, maintainer]) {

@@ -4456,6 +4456,7 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-status',
                 name: 'mcp__copse__git_status',
+                title: 'mcp.copse.git_status',
                 args: {},
                 status: 'done',
                 result: 'working tree clean',
@@ -4463,9 +4464,34 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-diff',
                 name: 'mcp__copse__git_diff',
+                title: 'mcp__copse__git_diff',
                 args: {},
                 status: 'done',
                 result: 'no changes',
+              },
+              {
+                id: 'tc-copse-shell',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: { command: 'cd /workspace && pnpm test' },
+                status: 'done',
+                result: 'Tests passed',
+              },
+              {
+                id: 'tc-copse-read',
+                name: 'mcp__copse__read_file',
+                title: 'mcp.copse.read_file',
+                args: { path: 'README.md' },
+                status: 'done',
+                result: '# Copse',
+              },
+              {
+                id: 'tc-copse-error',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: {},
+                status: 'error',
+                result: 'Command failed: exit 1',
               },
             ],
             createdAt: now + 3,
@@ -5197,11 +5223,14 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
   openThreadTitle: string
   mergedThreadTitle: string
   plainThreadTitle: string
+  failingThreadTitle: string
 } {
   const projectId = 'e2e-thread-pr-status-project'
   const openThreadTitle = 'Open PR thread'
   const mergedThreadTitle = 'Merged PR thread'
   const plainThreadTitle = 'No PR thread'
+  const failingThreadTitle = 'Failing CI thread'
+  const failingPrUrl = 'https://github.com/copse-dev/copse-panel/pull/88'
   const openPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   const mergedPrUrl = 'https://github.com/copse-dev/copse-panel/pull/99'
   const now = Date.now()
@@ -5273,9 +5302,32 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
         createdAt: now - 2000,
         updatedAt: now - 2000,
       },
+      {
+        id: 'e2e-pr-failing-thread',
+        title: failingThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-failing-pr',
+            role: 'assistant',
+            content: `Opened [PR #88](${failingPrUrl}); checks are red.`,
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-failing-agent',
+          prUrl: failingPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now - 3000,
+        },
+        createdAt: now - 3000,
+        updatedAt: now - 3000,
+      },
     ],
   })
-  return { openThreadTitle, mergedThreadTitle, plainThreadTitle }
+  return { openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle }
 }
 
 /**
