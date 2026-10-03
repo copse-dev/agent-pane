@@ -13,6 +13,12 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
 
 - `main-legacy@1` freezes the pre-migration prompt, single `run_shell` tool, result formatting,
   and recovery behavior.
+- `main-legacy@2` is `main-legacy@1` plus a bounded pre-flight: one read-only bridge command (cwd,
+  `ls -la /tests /app`, size-capped readable `/tests` files, python/pip locations, `/logs/verifier`
+  state) runs before the first model turn and its output (hard cap 8,000 characters, 30 s timeout)
+  is appended to the task message in an `<environment_preflight>` block. A missing or unreadable
+  `/tests` is stated explicitly; probe failure degrades to a short "unavailable" note. It is
+  opt-in (`--profile=main-legacy@2`); the unversioned `main-legacy` alias stays on `@1`.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
 - `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
