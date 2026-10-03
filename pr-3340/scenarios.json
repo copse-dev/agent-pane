@@ -20,6 +20,10 @@
     "label": "Unattended container run"
   },
   {
+    "id": "balanced-model-label",
+    "label": "Balanced model rule label"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
@@ -112,6 +116,14 @@
     "label": "Concise thread view for a capable model"
   },
   {
+    "id": "concise-thread-multi",
+    "label": "Concise thread view across several turns"
+  },
+  {
+    "id": "concise-thread-multi-working",
+    "label": "Concise thread view with finished turns and a live one"
+  },
+  {
     "id": "concise-thread-full",
     "label": "Full thread view for a model below the concise gate"
   },
@@ -126,5 +138,29 @@
   {
     "id": "roadmap-chat-min-width",
     "label": "Roadmap side panel minimum chat width"
+  },
+  {
+    "id": "site-fork-resend",
+    "label": "Copse.dev tour: fork and resend a prompt"
+  },
+  {
+    "id": "site-subagent",
+    "label": "Copse.dev tour: an expanded subagent"
+  },
+  {
+    "id": "site-archive-attachment",
+    "label": "Copse.dev tour: attach a zip archive"
+  },
+  {
+    "id": "site-providers",
+    "label": "Copse.dev tour: provider settings"
+  },
+  {
+    "id": "site-create-pr",
+    "label": "Copse.dev tour: create a pull request"
+  },
+  {
+    "id": "site-mcp-permissions",
+    "label": "Copse.dev tour: per-tool MCP permissions"
   }
 ]
