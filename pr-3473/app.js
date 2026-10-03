@@ -70228,7 +70228,8 @@ function orderSidebarThreads(threads, mode, reverse) {
   if (mode === "created") {
     ordered.sort((a3, b4) => (b4.createdAt ?? 0) - (a3.createdAt ?? 0));
   } else if (mode === "title") {
-    ordered.sort((a3, b4) => a3.title.localeCompare(b4.title, void 0, { sensitivity: "base" }));
+    const name = (thread) => thread.title || "New Thread";
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
   }
   return reverse ? ordered.reverse() : ordered;
 }
@@ -72370,6 +72371,11 @@ function mountProjectsPane(root, store2, api2) {
     created: "Created",
     title: "Thread name"
   };
+  const saveSort = (key, value) => {
+    void api2.settings.set(key, value).catch((err2) => {
+      showErrorToast("Could not save the thread order", err2);
+    });
+  };
   sortBtn.addEventListener("click", () => {
     const rect = sortBtn.getBoundingClientRect();
     const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
@@ -72380,7 +72386,7 @@ function mountProjectsPane(root, store2, api2) {
         checked: mode === sidebarThreadSort,
         onSelect: () => {
           store2.setState({ sidebarThreadSort: mode });
-          void api2.settings.set("sidebarThreadSort", mode);
+          saveSort("sidebarThreadSort", mode);
           render();
         }
       })),
@@ -72389,7 +72395,7 @@ function mountProjectsPane(root, store2, api2) {
         checked: sidebarThreadSortReverse,
         onSelect: () => {
           store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
-          void api2.settings.set("sidebarThreadSortReverse", !sidebarThreadSortReverse);
+          saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
           render();
         }
       }
