@@ -1,3 +1,5 @@
+import { runWithThreadPlan } from './thread-plan-context.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
 import type {
@@ -28,6 +30,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
+  getLatestThreadPlan,
   getProjectThread,
   loadAgentHistory,
   loadAgentTurnEpoch,
@@ -67,6 +70,7 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
 }
 
 export interface AgentDispatcherDependencies {
+  loadPlan: (projectId: string, threadId: string) => Promise<StoredThreadPlan | null>
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
   /**
@@ -125,6 +129,7 @@ async function recoverHistoryFromTranscript(
 }
 
 const defaultDependencies: AgentDispatcherDependencies = {
+  loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
   recoverHistory: recoverHistoryFromTranscript,
@@ -594,6 +599,7 @@ export class AgentDispatcher {
       host,
     )
     if (!executionContext) return undefined
+    const plan = await this.dependencies.loadPlan(projectId, threadId)
     perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
@@ -611,7 +617,9 @@ export class AgentDispatcher {
 
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,
-      priorTodos: payload.priorTodos,
+      // Existing execution todos must not trigger finalize/continuation nudges
+      // during a draft turn. The stored checklist is retained for implementation.
+      priorTodos: plan?.meta.status === 'draft' ? [] : payload.priorTodos,
       ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),
       onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
@@ -626,14 +634,16 @@ export class AgentDispatcher {
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
-        runWithActiveRunIdentity(threadId, () =>
-          this.dependencies.run(
-            threadId,
-            payload.userContent,
-            priorMessages,
-            host,
-            this.registry,
-            options,
+        runWithThreadPlan(plan, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            this.dependencies.run(
+              threadId,
+              payload.userContent,
+              priorMessages,
+              host,
+              this.registry,
+              options,
+            ),
           ),
         ),
       )

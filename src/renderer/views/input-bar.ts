@@ -1,3 +1,4 @@
+import { mountThreadPlanControl } from './thread-plan-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
@@ -381,6 +382,16 @@ export function mountInputBar(
   containerRunMounted = true
   updateTargetPicker()
   void refreshContainerRunsSetting()
+  const planControl = mountThreadPlanControl(api, store, async (threadId, text): Promise<void> => {
+    if (getActiveThreadId() !== threadId)
+      throw new Error('Select the plan’s task before continuing.')
+    const context = composer.expandedValue().trim()
+    composer.value = context ? `${text}\n\nAdditional context:\n${context}` : text
+    persistComposerDraft()
+    // Use the ordinary checkout, attachment, submission and draft-consumption path.
+    // If preflight needs attention, the complete prompt stays ready in the composer.
+    await submit()
+  })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -421,7 +432,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
-  footer.append(modelHost, checkoutHost, branchHost)
+  footer.append(modelHost, checkoutHost, branchHost, planControl.button)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -2748,6 +2759,7 @@ export function mountInputBar(
       footerOverflow.destroy()
       guardedYolo.destroy()
       containerRun.destroy()
+      planControl.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

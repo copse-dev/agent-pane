@@ -48,6 +48,8 @@ import {
   type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
+  SPINE_SCHEMA_VERSION,
+  type SpinePlanLine,
 } from './spine-schema.ts'
 import {
   remoteAgentPrIndexKey,
@@ -76,6 +78,23 @@ import {
 } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
+import {
+  planStateSchema,
+  planCriteria,
+  parsePlanDocument,
+  REQUIRED_PLAN_SECTIONS,
+  planApprovalPath,
+  planCommentsPath,
+  planMetaPath,
+  planRevisionPath,
+  type PlanApproval,
+  type PlanComment,
+  type PlanMeta,
+  type PlanState,
+  type PlanDraft,
+  type PlanCompletion,
+  type StoredThreadPlan,
+} from './plan-schema.ts'
 
 /**
  * Filesystem-native thread store (issue #644). Each thread is a self-contained
@@ -161,9 +180,14 @@ function reasoningCheckpointsPath(projectId: string): string {
 }
 
 function metaOf(thread: Thread): ThreadMeta {
-  // `messagesLoaded` is in-memory bookkeeping about *this session's* load state.
-  // Persisting it would write a field that is meaningless on the next launch.
-  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
+  // Load state and plan presence are derived for this session, not mutable
+  // metadata. Recompute them from the committed spine on the next launch.
+  const {
+    messages: _messages,
+    messagesLoaded: _messagesLoaded,
+    hasSavedPlan: _hasSavedPlan,
+    ...meta
+  } = thread
   return meta
 }
 
@@ -613,7 +637,11 @@ async function readThread(
     // Surface the always-on `hook_run` records (decision 6) as display-only hook
     // cards on the messages they fired within (decisions 10 & 17). Derived from
     // the spine — never from live hook registration — so history stays honest.
-    return { ...thread, messages: attachHookCards(thread.messages, entries) }
+    return {
+      ...thread,
+      messages: attachHookCards(thread.messages, entries),
+      ...(entries.some((entry) => entry.line?.type === 'plan') ? { hasSavedPlan: true } : {}),
+    }
   } catch (err) {
     console.warn(`[thread-store] Skipping unreadable thread ${threadId}:`, err)
     return null
@@ -649,7 +677,11 @@ function listThreadIds(projectId: string): string[] {
  * — `isBlankThread` and the autosave reconciler between them delete threads that
  * look blank, so "no messages" and "messages not loaded" must not be conflated.
  *
- * Cost per thread is one small read and one stat, against the old path's two
+ * Plan presence is also retained before message-only hydration: plan tasks
+ * must not turn into prunable blanks when their empty transcript finishes
+ * loading. Only tasks with a plans directory need their spine read here.
+ *
+ * Cost per ordinary thread is one small read and two stats, against the old path's two
  * reads plus a file read per referenced message and blob, a full fold, and a
  * SHA-256 per ref.
  */
@@ -670,7 +702,18 @@ async function readThreadMetaOnly(
   }
   // An empty spine means the transcript really is empty, and saying so lets
   // blank-thread pruning keep working exactly as before for new threads.
-  return { ...meta, messages: [], messagesLoaded: spineBytes === 0 }
+  const plansDirectory = await fsPromises.stat(join(dir, 'plans')).catch(() => null)
+  const hasSavedPlan =
+    plansDirectory?.isDirectory() &&
+    parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '').some(
+      (entry) => entry.line?.type === 'plan',
+    )
+  return {
+    ...meta,
+    messages: [],
+    messagesLoaded: spineBytes === 0,
+    ...(hasSavedPlan ? { hasSavedPlan: true } : {}),
+  }
 }
 
 /**
@@ -1972,6 +2015,415 @@ export function threadBlobsDir(projectId: string, threadId: string): string {
  */
 export function threadDirectoryPath(projectId: string, threadId: string): string {
   return threadDir(projectId, threadId)
+}
+
+/** UI mutations recheck idleness at the commit point, after asynchronous writes. */
+export interface PlanWriteOptions {
+  assertIdle?: () => void
+}
+export type { StoredThreadPlan, PlanDraft } from './plan-schema.ts'
+
+function planLines(dir: string): SpinePlanLine[] {
+  return parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '').flatMap(({ line }) =>
+    line?.type === 'plan' ? [line] : [],
+  )
+}
+
+function validatePlanId(planId: string): void {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
+    throw new Error('Invalid plan id')
+  }
+}
+
+function readPlanBody(
+  dir: string,
+  planId: string,
+  revision: number,
+  artifact: ContentRef | undefined,
+): string {
+  if (!artifact || artifact.ref !== planRevisionPath(planId, revision))
+    throw new Error('Invalid plan revision reference')
+  const body = safeRead(join(dir, artifact.ref))
+  if (body === null || sha256(body) !== artifact.sha256)
+    throw new Error('Plan revision integrity check failed')
+  return body
+}
+
+function readStoredPlan(dir: string, threadId: string, planId: string): StoredThreadPlan | null {
+  validatePlanId(planId)
+  const line = planLines(dir)
+    .reverse()
+    .find((entry) => entry.planId === planId)
+  if (!line) return null
+  validatePlanId(line.id)
+  // Legacy P1 lines were schema fixtures only. Never infer approval from mutable mirrors.
+  if (!line.state || line.state.ref !== `plans/${planId}/states/${line.id}.json`) {
+    throw new Error('Plan has no committed state snapshot')
+  }
+  const raw = safeRead(join(dir, line.state.ref))
+  const state = raw === null ? null : safeJsonParse(raw, decodeWithSchema(planStateSchema))
+  if (
+    !state ||
+    sha256(raw ?? '') !== line.state.sha256 ||
+    state.meta.planId !== planId ||
+    state.meta.threadId !== threadId ||
+    state.meta.currentRevision !== line.revision
+  ) {
+    throw new Error('Plan state integrity check failed')
+  }
+  const body = readPlanBody(dir, planId, state.meta.currentRevision, line.artifact)
+  const contentHash = sha256(body)
+  const { meta, approval, completion } = state
+  if (meta.status === 'draft' && approval) throw new Error('Draft plan has an approval record')
+  if (
+    meta.status === 'approved' &&
+    (!approval ||
+      approval.planId !== planId ||
+      approval.approvedRevision !== meta.currentRevision ||
+      meta.approvedRevision !== meta.currentRevision ||
+      approval.contentHash !== contentHash ||
+      meta.contentHash !== contentHash ||
+      approval.executionProfileId !== meta.executionProfileId)
+  ) {
+    throw new Error('Approved plan content does not match its approval')
+  }
+  if (
+    completion &&
+    (!approval ||
+      completion.planId !== planId ||
+      completion.revision !== approval.approvedRevision ||
+      completion.contentHash !== approval.contentHash)
+  )
+    throw new Error('Completion does not match approval')
+  return { ...state, body, contentHash }
+}
+
+function latestStoredPlan(dir: string, threadId: string): StoredThreadPlan | null {
+  const latest = planLines(dir)
+    .reverse()
+    .find((line) => line.action === 'create')
+  return latest ? readStoredPlan(dir, threadId, latest.planId) : null
+}
+
+export function getLatestThreadPlan(
+  projectId: string,
+  threadId: string,
+): Promise<StoredThreadPlan | null> {
+  return runSerialized(queueKey(projectId), () =>
+    latestStoredPlan(threadDir(projectId, threadId), threadId),
+  )
+}
+
+export function getThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+): Promise<StoredThreadPlan | null> {
+  return runSerialized(queueKey(projectId), () =>
+    readStoredPlan(threadDir(projectId, threadId), threadId, planId),
+  )
+}
+
+/** Earlier revisions must have a committed spine record and matching bytes. */
+export function getThreadPlanRevision(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+): Promise<string | null> {
+  return runSerialized(queueKey(projectId), () => {
+    validatePlanId(planId)
+    const dir = threadDir(projectId, threadId)
+    const line = planLines(dir)
+      .reverse()
+      .find((entry) => entry.planId === planId && entry.revision === revision)
+    return line ? readPlanBody(dir, planId, revision, line.artifact) : null
+  })
+}
+
+function requirePlanDraft(input: PlanDraft): void {
+  if (!input.title.trim() || !input.body.trim()) throw new Error('Plan title and body are required')
+  const document = parsePlanDocument(input.body)
+  for (const label of REQUIRED_PLAN_SECTIONS) {
+    if (!document.sections.get(label)) throw new Error(`Plan needs a nonempty ${label} section`)
+  }
+  if (document.criteria.length === 0)
+    throw new Error('Definition of done needs at least one bullet criterion')
+}
+
+async function commitPlan(
+  dir: string,
+  plan: StoredThreadPlan,
+  action: SpinePlanLine['action'],
+  options: PlanWriteOptions = {},
+  commentId?: string,
+): Promise<StoredThreadPlan> {
+  options.assertIdle?.()
+  const { meta, comments, approval, completion, body } = plan
+  const id = randomUUID()
+  const artifact = {
+    ref: planRevisionPath(meta.planId, meta.currentRevision),
+    sha256: sha256(body),
+  }
+  // A failed pre-commit write can leave an orphan revision. Only committed refs are readable.
+  if (action === 'create' || action === 'revise')
+    await writeFileEnsuringDirAsync(join(dir, artifact.ref), body)
+  const state: PlanState = { meta, comments, approval, completion }
+  const raw = `${JSON.stringify(state)}\n`
+  const stateRef = { ref: `plans/${meta.planId}/states/${id}.json`, sha256: sha256(raw) }
+  await writeFileEnsuringDirAsync(join(dir, stateRef.ref), raw)
+  options.assertIdle?.()
+  await appendJsonlLine(
+    join(dir, EVENTS_FILE),
+    serializeSpineLine({
+      v: SPINE_SCHEMA_VERSION,
+      type: 'plan',
+      action,
+      id,
+      planId: meta.planId,
+      revision: meta.currentRevision,
+      createdAt: meta.updatedAt,
+      artifact,
+      state: stateRef,
+      ...(commentId ? { commentId } : {}),
+      ...(approval
+        ? { executionProfileId: approval.executionProfileId, contentHash: approval.contentHash }
+        : {}),
+    }),
+  )
+  // Convenience projections only. Recovery always reads the committed snapshot above.
+  const projections: Array<readonly [string, unknown]> = [
+    [planMetaPath(meta.planId), meta],
+    [planCommentsPath(meta.planId), { comments }],
+  ]
+  if (approval) projections.push([planApprovalPath(meta.planId), approval])
+  for (const [path, value] of projections) {
+    await atomicWriteFileAsync(join(dir, path), `${JSON.stringify(value)}\n`).catch(() => {})
+  }
+  return plan
+}
+
+export function createThreadPlan(
+  projectId: string,
+  threadId: string,
+  input: PlanDraft,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    requirePlanDraft(input)
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) throw new Error('Thread does not exist')
+    const previous = latestStoredPlan(dir, threadId)
+    if (previous && previous.meta.status !== 'abandoned')
+      throw new Error('End the current plan before starting another')
+    const now = Date.now()
+    const meta: PlanMeta = {
+      ...(previous ? { supersedesPlanId: previous.meta.planId } : {}),
+      planId: randomUUID(),
+      threadId,
+      title: input.title.trim(),
+      status: 'draft',
+      currentRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+    }
+    return commitPlan(
+      dir,
+      {
+        meta,
+        body: input.body,
+        contentHash: sha256(input.body),
+        comments: [],
+        approval: null,
+        completion: null,
+      },
+      'create',
+      options,
+    )
+  })
+}
+
+function requireCurrentPlan(
+  dir: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+): StoredThreadPlan {
+  const current = readStoredPlan(dir, threadId, planId)
+  if (!current || current.meta.currentRevision !== revision)
+    throw new Error('Plan revision changed')
+  return current
+}
+
+export function reviseThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  expectedRevision: number,
+  input: PlanDraft,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, expectedRevision)
+    if (current.meta.status !== 'draft') throw new Error('No editable draft plan')
+    requirePlanDraft(input)
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        body: input.body,
+        contentHash: sha256(input.body),
+        meta: {
+          ...current.meta,
+          title: input.title.trim(),
+          currentRevision: expectedRevision + 1,
+          updatedAt: Date.now(),
+        },
+      },
+      'revise',
+      options,
+    )
+  })
+}
+
+export function commentOnThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+  body: string,
+  anchor: { start: number; end: number },
+  options: PlanWriteOptions = {},
+): Promise<PlanComment> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, revision)
+    if (current.meta.status !== 'draft') throw new Error('No editable draft plan')
+    if (
+      !body.trim() ||
+      !Number.isInteger(anchor.start) ||
+      !Number.isInteger(anchor.end) ||
+      anchor.start < 0 ||
+      anchor.end <= anchor.start ||
+      anchor.end > current.body.length
+    )
+      throw new Error('Select a passage and enter feedback')
+    const comment: PlanComment = {
+      id: randomUUID(),
+      revision,
+      body: body.trim(),
+      createdAt: Date.now(),
+      author: 'user',
+      quote: current.body.slice(anchor.start, anchor.end),
+      anchor,
+    }
+    await commitPlan(
+      dir,
+      {
+        ...current,
+        comments: [...current.comments, comment],
+        meta: { ...current.meta, updatedAt: comment.createdAt },
+      },
+      'comment',
+      options,
+      comment.id,
+    )
+    return comment
+  })
+}
+
+export function approveThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  expectedRevision: number,
+  expectedContentHash: string,
+  executionProfileId: string,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, expectedRevision)
+    if (current.meta.status !== 'draft') throw new Error('No approvable draft plan')
+    if (current.contentHash !== expectedContentHash) throw new Error('Plan revision changed')
+    if (executionProfileId !== 'implementation') throw new Error('Unknown execution profile')
+    const now = Date.now()
+    const approval: PlanApproval = {
+      planId,
+      approvedRevision: expectedRevision,
+      approvedAt: now,
+      executionProfileId,
+      contentHash: expectedContentHash,
+    }
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        approval,
+        meta: {
+          ...current.meta,
+          status: 'approved',
+          updatedAt: now,
+          approvedAt: now,
+          approvedRevision: expectedRevision,
+          executionProfileId,
+          contentHash: expectedContentHash,
+        },
+      },
+      'approve',
+      options,
+    )
+  })
+}
+
+export function abandonThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, revision)
+    return commitPlan(
+      dir,
+      { ...current, meta: { ...current.meta, status: 'abandoned', updatedAt: Date.now() } },
+      'abandon',
+      options,
+    )
+  })
+}
+
+export function reportThreadPlanCompletion(
+  projectId: string,
+  threadId: string,
+  input: Omit<PlanCompletion, 'reportedAt'>,
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, input.planId, input.revision)
+    if (current.meta.status !== 'approved' || current.approval?.contentHash !== input.contentHash)
+      throw new Error('Completion requires the exact approved plan')
+    const ids = planCriteria(current.body).map((criterion) => criterion.id)
+    if (
+      input.results.length !== ids.length ||
+      new Set(input.results.map((result) => result.criterionId)).size !== ids.length ||
+      input.results.some((result) => !ids.includes(result.criterionId) || !result.evidence.trim())
+    )
+      throw new Error('Report every criterion exactly once with evidence or a verification gap')
+    const now = Date.now()
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        completion: { ...input, reportedAt: now },
+        meta: { ...current.meta, updatedAt: now },
+      },
+      'report',
+    )
+  })
 }
 
 /** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */

@@ -72,6 +72,8 @@ export interface StoreEvents {
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
   roadmap_reveal: [itemId: string]
+  thread_plan_open: []
+  thread_plan_changed: [threadId: string]
   browser_url_requested: [url: string]
   // Cmd/Ctrl+L: focus the Browser pane's address bar and select its contents.
   // Raised from the app menu because the key never reaches the renderer while a

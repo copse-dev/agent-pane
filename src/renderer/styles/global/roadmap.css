@@ -563,3 +563,156 @@
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
+
+/* The list stays compact; the selected brief has a quiet writing surface. */
+.roadmap-viewer {
+  padding: 0;
+  overflow: hidden;
+}
+.roadmap-form {
+  gap: 0;
+}
+.roadmap-document-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+}
+.roadmap-document-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+.roadmap-document-title {
+  flex: 1 1 180px;
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
+}
+.roadmap-document-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.roadmap-document-controls select {
+  width: auto;
+  font-size: var(--font-size-xs);
+  border-color: transparent;
+  background: var(--bg-subtle);
+}
+.roadmap-editor-modes {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+.roadmap-editor-modes [aria-pressed='true'] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+}
+.roadmap-form .plan-document {
+  min-height: 200px;
+}
+.roadmap-form .plan-format-toolbar {
+  border-top: 0;
+  padding: 0 0 var(--spacing-xs);
+}
+.roadmap-form .plan-editor-modes {
+  display: none;
+}
+.roadmap-form .plan-document-page {
+  overflow: visible;
+}
+.roadmap-form .plan-editor-body {
+  padding: var(--spacing-md) 0;
+  min-height: 160px;
+}
+.roadmap-form .plan-editor-body:focus-visible {
+  box-shadow: none;
+}
+.roadmap-form .roadmap-prompt-input {
+  min-height: 180px;
+  margin-bottom: var(--spacing-md);
+}
+.roadmap-document-attachments {
+  margin: var(--spacing-md) 0;
+}
+.roadmap-document-attachments > .memories-label {
+  display: none;
+}
+.roadmap-document-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--spacing-md);
+  background: var(--bg-subtle);
+}
+.roadmap-document-footer .memories-error:not([hidden]) {
+  margin-bottom: var(--spacing-sm);
+}
+.roadmap-details,
+.roadmap-attempts {
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+.roadmap-details > summary,
+.roadmap-previous-attempts > summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.roadmap-detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+}
+.roadmap-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  margin-block: var(--spacing-sm);
+}
+.roadmap-attempts h4 {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+.roadmap-attempt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding-block: var(--spacing-sm);
+}
+.roadmap-attempt > div {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.roadmap-attempt-title,
+.roadmap-attempt-summary {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.roadmap-attempt-summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.roadmap-previous-attempts {
+  margin-top: var(--spacing-sm);
+}
+
+.roadmap-format-toggle {
+  margin-left: auto;
+}
+.roadmap-form:not(.is-formatting) .plan-format-toolbar {
+  display: none;
+}
+.roadmap-document-scroll > * {
+  max-width: 720px;
+  margin-inline: auto;
+}

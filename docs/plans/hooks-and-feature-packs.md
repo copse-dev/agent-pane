@@ -429,6 +429,16 @@ revisiting this document, not silently diverging in an implementation PR.
     workspace snapshot; moving review into the background or granting execution
     tools requires one immutable per-review snapshot shared by every participant.
 
+30. **Draft planning denies command execution at the host runner.** The optional
+    thread-plan capability context is fixed for a turn. Its tool allowlist is
+    enforced before permission hooks; command hooks themselves receive a recorded
+    policy denial without spawning, including when their runtime failure policy is
+    open. This is an intentional permission outcome, not a command failure or a
+    dialect exception. A runner captured for a detached draft hook retains that
+    restriction. Approved implementation starts a new human turn through the normal
+    dispatcher and restores the ordinary hook and tool permission contracts. No
+    ad hoc continuation, pending-message channel or hook event is introduced.
+
 ## Target architecture
 
 ```mermaid

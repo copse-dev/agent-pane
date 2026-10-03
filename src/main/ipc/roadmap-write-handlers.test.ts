@@ -124,9 +124,9 @@ describe('roadmap write handlers without Electron', () => {
     assert.equal(h.handlers.findByThread('thread-2'), null)
     assert.equal(h.notes.get(second.id)?.fields['thread'], undefined)
 
-    // Restamping points the item at the newer thread; the older one stops resolving.
+    // Restamping updates the shortcut while keeping earlier attempts reachable.
     h.handlers.setThread(first.id, 'thread-2')
-    assert.equal(h.handlers.findByThread('thread-1'), null)
+    assert.deepEqual(h.handlers.findByThread('thread-1'), { id: first.id, title: first.title })
     assert.deepEqual(h.handlers.findByThread('thread-2'), { id: first.id, title: first.title })
 
     // An empty id clears the tracking.
