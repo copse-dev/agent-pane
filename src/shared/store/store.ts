@@ -41,6 +41,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     rightPanelPosition: 'auto',
     sidebarThreadSort: 'activity',
     sidebarThreadSortReverse: false,
+    sidebarThreadGroup: 'project',
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial,

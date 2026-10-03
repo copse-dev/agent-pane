@@ -24,6 +24,11 @@ export const isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS)
 export type ThreadSortMode = 'activity' | 'created' | 'title'
 export const THREAD_SORT_MODES: readonly ThreadSortMode[] = ['activity', 'created', 'title']
 export const isThreadSortMode = memberOf(THREAD_SORT_MODES)
+// How the sidebar lays threads out: under their projects (the tree), in
+// Needs you / Working / Recent sections across projects, or as one flat list.
+export type ThreadGroupMode = 'project' | 'status' | 'none'
+export const THREAD_GROUP_MODES: readonly ThreadGroupMode[] = ['project', 'status', 'none']
+export const isThreadGroupMode = memberOf(THREAD_GROUP_MODES)
 export type Theme = 'light' | 'dark'
 // What the user picked in Settings. `system` follows the OS colour scheme and
 // resolves to a concrete `Theme` at runtime; `light`/`dark` pin it. The store
@@ -141,6 +146,7 @@ export interface AppState {
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
   sidebarThreadSort: ThreadSortMode // How the sidebar orders each project's threads.
   sidebarThreadSortReverse: boolean // Flip that order (oldest or Z–A first).
+  sidebarThreadGroup: ThreadGroupMode // Whether the sidebar groups threads by project, by status, or not at all.
   openLinksInBuiltInBrowser: boolean // Clicked http(s) links open in the in-app browser vs the system browser.
   developerMode: boolean // Reveals advanced diagnostics and the native Developer Tools menu item.
   settings?: { model: string }

@@ -154,6 +154,7 @@ import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
+  isThreadGroupMode,
   isThreadSortMode,
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
@@ -293,6 +294,7 @@ async function boot(): Promise<void> {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
   const savedSidebarThreadSort = startupSettings.sidebarThreadSort
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
   const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
@@ -351,6 +353,9 @@ async function boot(): Promise<void> {
       ? savedSidebarThreadSort
       : 'activity',
     sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup)
+      ? savedSidebarThreadGroup
+      : 'project',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,

@@ -71,6 +71,15 @@ describe('settings-schema', () => {
     assert.equal(reverse.safeParse('yes').success, false)
   })
 
+  it('validates the sidebar thread group setting', () => {
+    const group = getSettingSchema('sidebarThreadGroup')
+    assert.ok(group)
+    for (const mode of ['project', 'status', 'none']) {
+      assert.equal(group.safeParse(mode).success, true)
+    }
+    assert.equal(group.safeParse('folder').success, false)
+  })
+
   // Regression: `trustedShellCommands`, `cursorHooksEnabled` and
   // `defaultReadonlyMode` were written by the security bundle but never
   // registered here, so `settings:get` (which reads with a `null` fallback)

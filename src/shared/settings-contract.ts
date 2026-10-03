@@ -10,6 +10,7 @@ export interface SettingsValues {
   updateChannel: ReleaseChannel
   sidebarThreadSort: 'activity' | 'created' | 'title'
   sidebarThreadSortReverse: boolean
+  sidebarThreadGroup: 'project' | 'status' | 'none'
   fontSize: number
   uiScale: number
   animateAgentAvatars: boolean
