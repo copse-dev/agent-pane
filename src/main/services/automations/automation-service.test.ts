@@ -8,8 +8,11 @@ import type {
   Thread,
 } from '@shared/types'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
-import type { EnqueueSupervisedTaskInput } from '../supervisor/task-supervisor.ts'
-import { storageSet } from '../storage/storage.ts'
+import type {
+  EnqueueSupervisedTaskInput,
+  SupervisedTaskHandler,
+} from '../supervisor/task-supervisor.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { createAutomationService, type AutomationTaskSupervisor } from './automation-service.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
@@ -73,8 +76,13 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
     return Promise.resolve(task)
   }
 
-  registerHandler(): () => void {
-    return () => {}
+  handler: SupervisedTaskHandler | null = null
+
+  registerHandler(_kind: string, handler: SupervisedTaskHandler): () => void {
+    this.handler = handler
+    return () => {
+      this.handler = null
+    }
   }
 
   subscribe(listener: (task: SupervisedTaskMeta) => void): () => void {
@@ -1128,6 +1136,108 @@ describe('AutomationService', () => {
       await service.upsert('project-a', { ...input, id: schedule.id, name: 'Renamed' })
 
       assert.equal(service.list('project-a')[0]?.lastProblem?.message, 'disk unavailable')
+    })
+  })
+  it('keeps a schedule this version cannot read when other schedules change', async () => {
+    const newer = {
+      id: 'from-a-newer-build',
+      projectId: 'project-a',
+      name: 'Newer',
+      cron: '0 9 * * *',
+      prompt: 'p',
+      model: 'm',
+      enabled: true,
+      permissions: [{ kind: 'a-kind-added-later', toolName: 'x' }],
+      createdAt: 0,
+      updatedAt: 0,
+    }
+    storageSet(STORAGE_KEY, [newer])
+    const service = createAutomationService({
+      now: () => 1,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+
+    const mine = await service.upsert('project-a', {
+      name: 'Mine',
+      cron: '* * * * *',
+      prompt: 'p',
+      model: 'm',
+      enabled: true,
+    })
+    await service.runNow('project-a', mine.id)
+    await service.upsert('project-a', { ...mine, name: 'Mine, renamed' })
+    await service.remove('project-a', mine.id)
+
+    assert.deepEqual(storageGet(STORAGE_KEY), [newer])
+  })
+  describe('a timer that fires after its minute', () => {
+    const NINE = new Date(2026, 6, 27, 9, 0, 0).getTime()
+    function setup(clock: number): {
+      created: Thread[]
+      service: ReturnType<typeof createAutomationService>
+      supervisor: FakeTaskSupervisor
+    } {
+      const created: Thread[] = []
+      const supervisor = new FakeTaskSupervisor()
+      storageSet(STORAGE_KEY, [
+        {
+          id: 'nine',
+          projectId: 'project-a',
+          name: 'Nine',
+          cron: '0 9 * * *',
+          prompt: 'p',
+          model: 'm',
+          enabled: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ])
+      const service = createAutomationService({
+        now: () => clock,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          created.push(thread)
+          return Promise.resolve()
+        },
+        loadProjectThreads: () => Promise.resolve(created),
+        releasePreviousRun: () => Promise.resolve(true),
+        supervisor: () => supervisor,
+      })
+      return { created, service, supervisor }
+    }
+
+    it('still runs the minute it was armed for', async () => {
+      const { created, service } = setup(NINE + 70_000)
+      await service.tick(NINE)
+      assert.equal(created.length, 1)
+      assert.equal(created[0]?.automation?.triggeredAt, NINE)
+    })
+
+    it('does not run a minute it was not armed for', async () => {
+      const { created, service } = setup(NINE + 70_000)
+      await service.tick()
+      assert.equal(created.length, 0)
+    })
+
+    it('does not catch up on a wake that is too stale to be a late timer', async () => {
+      const { created, service } = setup(NINE + 10 * 60_000)
+      await service.tick(NINE)
+      assert.equal(created.length, 0)
+    })
+
+    it('takes the armed minute from the supervisor task that woke the scheduler', async () => {
+      const { created, service, supervisor } = setup(NINE + 70_000)
+      service.start(() => {})
+      const task = {
+        ...schedulerTask({ taskId: 't', projectId: 'project-a', threadId: 'nine' }),
+        nextWakeAt: NINE,
+      }
+      await supervisor.handler?.(task, { signal: new AbortController().signal })
+      service.stop()
+      assert.equal(created.length, 1)
     })
   })
 })

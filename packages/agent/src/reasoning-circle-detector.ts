@@ -1,3 +1,5 @@
+import type { ReasoningSoftBudget } from './reasoning-budget.ts'
+
 /** High-confidence reasons that an in-progress reasoning stream is circling. */
 export type ReasoningCircleSignal =
   | 'self_reported_circle'
@@ -239,6 +241,12 @@ export interface ReasoningCheckpointPolicy {
    * non-reasoning ceiling. Absent leaves trailing reasoning to that ceiling.
    */
   maxTrailingReasoningTokens?: number
+  /**
+   * Early per-step cut for reasoning-dominated streams with no tool call. Unlike
+   * the hard maxima, a soft cut carries an excerpt of the reasoning into history
+   * and continues with a tool-enabled turn. Absent leaves only the hard maxima.
+   */
+  softReasoningBudget?: ReasoningSoftBudget
 }
 
 export interface ReasoningCheckpointRecord {
@@ -251,4 +259,6 @@ export interface ReasoningCheckpointRecord {
   visibleTextChars: number
   decision: 'continue' | 'cut'
   signals: ReasoningCircleSignal[]
+  /** Set when the cut was the soft reasoning budget rather than a circle or hard maximum. */
+  cause?: 'soft_budget'
 }
