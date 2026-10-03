@@ -77,7 +77,7 @@ describe('analyzeShellCommand', () => {
       'gh run list',
       'gh run view 123 --log',
       'gh run download',
-      'gh run download 123 --repo other/repo --dir .tmp/artifacts --clobber',
+      'gh run download 123 --repo other/repo --dir .tmp/artifacts',
       "gh run download 123 --pattern 'screenshots-*' --dir .tmp/artifacts",
     ]) {
       const r = analyzeShellCommand(cmd, root)

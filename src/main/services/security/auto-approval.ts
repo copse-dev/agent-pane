@@ -41,8 +41,8 @@ import {
  *    already resolved to `prompt`, and only ever converts that prompt into an
  *    auto-approval. A `deny` is never reachable from here, and a command the
  *    policy already allows never enters this path.
- *  - Its grants are **bounded and recoverable**: reads, sandbox-local GitHub
- *    artifact downloads, local git operations whose effects survive in the reflog,
+ *  - Its grants are **bounded and recoverable**: reads, local git operations
+ *    whose effects survive in the reflog,
  *    and additive writes to a remote the user already configured in the repository.
  *    Arbitrary code execution is not a shape — interpreters, project scripts
  *    (`npm test`), ephemeral runners (`npx`), installs, and any command with

@@ -385,8 +385,9 @@ While active:
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
   `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
   one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
-  `gh run download` is included in the GitHub read grant; its local writes stay inside the
-  project sandbox. With no active sandbox, it still prompts. Dedicated mutating GitHub tools
+  `gh run download` may run inside the project sandbox, which contains its local writes.
+  It does not receive a classifier read grant: running or retrying it outside the sandbox
+  requires approval, even when the session has an active sandbox. Dedicated mutating GitHub tools
   (`GITHUB_WRITE_TOOLS`) still prompt unless the owning automation has the exact project-scoped grant
   described below. Read-only `gh` carve-outs keep the normal sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
