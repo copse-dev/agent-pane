@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
   AutomationPermission,
+  AutomationProblem,
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
@@ -9,6 +10,7 @@ import type {
   Thread,
 } from '@shared/types'
 import { automationPermissionKey } from '@shared/types'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
@@ -28,6 +30,8 @@ const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 const SCHEDULER_MAX_DURATION_MS = 120_000
 const SCHEDULER_RECOVERY_DELAY_MS = 5_000
+/** How late a wake may be and still run the minute it was armed for rather than the current one. */
+const MAX_WAKE_LATENESS_MS = 2 * 60_000
 
 interface CopseAutomationAction {
   toolName: string
@@ -128,11 +132,22 @@ function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean
   return parsed !== null && parsed.server.length > 0 && parsed.tool.length > 0
 }
 
+function isAutomationProblem(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value['at'] === 'number' &&
+    Number.isFinite(value['at']) &&
+    (value['kind'] === 'failed' || value['kind'] === 'pending-start') &&
+    typeof value['message'] === 'string'
+  )
+}
+
 function isSchedule(value: unknown): value is AutomationSchedule {
   if (!isRecord(value)) return false
   const maxLiveWorktrees = value['maxLiveWorktrees']
   const lastWorktreeLimitAt = value['lastWorktreeLimitAt']
   const permissions = value['permissions']
+  const lastProblem = value['lastProblem']
   return (
     typeof value['id'] === 'string' &&
     typeof value['projectId'] === 'string' &&
@@ -149,6 +164,7 @@ function isSchedule(value: unknown): value is AutomationSchedule {
       (typeof lastWorktreeLimitAt === 'number' && Number.isFinite(lastWorktreeLimitAt))) &&
     (permissions === undefined ||
       (Array.isArray(permissions) && permissions.every(isAutomationPermission))) &&
+    (lastProblem === undefined || isAutomationProblem(lastProblem)) &&
     typeof value['createdAt'] === 'number' &&
     typeof value['updatedAt'] === 'number'
   )
@@ -164,6 +180,21 @@ function readSchedules(): AutomationSchedule[] {
         ? { ...schedule, permissions: normalizePermissions(schedule.permissions) }
         : schedule,
     )
+}
+
+/**
+ * Rewrite the readable schedules in storage while carrying every other row
+ * through untouched. A row this version cannot read (for example one written
+ * by a newer build) is not ours to delete, and rewriting from the filtered list
+ * used to drop it on the next unrelated edit or run.
+ */
+function updateSchedules(
+  update: (schedules: AutomationSchedule[]) => AutomationSchedule[],
+): Promise<void> {
+  return storageUpdate(STORAGE_KEY, (raw) => {
+    const rows: unknown[] = Array.isArray(raw) ? raw : []
+    return [...rows.filter((row) => !isSchedule(row)), ...update(rows.filter(isSchedule))]
+  })
 }
 
 function minuteStamp(timestamp: number): number {
@@ -190,7 +221,11 @@ export interface AutomationService {
   start(notify: (event: AutomationTriggerEvent) => void): void
   sync(): Promise<void>
   stop(): void
-  tick(): Promise<void>
+  /**
+   * Run the schedules due now. `scheduledFor` is the minute the supervisor's timer
+   * was armed for: a timer that fires late still runs the minute it was owed.
+   */
+  tick(scheduledFor?: number): Promise<void>
 }
 
 /**
@@ -230,14 +265,32 @@ export function createAutomationService(
   const inFlight = new Set<string>()
   const attemptedMinutes = new Map<string, number>()
 
-  function logTriggerFailure(schedule: AutomationSchedule, error: unknown): void {
+  async function recordProblem(
+    schedule: AutomationSchedule,
+    problem: AutomationProblem,
+  ): Promise<void> {
+    try {
+      await updateSchedules((schedules) => {
+        return schedules.map((candidate) =>
+          candidate.projectId === schedule.projectId && candidate.id === schedule.id
+            ? { ...candidate, lastProblem: problem }
+            : candidate,
+        )
+      })
+    } catch (error) {
+      // The ledger is a courtesy; never let it turn a skipped run into a crash.
+      console.error('[automations] Could not record a trigger problem:', error)
+    }
+  }
+
+  async function logTriggerFailure(schedule: AutomationSchedule, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[automations] Failed to create task for “${schedule.name}”: ${message}`)
+    await recordProblem(schedule, { at: dependencies.now(), kind: 'failed', message })
   }
 
   async function replaceSchedule(next: AutomationSchedule): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return [...schedules.filter((schedule) => schedule.id !== next.id), next]
     })
   }
@@ -248,8 +301,7 @@ export function createAutomationService(
     triggeredAt: number,
     attemptedLimit: number,
   ): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return schedules.map((schedule) =>
         schedule.projectId === projectId &&
         schedule.id === scheduleId &&
@@ -266,8 +318,7 @@ export function createAutomationService(
     triggeredAt: number,
     threadId: string,
   ): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return schedules.map((schedule) => {
         if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
         const updated = {
@@ -277,6 +328,7 @@ export function createAutomationService(
           lastCreatedThreadId: threadId,
         }
         delete updated.lastWorktreeLimitAt
+        delete updated.lastProblem
         return updated
       })
     })
@@ -381,11 +433,18 @@ export function createAutomationService(
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
-      const busy = scheduleThreads.find(
-        (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-      )
+      const busy = scheduleThreads.find((thread) => automationRunBlock(thread) !== null)
 
       if (busy) {
+        if (automationRunBlock(busy) === 'pending-start') {
+          await recordProblem(schedule, {
+            at: triggeredAt,
+            kind: 'pending-start',
+            message:
+              'An earlier run was created but never started, so this one was skipped. ' +
+              'Open the project to start it, or send or discard its draft.',
+          })
+        }
         return {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -483,8 +542,7 @@ export function createAutomationService(
     async grantPermission(projectId, scheduleId, permission) {
       if (!canGrantPermissionFromPrompt(permission)) return false
       let found = false
-      await storageUpdate(STORAGE_KEY, (raw) => {
-        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      await updateSchedules((schedules) => {
         return schedules.map((schedule) => {
           if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
           found = true
@@ -546,6 +604,7 @@ export function createAutomationService(
         maxLiveWorktrees === (existing.maxLiveWorktrees ?? 1)
           ? { lastWorktreeLimitAt: existing.lastWorktreeLimitAt }
           : {}),
+        ...(existing?.lastProblem !== undefined ? { lastProblem: existing.lastProblem } : {}),
       }
       await replaceSchedule(schedule)
       // The minute tick reads schedule settings from storage. Editing fields such
@@ -558,8 +617,7 @@ export function createAutomationService(
       return schedule
     },
     async remove(projectId, scheduleId) {
-      await storageUpdate(STORAGE_KEY, (raw) => {
-        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      await updateSchedules((schedules) => {
         return schedules.filter(
           (schedule) => !(schedule.projectId === projectId && schedule.id === scheduleId),
         )
@@ -576,8 +634,8 @@ export function createAutomationService(
       notify = sender
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
-        async () => {
-          await service.tick()
+        async (task) => {
+          await service.tick(task.nextWakeAt)
           return {}
         },
       )
@@ -605,9 +663,18 @@ export function createAutomationService(
       recoveryTimer = null
       notify = null
     },
-    async tick() {
+    async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return
-      const now = dependencies.now()
+      const clock = dependencies.now()
+      // Matching against the wall clock alone skips a schedule whenever the timer
+      // fires after the minute it was armed for (a slow previous tick, a busy main
+      // process): the next minute is evaluated and the owed one is never seen.
+      const now =
+        scheduledFor !== undefined &&
+        scheduledFor <= clock &&
+        clock - scheduledFor < MAX_WAKE_LATENESS_MS
+          ? scheduledFor
+          : clock
       const date = new Date(now)
       const currentMinute = minuteStamp(now)
       const due: AutomationSchedule[] = []
@@ -639,7 +706,7 @@ export function createAutomationService(
           } catch (error) {
             // Isolate failures so one project cannot prevent other matching
             // schedules from running. Do not retry repeatedly in the same minute.
-            logTriggerFailure(schedule, error)
+            await logTriggerFailure(schedule, error)
           }
         }),
       )

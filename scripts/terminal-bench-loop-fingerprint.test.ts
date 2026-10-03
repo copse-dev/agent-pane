@@ -62,6 +62,9 @@ async function fingerprint(
   streams: (call: number) => ProviderStreamChunk[],
   toolOutput = 'total 0',
   profileId: 'product-aligned@5' = 'product-aligned@5',
+  env: Readonly<Record<string, string | undefined>> = {
+    COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '0',
+  },
 ): Promise<Fingerprint> {
   const profile = terminalBenchProfile(profileId)
   let streamCount = 0
@@ -78,10 +81,11 @@ async function fingerprint(
     provider,
     messages: [{ role: 'user', content: 'Write /app/answer.txt' }],
     tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
-    // Real defaults, with a smaller step budget so a recovery loop ends quickly.
+    // Immutable profile baseline unless a reported runtime override is requested.
+    // A smaller step budget lets a recovery loop end quickly.
     ...terminalBenchLoopOptions(
       profile,
-      { ...terminalBenchRuntimeConfiguration(profile, {}), maxSteps: 12, maxLlmCalls: 15 },
+      { ...terminalBenchRuntimeConfiguration(profile, env), maxSteps: 12, maxLlmCalls: 15 },
       'Write /app/answer.txt',
     ),
     onChunk: () => {},
@@ -110,6 +114,23 @@ const ANSWER =
 
 for (const profileId of ['product-aligned@5'] as const) {
   describe(`${profileId} loop fingerprint`, () => {
+    it('records the default soft-budget override as one bounded carry-forward cut', async () => {
+      const actual = await fingerprint(
+        (call) =>
+          call === 1
+            ? [...distinctReasoning(CHARS_PER_CHECKPOINT * 2.5, 'partial plan'), { type: 'done' }]
+            : [{ type: 'text', text: 'Done.' }, { type: 'done' }],
+        'total 0',
+        profileId,
+        {},
+      )
+      assert.deepEqual(actual, {
+        streams: 2,
+        checkpoints: ['cut@768 []'],
+        cuts: ['reasoning_budget_soft@768'],
+        nudges: ['reasoning-budget-carry-forward/tool-enabled-message'],
+      })
+    })
     const fingerprintForProfile = (
       streams: (call: number) => ProviderStreamChunk[],
       toolOutput = 'total 0',

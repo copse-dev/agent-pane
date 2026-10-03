@@ -65,5 +65,6 @@
 // `none` security profile) on container runs.
 // v37 conservatively versions the optional `verbosity` field on turn model parameters.
 // v38 conservatively versions interrupted-turn recovery metadata.
-// v39 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 39 as const
+// v39 versions the automation lastProblem ledger and startFailedAt provenance.
+// v40 versions the context_compacted agent chunk (OpenAI server-side compaction).
+export const API_PROTOCOL_VERSION = 40 as const

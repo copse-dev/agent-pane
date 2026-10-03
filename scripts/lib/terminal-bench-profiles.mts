@@ -5,6 +5,7 @@ import type {
 } from '@copse/agent/reasoning-circle-detector.ts'
 import { keyOf } from '@copse/std/member-of.ts'
 import { z } from 'zod'
+import type { ReasoningSoftBudget } from '@copse/agent/reasoning-budget.ts'
 
 export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-aligned'] as const
 
@@ -18,6 +19,7 @@ export const TERMINAL_BENCH_PROFILE_VERSIONED_IDS = [
   'product-aligned@3',
   'product-aligned@4',
   'product-aligned@5',
+  'product-aligned@6',
 ] as const
 
 export type TerminalBenchProfileVersionedId = (typeof TERMINAL_BENCH_PROFILE_VERSIONED_IDS)[number]
@@ -40,7 +42,7 @@ export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkp
  * thresholds no longer match the product, because the host cannot pin them.
  */
 export interface TerminalBenchLoopSettings {
-  recoveryStrategy: 'legacy-two-cut-v1'
+  recoveryStrategy: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   suppressedOutputTokens: number
   suppressedNudge: string
   suppressionProtocol: string
@@ -71,9 +73,20 @@ export const TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA = z
     maxStreamOutputTokens: positiveInteger,
     reasoningRunawayRecoveryOutputTokens: positiveInteger,
     maxCommandTimeoutSec: positiveInteger,
-    recoveryStrategy: z.literal('legacy-two-cut-v1').default('legacy-two-cut-v1'),
+    recoveryStrategy: z
+      .enum(['legacy-two-cut-v1', 'suppression-ladder-v1'])
+      .default('legacy-two-cut-v1'),
     suppressedOutputTokens: positiveInteger.default(1024),
-    softReasoningBudget: z.null().default(null),
+    softReasoningBudget: z
+      .object({
+        tokens: positiveInteger,
+        carryChars: positiveInteger,
+        maxCutsPerRun: positiveInteger,
+        maxConsecutiveCuts: positiveInteger,
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   .strict()
 
@@ -82,16 +95,16 @@ export type TerminalBenchRuntimeConfiguration = z.infer<
 >
 
 export interface TerminalBenchStreamCapOverrides {
-  recoveryStrategy?: 'legacy-two-cut-v1'
+  recoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   suppressedOutputTokens?: number
-  softReasoningBudget?: null
+  softReasoningBudget?: ReasoningSoftBudget | null
   maxStreamOutputTokens?: number
   reasoningRunawayRecoveryOutputTokens?: number
 }
 
 export interface TerminalBenchProfile {
   id: TerminalBenchProfileId
-  version: 1 | 2 | 3 | 4 | 5
+  version: 1 | 2 | 3 | 4 | 5 | 6
   versionedId: TerminalBenchProfileVersionedId
   contentHash: string
   systemPrompt: string
@@ -464,6 +477,34 @@ const PRODUCT_ALIGNED_V5: ProfileDefinition = {
   },
 }
 
+const PRODUCT_ALIGNED_V6_BASE = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  version: 6 as const,
+  versionedId: 'product-aligned@6' as const,
+  systemPrompt: PRODUCT_ALIGNED_V4_SYSTEM_PROMPT,
+  hintsLongRunningCommands: true,
+  reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
+}
+
+/** Explicit long-command arm on the current immutable checkpoint baseline. */
+const PRODUCT_ALIGNED_V6: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V6_BASE,
+  loop: CHECKPOINTED_LOOP,
+  retirement: null,
+  hashPayload: {
+    hashSchema: 6,
+    profile: PRODUCT_ALIGNED_V6_BASE,
+    loop: CHECKPOINTED_LOOP,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+      longRunningCommands: 'background-job-hint-on-timeout-slow-or-install-v1',
+    },
+  },
+}
+
 const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = {
   'main-legacy@1': MAIN_LEGACY_V1,
   'main-legacy@2': MAIN_LEGACY_V2,
@@ -473,6 +514,7 @@ const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = 
   'product-aligned@3': PRODUCT_ALIGNED_V3,
   'product-aligned@4': PRODUCT_ALIGNED_V4,
   'product-aligned@5': PRODUCT_ALIGNED_V5,
+  'product-aligned@6': PRODUCT_ALIGNED_V6,
 }
 
 const CURRENT_PROFILE_VERSIONS: Record<TerminalBenchProfileId, TerminalBenchProfileVersionedId> = {
@@ -626,6 +668,10 @@ export function terminalBenchStreamCapOverrides(
     >,
 ): TerminalBenchStreamCapOverrides {
   return {
+    ...(runtime.recoveryStrategy !== undefined &&
+    runtime.recoveryStrategy !== profile.loop.recoveryStrategy
+      ? { recoveryStrategy: runtime.recoveryStrategy }
+      : {}),
     ...(runtime.suppressedOutputTokens !== undefined &&
     runtime.suppressedOutputTokens !== profile.loop.suppressedOutputTokens
       ? { suppressedOutputTokens: runtime.suppressedOutputTokens }

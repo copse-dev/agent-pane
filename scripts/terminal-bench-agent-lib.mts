@@ -3,12 +3,22 @@ import { copyFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
+import {
+  DEFAULT_REASONING_SOFT_BUDGET_CARRY_CHARS,
+  DEFAULT_REASONING_SOFT_BUDGET_MAX_CONSECUTIVE_CUTS,
+  DEFAULT_REASONING_SOFT_BUDGET_MAX_CUTS_PER_RUN,
+  DEFAULT_REASONING_SOFT_BUDGET_TOKENS,
+  type ReasoningSoftBudget,
+} from '@copse/agent/reasoning-budget.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import { LOCAL_REASONING_SUPPRESSION_BODY } from '@copse/llm/create-provider.ts'
+import { REASONING_RUNAWAY_SUPPRESSED_NUDGE } from '@copse/llm/provider-stop-reason.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
 import {
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
   MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE,
   MAIN_LEGACY_STUCK_TOOL_RECOVERY_NUDGE,
   MAIN_LEGACY_SYSTEM_PROMPT,
@@ -55,6 +65,16 @@ function withOriginalTerminalTask(nudge: string, instruction: string): string {
   return task ? `${nudge}\n\nOriginal task:\n${task}` : nudge
 }
 
+/**
+ * LM Studio ignores `reasoning_effort: none` and `enable_thinking: false` for
+ * Qwen3-family models, so the suppressed recovery turn would still think at
+ * length. Qwen3's chat template honours a `/no_think` soft switch in the last
+ * user message, which is the recovery nudge.
+ */
+export function terminalReasoningSuppressedNudge(model: string): string | undefined {
+  return /qwen3/i.test(model) ? `${REASONING_RUNAWAY_SUPPRESSED_NUDGE}\n/no_think` : undefined
+}
+
 export function terminalReasoningRunawayRecoveryNudge(instruction: string): string {
   return withOriginalTerminalTask(
     terminalBenchProfile('pr-1149').reasoningRunawayRecoveryNudge,
@@ -87,11 +107,18 @@ export function terminalBenchRuntimeConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): TerminalBenchRuntimeConfiguration {
   const maxSteps = envPositiveInt(env, 'COPSE_TERMINAL_MAX_STEPS', 80)
+  const recoveryStrategy = env['COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY']?.trim()
   return {
     maxSteps,
-    recoveryStrategy: profile.loop.recoveryStrategy,
+    recoveryStrategy: TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.shape.recoveryStrategy.parse(
+      recoveryStrategy === undefined || recoveryStrategy === ''
+        ? profile.loop.recoveryStrategy
+        : recoveryStrategy,
+    ),
     suppressedOutputTokens: profile.loop.suppressedOutputTokens,
-    softReasoningBudget: null,
+    softReasoningBudget: profile.loop.reasoningCheckpointPolicy
+      ? (terminalReasoningSoftBudgetFromEnv(env) ?? null)
+      : null,
     maxLlmCalls: envPositiveInt(env, 'COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3),
     maxContextTokens: envPositiveInt(env, 'COPSE_TERMINAL_CONTEXT_TOKENS', 32_768),
     maxStreamOutputTokens: envPositiveInt(
@@ -131,16 +158,32 @@ export function terminalBenchLoopOptions(
   | 'maxStreamOutputTokens'
   | 'reasoningRunawayRecoveryOutputTokens'
   | 'reasoningRunawayRecoveryStrategy'
+  | 'reasoningRunawaySuppressedNudge'
+  | 'reasoningRunawaySuppressedOutputTokens'
   | 'reasoningRunawayRecoveryNudge'
   | 'reasoningRunawayTextToleranceChars'
   | 'reasoningCheckpointPolicy'
   | 'allowForcedTextEscalation'
   | 'stuckToolRecoveryNudge'
 > {
-  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  const baseCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  const reasoningCheckpointPolicy = baseCheckpointPolicy
+    ? {
+        ...baseCheckpointPolicy,
+        ...(runtime.softReasoningBudget
+          ? { softReasoningBudget: runtime.softReasoningBudget }
+          : {}),
+      }
+    : undefined
   return {
     maxSteps: runtime.maxSteps,
     reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
+    ...(runtime.recoveryStrategy === 'suppression-ladder-v1'
+      ? {
+          reasoningRunawaySuppressedNudge: profile.loop.suppressedNudge,
+          reasoningRunawaySuppressedOutputTokens: runtime.suppressedOutputTokens,
+        }
+      : {}),
     maxLlmCalls: runtime.maxLlmCalls,
     adaptiveExtensions: profile.loop.adaptiveExtensions,
     maxContextTokens: runtime.maxContextTokens,
@@ -155,6 +198,47 @@ export function terminalBenchLoopOptions(
     stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
       ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, instruction)
       : profile.stuckToolRecoveryNudge,
+  }
+}
+
+/** Optional reported soft-budget override; old profile identities stay unchanged. */
+export function terminalReasoningSoftBudgetFromEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ReasoningSoftBudget | undefined {
+  const read = (name: string, fallback: number, allowZero: boolean): number => {
+    const raw = env[name]?.trim()
+    if (!raw) return fallback
+    const parsed = Number(raw)
+    if (!Number.isInteger(parsed) || parsed < 0 || (parsed === 0 && !allowZero)) {
+      throw new Error(
+        `${name} must be a${allowZero ? ' non-negative' : ' positive'} integer, received '${raw}'.`,
+      )
+    }
+    return parsed
+  }
+  const tokens = read(
+    'COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS',
+    DEFAULT_REASONING_SOFT_BUDGET_TOKENS,
+    true,
+  )
+  if (tokens === 0) return undefined
+  return {
+    tokens,
+    carryChars: read(
+      'COPSE_TERMINAL_REASONING_SOFT_CARRY_CHARS',
+      DEFAULT_REASONING_SOFT_BUDGET_CARRY_CHARS,
+      false,
+    ),
+    maxCutsPerRun: read(
+      'COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS',
+      DEFAULT_REASONING_SOFT_BUDGET_MAX_CUTS_PER_RUN,
+      false,
+    ),
+    maxConsecutiveCuts: read(
+      'COPSE_TERMINAL_REASONING_SOFT_MAX_CONSECUTIVE',
+      DEFAULT_REASONING_SOFT_BUDGET_MAX_CONSECUTIVE_CUTS,
+      false,
+    ),
   }
 }
 
@@ -242,6 +326,40 @@ export function terminalResultEvidenceWarning(result: TerminalToolResult): strin
     )
   }
   return null
+}
+
+export const TERMINAL_SLOW_COMMAND_HINT_SEC = 30
+
+const BACKGROUND_LAUNCH = /(?<!&)&\s*$/
+const PACKAGE_INSTALL =
+  /\b(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install\b|\bapt(?:-get)?\s+(?:-\S+\s+)*(?:install|update|upgrade)\b|\b(?:npm|pnpm|yarn)\s+(?:install|add|i)\b|\bcargo\s+(?:install|build)\b/
+
+/**
+ * Deterministic hint appended to a foreground run_shell result that timed out
+ * (exit 124) or ran slowly, steering the model to background jobs and polling.
+ */
+export function terminalLongRunningCommandHint(
+  command: string,
+  result: TerminalToolResult,
+  elapsedMs: number,
+): string | null {
+  if (BACKGROUND_LAUNCH.test(command.trimEnd())) return null
+  const timedOut = result.exitCode === 124
+  const slow = elapsedMs >= TERMINAL_SLOW_COMMAND_HINT_SEC * 1000
+  if (!timedOut && !slow) return null
+  const elapsed = `${String(Math.round(elapsedMs / 1000))}s`
+  const lines = [
+    timedOut
+      ? 'Long-running command hint: this command hit its timeout and was killed.'
+      : `Long-running command hint: this command blocked for ${elapsed}.`,
+    'Do not rerun it in the foreground. Start it in the background with a log, e.g. `nohup <command> > /tmp/job.log 2>&1 &`, then poll with short `tail -n 20 /tmp/job.log` or `pgrep -f <name>` calls and do other work between polls.',
+  ]
+  if (PACKAGE_INSTALL.test(command)) {
+    lines.push(
+      'This was a package install: first check whether the package or a lighter alternative is already available (e.g. `python3 -c "import X"`, `pip list`, `which X`) and use the task\'s local files before downloading.',
+    )
+  }
+  return lines.join('\n')
 }
 
 interface StartMessage {
@@ -461,13 +579,16 @@ export async function runTerminalBenchAgent(): Promise<void> {
     apiKey,
     forcesRequestedOutputRecovery: profile.forcesRequestedOutputRecovery,
     record: modelParameters,
+    ...(runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? { reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY }
+      : {}),
   })
   let recoveryOutputPaths: string[] = []
   const adaptiveProvider: LLMProvider = {
-    stream(messages, tools, signal) {
+    stream(messages, tools, signal, options) {
       const selected = recoveryOutputPaths.length > 0 ? forcedWriteProvider : baseProvider
       if (!selected) throw new Error('Forced recovery provider is unavailable for this profile.')
-      return selected.stream(messages, tools, signal)
+      return selected.stream(messages, tools, signal, options)
     },
   }
   const provider = recordTerminalBenchProviderRequests(
@@ -478,6 +599,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model
     : `lmstudio:${parsed.model}`
+  const suppressedNudge =
+    runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? terminalReasoningSuppressedNudge(parsed.model)
+      : undefined
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
   let userContent = parsed.instruction
@@ -552,6 +677,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
       messages,
       tools: terminalTools,
       ...terminalBenchLoopOptions(profile, runtimeConfiguration, parsed.instruction),
+      ...(suppressedNudge ? { reasoningRunawaySuppressedNudge: suppressedNudge } : {}),
       usageModel,
       onLlmCall: (count) => {
         usage.llmCalls = count
@@ -648,6 +774,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           )
         }
         flushTraceEvents()
+        const requestStartedAt = Date.now()
         stepTiming.toolStarted(id, name)
         let toolFailed = true
         let response: unknown
@@ -671,7 +798,13 @@ export async function runTerminalBenchAgent(): Promise<void> {
         if (response.exitCode === 124) {
           usage.commandTimeouts += 1
         }
-        const formatted = formatTerminalResult(response)
+        const longRunningHint =
+          name === 'run_shell' && profile.hintsLongRunningCommands
+            ? terminalLongRunningCommandHint(command, response, Date.now() - requestStartedAt)
+            : null
+        const formatted = longRunningHint
+          ? `${formatTerminalResult(response)}\n\n${longRunningHint}`
+          : formatTerminalResult(response)
         if (terminalShellResultIsError(profile, response)) {
           throw new Error(formatted)
         }

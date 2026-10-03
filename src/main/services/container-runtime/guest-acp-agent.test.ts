@@ -60,6 +60,19 @@ describe('acpHarnessForContainer', () => {
 })
 
 describe('guestAcpAgentConfig', () => {
+  it('selects Codex API-key login with the run key, without embedding the secret in the request', () => {
+    const harness = acpHarnessForContainer(
+      { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+      'CODEX_API_KEY',
+    )
+    const guest = guestAcpAgentConfig(harness, 'run-scoped-codex-key')
+    assert.deepEqual(guest.env, {
+      CODEX_API_KEY: 'run-scoped-codex-key',
+      DEFAULT_AUTH_REQUEST: '{"methodId":"api-key"}',
+    })
+    assert.equal(guestAcpAgentConfig(harness, '').env, undefined)
+  })
+
   it("gives the agent exactly one variable — the run's key under its own name", () => {
     const harness = acpHarnessForContainer(registered, 'ANTHROPIC_API_KEY')
     const guest = guestAcpAgentConfig(harness, 'sk-ant-run-scoped')

@@ -917,6 +917,26 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   is not a general response cap. The primary host persists metadata-only decisions (never reasoning
   text) to `reasoning-checkpoints.jsonl`. ACP and other externally hosted agent loops remain outside
   this policy.
+- **Reasoning-runaway is a three-rung recovery ladder, not a two-strike give-up.** A stream cut by
+  the reasoning cap with no answer and no tool call used to nudge once and, on the second
+  consecutive cut, end the run as a finished answer — which in Terminal-Bench scored the give-up
+  rule instead of the model (a thinking model abandoned the task unattempted). The loop-owned streak
+  (`MAX_REASONING_RUNAWAY_STREAK = 3`) now climbs: cut 1 applies the existing `reasoning-runaway`
+  hook nudge (host override `reasoningRunawayRecoveryNudge` still wins) on the recovery cap; cut 2
+  applies `REASONING_RUNAWAY_SUPPRESSED_NUDGE` (host override `reasoningRunawaySuppressedNudge`) and
+  streams a **reasoning-suppressed, tool-enabled** recovery turn — `LLMStreamOptions.suppressReasoning`
+  (a best-effort provider hint: `OpenAIProvider` sends its `reasoningSuppressionBody`, set only by
+  `createLocalOpenAIProvider` and the Terminal-Bench providers as `reasoning_effort: 'none'` +
+  `chat_template_kwargs.enable_thinking: false`; the native LM Studio SDK, Anthropic and hosted
+  OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
+  exempt, so a bare tool call always lands) and a checkpoint hard max clamped to match; cut 3 ends
+  the run with the give-up message and `done.stopReason = 'reasoning_runaway_exhausted'`
+  (`REASONING_RUNAWAY_EXHAUSTED_STOP_REASON`), which the bench harness records as its stop reason.
+  Any answer or tool call resets the streak. The ladder is still an in-loop nudge sequence: it takes
+  no `ContinuationGrant`, adds at most one extra LLM call over the old rule, and remains bounded by
+  `maxSteps`/LLM-call caps and the deadline. The desktop app inherits the ladder; where its provider
+  cannot suppress reasoning the suppressed turn degrades to the tighter cap plus the tool-focused
+  nudge.
 - **Reasoning after the answer is policed on its own budget.** The checkpoint above classifies a
   stream as reasoning-dominated only while no visible answer has landed, so a model that answers and
   _then_ keeps thinking used to ride the 32K non-reasoning ceiling and be handed a
@@ -955,6 +975,17 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   an empty turn and fall through to their existing bounded handling. OpenAI-compatible streaming
   already recovers (an unparseable argument string becomes `argsError`, answered with a tool
   result), so only LM Studio needed the typed outcome.
+- **A soft reasoning budget converts a long tool-less think into progress.** Hard checkpoint cuts
+  discard the whole stream, so every token and second spent reaching them is wasted. A host may set
+  `softReasoningBudget` on its checkpoint policy: a reasoning-dominated stream with no tool call and
+  no visible answer that reaches `tokens` is cut, a bounded head-and-tail excerpt of its reasoning
+  is pushed as a user message (`reasoning-budget-carry-forward`, `tool-enabled-message`) telling the
+  model to act on that partial plan, and the loop continues with tools. It is an in-loop nudge, so it
+  never touches the continuation budget (decision 5); it is bounded by `maxCutsPerRun` and
+  `maxConsecutiveCuts`, after which only the hard maxima and the existing `reasoning-runaway`
+  streak/give-up path apply. It is disarmed while a runaway streak is active and never replaces
+  the runaway path (a cross-turn circle still wins). Opt-in: the product policy does not set it;
+  Terminal-Bench reports it as an explicit runtime override (`COPSE_TERMINAL_REASONING_SOFT_*`, default 768 tokens); the immutable baseline profile continues to declare no soft budget.
 
 ## Codebase impact
 
@@ -1007,8 +1038,13 @@ existing desktop paths. See `mobile-web-experience.md`, revised decision 5.
 
 ### Benchmark recovery compatibility foundation
 
-The benchmark profile host explicitly records and selects the supported `legacy-two-cut-v1`
-recovery strategy. This foundation preserves the existing two-cut in-loop give-up behavior;
-it introduces no new suppression ladder or soft reasoning budget, changes no continuation budget,
-and leaves the Electron product behavior unchanged. Literal compatibility policy metadata
-preserves the immutable profile identities before later experiments extend this boundary.
+The benchmark profile host explicitly records and selects `legacy-two-cut-v1` for every existing
+profile. Those profiles preserve two-cut give-up, without a suppression request or the new exhausted
+stop reason; their loop settings and content hashes remain frozen. The product's three-rung ladder
+does not replace that explicit historical strategy. Terminal-Bench opts into the same ladder only
+through `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY=suppression-ladder-v1`, recorded in runtime
+configuration and stream-cap overrides. It changes no continuation budget and introduces no soft
+reasoning budget. Sampling/output-ceiling provenance remains independent of this explicit runtime
+experiment; the same model-parameter builder serves both provider paths.
+The independent opt-in soft-budget override runs before runaway recovery; after its bounded cuts,
+any hard runaway streak disarms soft carry through either selected recovery strategy.

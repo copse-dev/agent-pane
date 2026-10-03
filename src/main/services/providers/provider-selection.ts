@@ -1,4 +1,7 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
+import { createChatGptPlanProvider } from './chatgpt-plan-provider.ts'
+import { getChatGptPlanService } from './chatgpt-plan-service.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
@@ -90,7 +93,8 @@ export function normalizeRoleModelSelection(model: string): string {
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
     extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
-    firstPartyProviderOf(value) !== null
+    firstPartyProviderOf(value) !== null ||
+    parseChatGptPlanModel(value) !== null
   ) {
     return value
   }
@@ -300,6 +304,19 @@ export async function buildProvider(
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
+  const chatGpt = parseChatGptPlanModel(model)
+  if (chatGpt) {
+    assertModelMakerAllowed(model)
+    return redactedRemoteProvider(
+      createChatGptPlanProvider(
+        getChatGptPlanService(),
+        chatGpt,
+        model,
+        resolveTurnParameters(model, opts),
+        promptCacheKey,
+      ),
+    )
+  }
   const description = await describeProvider(model, opts)
   const provider = buildProviderFromDescription(description, {
     apiKey: apiKeyForDescription(description),
@@ -331,6 +348,10 @@ export async function describeProvider(
   opts: BuildProviderOptions = {},
 ): Promise<ProviderDescription> {
   assertModelMakerAllowed(model)
+  if (parseChatGptPlanModel(model))
+    throw new Error(
+      'The ChatGPT plan prototype runs on this desktop. Choose an API-key model for container runs.',
+    )
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)

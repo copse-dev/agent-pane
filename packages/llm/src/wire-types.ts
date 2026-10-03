@@ -275,6 +275,14 @@ export interface LLMStreamOptions {
    * single owner of "when to compact"; providers without the capability ignore it.
    */
   readonly compactAtTokens?: number | undefined
+  /**
+   * Ask the provider to minimise or skip hidden reasoning for this one call. A
+   * best-effort hint: providers with no wire control for it (Anthropic budgets,
+   * LM Studio's native SDK) ignore it, so callers must still bound the stream
+   * themselves. The agent loop sets it on the last-chance reasoning-runaway
+   * recovery turn.
+   */
+  readonly suppressReasoning?: boolean | undefined
 }
 
 export interface LLMProvider {

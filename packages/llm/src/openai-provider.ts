@@ -76,6 +76,12 @@ export class OpenAIProvider implements LLMProvider {
       apiKey?: string
       includeUsage?: boolean
       extraBody?: Record<string, unknown>
+      /**
+       * Body fields merged into a call that sets `suppressReasoning`. Only
+       * servers known to accept them (local OpenAI-compatible engines) pass
+       * this; hosted APIs would reject the unknown or unsupported values.
+       */
+      reasoningSuppressionBody?: Record<string, unknown>
       promptCacheKey?: string
       defaultHeaders?: Readonly<Record<string, string>>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
@@ -91,6 +97,7 @@ export class OpenAIProvider implements LLMProvider {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
+    this.reasoningSuppressionBody = opts.reasoningSuppressionBody
     this.promptCacheKey = opts.promptCacheKey
     this.cacheDiagnostics = new PromptCacheDiagnostics(
       'chat-completions',
@@ -121,6 +128,7 @@ export class OpenAIProvider implements LLMProvider {
   private readonly openRouterCache: boolean
   private strictTools: boolean
   private readonly extraBody: Record<string, unknown> | undefined
+  private readonly reasoningSuppressionBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
   private readonly serviceTier: ServiceTier | undefined
   private readonly tuned: ReturnType<typeof openAiParameterFields>
@@ -208,6 +216,7 @@ export class OpenAIProvider implements LLMProvider {
               // invariant and must not be weakened back to `auto`.
               ...self.tuned,
               ...(self.extraBody ?? {}),
+              ...(options?.suppressReasoning ? (self.reasoningSuppressionBody ?? {}) : {}),
               ...(options?.toolChoice
                 ? {
                     tool_choice: {

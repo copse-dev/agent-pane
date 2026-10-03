@@ -253,7 +253,12 @@ function findFamily(modelId: string): FamilyEntry | undefined {
 }
 
 /** Namespaces whose vendor-stripped id names a model whose lineage we can judge. */
-const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
+const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set([
+  'cloud',
+  'openrouter',
+  'extra-provider',
+  'chatgpt-plan',
+])
 
 /** The routing and feature answer for one selection, before parameters and context are attached. */
 export interface ModelFamilyResolution extends ModelFeatures {
@@ -285,6 +290,8 @@ function nonFirstPartyTransport(namespace: ModelNamespace): ModelTransport {
       return 'host-routed'
     case 'cloud':
       return 'unknown'
+    case 'chatgpt-plan':
+      return 'openai-responses'
   }
 }
 
@@ -324,7 +331,12 @@ export function resolveModelFamily(model: string | ModelSelection): ModelFamilyR
     return {
       ...routeGated(withFeatures(entry.features), direct),
       namespace,
-      transport: direct ? entry.transport : 'openai-compatible',
+      transport:
+        namespace === 'chatgpt-plan'
+          ? 'openai-responses'
+          : direct
+            ? entry.transport
+            : 'openai-compatible',
       provider: direct ? entry.provider : null,
       family: entry.match,
       known: true,
@@ -346,7 +358,8 @@ export function resolveModelFamily(model: string | ModelSelection): ModelFamilyR
   return {
     ...NO_FEATURES,
     namespace,
-    transport: direct ? 'unknown' : 'openai-compatible',
+    transport:
+      namespace === 'chatgpt-plan' ? 'openai-responses' : direct ? 'unknown' : 'openai-compatible',
     provider: null,
     family: null,
     known: false,

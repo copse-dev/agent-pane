@@ -54,6 +54,7 @@ describe('global OpenAI service tier', () => {
     await providers.$('.provider-chip[data-provider="openai"]').click()
     await rejectFreshAcpBootstrap()
 
+    await providers.$('[data-testid="openai-api-details"] summary').click()
     const picker = providers.$('select[name="openAiServiceTier"]')
     await expect(picker).toBeDisplayed()
     await expect(picker).toHaveValue('flex')
@@ -63,7 +64,7 @@ describe('global OpenAI service tier', () => {
     await expect(picker.$$('option')[2]).toHaveText('Flex')
     await expect(picker.$$('option')[3]).toHaveText('Fast')
     await expect(providers.$('.openai-service-tier-scope')).toHaveText(
-      'Applies to every first-party OpenAI model request',
+      'Applies to OpenAI API-key requests',
       { containing: true },
     )
 
