@@ -41,10 +41,20 @@ select:focus-visible {
 .shell {
   max-width: 680px;
   margin: auto;
-  padding: env(safe-area-inset-top) 20px calc(32px + env(safe-area-inset-bottom));
+  padding: calc(68px + env(safe-area-inset-top)) 20px
+    calc(32px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
 }
 .topbar {
-  height: 68px;
+  position: fixed;
+  top: var(--viewport-offset, 0px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-width: 680px;
+  margin: auto;
+  height: calc(68px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 20px 0;
+  background: var(--bg-base);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -63,15 +73,11 @@ select:focus-visible {
   height: 26px;
   background: url('../../assets/brand-mark.svg') center / contain no-repeat;
 }
-.session-label,
 .eyebrow {
   font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--text-secondary);
-}
-.session-label {
-  letter-spacing: 0.08em;
 }
 h1 {
   font-size: 34px;
@@ -225,14 +231,35 @@ h1 {
   line-height: 1.5;
 }
 .back {
-  display: block;
-  margin: 25px 0 28px;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0 var(--spacing-sm);
   min-height: 44px;
   border: 0;
+  border-radius: var(--radius);
   background: none;
   color: var(--link);
   font-weight: 600;
+}
+.back:hover,
+.back:active {
+  background: var(--bg-hover);
+}
+.back svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#thread-project {
+  display: block;
+}
+#thread {
+  padding-top: 30px;
 }
 .read-only {
   font-size: var(--font-size-sm);
@@ -256,11 +283,91 @@ h1 {
   margin: 8px 0;
 }
 .message-content {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: var(--font-size-lg);
   line-height: 1.65;
   margin: 8px 0 0;
+}
+.message-content-plain {
+  white-space: pre-wrap;
+}
+.message-content p,
+.message-content ul,
+.message-content ol,
+.message-content blockquote,
+.message-content pre {
+  margin: 0.75em 0;
+}
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  font-size: 1.15em;
+  line-height: 1.35;
+  margin: 1em 0 0.5em;
+}
+.message-content ul,
+.message-content ol {
+  padding-left: 1.5em;
+}
+.message-content li + li {
+  margin-top: 0.25em;
+}
+.message-content a {
+  color: var(--link);
+  text-decoration: underline;
+}
+.message-content blockquote {
+  margin-left: 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.message-content code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.message-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.message-content pre code {
+  padding: 0;
+  background: none;
+}
+.message-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.message-content th,
+.message-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+}
+.message-content hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+.message-content > :first-child {
+  margin-top: 0;
+}
+.message-content > :last-child {
+  margin-bottom: 0;
 }
 .error {
   padding: 12px 14px;
@@ -314,6 +421,14 @@ select {
 }
 textarea {
   resize: vertical;
+}
+#message,
+#new-message {
+  min-height: 48px;
+  max-height: max(48px, calc(var(--viewport-height, 100dvh) - 240px));
+}
+#new-message {
+  max-height: max(48px, calc(var(--viewport-height, 100dvh) - 300px));
 }
 form .ui-btn {
   margin-top: 12px;

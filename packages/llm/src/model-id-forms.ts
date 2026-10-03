@@ -85,6 +85,13 @@ function unwrapUncached(id: string, search: Search): string | null {
     const stripped = unwrap(id.slice(sep + 1), search)
     if (stripped !== null) return stripped
   }
+  // OpenRouter's maker namespace does not change an OpenAI/Anthropic model
+  // identity. Resolve new scored models without waiting for a per-model alias
+  // sync. Keep both maker and family exact; arbitrary vendor paths are identities.
+  if (id.startsWith('openai/gpt-') || id.startsWith('anthropic/claude-')) {
+    const stripped = unwrap(id.slice(id.indexOf('/') + 1), search)
+    if (stripped !== null) return stripped
+  }
   // Serving-route tag on a vendor path: `vendor/model:tag` (only when a '/'
   // remains, so a bare word after a colon is never mistaken for a model).
   const lastColon = id.lastIndexOf(':')
