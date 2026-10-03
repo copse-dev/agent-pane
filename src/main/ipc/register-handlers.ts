@@ -3286,24 +3286,29 @@ export function registerAllHandlers(
       win.webContents.send('workspace:opened', root)
       return root
     })
-    ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
+    ipcMain.handle('test:requestAcpPackageInstallApproval', (event, rawScenario: unknown) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
-    })
-    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
-      assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([
-        {
-          agent: codex,
-          action: 'upgrade',
-          fromVersion: '1.1.0',
-          toVersion: '1.1.7',
-        },
-      ])
+      // Fixture at the detection boundary; no global package mutation runs here.
+      const scenario = parseIpcArgs(
+        z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
+        [rawScenario],
+      )
+      if (scenario === 'mixed-bootstrap') {
+        const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
+        if (!claude) throw new IpcValidationError('Claude ACP preset is missing')
+        return requestAcpPackageInstallApproval(
+          [
+            { agent: claude, action: 'install' },
+            { agent: codex, action: 'upgrade', fromVersion: '1.1.0', toVersion: '1.1.7' },
+          ],
+          false,
+        )
+      }
+      return scenario === 'firewall-bootstrap'
+        ? requestAcpPackageInstallApproval([{ agent: codex, action: 'upgrade' }], false)
+        : requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
     })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
