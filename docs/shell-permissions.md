@@ -70,10 +70,11 @@ because bubblewrap ignores missing file grants; it re-binds configuration, hooks
 metadata, and discovered sibling worktree administration read-only. Those protected paths remain
 outside the writable surface on every platform.
 
-Agent execution still rejects a detached thread checkout. Terminal creation has one recovery-only
-fallback: main must validate the persisted checkout path, Git registration, repository identity, and
-base commit, and the per-worktree Git directory must contain an active rebase or cherry-pick marker.
-An unrelated detached checkout remains blocked.
+A detached thread checkout remains usable by agent turns, file and editor operations, and terminals
+only during validated Git recovery. Main must validate the persisted checkout path, Git registration,
+repository identity, and base commit, and the per-worktree Git directory must contain an active Git
+recovery marker. The persisted branch identity is retained while HEAD is detached. An unrelated
+detached checkout remains blocked. The footer offers recovery continuation after the agent turn ends.
 
 ## Apple development operations
 
