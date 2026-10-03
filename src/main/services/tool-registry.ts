@@ -1,3 +1,4 @@
+import { planToolBlockReason } from './thread-plan-context.ts'
 import { z } from 'zod'
 import type {
   ToolDefinition,
@@ -198,6 +199,8 @@ export class ToolRegistry {
   }
 
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
+    const blocked = planToolBlockReason(name)
+    if (blocked) return blocked
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     // A ZodError carries the issues array as its `message`, and the agent loop

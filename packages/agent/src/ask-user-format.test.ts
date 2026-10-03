@@ -20,6 +20,27 @@ describe('askUserParamsSchema validation', () => {
     assert.equal(parsed.success, true)
   })
 
+  it('keeps a recommendation attached to an actual option', () => {
+    const question = {
+      question: 'Which DB?',
+      options: ['Postgres', 'SQLite'],
+      recommendedOption: 'SQLite',
+      recommendationReason: 'The project already uses SQLite.',
+    }
+    assert.equal(askUserParamsSchema.safeParse({ questions: [question] }).success, true)
+    assert.equal(
+      askUserParamsSchema.safeParse({ questions: [{ ...question, recommendedOption: 'MySQL' }] })
+        .success,
+      false,
+    )
+    assert.equal(
+      askUserParamsSchema.safeParse({
+        questions: [{ ...question, recommendationReason: undefined }],
+      }).success,
+      false,
+    )
+  })
+
   it('rejects an empty questions array', () => {
     assert.equal(askUserParamsSchema.safeParse({ questions: [] }).success, false)
   })

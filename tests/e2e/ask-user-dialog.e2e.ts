@@ -109,6 +109,8 @@ describe('ask_user dialog', () => {
                         question:
                           'Claude is not signed in. Run `claude /login` in a terminal, then re-send your message.',
                         options: ['Run `claude /login`', 'Not now'],
+                        recommendedOption: 'Run `claude /login`',
+                        recommendationReason: 'Sign-in is required before this task can continue.',
                       },
                     ],
                   },
@@ -134,6 +136,10 @@ describe('ask_user dialog', () => {
 
     const option = await dialog.$('.ask-user-option*=Run')
     await expect(option.$('code')).toHaveText('claude /login')
+    await expect(option.$('.ask-user-recommended-label')).toHaveText('Recommended')
+    await expect(dialog.$('.ask-user-recommendation-reason')).toHaveText(
+      'Sign-in is required before this task can continue.',
+    )
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog.png')
     await option.click()
 

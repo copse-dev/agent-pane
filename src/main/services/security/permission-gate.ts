@@ -1,3 +1,4 @@
+import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
@@ -1904,6 +1905,7 @@ export async function ensureToolPermitted(
   signal?: AbortSignal,
   afterHooks?: (effectiveArgs: unknown) => Promise<void>,
 ): Promise<boolean> {
+  if (planToolBlockReason(check.toolName)) return false
   const initialOverride = resolveToolPermission(check.toolName)
   if (initialOverride) recordExplicitToolPolicy(check.toolName, initialOverride)
   if (initialOverride?.policy === 'block') return false

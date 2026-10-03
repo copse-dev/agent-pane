@@ -34,6 +34,9 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   // `delegate_step`, whose whole purpose is to write files.
   'task',
   'ask_user',
+  // Thread-owned review artifacts change no workspace or external state.
+  'update_thread_plan',
+  'report_plan_completion',
   // Reading back stored OKF memories is non-mutating; `remember` (a write) stays
   // denied by default in read-only mode.
   'recall',

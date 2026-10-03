@@ -5,14 +5,40 @@ import { z } from 'zod'
  * suggested answers the UI can render as quick-pick buttons; the user is always
  * free to type their own answer instead.
  */
-export const askUserQuestionSchema = z.object({
-  question: z.string().min(1).describe('The clarifying question to ask the user.'),
-  options: z
-    .array(z.string().min(1))
-    .max(8)
-    .optional()
-    .describe('Optional suggested answers the user can pick from instead of typing.'),
-})
+export const askUserQuestionSchema = z
+  .object({
+    question: z.string().min(1).describe('The clarifying question to ask the user.'),
+    options: z
+      .array(z.string().min(1))
+      .max(8)
+      .optional()
+      .describe('Optional suggested answers the user can pick from instead of typing.'),
+    recommendedOption: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The exact option the agent recommends, when one is supported by the evidence.'),
+    recommendationReason: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('A brief reason for the recommendation, shown to the user.'),
+  })
+  .refine(
+    (question) =>
+      !question.recommendedOption || question.options?.includes(question.recommendedOption),
+    {
+      message: 'recommendedOption must be one of options',
+      path: ['recommendedOption'],
+    },
+  )
+  .refine(
+    (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+    {
+      message: 'A recommendation needs both an option and a reason',
+      path: ['recommendationReason'],
+    },
+  )
 
 export const askUserParamsSchema = z.object({
   questions: z
@@ -42,8 +68,11 @@ export function formatQuestionsBody(questions: AskUserQuestion[]): string {
     const prefix = questions.length > 1 ? `${String(i + 1)}. ` : ''
     lines.push(`${prefix}${q.question}`)
     if (q.options && q.options.length > 0) {
-      for (const option of q.options) lines.push(`   - ${option}`)
+      for (const option of q.options) {
+        lines.push(`   - ${option}${option === q.recommendedOption ? ' (recommended)' : ''}`)
+      }
     }
+    if (q.recommendationReason) lines.push(`   Recommendation: ${q.recommendationReason}`)
   })
   return lines.join('\n')
 }

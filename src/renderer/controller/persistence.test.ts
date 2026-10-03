@@ -31,6 +31,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { startProposedThread } from './thread-proposals.ts'
+import { markThreadHasSavedPlan, switchThread } from '@shared/store/thread-helpers.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
@@ -423,6 +424,26 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
     calls.metas.map((m) => [m.threadId, expectRecord(m.patch)['draftPrompt']]),
     [['t1', 'typing']],
   )
+  autosave.detach()
+})
+
+test('saving a plan prevents autosave deletion without persisting its derived retention flag', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 'plan',
+    threads: [thread('plan'), thread('other', { messages: [userMsg('u1')] })],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await awaitPendingThreadPersistence()
+  markThreadHasSavedPlan(store, 'plan')
+  switchThread(store, 'other')
+  await waitDebounce()
+  assert.deepEqual(calls.deletes, [])
+  assert.deepEqual(calls.metas, [], 'derived plan presence is not mutable thread metadata')
+  assert.ok(store.getState().threads.some((item) => item.id === 'plan'))
   autosave.detach()
 })
 

@@ -1396,6 +1396,27 @@
           1
         ]
       },
+      "plans:change": {
+        "api": "plans.change",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "plans:get": {
+        "api": "plans.get",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "plans:revision": {
+        "api": "plans.revision",
+        "args": [
+          4,
+          4
+        ]
+      },
       "plugins:add-source": {
         "api": "plugins.addSource",
         "args": [
