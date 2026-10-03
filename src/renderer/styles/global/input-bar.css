@@ -116,7 +116,7 @@
 }
 /* The docked composer keeps a real 1px border, so its first strip nests one
    pixel inside it. */
-.pane-chat #input-bar > .is-composer-top {
+.pane-chat:not(.is-activity-idle) #input-bar > .is-composer-top {
   border-top-left-radius: calc(var(--radius-lg) - 1px);
   border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
@@ -532,7 +532,7 @@
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
 }
-#app.is-portrait-chrome .pane-chat #input-bar {
+#app.is-portrait-chrome .pane-chat:not(.is-activity-idle) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
   /* The card's bottom offset grows to clear the portrait mode-switch strip, so
      its hard height cap (titlebar.css) has to shrink by the same amount or the

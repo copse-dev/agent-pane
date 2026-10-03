@@ -828,8 +828,12 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 An empty thread is the **Activity home** (`.pane-chat.is-activity-home`,
 [`activity-home.ts`](../src/renderer/views/activity-home.ts)): the Activity list and detail fill
 the chat pane, and `#input-bar` stays **docked** at the bottom exactly as it is in a conversation.
-There is no floating, centred composer variant, so there is no second ring to keep in step: the
-docked card's own `border: 1px solid var(--border)` is the only hairline. The home reserves the
+The one exception is **idle**: when no thread in any project is running, waiting or recently
+finished there is nothing to list, so the strip, card and caption are not drawn (a lone "All
+clear" card is clutter on a first run). The pane gets `.is-activity-idle` and the composer
+centres in it, with its ring drawn by `box-shadow` instead of the docked border; the first run
+that arrives brings the home back. Otherwise the docked card's own
+`border: 1px solid var(--border)` is the only hairline. The home reserves the
 composer's height with the same `padding-bottom` the conversation uses, so a row is never hidden
 behind it. A thread that is still loading its transcript (`messagesLoaded: false`) is **not**
 empty: it keeps the conversation and its "Loading" / "Couldn't load" notice rather than flashing

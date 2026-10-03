@@ -34,30 +34,30 @@ describe('titlebar workspace name', () => {
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
-    // An empty thread is the Activity home: the list sits above a docked
-    // composer, never behind it, and nothing spills sideways.
-    await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
-    await expect($('#activity-home')).toBeDisplayed()
-    const home = await browser.execute(() => {
-      const root = document.getElementById('activity-home')
-      const body = root?.querySelector('.activity-panel-body')
+    // An empty thread with nothing running or waiting anywhere is the bare
+    // composer, centred; the Activity home steps aside until there is something
+    // to list.
+    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 })
+    await expect($('#activity-home')).not.toBeDisplayed()
+    const idle = await browser.execute(() => {
       const input = document.getElementById('input-bar')
+      const pane = document.getElementById('pane-chat')
       const conversation = document.getElementById('conversation')
-      if (!root || !body || !input || !conversation) return null
+      if (!input || !pane || !conversation) return null
+      const bar = input.getBoundingClientRect()
+      const frame = pane.getBoundingClientRect()
       return {
-        bodyBottom: body.getBoundingClientRect().bottom,
-        inputTop: input.getBoundingClientRect().top,
-        overflowsSideways: root.scrollWidth > root.clientWidth,
+        barMid: (bar.top + bar.bottom) / 2,
+        paneMid: (frame.top + frame.bottom) / 2,
         conversationDisplay: getComputedStyle(conversation).display,
         composerBorder: getComputedStyle(input).borderTopWidth,
       }
     })
-    await expect(home).not.toBeNull()
-    if (!home) throw new Error('Missing Activity home elements')
-    await expect(home.bodyBottom).toBeLessThanOrEqual(home.inputTop + 1)
-    await expect(home.overflowsSideways).toBe(false)
-    await expect(home.conversationDisplay).toBe('none')
-    await expect(home.composerBorder).toBe('1px')
+    await expect(idle).not.toBeNull()
+    if (!idle) throw new Error('Missing composer elements')
+    await expect(Math.abs(idle.barMid - idle.paneMid)).toBeLessThanOrEqual(2)
+    await expect(idle.conversationDisplay).toBe('none')
+    await expect(idle.composerBorder).toBe('0px')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()

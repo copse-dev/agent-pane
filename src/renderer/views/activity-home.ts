@@ -48,6 +48,12 @@ export function mountActivityHome(
     onNeedsYou: (count) => {
       root.dataset['needsYou'] = String(count)
     },
+    // With nothing to list the strip and card would only say so: the screen steps
+    // aside and the composer takes the middle of the pane, as a first run always had.
+    onIdle: (idle) => {
+      root.dataset['idle'] = String(idle)
+      pane.classList.toggle('is-activity-idle', idle)
+    },
     collapsibleGroups: true,
     projectStrip: true,
     followUrgent: true,
@@ -73,6 +79,7 @@ export function mountActivityHome(
       if (next === shown) return
       shown = next
       root.hidden = !next
+      if (!next) pane.classList.remove('is-activity-idle')
       if (next) view.show({ focusFirstRow: false })
       else view.hide()
     },
