@@ -215,13 +215,13 @@ describe('readOutsideProjectGrantTargets', () => {
 })
 
 describe('read-outside prompt copy', () => {
-  it('keeps the sensitive-locations warning and says what the grant covers', () => {
+  it('names the path in one sentence and says what the grant leaves off limits', () => {
     const analysis = analyze('ls -la ~/.copse/workspace')
     const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse/workspace', analysis)
     assert.equal(parts.command, 'ls -la ~/.copse/workspace')
     assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
-    assert.match(parts.bodyAdvice ?? '', /read from sensitive locations on your computer/)
-    assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.equal(parts.bodyAdvice, 'The agent wants to read ~/.copse/workspace.')
+    assert.match(parts.bodyFooter ?? '', /rest of the thread/)
     assert.match(parts.bodyFooter ?? '', /credential/)
   })
 
@@ -304,5 +304,30 @@ describe('analyzeReadOutsideProject — cd and sed', () => {
     ]) {
       assert.equal(analyze(command).eligible, false, command)
     }
+  })
+})
+
+describe('analyzeReadOutsideProject — log-slice pipelines', () => {
+  const LOG = '/var/folders/y1/2d_l/T/rbe.log'
+  const SLICE = String.raw`tr -d '\000' < "$L" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '1770,1850p' | cut -c1-300`
+
+  it('accepts a log read through a variable, an input redirect, and a sed script with `;`', () => {
+    const analysis = analyze(`L=${LOG}; ${SLICE}`)
+    assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
+    assert.deepEqual(analysis.resolvedTargets, [LOG])
+  })
+
+  it('counts a `<` redirect as a read target', () => {
+    assert.deepEqual(analyze(`tr -d x < ${LOG}`).resolvedTargets, [LOG])
+  })
+
+  it('still refuses a credential named through the variable or the redirect', () => {
+    assert.equal(analyze(`L=${HOME}/.ssh/id_rsa; cat "$L"`).eligible, false)
+    assert.equal(analyze(`tr -d x < ${HOME}/.ssh/id_rsa`).eligible, false)
+  })
+
+  it('still refuses a variable whose value it cannot see', () => {
+    assert.equal(analyze('L=$(mktemp); cat "$L"').eligible, false)
+    assert.equal(analyze('cat "$L"').eligible, false)
   })
 })
