@@ -85,6 +85,7 @@ export interface DemoScenario {
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
+    threadId?: string
     title: string
     body: string
     bodyAdvice?: string
@@ -1186,6 +1187,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'approval-thread-switch-scroll',
+    label: 'Switch between threads awaiting permission',
+    project: project('demo-approval-scroll-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: ['a', 'b'].map((suffix): Thread => ({
+      id: `demo-approval-scroll-${suffix}`,
+      title: `Permission wait ${suffix.toUpperCase()}`,
+      status: 'running',
+      messages: Array.from({ length: 20 }, (_, index) => ({
+        id: `approval-scroll-${suffix}-${String(index)}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content:
+          index === 19
+            ? `The checks are ready. I need permission to run command ${suffix.toUpperCase()}.`
+            : index % 2 === 0
+              ? `Review step ${String(index / 2 + 1)} for thread ${suffix.toUpperCase()}.`
+              : 'I checked the relevant code and recorded the result. The next check will confirm the remaining behavior.',
+        toolCalls:
+          index === 19
+            ? [
+                {
+                  id: `approval-scroll-tool-${suffix}`,
+                  name: 'run_shell',
+                  args: { command: `node scripts/check-${suffix}.mjs` },
+                  status: 'running',
+                  result: '',
+                },
+              ]
+            : [],
+        createdAt: FIXED_TIME + index,
+      })),
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME,
+      updatedAt: FIXED_TIME,
+    })),
+    approvalRequests: ['a', 'b'].map((suffix) => ({
+      id: `approval-scroll-request-${suffix}`,
+      threadId: `demo-approval-scroll-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: `node scripts/check-${suffix}.mjs`,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+      type: 'shell',
+    })),
   },
   {
     id: 'approval-light-accent',
