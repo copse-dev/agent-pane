@@ -335,6 +335,9 @@ dialog.activity-panel-overlay {
   width: min(1050px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
   margin-inline: auto;
   padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
+  /* A pane too short for the card scrolls above the composer's reserved space
+     rather than running under it. */
+  overflow-y: auto;
 }
 /* display above would otherwise beat the UA's [hidden] rule. */
 .activity-home[data-idle='true'],
@@ -542,6 +545,28 @@ dialog.activity-panel-overlay {
 /* Narrow pane: one column that scrolls as a whole. The list keeps its own short
    scroll above the detail, and the action bar sticks to the card's bottom edge so
    Reject and Approve stay reachable however long the request is. */
+/* A short pane (a small window, or the right panel docked below): the project
+   tiles shrink to one-line pills and the card gives up some of its floor. */
+@media (max-height: 640px) {
+  .activity-home {
+    padding-top: 16px;
+  }
+  .activity-home .activity-strip {
+    margin-bottom: 10px;
+  }
+  .activity-home .activity-strip-card,
+  .activity-home .activity-strip-card:first-child {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .activity-home .activity-panel-body {
+    min-height: 200px;
+  }
+}
 @container chat-pane (max-width: 640px) {
   /* Squeezed for room: the project tiles shrink to one-line pills so the card
      below keeps the height. */

@@ -227,6 +227,36 @@ describe('browser-hosted Activity home', () => {
     await saveAppScreenshot('activity-home-narrow.png')
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
   })
+
+  it('shrinks the project tiles and keeps Approve above the composer in a short window', async () => {
+    const before = await browser.getWindowSize()
+    await browser.setWindowSize(1280, 560)
+    try {
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              (document.querySelector('#activity-home .activity-strip')?.getBoundingClientRect()
+                .height ?? 99) < 50,
+          ),
+        {
+          timeout: 10_000,
+          timeoutMsg: 'the tiles must shrink to one-line pills in a short window',
+        },
+      )
+      const probe = await browser.execute(() => {
+        const approve = document.querySelector('#activity-home .activity-approve')
+        const input = document.getElementById('input-bar')
+        return {
+          approveBottom: approve?.getBoundingClientRect().bottom ?? 0,
+          inputTop: input?.getBoundingClientRect().top ?? 0,
+        }
+      })
+      expect(probe.approveBottom).toBeLessThanOrEqual(probe.inputTop + 1)
+    } finally {
+      await browser.setWindowSize(before.width, before.height)
+    }
+  })
 })
 
 describe('browser-hosted Activity home with nothing to list', () => {
