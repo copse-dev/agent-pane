@@ -75,6 +75,28 @@ export const containerRuntimeAttestationSchema = z.object({
   network: z.enum(['none', 'brokered']),
   egressAllowlist: z.array(z.string().min(1)),
   hostMounts: z.array(z.string().min(1)),
-  securityProfiles: z.enum(['default', 'unconfined']).optional(),
+  /**
+   * `none` is an engine with no seccomp or AppArmor at all — Apple container,
+   * whose boundary is a VM of its own instead (`isolation: 'vm'`).
+   */
+  securityProfiles: z.enum(['default', 'unconfined', 'none']).optional(),
   perCommandNetwork: z.enum(['token-gated', 'none']).optional(),
+  /**
+   * The engine that started the guest. Absent on records written before a
+   * second engine existed, which were all Docker.
+   */
+  engine: z.enum(['docker', 'apple']).optional(),
+  /**
+   * What separates the guest from the host: namespaces on the host's own
+   * kernel (Docker), or a lightweight VM with a kernel of its own per
+   * container (Apple container). Absent means Docker's, as for `engine`.
+   */
+  isolation: z.enum(['shared-kernel', 'vm']).optional(),
+  /**
+   * How `pidsLimit` is enforced: a cgroup `pids.max` over the container
+   * (Docker's `--pids-limit`), or `RLIMIT_NPROC` on the worker uid inside a
+   * guest kernel that runs nothing else as that uid (Apple container's
+   * `--ulimit nproc`). Absent means Docker's.
+   */
+  processLimit: z.enum(['cgroup-pids', 'rlimit-nproc']).optional(),
 })
