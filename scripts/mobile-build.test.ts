@@ -37,9 +37,9 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     })
     const scrolls: number[] = []
     Object.defineProperty(window, 'scrollBy', {
-      value: (options: { top: number }) => scrolls.push(options.top),
+      value: (options: { top: number }): number => scrolls.push(options.top),
     })
-    let poll = () => {}
+    let poll = (): void => {}
     Object.defineProperty(window, 'setInterval', {
       value: (callback: () => void) => {
         poll = callback
@@ -60,7 +60,10 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     let access = 'control'
     window.localStorage.setItem('copse-mobile-token', 'test-token')
     Object.defineProperty(window, 'matchMedia', {
-      value: () => ({ matches: false, addEventListener() {} }),
+      value: (): { matches: boolean; addEventListener(): void } => ({
+        matches: false,
+        addEventListener(): void {},
+      }),
     })
     const row = {
       projectId: 'p',
@@ -73,7 +76,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       lastSavedAt: Date.now(),
     }
     Object.defineProperty(window, 'fetch', {
-      value: async (path: string) => ({
+      value: async (path: string): Promise<unknown> => ({
         ok: true,
         status: 200,
         json: async () =>
@@ -144,7 +147,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       '_blank',
     )
     assert.equal(content.querySelector('script, [onclick], a[href^="javascript:"], img[src]'), null)
-    assert.ok(content.textContent?.includes('<script>alert(1)</script>'))
+    assert.ok(content.textContent.includes('<script>alert(1)</script>'))
     assert.equal(
       window.document.querySelectorAll('.message-content')[1]?.querySelector('strong')?.textContent,
       'check',
@@ -160,12 +163,14 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     assert.equal(input.value, '')
     assert.equal(window.document.activeElement, input, 'returns focus after submission')
     assert.equal(window.history.length, 2, 'opening a thread adds exactly one history entry')
-    assert.equal(window.history.state.mobileView, 'thread')
+    const historyState: unknown = window.history.state
+    assert.ok(historyState !== null && typeof historyState === 'object')
+    assert.equal(Reflect.get(historyState, 'mobileView'), 'thread')
     input.value = 'Keep this draft'
     const back = window.document.querySelector<HTMLButtonElement>('#back')
     assert.ok(back)
     assert.ok(back.querySelector('svg[aria-hidden="true"]'))
-    assert.equal(back.textContent?.trim(), 'Activity')
+    assert.equal(back.textContent.trim(), 'Activity')
     assert.ok(back.closest('.topbar'), 'Activity navigation lives in the fixed header')
     assert.equal(back.hidden, false)
     assert.equal(window.document.querySelector('.session-label'), null)
@@ -196,13 +201,13 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     await new Promise((resolve) => setTimeout(resolve, 0))
     window.document.querySelector<HTMLButtonElement>('#new-chat')?.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(window.document.activeElement?.id, 'new-message')
+    assert.equal(window.document.activeElement.id, 'new-message')
     assert.ok(scrolls.includes(186), 'shows Start chat alongside the new-message textbox')
     access = 'read'
     window.document.querySelector<HTMLButtonElement>('.row')?.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(window.document.getElementById('composer')?.hidden, true)
-    assert.notEqual(window.document.activeElement?.id, 'message')
+    assert.notEqual(window.document.activeElement.id, 'message')
     access = 'control'
     poll()
     await new Promise((resolve) => setTimeout(resolve, 0))

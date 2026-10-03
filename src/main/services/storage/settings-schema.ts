@@ -108,6 +108,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // The classifier connection that screens shell commands and terminal reads.
   // A key of its own, so builds that predate it still read `classifierProviders`.
   safetyScreeningClassifier: z.string().regex(/^[a-z0-9-]{1,53}$/),
+  // The classifier connection that answers background questions (roadmap
+  // complexity and category) before the small-tasks model.
+  backgroundClassifier: z.string().regex(/^[a-z0-9-]{1,53}$/),
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
   localServerUrl: z.string().max(2048),
