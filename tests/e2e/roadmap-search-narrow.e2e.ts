@@ -4,19 +4,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  saveAppScreenshot,
+} from './helpers/screenshot.ts'
 
 // The Roadmap header holds the title, pane buttons, search + Filter and five
 // action buttons. In a narrow pane the search box used to be squeezed to
 // "Search r…" beside Filter; the group now wraps onto its own row instead.
 describe('roadmap search box in a narrow pane', () => {
   let workspaceRoot: string
+  let scratchRoot: string
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-search-narrow-'))
+    scratchRoot = mkdtempSync(join(tmpdir(), 'copse-roadmap-search-narrow-'))
+    workspaceRoot = join(scratchRoot, 'roadmap-search-project')
+    mkdirSync(workspaceRoot)
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-search-narrow', [
       { id: 'thread-0', title: 'Roadmap thread 1', body: 'Prompt body.' },
     ])
@@ -29,7 +36,7 @@ describe('roadmap search box in a narrow pane', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(scratchRoot, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
@@ -40,6 +47,18 @@ describe('roadmap search box in a narrow pane', () => {
       timeout: 20_000,
     })
 
+    const mainHandle = await browser.getWindowHandle()
+    const before = await browser.getWindowHandles()
+    await $('#roadmap-host .pane-popout-btn').click()
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length)
+    const popout = (await browser.getWindowHandles()).find((handle) => !before.includes(handle))
+    assert.ok(popout)
+    await browser.switchToWindow(popout)
+    await browser.waitUntil(() =>
+      browser.execute(() => document.documentElement.dataset['popoutMode'] === 'roadmap'),
+    )
+    await $('.roadmap-search-input').waitForDisplayed()
+    await prepareE2eScreenshot({ width: 1024, height: 800 })
     const widths = await browser.execute(() => {
       const input = document.querySelector('.roadmap-search-input')
       const toggle = document.querySelector('.roadmap-filter-toggle')
@@ -57,9 +76,10 @@ describe('roadmap search box in a narrow pane', () => {
       `Filter toggle ends at ${String(widths.toggleRight)}px, past the header edge ${String(widths.headerRight)}px (clipped)`,
     )
     assert.ok(
-      widths.inputWidth >= 100,
+      widths.inputWidth >= 130,
       `search input is ${String(widths.inputWidth)}px wide; the placeholder would be truncated`,
     )
-    await saveAppScreenshot('roadmap-search-narrow.png')
+    await saveAppScreenshot('roadmap-search-narrow.png', { width: 1024, height: 800 })
+    await browser.switchToWindow(mainHandle)
   })
 })
