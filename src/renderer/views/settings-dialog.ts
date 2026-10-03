@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
   AUTO_APPROVAL_LEVEL_LABELS,
@@ -4352,6 +4353,66 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     row.scrollIntoView({ block: 'start' })
   }
 
+  // Servers whose browser sign-in is in flight, and the last sign-in failure per
+  // server. Both outlive a re-render of the list.
+  const mcpSignInPending = new Set<string>()
+  const mcpSignInErrors = new Map<string, string>()
+
+  function mcpSignInButton(
+    s: import('@shared/types/mcp.ts').McpServerStatus,
+  ): HTMLButtonElement | null {
+    if (s.auth === undefined) return null
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ui-btn ui-btn-compact mcp-auth-btn'
+    if (mcpSignInPending.has(s.name)) {
+      button.classList.add('ui-btn-secondary')
+      button.textContent = 'Cancel sign-in'
+      button.addEventListener('click', () => {
+        void api.mcp.cancelSignIn(s.name)
+      })
+      return button
+    }
+    if (s.auth === 'signed-in') {
+      button.classList.add('ui-btn-secondary')
+      button.textContent = 'Sign out'
+      button.setAttribute('aria-label', `Sign out of ${s.name}`)
+      button.addEventListener('click', () => {
+        button.disabled = true
+        mcpSignInErrors.delete(s.name)
+        void api.mcp
+          .signOut(s.name)
+          .then(renderMcpServers)
+          .catch((error: unknown) => {
+            mcpSignInErrors.set(s.name, ipcErrorMessage(error, 'Sign-out failed.'))
+            void refreshMcpServers()
+          })
+      })
+      return button
+    }
+    button.classList.add('ui-btn-primary')
+    button.textContent = 'Sign in'
+    button.setAttribute('aria-label', `Sign in to ${s.name}`)
+    button.addEventListener('click', () => {
+      mcpSignInPending.add(s.name)
+      mcpSignInErrors.delete(s.name)
+      void refreshMcpServers()
+      void api.mcp
+        .signIn(s.name)
+        .then((next) => {
+          mcpSignInPending.delete(s.name)
+          renderMcpServers(next)
+        })
+        .catch((error: unknown) => {
+          mcpSignInPending.delete(s.name)
+          const message = ipcErrorMessage(error, 'Sign-in failed.')
+          if (message !== 'Sign-in cancelled.') mcpSignInErrors.set(s.name, message)
+          void refreshMcpServers()
+        })
+    })
+    return button
+  }
+
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
     const listEl = qsRequired(overlay, '#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
@@ -4442,13 +4503,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const badge: Node =
         s.state === 'connected'
           ? inlineStatus('filled', 'connected')
-          : s.state === 'error'
-            ? inlineStatus('error', 'error')
-            : s.state === 'disabled'
-              ? inlineStatus('idle', 'disabled')
-              : s.state === 'untrusted'
-                ? inlineStatus('warn', 'not trusted')
-                : document.createTextNode('… connecting')
+          : s.auth === 'required'
+            ? inlineStatus('warn', 'sign-in required')
+            : s.state === 'error'
+              ? inlineStatus('error', 'error')
+              : s.state === 'disabled'
+                ? inlineStatus('idle', 'disabled')
+                : s.state === 'untrusted'
+                  ? inlineStatus('warn', 'not trusted')
+                  : document.createTextNode('… connecting')
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
 
@@ -4504,13 +4567,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           qsRequired(overlay, '#tool-permissions-fieldset').scrollIntoView({ block: 'start' })
         })
       })
+      const authButton = mcpSignInButton(s)
+      if (authButton) header.append(authButton)
       header.append(permissionsButton)
       row.append(header)
 
-      let detailText =
+      const statusDetail =
         s.state === 'connected'
           ? `${String(s.toolCount)} tool(s)${s.tools.length ? `: ${s.tools.join(', ')}` : ''}`
-          : (s.error ?? '')
+          : s.auth === 'required'
+            ? "Sign in to use this server's tools."
+            : (s.error ?? '')
+      let detailText = mcpSignInPending.has(s.name)
+        ? 'Continue in your browser to finish signing in.'
+        : (mcpSignInErrors.get(s.name) ?? statusDetail)
       if (s.configDisabled) {
         detailText = detailText
           ? `${detailText} · disabled in MCP config`
