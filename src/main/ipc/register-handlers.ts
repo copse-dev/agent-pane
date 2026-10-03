@@ -1,4 +1,5 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
@@ -190,6 +191,12 @@ import {
   readVideoForPlayback,
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
+import {
+  applyThreadHistoryEdit,
+  loadThreadHistorySnapshot,
+  undoThreadHistoryEdit,
+  type ThreadHistoryEditRuntime,
+} from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -557,6 +564,7 @@ export function registerAllHandlers(
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
+  threadHistoryEditRuntime: ThreadHistoryEditRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
@@ -1400,6 +1408,37 @@ export function registerAllHandlers(
     return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
 
+  ipcMain.handle('chat-gpt-plan:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().status()
+  })
+  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signIn(
+      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
+    )
+  })
+  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
+    assertMainFrameSender(event, win)
+    getChatGptPlanService().cancelSignIn()
+  })
+  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:models', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().models()
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1968,6 +2007,48 @@ export function registerAllHandlers(
         [projectId, sourceThreadId, targetThreadId, throughMessageId],
       )
       return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
+  ipcMain.handle('threads:history-snapshot', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadHistorySnapshot(pid, tid)
+  })
+  ipcMain.handle(
+    'threads:edit-history',
+    (event, projectId: unknown, threadId: unknown, request: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            expectedRevision: z.string().length(64),
+            messages: z
+              .array(
+                z.object({
+                  id: zNonEmptyString.max(256),
+                  content: z.string().max(1_000_000),
+                  included: z.boolean(),
+                }),
+              )
+              .max(10_000),
+          }),
+        ]),
+        [projectId, threadId, request],
+      )
+      return applyThreadHistoryEdit(pid, tid, payload, threadHistoryEditRuntime)
+    },
+  )
+  ipcMain.handle(
+    'threads:undo-history-edit',
+    (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, revision] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().length(64)]),
+        [projectId, threadId, expectedRevision],
+      )
+      return undoThreadHistoryEdit(pid, tid, revision, threadHistoryEditRuntime)
     },
   )
   // The whole thread directory, zipped — the archive counterpart to the

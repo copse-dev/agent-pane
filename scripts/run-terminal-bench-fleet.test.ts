@@ -290,6 +290,7 @@ test('fleet forwards explicit sampling and output caps to the worker environment
     SCW_OBJECT_STORAGE_BUCKET: 'test-bucket',
     COPSE_TERMINAL_MODEL_PARAMETERS: 'server',
     COPSE_TERMINAL_MAX_OUTPUT_TOKENS: '16384',
+    COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY: 'suppression-ladder-v1',
   }
   const previous = Object.fromEntries(Object.keys(fixture).map((key) => [key, process.env[key]]))
   try {
@@ -304,8 +305,15 @@ test('fleet forwards explicit sampling and output caps to the worker environment
       environment.split('\n').find((line) => line.startsWith('COPSE_TERMINAL_MAX_OUTPUT_TOKENS=')),
       'COPSE_TERMINAL_MAX_OUTPUT_TOKENS=16384',
     )
+    assert.equal(
+      environment
+        .split('\n')
+        .find((line) => line.startsWith('COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY=')),
+      'COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY=suppression-ladder-v1',
+    )
     delete process.env['COPSE_TERMINAL_MODEL_PARAMETERS']
     delete process.env['COPSE_TERMINAL_MAX_OUTPUT_TOKENS']
+    delete process.env['COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY']
     const defaults = workerEnvironment(config, 0)
     assert.equal(
       defaults.split('\n').some((line) => line.startsWith('COPSE_TERMINAL_MODEL_PARAMETERS=')),

@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import type {
   LLMMessage,
   LLMProvider,
+  LLMStreamOptions,
   LLMTool,
   ProviderStreamChunk,
 } from '@copse/llm/wire-types.ts'
@@ -21,6 +22,7 @@ export function recordTerminalBenchProviderRequests(
       messages: LLMMessage[],
       tools: LLMTool[],
       signal?: AbortSignal,
+      options?: LLMStreamOptions,
     ): AsyncIterable<ProviderStreamChunk> {
       sequence += 1
       appendFileSync(
@@ -33,9 +35,11 @@ export function recordTerminalBenchProviderRequests(
           messages,
           ...(sampling ? { sampling } : {}),
           tools,
+          ...(options?.suppressReasoning ? { suppressReasoning: true } : {}),
+          ...(options?.toolChoice ? { toolChoice: options.toolChoice.name } : {}),
         })}\n`,
       )
-      yield* provider.stream(messages, tools, signal)
+      yield* provider.stream(messages, tools, signal, options)
     },
   }
 }

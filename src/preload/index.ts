@@ -839,6 +839,15 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    historySnapshot: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => ipcRenderer.invoke('threads:edit-history', projectId, threadId, request),
+    undoHistoryEdit: (projectId: string, threadId: string, expectedRevision: string) =>
+      ipcRenderer.invoke('threads:undo-history-edit', projectId, threadId, expectedRevision),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
@@ -1081,6 +1090,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('settings:fetch-provider-models', baseUrl, apiKey),
     refreshHuggingFaceModels: (apiKey?: string) =>
       ipcRenderer.invoke('settings:refresh-hugging-face-models', apiKey),
+  },
+  chatGptPlan: {
+    status: () => ipcRenderer.invoke('chat-gpt-plan:status'),
+    signIn: (clientId?: string) => ipcRenderer.invoke('chat-gpt-plan:sign-in', clientId),
+    refreshAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:refresh-account', clientId),
+    cancelSignIn: () => ipcRenderer.invoke('chat-gpt-plan:cancel-sign-in'),
+    selectAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:select-account', clientId),
+    signOut: (clientId: string) => ipcRenderer.invoke('chat-gpt-plan:sign-out', clientId),
+    models: () => ipcRenderer.invoke('chat-gpt-plan:models'),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),

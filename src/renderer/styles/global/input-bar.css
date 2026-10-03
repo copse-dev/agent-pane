@@ -1336,3 +1336,19 @@
     right: var(--spacing-md);
   }
 }
+
+.footer-plan-usage {
+  padding: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.footer-model-host:has(.footer-plan-usage:not([hidden])) {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.footer-plan-usage[hidden] {
+  display: none;
+}

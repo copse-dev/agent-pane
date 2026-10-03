@@ -19,14 +19,18 @@ import type { LLMProvider } from '@copse/llm/wire-types.ts'
  *   how every run before this switch was made; keep it selectable so those
  *   results stay comparable.
  *
- * The default is `client`: a benchmark should measure the product, and the recipe
- * exists precisely to prevent the pure-reasoning runaway streams the bench keeps
- * hitting. The cost is that `client` results are not comparable with earlier
- * `server` runs; every trial therefore writes `model-parameters.json`.
+ * The default is `server`, which is what every earlier run used, so adopting this
+ * switch changes no result. `client` is opt-in: in paired Terminal-Bench runs on
+ * `qwen3.6-35b-a3b` it lowered the runaway rate on one task but showed no better
+ * outcomes, and it used up to 4.5x the tokens on two tasks the `server` runs
+ * passed (3 of 3 passed with `server` sampling against 1 of 3 with the recipe;
+ * one run each, and the baseline itself flipped on all three tasks between two
+ * runs, so this is a hint, not a result). Every trial writes
+ * `model-parameters.json`, so runs from either mode stay identifiable.
  */
 export const TERMINAL_MODEL_PARAMETER_MODES = ['client', 'server'] as const
 export type TerminalModelParametersMode = (typeof TERMINAL_MODEL_PARAMETER_MODES)[number]
-export const DEFAULT_TERMINAL_MODEL_PARAMETERS_MODE: TerminalModelParametersMode = 'client'
+export const DEFAULT_TERMINAL_MODEL_PARAMETERS_MODE: TerminalModelParametersMode = 'server'
 export const TERMINAL_MODEL_PARAMETERS_ENV = 'COPSE_TERMINAL_MODEL_PARAMETERS'
 export const TERMINAL_MODEL_PARAMETERS_ARTIFACT = 'model-parameters.json'
 export const TERMINAL_MAX_OUTPUT_TOKENS_ENV = 'COPSE_TERMINAL_MAX_OUTPUT_TOKENS'
@@ -145,6 +149,7 @@ export function buildTerminalProviders(options: {
   apiKey: string
   forcesRequestedOutputRecovery: boolean
   record: TerminalModelParametersRecord
+  reasoningSuppressionBody?: Readonly<Record<string, unknown>>
 }): TerminalProviders {
   const { baseUrl, model, apiKey, forcesRequestedOutputRecovery, record } = options
   const params = record.params
@@ -158,6 +163,9 @@ export function buildTerminalProviders(options: {
       baseURL: baseUrl,
       apiKey,
       includeUsage: true,
+      ...(options.reasoningSuppressionBody
+        ? { reasoningSuppressionBody: options.reasoningSuppressionBody }
+        : {}),
       ...(applied ? { params } : {}),
       ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
       ...(extraBody ? { extraBody } : {}),
