@@ -363,7 +363,10 @@ describe('cron automation trigger', function () {
       },
     )
     assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'dark')
-    assert.equal(await browser.execute(() => document.documentElement.dataset['tintPalette']), 'copse')
+    assert.equal(
+      await browser.execute(() => document.documentElement.dataset['tintPalette']),
+      'copse',
+    )
     assert.equal(
       await browser.execute(() => document.documentElement.dataset['tintStrength']),
       'strong',
