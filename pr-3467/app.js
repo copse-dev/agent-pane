@@ -70638,6 +70638,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
       openThread(row2);
     });
+    if (host.openThreadArrow)
+      node2.append(arrowUpRightIcon("ui-icon ui-icon-sm activity-open-arrow"));
     node2.disabled = !canOpen(row2);
     return node2;
   }
@@ -139900,7 +139902,8 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
     },
     collapsibleGroups: true,
     projectStrip: true,
-    followUrgent: true
+    followUrgent: true,
+    openThreadArrow: true
   });
   view.status.classList.add("activity-home-sr");
   root.append(

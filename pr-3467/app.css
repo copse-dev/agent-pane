@@ -985,7 +985,7 @@ copse-ui-field input[type=password],
   background: var(--bg-hover);
 }
 .projects-activity-btn.has-attention {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .projects-activity-count {
   font-size: var(--font-size-xs);
@@ -1429,7 +1429,7 @@ copse-ui-field input[type=password],
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
-  color: var(--warning, #d29922);
+  color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
 }
 .project-row .chat-attention-bell {
@@ -12322,7 +12322,7 @@ dialog.activity-panel-overlay {
 }
 .activity-row[data-state=needs-approval] .activity-glyph,
 .activity-row[data-state=needs-answer] .activity-glyph {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .activity-row[data-state=working] .activity-glyph {
   color: var(--text-secondary);
@@ -12665,19 +12665,19 @@ dialog.activity-panel-overlay {
   background: none;
 }
 .activity-home .activity-detail-actions .ui-btn {
-  padding: 5px 16px;
+  min-height: calc(29px * var(--ui-scale));
+  padding: 0 16px;
   border-radius: 999px;
   font-size: calc(13px * var(--ui-scale));
   font-weight: 600;
 }
 .activity-home .activity-detail-actions .activity-open-thread {
-  padding: 4px 0;
+  padding-inline: 0;
   border: 0;
   background: none;
 }
-.activity-home .activity-detail-actions .activity-open-thread::after {
-  content: "\2197" / "";
-  margin-left: 8px;
+.activity-home .activity-open-arrow {
+  margin-left: var(--spacing-xs);
 }
 @container chat-pane (max-width: 640px) {
   .activity-home .activity-panel-body {
