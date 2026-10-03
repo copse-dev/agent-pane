@@ -84,10 +84,14 @@ describe('Grok model labels and scores across providers', function () {
     assert.ok(score)
     const expected = `Grok Build 0.1 — intellect ${score.estimated ? '~' : ''}${String(score.value)}`
     for (const route of [BUILD_ROUTE, AGENT_ROUTE]) {
-      await expect($(`.model-picker-option[data-value="${route}"]`)).toHaveText(expected)
+      await expect(
+        $(`.model-picker-option[data-value="${route}"] .model-picker-option-label`),
+      ).toHaveText(expected)
     }
     for (const route of ['openrouter:x-ai/grok-4.3', 'acp:cursor#grok-4.3']) {
-      await expect($(`.model-picker-option[data-value="${route}"]`)).toHaveText('Grok 4.3')
+      await expect(
+        $(`.model-picker-option[data-value="${route}"] .model-picker-option-label`),
+      ).toHaveText('Grok 4.3')
     }
     await prepareE2eScreenshot()
     await saveElementScreenshot('.model-picker-menu', 'grok-model-picker.png')
