@@ -182,7 +182,7 @@ export function splitServiceTierUsage(usage: ModelUsage): {
 /** Cache tokens of an ACP record that holds fewer input tokens than that, else null. */
 function legacyAcpCachedTokens(model: string, usage: TokenUsage): number | null {
   if (parseModelSelection(model).namespace !== 'acp') return null
-  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
+  const cached = nonNegative(usage.cacheReadTokens) + nonNegative(usage.cacheCreationTokens)
   return cached > usage.inputTokens ? cached : null
 }
 

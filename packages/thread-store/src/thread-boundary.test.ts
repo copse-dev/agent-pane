@@ -64,6 +64,23 @@ describe('parseThreadMetaValue usage', () => {
     assert.equal(parsed?.usage.inputTokens, 80)
   })
 
+  it('does not coerce malformed persisted cache counts into repaired input', () => {
+    for (const cache of [{ cacheReadTokens: '40' }, { cacheCreationTokens: '20' }]) {
+      const parsed = parseThreadMetaValue(
+        meta({
+          inputTokens: 3,
+          outputTokens: 2,
+          byModel: {
+            'acp:claude-acp#opus': { inputTokens: 3, outputTokens: 2, ...cache },
+          },
+        }),
+      )
+      assert.ok(parsed)
+      assert.equal(parsed.usage.inputTokens, 3)
+      assert.equal(parsed.usage.byModel?.['acp:claude-acp#opus']?.inputTokens, 3)
+    }
+  })
+
   it('leaves usage without legacy ACP entries untouched', () => {
     const usage = {
       inputTokens: 41_203,
