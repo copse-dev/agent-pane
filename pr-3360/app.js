@@ -26144,14 +26144,11 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
-function handIcon(className = DEFAULT) {
+function shieldIcon(className = DEFAULT) {
   return outlineIcon(
-    "hand",
+    "shield",
     [
-      "M18 11V6a2 2 0 0 0-4 0v5",
-      "M14 10V4a2 2 0 0 0-4 0v7",
-      "M10 10.5V6a2 2 0 0 0-4 0v8",
-      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
     ],
     className
   );
@@ -37270,7 +37267,10 @@ function conciseThreadScenario(id, label, model, {
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        messages: multiTurn ? [
+          ...conciseMultiTurnMessages(model),
+          ...live ? conciseThreadMessages(model, true) : []
+        ] : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -38654,6 +38654,12 @@ var init_demo_scenarios = __esm({
         { multiTurn: true }
       ),
       conciseThreadScenario(
+        "concise-thread-multi-working",
+        "Concise thread view with finished turns and a live one",
+        "claude-opus-5-5",
+        { multiTurn: true, live: true }
+      ),
+      conciseThreadScenario(
         "concise-thread-full",
         "Full thread view for a model below the concise gate",
         "gpt-4o"
@@ -39302,7 +39308,9 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported,
       test: unsupported,
       screening: () => resolved(null),
-      setScreening: unsupported
+      setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported
     },
     localClassifiers: {
       status: () => resolved({ servers: [], hosted: [] }),
@@ -57616,6 +57624,19 @@ var init_presets = __esm({
         }
       },
       {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
         id: "kev",
         label: "Kev (local)",
         model: "kev-latest",
@@ -57716,6 +57737,7 @@ function createClassifiersSection(api2) {
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const background = el("select", { name: "classifierBackground" });
   const localHost = el("div", {
     class: "classifier-local",
     "aria-label": "Local classifier servers"
@@ -57727,7 +57749,7 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, background questions and evals. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
     ),
     el(
       "label",
@@ -57740,6 +57762,17 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    el(
+      "label",
+      { class: "classifier-background" },
+      "Background questions",
+      background,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
+      )
+    ),
     localHost,
     chips,
     formHost,
@@ -57747,6 +57780,7 @@ function createClassifiersSection(api2) {
   );
   let profiles = [];
   let screeningId = null;
+  let backgroundId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -57828,6 +57862,7 @@ function createClassifiersSection(api2) {
   async function reloadProfiles() {
     profiles = await api2.classifiers.list();
     renderScreening();
+    renderBackground();
     renderChips();
   }
   async function applyLocal(next) {
@@ -57867,7 +57902,7 @@ function createClassifiersSection(api2) {
   async function confirmInstall(server) {
     const approved = await showConfirmDialog({
       message: `Download and run ${server.label}?`,
-      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
       confirmLabel: "Download and run"
     });
     if (approved) await localAction(() => api2.localClassifiers.install(server.id));
@@ -57980,34 +58015,59 @@ function createClassifiersSection(api2) {
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
   }
-  screening.addEventListener("change", () => {
-    const id = screening.value || null;
-    if (busy) {
-      renderScreening();
-      return;
+  function renderBackground() {
+    clear(background);
+    background.append(el("option", { value: "" }, "Small-tasks model"));
+    for (const { profile } of profiles) {
+      background.append(el("option", { value: profile.id }, profile.label));
     }
-    busy = true;
-    root.disabled = true;
-    void (async () => {
-      try {
-        screeningId = await api2.classifiers.setScreening(id);
-        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
-        setInlineStatus(
-          status,
-          "ok",
-          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
-        );
-      } catch (error62) {
-        setInlineStatus(status, "error", classifierErrorMessage(error62));
-      } finally {
-        busy = false;
-        root.disabled = false;
-        renderScreening();
+    background.value = profiles.some((item) => item.profile.id === backgroundId) ? backgroundId ?? "" : "";
+  }
+  function onRouteChange(select, renderRoute, save, describeChoice) {
+    select.addEventListener("change", () => {
+      const id = select.value || null;
+      if (busy) {
+        renderRoute();
+        return;
       }
-    })();
-  });
+      busy = true;
+      root.disabled = true;
+      void (async () => {
+        try {
+          const saved = await save(id);
+          const chosen = profiles.find((item) => item.profile.id === saved)?.profile.label;
+          setInlineStatus(status, "ok", describeChoice(chosen));
+        } catch (error62) {
+          setInlineStatus(status, "error", classifierErrorMessage(error62));
+        } finally {
+          busy = false;
+          root.disabled = false;
+          renderRoute();
+        }
+      })();
+    });
+  }
+  onRouteChange(
+    screening,
+    renderScreening,
+    async (id) => {
+      screeningId = await api2.classifiers.setScreening(id);
+      return screeningId;
+    },
+    (chosen) => chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+  );
+  onRouteChange(
+    background,
+    renderBackground,
+    async (id) => {
+      backgroundId = await api2.classifiers.setBackground(id);
+      return backgroundId;
+    },
+    (chosen) => chosen ? `Background questions now use ${chosen}. No test call has been made.` : "Background questions now use the small-tasks model."
+  );
   function render() {
     renderScreening();
+    renderBackground();
     renderChips();
     clear(formHost);
     clear(status);
@@ -58141,6 +58201,8 @@ function createClassifiersSection(api2) {
           "Custom connections use ",
           el("code", {}, "COPSE_CLASSIFIER_*"),
           " variables. ",
+          el("code", {}, "LIQUID_API_KEY"),
+          ", ",
           el("code", {}, "TYPESAFE_API_KEY"),
           " and ",
           el("code", {}, "FEATHERLESS_API_KEY"),
@@ -58332,7 +58394,10 @@ function createClassifiersSection(api2) {
       void run2(async () => {
         if (saved) {
           profiles = await api2.classifiers.remove(profile.id);
-          screeningId = await api2.classifiers.screening();
+          [screeningId, backgroundId] = await Promise.all([
+            api2.classifiers.screening(),
+            api2.classifiers.background()
+          ]);
         }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
@@ -58351,9 +58416,10 @@ function createClassifiersSection(api2) {
     captureDraft?.();
     try {
       ;
-      [profiles, screeningId] = await Promise.all([
+      [profiles, screeningId, backgroundId] = await Promise.all([
         api2.classifiers.list(),
-        api2.classifiers.screening()
+        api2.classifiers.screening(),
+        api2.classifiers.background()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
       void refreshLocal();
@@ -59986,6 +60052,7 @@ function planAcpFrontierCandidates(agents, pricedRoutes = []) {
       candidates.push({
         id: acpModelValue(agent.id, choice.value),
         intellect: score.value,
+        intellectEstimated: score.estimated === true,
         costPerMTok: price,
         planAccess: { provider, modelId: resolved3 }
       });
@@ -62058,7 +62125,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.append(heading);
   const intro = document.createElement("p");
   intro.className = "settings-fieldset-desc";
-  intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
+  intro.textContent = "Live plan windows for the plans you have set up in Settings \u2192 General. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
   if (error62) {
     const err2 = document.createElement("p");
@@ -64488,7 +64555,7 @@ var init_tool_permissions_panel = __esm({
     };
     POLICY_ICON = {
       allow: checkIcon,
-      ask: handIcon,
+      ask: shieldIcon,
       block: banIcon
     };
   }
@@ -65489,7 +65556,7 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Your subscription plan windows for the accounts you are signed in to, plus estimated
+              Your subscription plan windows for the plans you have set up in General, plus estimated
               spend and free on-device token usage across every project. Costs are approximate and
               based on published prices.
             </p>
@@ -69848,6 +69915,20 @@ var init_activity_model = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function githubMarkIcon() {
+  const svg2 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg2.setAttribute("class", "approval-github-icon");
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  );
+  svg2.append(path);
+  return svg2;
+}
 function approvalCopyElement(className, text2) {
   const root = el("div", { class: className });
   let list = null;
@@ -69925,6 +70006,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
     "Allow retries for this task (up to 10, for 15 minutes)"
   );
+  const githubBrand = el(
+    "div",
+    { class: "approval-github-brand", hidden: "", "aria-hidden": "true" },
+    el("span", { class: "approval-github-mark" }, githubMarkIcon()),
+    el("span", {}, "GitHub")
+  );
   const heading = el("h3", { class: "approval-heading" });
   const items = el("div", { class: "approval-items" });
   const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
@@ -69945,6 +70032,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   );
   const dialog2 = el("dialog", { id: "approval-dialog" });
   dialog2.append(
+    githubBrand,
     heading,
     items,
     rememberLabel,
@@ -70055,6 +70143,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
       }
     }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
+    githubBrand.hidden = !isGithubApproval;
+    dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
       const body = el("div", { class: bodyClass }, req.body);
@@ -70359,7 +70450,7 @@ function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
   switch (state) {
     case "needs-approval":
-      return handIcon(className);
+      return shieldIcon(className);
     case "needs-answer":
       return messageQuestionIcon(className);
     case "working":
@@ -70691,6 +70782,31 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
+  function captureListScrollAnchor() {
+    const listRect = list.getBoundingClientRect();
+    for (const row2 of list.querySelectorAll(".activity-row")) {
+      const rowKey2 = row2.dataset["rowKey"];
+      if (!rowKey2) continue;
+      const rowRect = row2.getBoundingClientRect();
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey: rowKey2, viewportTop: rowRect.top };
+      }
+    }
+    return null;
+  }
+  function restoreListScrollAnchor(anchor2, fallbackScrollTop) {
+    if (anchor2) {
+      const row2 = [...list.querySelectorAll(".activity-row")].find(
+        (candidate) => candidate.dataset["rowKey"] === anchor2.rowKey
+      );
+      if (row2) {
+        const delta = row2.getBoundingClientRect().top - anchor2.viewportTop;
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta;
+        return;
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
+  }
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
@@ -70714,7 +70830,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
     }
     const opener = selectedOpener();
-    if (opener) opener.focus();
+    if (opener) opener.focus({ preventScroll: true });
     else closeButton.focus();
   }
   function armSettle() {
@@ -70737,6 +70853,8 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     const at3 = now();
     lastRenderAt = at3;
     const focus = captureFocus();
+    const previousListScrollTop = list.scrollTop;
+    const listScrollAnchor = captureListScrollAnchor();
     const groups = deriveActivity({
       threads: collectActivityThreads(store2),
       approvals: sources3.approvals.pending(),
@@ -70780,6 +70898,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
       children.push(...populated.map((group) => groupElement(group, at3)));
       list.replaceChildren(...children);
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
     dialog2.dataset["needsYou"] = String(needCount);
@@ -80510,6 +80629,21 @@ function isConciseStepsMessage(msg) {
 function isConciseWorkingMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
 }
+function turnStartId(messages, messageId) {
+  const at3 = messages.findIndex((msg) => msg.id === messageId);
+  for (let i2 = at3; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
+function liveTurnStartId(messages) {
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
   msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
@@ -83982,10 +84116,30 @@ function mountConversation(root, store2, api2) {
     list,
     scrollToBottomBtn
   );
+  let expandedConciseTurnId = null;
+  function conciseEnabledFor(thread, messageId) {
+    const enabled = store2.getState().conciseThreadsEnabled;
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled;
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId;
+  }
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
+  function toggleConciseTurnExpansion() {
+    const thread = getActiveThread(store2);
+    if (!thread || !isConciseTurnExpandable(thread)) return false;
+    const turn = liveTurnStartId(thread.messages);
+    if (turn === null) return false;
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null;
+    syncConciseThreadClasses();
+    scrollToBottom();
+    return true;
+  }
+  function isConciseTurnExpandable(thread) {
+    return thread.status === "running" && store2.getState().conciseThreadsEnabled && isConciseThread(thread);
+  }
   activityBar.addEventListener("click", () => {
+    if (toggleConciseTurnExpansion()) return;
     const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
@@ -83994,6 +84148,12 @@ function mountConversation(root, store2, api2) {
     const key = details.dataset["disclosureKey"];
     if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
+  });
+  activityBar.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (activityBar.getAttribute("role") !== "button") return;
+    event.preventDefault();
+    toggleConciseTurnExpansion();
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
@@ -84474,6 +84634,20 @@ function mountConversation(root, store2, api2) {
     const thread = getActiveThread(store2);
     const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
     const label = conciseLabel ?? requested;
+    const expandable = thread !== void 0 && isConciseTurnExpandable(thread);
+    const expanded = expandable && expandedConciseTurnId !== null;
+    activityBar.setAttribute("role", expandable ? "button" : "status");
+    activityBar.classList.toggle("agent-activity-expandable", expandable);
+    activityBar.classList.toggle("agent-activity-expanded", expanded);
+    if (expandable) {
+      activityBar.tabIndex = 0;
+      activityBar.setAttribute("aria-expanded", String(expanded));
+      activityBar.title = expanded ? "Hide this turn\u2019s steps" : "Show this turn\u2019s steps";
+    } else {
+      activityBar.removeAttribute("tabindex");
+      activityBar.removeAttribute("aria-expanded");
+      activityBar.removeAttribute("title");
+    }
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
     if (label.startsWith("Reasoning\u2026") && [
@@ -84655,7 +84829,7 @@ function mountConversation(root, store2, api2) {
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
-    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
+    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const isInterrupted = (call) => userInterruption(call) !== void 0;
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
@@ -84811,7 +84985,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -85019,11 +85193,11 @@ function mountConversation(root, store2, api2) {
   function syncConciseThreadClasses() {
     const thread = getActiveThread(store2);
     if (!thread) return;
-    const enabled = store2.getState().conciseThreadsEnabled;
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
     list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
-      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
-      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+      const id = msgEl.dataset["messageId"] ?? "";
+      const msg = byId.get(id);
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id));
     });
     syncFromStore();
   }
@@ -85113,7 +85287,7 @@ function mountConversation(root, store2, api2) {
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
-    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -85510,6 +85684,10 @@ function mountConversation(root, store2, api2) {
           card.remove();
         });
       } else {
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null;
+          syncConciseThreadClasses();
+        }
         setActivity(null);
         list.querySelectorAll(".message-reasoning-live").forEach((details) => {
           setReasoningDisclosureTitle(details, false);
