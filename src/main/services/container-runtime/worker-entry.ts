@@ -42,7 +42,7 @@ import {
   type DependencyInstallSummary,
   volumeTrouble,
 } from './guest-install.ts'
-import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
+import { GUEST_ALLOWED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types/index.ts'
@@ -495,9 +495,9 @@ async function main(): Promise<void> {
         enabledPluginIds: [],
         toolAvailability: { rg: true, git: true, gh: false },
         loadMcpServers: false,
-        // Deliberate, not incidental: no GitHub or CI tool in the guest, and
-        // so no way to open, approve or merge a PR from an unattended run.
-        excludeTools: GUEST_EXCLUDED_TOOLS,
+        // Only supported local coding tools. Desktop services and external
+        // write tools remain with the parent; new tools are absent by default.
+        includeTools: GUEST_ALLOWED_TOOLS,
         workspaceTrusted: true,
         interaction: {
           approve: (request) => {
