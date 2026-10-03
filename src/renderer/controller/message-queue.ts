@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
 import type { Message, QueuedUserMessage, Thread, UserContent } from '@shared/types'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import {
   addMessage,
   clearContextSnapshot,
@@ -160,6 +161,7 @@ export function refreshAgentRunPayload(
   store: AppStore,
   threadId: string,
   { reviewContext: _stale, ...payload }: AgentRunPayload,
+  queuedModel?: string,
 ): AgentRunPayload {
   const thread = getThreadById(store, threadId)
   // Reviews the user ran since the model's last reply (#2519), read at dispatch
@@ -168,15 +170,16 @@ export function refreshAgentRunPayload(
   const reviewContext = thread
     ? reviewReportModelContext(reviewReportsAwaitingModel(thread))
     : undefined
+  const selectedModel = queuedModel ?? thread?.model
   return {
     ...payload,
     ...(reviewContext !== undefined ? { reviewContext } : {}),
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
-    // Send the per-thread model so the run uses the picker's selection rather
-    // than the global default. Read at dispatch time so a change made while the
-    // message was queued still takes effect. Absent → main uses the global default.
-    ...(thread?.model !== undefined ? { model: thread.model } : {}),
+    // A queued human prompt carries its own model snapshot; hook-authored
+    // prompts without one follow the live thread selection. Absent → main uses
+    // the global default.
+    ...(selectedModel !== undefined ? { model: selectedModel } : {}),
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...(thread?.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
@@ -249,7 +252,7 @@ export function dispatchAgentRun(
   const run = api.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store, threadId, payload)),
+    JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model)),
   )
   if (!queued) {
     void run
@@ -299,12 +302,46 @@ export function enqueueUserMessage(
   threadId: string,
   item: QueuedUserMessage,
 ): void {
+  // Human prompts can enter the queue through the composer, mobile chat,
+  // resend, reviewer input, or a finished code-block run. Snapshot the model at
+  // this shared boundary so every surface keeps the selection that was active
+  // when the prompt queued. Hook follow-ups intentionally stay unresolved and
+  // follow the live thread model unless the user picks one on the queued card.
+  const queued =
+    item.model !== undefined || isMachineContinuation(item)
+      ? item
+      : {
+          ...item,
+          model:
+            getThreadById(store, threadId)?.model ??
+            store.getState().settings?.model ??
+            DEFAULT_APP_CHAT_MODEL,
+        }
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
-    pendingMessages: [...(t.pendingMessages ?? []), item],
+    pendingMessages: [...(t.pendingMessages ?? []), queued],
     updatedAt: Date.now(),
   }))
-  store.emit('message_queued', threadId, item.messageId)
+  store.emit('message_queued', threadId, queued.messageId)
+  store.emit('threads_changed')
+}
+
+/** Pin a model to one queued prompt without changing the thread's live default. */
+export function updateQueuedMessageModel(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  model: string,
+): void {
+  const thread = getThreadById(store, threadId)
+  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    pendingMessages: (t.pendingMessages ?? []).map((item) =>
+      item.messageId === messageId ? { ...item, model } : item,
+    ),
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 

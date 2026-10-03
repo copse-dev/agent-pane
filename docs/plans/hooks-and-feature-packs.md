@@ -975,6 +975,17 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   an empty turn and fall through to their existing bounded handling. OpenAI-compatible streaming
   already recovers (an unparseable argument string becomes `argsError`, answered with a tool
   result), so only LM Studio needed the typed outcome.
+- **A soft reasoning budget converts a long tool-less think into progress.** Hard checkpoint cuts
+  discard the whole stream, so every token and second spent reaching them is wasted. A host may set
+  `softReasoningBudget` on its checkpoint policy: a reasoning-dominated stream with no tool call and
+  no visible answer that reaches `tokens` is cut, a bounded head-and-tail excerpt of its reasoning
+  is pushed as a user message (`reasoning-budget-carry-forward`, `tool-enabled-message`) telling the
+  model to act on that partial plan, and the loop continues with tools. It is an in-loop nudge, so it
+  never touches the continuation budget (decision 5); it is bounded by `maxCutsPerRun` and
+  `maxConsecutiveCuts`, after which only the hard maxima and the existing `reasoning-runaway`
+  streak/give-up path apply. It is disarmed while a runaway streak is active and never replaces
+  the runaway path (a cross-turn circle still wins). Opt-in: the product policy does not set it;
+  Terminal-Bench reports it as an explicit runtime override (`COPSE_TERMINAL_REASONING_SOFT_*`, default 768 tokens); the immutable baseline profile continues to declare no soft budget.
 
 ## Codebase impact
 
@@ -1035,3 +1046,5 @@ through `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY=suppression-ladder-v1`, reco
 configuration and stream-cap overrides. It changes no continuation budget and introduces no soft
 reasoning budget. Sampling/output-ceiling provenance remains independent of this explicit runtime
 experiment; the same model-parameter builder serves both provider paths.
+The independent opt-in soft-budget override runs before runaway recovery; after its bounded cuts,
+any hard runaway streak disarms soft carry through either selected recovery strategy.
