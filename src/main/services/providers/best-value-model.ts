@@ -118,11 +118,14 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
     p.local ? true : isProviderAvailable(p.id),
   )
   const availableCloud = availableCloudModelIds()
-  const extras: FrontierCandidate[] = [
-    ...localFrontierCandidates(localIds),
+  const pricedRoutes = [
     ...extraProviderFrontierCandidates(extraProviders),
     ...openRouterFrontierCandidates(openRouterModels),
-    ...planAcpFrontierCandidates(listEnabledAcpAgents()),
+  ]
+  const extras: FrontierCandidate[] = [
+    ...localFrontierCandidates(localIds),
+    ...pricedRoutes,
+    ...planAcpFrontierCandidates(listEnabledAcpAgents(), pricedRoutes),
   ]
 
   const openRouterZdrOnly = getSetting<boolean>('openRouterZdrOnly', true)
