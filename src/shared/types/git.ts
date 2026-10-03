@@ -81,6 +81,7 @@ export interface GitBranchStatus {
  */
 export type ThreadWorktreeAttachment =
   | { state: 'attached' }
+  | { state: 'missing'; branch: string; reason: string | null }
   | {
       state: 'detached'
       branch: string
