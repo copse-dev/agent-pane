@@ -8,6 +8,8 @@
 // meets it. Nothing is executed: only the gate runs, with a handler that declines
 // every prompt.
 import assert from 'node:assert/strict'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -74,26 +76,28 @@ interface CorpusCase {
   hasFiles: boolean
 }
 
+const corpusCaseSchema = z.object({
+  id: z.string(),
+  command: z.string(),
+  tier: z.string(),
+  trustedSshHosts: z.unknown().optional(),
+  files: z.unknown().optional(),
+})
+
 async function loadCases(): Promise<CorpusCase[]> {
   const rows: CorpusCase[] = []
   for (const line of (await readFile(CASES, 'utf8')).split('\n')) {
     if (!line.trim()) continue
-    const row: unknown = JSON.parse(line)
-    if (
-      isRecord(row) &&
-      typeof row['id'] === 'string' &&
-      typeof row['command'] === 'string' &&
-      typeof row['tier'] === 'string'
-    ) {
-      const hosts = row['trustedSshHosts']
-      rows.push({
-        id: row['id'],
-        command: row['command'],
-        tier: row['tier'],
-        trustedSshHosts: Array.isArray(hosts) ? hosts.filter((h) => typeof h === 'string') : [],
-        hasFiles: isRecord(row['files']) && Object.keys(row['files']).length > 0,
-      })
-    }
+    const row = safeJsonParse(line, decodeWithSchema(corpusCaseSchema))
+    assert.ok(row, 'Invalid command corpus row')
+    const hosts = row.trustedSshHosts
+    rows.push({
+      id: row.id,
+      command: row.command,
+      tier: row.tier,
+      trustedSshHosts: Array.isArray(hosts) ? hosts.filter((h) => typeof h === 'string') : [],
+      hasFiles: isRecord(row.files) && Object.keys(row.files).length > 0,
+    })
   }
   return rows
 }
