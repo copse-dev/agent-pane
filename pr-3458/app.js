@@ -70882,6 +70882,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const workCount = working?.total ?? 0;
     summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
+    const populatedIds = new Set(populated.map((group) => group.id));
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren();
+    }
     if (populated.length === 0) {
       list.hidden = true;
       list.replaceChildren();
@@ -70984,6 +70988,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     selectedIndex = 0;
     shownKey = null;
     status.textContent = "";
+    for (const entry of groupCache.values()) entry.rows.replaceChildren();
     rowCache.clear();
   }
   function show2() {
