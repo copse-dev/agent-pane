@@ -10,7 +10,17 @@ import type { Thread } from '@shared/types'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import type { ApprovalRequests } from './approval-dialog.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
-import { createActivityView, type ActivityView, type ActivityViewHost } from './activity-view.ts'
+import {
+  createActivityView,
+  ACTIVITY_AGE_REFRESH_MS as VIEW_AGE_REFRESH_MS,
+  type ActivityView,
+  type ActivityViewHost,
+} from './activity-view.ts'
+import {
+  ACTIVITY_AGE_REFRESH_MS,
+  type ActivityPanelDeps,
+  type ActivitySources,
+} from './activity-panel.ts'
 
 function thread(id: string, patch: Partial<Thread> = {}): Thread {
   return {
@@ -73,19 +83,16 @@ function setup(threads: Thread[]): Harness {
       state.needsYou.push(count)
     },
   }
-  const view = createActivityView(
-    createPendingApi({}),
-    store,
-    { approvals: noApprovals, questions: noQuestions },
-    {
-      now: () => 1_000_000,
-      setTimer: (fn) => {
-        queued.push(fn)
-        return (): void => {}
-      },
+  // Existing panel callers retain these named type imports after extraction.
+  const sources: ActivitySources = { approvals: noApprovals, questions: noQuestions }
+  const deps: ActivityPanelDeps = {
+    now: () => 1_000_000,
+    setTimer: (fn) => {
+      queued.push(fn)
+      return (): void => {}
     },
-    host,
-  )
+  }
+  const view = createActivityView(createPendingApi({}), store, sources, deps, host)
   const flush = (): void => {
     for (const fn of queued.splice(0)) fn()
   }
@@ -97,6 +104,9 @@ function rowCount(view: { body: HTMLElement }): number {
 }
 
 describe('activity view', () => {
+  it('preserves the age refresh constant at the original panel module path', () => {
+    assert.equal(ACTIVITY_AGE_REFRESH_MS, VIEW_AGE_REFRESH_MS)
+  })
   it('draws nothing for a store change while the host has it hidden', () => {
     const { store, view, state, flush } = setup([thread('t1', { status: 'running' })])
     store.emit('thread_status_changed', 't1', 'running')

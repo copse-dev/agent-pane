@@ -9,7 +9,8 @@ import {
 } from './activity-view.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 
-export { ACTIVITY_RENDER_INTERVAL_MS } from './activity-view.ts'
+export { ACTIVITY_AGE_REFRESH_MS, ACTIVITY_RENDER_INTERVAL_MS } from './activity-view.ts'
+export type { ActivityPanelDeps, ActivitySources } from './activity-view.ts'
 
 /**
  * The Activity panel (docs/plans/mission-control.md, slice 1): the Activity view
