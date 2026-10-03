@@ -220,6 +220,20 @@ export function mockGetGhPrDetails(ref: {
   repo: string
   number: number
 }): GhPrDetails | null {
+  if (ref.owner === MOCK_GH_PR_OWNER && ref.repo === MOCK_GH_PR_REPO && ref.number === 100) {
+    return {
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      title: 'Resolve conflicting changes',
+      url: `https://github.com/${ref.owner}/${ref.repo}/pull/100`,
+      state: 'OPEN',
+      mergeable: 'CONFLICTING',
+      mergeStateStatus: 'DIRTY',
+      body: 'This open pull request has known merge conflicts.',
+      files: [],
+    }
+  }
   if (
     ref.owner === MOCK_GH_PR_OWNER &&
     ref.repo === MOCK_GH_PR_REPO &&
