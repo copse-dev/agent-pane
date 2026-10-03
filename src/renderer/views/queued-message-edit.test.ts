@@ -65,6 +65,11 @@ describe('queued message edit (component)', () => {
     assert.ok(queued.querySelector('.queued-edit'), 'expected an Edit button')
     assert.ok(queued.querySelector('.queued-send-now'), 'expected a Send now button')
     assert.ok(queued.querySelector('.queued-delete'), 'expected a Delete button')
+    assert.equal(queued.querySelector('.message-queued-model-label')?.textContent, 'Run with')
+    assert.ok(
+      queued.querySelector('.message-queued-actions > .message-queued-model .model-picker-trigger'),
+      'expected a quiet per-prompt model picker in the action row',
+    )
     // Exactly one action row — guards against duplicate decoration on re-render.
     assert.equal(queued.querySelectorAll('.message-queued-actions').length, 1)
   })
