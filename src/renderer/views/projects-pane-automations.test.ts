@@ -430,8 +430,9 @@ describe('projects pane automation setup links', () => {
       'Archive',
       'Run now',
       'Automation setup…',
+      'Delete',
     ])
-    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive'])
+    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive', 'Delete'])
   })
 })
 
@@ -546,7 +547,7 @@ describe('workspace-level automations section (#2511)', () => {
     )
     assert.ok(row)
 
-    assert.equal(row.querySelector('.chat-delete'), null)
+    assert.equal(row.querySelector('.chat-menu-btn'), null)
     row.querySelector('.chat-title')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     assert.equal(row.querySelector('.chat-title-rename'), null)
 

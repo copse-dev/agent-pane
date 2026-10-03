@@ -4,10 +4,24 @@ import {
   isTruncationStopReason,
   isRefusalStopReason,
   isContextOverflowStopReason,
+  isMalformedToolCallStopReason,
+  TOOL_CALL_MALFORMED_STOP_REASON,
   REFUSAL_USER_MESSAGE,
   CONTEXT_OVERFLOW_USER_MESSAGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from './provider-stop-reason.ts'
+
+describe('isMalformedToolCallStopReason', () => {
+  it('matches only the typed malformed tool call outcome', () => {
+    assert.equal(isMalformedToolCallStopReason(TOOL_CALL_MALFORMED_STOP_REASON), true)
+    assert.equal(isMalformedToolCallStopReason('max_tokens'), false)
+    assert.equal(isMalformedToolCallStopReason(undefined), false)
+  })
+
+  it('is not a truncation stop reason, so the continue nudge never stacks on it', () => {
+    assert.equal(isTruncationStopReason(TOOL_CALL_MALFORMED_STOP_REASON), false)
+  })
+})
 
 describe('isTruncationStopReason', () => {
   it('matches Anthropic max_tokens and OpenAI length', () => {

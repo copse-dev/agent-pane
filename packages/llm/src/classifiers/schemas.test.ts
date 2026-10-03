@@ -50,6 +50,56 @@ describe('classifier schemas and presets', () => {
     )
   })
 
+  it('accepts an object shared by several questions, which is not a cycle', () => {
+    const options = { yes: 'it applies', no: 'it does not' }
+    const shared = {
+      state: 'text',
+      questions: {
+        first: { type: 'choice', instructions: 'First?', options },
+        second: { type: 'choice', instructions: 'Second?', options },
+      },
+    }
+    assert.equal(classifierRequestSchema.safeParse(shared).success, true)
+    const leaf = { kind: 'leaf' }
+    assert.equal(
+      classifierRequestSchema.safeParse({
+        ...CLASSIFIER_TEST_REQUEST,
+        state: { a: leaf, b: [leaf, { again: leaf }] },
+      }).success,
+      true,
+    )
+  })
+
+  it('still rejects a cycle nested below shared objects', () => {
+    const inner: Record<string, unknown> = { kind: 'inner' }
+    const outer = { first: inner, second: inner }
+    inner['back'] = outer
+    assert.equal(
+      classifierRequestSchema.safeParse({ ...CLASSIFIER_TEST_REQUEST, state: outer }).success,
+      false,
+    )
+  })
+
+  it('counts every visit to a shared object towards the size limits', () => {
+    // 15 levels of a two-way shared node is one object but 2^16 - 1 visits,
+    // past the 20,000-node budget.
+    let shared: unknown = 'leaf'
+    for (let i = 0; i < 15; i++) shared = { left: shared, right: shared }
+    assert.equal(
+      classifierRequestSchema.safeParse({ ...CLASSIFIER_TEST_REQUEST, state: shared }).success,
+      false,
+    )
+    // Shared text counts once per reference: 3 × 400,000 characters is over the limit.
+    const big = 'x'.repeat(400_000)
+    assert.equal(
+      classifierRequestSchema.safeParse({
+        ...CLASSIFIER_TEST_REQUEST,
+        state: [big, big, big],
+      }).success,
+      false,
+    )
+  })
+
   it('validates SemIf executable as a specific scorer instead of a shell command', () => {
     const profile = CLASSIFIER_PRESETS.find((entry) => entry.id === 'semif')
     assert.ok(profile)

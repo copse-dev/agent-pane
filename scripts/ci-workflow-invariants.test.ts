@@ -32,39 +32,8 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('does not let a cosmetic pull request edit cancel an in-flight run', () => {
-    // Subscribing to `edited` for retargets also subscribes to title and body
-    // edits, which arrive in the PR's own concurrency group mid-run. Cancelling
-    // there is not a wasted run but a red one: since #2722 `ci-passed` turns a
-    // cancelled run into an explicit failure rather than a skip, so a
-    // description edit left a red `CI Passed` on a SHA that had been green.
-    //
-    // Truth table the expression has to hold, under GitHub's documented casting
-    // (Null -> 0, Object -> NaN, and NaN equals nothing):
-    //
-    //   schedule                      -> false, the nightly never cancels
-    //   push / synchronize / opened   -> true,  `action` is null or not 'edited'
-    //   edited WITH    changes.base   -> true,  a retarget invalidates the run
-    //   edited WITHOUT changes.base   -> false, cosmetic, leave the run alone
-    const concurrency = workflow.slice(
-      workflow.indexOf('\nconcurrency:'),
-      workflow.indexOf('\njobs:'),
-    )
-    assert.ok(concurrency, 'expected a top-level `concurrency:` block in ci.yml')
-    const clause = concurrency.match(/cancel-in-progress: (>-\n(?: {4}.+\n)+|.+\n)/)?.[1]
-    assert.ok(clause, 'expected `cancel-in-progress` on the concurrency block')
-    const expression = clause.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
-    assert.match(
-      expression,
-      /github\.event_name != 'schedule'/,
-      'a late nightly must still not cancel an in-flight tip push or PR',
-    )
-    assert.match(
-      expression,
-      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
-      'a title or body edit must not cancel a run; only a base retarget may',
-    )
-  })
+  // Cosmetic event admission, check names, and concurrency are evaluated from
+  // the parsed workflow in ci-cosmetic-events.test.ts.
 
   /**
    * A whole job block, header through to the next top-level job. The
@@ -502,6 +471,20 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('runs the strict streaming motion eval once after the parallel browser suite', () => {
+    const build = jobBlock('build')
+    const commands = [...build.matchAll(/^ {6}- run: (npm run test:demo.*)$/gm)].map(
+      (match) => match[1],
+    )
+    assert.deepEqual(commands, [
+      'npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts',
+      'npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1',
+    ])
+    const motion = readFileSync(resolve('tests/demo/streamed-reply-motion.demo.ts'), 'utf8')
+    assert.match(motion, /expect\(motion\.maxScrollStepPx\)\.toBeLessThanOrEqual\(24\)/)
+    assert.match(build, /needs: precheck/, 'keep static and build jobs parallel')
+  })
+
   it('publishes screenshot candidates without mutating the PR branch', () => {
     const job = jobBlock('screenshot-artifacts')
     assert.match(job, /permissions:\n {6}contents: read/)
@@ -549,7 +532,7 @@ describe('ci.yml workflow invariants', () => {
 
   it('never pushes a format commit to a promotion into release', () => {
     // The promotion head, promote/main, must hold only commits already on main.
-    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release'$/m)
+    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release' && /m)
   })
 
   it('decides autofix has work to do before paying for the dependency install', () => {

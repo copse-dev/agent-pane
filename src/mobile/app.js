@@ -1,3 +1,6 @@
+import { renderMessageContent } from './message-content.js'
+import { installComposerFocus } from './composer-focus.js'
+
 const pair = document.getElementById('pair')
 const activity = document.getElementById('activity')
 const thread = document.getElementById('thread')
@@ -31,11 +34,13 @@ const pendingActions = new Map()
 const composer = document.getElementById('composer')
 const messageInput = document.getElementById('message')
 const actionStatus = document.getElementById('action-status')
+const { focusComposer, revealComposer } = installComposerFocus()
 
 function show(view) {
   pair.hidden = view !== pair
   activity.hidden = view !== activity
   thread.hidden = view !== thread
+  document.getElementById('back').hidden = view !== thread
 }
 
 function fail(message) {
@@ -304,7 +309,9 @@ async function refreshThread() {
     access = data.access
     sessionId = data.sessionId
     runId = data.runId
+    const composerWasHidden = composer.hidden
     composer.hidden = access !== 'control'
+    if (composerWasHidden && !composer.hidden) focusComposer(messageInput)
     document.getElementById('stop').hidden = access !== 'control' || !runId
     document.getElementById('send').textContent = runId ? 'Queue message' : 'Send'
     document.getElementById('thread-title').textContent = data.title
@@ -319,17 +326,13 @@ async function refreshThread() {
     if (signature === messageSignature) return
     messageSignature = signature
     messages.replaceChildren(
-      ...data.messages.map((message) => {
+      ...data.messages.map((message, index) => {
         const card = element('article', 'message')
         card.append(element('div', 'message-role', message.role))
         if (message.summary) card.append(element('div', 'message-summary', message.summary))
-        card.append(
-          element(
-            'p',
-            'message-content',
-            message.content || (message.summary ? 'Tool activity' : 'No saved text'),
-          ),
-        )
+        const content = element('div', 'message-content')
+        renderMessageContent(content, message, index)
+        card.append(content)
         return card
       }),
     )
@@ -337,12 +340,15 @@ async function refreshThread() {
       messages.append(
         element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
       )
+    if (document.activeElement === messageInput) revealComposer()
   } catch (cause) {
     fail(cause.message)
   }
 }
 
-async function openThread(row) {
+async function openThread(row, addHistory = true) {
+  if (addHistory && (selected?.projectId !== row.projectId || selected?.threadId !== row.threadId))
+    history.pushState({ mobileView: 'thread', row }, '')
   if (selected) drafts.set(selected.threadId, messageInput.value)
   selected = row
   runId = null
@@ -386,6 +392,7 @@ composer.addEventListener('submit', async (event) => {
   } finally {
     sending = false
     document.getElementById('send').disabled = false
+    if (selected === row && !composer.hidden) focusComposer(messageInput)
   }
 })
 
@@ -415,6 +422,7 @@ document.getElementById('stop').addEventListener('click', async () => {
 document.getElementById('new-chat').addEventListener('click', () => {
   const form = document.getElementById('new-chat-form')
   form.hidden = !form.hidden
+  if (!form.hidden) focusComposer(document.getElementById('new-message'))
 })
 document.getElementById('new-chat-form').addEventListener('submit', async (event) => {
   event.preventDefault()
@@ -447,12 +455,26 @@ document.getElementById('new-chat-form').addEventListener('submit', async (event
   }
 })
 
-document.getElementById('back').addEventListener('click', () => {
+function openActivity() {
   if (selected) drafts.set(selected.threadId, messageInput.value)
   selected = null
   actionStatus.textContent = ''
   fail('')
+  show(token ? activity : pair)
   void refresh()
+}
+
+window.addEventListener('popstate', (event) => {
+  if (token && event.state?.mobileView === 'thread' && event.state.row) {
+    actionStatus.textContent = ''
+    void openThread(event.state.row, false)
+  } else {
+    openActivity()
+  }
+})
+
+document.getElementById('back').addEventListener('click', () => {
+  history.back()
 })
 document.getElementById('pair-button').addEventListener('click', async () => {
   const button = document.getElementById('pair-button')
@@ -492,8 +514,11 @@ document.getElementById('pair-button').addEventListener('click', async () => {
   }
 })
 
+if (!history.state?.mobileView) history.replaceState({ mobileView: 'activity' }, '')
 show(token ? activity : pair)
-if (token) void refresh()
+if (token && history.state?.mobileView === 'thread' && history.state.row)
+  void openThread(history.state.row, false)
+else if (token) void refresh()
 setInterval(() => {
   if (!token || document.hidden) return
   if (selected) void refreshThread()

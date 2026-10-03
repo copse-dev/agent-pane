@@ -5,10 +5,10 @@ import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
   bellIcon,
   chevronRightIcon,
-  closeIcon,
   gitMergeIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
+  moreVerticalIcon,
   plusIcon,
   runningStatusIcon,
   searchIcon,
@@ -1166,10 +1166,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (renaming?.threadId === thread.id) return
         switchProjectThread(store, api, project.id, thread.id)
       })
-      chatRow.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        showContextMenu(e.clientX, e.clientY, [
+      const openThreadMenu = (x: number, y: number): void => {
+        showContextMenu(x, y, [
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1222,7 +1220,30 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
               ]
             : []),
+          ...(canMutate
+            ? [
+                {
+                  label: 'Delete',
+                  disabled: getSidebarThreads(store, project.id).length <= 1,
+                  onSelect: (): void => {
+                    if (
+                      store.getState().activeProjectId !== project.id ||
+                      getSidebarThreads(store, project.id).length <= 1
+                    ) {
+                      return
+                    }
+                    void api.agent.clearHistory(project.id, thread.id)
+                    deleteThread(store, thread.id)
+                  },
+                },
+              ]
+            : []),
         ])
+      }
+      chatRow.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openThreadMenu(e.clientX, e.clientY)
       })
 
       if (thread.status === 'running') {
@@ -1258,19 +1279,23 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
 
       if (canMutate) {
-        const del = el(
+        const menuButton = el(
           'button',
-          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
-          closeIcon('ui-icon ui-icon-sm'),
+          {
+            type: 'button',
+            class: 'chat-menu-btn',
+            'aria-label': `Thread menu for ${displayTitle}`,
+            'aria-haspopup': 'menu',
+            'data-tooltip': 'Thread menu',
+          },
+          moreVerticalIcon('ui-icon ui-icon-sm'),
         )
-        del.addEventListener('click', (e) => {
+        menuButton.addEventListener('click', (e) => {
           e.stopPropagation()
-          if (getSidebarThreads(store, project.id).length > 1) {
-            void api.agent.clearHistory(project.id, thread.id)
-            deleteThread(store, thread.id)
-          }
+          const rect = menuButton.getBoundingClientRect()
+          openThreadMenu(rect.left, rect.bottom)
         })
-        chatRow.append(del)
+        chatRow.append(menuButton)
       }
       return chatRow
     }
@@ -1392,9 +1417,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             })
             // A lone run has no schedule heading of its own to carry the setup
             // button, so the row carries it directly (kept quiet like the
-            // delete button beside it — see the `.chat-row:hover` reveal rule).
-            const del = row.querySelector('.chat-delete')
-            if (del) del.before(setupBtn)
+            // menu button beside it — see the `.chat-row:hover` reveal rule).
+            const menuButton = row.querySelector('.chat-menu-btn')
+            if (menuButton) menuButton.before(setupBtn)
             else row.append(setupBtn)
             rows.append(row)
             continue

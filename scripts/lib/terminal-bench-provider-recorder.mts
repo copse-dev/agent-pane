@@ -11,6 +11,8 @@ import type {
 export function recordTerminalBenchProviderRequests(
   provider: LLMProvider,
   path: string,
+  /** Sampling mode and parameters in force, stamped on every request line. */
+  sampling?: { mode: string; params: unknown },
 ): LLMProvider {
   let sequence = 0
   mkdirSync(dirname(path), { recursive: true })
@@ -29,6 +31,7 @@ export function recordTerminalBenchProviderRequests(
           sequence,
           recordedAt: new Date().toISOString(),
           messages,
+          ...(sampling ? { sampling } : {}),
           tools,
         })}\n`,
       )

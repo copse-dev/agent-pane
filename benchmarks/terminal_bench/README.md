@@ -455,6 +455,21 @@ Optional tuning variables:
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `client`; `client` sends the product's curated
+  per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
+  none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
+  two modes are not comparable. Each trial records the mode and values in
+  `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
+  read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
+  historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
+  fail sealing rather than substituting current defaults.
+- `COPSE_TERMINAL_MAX_OUTPUT_TOKENS` (unset by default; a positive integer that replaces the
+  per-request output ceiling in both parameter modes, e.g. `16384`). The loop's stream caps cannot
+  see a tool call's arguments growing, because the SDK transport delivers a tool call as one chunk
+  when it ends, so one runaway call can otherwise generate to the 81,920-token card ceiling, about
+  19 minutes at 70 tokens/s. Recorded as `outputCeiling` and `params.maxOutputTokens` in
+  `agent/model-parameters.json`)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)

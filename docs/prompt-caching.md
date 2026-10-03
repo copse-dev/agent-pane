@@ -104,6 +104,13 @@ The Responses adapter reads `input_tokens_details.cached_tokens` into
 `cacheReadTokens`. Cost estimates use the route's cache rates when available;
 missing rates retain the existing input-rate fallback.
 
+Cloud agents report cache tokens beside, not inside, their input count, so the
+clients add them in. Claude Managed Agents session usage is cumulative:
+`cache_read_input_tokens` plus the per-TTL `cache_creation` buckets (5-minute
+and 1-hour, summed into `cacheCreationTokens`) are tracked on the persisted
+session and reported as per-turn deltas. Cursor's per-run usage carries
+`cacheReadTokens` and `cacheWriteTokens`.
+
 Known gaps are tracked in
 [#1286](https://github.com/copse-dev/agent-pane/issues/1286): the fourth breakpoint
 is unused, only the 5-minute TTL is used, and changing auto-attached rules,

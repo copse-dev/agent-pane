@@ -136,6 +136,15 @@ function defaultProposedPath(
   return first.path
 }
 
+function settleRead<T>(
+  read: Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  return read.then(
+    (value) => ({ ok: true, value }),
+    (error: unknown) => ({ ok: false, error }),
+  )
+}
+
 export function mountGitChangesPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -266,6 +275,7 @@ export function mountGitChangesPane(
   // guess is what the user believes; on a cold start it is also the first thing
   // they see, because this pane mounts behind the Monaco bundle.
   let loaded = false
+  let committedPending = false
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
@@ -357,6 +367,7 @@ export function mountGitChangesPane(
     selectRequestId++
     const known = nextKey ? snapshotsByOwner.get(nextKey) : undefined
     loaded = known !== undefined
+    committedPending = false
     gitAvailable = loaded
     status = known?.status ?? null
     committed = known?.committed ?? null
@@ -570,7 +581,8 @@ export function mountGitChangesPane(
     const hasGitChanges = status != null && (status.staged.length > 0 || status.unstaged.length > 0)
     const hasCommitted = (committed?.changes.length ?? 0) > 0
     if (!hasGitChanges && !hasCommitted && queue.length === 0) {
-      listBody.append(el('div', { class: 'git-changes-empty' }, 'No changes'))
+      if (committedPending) listBody.append(paneLoadingRow('Checking committed changes…'))
+      else listBody.append(el('div', { class: 'git-changes-empty' }, 'No changes'))
       return
     }
 
@@ -581,6 +593,7 @@ export function mountGitChangesPane(
     // Last: committed work is settled relative to the working tree above it, and
     // keeping it below preserves which row the pane auto-selects.
     if (committed) renderCommittedSection(committed)
+    if (committedPending) listBody.append(paneLoadingRow('Checking committed changes…'))
   }
 
   function renderRestoreBanner(): void {
@@ -945,8 +958,9 @@ export function mountGitChangesPane(
     pendingSelect = null
     hideApprovalButtons()
     emptyState.hidden = false
-    if (loaded) emptyState.textContent = 'Select a changed file'
-    else setInlineStatus(emptyState, 'pending', 'Loading changes…')
+    if (!loaded) setInlineStatus(emptyState, 'pending', 'Loading changes…')
+    else if (committedPending) setInlineStatus(emptyState, 'pending', 'Checking committed changes…')
+    else emptyState.textContent = 'Select a changed file'
     diffWrap.hidden = true
     imageWrap.hidden = true
     dirWrap.hidden = true
@@ -1096,6 +1110,7 @@ export function mountGitChangesPane(
       if (displayedOwnerKey) snapshotsByOwner.delete(displayedOwnerKey)
       if (!availabilityFailed) gitFailureLogged = false
       loaded = true
+      committedPending = false
       status = null
       committed = null
       sessionBackup = null
@@ -1104,16 +1119,33 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
+    // These reads have no data dependency. In particular, the committed view
+    // may wait on a PR lookup, so do not hold working-tree rows behind it.
+    const committedRead = settleRead(api.git.committedChanges(owner.projectId, owner.threadId))
+    const backupRead = settleRead(api.git.sessionBackup(owner.projectId, owner.threadId))
     let nextStatus
     let nextCommitted
-    let nextBackup
+    let selectedEarly: boolean
     try {
       nextStatus = await api.git.status(owner.projectId, owner.threadId)
       if (requestId !== refreshRequestId) return
-      nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
+      status = nextStatus
+      loaded = true
+      committedPending = true
+      renderList()
+      if (!selection) clearViewer()
+      // A committed-file navigation must wait for that section to arrive;
+      // syncing it now would consume pendingNavigate before it can match.
+      selectedEarly =
+        !pendingNavigate &&
+        selection?.kind !== 'committed' &&
+        nextStatus !== null &&
+        getFirstGitChange(nextStatus) !== null
+      if (selectedEarly) void syncSelection()
+      const committedResult = await committedRead
       if (requestId !== refreshRequestId) return
-      nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
-      if (requestId !== refreshRequestId) return
+      if (!committedResult.ok) throw committedResult.error
+      nextCommitted = committedResult.value
     } catch (error) {
       markGitUnavailable('git status read', error)
       if (requestId !== refreshRequestId) return
@@ -1123,23 +1155,29 @@ export function mountGitChangesPane(
       sessionBackup = null
       gitAvailable = false
       loaded = true
+      committedPending = false
       renderRestoreBanner()
       renderList()
       clearViewer()
       return
     }
     gitFailureLogged = false
-    // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
-    // three more awaits, and any event that repaints the list in that window
-    // (an approve, a pop-out sync) would render "No changes" over a repo that
-    // has them.
+    // A clean working tree is only "No changes" once committed work is known.
     loaded = true
+    committedPending = false
     status = nextStatus
     committed = nextCommitted
-    sessionBackup = nextBackup
-    renderRestoreBanner()
     renderList()
-    await syncSelection()
+    if (!selectedEarly) await syncSelection()
+    const backupResult = await backupRead
+    if (requestId !== refreshRequestId) return
+    if (backupResult.ok) {
+      sessionBackup = backupResult.value
+    } else {
+      markGitUnavailable('session backup read', backupResult.error)
+      sessionBackup = null
+    }
+    renderRestoreBanner()
   }
 
   async function syncFromStore(): Promise<void> {

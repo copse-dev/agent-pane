@@ -62,9 +62,20 @@ interface ManagedAgentSession {
    * persisted before repo-less support; those were always repo-backed.
    */
   hasRepo?: boolean
-  /** Last cumulative usage seen for this session, so follow-ups report a delta. */
+  /**
+   * Last cumulative usage seen for this session, so follow-ups report a delta.
+   * Raw API counters: `usageInput` is fresh (uncached) `input_tokens` only.
+   */
   usageInput: number
   usageOutput: number
+  /**
+   * Cumulative `cache_read_input_tokens` and summed `cache_creation` tokens.
+   * Absent on sessions persisted before cache tracking; the first fetch then
+   * adopts the current totals as the baseline instead of charging the whole
+   * session's cache history to one turn.
+   */
+  usageCacheRead?: number
+  usageCacheCreation?: number
 }
 
 const optionalString = z.preprocess(
@@ -76,11 +87,28 @@ const optionalNumber = z.preprocess(
   z.number().optional(),
 )
 const idResponseSchema = z.object({ id: optionalString }).loose()
+// Session usage (GET /v1/sessions/{id}) reports cache creation per TTL under
+// `cache_creation`, not as the Messages API's flat `cache_creation_input_tokens`.
 const sessionGetResponseSchema = z
   .object({
     usage: z.preprocess(
       (value) => (value === null ? undefined : value),
-      z.object({ input_tokens: optionalNumber, output_tokens: optionalNumber }).optional(),
+      z
+        .object({
+          input_tokens: optionalNumber,
+          output_tokens: optionalNumber,
+          cache_read_input_tokens: optionalNumber,
+          cache_creation: z.preprocess(
+            (value) => (value === null ? undefined : value),
+            z
+              .object({
+                ephemeral_5m_input_tokens: optionalNumber,
+                ephemeral_1h_input_tokens: optionalNumber,
+              })
+              .optional(),
+          ),
+        })
+        .optional(),
     ),
   })
   .loose()
@@ -113,6 +141,10 @@ function readSession(threadId: string): ManagedAgentSession | null {
     environmentId: raw['environmentId'],
     usageInput: raw['usageInput'],
     usageOutput: raw['usageOutput'],
+    ...(typeof raw['usageCacheRead'] === 'number' ? { usageCacheRead: raw['usageCacheRead'] } : {}),
+    ...(typeof raw['usageCacheCreation'] === 'number'
+      ? { usageCacheCreation: raw['usageCacheCreation'] }
+      : {}),
     ...(typeof raw['model'] === 'string' ? { model: raw['model'] } : {}),
     ...(typeof raw['hasRepo'] === 'boolean' ? { hasRepo: raw['hasRepo'] } : {}),
   }
@@ -348,15 +380,28 @@ async function fetchSessionUsage(input: {
   baseUrl: string
   apiKey: string
   sessionId: string
-}): Promise<{ inputTokens: number; outputTokens: number }> {
+}): Promise<{
+  freshInputTokens: number
+  outputTokens: number
+  cacheReadTokens: number | undefined
+  cacheCreationTokens: number | undefined
+}> {
   const response = await input.fetchImpl(
     joinUrl(input.baseUrl, `/v1/sessions/${encodeURIComponent(input.sessionId)}`),
     { headers: authHeaders(input.apiKey) },
   )
   const json = sessionGetResponseSchema.parse(await readJson(response, 'Claude Agent usage'))
+  const cacheCreation = json.usage?.cache_creation
   return {
-    inputTokens: json.usage?.input_tokens ?? 0,
+    freshInputTokens: json.usage?.input_tokens ?? 0,
     outputTokens: json.usage?.output_tokens ?? 0,
+    cacheReadTokens: json.usage?.cache_read_input_tokens,
+    cacheCreationTokens:
+      cacheCreation?.ephemeral_5m_input_tokens === undefined &&
+      cacheCreation?.ephemeral_1h_input_tokens === undefined
+        ? undefined
+        : (cacheCreation.ephemeral_5m_input_tokens ?? 0) +
+          (cacheCreation.ephemeral_1h_input_tokens ?? 0),
   }
 }
 
@@ -441,18 +486,37 @@ async function reportManagedAgentUsage(input: {
       sessionId: input.session.sessionId,
     })
     // Session usage is cumulative across all turns; report only this turn's
-    // delta and persist the new running total.
-    deltaInput = Math.max(0, cumulative.inputTokens - input.session.usageInput)
-    deltaOutput = Math.max(0, cumulative.outputTokens - input.session.usageOutput)
-    input.session.usageInput = cumulative.inputTokens
-    input.session.usageOutput = cumulative.outputTokens
-    writeSession(input.threadId, input.session)
+    // delta and persist the new running totals.
+    const { session } = input
+    const deltaFresh = Math.max(0, cumulative.freshInputTokens - session.usageInput)
+    const cacheReadTokens = cumulative.cacheReadTokens ?? session.usageCacheRead ?? 0
+    const cacheCreationTokens = cumulative.cacheCreationTokens ?? session.usageCacheCreation ?? 0
+    const deltaCacheRead = Math.max(
+      0,
+      cacheReadTokens - (session.usageCacheRead ?? cacheReadTokens),
+    )
+    const deltaCacheCreation = Math.max(
+      0,
+      cacheCreationTokens - (session.usageCacheCreation ?? cacheCreationTokens),
+    )
+    // Copse usage records count cache reads and writes inside inputTokens.
+    deltaInput = deltaFresh + deltaCacheRead + deltaCacheCreation
+    deltaOutput = Math.max(0, cumulative.outputTokens - session.usageOutput)
+    session.usageInput = cumulative.freshInputTokens
+    session.usageOutput = cumulative.outputTokens
+    if (cumulative.cacheReadTokens !== undefined)
+      session.usageCacheRead = cumulative.cacheReadTokens
+    if (cumulative.cacheCreationTokens !== undefined)
+      session.usageCacheCreation = cumulative.cacheCreationTokens
+    writeSession(input.threadId, session)
     if (deltaInput || deltaOutput) {
       input.onChunk({
         type: 'usage',
         model: remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, input.selectedModel),
         inputTokens: deltaInput,
         outputTokens: deltaOutput,
+        cacheReadTokens: deltaCacheRead,
+        cacheCreationTokens: deltaCacheCreation,
       })
     }
   } catch (err) {
@@ -555,6 +619,8 @@ export async function runManagedAgentFromSettings(
       hasRepo: repository !== null,
       usageInput: 0,
       usageOutput: 0,
+      usageCacheRead: 0,
+      usageCacheCreation: 0,
     }
     turnPrompt = await buildFirstHandoffPrompt(prompt, options.priorMessages ?? [])
   }

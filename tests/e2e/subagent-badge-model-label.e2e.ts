@@ -126,7 +126,8 @@ describe('subagent badge and footer model label', () => {
     // route to exercise the shared labeler here.
     const trigger = await $('.model-picker-trigger')
     await trigger.waitForExist({ timeout: 15_000 })
-    await expect(trigger).toHaveText('Claude Sonnet 4.6')
+    await expect(trigger.$('.model-picker-label')).toHaveText('Claude Sonnet 4.6')
+    await expect(trigger.$('.model-picker-cost')).toBeDisplayed()
 
     await saveAppScreenshot('footer-model-label-resolved.png')
   })

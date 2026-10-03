@@ -10,23 +10,23 @@ import {
   npmBinBesideBinary,
   type AcpAdapterOutdated,
 } from './acp-adapter-version.ts'
-import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
+import { installGlobalNpmPackage, isSocketFirewallAvailable } from '../security/socket-firewall.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { requestApproval } from '../approval.ts'
 
 /**
  * "Just works" setup for curated ACP presets. It runs when ACP settings opens.
- * Any host-wide package installation is still gated by an explicit approval.
+ * Fresh host-wide package installations are gated by an explicit approval.
  * For each preset it:
  *
  *  1. Detects the agent binary and any gating client (`claude`, `cursor-agent`).
  *  2. Installs a missing npm adapter through Socket Firewall when the adapter opts
  *     in (`autoInstall`) and its client prerequisite is present. Script-installed
  *     binaries (Cursor) are never auto-installed; the UI shows their command.
- *  3. Offers an approved upgrade when an installed autoInstall adapter is behind
- *     the registry latest (same Socket-Firewall path; uses the npm beside the
- *     resolved binary so nvm prefixes stay consistent).
+ *  3. Updates an installed autoInstall adapter when it is behind the registry
+ *     latest (same Socket-Firewall path; uses the npm beside the resolved
+ *     binary so nvm prefixes stay consistent).
  *  4. Registers a ready-to-use config for any preset whose binary is available.
  *  5. Best-effort detects + caches the agent's models (needs an open folder), so
  *     they appear in the picker without a manual "Detect".
@@ -122,7 +122,7 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
 
 export type { AcpAutoSetupResult }
 
-/** One approved global npm change (fresh install or upgrade of a catalog package). */
+/** One global npm change (fresh install or upgrade of a catalog package). */
 export interface AcpPackageChange {
   agent: KnownAcpAgent
   action: 'install' | 'upgrade'
@@ -223,44 +223,12 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   const plan = planAcpAutoSetup(inputs)
   const packageChanges = packageChangesFromPlan(plan)
 
-  const installedNow = new Set<string>()
-  const upgradedNow = new Set<string>()
-  const installApproved = await requestAcpPackageInstallApproval(packageChanges)
-  if (!installApproved) {
-    for (const change of packageChanges) {
-      result.failed.push({
-        id: change.agent.id,
-        reason:
-          change.action === 'upgrade'
-            ? 'package upgrade not approved'
-            : 'package install not approved',
-      })
-    }
-  } else {
-    for (const change of packageChanges) {
-      if (signal.aborted || !change.agent.installPackage) break
-      const npmBin = await resolveNpmBinForChange(change)
-      const ok = await installGlobalNpmPackage(
-        change.agent.installPackage,
-        signal,
-        npmBin ? { npmBin } : {},
-      )
-      if (ok) {
-        if (change.action === 'upgrade') {
-          upgradedNow.add(change.agent.id)
-          result.upgraded.push(change.agent.id)
-        } else {
-          installedNow.add(change.agent.id)
-          result.installed.push(change.agent.id)
-        }
-      } else {
-        result.failed.push({
-          id: change.agent.id,
-          reason: change.action === 'upgrade' ? 'package upgrade failed' : 'package install failed',
-        })
-      }
-    }
-  }
+  const packageResult = await installAcpPackageChanges(packageChanges, signal)
+  result.installed.push(...packageResult.installed)
+  result.upgraded.push(...packageResult.upgraded)
+  result.failed.push(...packageResult.failed)
+  const installedNow = new Set(result.installed)
+  const upgradedNow = new Set(result.upgraded)
 
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   for (const known of plan.register) {
@@ -305,6 +273,65 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   return result
 }
 
+/** Apply catalog package changes only after consent for any fresh global install. */
+export async function installAcpPackageChanges(
+  packageChanges: readonly AcpPackageChange[],
+  signal: AbortSignal,
+  dependencies: {
+    socketFirewallAvailable: typeof isSocketFirewallAvailable
+    requestInstallApproval: typeof requestAcpPackageInstallApproval
+    resolveNpmBin: typeof resolveNpmBinForChange
+    install: typeof installGlobalNpmPackage
+  } = {
+    socketFirewallAvailable: isSocketFirewallAvailable,
+    requestInstallApproval: requestAcpPackageInstallApproval,
+    resolveNpmBin: resolveNpmBinForChange,
+    install: installGlobalNpmPackage,
+  },
+): Promise<Pick<AcpAutoSetupResult, 'installed' | 'upgraded' | 'failed'>> {
+  const result: Pick<AcpAutoSetupResult, 'installed' | 'upgraded' | 'failed'> = {
+    installed: [],
+    upgraded: [],
+    failed: [],
+  }
+  const socketFirewallAvailable = dependencies.socketFirewallAvailable()
+  const installApproved = await dependencies.requestInstallApproval(
+    packageChanges,
+    socketFirewallAvailable,
+  )
+  for (const change of packageChanges) {
+    if (!installApproved && (change.action === 'install' || !socketFirewallAvailable)) {
+      result.failed.push({
+        id: change.agent.id,
+        reason: socketFirewallAvailable
+          ? 'package install not approved'
+          : 'Socket Firewall install not approved',
+      })
+      continue
+    }
+    if (signal.aborted || !change.agent.installPackage) break
+    const npmBin = await dependencies.resolveNpmBin(change)
+    const ok = await dependencies.install(
+      change.agent.installPackage,
+      signal,
+      npmBin ? { npmBin } : {},
+    )
+    if (ok) {
+      if (change.action === 'upgrade') {
+        result.upgraded.push(change.agent.id)
+      } else {
+        result.installed.push(change.agent.id)
+      }
+    } else {
+      result.failed.push({
+        id: change.agent.id,
+        reason: change.action === 'upgrade' ? 'package upgrade failed' : 'package install failed',
+      })
+    }
+  }
+  return result
+}
+
 function packageChangesFromPlan(plan: AcpAutoSetupPlan): AcpPackageChange[] {
   const changes: AcpPackageChange[] = plan.install.map((agent) => ({
     agent,
@@ -327,40 +354,44 @@ async function resolveNpmBinForChange(change: AcpPackageChange): Promise<string 
   return binaryPath ? npmBinBesideBinary(binaryPath) : undefined
 }
 
-/** Build the approval dialog title/body for a set of package changes. Pure. */
-export function formatAcpPackageApproval(changes: readonly AcpPackageChange[]): {
+/** Build the approval dialog title/body for fresh global installs. Pure. */
+export function formatAcpPackageApproval(
+  changes: readonly AcpPackageChange[],
+  socketFirewallAvailable = true,
+): {
   title: string
   body: string
 } {
   const installs = changes.filter((change) => change.action === 'install')
-  const upgrades = changes.filter((change) => change.action === 'upgrade')
-  const title =
-    upgrades.length > 0 && installs.length === 0
-      ? 'Update ACP adapters globally?'
-      : upgrades.length > 0
-        ? 'Install or update ACP adapters?'
-        : 'Install ACP adapters globally?'
-
-  const lines: string[] = []
-  if (installs.length > 0 && upgrades.length === 0) {
-    lines.push('Copse found missing ACP adapters and wants to install these global npm packages:')
-    lines.push('')
-    for (const change of installs) {
-      if (change.agent.installPackage) lines.push(`• ${change.agent.installPackage}`)
+  if (!installs.length && !socketFirewallAvailable) {
+    return {
+      title: 'Install Socket Firewall globally?',
+      body:
+        'Copse needs to install Socket Firewall (sfw) globally before updating your installed ACP adapters. ' +
+        'The adapter updates then run through Socket Firewall with lifecycle scripts disabled.',
     }
-  } else {
-    lines.push('Copse wants to change these global npm ACP adapters:')
-    lines.push('')
-    for (const change of installs) {
-      if (change.agent.installPackage) {
-        lines.push(`• ${change.agent.installPackage} (new install)`)
-      }
-    }
-    for (const change of upgrades) {
-      if (change.agent.installPackage) {
-        const from = change.fromVersion ?? '?'
-        const to = change.toVersion ?? 'latest'
-        lines.push(`• ${change.agent.installPackage} (${from} → ${to})`)
+  }
+  const lines = [
+    'Copse found missing ACP adapters and wants to install these global npm packages:',
+    '',
+  ]
+  for (const change of installs) {
+    if (change.agent.installPackage) lines.push(`• ${change.agent.installPackage}`)
+  }
+  if (!socketFirewallAvailable) {
+    const upgrades = changes.filter((change) => change.action === 'upgrade')
+    if (upgrades.length) {
+      lines.push(
+        '',
+        'After installing Socket Firewall, Copse will also update these installed adapters:',
+      )
+      for (const change of upgrades) {
+        if (!change.agent.installPackage) continue
+        const versions =
+          change.fromVersion && change.toVersion
+            ? ` (${change.fromVersion} → ${change.toVersion})`
+            : ''
+        lines.push(`• ${change.agent.installPackage}${versions}`)
       }
     }
   }
@@ -369,21 +400,24 @@ export function formatAcpPackageApproval(changes: readonly AcpPackageChange[]): 
     'If Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
       'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
   )
-  return { title, body: lines.join('\n') }
+  return { title: 'Install ACP adapters globally?', body: lines.join('\n') }
 }
 
-/** Ask before mutating the user's global npm installation. */
+/** Ask before a fresh global install, including SFW needed by an adapter update. */
 export async function requestAcpPackageInstallApproval(
   changes: readonly AcpPackageChange[],
+  socketFirewallAvailable = isSocketFirewallAvailable(),
 ): Promise<boolean> {
-  if (changes.length === 0) return true
-  const { title, body } = formatAcpPackageApproval(changes)
+  if (!changes.length) return true
+  if (socketFirewallAvailable && !changes.some((change) => change.action === 'install')) return true
+  const { title, body } = formatAcpPackageApproval(changes, socketFirewallAvailable)
   const { approved } = await requestApproval({
     title,
     body,
     type: 'shell',
     cause: 'acp-package-setup',
     allowRemember: false,
+    showWhileSettingsOpen: true,
   })
   return approved
 }

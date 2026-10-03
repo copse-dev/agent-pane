@@ -1,3 +1,4 @@
+import { announcementHistorySchema } from '@shared/product-announcements.ts'
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
@@ -179,6 +180,7 @@ export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
+  acknowledgedProductAnnouncements: announcementHistorySchema,
   model: z.string().max(256),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),

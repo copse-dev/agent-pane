@@ -6,6 +6,13 @@ import { join } from 'node:path'
 export async function buildMobileAssets(outputDir = 'dist/mobile'): Promise<void> {
   cpSync('src/mobile', outputDir, { recursive: true })
   await build({
+    entryPoints: ['src/mobile/app.js'],
+    outfile: join(outputDir, 'app.js'),
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+  })
+  await build({
     entryPoints: ['src/mobile/app.css'],
     outfile: join(outputDir, 'app.css'),
     bundle: true,
