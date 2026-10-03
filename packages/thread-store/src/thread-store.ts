@@ -2059,7 +2059,7 @@ function recoverPendingHistoryEdit(projectId: string, threadId: string, force = 
     unlinkIfPresent(agentHistoryPath(projectId, threadId))
   }
   unlinkIfPresent(agentEpochPath(projectId, threadId))
-  unlinkIfPresent(path)
+  unlinkSync(path)
 }
 
 /** Durably record the state restored if the following history mutation is interrupted. */
@@ -2098,7 +2098,8 @@ export function commitThreadHistoryMutation(
       `${JSON.stringify({ v: HISTORY_EDIT_VERSION, resultingRevision, previous })}\n`,
       0o600,
     )
-    unlinkIfPresent(transaction)
+    // The rollback journal must be gone before success becomes observable.
+    unlinkSync(transaction)
     activeHistoryMutations.delete(historyMutationKey(projectId, threadId))
   })
 }
@@ -2126,7 +2127,8 @@ export function clearThreadHistoryUndo(projectId: string, threadId: string): Pro
 /** Finish a successful Undo: its restored state is live, so no rollback remains pending. */
 export function finishThreadHistoryUndo(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    unlinkIfPresent(historyEditTransactionPath(projectId, threadId))
+    // A surviving journal would roll this successful Undo back on the next read.
+    unlinkSync(historyEditTransactionPath(projectId, threadId))
     unlinkIfPresent(historyEditUndoPath(projectId, threadId))
     activeHistoryMutations.delete(historyMutationKey(projectId, threadId))
   })

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +7,8 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import {
   commitThreadHistoryMutation,
+  finishThreadHistoryUndo,
+  threadDirectoryPath,
   getProjectThread,
   loadAgentHistory,
   recoverThreadHistoryMutation,
@@ -232,6 +235,42 @@ describe('thread history editing', () => {
     assert.deepEqual((await getProjectThread('project', 'thread'))?.messages, edited.messages)
     assert.deepEqual(await loadAgentHistory('project', 'thread'), editedHistory)
   })
+
+  for (const operation of ['commit', 'undo'] as const) {
+    it(
+      `rejects ${operation} when its rollback journal cannot be removed and recovers on reload`,
+      { skip: process.platform !== 'darwin' },
+      async () => {
+        const original = thread('thread')
+        const history: LLMMessage[] = [{ role: 'user', content: 'original' }]
+        const previous = { thread: original, agentHistory: history, hadAgentHistory: true }
+        await stageThreadHistoryMutation('project', 'thread', previous)
+        const edited = thread('thread')
+        edited.messages = [message('u1', 'user', 'Use SQLite', 1)]
+        await saveProjectThread('project', edited)
+        await saveAgentHistory('project', 'thread', [{ role: 'user', content: 'Use SQLite' }])
+        const journal = join(
+          threadDirectoryPath('project', 'thread'),
+          'history-edit-transaction.json',
+        )
+        // An immutable real file permits reads and unrelated writes while unlink fails.
+        execFileSync('/usr/bin/chflags', ['uchg', journal])
+        try {
+          await assert.rejects(
+            operation === 'commit'
+              ? commitThreadHistoryMutation('project', 'thread', 'revision', previous)
+              : finishThreadHistoryUndo('project', 'thread'),
+            /operation not permitted/i,
+          )
+        } finally {
+          execFileSync('/usr/bin/chflags', ['nouchg', journal])
+          await recoverThreadHistoryMutation('project', 'thread')
+        }
+        assert.deepEqual((await getProjectThread('project', 'thread'))?.messages, original.messages)
+        assert.deepEqual(await loadAgentHistory('project', 'thread'), history)
+      },
+    )
+  }
 
   it('blocks reconstruction when attachment context is not recoverable', async () => {
     const withAttachment = thread('attached')
