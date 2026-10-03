@@ -1277,11 +1277,46 @@
           0
         ]
       },
+      "plugins:cancel-install": {
+        "api": "plugins.cancelInstall",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "plugins:commit-install": {
+        "api": "plugins.commitInstall",
+        "args": [
+          1,
+          1
+        ]
+      },
       "plugins:list": {
         "api": "plugins.list",
         "args": [
           0,
           0
+        ]
+      },
+      "plugins:list-installs": {
+        "api": "plugins.listInstalls",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "plugins:prepare-install": {
+        "api": "plugins.prepareInstall",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "plugins:rollback": {
+        "api": "plugins.rollback",
+        "args": [
+          1,
+          1
         ]
       },
       "plugins:set-enabled": {
@@ -1296,6 +1331,13 @@
         "args": [
           3,
           3
+        ]
+      },
+      "plugins:uninstall": {
+        "api": "plugins.uninstall",
+        "args": [
+          2,
+          2
         ]
       },
       "ports:kill": {

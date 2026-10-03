@@ -11,8 +11,10 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
+import type { PluginInstallRecord } from '@shared/types/plugin-installs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 
@@ -20,6 +22,8 @@ import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 interface StubApiSpy {
   lastSetEnabled: { id: string; enabled: boolean } | null
   lastSetSetting: { id: string; key: string; value: unknown } | null
+  lastPreparedCatalogId: string | null
+  lastCommittedToken: string | null
   addSourceCalls: number
 }
 
@@ -29,6 +33,7 @@ function stubApi(
   listOverride?: (current: PluginsListResult) => Promise<PluginsListResult>,
 ): ApiClient {
   let current = initial
+  let installs: PluginInstallRecord[] = []
   return createPendingApi({
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
@@ -72,6 +77,49 @@ function stubApi(
       spy.addSourceCalls += 1
       return Promise.resolve(current)
     },
+    'plugins.listInstalls': () => Promise.resolve(installs),
+    'plugins.prepareInstall': (catalogId: string) => {
+      spy.lastPreparedCatalogId = catalogId
+      return Promise.resolve({
+        token: 'review-token',
+        catalogId,
+        pluginId: 'stripe',
+        name: 'stripe',
+        publisher: 'Stripe',
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        revision: '97b2164821c378f246c3903852057b36a8bd0296',
+        skillCount: 2,
+        mcpServerCount: 1,
+        skills: ['skills/payments/SKILL.md', 'skills/refunds/SKILL.md'],
+        mcpServers: [{ name: 'stripe', transport: 'stdio' as const, target: 'npx @stripe/mcp' }],
+        warnings: ['Skipped MCP server "legacy": Copse runs local commands and HTTP URLs only.'],
+        provenance: 'unsigned' as const,
+        operation: 'install' as const,
+      })
+    },
+    'plugins.cancelInstall': () => Promise.resolve(),
+    'plugins.commitInstall': (token: string) => {
+      spy.lastCommittedToken = token
+      const record: PluginInstallRecord = {
+        schemaVersion: 1,
+        catalogId: spy.lastPreparedCatalogId ?? 'missing',
+        pluginId: 'stripe',
+        name: 'stripe',
+        source: {
+          repository: 'https://github.com/stripe/ai',
+          path: 'providers/claude/plugin',
+          revision: '97b2164821c378f246c3903852057b36a8bd0296',
+        },
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        installedAt: '2026-10-01T12:00:00.000Z',
+        updatedAt: '2026-10-01T12:00:00.000Z',
+        provenance: 'unsigned',
+      }
+      installs = [record]
+      return Promise.resolve({ record })
+    },
+    'plugins.uninstall': () => Promise.resolve({ pluginId: 'stripe', dataDeleted: false }),
+    'plugins.rollback': () => Promise.reject(new Error('No retained revision')),
   })
 }
 
@@ -216,6 +264,7 @@ async function openPlugins(
   section: 'customise' | 'experimental' = 'customise',
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
+  mountConfirmDialog()
   mountSettingsDialog(store, stubApi(initial, spy))
   const btn = document.querySelector<HTMLButtonElement>(
     `.settings-nav-btn[data-section="${section}"]`,
@@ -241,7 +290,13 @@ function pluginsFieldset(): HTMLElement {
 }
 
 it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
-  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
   const initial = { plugins: [{ ...demoPlugin, enabled: true }] }
   let release: ((result: PluginsListResult) => void) | undefined
   let reads = 0
@@ -285,6 +340,8 @@ describe('settings → plugins list', () => {
     spy = {
       lastSetEnabled: null,
       lastSetSetting: null,
+      lastPreparedCatalogId: null,
+      lastCommittedToken: null,
       addSourceCalls: 0,
     }
   })
@@ -295,6 +352,110 @@ describe('settings → plugins list', () => {
     assert.ok(btn)
     assert.match(btn.textContent, /Customise/)
     assert.match(list.textContent, /No plugins installed\./)
+  })
+
+  it('switches to the bundled catalogue and filters pinned source cards', async () => {
+    const list = await openPlugins({ plugins: [] }, spy)
+    const fieldset = pluginsFieldset()
+    const installedPanel = fieldset.querySelector<HTMLElement>('#plugins-installed-panel')
+    const browsePanel = fieldset.querySelector<HTMLElement>('#plugins-browse-panel')
+    const browseTab = fieldset.querySelector<HTMLButtonElement>('#plugins-browse-tab')
+    assert.ok(installedPanel)
+    assert.ok(browsePanel)
+    assert.ok(browseTab)
+    assert.equal(browsePanel.hidden, true)
+
+    browseTab.click()
+    assert.equal(installedPanel.hidden, true)
+    assert.equal(browsePanel.hidden, false)
+    assert.equal(browseTab.getAttribute('aria-selected'), 'true')
+    assert.match(browsePanel.textContent, /323 packages from 2 pinned catalogues/)
+
+    const search = browsePanel.querySelector<HTMLInputElement>('.plugin-catalog-search-input')
+    assert.ok(search)
+    search.value = 'stripe'
+    search.dispatchEvent(new Event('input'))
+    const stripe = browsePanel.querySelector<HTMLElement>(
+      '.plugin-catalog-card[data-catalog-id="https://github.com/stripe/ai#providers/claude/plugin"]',
+    )
+    assert.ok(stripe)
+    assert.equal(stripe.querySelector('.plugin-name')?.textContent, 'stripe')
+    assert.match(stripe.textContent, /Untested/)
+    const source = stripe.querySelector<HTMLAnchorElement>('.plugin-catalog-source-link')
+    assert.ok(source)
+    assert.match(
+      source.href,
+      /github\.com\/stripe\/ai\/tree\/97b2164821c378f246c3903852057b36a8bd0296\/providers\/claude\/plugin/,
+    )
+    assert.match(list.textContent, /No plugins installed\./)
+  })
+
+  it('reviews the exact pinned package by component before installing it', async () => {
+    await openPlugins({ plugins: [] }, spy)
+    const fieldset = pluginsFieldset()
+    fieldset.querySelector<HTMLButtonElement>('#plugins-browse-tab')?.click()
+    const browsePanel = fieldset.querySelector<HTMLElement>('#plugins-browse-panel')
+    assert.ok(browsePanel)
+    const search = browsePanel.querySelector<HTMLInputElement>('.plugin-catalog-search-input')
+    assert.ok(search)
+    search.value = 'stripe'
+    search.dispatchEvent(new Event('input'))
+    const card = browsePanel.querySelector<HTMLElement>(
+      '.plugin-catalog-card[data-catalog-id="https://github.com/stripe/ai#providers/claude/plugin"]',
+    )
+    assert.ok(card)
+    const install = [...card.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Review install',
+    )
+    assert.ok(install)
+    install.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(spy.lastPreparedCatalogId, 'https://github.com/stripe/ai#providers/claude/plugin')
+    const dialog = document.querySelector<HTMLDialogElement>('#confirm-dialog')
+    assert.ok(dialog)
+    const review = dialog.querySelector<HTMLElement>('.plugin-install-review-dialog')
+    assert.ok(review)
+    assert.match(review.textContent, /Unsigned package from Stripe/)
+    // Skills read by name; the path stays available on hover.
+    const skills = [...review.querySelectorAll<HTMLElement>('.plugin-chip')]
+    assert.deepEqual(
+      skills.map((chip) => chip.textContent),
+      ['payments', 'refunds'],
+    )
+    assert.equal(skills[0]?.title, 'skills/payments/SKILL.md')
+    const headings = [...review.querySelectorAll('.plugin-install-review-heading')]
+    assert.deepEqual(
+      headings.map((heading) => heading.textContent),
+      ['2 skills', '1 MCP server'],
+    )
+    const server = review.querySelector('.plugin-install-review-servers li')
+    assert.equal(server?.textContent, 'stripeLocal commandnpx @stripe/mcp')
+    assert.deepEqual(
+      [...review.querySelectorAll('.plugin-install-review-warnings li')].map(
+        (li) => li.textContent,
+      ),
+      ['Skipped MCP server "legacy": Copse runs local commands and HTTP URLs only.'],
+    )
+    // The exact pin is still part of the review, folded behind its short form.
+    const pin = review.querySelector<HTMLDetailsElement>('details.plugin-install-review-pin')
+    assert.ok(pin)
+    assert.equal(pin.open, false)
+    assert.equal(pin.querySelector('summary')?.textContent, 'Pinned to 97b2164')
+    assert.match(pin.textContent, /97b2164821c378f246c3903852057b36a8bd0296/)
+    assert.match(pin.textContent, /sha256:a{64}/)
+    assert.equal(dialog.querySelector('.confirm-dialog-confirm')?.textContent, 'Install')
+
+    clickActiveConfirmDialogConfirm()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(spy.lastCommittedToken, 'review-token')
+    const installedCard = browsePanel.querySelector<HTMLElement>(
+      '.plugin-catalog-card[data-catalog-id="https://github.com/stripe/ai#providers/claude/plugin"]',
+    )
+    assert.ok(installedCard)
+    assert.equal(installedCard.dataset['installed'], 'true')
+    assert.match(installedCard.textContent, /Installed/)
   })
 
   it('lists all experimental plugins, active first, including disabled user plugins', async () => {

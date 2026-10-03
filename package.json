@@ -110,6 +110,7 @@
     "sync:intellect": "node scripts/sync-intellect.mts",
     "sync:model-cards": "node scripts/sync-model-cards.mts",
     "sync:cursor-skills": "node scripts/sync-bundled-cursor-skills.mts",
+    "sync:plugin-catalog": "node scripts/plugin-catalog-sync.mts",
     "sync:gortex-licenses": "node scripts/sync-gortex-licenses.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
