@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  createThread,
+  setThreadStatus,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -38,7 +43,9 @@ function installGeometry(list: HTMLElement): { setExtra: (px: number) => void; m
   let extra = 0
   let scrollTopValue = 0
   const contentHeight = (): number =>
-    list.querySelectorAll(':scope > .msg-user, :scope > .msg-assistant').length * ROW_HEIGHT + extra
+    list.querySelectorAll(':scope > .msg-user, :scope > .msg-assistant').length * ROW_HEIGHT +
+    (list.querySelector(':scope > .agent-activity:not([hidden])') ? 32 : 0) +
+    extra
   const max = (): number => Math.max(0, contentHeight() - CLIENT_HEIGHT)
   Object.defineProperties(list, {
     clientHeight: { configurable: true, get: () => CLIENT_HEIGHT },
@@ -88,6 +95,49 @@ function mountAtBottom(): {
 }
 
 describe('transcript bottom pinning', () => {
+  it('lands at the bottom when switching between threads with the same live activity', () => {
+    const { list, threadId, store, geometry } = mountAtBottom()
+    setThreadStatus(store, threadId, 'running')
+    const otherId = createThread(store)
+    for (let i = 0; i < 6; i++) {
+      addMessage(store, otherId, i % 2 === 0 ? 'user' : 'assistant', `other message ${String(i)}`)
+    }
+    setThreadStatus(store, otherId, 'running')
+    store.emit('agent_activity', otherId, 'Reasoning…')
+
+    switchThread(store, threadId)
+
+    assert.ok(list.querySelector(':scope > .agent-activity:not([hidden])'))
+    assert.equal(
+      list.scrollTop,
+      geometry.max(),
+      'the reattached activity row is part of the bottom',
+    )
+  })
+
+  it('keeps the live activity row in view on a pinned same-thread rebuild', () => {
+    const { list, threadId, store, geometry } = mountAtBottom()
+    setThreadStatus(store, threadId, 'running')
+    store.emit('agent_activity', threadId, 'Reasoning…')
+
+    store.emit('threads_changed')
+
+    assert.equal(list.scrollTop, geometry.max(), 'an unchanged activity label must not leave a gap')
+  })
+
+  it('preserves a reader’s position when rebuilding a running thread', () => {
+    const { list, threadId, store, geometry } = mountAtBottom()
+    setThreadStatus(store, threadId, 'running')
+    store.emit('agent_activity', threadId, 'Reasoning…')
+    const readingAt = geometry.max() - 120
+    list.scrollTop = readingAt
+    list.dispatchEvent(new Event('scroll'))
+
+    store.emit('threads_changed')
+
+    assert.equal(list.scrollTop, readingAt, 'rebuilding must not force a reader back to the bottom')
+  })
+
   it('keeps following new output after content above the bottom shrinks', () => {
     const { list, threadId, store, geometry } = mountAtBottom()
 

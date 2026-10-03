@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import {
   loopNudgeHook,
+  malformedToolCallHook,
   LOOP_NUDGE_HOOK_ID,
   reasoningRunawayHook,
   REASONING_RUNAWAY_HOOK_ID,
@@ -22,7 +23,9 @@ import {
   STUCK_FINALIZE_NUDGE,
 } from '../agent-loop-guards.ts'
 import {
+  MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+  TRUNCATED_TOOL_CALL_NUDGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
 
@@ -100,14 +103,47 @@ function postStream(over: Partial<StepBoundaryPayload> = {}): StepBoundaryPayloa
 }
 
 describe('STEP_BOUNDARY_HOOKS registration', () => {
-  it('lists the four named nudge hooks in inline order and joins FIRST_PARTY_HOOKS', () => {
+  it('lists the named nudge hooks in inline order and joins FIRST_PARTY_HOOKS', () => {
     assert.deepEqual(
       STEP_BOUNDARY_HOOKS.map((h) => h.id),
-      ['stuck-finalize-nudge', 'loop-nudge', 'truncation-continue', 'reasoning-runaway'],
+      [
+        'stuck-finalize-nudge',
+        'loop-nudge',
+        'truncation-continue',
+        'reasoning-runaway',
+        'malformed-tool-call',
+      ],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
       STEP_BOUNDARY_HOOKS.map((h) => h.id),
+    )
+  })
+})
+
+describe('malformed-tool-call', () => {
+  it('selects the truncated wording when the ceiling cut the call off', async () => {
+    assert.deepEqual(
+      await malformedToolCallHook.run(
+        postStream({ stopReason: 'tool_call_malformed', malformedToolCallHitCeiling: true }),
+        {},
+      ),
+      { injectContext: TRUNCATED_TOOL_CALL_NUDGE },
+    )
+  })
+
+  it('selects the generic wording otherwise, and abstains for other stop reasons or phases', async () => {
+    assert.deepEqual(
+      await malformedToolCallHook.run(postStream({ stopReason: 'tool_call_malformed' }), {}),
+      { injectContext: MALFORMED_TOOL_CALL_NUDGE },
+    )
+    assert.equal(
+      await malformedToolCallHook.run(postStream({ stopReason: 'max_tokens' }), {}),
+      undefined,
+    )
+    assert.equal(
+      await malformedToolCallHook.run(preStream({ stopReason: 'tool_call_malformed' }), {}),
+      undefined,
     )
   })
 })

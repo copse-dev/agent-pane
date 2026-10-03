@@ -83,6 +83,68 @@ describe('git changes pane loading state', () => {
     assert.notEqual(listText(listRoot), 'No changes')
   })
 
+  it('shows working-tree rows while the committed lookup is still pending', async () => {
+    const base = createFakeApi()
+    let finishCommitted: ((value: null) => void) | undefined
+    let fileDiffCalls = 0
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        isAvailable: async () => true,
+        status: async () => ({
+          staged: [],
+          unstaged: [{ path: 'edited.ts', status: 'modified' }],
+        }),
+        committedChanges: () =>
+          new Promise((resolve) => {
+            finishCommitted = resolve
+          }),
+        sessionBackup: async () => null,
+        fileDiff: async () => {
+          fileDiffCalls++
+          return null
+        },
+      },
+    }
+    const { listRoot } = mount(api)
+    await settle()
+
+    assert.match(listRoot.textContent, /edited\.ts/)
+    assert.doesNotMatch(listRoot.textContent, /Loading changes/)
+    assert.match(listRoot.textContent, /Checking committed changes/)
+
+    finishCommitted?.(null)
+    await settle()
+    assert.doesNotMatch(listRoot.textContent, /Checking committed changes/)
+    assert.equal(fileDiffCalls, 1)
+  })
+
+  it('does not claim a clean tree has no changes before committed work is checked', async () => {
+    const base = createFakeApi()
+    let finishCommitted: ((value: null) => void) | undefined
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        isAvailable: async () => true,
+        status: async () => CLEAN,
+        committedChanges: () =>
+          new Promise((resolve) => {
+            finishCommitted = resolve
+          }),
+        sessionBackup: async () => null,
+      },
+    }
+    const { listRoot } = mount(api)
+    await settle()
+
+    assert.equal(listText(listRoot), 'Checking committed changes…')
+    finishCommitted?.(null)
+    await settle()
+    assert.equal(listText(listRoot), 'No changes')
+  })
+
   it('settles to "No changes" once a clean repo has answered', async () => {
     const base = createFakeApi()
     const api: ApiClient = {

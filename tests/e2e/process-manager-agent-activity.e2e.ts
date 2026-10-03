@@ -4,6 +4,7 @@ import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('Process manager agent activity', function () {
@@ -53,6 +54,7 @@ describe('Process manager agent activity', function () {
     // The chip is rounded with the base radius; it used to name `--radius-md`,
     // which is not a token and computed to square corners (#3065).
     assert.equal((await activity.getCSSProperty('border-top-left-radius')).value, '6px')
+    await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager-agent-working.png')
 
     // While the agent is running, the global stop shortcut must not swallow
@@ -85,6 +87,7 @@ describe('Process manager agent activity', function () {
     await browser.keys(['Shift', 'F10'])
     await expect($('.context-menu-item=Jump to thread')).toBeDisplayed()
     await expect($('.context-menu-item=Stop agent run')).toBeDisplayed()
+    await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager-agent-keyboard.png')
     await browser.keys('Escape')
 
@@ -101,6 +104,7 @@ describe('Process manager agent activity', function () {
     await activity.click({ button: 'right' })
     await expect($('.context-menu-item=Jump to thread')).toBeDisplayed()
     await expect($('.context-menu-item=Stop agent run')).toBeDisplayed()
+    await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager-agent-actions.png')
     await $('.context-menu-item=Jump to thread').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })

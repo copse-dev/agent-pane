@@ -366,6 +366,9 @@ describe('Screenshot click-to-expand', () => {
     const outsideSelection = await browser.execute(() => {
       const outside = document.querySelector('.attachment-preview-title')
       if (!outside) throw new Error('text preview title missing')
+      // The title inherits the app's nonselectable chrome style. Make this
+      // fixture selectable so the test really supplies an unrelated selection.
+      if (outside instanceof HTMLElement) outside.style.userSelect = 'text'
       const range = document.createRange()
       range.selectNodeContents(outside)
       const selection = window.getSelection()

@@ -174,7 +174,7 @@ describe('thread execution context', () => {
     })
   })
 
-  it('allows a terminal to enter a validated interrupted Git recovery', async () => {
+  it('keeps every thread surface on the validated checkout during Git recovery', async () => {
     const persisted = {
       path: '/diagnostic/path',
       branch: 'copse/thread-1',
@@ -192,6 +192,8 @@ describe('thread execution context', () => {
       commonGitDir: '/repo/.git',
     }
     let recoveryValidations = 0
+    let branchSyncs = 0
+    const indexedRoots: string[] = []
     const dependencies: ThreadExecutionContextDependencies = {
       getProjectRoot: () => '/project',
       getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
@@ -202,17 +204,15 @@ describe('thread execution context', () => {
         recoveryValidations += 1
         return recovery
       },
+      syncWorktreeBranch: async () => {
+        branchSyncs += 1
+      },
+      startWorktreeIndexing: (root) => {
+        indexedRoots.push(root)
+      },
     }
 
-    await assert.rejects(
-      resolveThreadExecutionContext('project-1', 'thread-1', dependencies),
-      ThreadWorktreeDetachedError,
-    )
-    const context = await resolveThreadTerminalExecutionContext(
-      'project-1',
-      'thread-1',
-      dependencies,
-    )
+    const context = await resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
 
     assert.deepEqual(context, {
       projectId: 'project-1',
@@ -223,6 +223,44 @@ describe('thread execution context', () => {
       branch: null,
     })
     assert.equal(recoveryValidations, 1)
+    assert.equal(branchSyncs, 0)
+    assert.deepEqual(
+      await resolveThreadTerminalExecutionContext('project-1', 'thread-1', dependencies),
+      context,
+    )
+    const prepared = await prepareThreadExecutionContext(
+      'project-1',
+      'thread-1',
+      { emit: () => {} },
+      dependencies,
+    )
+    assert.deepEqual(prepared, context)
+    assert.deepEqual(indexedRoots, ['/validated/root'])
+  })
+
+  it('still blocks a detached checkout without an active Git recovery', async () => {
+    const persisted: ThreadWorktree = {
+      path: '/diagnostic/path',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+      validateWorktree: async () => {
+        throw new ThreadWorktreeDetachedError(persisted.branch)
+      },
+      validateWorktreeRecovery: async () => {
+        throw new ThreadWorktreeDetachedError(persisted.branch)
+      },
+    }
+    await assert.rejects(
+      resolveThreadExecutionContext('project-1', 'thread-1', dependencies),
+      ThreadWorktreeDetachedError,
+    )
   })
 
   it('does not use terminal recovery for unrelated validation failures', async () => {

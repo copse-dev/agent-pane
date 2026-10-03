@@ -4,6 +4,7 @@ import type {
   LLMMessage,
   LLMStreamOptions,
   LLMTool,
+  MalformedToolCallInfo,
   ToolCallChunk,
   ToolResult,
 } from '@copse/llm/wire-types.ts'
@@ -34,7 +35,10 @@ import {
 import {
   CONTEXT_OVERFLOW_USER_MESSAGE,
   isContextOverflowStopReason,
+  isMalformedToolCallStopReason,
   isRefusalStopReason,
+  MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS,
+  MAX_MALFORMED_TOOL_CALLS_PER_RUN,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   REFUSAL_USER_MESSAGE,
 } from '@copse/llm/provider-stop-reason.ts'
@@ -55,6 +59,7 @@ import type { HookEmitResult } from './hooks/hook-registry.ts'
 import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
 import {
   LOOP_NUDGE_HOOK_ID,
+  MALFORMED_TOOL_CALL_HOOK_ID,
   REASONING_RUNAWAY_HOOK_ID,
   STUCK_FINALIZE_NUDGE_HOOK_ID,
   TRUNCATION_CONTINUE_HOOK_ID,
@@ -110,6 +115,7 @@ interface StepBoundaryNudges {
   loop: string | undefined
   truncation: string | undefined
   reasoningRunaway: string | undefined
+  malformedToolCall: string | undefined
   artifactCheckpoint: string | undefined
 }
 
@@ -1160,6 +1166,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
   // second means the model is stuck looping, so the run ends instead of re-priming.
   let reasoningRunawayStreak = 0
+  // Streams whose tool call the provider could not parse (cut off at the output
+  // ceiling, or malformed). Each gets a bounded "emit a smaller call" nudge; past
+  // the consecutive or per-run bound the run fails with the parse error, as it
+  // did before recovery existed, rather than looping to the deadline.
+  let consecutiveMalformedToolCalls = 0
+  let malformedToolCallsThisRun = 0
   const recentFingerprints: string[] = []
   // One entry per recent tool attempt: a fingerprint means successful,
   // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
@@ -1195,6 +1207,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       loop: nudgeFrom(result, LOOP_NUDGE_HOOK_ID),
       truncation: nudgeFrom(result, TRUNCATION_CONTINUE_HOOK_ID),
       reasoningRunaway: nudgeFrom(result, REASONING_RUNAWAY_HOOK_ID),
+      malformedToolCall: nudgeFrom(result, MALFORMED_TOOL_CALL_HOOK_ID),
       artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
     }
   }
@@ -1412,6 +1425,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let assistantText = ''
     const pendingToolCalls: ToolCallChunk[] = []
     let stopReason: string | undefined
+    let malformedToolCall: MalformedToolCallInfo | undefined
     let streamUsage: StepUsage | null = null
 
     if (!reserveLlmCall(budget)) {
@@ -1495,6 +1509,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         if (chunk.type === 'done') {
           stopReason = chunk.stopReason
+          malformedToolCall = chunk.malformedToolCall
           break
         }
         // Backstop against a single runaway generation (common with local
@@ -1669,7 +1684,26 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
       streamCappedAsRunaway,
       ...(stopReason !== undefined ? { stopReason } : {}),
+      ...(malformedToolCall !== undefined
+        ? { malformedToolCallHitCeiling: malformedToolCall.hitOutputCeiling }
+        : {}),
     })
+    const malformedToolCallNudge = isMalformedToolCallStopReason(stopReason)
+      ? postNudges.malformedToolCall
+      : undefined
+    if (isMalformedToolCallStopReason(stopReason)) {
+      consecutiveMalformedToolCalls++
+      malformedToolCallsThisRun++
+      if (
+        malformedToolCallNudge === undefined ||
+        consecutiveMalformedToolCalls > MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS ||
+        malformedToolCallsThisRun > MAX_MALFORMED_TOOL_CALLS_PER_RUN
+      ) {
+        throw new Error(malformedToolCall?.message ?? 'Failed to parse tool call')
+      }
+    } else {
+      consecutiveMalformedToolCalls = 0
+    }
     const truncationNudge = postNudges.truncation
     const reasoningRunawayNudge =
       postNudges.reasoningRunaway === undefined
@@ -1700,6 +1734,45 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         reasoningRunawayStreak,
         willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,
       })
+    }
+
+    if (malformedToolCallNudge !== undefined) {
+      // The provider could not parse this stream's tool call. Keep whatever
+      // usable output arrived (calls that parsed before the failure still run),
+      // then ask for a much smaller call. Reasoning never lands in history, and
+      // the call itself was discarded, so a reasoning-only stream just gets the
+      // nudge. The stop reason is not a truncation one, so the
+      // `truncation-continue` hook stays silent and the nudges never stack.
+      reasoningRunawayStreak = 0
+      if (pendingToolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
+        })
+        await executeToolBatch({
+          pendingToolCalls,
+          messages,
+          executeTool: opts.executeTool,
+          signal,
+          onChunk,
+          recentFingerprints,
+          recentToolProgress,
+          budget,
+          consecutiveExploreWithoutRead,
+        })
+        toolOnlySteps++
+        if (signal?.aborted) break
+      } else if (assistantText.trim()) {
+        messages.push({ role: 'assistant', content: assistantText })
+      }
+      messages.push({ role: 'user', content: malformedToolCallNudge })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: MALFORMED_TOOL_CALL_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: malformedToolCallNudge,
+      })
+      continue
     }
 
     // Push assistant message to history

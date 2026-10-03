@@ -61,6 +61,8 @@ import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountAlertThreadNavigation } from './controller/alert-navigation.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { mountProductAnnouncements } from './views/product-announcement-dialog.ts'
+import { PRODUCT_ANNOUNCEMENTS } from './product-announcements.ts'
 import { registerUiKit } from './ui/index.ts'
 import { installTooltips } from './dom/tooltip.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
@@ -554,7 +556,20 @@ async function boot(): Promise<void> {
 
   // Never in a pop-out: the early return above only covers popouts that already
   // restored a workspace, but a fresh-profile popout would fall through here.
-  if (!popoutMode && (await shouldShowOnboarding(api))) openOnboardingDialog()
+  if (!popoutMode) {
+    const isNewUser = await shouldShowOnboarding(api)
+    try {
+      await mountProductAnnouncements(
+        api.settings,
+        PRODUCT_ANNOUNCEMENTS,
+        openSettingsDialog,
+        isNewUser,
+      )
+    } catch (error) {
+      showErrorToast('Could not load announcements', error)
+    }
+    if (isNewUser) openOnboardingDialog()
+  }
 }
 
 function ensureLayout(): void {
@@ -821,7 +836,7 @@ function switchToNextThread(): void {
   if (next) switchThread(store, next)
 }
 
-void boot()
+export const rendererReady = boot()
 
 // package.json marks .js as CommonJS. Keep this entry explicitly ESM so esbuild
 // can propagate top-level await from dependencies such as noVNC 1.7.

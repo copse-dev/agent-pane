@@ -21,6 +21,7 @@
 @import './global/ask-user.css';
 @import './global/ssh-prompt.css';
 @import './global/update-prompt.css';
+@import './global/product-announcement.css';
 @import './global/confirm-dialog.css';
 @import './global/container-run.css';
 @import './global/new-project-dialog.css';

@@ -17,6 +17,14 @@ async function startOpenRouterServer(): Promise<{ apiBase: string; close: () => 
         JSON.stringify({
           data: [
             {
+              id: 'openai/gpt-6.1-sol',
+              name: 'OpenAI: GPT-6.1 Sol',
+              context_length: 922000,
+              pricing: { prompt: '0.000002', completion: '0.000010' },
+              supported_parameters: ['tools'],
+              architecture: { modality: 'text->text', output_modalities: ['text'] },
+            },
+            {
               id: 'anthropic/claude-fable-5',
               name: 'Anthropic: Claude Fable 5',
               context_length: 272000,
@@ -113,5 +121,72 @@ describe('model value map respects subscription billing routes', function () {
     assert.match(text, /\$45\/MTok/)
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-value-map-plan-routes.png')
+  })
+})
+
+describe('Balanced keeps a newly advertised Sol model on Codex ACP', function () {
+  this.timeout(90_000)
+  let fixture: { apiBase: string; close: () => Promise<void> } | null = null
+
+  before(async () => {
+    fixture = await startOpenRouterServer()
+    resetUserData()
+    seedOpenRouterFixture(process.cwd(), {
+      apiBase: fixture.apiBase,
+      model: 'auto:balanced',
+      openRouterZdrOnly: false,
+      registeredAcpAgents: [
+        {
+          id: 'codex-acp',
+          title: 'Codex',
+          command: 'codex-acp',
+          enabled: true,
+          modelsProbedAt: Date.now(),
+          availableModels: [{ value: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' }],
+        },
+      ],
+    })
+    writeE2eEnv({ COPSE_PANEL_MOCK_LLM: '0', COPSE_PLAN_USAGE_MOCK: '1' })
+    await browser.reloadSession()
+  })
+
+  after(async () => {
+    resetUserData()
+    writeE2eEnv({})
+    await fixture?.close()
+  })
+
+  it('resolves a new thread through Balanced and shows the included ACP route', async () => {
+    const planRoute = 'acp:codex-acp#gpt-6.1-sol'
+    assert.equal(
+      await browser.execute(() => window.api.models.resolveDynamic('auto:balanced')),
+      planRoute,
+    )
+    // Enter through the real new-thread action: seeding an already-resolved
+    // ACP selection would not exercise the automatic default controller.
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Current Qwen thread')
+    await $('.project-new-thread-btn').click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+    await expect($('.model-picker-trigger')).toHaveText('GPT-6.1 Sol', { containing: true })
+    await expect($('.model-picker-trigger .model-picker-label')).toHaveAttribute('title', planRoute)
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('#input-bar', 'balanced-new-thread-codex-sol.png')
+
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="usage"]').click()
+    const fieldset = $('.frontier-fieldset')
+    await expect(
+      fieldset.$(`circle.frontier-point.plan.estimated[data-model-id="${planRoute}"]`),
+    ).toExist()
+    await expect(
+      fieldset.$('circle.frontier-point[data-model-id="openrouter:openai/gpt-6.1-sol"]'),
+    ).not.toExist()
+    await fieldset.$(`circle.frontier-hit[data-model-id="${planRoute}"]`).moveTo()
+    await expect(fieldset.$('.frontier-tooltip')).toHaveText('included', { containing: true })
+    await expect(fieldset.$('.frontier-tooltip .tt-line strong')).toHaveText('~', {
+      containing: true,
+    })
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('.frontier-fieldset', 'settings-value-map-codex-sol-launch.png')
   })
 })

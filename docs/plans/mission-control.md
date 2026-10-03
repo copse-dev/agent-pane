@@ -7,6 +7,11 @@ still specification. It covers R-04, R-06, R-20 and R-22 from
 [`user-control-surface-gaps.md`](user-control-surface-gaps.md), which collapse into a
 single surface and should be one issue rather than four.
 
+> **Placement is being revised.** Slice 1 put the Activity panel in an overlay. The plan in
+> [`new-thread-activity-screen.md`](new-thread-activity-screen.md) keeps the overlay and also
+> shows the same view as the default new-thread screen. The slice 1 rationale below is the
+> record of why the overlay was chosen; it no longer rules out a screen host.
+
 ## Slice 1 — what shipped
 
 **Design decision: the panel sits beside the sidebar, as an overlay like the Process
@@ -357,7 +362,9 @@ start collecting for this.
 
 - ~~**Is the panel the sidebar, or beside it?**~~ Decided in slice 1: beside it, as an
   overlay sharing the Process Manager's shell. See
-  [Slice 1 — what shipped](#slice-1--what-shipped).
+  [Slice 1 — what shipped](#slice-1--what-shipped). Revised: the overlay stays and the same
+  view is also the default new-thread screen; see
+  [`new-thread-activity-screen.md`](new-thread-activity-screen.md).
 - **What is the stall threshold really?** Five minutes is a guess. It should come from
   timing real runs, and a semantic-search or benchmark run may legitimately exceed any
   fixed number.

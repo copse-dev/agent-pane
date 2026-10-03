@@ -107,8 +107,10 @@ export interface SpineToolCall {
 
 /** A nested subagent session; its messages live in `<ref>events.jsonl` + files. */
 export interface SpineSubagentRef {
-  /** Directory ref, e.g. `subagents/<id>/`. */
+  /** Directory ref, e.g. `subagents/<id>/` (the id escaped by `idPathSegment` when unusual). */
   ref: string
+  /** The session id, present only when the directory name had to be escaped. */
+  id?: string
   kind: SubagentSession['kind']
   status: SubagentSession['status']
   prompt: string

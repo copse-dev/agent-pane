@@ -223,7 +223,20 @@ export type ProviderStreamChunk =
    * token. `fraction` is a provider-reported value from 0 to 1.
    */
   | { type: 'prompt_progress'; fraction: number }
-  | { type: 'done'; stopReason?: string }
+  | { type: 'done'; stopReason?: string; malformedToolCall?: MalformedToolCallInfo }
+
+/**
+ * Detail on a stream that ended with the `tool_call_malformed` stop reason: the
+ * provider's parse error and, best effort, whether the output ceiling cut the
+ * call off (a truncated call and a syntactically broken one need different
+ * nudges).
+ */
+export interface MalformedToolCallInfo {
+  message: string
+  hitOutputCeiling: boolean
+  /** Tokens generated before the failure, when the provider could count them. */
+  outputTokens?: number
+}
 
 // ── The provider contract ────────────────────────────────────────────────────
 

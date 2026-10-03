@@ -38,10 +38,113 @@ function continuesSentence(prevText: string, text: string): boolean {
   if (!first) return false
   if ("'’,;)…–—".includes(first)) return true
   if (first >= 'a' && first <= 'z') {
+    // A hyphen at the very end of a word ("sidebar-") is itself the join.
+    if (text === trimmedStart && /[A-Za-z]-$/.test(prevText)) return true
     const hasWordBoundary = text !== trimmedStart || /\s$/.test(prevText)
     return hasWordBoundary
   }
   return false
+}
+
+function pipeCells(line: string): string[] {
+  const cells: string[] = []
+  let cell = ''
+  let escaped = false
+  for (const character of line) {
+    if (character === '|' && !escaped) {
+      cells.push(cell.trim())
+      cell = ''
+    } else {
+      cell += character
+    }
+    escaped = character === '\\' ? !escaped : false
+  }
+  cells.push(cell.trim())
+  if (cells[0] === '') cells.shift()
+  if (cells[cells.length - 1] === '') cells.pop()
+  return cells
+}
+
+// The prior text stops inside a markdown construct that cannot render on its
+// own: an unclosed code fence, an unfinished table row, or a dangling marker.
+// Splitting here strands the markers as literal text in one bubble and a
+// headless fragment in the next.
+function endsInsideMarkup(text: string, incomingText: string): boolean {
+  let fence: { character: string; length: number } | undefined
+  let lastLineClosesFence = false
+  const inlineLines: string[] = []
+  for (const line of text.split('\n')) {
+    lastLineClosesFence = false
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+    if (!match) {
+      if (!fence) inlineLines.push(line)
+      continue
+    }
+    const marker = match[1] ?? ''
+    const rest = match[2] ?? ''
+    if (fence) {
+      if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
+        fence = undefined
+        lastLineClosesFence = true
+      }
+    } else if (marker[0] !== '`' || !rest.includes('`')) {
+      fence = { character: marker[0] ?? '', length: marker.length }
+    } else {
+      inlineLines.push(line)
+    }
+  }
+  if (fence) return true
+  if (lastLineClosesFence) return false
+  if (/\n$/.test(text)) return false
+  const lastLine = text.slice(text.lastIndexOf('\n') + 1).trim()
+  // Optional outer pipes do not change a table's column count. Recognize a
+  // genuine header/delimiter pair in this uninterrupted paragraph before
+  // treating a row with fewer cells as a continuation. Ordinary pipe prose
+  // and already complete rows retain the fresh-reply boundary.
+  for (let index = inlineLines.length - 2; index > 0; index -= 1) {
+    const line = inlineLines[index] ?? ''
+    if (!line.trim()) break
+    const delimiterCells = pipeCells(line)
+    if (delimiterCells.length < 2 || !delimiterCells.every((cell) => /^:?-+:?$/.test(cell))) {
+      continue
+    }
+    const headerCells = pipeCells(inlineLines[index - 1] ?? '')
+    if (headerCells.length === delimiterCells.length) {
+      if (pipeCells(lastLine).length < headerCells.length) return true
+      // Equal column counts can still stop inside the final word. A directly
+      // attached lowercase fragment resumes it; a capitalized fresh answer
+      // after a complete row retains its independent bubble. A plain lowercase
+      // standalone sentence is ambiguous here; this bounded heuristic favors
+      // preserving the interrupted table word over splitting its cells.
+      return /[A-Za-z]$/.test(lastLine) && /^[a-z]/.test(incomingText)
+    }
+    break
+  }
+  if (lastLine.startsWith('|') && !lastLine.endsWith('|')) return true
+  const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1]
+  if (!trailingMarker) return false
+  // Closing markers are renderable on their own. Only an unmatched terminal
+  // run needs the next chunk, preserving the fresh-bubble boundary after a
+  // complete span such as "**Completed.**". Escaped runs are literal text.
+  let unmatched = false
+  let inlineCodeLength: number | undefined
+  const inlineText = inlineLines.join('\n')
+  for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
+    let precedingBackslashes = 0
+    for (let index = match.index - 1; index >= 0 && inlineText[index] === '\\'; index -= 1) {
+      precedingBackslashes += 1
+    }
+    if (precedingBackslashes % 2 !== 0 && inlineCodeLength === undefined) continue
+    const marker = match[0]
+    if (marker.startsWith('`')) {
+      if (inlineCodeLength === undefined) inlineCodeLength = marker.length
+      else if (marker.length === inlineCodeLength) inlineCodeLength = undefined
+    } else if (inlineCodeLength === undefined && marker === trailingMarker) {
+      unmatched = !unmatched
+    }
+  }
+  if (trailingMarker.startsWith('`')) return inlineCodeLength !== undefined
+  return unmatched
 }
 
 export function planAgentTextChunk(
@@ -64,12 +167,13 @@ export function planAgentTextChunk(
   // Continuation heuristic: a tool call interrupted the model mid-sentence. If
   // the pre-tool text has no boundary and this chunk resumes the sentence, keep
   // it in the same bubble instead of stranding the fragment in its own message.
+  // Text cut inside a table row, code fence or emphasis marker always resumes.
   const isMidSentenceContinuation =
     !isWhitespaceOnly &&
     state.msgId !== null &&
     state.toolSinceText &&
-    !endsAtBoundary(currentText) &&
-    continuesSentence(currentText, text)
+    (endsInsideMarkup(currentText, text) ||
+      (!endsAtBoundary(currentText) && continuesSentence(currentText, text)))
 
   const needsNewMessage = (!state.msgId || state.toolSinceText) && !isMidSentenceContinuation
   if (!isWhitespaceOnly && needsNewMessage) {

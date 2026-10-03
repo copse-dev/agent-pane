@@ -18,6 +18,7 @@ afterEach(() => {
   storageSet('projects', [])
   storageSet('activeProjectId', null)
   clearRemoteAgentSession('thread-cursor-usage')
+  clearRemoteAgentSession('thread-cursor-cache-usage')
   clearManagedAgentSession('thread-managed-usage')
   clearRemoteAgentSession('thread-cursor-cancel-usage')
   clearManagedAgentSession('thread-managed-cancel-usage')
@@ -99,6 +100,102 @@ describe('cloud agent runs reach the usage ledger', () => {
       const row = summary.day.cloudModels.find((m) => m.model === 'remote-agent:cursor')
       assert.ok(row, 'expected a remote-agent:cursor row in the cloud usage table')
       assert.equal(row.inputTokens, 4200)
+      assert.equal(row.outputTokens, 900)
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
+  })
+
+  it('counts Cursor cache reads and writes as input on the ledger row', async () => {
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    storageSet('remote-agent-session:thread-cursor-cache-usage', {
+      v: 1,
+      provider: 'cursor',
+      baseUrl: 'https://api.cursor.com',
+      agentId: 'agent-cache-1',
+      url: 'https://cursor.com/agents/agent-cache-1',
+    })
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      const url = new URL(href)
+      const method = init?.method ?? 'GET'
+
+      if (method === 'POST' && url.pathname === '/v1/agents/agent-cache-1/runs') {
+        return new Response(
+          JSON.stringify({ run: { id: 'run-cache-1', agentId: 'agent-cache-1' } }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        )
+      }
+      if (method === 'GET' && url.pathname === '/v1/agents/agent-cache-1/runs/run-cache-1/stream') {
+        const body =
+          'id: 1\nevent: result\ndata: {"status":"FINISHED","text":"Done."}\n\n' +
+          'event: done\ndata: {}\n\n'
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      }
+      if (method === 'GET' && url.pathname === '/v1/agents/agent-cache-1/usage') {
+        return new Response(
+          JSON.stringify({
+            runs: [
+              {
+                id: 'run-cache-1',
+                usage: {
+                  inputTokens: 4200,
+                  outputTokens: 900,
+                  cacheWriteTokens: 1800,
+                  cacheReadTokens: 12000,
+                  totalTokens: 18900,
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (method === 'GET' && url.pathname === '/v1/agents/agent-cache-1/artifacts') {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected request: ${method} ${url.pathname}`)
+    }
+
+    try {
+      const sink = createAgentChunkSink('thread-cursor-cache-usage', noopHost())
+      const result = await runRemoteAgentFromSettings({
+        threadId: 'thread-cursor-cache-usage',
+        provider: 'cursor',
+        userPrompt: 'fix the flaky test',
+        signal: new AbortController().signal,
+        onChunk: sink,
+        fetchImpl,
+      })
+
+      // Cursor's inputTokens is uncached input; Copse input includes cache.
+      assert.equal(result.inputTokens, 4200 + 12000 + 1800)
+      assert.equal(result.outputTokens, 900)
+
+      const summary = await getUsageSummary()
+      assert.equal(
+        summary.ledgerEventCount,
+        1,
+        'the cloud agent run should append one ledger event',
+      )
+      const row = summary.day.cloudModels.find((m) => m.model === 'remote-agent:cursor')
+      assert.ok(row, 'expected a remote-agent:cursor row in the cloud usage table')
+      assert.equal(row.inputTokens, 18000)
+      assert.equal(row.cacheReadTokens, 12000)
+      assert.equal(row.cacheCreationTokens, 1800)
       assert.equal(row.outputTokens, 900)
     } finally {
       if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
