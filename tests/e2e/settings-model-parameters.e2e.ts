@@ -113,6 +113,62 @@ describe('per-model generation parameters', () => {
     }, LOCAL_MODEL)
   })
 
+  it('offers verbosity only where OpenAI documents it', async function () {
+    this.timeout(60_000)
+    const pick = async (model: string): Promise<void> => {
+      await browser.execute((value) => {
+        const select = document.querySelector<HTMLSelectElement>(
+          '#settings-models-section select[name="model"]',
+        )
+        if (!select) return
+        if (![...select.options].some((option) => option.value === value)) {
+          select.append(new Option(value, value))
+        }
+        select.value = value
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }, model)
+    }
+    const section = await $('[data-testid="model-parameters"]')
+
+    await pick('gpt-6.1-sol')
+    const verbosity = await section.$('[data-testid="model-parameter-verbosity"]')
+    await verbosity.waitForDisplayed({ timeout: 10_000 })
+    // No curated default: blank sends nothing, so the first option says so and
+    // the three levels follow.
+    const labels = await verbosity.$$('option').map((option) => option.getText())
+    await expect(labels).toEqual([
+      "Model default (don't send)",
+      'Low — terse answers',
+      'Medium',
+      'High — thorough answers',
+    ])
+    await expect(verbosity).toHaveValue('')
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="model-parameters"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(200)
+    await saveElementScreenshot(
+      '[data-testid="model-parameters"]',
+      'settings-model-parameters-verbosity.png',
+    )
+
+    // Choosing a level persists against this model's entry and shows the chip.
+    await verbosity.selectByAttribute('value', 'low')
+    await expect(verbosity).toHaveValue('low')
+    await expect(
+      await section.$('[data-testid="model-parameter-customised"] [data-model="gpt-6.1-sol"]'),
+    ).toBeDisplayed()
+
+    // A codex id takes only `medium` and an aggregator route is not OpenAI's
+    // endpoint, so neither shows the control.
+    for (const model of ['gpt-5-codex', 'openrouter:openai/gpt-5.6-sol', LOCAL_MODEL]) {
+      await pick(model)
+      await expect(await section.$('[data-testid="model-parameter-verbosity"]')).not.toBeExisting()
+    }
+  })
+
   it('shows the GLM-4.7-Flash coding defaults and model-card source', async function () {
     this.timeout(60_000)
     await browser.execute(() => {

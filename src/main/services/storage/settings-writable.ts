@@ -2,7 +2,7 @@ import { announcementHistorySchema } from '@shared/product-announcements.ts'
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
-import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { REASONING_LEVELS, VERBOSITY_LEVELS } from '@copse/llm/model-parameters.ts'
 import { MODEL_MAKER_IDS } from '@copse/llm/model-maker-block.ts'
 import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
@@ -141,6 +141,7 @@ export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
  */
 export const modelParametersSchema = z.object({
   reasoning: z.enum(REASONING_LEVELS).optional(),
+  verbosity: z.enum(VERBOSITY_LEVELS).optional(),
   maxOutputTokens: z.number().int().min(256).max(1_000_000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
