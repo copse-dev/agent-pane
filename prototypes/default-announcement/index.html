@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — default change announcement</title>
+    <link rel="stylesheet" href="../../src/renderer/styles/tokens.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/themes.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/global/ui.css" />
+    <link rel="stylesheet" href="prototype.css" />
+    <script src="prototype.js" defer></script>
+  </head>
+  <body>
+    <header class="preview-controls" aria-label="Prototype controls">
+      <span>Default change · prototype</span>
+      <div>
+        <button id="fresh" class="ui-btn ui-btn-secondary">Fresh install</button>
+        <button id="update" class="ui-btn ui-btn-secondary">After update</button>
+        <button id="theme" class="ui-btn ui-btn-secondary">Light theme</button>
+      </div>
+    </header>
+    <main id="app">
+      <aside class="sidebar">
+        <div class="brand">Copse</div>
+        <button class="ui-btn ui-btn-secondary">New chat</button>
+        <p class="section-label">Chats</p>
+        <div class="selected">Polish the release</div>
+        <div class="chat-row">Review appearance settings</div>
+        <div class="chat-row">Plan the next milestone</div>
+        <button id="settings" class="ui-btn ui-btn-secondary">Settings</button>
+      </aside>
+      <section class="chat">
+        <header class="chat-header">Polish the release</header>
+        <div class="transcript">
+          <p class="user-message">Let's make the next release easier to read.</p>
+          <div class="activity">✓ Reviewed appearance settings <span>View activity</span></div>
+          <p>
+            The release is ready for review. Chats keep the answer in focus, with details available
+            when you need them.
+          </p>
+        </div>
+        <div class="composer">Ask a follow-up… <span>↑</span></div>
+      </section>
+    </main>
+    <dialog
+      id="announcement"
+      aria-labelledby="announcement-title"
+      aria-describedby="announcement-copy"
+    >
+      <div class="announcement-body">
+        <div class="eyebrow">New in Copse</div>
+        <h1 id="announcement-title">Compact is now the default</h1>
+        <p id="announcement-copy">
+          Compact view is out of experimental and available to everyone. Chats now have a more
+          concise, focused layout.
+        </p>
+        <div class="layout-sample" aria-label="Compact chat preview">
+          <div class="sample-activity">✓ Updated 3 files <span>View activity</span></div>
+          <div class="sample-answer">The changes are ready.</div>
+          <div class="sample-line"></div>
+          <div class="sample-line short"></div>
+        </div>
+        <p class="settings-hint">
+          Prefer another view? Change it anytime in <strong>Settings → Appearance</strong>.
+        </p>
+        <div class="actions">
+          <button id="appearance" class="ui-btn ui-btn-secondary">Appearance settings</button>
+          <button id="acknowledge" class="ui-btn ui-btn-primary" autofocus>Got it</button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="appearance-dialog" aria-labelledby="appearance-title">
+      <div class="announcement-body">
+        <div class="eyebrow">Settings → Appearance</div>
+        <h2 id="appearance-title">Choose your chat view</h2>
+        <p>This is a preview of the settings destination.</p>
+        <fieldset>
+          <legend>Chat view</legend>
+          <label
+            ><input type="radio" name="view" value="compact" checked /> Compact
+            <small>Concise and focused</small></label
+          >
+          <label
+            ><input type="radio" name="view" value="expanded" /> Expanded
+            <small>More details at a glance</small></label
+          >
+        </fieldset>
+        <div class="actions"><button id="done" class="ui-btn ui-btn-primary">Done</button></div>
+      </div>
+    </dialog>
+    <p id="preview-status" role="status">Preview: after update</p>
+  </body>
+</html>

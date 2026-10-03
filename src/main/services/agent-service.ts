@@ -153,7 +153,11 @@ import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
-import { runThreadReview, runWithReviewToolContext } from './review/review-service.ts'
+import {
+  runThreadReview,
+  runWithReviewToolContext,
+  type ReviewRunResult,
+} from './review/review-service.ts'
 import { withReviewContext } from '@shared/store/review-reports.ts'
 import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
@@ -2773,11 +2777,15 @@ export async function retryPostTurnReview(
  * for the Stop button, bracketed with a `done` so the thread idles, and run
  * under the thread's execution context so the reviewer sees the same checkout
  * the turn would. The gesture is the user's own spend decision, so no prompt.
+ *
+ * `onSettled` runs before the closing `done`, so a report recorded into the
+ * thread's model history is on disk before the renderer can send the next turn.
  */
 export async function runReviewForThread(
   threadId: string,
   host: AgentHost<StreamChunk>,
   options?: RetryOptions,
+  onSettled?: (result: ReviewRunResult) => Promise<unknown>,
 ): Promise<void> {
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const model = (await resolveAgentChatModel(requestedModel)).model
@@ -2788,7 +2796,7 @@ export async function runReviewForThread(
   if (!begun) throw new Error(RUN_ALREADY_ACTIVE_MESSAGE)
   const { controller, runAbort } = begun
   try {
-    await runThreadReview({
+    const result = await runThreadReview({
       threadId,
       root: executionRoot,
       chatModel: model,
@@ -2796,6 +2804,7 @@ export async function runReviewForThread(
       signal: controller.signal,
       initiator: 'user',
     })
+    await onSettled?.(result)
   } finally {
     runAbort.clear()
     clearActiveRunThread(threadId)

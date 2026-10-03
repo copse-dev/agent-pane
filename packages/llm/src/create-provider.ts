@@ -83,6 +83,9 @@ function openAiResponsesProvider(
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    // First-party OpenAI implements strict function tools; the extra
+    // Responses-style providers below do not get the flag.
+    strictTools: true,
     ...opts,
     ...(promptCacheKey ? { promptCacheKey } : {}),
     ...OPENAI_STORE_OPT_OUT,
@@ -144,6 +147,7 @@ export function createProvider(
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
+      strictTools: true,
       ...cacheKeyOpt,
       ...tierOpt,
       ...tunedOpts(m),
@@ -175,6 +179,7 @@ export function createProvider(
     }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
+      strictTools: true,
       ...cacheKeyOpt,
       ...tierOpt,
       ...tunedOpts(id),

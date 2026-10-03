@@ -697,7 +697,21 @@ describe('applyOrStageFileOp (worktree auto-approve)', () => {
     await assert.rejects(lstat(join(workspaceRoot, 'queued-dir')))
   })
 
-  ownedIt('still stages in the shared checkout, however clean it is', async () => {
+  ownedIt('creates a directory directly in the shared checkout', async () => {
+    const result = await applyOrStageFileOp({
+      op: 'mkdir',
+      path: 'shared-dir',
+      before: '',
+      after: '',
+      language: 'plaintext',
+    })
+
+    assert.match(result, /Created directory shared-dir directly/)
+    assert.equal((await lstat(join(workspaceRoot, 'shared-dir'))).isDirectory(), true)
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  ownedIt('still stages deletes in the shared checkout, however clean it is', async () => {
     await commitFile('gone.txt', 'bye\n')
 
     const result = await applyOrStageFileOp({

@@ -137,6 +137,49 @@ describe('footer branch status', () => {
       throw new Error('Thread worktree is on a detached HEAD')
     }
 
+    it('keeps recovery hidden during an agent turn and shows it when the turn ends', async () => {
+      const store = detachedStore()
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
+      })
+      const host = mountDetached(
+        {
+          // Recovery-aware root validation lets branch status return normally.
+          branchStatus: async () => ({ currentBranch: null, pr: null }),
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'rebase',
+            uncommittedPick: null,
+          }),
+        },
+        store,
+      )
+      await settle()
+
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.textContent, 'Continue rebase')
+      assert.equal(button.hidden, false)
+      const activeThread = store.getState().threads[0]
+      assert.ok(activeThread)
+      store.setState({ threads: [{ ...activeThread, status: 'running' }] })
+      store.emit('thread_status_changed', 'thread-1', 'running')
+      assert.equal(button.hidden, true)
+      button.click()
+      await settle()
+      assert.deepEqual(requests, [])
+      assert.equal(
+        qsRequired(host, '.footer-branch-status').classList.contains('is-detached'),
+        true,
+      )
+
+      store.setState({ threads: [activeThread] })
+      store.emit('thread_status_changed', 'thread-1', 'idle')
+      assert.equal(button.hidden, false)
+      assert.equal(button.textContent, 'Continue rebase')
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []

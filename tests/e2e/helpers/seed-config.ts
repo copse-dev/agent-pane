@@ -816,7 +816,9 @@ export function seedRoadmapNotes(
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
-  const iso = new Date().toISOString()
+  // Fixed, not `new Date()`: the pane prints "Updated <date>", so a live clock
+  // changed the reference shot every day.
+  const iso = '2026-01-15T09:00:00.000Z'
   for (const note of notes) {
     const contents = [
       '---',

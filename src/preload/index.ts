@@ -72,6 +72,7 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
       ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
@@ -1629,11 +1630,10 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
-    },
-    requestAcpPackageUpgradeApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    requestAcpPackageInstallApproval(
+      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
+    ) {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

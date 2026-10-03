@@ -1522,10 +1522,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts, reaching only its model's
-                origin, and brings its commits back for you to apply. Needs Docker; the first run
-                builds the worker image. A run carries one credential: the model's API key, or,
-                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout with no prompts and brings its commits back for
+                you to apply. Its network reaches only its model's origin, plus, when the run
+                installs dependencies (on by default, per run), the npm registry, GitHub and
+                Electron's download hosts. Needs Docker; the first run builds the worker image. A
+                run carries one credential: the model's API key, or, if you opt in per run, your
+                Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -3954,7 +3956,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  let pluginRefreshGeneration = 0
+
   async function refreshPlugins(): Promise<void> {
+    const generation = ++pluginRefreshGeneration
     const statusEls = overlay.querySelectorAll('.plugins-load-status')
     const setStatus = (text: string): void => {
       statusEls.forEach((el) => {
@@ -3972,6 +3977,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api.cursorPlugins.list().catch(() => []),
         api.bundledSkillPlugins.list().catch(() => []),
       ])
+      if (generation !== pluginRefreshGeneration) return
       // Enabled plugins first, disabled plugins after — so a scrapped plugin moves
       // out of the way instead of sitting in the middle of the list. The two
       // runs get a heading each: with rows this tall, "why is this one dimmed"
@@ -4011,7 +4017,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       renderPluginLists()
       setStatus('')
     } catch {
-      setStatus('Failed to load plugins.')
+      if (generation === pluginRefreshGeneration) setStatus('Failed to load plugins.')
     }
   }
 
