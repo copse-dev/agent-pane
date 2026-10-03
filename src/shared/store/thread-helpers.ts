@@ -103,13 +103,20 @@ export function getActiveThread(store: AppStore): Thread | undefined {
   return getThreadById(store, store.getState().activeThreadId)
 }
 
-/** Empty idle thread with no messages yet (unused "New Thread"). */
+/** Empty idle thread with no messages or saved plans (unused "New Thread"). */
 export function isBlankThread(thread: Thread): boolean {
   // A thread whose transcript has not been loaded yet is not blank — it is
   // unknown. Getting this wrong is destructive: `pruneBlankThreads` drops blanks
   // from the store and the autosave reconciler then deletes them from disk.
-  if (thread.messagesLoaded === false) return false
+  if (thread.messagesLoaded === false || thread.hasSavedPlan) return false
   return thread.messages.length === 0 && thread.status === 'idle'
+}
+
+/** Protect a successfully saved plan from automatic empty-task cleanup. */
+export function markThreadHasSavedPlan(store: AppStore, threadId: string): void {
+  if (getThreadById(store, threadId)?.hasSavedPlan) return
+  if (!patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, hasSavedPlan: true }))) return
+  store.emit('threads_changed')
 }
 
 export function hasUnsubmittedPrompt(thread: Thread): boolean {

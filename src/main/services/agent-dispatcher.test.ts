@@ -10,6 +10,9 @@ import {
   type AgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
+import { getRunPlan } from './thread-plan-context.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -48,6 +51,7 @@ function dependencies(
     appendMachineContinuation: async () => undefined,
     now: () => 100,
     createId: () => 'audit-id',
+    loadPlan: async () => null,
     prepareExecutionContext: async () => context,
     transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
@@ -59,6 +63,50 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('uses the committed plan while isolating draft turns from execution todos', async () => {
+    const plan: StoredThreadPlan = {
+      meta: {
+        planId: 'plan-1',
+        threadId: context.threadId,
+        title: 'Review scope',
+        status: 'draft',
+        currentRevision: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      body: 'The committed draft',
+      contentHash: 'hash',
+      comments: [],
+      approval: null,
+      completion: null,
+    }
+    const todos: TodoItem[] = [
+      { id: 'existing', content: 'Implement the earlier task', status: 'pending' },
+    ]
+    let turns = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadPlan: async () => plan,
+        run: async (_threadId, _userContent, messages, _host, _registry, options) => {
+          turns++
+          assert.equal(getRunPlan(), plan)
+          assert.deepEqual(options.priorTodos, [])
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: { userContent: 'Refine the scope', invokedSkills: [], priorTodos: todos },
+      }),
+    )
+    assert.equal(turns, 1)
+    assert.equal(todos[0]?.status, 'pending')
+    assert.equal(getRunPlan(), null)
+  })
+
   it('loads history once and commits each completed turn', async () => {
     const loaded: LLMMessage[] = [{ role: 'assistant', content: 'prior' }]
     const saved: LLMMessage[][] = []

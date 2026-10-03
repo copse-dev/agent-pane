@@ -12,6 +12,7 @@ import {
   getThreadById,
   getActiveThread,
   isBlankThread,
+  markThreadHasSavedPlan,
   isThreadArchived,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
@@ -420,6 +421,33 @@ describe('blank thread reuse', () => {
       threads.some((t) => t.id === blankA),
       false,
     )
+  })
+
+  it('keeps saved plans through switching, new-task reuse and blank normalization', () => {
+    const store = createStore()
+    const planId = createThread(store)
+    markThreadHasSavedPlan(store, planId)
+    // Roadmap plans start with a prompt; deleting that prompt must be safe too.
+    setThreadDraftPrompt(store, planId, 'Roadmap brief')
+    setThreadDraftPrompt(store, planId, '')
+    const plan = getThreadById(store, planId)
+    assert.ok(plan)
+    assert.equal(isBlankThread(plan), false)
+    assert.equal(plan.messages.length, 0)
+    const freshId = openNewThread(store)
+    assert.notEqual(freshId, planId)
+    switchThread(store, planId)
+    assert.equal(getThreadById(store, freshId), undefined, 'unused tasks still collapse')
+    const blankA = createThread(store)
+    const blankB = createThread(store)
+    normalizeBlankThreads(store)
+    assert.equal(getThreadById(store, blankA), undefined)
+    assert.ok(getThreadById(store, blankB))
+    assert.ok(getThreadById(store, planId))
+    switchThread(store, blankB)
+    assert.ok(getThreadById(store, planId))
+    deleteThread(store, planId)
+    assert.equal(getThreadById(store, planId), undefined, 'explicit deletion still works')
   })
 
   it('addUsageDelta accumulates cache tokens per model and thread total', () => {

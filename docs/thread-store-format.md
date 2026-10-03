@@ -373,16 +373,24 @@ and hook runs). Zod source of truth:
 [`plan-schema.ts`](../packages/thread-store/src/plan-schema.ts); published mirror:
 [`schemas/copse-plan.schema.json`](../schemas/copse-plan.schema.json).
 
+A committed plan makes its task nonempty for automatic blank-task cleanup, even
+with no messages or composer draft. Both full and metadata-only loads derive the
+session-only `hasSavedPlan` signal from committed plan events (not orphan files);
+successful renderer plan saves set it immediately. Neither metadata writer stores
+this signal. Ended plans retain it because their history is still saved content.
+Explicit task deletion continues to remove the task and its plans.
+
 ```jsonc
 {
   "v": 1,
   "type": "plan",
-  "action": "create" | "revise" | "comment" | "approve" | "abandon",
+  "action": "create" | "revise" | "comment" | "approve" | "abandon" | "report",
   "id": "<eventId>",
   "planId": "<planId>",
   "revision": 2, // when the action touches a revision
   "createdAt": 1712345678901,
-  "artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" }, // create/revise/approve
+  "artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" },
+  "state": { "ref": "plans/<planId>/states/<eventId>.json", "sha256": "…" },
   "commentId": "<commentId>", // comment
   "executionProfileId": "implementation", // approve
   "contentHash": "<hex sha256 of body>" // approve
@@ -398,6 +406,12 @@ and hook runs). Zod source of truth:
 - **Full-save refs.** `rebuildSpinePreservingNonMessageLines` keeps `plan` lines
   and exempts their `artifact.ref` paths from stale-file pruning (same as
   `hook_run` blobs).
+
+Plan writers commit hashed immutable state snapshots through these lines. Readers
+ignore uncommitted files and the mutable convenience projections; a corrupt committed
+snapshot blocks execution. The `report` action records criterion results against the
+exact approval identity. UI writes recheck idleness at the commit point. See the
+[living plan task brief](./plans/plan-mode-and-rewind.md#current-task-brief) for scope.
 
 ## Catalog
 

@@ -1,3 +1,4 @@
+import { updateThreadPlanTool, reportPlanCompletionTool } from '../tools/thread-plan-tools.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { readFileTool, listDirTool } from '../tools/file-tools.ts'
 import { searchCodeTool, findFilesTool } from '../tools/search-tools.ts'
@@ -210,6 +211,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(updateTodosTool)
   registry.register(askUserTool)
   syncReviewerInputTools(registry)
+  registry.register(updateThreadPlanTool)
+  registry.register(reportPlanCompletionTool)
   // Model-proposed threads. Always registered: an agent can spot work worth
   // splitting out in any project, and the card it draws is inert until clicked
   // (see `propose-thread-tool.ts`), so there is nothing to gate.

@@ -113,6 +113,7 @@ describe('roadmap review badges', () => {
 
     await $('.roadmap-row').click()
     await $('.roadmap-row.is-selected').waitForDisplayed({ timeout: 5_000 })
+    await $('.roadmap-details > summary').click()
     const reviewBox = $('.roadmap-review-result')
     await expect(reviewBox).toBeDisplayed()
     await expect(reviewBox).toHaveText(expect.stringContaining('review: likely'))

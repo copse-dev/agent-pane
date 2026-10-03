@@ -270,7 +270,14 @@ export interface SpineHookRunLine {
 }
 
 /** Plan Mode lifecycle actions recorded on the spine (issue #1080, P1). */
-export const PLAN_SPINE_ACTIONS = ['create', 'revise', 'comment', 'approve', 'abandon'] as const
+export const PLAN_SPINE_ACTIONS = [
+  'create',
+  'revise',
+  'comment',
+  'approve',
+  'abandon',
+  'report',
+] as const
 export type PlanSpineAction = (typeof PLAN_SPINE_ACTIONS)[number]
 
 /**
@@ -291,6 +298,8 @@ export interface SpinePlanLine {
   createdAt: number
   /** Revision markdown ref, e.g. `plans/<planId>/revision-2.md`. */
   artifact?: ContentRef
+  /** Immutable plan state; the spine append commits this snapshot. */
+  state?: ContentRef
   /** Set when `action` is `comment`. */
   commentId?: string
   /** Set when `action` is `approve`. */
@@ -760,7 +769,8 @@ const isPlanSpineAction: (value: unknown) => value is PlanSpineAction = (value) 
   value === 'revise' ||
   value === 'comment' ||
   value === 'approve' ||
-  value === 'abandon'
+  value === 'abandon' ||
+  value === 'report'
 
 const PLAN_LINE_FIELDS: RequiredFieldChecks<SpinePlanLine> = {
   v: (value) => typeof value === 'number',
@@ -774,6 +784,7 @@ const PLAN_LINE_FIELDS: RequiredFieldChecks<SpinePlanLine> = {
 const PLAN_LINE_OPTIONAL: OptionalFieldChecks<SpinePlanLine> = {
   revision: (value) => typeof value === 'number',
   artifact: isContentRef,
+  state: isContentRef,
   commentId: (value) => typeof value === 'string',
   executionProfileId: (value) => typeof value === 'string',
   contentHash: (value) => typeof value === 'string',
@@ -899,7 +910,12 @@ export function rebuildSpinePreservingNonMessageLines(
     preserved.push({ raw: entry.raw, anchor: lastMessageId })
     if (entry.line?.type === 'hook_run') preservedRefs.push(...hookRunBlobRefs(entry.line))
     if (entry.line?.type === 'decision') preservedRefs.push(...decisionBlobRefs(entry.line))
-    if (entry.line?.type === 'plan') preservedRefs.push(...planArtifactRefs(entry.line.artifact))
+    if (entry.line?.type === 'plan') {
+      preservedRefs.push(
+        ...planArtifactRefs(entry.line.artifact),
+        ...planArtifactRefs(entry.line.state),
+      )
+    }
   }
   if (preserved.length === 0) {
     return { body: serializeSpine(messages), preservedRefs }
