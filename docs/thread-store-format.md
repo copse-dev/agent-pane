@@ -48,8 +48,10 @@ installs the profile and tracing environment first.
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
-    blobs/<toolCallId>.result.txt    # verbatim tool result
-    blobs/<toolCallId>.args.json     # oversized tool args (when spilled from spine)
+    blobs/<messageId>.tool-<n>.result.txt        # verbatim result of the message's n-th tool call
+    blobs/<messageId>.tool-<n>.args.json         # oversized tool args (when spilled from spine)
+    blobs/<messageId>.tool-<n>.acp-content.json  # ACP tool-call display content (optional)
+    blobs/<messageId>.tool-<n>-img-<k>.dataurl   # image returned by the tool (optional)
     blobs/decision-<id>.detail.json  # optional decision extras (e.g. YOLO commands)
     blobs/<messageId>-img-<n>.dataurl  # decoded image data URL
     blobs/evidence/<sha256>.dataurl    # published visual-evidence PNG data URL (deduped)
@@ -215,10 +217,10 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
-      "args": { … } | { "ref": "blobs/<toolCallId>.args.json", "sha256": "…" },
+      "args": { … } | { "ref": "blobs/<messageId>.tool-<n>.args.json", "sha256": "…" },
       // inline when JSON ≤ ~2 KiB; otherwise spilled like results
       "status": "done" | "error",
-      "result": { "ref": "blobs/<toolCallId>.result.txt", "sha256": "…" } | null,
+      "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",
                     "summary": "…", "model": "…",
@@ -227,6 +229,20 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
   ]
 }
 ```
+
+Tool-call blobs are named from the owning message id and the call's 0-based
+position `<n>` in that message's `toolCalls`, never from the tool-call `id`.
+Tool-call ids come from remote providers and ACP agents: they repeat across
+messages (`call_0`, Kimi's `functions.read:0`, a per-response counter), so an
+id-named blob was overwritten by the next call that reused the id and the
+earlier message then failed its hash check; and they can contain `/`, `..`, or
+(on NTFS) `:`, which escaped or misnamed the file. Readers do not derive these
+names: `result`, `content`, and `images` follow the ref stored on the spine, and
+spilled `args` are recognised by matching either the current name or the legacy
+`blobs/<toolCallId>.args.json`. Threads written before this change therefore
+load unchanged, and their next whole-thread rewrite moves them to the new names
+(pruning the old ones). Every ref the store writes or prefetches must resolve
+inside the thread directory; one that would escape it is not followed.
 
 `model` on a spine line is the primary-chat picker id for that assistant
 message. The transcript surfaces it only when more than one distinct primary
@@ -270,7 +286,13 @@ Reconstruction (`foldThread`) folds `meta.json` + spine, resolves each ref, and
 thread (skipped), never silent corruption. Published evidence is deliberately
 recoverable: a missing, corrupt, or non-PNG evidence blob folds into an explicit
 unavailable asset so one damaged screenshot cannot hide the conversation around
-it. `parseSpine` tolerates unknown `v`
+it. Tool-call blobs are recoverable the same way when their hash does not match:
+the result folds to a fixed "Tool result unavailable" notice (dropping
+`appendedReminderLengths`, which index into the lost text), spilled args fold to
+`{}`, and a mismatched ACP `content` or tool image is dropped. The store logs
+each such ref. A _missing_ tool-call blob still skips the thread, because a read
+failure may be transient and a later whole-thread save would otherwise persist
+the notice over a recoverable file. `parseSpine` tolerates unknown `v`
 and unknown fields, and **skips any non-`message` line**, for forward
 compatibility. The round-trip is 1:1:
 `foldThread(explodeThread(messages)) === messages`.
@@ -372,7 +394,8 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
 Control-plane approvals (user, classifier, hook, system — including Guarded YOLO)
 append a unified `decision` line. Redacted fields live on the spine; optional
 structured extras (YOLO command text) go to `blobs/decision-<id>.detail.json`.
-Tool argv lives on the tool call (inline under ~2 KiB, else `blobs/<toolCallId>.args.json`).
+Tool argv lives on the tool call (inline under ~2 KiB, else the spilled
+`blobs/<messageId>.tool-<n>.args.json` its spine `args` ref names).
 See [`decision-log-format.md`](./decision-log-format.md).
 
 Legacy `permission_decision` lines remain parseable for older threads.
