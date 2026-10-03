@@ -86,6 +86,13 @@ export interface QueuedUserMessage {
   payload: AgentRunPayload
   createdAt: number
   /**
+   * Model selected for this prompt when it was queued. Human-authored queued
+   * prompts keep this snapshot so a later footer-model change does not retarget
+   * them. Hook-authored prompts omit it and follow the thread selection at drain
+   * time until a user picks one in the queued bubble.
+   */
+  model?: string
+  /**
    * Where the message came from (decision 10). Absent = human-authored. A
    * hook-originated message keeps `kind: 'hook'` even after a human edits it
    * (that flips {@link editedByUser} instead), so authorship is never lost.

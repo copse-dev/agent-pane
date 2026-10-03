@@ -2173,7 +2173,14 @@ export function mountInputBar(
     recordThreadVideos(store, id, attachedVideos)
     recordThreadArchives(store, id, attachedArchives)
 
-    const queued = { messageId, payload, createdAt: Date.now() }
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      // Snapshot the selection with the prompt. A later model change while this
+      // item waits in the pinned queue should affect the next prompt, not this one.
+      model: model ?? DEFAULT_APP_CHAT_MODEL,
+    }
     if (getThreadById(store, id)?.status === 'running') {
       enqueueUserMessage(store, id, queued)
     } else {
