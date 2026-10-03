@@ -248,7 +248,7 @@ the #1149 forced-write and task-specific warning mechanisms remain benchmark-onl
 > those values from live product constants. Both studies ran before #1242 added the
 > trailing-reasoning budget and the `repeated_sentence`/`repeated_tail` signals and before #1413
 > added visible-text and cross-turn circle checks, so later v3 runs share the studies' hash while
-> behaving differently. v3 is now retired. `product-aligned@4` hashes the effective loop settings,
+> behaving differently. v3 is now retired. `product-aligned@5` hashes the effective loop settings,
 > pins the loop's decisions on scripted streams, and carries the post-#1413 behaviour that v3 had
 > immediately before retirement. That configuration has not itself been evaluated; any claim about
 > it needs a fresh held-out run. Under Terminal-Bench's 2K visible-answer ceiling, #1242's trailing

@@ -111,17 +111,17 @@ test('fleet validates and carries an explicit ablation profile', () => {
 
 test('fleet carries explicit product profile versions for a paired study', () => {
   const config = runConfig({
-    profiles: 'product-aligned@2,product-aligned@4',
+    profiles: 'product-aligned@2,product-aligned@5',
     'no-steered-rerun': true,
     'worker-image': workerImage,
   })
-  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@4'])
+  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@5'])
 })
 
 test('fleet refuses the retired product-aligned v3 profile', () => {
   assert.throws(
     () => runConfig({ profile: 'product-aligned@3', 'worker-image': workerImage }),
-    /Run product-aligned@4 instead/,
+    /Run product-aligned@5 instead/,
   )
 })
 

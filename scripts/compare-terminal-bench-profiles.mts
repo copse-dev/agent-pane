@@ -4,6 +4,7 @@ import { TERMINAL_BENCH_HELD_OUT_TASKS } from './lib/terminal-bench-ablation.mts
 import {
   TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
   terminalBenchProfile,
+  terminalBenchProfileForIdentity,
   terminalBenchStreamCapOverrides,
   type TerminalBenchRuntimeConfiguration,
   type TerminalBenchStreamCapOverrides,
@@ -203,7 +204,8 @@ for (const path of paths) {
   datasetIdentities.add(report.datasetIdentity)
   const profiles = report.profiles
   for (const profile of profiles) {
-    const existing = merged.get(profile.profile)
+    const identity = `${profile.profile}:${profile.profileHash ?? 'unrecorded'}`
+    const existing = merged.get(identity)
     if (
       existing?.profileHash &&
       profile.profileHash &&
@@ -211,7 +213,7 @@ for (const path of paths) {
     ) {
       throw new Error(`Profile ${profile.profile} has inconsistent content hashes.`)
     }
-    merged.set(profile.profile, {
+    merged.set(identity, {
       profile: profile.profile,
       profileHash: existing?.profileHash ?? profile.profileHash,
       tasks: [...(existing?.tasks ?? []), ...profile.tasks],
@@ -222,7 +224,10 @@ for (const path of paths) {
 // id names today. A report hash that disagrees with the definition means the
 // definition changed under a retained id, which the pinned-hash test forbids.
 for (const profile of merged.values()) {
-  const expectedHash = terminalBenchProfile(profile.profile).contentHash
+  const definition = profile.profileHash
+    ? terminalBenchProfileForIdentity(profile.profile, profile.profileHash)
+    : terminalBenchProfile(profile.profile)
+  const expectedHash = definition.contentHash
   const hashes = new Set(
     [profile.profileHash, ...profile.tasks.map((trial) => trial.profileHash)].filter(
       (hash) => hash !== undefined,
@@ -252,7 +257,7 @@ interface ComparableRuntime {
 }
 
 function comparableRuntime(
-  profile: string,
+  profile: ProfileTrials,
   runtime: TerminalBenchRuntimeConfiguration,
 ): ComparableRuntime {
   return {
@@ -260,7 +265,12 @@ function comparableRuntime(
     maxLlmCalls: runtime.maxLlmCalls,
     maxContextTokens: runtime.maxContextTokens,
     maxCommandTimeoutSec: runtime.maxCommandTimeoutSec,
-    streamCapOverrides: terminalBenchStreamCapOverrides(terminalBenchProfile(profile), runtime),
+    streamCapOverrides: terminalBenchStreamCapOverrides(
+      profile.profileHash
+        ? terminalBenchProfileForIdentity(profile.profile, profile.profileHash)
+        : terminalBenchProfile(profile.profile),
+      runtime,
+    ),
   }
 }
 
@@ -268,10 +278,10 @@ const runtimeVariants = new Map<string, { settings: ComparableRuntime; profiles:
 for (const profile of merged.values()) {
   for (const trial of profile.tasks) {
     if (!trial.runtimeConfiguration) continue
-    const settings = comparableRuntime(profile.profile, trial.runtimeConfiguration)
+    const settings = comparableRuntime(profile, trial.runtimeConfiguration)
     const key = JSON.stringify(settings)
     const variant = runtimeVariants.get(key) ?? { settings, profiles: new Set<string>() }
-    variant.profiles.add(profile.profile)
+    variant.profiles.add(`${profile.profile}:${profile.profileHash ?? 'unrecorded'}`)
     runtimeVariants.set(key, variant)
   }
 }
@@ -298,7 +308,9 @@ if (datasetIdentities.size !== 1 || !datasetIdentities.has(expectedDatasetIdenti
   )
 }
 
-const baseline = merged.get('main-legacy@1')
+const baseline =
+  merged.get(`main-legacy@1:${terminalBenchProfile('main-legacy@1').contentHash}`) ??
+  merged.get('main-legacy@1:unrecorded')
 if (!baseline) throw new Error('Comparison requires the main-legacy@1 baseline.')
 const baselineMeans = taskMeans(baseline.tasks)
 const baselineSolves = new Set(
@@ -343,7 +355,7 @@ const summaries = [...merged.values()]
   .map((profile) => {
     const rewards = [...taskMeans(profile.tasks).values()]
     const comparison =
-      profile.profile === baseline.profile
+      profile.profile === baseline.profile && profile.profileHash === baseline.profileHash
         ? undefined
         : pairedBootstrap(
             baselineMeans,
@@ -389,6 +401,14 @@ const summaries = [...merged.values()]
       runtimeConfigurationRecorded: recorded,
       streamCapOverrides: recorded ? (sharedStreamCapOverrides ?? {}) : null,
       eligibleAsDefault:
+        (profile.profileHash
+          ? terminalBenchProfileForIdentity(profile.profile, profile.profileHash)
+          : terminalBenchProfile(profile.profile)
+        ).retirement === null &&
+        profile.profileHash !== undefined &&
+        profile.tasks.every((trial) => trial.profileHash === profile.profileHash) &&
+        baseline.profileHash !== undefined &&
+        baseline.tasks.every((trial) => trial.profileHash === baseline.profileHash) &&
         comparison !== undefined &&
         comparison.lower95 > 0 &&
         costWithinLimit &&
@@ -416,7 +436,7 @@ if (process.argv.includes('--json')) {
       ? `${comparison.difference.toFixed(3)} (${comparison.lower95.toFixed(3)}, ${comparison.upper95.toFixed(3)})`
       : 'baseline'
     console.log(
-      `| ${summary.profile} | ${String(summary.trials)} | ${String(summary.tasks)} | ` +
+      `| ${summary.profile} [${summary.profileHash?.slice(0, 12) ?? 'unrecorded'}] | ${String(summary.trials)} | ${String(summary.tasks)} | ` +
         `${summary.macroAverageReward?.toFixed(3) ?? 'n/a'} | ${String(summary.solves)} | ` +
         `${summary.medianTokens?.toFixed(0) ?? 'n/a'} | ` +
         `${summary.medianToolCalls?.toFixed(0) ?? 'n/a'} | ` +

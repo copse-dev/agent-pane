@@ -8,6 +8,7 @@ import {
 } from './lib/terminal-bench-tasks.mts'
 import {
   TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
+  terminalBenchProfileForIdentity,
   type TerminalBenchRuntimeConfiguration,
 } from './lib/terminal-bench-profiles.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
@@ -239,6 +240,15 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
       : undefined
   const metadata = nested(value, 'agent_result', 'metadata')
   const retainedProfile = await readTerminalBenchTrialProfile(path)
+  const agentProfile = stringValue(nested(metadata, 'profile'))
+  const agentHash = stringValue(nested(metadata, 'profile_hash'))
+  if (
+    retainedProfile &&
+    ((agentProfile !== undefined && agentProfile !== retainedProfile.versionedId) ||
+      (agentHash !== undefined && agentHash !== retainedProfile.contentHash))
+  )
+    throw new Error(`Conflicting profile provenance for ${path}`)
+  if (agentProfile && agentHash) terminalBenchProfileForIdentity(agentProfile, agentHash)
   const agentDirectory = join(dirname(path), 'agent')
   const trace = await traceMetrics(join(agentDirectory, 'copse-trace.jsonl'))
   const checkpointMetrics = await reasoningCheckpointMetrics(
@@ -330,12 +340,18 @@ function profileSummary(profile: string, selected: TrialSummary[]): ProfileSumma
   }
 }
 
-const profiles = [...new Set(trials.map((trial) => trial.profile))].sort().map((profile) =>
-  profileSummary(
-    profile,
-    trials.filter((trial) => trial.profile === profile),
-  ),
-)
+const profiles = [
+  ...new Set(trials.map((trial) => `${trial.profile}:${trial.profileHash ?? 'unrecorded'}`)),
+]
+  .sort()
+  .map((identity) => {
+    const selected = trials.filter(
+      (trial) => `${trial.profile}:${trial.profileHash ?? 'unrecorded'}` === identity,
+    )
+    const first = selected[0]
+    if (!first) throw new Error('Missing profile identity group')
+    return profileSummary(first.profile, selected)
+  })
 
 if (process.argv.slice(2).includes('--json')) {
   console.log(
@@ -356,7 +372,7 @@ if (process.argv.slice(2).includes('--json')) {
 } else {
   for (const summary of profiles) {
     console.log(
-      `terminal-bench ${summary.profile}: ${String(summary.counts.validTasks)} valid trials; ` +
+      `terminal-bench ${summary.profile} [${summary.profileHash?.slice(0, 12) ?? 'unrecorded'}]: ${String(summary.counts.validTasks)} valid trials; ` +
         `${String(summary.counts.pass)} pass, ${String(summary.counts.zero)} zero, ` +
         `${String(summary.counts.timeout)} timeout, ${String(summary.counts.invalid)} invalid`,
     )

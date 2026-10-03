@@ -74,13 +74,16 @@ optional one-image-ahead prefetch overlaps the next pull with inference, guarded
 30 GiB free-space floor so provisioning latency can be hidden without recreating unbounded disk
 pressure.
 
-The adapter now targets Terminal-Bench 2.1 and exposes four versioned experiment profiles:
+The adapter now targets Terminal-Bench 2.1 and exposes versioned experiment profiles:
 `main-legacy@1` (the unchanged original adapter), `pr-1149@1` (the exact constrained-write and
 validation-warning experiment), and `product-aligned@2` (workspace-aware regular shell/write
-semantics without task-specific recovery). `product-aligned@4` preserves v2's prompt/tools and
+semantics without task-specific recovery). `product-aligned@5` preserves v2's prompt/tools and
 reassesses a reasoning-dominated stream every 2k tokens: clean streams may expand to the product's
 32k hard cap, while high-confidence circle signals enter the existing bounded recovery.
-Historical `product-aligned@1`, v2 and the retired v3 capsules remain readable.
+Both colliding `product-aligned@4` hashes remain archived metadata only; new runs reject v4.
+The bare `product-aligned` selects the unhinted legacy-recovery v5 baseline. This provenance
+foundation adds no ladder or soft-budget behavior. Historical capsule tuples remain readable
+without relabeling; experiment additions require separate immutable version identities.
 `main-legacy` remains the default. Dataset revision, task configuration
 checksum, resolved image digest, profile ID, profile content hash, and the agent's effective
 runtime settings are retained with every trial.
@@ -88,11 +91,11 @@ runtime settings are retained with every trial.
 A profile content hash is only evidence if it identifies behaviour. `product-aligned@3` hashed a
 description of its reasoning policy while the host spread live product constants into it, so v3
 runs on either side of #1204, #1242 and #1413 share a hash but behaved differently; v3 is
-retired and cannot be run. From v4, the hash covers the literal loop settings the host passes to
+retired and cannot be run. From v5, the hash covers the literal loop settings the host passes to
 `runAgentLoop`, and the profile — never a product constant — supplies them.
 `scripts/lib/terminal-bench-profiles.test.ts` pins every version's hash and fails when the current
 product-aligned settings or the circle-detector thresholds drift from the product, and
-`scripts/terminal-bench-loop-fingerprint.test.ts` pins the loop's decisions for v4 on scripted
+`scripts/terminal-bench-loop-fingerprint.test.ts` pins the loop's decisions for v4 and v5 on scripted
 streams. Either failure is resolved by a new profile version, never by editing a pinned value.
 Stream-cap environment overrides are recorded per trial instead of hashed (historical hashes cannot
 absorb them); the comparison gate refuses to pool runs whose runtime settings or overrides differ

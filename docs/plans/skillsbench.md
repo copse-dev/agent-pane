@@ -105,7 +105,7 @@ planning markers such as `actually`, `wait`, and `I need to` are deliberately no
 repeated-tail signals (#1242) and visible-text and cross-turn checks (#1413). Its content hash
 describes the reasoning policy instead of hashing the values it runs with, so it does not
 distinguish those versions or a changed `COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS`. This is the
-defect that retired Terminal-Bench `product-aligned@3` in favour of `product-aligned@4`. Until
+defect that retired Terminal-Bench `product-aligned@3` in favour of `product-aligned@5`. Until
 SkillsBench profiles hash their effective values the same way, pair `@1`/`@2` arms only within one
 source commit and one stream-cap setting.
 

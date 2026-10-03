@@ -44,7 +44,7 @@ on:
           - pr-1149
           - product-aligned
           - product-aligned@2
-          - product-aligned@4
+          - product-aligned@5
       profiles:
         description: Optional comma-separated profiles to run sequentially on one fleet
         required: false
@@ -148,8 +148,8 @@ jobs:
           declare -A seen_profiles=()
           for profile_id in "${profile_ids[@]}"; do
             case "$profile_id" in
-              main-legacy|pr-1149|product-aligned|main-legacy@1|main-legacy@2|pr-1149@1|product-aligned@1|product-aligned@2|product-aligned@4) ;;
-              product-aligned@3) echo "::error::product-aligned@3 is retired because its hash does not identify its behaviour; run product-aligned@4"; exit 2 ;;
+              main-legacy|pr-1149|product-aligned|main-legacy@1|main-legacy@2|pr-1149@1|product-aligned@1|product-aligned@2|product-aligned@5) ;;
+              product-aligned@3|product-aligned@4) echo "::error::product-aligned@3 and @4 are archived identities; run product-aligned@5"; exit 2 ;;
               *) echo "::error::unsupported Terminal-Bench profile: $profile_id"; exit 2 ;;
             esac
             if [ -n "${seen_profiles[$profile_id]:-}" ]; then
@@ -265,7 +265,7 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@v5
         if: steps.image.outputs.exists != 'true'
 
       - name: Build and push worker once

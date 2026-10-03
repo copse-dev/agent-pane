@@ -17,6 +17,7 @@ export const TERMINAL_BENCH_PROFILE_VERSIONED_IDS = [
   'product-aligned@2',
   'product-aligned@3',
   'product-aligned@4',
+  'product-aligned@5',
 ] as const
 
 export type TerminalBenchProfileVersionedId = (typeof TERMINAL_BENCH_PROFILE_VERSIONED_IDS)[number]
@@ -39,6 +40,11 @@ export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkp
  * thresholds no longer match the product, because the host cannot pin them.
  */
 export interface TerminalBenchLoopSettings {
+  recoveryStrategy: 'legacy-two-cut-v1'
+  suppressedOutputTokens: number
+  suppressedNudge: string
+  suppressionProtocol: string
+  softReasoningBudget: null
   /** Default per-stream cap; `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` may override it. */
   maxStreamOutputTokens: number
   /** Default recovery-stream cap; `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` may override it. */
@@ -65,6 +71,9 @@ export const TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA = z
     maxStreamOutputTokens: positiveInteger,
     reasoningRunawayRecoveryOutputTokens: positiveInteger,
     maxCommandTimeoutSec: positiveInteger,
+    recoveryStrategy: z.literal('legacy-two-cut-v1').default('legacy-two-cut-v1'),
+    suppressedOutputTokens: positiveInteger.default(1024),
+    softReasoningBudget: z.null().default(null),
   })
   .strict()
 
@@ -73,13 +82,16 @@ export type TerminalBenchRuntimeConfiguration = z.infer<
 >
 
 export interface TerminalBenchStreamCapOverrides {
+  recoveryStrategy?: 'legacy-two-cut-v1'
+  suppressedOutputTokens?: number
+  softReasoningBudget?: null
   maxStreamOutputTokens?: number
   reasoningRunawayRecoveryOutputTokens?: number
 }
 
 export interface TerminalBenchProfile {
   id: TerminalBenchProfileId
-  version: 1 | 2 | 3 | 4
+  version: 1 | 2 | 3 | 4 | 5
   versionedId: TerminalBenchProfileVersionedId
   contentHash: string
   systemPrompt: string
@@ -91,6 +103,7 @@ export interface TerminalBenchProfile {
   warnsOnValidationEvidence: boolean
   nonzeroShellResultIsError: boolean
   reasoningPolicy: TerminalBenchReasoningPolicy
+  hintsLongRunningCommands: boolean
   loop: TerminalBenchLoopSettings
   /**
    * Why the profile can no longer be run, or null when it can. A retired
@@ -168,11 +181,17 @@ type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash' | 'preflightPr
 }
 
 /**
- * Loop settings every profile before v4 ran with. They were hard-coded in the
- * host rather than declared by the profile, so the v1–v3 hashes never covered
+ * Loop settings every profile before v5 ran with. They were hard-coded in the
+ * host rather than declared by the profile, so the v1–v4 hashes never covered
  * them; those hashes stay frozen because retained capsules reference them.
  */
 const FIXED_CAP_LOOP: TerminalBenchLoopSettings = {
+  recoveryStrategy: 'legacy-two-cut-v1',
+  suppressedOutputTokens: 1024,
+  suppressedNudge:
+    'Your reasoning was cut off twice with no action taken. Do not think any further. Take exactly one concrete next step right now by calling a tool (for example, run the first shell command or write the first file the task needs). Reply with the tool call only.',
+  suppressionProtocol: 'openai-local-reasoning-none-enable-thinking-false-qwen3-no-think-v1',
+  softReasoningBudget: null,
   maxStreamOutputTokens: 2_048,
   reasoningRunawayRecoveryOutputTokens: 4_096,
   reasoningRunawayTextToleranceChars: 256,
@@ -183,7 +202,7 @@ const FIXED_CAP_LOOP: TerminalBenchLoopSettings = {
 }
 
 /**
- * Circle-detector thresholds in force when product-aligned@4 was defined
+ * Circle-detector thresholds in force when product-aligned@5 was defined
  * (`DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS`, after #1242 and #1413).
  */
 const CIRCLE_DETECTOR_V1: Readonly<ReasoningCircleDetectorOptions> = {
@@ -221,6 +240,7 @@ function legacyDefinition(
     ...definition,
     writeFilePolicy,
     reasoningPolicy: 'fixed-cap',
+    hintsLongRunningCommands: false,
     loop: FIXED_CAP_LOOP,
     retirement: null,
     hashPayload: definition,
@@ -261,6 +281,7 @@ const MAIN_LEGACY_V2: ProfileDefinition = {
   writeFilePolicy: 'none',
   reasoningPolicy: 'fixed-cap',
   preflightProbe: true,
+  hintsLongRunningCommands: false,
   loop: FIXED_CAP_LOOP,
   retirement: null,
   hashPayload: {
@@ -322,6 +343,7 @@ const PRODUCT_ALIGNED_V2_BASE = {
 const PRODUCT_ALIGNED_V2: ProfileDefinition = {
   ...PRODUCT_ALIGNED_V2_BASE,
   reasoningPolicy: 'fixed-cap',
+  hintsLongRunningCommands: false,
   loop: FIXED_CAP_LOOP,
   retirement: null,
   hashPayload: {
@@ -351,13 +373,14 @@ const PRODUCT_ALIGNED_V3_BASE = {
  * product, after #1242 added the trailing budget and sentence/tail signals,
  * and after #1413 added text and cross-turn checks all share this hash while
  * behaving differently. It stays resolvable for those capsules but can no
- * longer be run; product-aligned@4 hashes the effective values instead.
+ * longer be run; product-aligned@5 hashes the effective values instead.
  */
 const PRODUCT_ALIGNED_V3: ProfileDefinition = {
   ...PRODUCT_ALIGNED_V3_BASE,
+  hintsLongRunningCommands: false,
   loop: CHECKPOINTED_LOOP,
   retirement:
-    'product-aligned@3 hashed a description of its reasoning policy rather than the values it ran with, so its hash covers behaviour that changed in #1204, #1242 and #1413. Run product-aligned@4 instead.',
+    'product-aligned@3 hashed a description of its reasoning policy rather than the values it ran with, so its hash covers behaviour that changed in #1204, #1242 and #1413. Run product-aligned@5 instead.',
   hashPayload: {
     hashSchema: 3,
     profile: PRODUCT_ALIGNED_V3_BASE,
@@ -373,25 +396,64 @@ const PRODUCT_ALIGNED_V3: ProfileDefinition = {
   },
 }
 
+export const PRODUCT_ALIGNED_V4_SYSTEM_PROMPT = `${PRODUCT_ALIGNED_SYSTEM_PROMPT}
+Run any command that may take more than about 30 seconds (package installs, builds, downloads, training) in the background with output to a log, for example \`nohup <command> > /tmp/job.log 2>&1 &\`, then poll with short \`tail -n 20 /tmp/job.log\` or \`pgrep -f <name>\` commands and make progress on other work between polls. Before installing anything, check whether it is already available (for example \`python3 -c 'import torch'\`).`
+
 const PRODUCT_ALIGNED_V4_BASE = {
-  ...PRODUCT_ALIGNED_V2_BASE,
+  ...PRODUCT_ALIGNED_V3_BASE,
   version: 4 as const,
   versionedId: 'product-aligned@4' as const,
+  systemPrompt: PRODUCT_ALIGNED_V4_SYSTEM_PROMPT,
+}
+
+/**
+ * Preserve #3423's explicit long-command arm and its original non-canonical
+ * hash payload. Snapshot its previously live loop values outside that frozen
+ * payload; detector and behavioral drift tests guard those values. The new
+ * effective-value hash and unhinted alias belong to v5, not this existing id.
+ */
+const PRODUCT_ALIGNED_V4: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V4_BASE,
+  hintsLongRunningCommands: true,
+  loop: CHECKPOINTED_LOOP,
+  retirement:
+    'product-aligned@4 collided across two published hashes; archived metadata only. Run product-aligned@5 instead.',
+  hashPayload: {
+    hashSchema: 4,
+    profile: PRODUCT_ALIGNED_V4_BASE,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+      recovery: 'generic-agent-loop-nudges-no-forced-tool-v1',
+      reasoning:
+        '2k-checkpoints-high-confidence-self-report-repeat-structure-list100-max32k-recovery4k-v1',
+      longRunningCommands: 'background-job-hint-on-timeout-slow-or-install-v1',
+    },
+  },
+}
+
+const PRODUCT_ALIGNED_V5_BASE = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  version: 5 as const,
+  versionedId: 'product-aligned@5' as const,
+  hintsLongRunningCommands: false,
   reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
 }
 
 /**
- * v4 behaves exactly as v3 did immediately before it was retired. Its hash
+ * v5 behaves exactly as v3 did immediately before it was retired. Its hash
  * covers the effective loop settings themselves, so any change to them needs a
  * new version rather than silently altering what this id means.
  */
-const PRODUCT_ALIGNED_V4: ProfileDefinition = {
-  ...PRODUCT_ALIGNED_V4_BASE,
+const PRODUCT_ALIGNED_V5: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V5_BASE,
   loop: CHECKPOINTED_LOOP,
   retirement: null,
   hashPayload: {
-    hashSchema: 4,
-    profile: PRODUCT_ALIGNED_V4_BASE,
+    hashSchema: 5,
+    profile: PRODUCT_ALIGNED_V5_BASE,
     loop: CHECKPOINTED_LOOP,
     implementation: {
       bridgeProtocol: 'newline-delimited-json-v1',
@@ -410,12 +472,13 @@ const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = 
   'product-aligned@2': PRODUCT_ALIGNED_V2,
   'product-aligned@3': PRODUCT_ALIGNED_V3,
   'product-aligned@4': PRODUCT_ALIGNED_V4,
+  'product-aligned@5': PRODUCT_ALIGNED_V5,
 }
 
 const CURRENT_PROFILE_VERSIONS: Record<TerminalBenchProfileId, TerminalBenchProfileVersionedId> = {
   'main-legacy': 'main-legacy@1',
   'pr-1149': 'pr-1149@1',
-  'product-aligned': 'product-aligned@4',
+  'product-aligned': 'product-aligned@5',
 }
 
 /** JSON with object keys sorted, so a hash never depends on property order. */
@@ -427,9 +490,9 @@ function canonicalJson(value: unknown): string {
 }
 
 function profileHash(definition: ProfileDefinition): string {
-  // v1–v3 hashes predate canonical ordering and stay byte-identical.
+  // v1–v4 hashes predate canonical ordering and stay byte-identical.
   const serialized =
-    definition.version < 4
+    definition.version < 5
       ? JSON.stringify(definition.hashPayload)
       : canonicalJson(definition.hashPayload)
   return createHash('sha256').update(serialized).digest('hex')
@@ -503,6 +566,29 @@ export function terminalBenchProfile(
   }
 }
 
+/** Resolve retained metadata by the immutable tuple, never by alias alone. */
+export function terminalBenchProfileForIdentity(
+  versionedId: string,
+  contentHash: string,
+): TerminalBenchProfile {
+  const profile = terminalBenchProfile(versionedId)
+  if (profile.versionedId === versionedId && profile.contentHash === contentHash) return profile
+  if (
+    versionedId === 'product-aligned@4' &&
+    contentHash === '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d'
+  ) {
+    return {
+      ...terminalBenchProfile('product-aligned@5'),
+      version: 4,
+      versionedId: 'product-aligned@4',
+      contentHash,
+      retirement:
+        'Historical #3410 product-aligned@4 collides with the long-command profile; archived metadata only. Run product-aligned@5 instead.',
+    }
+  }
+  throw new Error(`Unknown Terminal-Bench profile identity ${versionedId}:${contentHash}`)
+}
+
 /**
  * Resolve a profile for a new run. Retired profiles resolve for historical
  * capsules through {@link terminalBenchProfile} but must never start one.
@@ -531,9 +617,23 @@ export function terminalBenchStreamCapOverrides(
   runtime: Pick<
     TerminalBenchRuntimeConfiguration,
     'maxStreamOutputTokens' | 'reasoningRunawayRecoveryOutputTokens'
-  >,
+  > &
+    Partial<
+      Pick<
+        TerminalBenchRuntimeConfiguration,
+        'recoveryStrategy' | 'suppressedOutputTokens' | 'softReasoningBudget'
+      >
+    >,
 ): TerminalBenchStreamCapOverrides {
   return {
+    ...(runtime.suppressedOutputTokens !== undefined &&
+    runtime.suppressedOutputTokens !== profile.loop.suppressedOutputTokens
+      ? { suppressedOutputTokens: runtime.suppressedOutputTokens }
+      : {}),
+    ...(runtime.softReasoningBudget !== undefined &&
+    JSON.stringify(runtime.softReasoningBudget) !== JSON.stringify(profile.loop.softReasoningBudget)
+      ? { softReasoningBudget: runtime.softReasoningBudget }
+      : {}),
     ...(runtime.maxStreamOutputTokens === profile.loop.maxStreamOutputTokens
       ? {}
       : { maxStreamOutputTokens: runtime.maxStreamOutputTokens }),

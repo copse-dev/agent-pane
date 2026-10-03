@@ -24,24 +24,22 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
 - `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
   recovery logic.
-- `product-aligned@4` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
-  Clean reasoning receives another 2k window, checked again up to the product's 32k hard ceiling;
-  a high-confidence circle signal cuts the stream into the existing bounded recovery path. The
-  unversioned CLI and workflow selection resolves to v4.
-- `product-aligned@3` is retired. Its hash named the reasoning policy with a description while the
-  host took the actual values from live product constants, so v3 runs before and after #1204,
-  #1242 and #1413 share one hash but behaved differently. v3 capsules remain readable; every run
-  entry point refuses to start a new v3 run.
+- `product-aligned@4` has two archived `(id, hash)` identities: the long-command arm from
+  #3423 (`516606b6…`) and the effective baseline from #3410 (`252de9d8…`). Readers retain
+  both tuples separately; new runs reject this ambiguous version. No old artifact is relabeled.
+- `product-aligned@5` is the unhinted checkpoint baseline with the existing two-cut recovery
+  and no soft budget. The `product-aligned` alias selects this explicit baseline.
+- `product-aligned@3` remains retired because its descriptive hash relied on live product
+  constants. Historical capsules remain readable; new runs reject it.
 
-Since v4, a profile's content hash covers the loop settings the host passes to `runAgentLoop`
-(stream caps, preamble tolerance, forced-text escalation, adaptive budget extensions, the full
-reasoning-checkpoint policy and the circle-detector thresholds) as literal values. Nothing a
-profile runs with is read from a product constant at dispatch time. Three tests keep the id
-honest: `scripts/lib/terminal-bench-profiles.test.ts` pins every version's hash and fails when the
-current product-aligned version or the detector thresholds drift from the product;
-`scripts/terminal-bench-loop-fingerprint.test.ts` pins the decisions `runAgentLoop` makes for v4
-on scripted streams, so a loop change that alters v4's behaviour needs a new version too.
-Historical v1/v2 capsules remain readable and their hashes are unchanged.
+The default benchmark alias remains `main-legacy@1`. Historical runnable profiles explicitly
+select legacy recovery. This foundation changes no Electron recovery behavior and adds no
+suppression ladder, long-command experiment or soft-budget implementation. New experiments
+need their own immutable versioned identities and owning PRs.
+Since v5, canonical hashes cover literal loop settings and compatibility policy metadata.
+Disabled suppression/soft settings are recorded as inert metadata, without enabling those features.
+Readers, reports, sealing and debug selection retain full `(versioned id, hash)` tuples and reject
+conflicting or ambiguous provenance. Archived, custom or unrecorded identities cannot be promoted.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
@@ -90,7 +88,7 @@ sources to the host Docker daemon, so remapping that path would make verifier re
 to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
-`product-aligned@2,product-aligned@4` and set `steered_rerun` to false. The workflow provisions one
+`product-aligned@2,product-aligned@5` and set `steered_rerun` to false. The workflow provisions one
 fleet, then each worker runs one task across every profile before advancing to its next task. The
 profile order rotates by the task's global cohort position to counterbalance ordering effects:
 task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
@@ -276,7 +274,8 @@ npm run bench:terminal:debug -- fetch --run 123456 --task circuit-fibsqrt
 npm run bench:terminal:debug -- thread --run 123456 --task circuit-fibsqrt
 ```
 
-Use `--trial-id` instead of `--task` to select a particular repeated attempt, and `--json` with
+Use `--trial-id` instead of `--task` to select a particular repeated attempt. It is required when
+a task has multiple profile identities, and `--json` with
 `list` for agent-friendly discovery. Downloads are SHA-256 and size verified against the shard
 index before extraction. Extraction rejects absolute/traversing paths, links, special entries,
 archives over 200,000 entries, and expanded content over 1 GiB. Existing extraction directories

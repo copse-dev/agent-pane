@@ -40,16 +40,16 @@ describe('terminal benchmark bridge', () => {
         'main-legacy@1': main.contentHash,
         'pr-1149@1': pr.contentHash,
         'product-aligned@2': alignedV2.contentHash,
-        'product-aligned@4': aligned.contentHash,
+        'product-aligned@5': aligned.contentHash,
       },
       {
         'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
         'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
         'product-aligned@2': 'bb72d92ff108556d25660492cdf6bfd0e165b45db13aebcfb9d1e3132461dd23',
-        'product-aligned@4': '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
+        'product-aligned@5': '23c941b6ed4fdda18a1643a59ec9f113cf773253aa3e08bf8e3912d8a8c47597',
       },
     )
-    assert.equal(aligned.versionedId, 'product-aligned@4')
+    assert.equal(aligned.versionedId, 'product-aligned@5')
     assert.equal(
       new Set([main.contentHash, pr.contentHash, alignedV2.contentHash, aligned.contentHash]).size,
       4,
@@ -95,7 +95,7 @@ describe('terminal benchmark bridge', () => {
     assert.equal(terminalShellResultIsError(terminalBenchProfile('product-aligned'), result), true)
   })
   it('uses an action-oriented local-model stream cap', () => {
-    for (const id of ['main-legacy', 'pr-1149', 'product-aligned@2', 'product-aligned@4']) {
+    for (const id of ['main-legacy', 'pr-1149', 'product-aligned@2', 'product-aligned@5']) {
       const runtime = terminalBenchRuntimeConfiguration(terminalBenchProfile(id), {})
       assert.equal(runtime.maxStreamOutputTokens, 2_048)
       assert.equal(runtime.reasoningRunawayRecoveryOutputTokens, 4_096)
@@ -104,7 +104,7 @@ describe('terminal benchmark bridge', () => {
       terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@2')),
       undefined,
     )
-    assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@4')), {
+    assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@5')), {
       intervalTokens: 2_048,
       maxNonReasoningTokens: 2_048,
       maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
@@ -114,12 +114,15 @@ describe('terminal benchmark bridge', () => {
   })
 
   it('takes every loop setting from the profile and reports environment overrides', () => {
-    const profile = terminalBenchProfile('product-aligned@4')
+    const profile = terminalBenchProfile('product-aligned@5')
     const runtime = terminalBenchRuntimeConfiguration(profile, {
       COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: '4096',
       COPSE_TERMINAL_MAX_STEPS: '10',
     })
     assert.deepEqual(runtime, {
+      recoveryStrategy: 'legacy-two-cut-v1',
+      suppressedOutputTokens: 1024,
+      softReasoningBudget: null,
       maxSteps: 10,
       maxLlmCalls: 13,
       maxContextTokens: 32_768,
@@ -128,6 +131,7 @@ describe('terminal benchmark bridge', () => {
       maxCommandTimeoutSec: DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
     })
     assert.deepEqual(terminalBenchLoopOptions(profile, runtime, 'Write /app/out.txt'), {
+      reasoningRunawayRecoveryStrategy: 'legacy-two-cut-v1',
       maxSteps: 10,
       maxLlmCalls: 13,
       adaptiveExtensions: false,
@@ -321,5 +325,21 @@ describe('terminal benchmark bridge', () => {
       }),
       'exit=0',
     )
+  })
+  it('retains archived long-command metadata without enabling a runnable hint arm', () => {
+    const v4 = terminalBenchProfile('product-aligned@4')
+    assert.equal(v4.hintsLongRunningCommands, true)
+    assert.match(v4.systemPrompt, /nohup <command> > \/tmp\/job\.log 2>&1 &/)
+    assert.equal(terminalBenchProfile('product-aligned').versionedId, 'product-aligned@5')
+    for (const id of [
+      'main-legacy',
+      'pr-1149',
+      'product-aligned@2',
+      'product-aligned@3',
+      'product-aligned@5',
+      'product-aligned',
+    ]) {
+      assert.equal(terminalBenchProfile(id).hintsLongRunningCommands, false)
+    }
   })
 })

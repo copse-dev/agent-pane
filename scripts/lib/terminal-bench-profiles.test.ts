@@ -14,6 +14,7 @@ import {
   parseTerminalBenchProfileIds,
   runnableTerminalBenchProfile,
   terminalBenchProfile,
+  terminalBenchProfileForIdentity,
   terminalBenchStreamCapOverrides,
   type TerminalBenchProfileVersionedId,
 } from './terminal-bench-profiles.mts'
@@ -25,15 +26,17 @@ import {
  *
  * If this test fails, something a profile's hash covers changed. Do not edit
  * the expected value: restore the old definition and add a new version
- * (`product-aligned@5`, …) carrying the change, then pin its hash here.
+ * (`product-aligned@6`, …) carrying the change, then pin its hash here.
  */
 const PINNED_PROFILE_HASHES: Record<TerminalBenchProfileVersionedId, string> = {
   'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
+  'main-legacy@2': '6724718aa9618aa51d84d837671e2fea2f1b94241fdeba3fbafe515ab8273ade',
   'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
   'product-aligned@1': '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
   'product-aligned@2': 'bb72d92ff108556d25660492cdf6bfd0e165b45db13aebcfb9d1e3132461dd23',
   'product-aligned@3': '69c56451ed7d3abb564ac6edf731294cbf70d8c496249336f9282dbd64181a1f',
-  'product-aligned@4': '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
+  'product-aligned@4': '516606b6377201d949ad1d712056f68d6841f41a506499b0abbdfaf55dc8119c',
+  'product-aligned@5': '23c941b6ed4fdda18a1643a59ec9f113cf773253aa3e08bf8e3912d8a8c47597',
 }
 
 const DRIFT_HINT =
@@ -98,9 +101,9 @@ describe('Terminal-Bench profile provenance', () => {
     }
   })
 
-  it('keeps v4 behaviourally identical to v3 immediately before v3 was retired', () => {
+  it('keeps v5 behaviourally identical to v3 immediately before v3 was retired', () => {
     const v3 = terminalBenchProfile('product-aligned@3')
-    const v4 = terminalBenchProfile('product-aligned@4')
+    const v5 = terminalBenchProfile('product-aligned@5')
     const {
       contentHash: _v3Hash,
       version: _v3,
@@ -114,27 +117,27 @@ describe('Terminal-Bench profile provenance', () => {
       versionedId: _v4Id,
       retirement: _r4,
       ...v4Rest
-    } = v4
+    } = v5
     assert.deepEqual(v4Rest, v3Rest)
   })
 
   it('resolves retired profiles for history but refuses to run them', () => {
     assert.equal(terminalBenchProfile('product-aligned@3').versionedId, 'product-aligned@3')
     assert.deepEqual(parseTerminalBenchProfileIds('product-aligned@3'), ['product-aligned@3'])
-    assert.throws(() => runnableTerminalBenchProfile('product-aligned@3'), /product-aligned@4/)
+    assert.throws(() => runnableTerminalBenchProfile('product-aligned@3'), /product-aligned@5/)
     assert.throws(
       () => parseRunnableTerminalBenchProfileIds('main-legacy,product-aligned@3'),
-      /product-aligned@4/,
+      /product-aligned@5/,
     )
     assert.deepEqual(parseRunnableTerminalBenchProfileIds('main-legacy@1,product-aligned'), [
       'main-legacy@1',
       'product-aligned',
     ])
-    assert.equal(runnableTerminalBenchProfile('product-aligned').versionedId, 'product-aligned@4')
+    assert.equal(runnableTerminalBenchProfile('product-aligned').versionedId, 'product-aligned@5')
   })
 
   it('reports only the stream caps a run changed from its profile', () => {
-    const profile = terminalBenchProfile('product-aligned@4')
+    const profile = terminalBenchProfile('product-aligned@5')
     assert.deepEqual(
       terminalBenchStreamCapOverrides(profile, {
         maxStreamOutputTokens: 2_048,
@@ -157,4 +160,38 @@ describe('Terminal-Bench profile provenance', () => {
       { reasoningRunawayRecoveryOutputTokens: 1_024 },
     )
   })
+})
+
+it('preserves both colliding v4 identities for reading but rejects runnable ambiguity', () => {
+  const identities = [
+    PINNED_PROFILE_HASHES['product-aligned@4'],
+    '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
+  ]
+  for (const hash of identities) {
+    const profile = terminalBenchProfileForIdentity('product-aligned@4', hash)
+    assert.equal(profile.versionedId, 'product-aligned@4')
+    assert.equal(profile.contentHash, hash)
+    assert.notEqual(profile.retirement, null)
+    assert.equal(profile.loop.recoveryStrategy, 'legacy-two-cut-v1')
+    assert.equal(profile.loop.softReasoningBudget, null)
+  }
+  assert.equal(
+    terminalBenchProfileForIdentity('product-aligned@4', identities[0] ?? '')
+      .hintsLongRunningCommands,
+    true,
+  )
+  assert.equal(
+    terminalBenchProfileForIdentity('product-aligned@4', identities[1] ?? '')
+      .hintsLongRunningCommands,
+    false,
+  )
+  assert.throws(() => runnableTerminalBenchProfile('product-aligned@4'), /retired|archived|collid/)
+  assert.throws(
+    () => terminalBenchProfileForIdentity('product-aligned@4', '0'.repeat(64)),
+    /Unknown/,
+  )
+  assert.throws(
+    () => terminalBenchProfileForIdentity('product-aligned@5', identities[0] ?? ''),
+    /Unknown/,
+  )
 })

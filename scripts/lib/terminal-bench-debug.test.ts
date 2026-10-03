@@ -258,7 +258,7 @@ describe('Terminal-Bench post-run debugging', () => {
     })
     assert.equal(manifest.schemaVersion, 2)
     assert.equal(manifest.dataset?.id, 'terminal-bench/terminal-bench-2-1')
-    assert.equal(manifest.profile?.versionedId, 'product-aligned@4')
+    assert.equal(manifest.profile?.versionedId, 'product-aligned@5')
     assert.equal(manifest.objectPrefix, 'terminal-bench/copse-dev/agent-pane/12345/2')
   })
 
@@ -288,7 +288,63 @@ describe('Terminal-Bench post-run debugging', () => {
     assert.equal(manifest.profile, undefined)
     assert.deepEqual(
       manifest.profiles?.map((profile) => profile.versionedId),
-      ['main-legacy@1', 'pr-1149@1', 'product-aligned@4'],
+      ['main-legacy@1', 'pr-1149@1', 'product-aligned@5'],
     )
   })
+})
+
+it('retains manifest tuples and rejects task-only selection across different profile identities', () => {
+  const profiles = [
+    '516606b6377201d949ad1d712056f68d6841f41a506499b0abbdfaf55dc8119c',
+    '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
+  ].map((contentHash) => ({ id: 'product-aligned', versionedId: 'product-aligned@4', contentHash }))
+  const parsed = parseTerminalBenchRunManifest({
+    ...runManifest(),
+    schemaVersion: 2,
+    dataset: {
+      id: 'terminal-bench/terminal-bench-2-1',
+      version: '2.1',
+      revision: 'upstream-commit',
+    },
+    profiles,
+  })
+  assert.equal(parsed.profiles?.length, 2)
+  assert.throws(
+    () =>
+      parseTerminalBenchRunManifest({
+        ...runManifest(),
+        schemaVersion: 2,
+        dataset: {
+          id: 'terminal-bench/terminal-bench-2-1',
+          version: '2.1',
+          revision: 'upstream-commit',
+        },
+        profiles: [profiles[0], profiles[0]],
+      }),
+    /duplicates/,
+  )
+  const capsules = parseTerminalBenchShardIndex(
+    {
+      schemaVersion: 2,
+      capsules: profiles.map((profile, index) => ({
+        trialId: `identity-${String(index)}`,
+        taskName: 'debug-task',
+        archive: `identity-${String(index)}.tar.gz`,
+        bytes: 12,
+        sha256: 'a'.repeat(64),
+        attemptIndex: 1,
+        profile: profile.versionedId,
+        profileHash: profile.contentHash,
+      })),
+    },
+    0,
+  )
+  assert.throws(
+    () => selectTerminalBenchCapsule(capsules, { taskName: 'debug-task' }),
+    /multiple profile identities/,
+  )
+  assert.equal(
+    selectTerminalBenchCapsule(capsules, { trialId: 'identity-1' }).profileHash,
+    profiles[1]?.contentHash,
+  )
 })

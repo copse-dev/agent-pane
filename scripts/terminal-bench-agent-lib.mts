@@ -89,6 +89,9 @@ export function terminalBenchRuntimeConfiguration(
   const maxSteps = envPositiveInt(env, 'COPSE_TERMINAL_MAX_STEPS', 80)
   return {
     maxSteps,
+    recoveryStrategy: profile.loop.recoveryStrategy,
+    suppressedOutputTokens: profile.loop.suppressedOutputTokens,
+    softReasoningBudget: null,
     maxLlmCalls: envPositiveInt(env, 'COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3),
     maxContextTokens: envPositiveInt(env, 'COPSE_TERMINAL_CONTEXT_TOKENS', 32_768),
     maxStreamOutputTokens: envPositiveInt(
@@ -127,6 +130,7 @@ export function terminalBenchLoopOptions(
   | 'maxContextTokens'
   | 'maxStreamOutputTokens'
   | 'reasoningRunawayRecoveryOutputTokens'
+  | 'reasoningRunawayRecoveryStrategy'
   | 'reasoningRunawayRecoveryNudge'
   | 'reasoningRunawayTextToleranceChars'
   | 'reasoningCheckpointPolicy'
@@ -136,6 +140,7 @@ export function terminalBenchLoopOptions(
   const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
   return {
     maxSteps: runtime.maxSteps,
+    reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
     maxLlmCalls: runtime.maxLlmCalls,
     adaptiveExtensions: profile.loop.adaptiveExtensions,
     maxContextTokens: runtime.maxContextTokens,
