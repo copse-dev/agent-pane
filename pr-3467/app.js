@@ -70324,6 +70324,13 @@ var init_attention = __esm({
 
 // src/renderer/dom/patch-children.ts
 function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
   let cursor = parent.firstElementChild;
   for (const node2 of desired) {
     if (node2 === cursor) {
@@ -70331,11 +70338,6 @@ function patchChildren(parent, desired) {
       continue;
     }
     parent.insertBefore(node2, cursor);
-  }
-  while (cursor) {
-    const next = cursor.nextElementSibling;
-    cursor.remove();
-    cursor = next;
   }
 }
 var init_patch_children = __esm({
