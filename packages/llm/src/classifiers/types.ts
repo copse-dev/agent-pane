@@ -96,4 +96,8 @@ export interface ClassifierClient {
   screening(): Promise<string | null>
   /** Route safety screening to a saved connection, or back to the safety model with `null`. */
   setScreening(id: string | null): Promise<string | null>
+  /** The saved connection that answers background questions; `null` means the small-tasks model does. */
+  background(): Promise<string | null>
+  /** Route background questions to a saved connection, or back to the small-tasks model with `null`. */
+  setBackground(id: string | null): Promise<string | null>
 }

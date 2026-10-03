@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { stampRoadmapComplexity } from './roadmap-complexity.ts'
+import { ROADMAP_COMPLEXITY_QUESTION, stampRoadmapComplexity } from './roadmap-complexity.ts'
+import { backgroundChoicePrompt } from './classifiers/background-classification.ts'
 import {
   addKnowledgeNote,
   deleteKnowledgeNote,
@@ -105,5 +106,27 @@ describe('stampRoadmapComplexity', () => {
     )
     assert.equal(getKnowledgeNote(note.id)?.fields['complexity'], undefined)
     assert.equal(stamped, 0)
+  })
+})
+
+describe('ROADMAP_COMPLEXITY_QUESTION', () => {
+  it('renders the same prompt the small-tasks model was tuned on', () => {
+    // The wording the model path used before it moved onto background questions.
+    const previous =
+      'Rate the implementation complexity of the coding task below as exactly one word: ' +
+      'low, medium, or high.\n' +
+      '- low: contained and well-specified — one or two files, mechanical or obvious steps ' +
+      '(rename, copy/style tweak, config flag, small bug fix, adding a test).\n' +
+      '- medium: a typical feature or fix — several files and some decisions, but a familiar ' +
+      'shape (new UI control wired to existing state, new command, module-level change).\n' +
+      '- high: cross-cutting or open-ended — new subsystem, architectural refactor or ' +
+      'migration, concurrency/security-sensitive work, or a goal that needs design before code.\n' +
+      'Use the whole scale: many roadmap items are genuinely low, and medium is not a safe ' +
+      'default for uncertainty. If torn between two ratings, pick the lower one.\n' +
+      'Reply with ONLY the word.\n\nTask:\n'
+    assert.equal(
+      backgroundChoicePrompt(ROADMAP_COMPLEXITY_QUESTION, 'Add a flag'),
+      previous + 'Add a flag',
+    )
   })
 })
