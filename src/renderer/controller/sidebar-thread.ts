@@ -1,6 +1,7 @@
 import type { Message, Thread } from '@shared/types'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
+import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
 
 /**
  * Everything the projects sidebar reads off a thread to draw one row: its title,
@@ -20,6 +21,8 @@ export interface SidebarThread {
   title: string
   /** For the sidebar's Created sort. A compacted entry keeps it. */
   createdAt?: number
+  /** When the user last prompted it, for ordering across projects. A compacted entry keeps it. */
+  lastPromptAt?: number
   status: Thread['status']
   unreadAt?: number
   archivedAt?: number
@@ -62,14 +65,30 @@ export function sidebarPrRefs(thread: SidebarThread): GithubPrRef[] {
 }
 
 /**
+ * When the user last prompted the thread, falling back to its transcript while one
+ * is loaded. Undefined for a thread nobody has prompted.
+ */
+export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
+  if (thread.lastPromptAt !== undefined) return thread.lastPromptAt
+  const messages = thread.messages ?? []
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message !== undefined && isHumanUserPrompt(message)) return message.createdAt
+  }
+  return undefined
+}
+
+/**
  * Snapshot a thread down to its sidebar row, releasing the transcript. Idempotent
  * — compacting an already-compacted entry returns the same fields.
  */
 export function compactSidebarThread(thread: SidebarThread): SidebarThread {
+  const lastPromptAt = sidebarLastPromptAt(thread)
   return {
     id: thread.id,
     title: thread.title,
     ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
+    ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),

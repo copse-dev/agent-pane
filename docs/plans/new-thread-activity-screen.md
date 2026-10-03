@@ -1,6 +1,6 @@
 # New-thread activity screen: porting the #3450 prototype
 
-Status: **Proposed; decisions resolved and plan validated by exploration, 2026-10-02.** Not started.
+Status: **Proposed; decisions resolved and plan validated by exploration, 2026-10-02.** Slices 0-3, 4a (sort) and 6 are built and in review as the #3458 / #3467 / #3475 / #3473 stack; 4b (group-by) is in progress.
 See [Validation findings](#validation-findings). This plan turns
 [#3450](https://github.com/copse-dev/agent-pane/pull/3450) (`prototypes/new-thread-activity.html`,
 a standalone 8,244-line mock-up) into product code.
@@ -244,8 +244,8 @@ same list-and-detail design with real tokens. What differs and where it goes:
   branch. The normal path reads `getSidebarThreads` (`controller/projects.ts:171`), which does
   not sort; the newest-first order is applied upstream (`controller/persistence.ts:326`,
   `automations.ts:199`, `external-cursor-agent-sync.ts:35`) with key
-  `lastHumanPromptAt ?? createdAt` (`thread-sort.ts:41-49`). The new comparators must replace
-  that store-level ordering, not just one call site.
+  `lastHumanPromptAt ?? createdAt` (`thread-sort.ts:41-49`). **Decision as built (#3473):** the store keeps
+  that ordering, since several writers rely on it, and the comparators re-sort a copy at render time.
 - Persist per profile in the validated settings store (two keys or one object key; not
   `localStorage`). A new setting touches: `src/shared/types/state.ts` (type, guard, field),
   `src/shared/store/store.ts:40` (default), `src/main/services/storage/settings-writable.ts:190`

@@ -1896,6 +1896,16 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         createdAt: FIXED_TIME - 4,
         updatedAt: FIXED_TIME - 4,
       },
+      {
+        id: 'demo-sidebar-sort-e',
+        title: 'Run the schema migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 5,
+        updatedAt: FIXED_TIME - 5,
+      },
     ],
   },
   {
