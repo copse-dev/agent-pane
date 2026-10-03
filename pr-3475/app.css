@@ -12946,6 +12946,16 @@ dialog.activity-panel-overlay {
     bottom: 0;
     background: var(--bg-elevated);
   }
+  @media (max-height: 640px) {
+    .activity-home .activity-panel-body {
+      flex: none;
+      min-height: 0;
+      overflow: visible;
+    }
+    .activity-home .activity-detail-actions {
+      position: static;
+    }
+  }
 }
 
 /* src/renderer/styles/global/conversation-search.css */

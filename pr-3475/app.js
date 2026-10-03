@@ -70384,6 +70384,13 @@ var init_attention = __esm({
 
 // src/renderer/dom/patch-children.ts
 function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
   let cursor = parent.firstElementChild;
   for (const node2 of desired) {
     if (node2 === cursor) {
@@ -70391,11 +70398,6 @@ function patchChildren(parent, desired) {
       continue;
     }
     parent.insertBefore(node2, cursor);
-  }
-  while (cursor) {
-    const next = cursor.nextElementSibling;
-    cursor.remove();
-    cursor = next;
   }
 }
 var init_patch_children = __esm({
@@ -71241,7 +71243,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       requestId,
       asked.questions.map((_3, index) => typed[index] ?? "")
     );
-    drafts.delete(requestId);
+    if (sent) drafts.delete(requestId);
     status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
@@ -71269,21 +71271,22 @@ function createActivityView(api2, store2, sources3, deps, host) {
       event.preventDefault();
       sendAnswer(row2);
     });
-    const field = el(
-      "div",
-      { class: "activity-answer-field" },
-      el("p", { id: questionId, class: "activity-question" }, question)
-    );
+    const asked = el("div", {
+      id: questionId,
+      class: "activity-question streaming-markdown"
+    });
+    asked.innerHTML = renderMarkdown(question);
+    const field = el("div", { class: "activity-answer-field" }, asked);
     if (options.length > 0) {
       const choices = el("div", { class: "activity-options" });
       for (const option of options) {
-        const choice = el(
-          "button",
-          { type: "button", class: "ui-btn ui-btn-secondary activity-option" },
-          option
-        );
+        const choice = el("button", {
+          type: "button",
+          class: "ui-btn ui-btn-secondary activity-option"
+        });
+        setInlineMarkdown(choice, option);
         choice.addEventListener("click", () => {
-          input2.value = option;
+          input2.value = choice.textContent;
           sync();
           input2.focus();
         });
@@ -71946,6 +71949,8 @@ var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LON
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_dist();
+    init_inline_markdown();
     init_patch_children();
     init_icons();
     init_projects();
@@ -139181,26 +139186,26 @@ function mountAskUserDialog(api2, store2) {
     renderActive();
     syncAttention();
   }
-  function respond(answers) {
-    const current = active2;
-    if (!current) return;
-    dialog2.close();
-    active2 = null;
-    void api2.ask.respond(current.id, answers);
+  function settle2(request, answers) {
+    if (active2 === request) {
+      dialog2.close();
+      active2 = null;
+    } else {
+      const idx = queue.indexOf(request);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+    }
+    void api2.ask.respond(request.id, answers);
     showNext();
+    syncAttention();
+  }
+  function respond(answers) {
+    if (active2) settle2(active2, answers);
   }
   function answerFrom(id, answers) {
-    if (active2?.id === id) {
-      if (answers.length !== active2.questions.length) return false;
-      respond([...answers]);
-      return true;
-    }
-    const idx = queue.findIndex((req) => req.id === id);
-    const queued = queue[idx];
-    if (queued === void 0 || answers.length !== queued.questions.length) return false;
-    queue.splice(idx, 1);
-    void api2.ask.respond(queued.id, [...answers]);
-    syncAttention();
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    if (request === void 0 || answers.length !== request.questions.length) return false;
+    settle2(request, [...answers]);
     return true;
   }
   function submit() {
