@@ -1,6 +1,6 @@
 {
   "name": "copse-panel",
-  "version": "0.1.0-beta.12",
+  "version": "0.1.0-beta.13",
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Jonathan Kingston",
@@ -184,7 +184,21 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
-      "icon": "assets/icons/app.icns"
+      "icon": "assets/icons/app.icns",
+      "background": "build/dmg-background.png",
+      "contents": [
+        {
+          "x": 130,
+          "y": 140,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 140,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     }
   },
   "dependencies": {
