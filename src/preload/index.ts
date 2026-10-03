@@ -754,6 +754,8 @@ const api: ApiClient = {
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
+    archive: (projectId: string, threadId: string, discardChanges: boolean) =>
+      ipcRenderer.invoke('threads:archive', projectId, threadId, discardChanges),
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
