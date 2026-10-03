@@ -58,8 +58,11 @@ function knownLiteralSecrets(): string[] {
   return secrets
 }
 
-function redactedRemoteProvider(provider: LLMProvider): LLMProvider {
-  return withSecretRedaction(provider, knownLiteralSecrets())
+function redactedRemoteProvider(
+  provider: LLMProvider,
+  additionalSecrets: readonly string[] = [],
+): LLMProvider {
+  return withSecretRedaction(provider, [...knownLiteralSecrets(), ...additionalSecrets])
 }
 
 function localServerUrl(): string {
@@ -318,15 +321,24 @@ export async function buildProvider(
     )
   }
   const description = await describeProvider(model, opts)
+  return buildResolvedProvider(description, apiKeyForDescription(description), promptCacheKey)
+}
+
+/** Build a pinned desktop provider without resolving mutable model settings again. */
+export function buildResolvedProvider(
+  description: ProviderDescription,
+  apiKey: string | null,
+  promptCacheKey?: string,
+): LLMProvider {
   const provider = buildProviderFromDescription(description, {
-    apiKey: apiKeyForDescription(description),
+    apiKey,
     ...(promptCacheKey !== undefined ? { promptCacheKey } : {}),
     approvedHosts: getApprovedProviderHosts(),
   })
   const local =
     description.kind === 'lm-studio' ||
     (description.kind === 'openai-compatible' && description.local)
-  return local ? provider : redactedRemoteProvider(provider)
+  return local ? provider : redactedRemoteProvider(provider, apiKey ? [apiKey] : [])
 }
 
 /** The stored key a description is used with, or null when there is none. */

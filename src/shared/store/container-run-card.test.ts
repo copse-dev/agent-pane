@@ -226,6 +226,18 @@ describe('syncContainerRunCard', () => {
 })
 
 describe('latestContainerRun', () => {
+  it('retains host-owned authentication when reopening a stored run card', () => {
+    const store = createStore()
+    store.setState({ threads: [thread()], activeThreadId: THREAD })
+    syncContainerRunCard(
+      store,
+      progress({ phase: 'finished', runtimeId: 'host-run', credential: 'host' }),
+    )
+    const stored = store.getState().threads[0]
+    assert.ok(stored)
+    assert.equal(latestContainerRun(structuredClone(stored))?.credential, 'host')
+  })
+
   it('reads the newest run back from its card and says whether it is the last turn', () => {
     const store = createStore()
     store.setState({ threads: [thread()], activeThreadId: THREAD })

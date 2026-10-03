@@ -58,6 +58,9 @@ import { safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
 import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
 import { EgressBroker, hostLocalAliasRefusal } from './egress-broker.ts'
+import { HostInference } from './host-inference.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import {
   findEgressRule,
   formatEgressRule,
@@ -124,6 +127,8 @@ export interface ThreadContainerRequest {
    * for an ACP run, which brings its own agent.
    */
   provider?: ProviderDescription
+  /** Host-pinned provider factory; OAuth tokens never enter the worker. */
+  hostInference?: (maxOutputTokens: number, runId: string) => Promise<LLMProvider>
   /** What the guest trims history against; the desktop's own answer for the model. */
   contextWindow?: number
   /**
@@ -244,6 +249,7 @@ export interface ContainerRunInput {
    * the link is opened even for a run with no egress.
    */
   keyOverLink: boolean
+  hostInference?: boolean
   memoryLimit: string
   pidsLimit: number
   cpus: number
@@ -433,7 +439,7 @@ function guestRunArgs(input: ContainerRunInput): string[] {
     'CYPRESS_INSTALL_BINARY=0',
   ]
   // Egress and the run's key both cross the host stdio link.
-  if (input.egress.length > 0 || input.keyOverLink) {
+  if (input.egress.length > 0 || input.keyOverLink || input.hostInference === true) {
     args.push('--env', 'COPSE_HOST_LINK=stdio')
   }
   if (input.egress.length > 0) {
@@ -544,7 +550,7 @@ export function buildAttestation(
     noNewPrivileges: true,
     pidsLimit: input.pidsLimit,
     memoryLimit: input.memoryLimit,
-    network: input.egress.length > 0 ? 'brokered' : 'none',
+    network: input.egress.length > 0 || input.hostInference === true ? 'brokered' : 'none',
     perCommandNetwork: input.egressToken !== null ? 'token-gated' : 'none',
     egressAllowlist: input.egress.map(formatEgressRule),
     hostMounts: [GUEST_RUN_DIR, `${GUEST_RUN_DIR}/state`, `${GUEST_RUN_DIR}/out`],
@@ -1845,9 +1851,16 @@ export async function runThreadInContainer(
   const runtimesDir = resolve(request.runtimesDir ?? join(copseDataRoot(), 'runtimes'))
   const runDir = join(runtimesDir, runtimeId)
   const egress = request.egressAllowlist.map(parseEgressRule)
-  if (request.provider === undefined && request.acp === undefined) {
-    throw new Error('A run needs a provider description or an ACP agent')
+  if (
+    [request.provider, request.acp, request.hostInference].filter((value) => value !== undefined)
+      .length !== 1
+  ) {
+    throw new Error(
+      'A run needs exactly one provider description, host inference provider or ACP agent',
+    )
   }
+  if (request.hostInference && !request.egressAllowlist.includes(HOST_INFERENCE_TARGET))
+    throw new Error('Host inference target is not in the egress allowlist')
   if (request.provider !== undefined) {
     const provider = providerOrigin(providerEndpointUrl(request.provider))
     if (findEgressRule(egress, provider.host, provider.port) === null) {
@@ -1860,6 +1873,8 @@ export async function runThreadInContainer(
   // http, so the run must not exist unless the broker dials it on loopback.
   const aliasRefusal = hostLocalAliasRefusal(egress, request.egressResolve ?? {})
   if (aliasRefusal !== null) throw new Error(aliasRefusal)
+  if (request.hostInference && request.apiKey)
+    throw new Error('Host inference must not transfer a credential to the guest')
   const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
   const engine = request.engine ?? (await assertThreadContainerEngine())
@@ -1921,6 +1936,7 @@ export async function runThreadInContainer(
     prompt: request.prompt,
     model: request.model,
     provider: request.provider ?? null,
+    ...(request.hostInference ? { hostInference: true } : {}),
     contextWindow: request.contextWindow ?? null,
     apiKeyOverLink: apiKey !== null,
     acp: acp ?? null,
@@ -1947,6 +1963,7 @@ export async function runThreadInContainer(
     egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
     sharedStore: installs && engine === 'docker',
     keyOverLink: apiKey !== null,
+    hostInference: request.hostInference !== undefined,
     memoryLimit: '4g',
     pidsLimit: 512,
     cpus: 2,
@@ -1958,14 +1975,28 @@ export async function runThreadInContainer(
     writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
   })
 
+  const hostProvider = request.hostInference
+  const inference = hostProvider
+    ? new HostInference({
+        provider: (maximum): Promise<LLMProvider> => hostProvider(maximum, runtimeId),
+        tokenCeiling: request.budgets.tokenCeiling,
+        wallClockMs: request.budgets.wallClockMs,
+        maxRequests: request.maxSteps ?? 128,
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
+    : null
   const broker = await duringPreparation(
     () =>
       new EgressBroker({
         rules: egress,
         ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
         ...(apiKey !== null ? { runKey: apiKey } : {}),
+        ...(inference ? { inference: (stream): Promise<void> => inference.serve(stream) } : {}),
       }),
-  )
+  ).catch((error: unknown) => {
+    inference?.stop()
+    throw error
+  })
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
@@ -2007,7 +2038,7 @@ export async function runThreadInContainer(
     // has nothing to remove yet, so the `finally` below is the removal.
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     attached = attachContainer(engine, containerName(runtimeId), {
-      broker: egress.length > 0 || apiKey !== null ? broker : null,
+      broker: egress.length > 0 || apiKey !== null || inference !== null ? broker : null,
       onPhase: options.onPhase,
       onLog: (line) => {
         log(`[guest] ${line}`)
@@ -2024,6 +2055,8 @@ export async function runThreadInContainer(
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
   } finally {
+    inference?.stop()
+    broker.stop()
     try {
       options.onPhase?.('collecting')
       teardown = await teardownRuntime(runtimeId, engine)
@@ -2032,7 +2065,6 @@ export async function runThreadInContainer(
         cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
         log(`[thread-container] ${failure}`)
       }
-      broker.stop()
       if (attached) await detachContainer(attached)
     } finally {
       removeStagedLogin(runDir)
@@ -2080,7 +2112,13 @@ export async function runThreadInContainer(
     carryIn: { sha: carryIn.sha, dirty: carryIn.dirty },
     carryOut,
     containerExit,
-    credential: stagedLogin ? { login: stagedLogin } : apiKey !== null ? 'key' : 'none',
+    credential: stagedLogin
+      ? { login: stagedLogin }
+      : apiKey !== null
+        ? 'key'
+        : inference !== null
+          ? 'host'
+          : 'none',
     teardown,
     cleanupError,
     secretCanary: secretCanaryCheck(runDir, canary),

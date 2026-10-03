@@ -2,12 +2,11 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
-import { buildGuestProvider } from '../container-runtime/guest-provider.ts'
+import { HOST_INFERENCE_TARGET } from '../container-runtime/host-inference-wire.ts'
 import {
   explainContainerModel,
   guestFacingEndpoint,
   resolveContainerProvider,
-  type ContainerProviderPlan,
 } from './container-provider.ts'
 
 const CLAUDE_AGENT: AcpAgentConfig = {
@@ -47,99 +46,88 @@ describe('resolveContainerProvider', () => {
     await setSetting('blockedModelMakers', [])
   })
 
-  it('routes a local model to the configured local server, with its origin as egress', async () => {
-    await setSetting('localServerUrl', 'http://models.lan:1234/v1')
-    const plan = await resolveContainerProvider('lmstudio:qwen3')
-    assert.equal(plan.mode, 'provider')
-    // LM Studio's own transport is a WebSocket the guest proxy cannot carry;
-    // in the guest it is the OpenAI-compatible endpoint it also is.
-    assert.equal(plan.provider.kind, 'openai-compatible')
-    assert.equal(plan.provider.url, 'http://models.lan:1234/v1')
-    assert.equal(plan.provider.model, 'qwen3')
-    assert.deepEqual(plan.egress, ['models.lan:1234'])
-    assert.equal(plan.egressResolve, undefined)
-  })
-
-  it("gives a server on the desktop's loopback a name the guest can reach it by", async () => {
-    // The guest's loopback bypasses its proxy, so `127.0.0.1` in the guest is
-    // the guest's own empty loopback; the alias goes through the broker, which
-    // dials the host's.
-    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
-    const plan = await resolveContainerProvider('lmstudio:qwen3')
-    assert.equal(plan.mode, 'provider')
-    const url = (candidate: ContainerProviderPlan): string | null =>
-      candidate.mode === 'provider' && candidate.provider.kind === 'openai-compatible'
-        ? candidate.provider.url
-        : null
-    assert.equal(url(plan), 'http://model.copse.internal:1234/v1')
-    assert.deepEqual(plan.egress, ['model.copse.internal:1234'])
-    assert.deepEqual(plan.egressResolve, { 'model.copse.internal': '127.0.0.1' })
-    await setSetting('localServerUrl', 'http://localhost:1234/v1')
-    assert.equal(
-      url(await resolveContainerProvider('lmstudio:qwen3')),
-      'http://model.copse.internal:1234/v1',
-    )
-    // And the guest can build its client from what it is handed: the alias
-    // keeps the desktop loopback's plain http there, and only there.
-    assert.equal(plan.mode, 'provider')
-    assert.ok(buildGuestProvider(plan.provider, plan.apiKey))
+  it('keeps local inference on the host for LAN and loopback endpoints', async () => {
+    for (const url of ['http://models.lan:1234/v1', 'http://127.0.0.1:1234/v1']) {
+      await setSetting('localServerUrl', url)
+      const plan = await resolveContainerProvider('lmstudio:qwen3')
+      assert.equal(plan.mode, 'host-inference')
+      assert.equal(plan.apiKey, null)
+      assert.deepEqual(plan.egress, [HOST_INFERENCE_TARGET])
+      assert.ok(plan.hostInference)
+      assert.ok(!JSON.stringify(plan).includes(url))
+    }
   })
 
   it('refuses an endpoint that already names the host-local alias', async () => {
-    // The guest reads the alias as loopback, which holds only while the host's
-    // rewrite of a loopback URL is the one way to be given it.
-    assert.throws(
-      () => guestFacingEndpoint('https://model.copse.internal/v1'),
-      /model\.copse\.internal is reserved/,
-    )
-    assert.throws(() => guestFacingEndpoint('https://MODEL.copse.internal./v1'), /is reserved/)
+    assert.throws(() => guestFacingEndpoint('https://model.copse.internal/v1'), /is reserved/)
     await setSetting('localServerUrl', 'https://model.copse.internal:1234/v1')
     await assert.rejects(resolveContainerProvider('lmstudio:qwen3'), /is reserved/)
   })
 
-  it('routes claude models to Anthropic with the anthropic key', async () => {
-    setApiKey('anthropic', 'sk-ant-test')
-    const plan = await resolveContainerProvider('claude-sonnet-4-6')
-    assert.equal(plan.mode, 'provider')
-    assert.equal(plan.provider.kind, 'anthropic')
-    assert.equal(plan.provider.apiKeySlug, 'anthropic')
-    assert.equal(plan.apiKey, 'sk-ant-test')
-    assert.equal(plan.contextWindow, 1_000_000)
-    assert.deepEqual(plan.egress, ['api.anthropic.com:443'])
+  it('keeps every built-in cloud provider key and endpoint out of the run plan', async () => {
+    for (const [slug, model] of [
+      ['anthropic', 'claude-sonnet-4-6'],
+      ['openai', 'gpt-5'],
+      ['openrouter', 'openrouter:qwen/qwen3'],
+    ]) {
+      assert.ok(slug && model)
+      const secret = `private-${slug}-secret`
+      setApiKey(slug, secret)
+      const plan = await resolveContainerProvider(model)
+      assert.equal(plan.mode, 'host-inference')
+      assert.equal(plan.apiKey, null)
+      assert.deepEqual(plan.egress, [HOST_INFERENCE_TARGET])
+      assert.ok(plan.hostInference)
+      assert.ok(!JSON.stringify(plan).includes(secret))
+    }
   })
 
-  it("routes gpt models to OpenAI with the desktop's transport choices", async () => {
-    setApiKey('openai', 'sk-test')
-    await setSetting('openAiServiceTier', 'flex')
-    const plan = await resolveContainerProvider('gpt-5')
-    assert.equal(plan.mode, 'provider')
-    assert.equal(plan.provider.kind, 'openai')
-    assert.equal(plan.provider.serviceTier, 'flex')
-    assert.deepEqual(plan.egress, ['api.openai.com:443'])
-    assert.equal(plan.apiKey, 'sk-test')
-    await setSetting('openAiServiceTier', 'fast')
-    const fastPlan = await resolveContainerProvider('gpt-5')
-    assert.equal(fastPlan.mode, 'provider')
-    assert.equal(fastPlan.provider.kind, 'openai')
-    assert.equal(fastPlan.provider.serviceTier, 'fast')
-    await setSetting('openAiServiceTier', '')
-  })
-
-  it("carries the user's tuned parameters and OpenRouter's privacy routing", async () => {
-    setApiKey('openrouter', 'sk-or-test')
+  it('pins the API key and generation settings despite later Settings changes', async (t) => {
+    setApiKey('openrouter', 'host-only-secret-before')
     await setSetting('modelParameters', {
-      'openrouter:qwen/qwen3': { temperature: 0.2, reasoning: 'high' },
+      'openrouter:qwen/qwen3': { temperature: 0.2, maxOutputTokens: 512 },
     })
-    await setSetting('openRouterZdrOnly', false)
     const plan = await resolveContainerProvider('openrouter:qwen/qwen3')
-    assert.equal(plan.mode, 'provider')
-    assert.equal(plan.provider.kind, 'openrouter')
-    assert.equal(plan.provider.model, 'qwen/qwen3')
-    assert.deepEqual(plan.provider.params, { temperature: 0.2, reasoning: 'high' })
-    assert.equal(plan.provider.zdrOnly, false)
-    assert.deepEqual(plan.egress, ['openrouter.ai:443'])
+    assert.equal(plan.mode, 'host-inference')
+    setApiKey('openrouter', 'host-only-secret-after')
+    await setSetting('modelParameters', { 'openrouter:qwen/qwen3': { temperature: 0.8 } })
+    let requests = 0
+    t.mock.method(
+      globalThis,
+      'fetch',
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const request = new Request(input, init)
+        requests++
+        assert.equal(request.headers.get('authorization'), 'Bearer host-only-secret-before')
+        const body = await request.text()
+        assert.ok(!body.includes('host-only-secret-before'))
+        assert.ok(body.includes('"temperature":0.2'))
+        assert.ok(body.includes('"max_tokens":512'))
+        const payload = {
+          id: 'pinned',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'qwen/qwen3',
+          choices: [
+            { index: 0, delta: { content: 'host-only-secret-before' }, finish_reason: 'stop' },
+          ],
+        }
+        return new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`, {
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      },
+    )
+    const provider = await plan.hostInference(1024, 'run-pinned')
+    let output = ''
+    for await (const chunk of provider.stream(
+      [{ role: 'user', content: 'Hello host-only-secret-before' }],
+      [],
+    ))
+      output += JSON.stringify(chunk)
+    assert.ok(requests >= 1)
+    assert.ok(!output.includes('host-only-secret-before'))
+    assert.ok(output.includes('[REDACTED_SECRET]'))
     await setSetting('modelParameters', {})
-    await setSetting('openRouterZdrOnly', true)
   })
 
   it('refuses a cloud model with no key rather than starting a run that cannot talk', async () => {

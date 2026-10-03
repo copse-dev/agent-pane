@@ -112,13 +112,11 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   destination; the host decides. (`egressResolve` lets the host dial `addr[:port]` for a
   name only the guest resolves, which is how a scripted model server on loopback plays a
   real origin on 443 in the tests.)
-- **No credentials in the guest except one.** The model loop needs a provider key, so the
-  worker collects exactly that value from the host over the container's stdio link before
-  it spawns anything, and consumes it into the provider client (A17: it is never in the
-  container's configuration or any process's initial environment). Git remotes, GitHub
-  tokens and the host's environment never enter. A per-run secret canary, placed only in
-  the environment of the Docker client that creates the container, is checked against every
-  host-owned surface of the run and against the guest's reported environment key names.
+- **Built-in model credentials stay on the host (A1″).** The guest uses a bounded run-scoped
+  inference channel; the host authenticates and calls the pinned provider. External ACP agents
+  still receive their selected credential in the guest under A1/A1′. Git remotes, GitHub tokens,
+  and the host's environment never enter. A per-run secret canary checks the host-owned run
+  surfaces and the guest's reported environment key names.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
@@ -185,7 +183,7 @@ long-horizon plans want is exactly the one where it does.
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 — container is an SSH host, not a new tool surface | Neither: the container runs the whole headless host, so the tool surface is the product's own, unchanged. No second transport was built. SSH is not involved in v1; it returns when the desktop attaches to a running guest. |
 | 2 — provenance decides capabilities                  | Kept, as an _attestation_: the host records the hardening it applied; the guest declares from that record and refuses a short one.                                                                                           |
-| 3 — no credentials in the guest                      | **Narrowed**, not kept: exactly one credential — the provider key — is in the guest, by value, for the run, and blanked from the environment before any child spawns. Everything else stays out.                             |
+| 3 — no credentials in the guest                      | **Kept for built-in providers (A1″)**: authentication and inference stay on the host. External ACP agents retain the explicit key/sign-in exceptions in A1/A1′.                                                              |
 | 4 — egress deny-by-default and named                 | Kept and made structural: no interface at all; named origins only through the broker.                                                                                                                                        |
 | 5 — separate concept from Guarded YOLO               | Kept: separate ledger, separate arming, mutually exclusive, tested both ways.                                                                                                                                                |
 | 6 — the gate never blocks                            | Kept: arming implies deferral mode; the fail-closed handler in the worker counts what would have blocked and the test requires zero.                                                                                         |
@@ -479,6 +477,18 @@ guarantee, and the record must say so.
   method reads that same environment key, whereas the variable alone does not
   authenticate a fresh guest. The request carries no secret and is absent from
   sign-in runs, which continue to use the explicitly carried login files.
+- **A1″ — built-in provider authentication and inference stay on the host.** Requested by the
+  author after the native ChatGPT bridge: all built-in providers, including local servers, use a
+  run-scoped model RPC on private stdio. The guest receives no provider endpoint, API key, or OAuth
+  token. The host pins the selected provider settings/key (OAuth pins its account and refreshes on
+  the host), enforces one concurrent request and run/request/size/token/time bounds, and cancels
+  inference when the guest disconnects or the run stops. Known authentication literals are scrubbed
+  from streamed responses and diagnostics. The synthetic inference origin is a capability handled
+  by the broker, never a TCP destination. Dependency-install network grants remain separate.
+  A1 and A1′ still govern external ACP agents: their agent processes and tools remain in the guest;
+  this does not move external agent commands onto the user's host. Token reservation is an estimate
+  before a call; reported usage can exhaust the budget during that call and refuses later calls.
+
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed

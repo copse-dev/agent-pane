@@ -17,6 +17,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { threadContainerRunSpecSchema, type ThreadContainerRunSpec as Spec } from './run-spec.ts'
 import { buildGuestProvider } from './guest-provider.ts'
+import { buildHostInferenceProvider } from './guest-host-provider.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
   declareContainerRuntime,
@@ -372,6 +373,8 @@ async function main(): Promise<void> {
   // environment, so no later process in the guest can read it from /proc.
   // Under an ACP harness it reaches exactly one child — the agent — as the
   // one entry of its explicit env map.
+  if (spec.hostInference && (!link || spec.provider || spec.acp || spec.apiKeyOverLink))
+    throw new Error('Invalid host inference configuration')
   const apiKey = spec.apiKeyOverLink ? await collectRunKey(link) : ''
   if (spec.acp) {
     say(`[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`)
@@ -532,12 +535,17 @@ async function main(): Promise<void> {
       },
       // The desktop's own resolution of the model, built here from its
       // description with the run's one key.
-      spec.provider !== null
+      spec.hostInference && link
         ? {
-            provider: buildGuestProvider(spec.provider, apiKey || null),
+            provider: buildHostInferenceProvider(link),
             contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
           }
-        : {},
+        : spec.provider !== null
+          ? {
+              provider: buildGuestProvider(spec.provider, apiKey || null),
+              contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
+            }
+          : {},
     )
     messages = result.messages
     chunks = result.chunks
