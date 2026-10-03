@@ -2566,6 +2566,8 @@ describe('runAgentLoop malformed tool call recovery', () => {
       (m) => m.role === 'user' && m.content === MALFORMED_TOOL_CALL_NUDGE,
     )
     assert.ok(toolIndex !== -1 && nudgeIndex > toolIndex)
+    assert.doesNotMatch(MALFORMED_TOOL_CALL_NUDGE, /nothing ran/)
+    assert.doesNotMatch(TRUNCATED_TOOL_CALL_NUDGE, /nothing ran/)
   })
 
   it('does not stack the truncation-continue nudge on a malformed stream', async () => {

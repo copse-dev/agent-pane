@@ -395,7 +395,42 @@ describe('LMStudioProvider', () => {
       stopReason: 'tool_call_malformed',
       malformedToolCall: { message: 'bad tool call', hitOutputCeiling: true, outputTokens: 16_000 },
     })
+    assert.deepEqual(
+      chunks.find((chunk) => chunk.type === 'usage'),
+      {
+        type: 'usage',
+        model: 'local-model',
+        inputTokens: 0,
+        outputTokens: 16_000,
+      },
+    )
+    assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens: 16_000 })
   })
+
+  for (const outputTokens of [0, 16_000]) {
+    it(`does not reuse prior successful usage after a ${String(outputTokens)}-token malformed call`, async () => {
+      const successful = new FakeClient()
+      const failed = new FakeToolFailureClient({ tokensBeforeFailure: outputTokens })
+      let requests = 0
+      const provider = new LMStudioProvider('local-model', {
+        client: {
+          model: async (): Promise<FakeModel | FakeToolFailureModel> =>
+            requests++ === 0 ? successful.modelHandle : failed.modelHandle,
+          prepareImageBase64: (): Promise<never> => Promise.reject(new Error('unexpected image')),
+        },
+      })
+      await collect(provider)
+      assert.deepEqual(provider.lastUsage, { inputTokens: 123, outputTokens: 9 })
+      const chunks = await collect(provider)
+      assert.deepEqual(
+        chunks.filter((chunk) => chunk.type === 'usage'),
+        [{ type: 'usage', model: 'local-model', inputTokens: 0, outputTokens }],
+      )
+      assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens })
+      assert.equal(chunks.at(-1)?.type, 'done')
+      assert.equal(failed.modelHandle.opts?.signal?.aborted, true)
+    })
+  }
 
   it('cancels the prediction when the consumer stops reading early', async () => {
     // The agent loop breaks out of a stream it cut for runaway reasoning. LM

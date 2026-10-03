@@ -939,7 +939,10 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   `malformed-tool-call`, selects the nudge text (a "your call was cut off, emit a much smaller one,
   write large files in short pieces" message, worded differently when the ceiling was hit); the
   loop applies it as a plain user message and continues, after first running any tool calls that
-  parsed before the failure so tool_use/tool_result pairing stays valid. The stop reason is
+  parsed before the failure so tool_use/tool_result pairing stays valid. Request-local streamed
+  output usage accompanies the outcome, even when the count is zero; prompt usage
+  remains unmeasured because cancellation discards final SDK stats. Recovery copy refers only to
+  the discarded call and does not claim that the valid preceding calls did not execute. The stop reason is
   deliberately not a truncation reason, so `truncation-continue` never stacks on it, and it resets
   `reasoningRunawayStreak` (a tool-call attempt is not a reasoning-only runaway). The bounds are loop
   mechanism: at most `MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS` (2) in a row and

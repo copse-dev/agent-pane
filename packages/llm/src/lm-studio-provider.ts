@@ -281,6 +281,16 @@ export class LMStudioProvider implements LLMProvider {
           // run should not die over it. Nothing later in this prediction can be
           // used, so stop it rather than paying for the rest.
           const ceiling = resolvedOutputCeiling(this.modelName, this.params)
+          // Cancellation discards final SDK stats. Keep the streamed output
+          // count and leave prompt usage unmeasured, rather than attributing
+          // this request to a prior prediction through the usage fallback.
+          this.lastUsage = { inputTokens: 0, outputTokens: predictedTokens }
+          queue.push({
+            type: 'usage',
+            model: this.modelName,
+            inputTokens: 0,
+            outputTokens: predictedTokens,
+          })
           queue.push({
             type: 'done',
             stopReason: TOOL_CALL_MALFORMED_STOP_REASON,

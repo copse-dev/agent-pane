@@ -52,13 +52,13 @@ export const REASONING_RUNAWAY_GIVEUP_MESSAGE =
 
 /** Nudge after a tool call was cut off at the per-request output ceiling. */
 export const TRUNCATED_TOOL_CALL_NUDGE =
-  'Your last tool call was cut off because it hit the output length limit, so it was discarded and nothing ran. ' +
+  'Your malformed tool call was cut off because it hit the output length limit, so that call was discarded and did not run. ' +
   'Emit a much smaller call. Write large files in several short pieces (for example appending with shell heredocs), ' +
   'or write a smaller first version and extend it afterwards. Keep any reasoning brief.'
 
 /** Nudge after a tool call could not be parsed for a reason other than the ceiling. */
 export const MALFORMED_TOOL_CALL_NUDGE =
-  'Your last tool call was malformed and could not be parsed, so nothing ran. ' +
+  'Your malformed tool call could not be parsed, so that call was discarded and did not run. ' +
   'Emit a smaller, well-formed call with valid arguments. Write large files in several short pieces ' +
   '(for example appending with shell heredocs) rather than one large call.'
 
