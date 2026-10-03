@@ -1,4 +1,9 @@
 import { errorMessage } from '@shared/errors.ts'
+import {
+  appendThreadLink,
+  DEFAULT_GIT_THREAD_LINK_ENABLED,
+  GIT_THREAD_LINK_SETTING,
+} from '@shared/git/thread-link.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
@@ -98,12 +103,12 @@ export const gitCommitTool = defineTool({
 
     const threadId = getActiveRunThread()
     const models = threadId ? getThreadModels(threadId) : []
-    const fullMessage = getSetting<boolean>(
-      GIT_ATTRIBUTION_SETTING,
-      DEFAULT_GIT_ATTRIBUTION_ENABLED,
-    )
+    let fullMessage = getSetting<boolean>(GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED)
       ? appendCommitAttribution(message, models)
       : message
+    if (getSetting<boolean>(GIT_THREAD_LINK_SETTING, DEFAULT_GIT_THREAD_LINK_ENABLED)) {
+      fullMessage = appendThreadLink(fullMessage, threadId)
+    }
     const commit = `git commit -m ${posixQuote(fullMessage)}`
     const command = stage_all ? `git add -A && ${commit}` : commit
 

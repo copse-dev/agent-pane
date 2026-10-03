@@ -59,6 +59,7 @@ import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountAlertThreadNavigation } from './controller/alert-navigation.ts'
+import { mountDeepLinkNavigation } from './controller/deep-link-navigation.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { mountProductAnnouncements } from './views/product-announcement-dialog.ts'
@@ -540,6 +541,11 @@ async function boot(): Promise<void> {
   }
 
   mobileRestored()
+
+  if (!popoutMode) {
+    mountDeepLinkNavigation(store, api)
+    await api.deepLinks.ready()
+  }
 
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
