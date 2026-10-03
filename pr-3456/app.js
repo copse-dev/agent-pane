@@ -139696,7 +139696,25 @@ function continuesSentence(prevText, text2) {
   }
   return false;
 }
-function endsInsideMarkup(text2) {
+function pipeCells(line) {
+  const cells = [];
+  let cell = "";
+  let escaped = false;
+  for (const character of line) {
+    if (character === "|" && !escaped) {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+    escaped = character === "\\" ? !escaped : false;
+  }
+  cells.push(cell.trim());
+  if (cells[0] === "") cells.shift();
+  if (cells[cells.length - 1] === "") cells.pop();
+  return cells;
+}
+function endsInsideMarkup(text2, incomingText) {
   let fence;
   let lastLineClosesFence = false;
   const inlineLines = [];
@@ -139724,6 +139742,20 @@ function endsInsideMarkup(text2) {
   if (lastLineClosesFence) return false;
   if (/\n$/.test(text2)) return false;
   const lastLine = text2.slice(text2.lastIndexOf("\n") + 1).trim();
+  for (let index = inlineLines.length - 2; index > 0; index -= 1) {
+    const line = inlineLines[index] ?? "";
+    if (!line.trim()) break;
+    const delimiterCells = pipeCells(line);
+    if (delimiterCells.length < 2 || !delimiterCells.every((cell) => /^:?-+:?$/.test(cell))) {
+      continue;
+    }
+    const headerCells = pipeCells(inlineLines[index - 1] ?? "");
+    if (headerCells.length === delimiterCells.length) {
+      if (pipeCells(lastLine).length < headerCells.length) return true;
+      return /[A-Za-z]$/.test(lastLine) && /^[a-z]/.test(incomingText);
+    }
+    break;
+  }
   if (lastLine.startsWith("|") && !lastLine.endsWith("|")) return true;
   const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1];
   if (!trailingMarker) return false;
@@ -139756,7 +139788,7 @@ function planAgentTextChunk(state, text2) {
   if (isWhitespaceOnly && !state.msgId) {
     return { plan: { action: "ignore" }, state };
   }
-  const isMidSentenceContinuation = !isWhitespaceOnly && state.msgId !== null && state.toolSinceText && (endsInsideMarkup(currentText) || !endsAtBoundary(currentText) && continuesSentence(currentText, text2));
+  const isMidSentenceContinuation = !isWhitespaceOnly && state.msgId !== null && state.toolSinceText && (endsInsideMarkup(currentText, text2) || !endsAtBoundary(currentText) && continuesSentence(currentText, text2));
   const needsNewMessage = (!state.msgId || state.toolSinceText) && !isMidSentenceContinuation;
   if (!isWhitespaceOnly && needsNewMessage) {
     const plan = state.msgId ? {
