@@ -70,6 +70,8 @@ describe('acp model values', () => {
       { id: 'gemini-cli', title: 'Gemini CLI', command: 'gemini', enabled: true },
     ]
     assert.equal(acpModelDisplayLabel('acp:gemini-cli', agents), 'Gemini CLI')
+    assert.equal(acpModelDisplayLabel('acp:codex-acp', []), 'Codex')
+    assert.equal(acpModelDisplayLabel('acp:codex-acp#gpt-5.6-sol', []), 'Codex — GPT-5.6 Sol')
     assert.equal(acpModelDisplayLabel('acp:unknown', agents), 'unknown')
     // A thread that ran a since-retired agent still names it, even though the
     // agent is no longer offered and so is not in `agents`.
