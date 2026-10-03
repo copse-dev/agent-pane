@@ -42,7 +42,7 @@
         "api": "agent.abort",
         "args": [
           1,
-          1
+          2
         ]
       },
       "agent:clear-history": {

@@ -2759,8 +2759,8 @@ async function runAgentWithInlineCanvas(
   })
 }
 
-export function abortAgent(threadId: string): void {
-  abortMap.get(threadId)?.abort()
+export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  abortMap.get(threadId)?.abort(reason)
 }
 
 const mobileRunIds = new WeakMap<AbortController, string>()

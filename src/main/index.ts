@@ -23,6 +23,7 @@ installIpcPerfTracing()
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
+import { z } from 'zod'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
 import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
@@ -941,11 +942,12 @@ app
       invalidateCursorCloudModelsCache()
     })
 
-    ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
+    ipcMain.handle('agent:abort', (event, threadIdArg: unknown, reasonArg: unknown) => {
       assertMainFrameSender(event, win)
       assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      abortAgent(threadId)
+      const reason = z.literal('send_now').optional().parse(reasonArg)
+      abortAgent(threadId, reason)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
