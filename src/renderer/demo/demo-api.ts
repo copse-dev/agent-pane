@@ -16,6 +16,7 @@ import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -329,9 +330,7 @@ function providerSlug(model: string | undefined): string | undefined {
   if (model === undefined) return undefined
   const colon = model.indexOf(':')
   if (colon > 0) return model.slice(0, colon)
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
-  return undefined
+  return firstPartyProviderOf(model) ?? undefined
 }
 
 export interface DemoApiOptions {
@@ -418,7 +417,8 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS)
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
@@ -687,6 +687,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      runMachine: () => resolved('completed' as const),
       describeImages: () => resolved({ text: 'Demo image description.' }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -725,8 +726,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...(scenario.followUps ?? [])])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
@@ -819,7 +820,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onConnectionChanged: subscribe,
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -858,8 +859,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolvedVoid()
       },
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) =>
+        resolved({
+          path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+          name: archive.name,
+          sizeBytes: archive.bytes?.byteLength ?? 0,
+        }),
+    },
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
@@ -875,6 +885,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => undefined,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,
@@ -1030,6 +1041,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported,
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
@@ -1339,7 +1359,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),

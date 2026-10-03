@@ -360,6 +360,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(await ensureToolPermitted({ toolName: 'write_file', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'run_shell', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'str_replace', args: {} }), false)
+      assert.equal(await ensureToolPermitted({ toolName: 'apply_patch', args: {} }), false)
       assert.equal(await ensureToolPermitted({ toolName: 'read_file', args: {} }), true)
     })
   })
@@ -474,7 +475,7 @@ describe('ensureToolPermitted', () => {
         }),
         false,
       )
-      assert.equal(title, 'Mark pull request ready for review?')
+      assert.equal(title, 'Mark pull request ready for review on GitHub?')
       assert.equal(body, 'acme/widgets#1478')
       assert.doesNotMatch(body, /\{/)
       assert.doesNotMatch(title, /gh_pr_mark_ready/)
@@ -2150,7 +2151,7 @@ describe('decideShellPermission', () => {
 describe('formatGithubWritePrompt', () => {
   it('uses a question title and PR target body', () => {
     assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
-      title: 'Mark pull request ready for review?',
+      title: 'Mark pull request ready for review on GitHub?',
       body: 'PR #1478',
     })
     assert.deepEqual(
@@ -2164,7 +2165,7 @@ describe('formatGithubWritePrompt', () => {
 
   it('falls back to JSON when args are not a PR target', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
-    assert.equal(prompt.title, 'Re-run failed CI?')
+    assert.equal(prompt.title, 'Re-run failed CI on GitHub?')
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
 

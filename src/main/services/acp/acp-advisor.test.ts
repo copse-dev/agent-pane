@@ -1,9 +1,15 @@
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import type { AcpTransportFactory } from './acp-client.ts'
-import { runAcpAdvisorSession } from './acp-advisor.ts'
+import { buildAcpAdvisorSpawnConfig, runAcpAdvisorSession } from './acp-advisor.ts'
+import { gateRemoteAcpEnvForward } from './acp-remote-env-gate.ts'
+import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 /**
  * The bare ACP advisor session (`acp-advisor.ts`) over an in-memory loopback:
@@ -72,5 +78,48 @@ describe('runAcpAdvisorSession', () => {
 
     assert.deepEqual(decisions, ['reject'])
     assert.equal(result.text, 'Advice without tools.')
+  })
+})
+
+describe('ACP advisor placement', () => {
+  const remoteRoot = '/remote/project'
+  const agent: AcpAgentConfig = {
+    id: 'advisor-acp',
+    title: 'Advisor',
+    command: 'advisor-acp',
+    env: { PROVIDER_API_KEY: 'secret' },
+    enabled: true,
+  }
+
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('acpOverSshEnabled', false)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: remoteRoot, sshHost: 'dev' }])
+    setWorkspaceRootForTest(remoteRoot)
+  })
+
+  afterEach(async () => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+    await setSetting('acpOverSshEnabled', false)
+  })
+
+  it('cannot become remote after its environment passed the local consent gate', async () => {
+    const config = buildAcpAdvisorSpawnConfig(agent, remoteRoot)
+    assert.equal(config.sshTarget, null)
+
+    await gateRemoteAcpEnvForward(agent.id, config)
+    assert.deepEqual(config.env, { PROVIDER_API_KEY: 'secret' })
+
+    await setSetting('acpOverSshEnabled', true)
+    assert.equal(acpSshTarget(remoteRoot)?.hostId, 'dev')
+    assert.equal(spawnConfigSshTarget(config), null)
   })
 })

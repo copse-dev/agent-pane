@@ -6,6 +6,7 @@ import {
   bellIcon,
   chevronRightIcon,
   closeIcon,
+  gitMergeIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
   plusIcon,
@@ -16,6 +17,7 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, ProjectGroup } from '@shared/types'
+import type { GhPrChecksState } from '@shared/types/git.ts'
 import {
   archiveThread,
   deleteThread,
@@ -132,14 +134,16 @@ function runningStatus(label: string): SVGSVGElement {
 }
 
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
-  const label = describeThreadPrStatus(rollup)
-  const icon = gitPullRequestIcon('ui-icon ui-icon-sm')
+function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
+  const label = ciFailing
+    ? `${describeThreadPrStatus(rollup)}; checks are failing`
+    : describeThreadPrStatus(rollup)
+  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -443,6 +447,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
+  const prBackfillRequested = new Map<string, Set<string>>()
+  const prBackfillRetryAttempts = new Map<string, number>()
+  const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
+  let prBackfillRowsByKey = new Map<string, Element>()
+  let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
   // every schedule regardless of which project it belongs to. Expansion is
@@ -453,6 +462,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
+  // Project selection and expansion also emit `projects_changed`, but only a
+  // change to the project ids can alter which thread stores are orphaned.
+  let knownProjectIds = new Set(store.getState().projects.map((project) => project.id))
+  let orphanScanGeneration = 0
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
   let renaming: { threadId: string; draft: string } | null = null
@@ -472,7 +485,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
   // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
-  const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
+  const prLifecycleCache = new Map<
+    string,
+    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+  >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
 
@@ -547,8 +563,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         .then((details) => {
           if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
-          lifecycleChanged = prLifecycleCache.get(key)?.state !== state
-          prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
+          const previous = prLifecycleCache.get(key)
+          lifecycleChanged = previous?.state !== state
+          // CI only matters while the PR is open; the dot is the one extra cue.
+          prLifecycleCache.set(key, {
+            state,
+            ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
+            fetchedAt: Date.now(),
+          })
+          if (state !== 'open') return undefined
+          return api.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+            if (generation !== prStatusGeneration) return
+            const entry = prLifecycleCache.get(key)
+            if (!entry) return
+            if (entry.checks !== checks) lifecycleChanged = true
+            prLifecycleCache.set(key, { ...entry, checks })
+          })
         })
         .catch(() => {
           if (generation !== prStatusGeneration) return
@@ -564,6 +594,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (lifecycleChanged) render()
         })
     }
+  }
+
+  function ciFailingForThread(thread: SidebarThread): boolean {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref))
+      return entry?.state === 'open' && entry.checks === 'failure'
+    })
   }
 
   function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
@@ -693,7 +730,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         void dismissOrphanProject(api, orphan.id)
           .then(() => {
             orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            render()
+            render(true)
             showToast('Recoverable threads hidden. They remain on disk.')
           })
           .catch((err: unknown) => {
@@ -726,9 +763,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return section
   }
 
+  function refreshOrphansIfProjectSetChanged(): void {
+    const nextIds = new Set(store.getState().projects.map((project) => project.id))
+    if (
+      nextIds.size === knownProjectIds.size &&
+      [...nextIds].every((id) => knownProjectIds.has(id))
+    ) {
+      return
+    }
+    knownProjectIds = nextIds
+    refreshOrphans()
+  }
+
   function refreshOrphans(): void {
+    const generation = ++orphanScanGeneration
     void listOrphanProjects(api)
-      .then((next) => {
+      .then((scanned) => {
+        if (generation !== orphanScanGeneration) return
+        // Recovery can emit before its new project id reaches main-process
+        // config. Exclude ids already known to the renderer from that stale scan.
+        const known = new Set(store.getState().projects.map((project) => project.id))
+        const next = scanned.filter((orphan) => !known.has(orphan.id))
         const changed =
           next.length !== orphans.length ||
           next.some((o, i) => {
@@ -745,6 +800,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (changed) render()
       })
       .catch((err: unknown) => {
+        if (generation !== orphanScanGeneration) return
         showErrorToast('Could not scan recoverable threads', err)
       })
   }
@@ -1020,14 +1076,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return entries
   }
 
-  function render(): void {
+  function render(preserveScroll = false): void {
+    // Rebuilding the list removes its children synchronously. In Chromium that
+    // clamps the scroll container to the top while the content is empty, so the
+    // dismiss action opts into keeping the reader's position.
+    const scrollTop = preserveScroll ? list.scrollTop : 0
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
     clear(list)
+    const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
 
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
+      if (preserveScroll) list.scrollTop = scrollTop
       return
     }
 
@@ -1184,7 +1248,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const prRollup = rollupForThread(thread)
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
-        chatRow.append(chatPrStatus(prRollup))
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === 'open' && ciFailingForThread(thread)),
+        )
+      }
+
+      if (thread.prRefs === undefined) {
+        prBackfillRows.push({ row: chatRow, projectId: project.id, threadId: thread.id })
       }
 
       if (canMutate) {
@@ -1731,6 +1801,71 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())
+
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
+    )
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
+      const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
+        prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
+      )
+      const observer = new IntersectionObserver((entries) => {
+        if (prBackfillObserver !== observer) return
+        const pending = new Map<string, Array<{ threadId: string; row: Element }>>()
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          observer.unobserve(entry.target)
+          const thread = rowThreads.get(entry.target)
+          if (!thread) continue
+          const requested = prBackfillRequested.get(thread.projectId) ?? new Set<string>()
+          prBackfillRequested.set(thread.projectId, requested)
+          if (requested.has(thread.threadId)) continue
+          requested.add(thread.threadId)
+          const rows = pending.get(thread.projectId) ?? []
+          rows.push({ threadId: thread.threadId, row: entry.target })
+          pending.set(thread.projectId, rows)
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId)
+          for (let i = 0; i < rows.length; i += 10) {
+            const batch = rows.slice(i, i + 10)
+            const threadIds = batch.map(({ threadId }) => threadId)
+            void api.threads
+              .backfillPrRefs(projectId, threadIds)
+              .then(() => {
+                for (const threadId of threadIds) {
+                  prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`)
+                }
+              })
+              .catch((err: unknown) => {
+                let attempt = 1
+                for (const threadId of threadIds) {
+                  const key = `${projectId}\0${threadId}`
+                  const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1
+                  prBackfillRetryAttempts.set(key, nextAttempt)
+                  attempt = Math.max(attempt, nextAttempt)
+                }
+                const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
+                const timer = setTimeout(() => {
+                  prBackfillRetryTimers.delete(timer)
+                  for (const { threadId } of batch) requested?.delete(threadId)
+                  const currentObserver = prBackfillObserver
+                  if (!currentObserver) return
+                  for (const { threadId } of batch) {
+                    const row = prBackfillRowsByKey.get(`${projectId}\0${threadId}`)
+                    if (row?.isConnected) currentObserver.observe(row)
+                  }
+                }, delay)
+                prBackfillRetryTimers.add(timer)
+                console.warn('[threads] visible PR-ref backfill failed:', err)
+              })
+          }
+        }
+      })
+      prBackfillObserver = observer
+      for (const { row } of prBackfillRows) observer.observe(row)
+    }
+    if (preserveScroll) list.scrollTop = scrollTop
   }
 
   const unsubs = [
@@ -1740,7 +1875,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('threads_changed', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store.on('thread_status_changed', render),
+    store.on('thread_status_changed', () => {
+      render()
+    }),
     store.on('workspace_changed', () => {
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
@@ -1755,16 +1892,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('attention_changed', render),
     store.on('attention_changed', syncActivityButton),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store.on('projects_changed', refreshOrphans),
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store.on('projects_changed', refreshOrphansIfProjectSetChanged),
   ]
 
   render()
   refreshOrphans()
   return () => {
     contentFilter.cancel()
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
+    prBackfillRetryTimers.clear()
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
+    prBackfillRowsByKey.clear()
     prStatusGeneration += 1
+    orphanScanGeneration += 1
     dismissContextMenu()
     renaming = null
     renamingGroup = null

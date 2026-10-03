@@ -26,11 +26,13 @@ describe('footer compact layout', () => {
     footer.className = 'input-footer is-compact'
     const usage = document.createElement('span')
     usage.className = 'footer-usage'
+    usage.hidden = true
     footer.append(usage)
     document.body.append(footer)
 
     let measuredWithoutCompact = false
     let usageDisplayDuringMeasurement = ''
+    let usageDisplayPriorityDuringMeasurement = ''
     Object.defineProperties(footer, {
       clientWidth: { configurable: true, get: () => 220 },
       scrollWidth: {
@@ -38,6 +40,7 @@ describe('footer compact layout', () => {
         get: () => {
           measuredWithoutCompact ||= !footer.classList.contains('is-compact')
           usageDisplayDuringMeasurement = usage.style.display
+          usageDisplayPriorityDuringMeasurement = usage.style.getPropertyPriority('display')
           return 300
         },
       },
@@ -50,7 +53,9 @@ describe('footer compact layout', () => {
       assert.equal(binding.isCompact(), true)
       assert.equal(measuredWithoutCompact, false)
       assert.equal(usageDisplayDuringMeasurement, 'inline')
+      assert.equal(usageDisplayPriorityDuringMeasurement, 'important')
       assert.equal(usage.style.display, '')
+      assert.equal(usage.hidden, true)
     } finally {
       binding?.destroy()
       footer.remove()

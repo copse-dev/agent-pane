@@ -413,9 +413,11 @@ describe('ACP successful turn with an unterminated tool call', () => {
     )
     await expect(anchor.$('[data-status="running"]')).not.toExist()
 
-    await expect(rollup).toHaveAttribute('open')
-    const failedSearch = await anchor.$('[data-tool-id="tc-acp-settled-web-search"]')
+    // The run stays quiet; the genuine failure is shown open beside it.
+    await expect(rollup).not.toHaveAttribute('open')
+    const failedSearch = await anchor.$(':scope > [data-tool-id="tc-acp-settled-web-search"]')
     await expect(failedSearch).toHaveAttribute('data-status', 'error')
+    await expect(failedSearch).toHaveAttribute('open')
     await expect(
       $('[data-message-id="msg-assistant-acp-settled-answer"] .message-text'),
     ).toHaveText('Five pull requests landed this week.')

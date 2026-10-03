@@ -652,6 +652,28 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 
+  it('serializes the same tool set identically whatever order it was registered in', () => {
+    const define = (name: string): Parameters<ToolRegistry['register']>[0] => ({
+      name,
+      description: `the ${name} tool`,
+      parameters: z.object({ arg: z.string() }),
+      execute: async () => '',
+    })
+    const first = new ToolRegistry()
+    for (const name of ['read_file', 'mcp__srv__lookup', 'advisor']) first.register(define(name))
+    // A settings toggle or MCP reconnect unregisters and re-registers a tool,
+    // which moves it to the end of a Map's insertion order.
+    const toggled = new ToolRegistry()
+    for (const name of ['advisor', 'read_file', 'mcp__srv__lookup']) toggled.register(define(name))
+    toggled.unregister('advisor')
+    toggled.register(define('advisor'))
+    assert.deepEqual(
+      first.toLLMTools().map((t) => t.name),
+      ['advisor', 'mcp__srv__lookup', 'read_file'],
+    )
+    assert.equal(JSON.stringify(toggled.toLLMTools()), JSON.stringify(first.toLLMTools()))
+  })
+
   it('reports bad arguments as a sentence, not the ZodError JSON dump', async () => {
     setPermissionGateForTests(async () => true)
     let executed = false

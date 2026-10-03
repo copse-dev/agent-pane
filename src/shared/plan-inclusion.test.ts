@@ -269,3 +269,35 @@ describe('applyPlanCoverage', () => {
     assert.deepEqual(out.planDetail?.priorLimitHits, { hit: 1, total: 4 })
   })
 })
+
+describe('resolvePlanInclusion with per-model availability', () => {
+  function codex(availability: Record<string, boolean>): PlanUsageSnapshot {
+    const base = snapshot('codex', [
+      { id: 'primary', usedPercent: 100 },
+      { id: 'chatpass_0', usedPercent: 0 },
+    ])
+    const [result] = base.providers
+    if (result?.status !== 'ok') throw new Error('fixture')
+    result.usage.modelAvailability = availability
+    return base
+  }
+
+  it('covers an available model through the ChatPass pool while the weekly window is spent', () => {
+    const inclusion = resolvePlanInclusion('codex', 'gpt-6-astra', codex({ 'gpt-6-astra': true }))
+    assert.ok(inclusion)
+    assert.equal(inclusion.windowId, 'chatpass_0')
+    assert.equal(inclusion.exhausted, false)
+  })
+
+  it('treats an explicitly unavailable model as exhausted even with window headroom', () => {
+    const snap = codex({ 'gpt-6-luna': false })
+    assert.equal(resolvePlanInclusion('codex', 'gpt-6-luna', snap)?.exhausted, true)
+  })
+
+  it('falls back to the shared windows for models the provider does not list', () => {
+    const inclusion = resolvePlanInclusion('codex', 'gpt-6-sol', codex({ 'gpt-6-astra': true }))
+    assert.ok(inclusion)
+    assert.equal(inclusion.windowId, 'primary')
+    assert.equal(inclusion.exhausted, true)
+  })
+})

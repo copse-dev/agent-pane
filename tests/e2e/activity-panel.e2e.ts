@@ -90,6 +90,15 @@ describe('Activity panel', function () {
           'List the direct dependencies.',
           'There are no direct dependencies yet.',
         ),
+        ...Array.from({ length: 10 }, (_, index) => ({
+          ...seededThread(
+            `e2e-activity-recent-${String(index)}`,
+            `Recent run ${String(index)}`,
+            'List the recent run.',
+            'The recent run completed.',
+          ),
+          unreadAt: SEEDED_AT + index + 2,
+        })),
       ],
     })
     // One write: seedE2eViewport replaces the settings file, so a separate
@@ -163,6 +172,7 @@ describe('Activity panel', function () {
     await expect(needsRow).toHaveAttribute('data-state', 'needs-approval')
     await expect(needsRow.$('.activity-thread')).toHaveText('Refactor auth')
     await expect(needsRow.$('.activity-state')).toHaveText('Approval')
+    await expect(needsRow.$('.activity-glyph')).toHaveAttribute('data-icon', 'shield')
     await expect(needsRow.$('.activity-want-code')).toHaveText(AUTH_COMMAND)
     await expect(needsRow.$('.activity-project')).toHaveText('workspace')
     const workingRow = $(rowSelector('working', AUDIT_THREAD))
@@ -170,7 +180,7 @@ describe('Activity panel', function () {
     await expect(workingRow.$('.activity-state')).toHaveText('Running')
     assert.deepEqual(
       await $$('#activity-panel .activity-group').map((group) => group.getAttribute('data-group')),
-      ['needs-you', 'working'],
+      ['needs-you', 'working', 'recent'],
     )
     // The most urgent row is selected and focused; its label leads with its state.
     await expect(needsRow).toHaveAttribute('data-selected', 'true')
@@ -211,8 +221,41 @@ describe('Activity panel', function () {
     assert.deepEqual(fits, { noSideScroll: true, inside: true })
     await saveAppScreenshot('activity-panel-needs-you.png')
 
+    // The running audit thread makes the global stop shortcut active. Dialog
+    // keyboard events must still reach the native Activity panel: Escape closes
+    // it, and Enter activates its focused close button.
+    await browser.keys('Escape')
+    await $('#activity-panel').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await openActivityPanel()
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('#activity-panel .activity-panel-close')?.focus()
+    })
+    await browser.keys('Enter')
+    await $('#activity-panel').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await openActivityPanel()
+    await needsRow.waitForDisplayed({ timeout: 10_000 })
+    const reopenedDetail = $('#activity-panel .activity-detail')
+    const reopenedApprove = reopenedDetail.$('.activity-approve')
+    await reopenedApprove.waitForEnabled({ timeout: 5_000 })
+
+    // Scroll the reopened list before approving so the update must preserve it.
+    const initialScroll = await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('#activity-panel .activity-list')
+      if (!list) return { scrollHeight: 0, clientHeight: 0, scrollTop: 0 }
+      list.scrollTop = list.scrollHeight
+      return {
+        scrollHeight: list.scrollHeight,
+        clientHeight: list.clientHeight,
+        scrollTop: list.scrollTop,
+      }
+    })
+    assert.ok(
+      initialScroll.scrollTop > 0,
+      `the activity list should scroll before the update (${JSON.stringify(initialScroll)})`,
+    )
+
     // Approve from the panel. The user stays on thread B the whole time.
-    await approve.click()
+    await reopenedApprove.click()
     await browser.waitUntil(
       async () => !(await $(rowSelector('needs-you', AUTH_THREAD)).isExisting()),
       {
@@ -223,6 +266,14 @@ describe('Activity panel', function () {
     await expect($('#activity-panel .activity-panel-status')).toHaveText(
       'Approved once for Refactor auth.',
     )
+    const scrollAfterApproval = await browser.execute(
+      () => document.querySelector<HTMLElement>('#activity-panel .activity-list')?.scrollTop ?? 0,
+    )
+    assert.ok(
+      scrollAfterApproval > 0,
+      `the activity list should keep its position after the update (scrollTop=${String(scrollAfterApproval)})`,
+    )
+    await saveAppScreenshot('activity-panel-scroll-preserved.png')
     // Proof the answer reached main: A's tool runs and its turn finishes, so its
     // row lands in Recently finished while B is still working.
     const finishedRow = $(rowSelector('recent', AUTH_THREAD))

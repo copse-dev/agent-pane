@@ -8,7 +8,9 @@ import {
   isConciseThread,
   isConciseThreadModel,
   isConciseWorkingMessage,
+  liveTurnStartId,
   syncConciseMessageClasses,
+  turnStartId,
 } from './concise-thread.ts'
 
 // Opus 5.5 sits well above the gate; Haiku 4.5 and gpt-4o well below it.
@@ -75,9 +77,13 @@ describe('concise thread model gate', () => {
     assert.equal(isConciseMessage(message({ role: 'user', model: CAPABLE })), false)
   })
 
-  it('treats a concise bubble with tool calls as working, unless its turn failed', () => {
+  it('treats a concise bubble with a running tool as working', () => {
     const working = message({ model: CAPABLE, toolCalls: [tool()] })
-    assert.equal(isConciseWorkingMessage(working), true)
+    assert.equal(
+      isConciseWorkingMessage({ ...working, toolCalls: [tool({ status: 'running' })] }),
+      true,
+    )
+    assert.equal(isConciseWorkingMessage(working), false)
     assert.equal(isConciseWorkingMessage(message({ model: CAPABLE })), false)
     assert.equal(isConciseWorkingMessage({ ...working, turnOutcome: failedOutcome() }), false)
     assert.equal(isConciseWorkingMessage(message({ model: MODEST, toolCalls: [tool()] })), false)
@@ -85,8 +91,11 @@ describe('concise thread model gate', () => {
 
   it('toggles the stylesheet classes on the bubble', () => {
     const el = document.createElement('div')
+    const running = message({ model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
+    syncConciseMessageClasses(el, running, true)
+    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-working', 'msg-concise-steps'])
     syncConciseMessageClasses(el, message({ model: CAPABLE, toolCalls: [tool()] }), true)
-    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-working'])
+    assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-steps'])
     syncConciseMessageClasses(el, message({ model: CAPABLE }), true)
     assert.deepEqual([...el.classList], ['msg-concise'])
     syncConciseMessageClasses(el, message({ model: MODEST }), true)
@@ -168,5 +177,33 @@ describe('concise activity label', () => {
       }),
     )
     assert.match(label ?? '', /^Running ls… \(.+\)$/)
+  })
+})
+
+describe('turn identity', () => {
+  const messages = [
+    message({ id: 'a0', role: 'assistant' }),
+    message({ id: 'u1', role: 'user' }),
+    message({ id: 'a1', role: 'assistant' }),
+    message({ id: 'a2', role: 'assistant' }),
+    message({ id: 'u2', role: 'user' }),
+    message({ id: 'a3', role: 'assistant' }),
+  ]
+
+  it('names the prompt that started a message’s turn', () => {
+    assert.equal(turnStartId(messages, 'a1'), 'u1')
+    assert.equal(turnStartId(messages, 'a2'), 'u1')
+    assert.equal(turnStartId(messages, 'u2'), 'u2')
+    assert.equal(turnStartId(messages, 'a3'), 'u2')
+  })
+
+  it('has no turn before the first prompt or for an unknown message', () => {
+    assert.equal(turnStartId(messages, 'a0'), null)
+    assert.equal(turnStartId(messages, 'missing'), null)
+  })
+
+  it('finds the live turn from the newest prompt', () => {
+    assert.equal(liveTurnStartId(messages), 'u2')
+    assert.equal(liveTurnStartId([]), null)
   })
 })

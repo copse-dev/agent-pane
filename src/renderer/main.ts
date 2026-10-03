@@ -679,6 +679,15 @@ function updateFilesPane(): void {
 function registerKeyboardShortcuts(): void {
   document.addEventListener('keydown', (e) => {
     const meta = e.ctrlKey || e.metaKey
+    // Native dialogs own Escape, Enter, and their other keyboard interactions.
+    // Keep Cmd/Ctrl+W swallowed so the menu cannot close the window while a
+    // dialog is open, but leave the rest of the event to the dialog itself.
+    if (meta && e.key === 'w') {
+      e.preventDefault()
+      if (!isAnyDialogOpen()) void confirmDeleteThread()
+      return
+    }
+    if (isAnyDialogOpen()) return
     if (meta && e.key === 't') {
       e.preventDefault()
       openNewThread(store)
@@ -733,17 +742,6 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       if (uiScaleAction === 'reset') void resetUiScale(store, api)
       else void bumpUiScale(store, api, uiScaleAction === 'in' ? 1 : -1)
-    }
-    // Cmd/Ctrl+W deletes the active thread. `preventDefault` stays
-    // unconditional — it is what keeps the keystroke from also reaching the
-    // File ▸ Close accelerator — but with a dialog on screen the delete does
-    // not run: a user closing Settings with Cmd+W meant "close this", not
-    // "destroy this conversation" (#2474). Doing nothing is the right answer
-    // rather than closing the dialog for them; Esc already does that, right
-    // below, and every dialog handles it.
-    if (meta && e.key === 'w') {
-      e.preventDefault()
-      if (!isAnyDialogOpen()) void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
       if (isCommandPaletteOpen()) {
