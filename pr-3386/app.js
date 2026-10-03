@@ -67129,10 +67129,12 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts, reaching only its model's
-                origin, and brings its commits back for you to apply. Needs Docker; the first run
-                builds the worker image. A run carries one credential: the model's API key, or,
-                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout with no prompts and brings its commits back for
+                you to apply. Its network reaches only its model's origin, plus, when the run
+                installs dependencies (on by default, per run), the npm registry, GitHub and
+                Electron's download hosts. Needs Docker; the first run builds the worker image. A
+                run carries one credential: the model's API key, or, if you opt in per run, your
+                Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -71896,7 +71898,7 @@ function createRecoverableThreads(store2, api2, changed) {
       dismissBtn.addEventListener("click", () => {
         void dismissOrphanProject(api2, orphan.id).then(() => {
           orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          changed();
+          changed({ preserveScroll: true });
           showToast("Recoverable threads hidden. They remain on disk.");
         }).catch((err2) => {
           showErrorToast("Could not dismiss recoverable threads", err2);
@@ -72499,8 +72501,8 @@ function mountProjectsPane(root, store2, api2) {
     render();
   });
   const prBackfill = createPrBackfill(api2);
-  const recoverable = createRecoverableThreads(store2, api2, () => {
-    render();
+  const recoverable = createRecoverableThreads(store2, api2, (options) => {
+    render(options?.preserveScroll === true);
   });
   function beginThreadRename(threadId, currentTitle) {
     renaming = { threadId, draft: currentTitle || "New Thread" };
@@ -72742,13 +72744,15 @@ function mountProjectsPane(root, store2, api2) {
     }
     return entries2;
   }
-  function render() {
+  function render(preserveScroll = false) {
+    const scrollTop = preserveScroll ? list.scrollTop : 0;
     clear(list);
     const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && recoverable.count === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
+      if (preserveScroll) list.scrollTop = scrollTop;
       return;
     }
     function renderThreadRow(project2, thread, options = {}) {
@@ -73253,6 +73257,7 @@ function mountProjectsPane(root, store2, api2) {
     const recoverableSection = recoverable.section();
     if (recoverableSection) list.append(recoverableSection);
     prBackfill.observe(prBackfillRows);
+    if (preserveScroll) list.scrollTop = scrollTop;
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -73261,7 +73266,9 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store2.on("thread_status_changed", render),
+    store2.on("thread_status_changed", () => {
+      render();
+    }),
     store2.on("workspace_changed", () => {
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
@@ -73848,7 +73855,9 @@ function mountThreadSidebar(root, store2, api2, sources3) {
       return;
     }
     renderedSignature = signature;
+    const scrollTop = list.scrollTop;
     list.replaceChildren(...nodes);
+    list.scrollTop = scrollTop;
     prBackfill.observe(backfillRows);
     if (focusKey === "work-toggle") workToggle.focus();
     else if (focusKey) {
