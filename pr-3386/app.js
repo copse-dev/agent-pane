@@ -33918,6 +33918,9 @@ function minimizeIcon(className = DEFAULT) {
 function moreHorizontalIcon(className = DEFAULT) {
   return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
 }
+function moreVerticalIcon(className = DEFAULT) {
+  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
+}
 function runningStatusIcon(className = DEFAULT) {
   return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
 }
@@ -56156,7 +56159,7 @@ function getToolCallLabel(tc2) {
   if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (title) return title;
+    if (title) return shellCommandLabel(title);
   }
   if (title) return title;
   return getToolDisplayName(mcpTitle ?? tc2.name, tense);
@@ -72664,16 +72667,7 @@ function threadMenuEntries(store2, api2, options) {
         onSelect: () => {
           archiveProjectThread(store2, project2.id, thread.id);
         }
-      },
-      ...options.allowDelete ? [
-        {
-          label: "Delete",
-          disabled: getSidebarThreads(store2, project2.id).length <= 1,
-          onSelect: () => {
-            deleteProjectThread(store2, api2, project2.id, thread.id);
-          }
-        }
-      ] : []
+      }
     ] : [],
     // A schedule with a single run has no heading of its own, and a
     // historical run is several rows below the one that does, so every
@@ -72695,6 +72689,15 @@ function threadMenuEntries(store2, api2, options) {
         label: "Automation setup\u2026",
         onSelect: () => {
           openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+        }
+      }
+    ] : [],
+    ...canMutate && options.allowDelete ? [
+      {
+        label: "Delete",
+        disabled: getSidebarThreads(store2, project2.id).length <= 1,
+        onSelect: () => {
+          deleteProjectThread(store2, api2, project2.id, thread.id);
         }
       }
     ] : []
@@ -73321,21 +73324,25 @@ function mountProjectsPane(root, store2, api2) {
         if (renaming?.threadId === thread.id) return;
         switchProjectThread(store2, api2, project2.id, thread.id);
       });
-      chatRow.addEventListener("contextmenu", (e3) => {
-        e3.preventDefault();
-        e3.stopPropagation();
+      const openThreadMenu = (x2, y2) => {
         showContextMenu(
-          e3.clientX,
-          e3.clientY,
+          x2,
+          y2,
           threadMenuEntries(store2, api2, {
             project: project2,
             thread,
             allowRename,
+            allowDelete: true,
             onRename: () => {
               beginThreadRename(thread.id, displayTitle);
             }
           })
         );
+      };
+      chatRow.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        openThreadMenu(e3.clientX, e3.clientY);
       });
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
@@ -73366,16 +73373,23 @@ function mountProjectsPane(root, store2, api2) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
       }
       if (canMutate) {
-        const del = el(
+        const menuButton = el(
           "button",
-          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
-          closeIcon("ui-icon ui-icon-sm")
+          {
+            type: "button",
+            class: "chat-menu-btn",
+            "aria-label": `Thread menu for ${displayTitle}`,
+            "aria-haspopup": "menu",
+            "data-tooltip": "Thread menu"
+          },
+          moreVerticalIcon("ui-icon ui-icon-sm")
         );
-        del.addEventListener("click", (e3) => {
+        menuButton.addEventListener("click", (e3) => {
           e3.stopPropagation();
-          deleteProjectThread(store2, api2, project2.id, thread.id);
+          const rect = menuButton.getBoundingClientRect();
+          openThreadMenu(rect.left, rect.bottom);
         });
-        chatRow.append(del);
+        chatRow.append(menuButton);
       }
       return chatRow;
     }
@@ -73469,8 +73483,8 @@ function mountProjectsPane(root, store2, api2) {
             const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
               openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
             });
-            const del = row2.querySelector(".chat-delete");
-            if (del) del.before(setupBtn);
+            const menuButton = row2.querySelector(".chat-menu-btn");
+            if (menuButton) menuButton.before(setupBtn);
             else row2.append(setupBtn);
             rows.append(row2);
             continue;
