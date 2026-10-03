@@ -61,6 +61,8 @@
 // v33 versions machine-turn dispatch and its chunk metadata.
 // v34 versions the per-model availability shape returned by `usage:get-plan-usage`.
 // v35 conservatively versions optional malformed-tool-call metadata on streamed chunks.
-// v36 conservatively versions the optional classifier-call latency and token fields on
+// v36 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+// v37 conservatively versions the optional classifier-call latency and token fields on
 // decision events, alongside the new `usage:get-thread-classifier-use` channel.
-export const API_PROTOCOL_VERSION = 36 as const
+export const API_PROTOCOL_VERSION = 37 as const

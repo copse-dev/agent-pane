@@ -556,6 +556,21 @@ const api: ApiClient = {
       }
     },
   },
+  deepLinks: {
+    ready: () => ipcRenderer.invoke('deep-links:ready'),
+    onOpenThread: (handler: (target: { threadId: string; projectId: string | null }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        target: { threadId: string; projectId: string | null },
+      ): void => {
+        handler(target)
+      }
+      ipcRenderer.on('deep-links:open-thread', listener)
+      return (): void => {
+        ipcRenderer.off('deep-links:open-thread', listener)
+      }
+    },
+  },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),

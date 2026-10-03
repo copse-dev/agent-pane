@@ -11,7 +11,10 @@ import {
   terminalBenchCanonicalTaskName,
   terminalBenchTaskMetadata,
 } from './lib/terminal-bench-tasks.mts'
-import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import {
+  terminalBenchProfile,
+  terminalBenchProfileForIdentity,
+} from './lib/terminal-bench-profiles.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 import {
   terminalBenchAnalysisPlanPath,
@@ -278,14 +281,35 @@ for (const { resultPath, result } of storedTrials) {
   const taskMetadata = terminalBenchTaskMetadata(taskName)
   const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
   const retainedProfile = await readTerminalBenchTrialProfile(resultPath)
+  const rawHash = nested(result, 'agent_result', 'metadata', 'profile_hash')
+  if (
+    (rawProfile !== undefined || rawHash !== undefined) &&
+    !retainedProfile &&
+    (typeof rawProfile !== 'string' || typeof rawHash !== 'string')
+  )
+    throw new Error(`Incomplete profile identity for ${taskName}`)
+  if (
+    retainedProfile &&
+    ((rawProfile !== undefined && rawProfile !== retainedProfile.versionedId) ||
+      (rawHash !== undefined && rawHash !== retainedProfile.contentHash))
+  )
+    throw new Error(`Retained profile metadata does not match agent metadata for ${taskName}.`)
+  if (rawProfile === undefined && rawHash === undefined && !retainedProfile)
+    throw new Error(
+      `Unrecorded profile identity for ${taskName}; refusing to relabel a historical trial`,
+    )
   const profile =
-    typeof rawProfile === 'string'
-      ? terminalBenchProfile(rawProfile)
+    typeof rawProfile === 'string' && typeof rawHash === 'string'
+      ? terminalBenchProfileForIdentity(rawProfile, rawHash)
       : (retainedProfile ?? terminalBenchProfile())
-  if (retainedProfile && retainedProfile.versionedId !== profile.versionedId) {
+  if (
+    retainedProfile &&
+    (retainedProfile.versionedId !== profile.versionedId ||
+      retainedProfile.contentHash !== profile.contentHash)
+  ) {
     throw new Error(`Retained profile metadata does not match agent metadata for ${taskName}.`)
   }
-  const attemptKey = `${profile.versionedId}:${taskName}`
+  const attemptKey = `${profile.versionedId}:${profile.contentHash}:${taskName}`
   const attemptIndex = (attemptsByTask.get(attemptKey) ?? 0) + 1
   attemptsByTask.set(attemptKey, attemptIndex)
   const rawStartedAt = nested(result, 'started_at')
@@ -509,7 +533,7 @@ const index = {
   profiles: [
     ...new Map(
       capsules.map((capsule) => [
-        capsule.profile,
+        `${capsule.profile}:${capsule.profileHash}`,
         { versionedId: capsule.profile, contentHash: capsule.profileHash },
       ]),
     ).values(),
