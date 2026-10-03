@@ -290,7 +290,13 @@ function pluginsFieldset(): HTMLElement {
 }
 
 it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
-  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const spy: StubApiSpy = {
+    lastSetEnabled: null,
+    lastSetSetting: null,
+    addSourceCalls: 0,
+    lastPreparedCatalogId: null,
+    lastCommittedToken: null,
+  }
   const initial = { plugins: [{ ...demoPlugin, enabled: true }] }
   let release: ((result: PluginsListResult) => void) | undefined
   let reads = 0
