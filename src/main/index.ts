@@ -33,6 +33,7 @@ import {
   attachBrowserGuestContextMenu,
   attachBrowserGuestShareShortcut,
 } from './windows/browser-context-menu.ts'
+import { startAutoArchive } from './services/auto-archive-bootstrap.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
@@ -518,6 +519,7 @@ app
       developerMode,
     )
     void resumeMobileCompanion()
+    startAutoArchive()
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win)

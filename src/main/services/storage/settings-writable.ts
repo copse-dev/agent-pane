@@ -187,6 +187,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   uiScale: z.number().min(0.75).max(1.5),
   animateAgentAvatars: z.boolean(),
   autoPortraitRightPanel: z.boolean(),
+  // Days a thread whose PRs are all merged sits idle, clean and unpushed-free
+  // before it is archived automatically (0 = never). See auto-archive-service.ts.
+  autoArchiveAfterDays: z.number().min(0).max(365),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat
   // emphasis. Theme CSS derives accessible link/hover shades from this hue.
