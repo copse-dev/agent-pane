@@ -541,7 +541,7 @@
   border-radius: 3px;
   padding: 0 2px;
 }
-.chat-delete {
+.chat-menu-btn {
   flex-shrink: 0;
   width: var(--projects-action-size);
   height: var(--projects-action-size);
@@ -552,12 +552,13 @@
   color: var(--text-muted);
   padding: 0;
 }
-.chat-row:hover .chat-delete {
+.chat-row:hover .chat-menu-btn,
+.chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
 /* A single-run automation row (#2511) has no schedule heading of its own to
    carry `.automation-setup-btn`, so it sits directly on the row — same quiet
-   reveal as the delete button beside it. */
+   reveal as the menu button beside it. */
 .chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
