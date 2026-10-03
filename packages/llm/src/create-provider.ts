@@ -202,6 +202,16 @@ function withoutVerbosity(params: ModelParameters): ModelParameters {
   return rest
 }
 
+/**
+ * Wire fields that switch off thinking on local OpenAI-compatible engines: the
+ * `reasoning_effort` ladder (LM Studio, Ollama) plus the Qwen3-style chat
+ * template switch (vLLM, llama.cpp). Engines ignore the spelling they lack.
+ */
+export const LOCAL_REASONING_SUPPRESSION_BODY: Readonly<Record<string, unknown>> = {
+  reasoning_effort: 'none',
+  chat_template_kwargs: { enable_thinking: false },
+}
+
 // OpenAI-compatible local servers speak the same chat API, so we reuse
 // OpenAIProvider with a custom base URL. apiKey is whatever the local server
 // expects (many require any non-empty value, even when auth is disabled).
@@ -220,6 +230,7 @@ export function createLocalOpenAIProvider(
     apiKey: apiKey || 'lm-studio',
     includeUsage: true,
     params: withoutVerbosity(params),
+    reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
   })
 }

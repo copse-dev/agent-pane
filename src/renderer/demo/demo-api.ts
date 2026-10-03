@@ -954,6 +954,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
+      historySnapshot: unsupported,
+      editHistory: unsupported,
+      undoHistoryEdit: unsupported,
       catalog: () =>
         resolved(
           threads.map((thread) => ({
@@ -1067,6 +1070,21 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       start: unsupported,
       stop: unsupported,
       connect: unsupported,
+    },
+    chatGptPlan: {
+      status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      refreshAccount: () => (scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()),
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () =>
+        resolved({
+          clientId: scenario.chatGptPlan?.activeClientId ?? null,
+          models: scenario.chatGptPlan?.activeClientId
+            ? [{ slug: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna' }]
+            : [],
+        }),
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),

@@ -363,6 +363,9 @@ function openAiSupport(modelId: string): ModelParameterSupport {
  */
 export function modelParameterSupport(model: string): ModelParameterSupport {
   const selection = parseModelSelection(model)
+  if (selection.namespace === 'chatgpt-plan') {
+    return { ...openAiSupport(selection.modelId), sampling: [], outputCap: false }
+  }
   if (AGENT_NAMESPACES.has(selection.namespace)) {
     return {
       ...NO_PARAMETERS,

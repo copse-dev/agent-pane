@@ -85,6 +85,8 @@ export function displayModelLabel(model: string, context?: ModelDisplayContext):
       // which still beats the raw `acp:…` id the transcript and badge used to
       // render.
       return acpModelDisplayLabel(model, context?.acpAgents ?? [])
+    case 'chatgpt-plan':
+      return `${cloudModelDisplayLabel(selection.id)} · ChatGPT plan`
     case 'remote-agent':
       return remoteAgentDisplayLabel(model, context?.remoteCatalog ?? [])
     case 'plugin-model':
