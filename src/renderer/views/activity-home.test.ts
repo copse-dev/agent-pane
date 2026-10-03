@@ -17,7 +17,11 @@ const noApprovals: ApprovalRequests = {
   answerOnce: () => false,
   onChange: () => () => {},
 }
-const noQuestions: AskUserRequests = { pending: () => [], onChange: () => () => {} }
+const noQuestions: AskUserRequests = {
+  pending: () => [],
+  answer: () => false,
+  onChange: () => () => {},
+}
 
 function thread(id: string, patch: Partial<Thread> = {}): Thread {
   return {

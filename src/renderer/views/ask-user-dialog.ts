@@ -22,17 +22,27 @@ export interface PendingQuestionSummary {
   threadId: string | undefined
   /** The question texts, in order, as the agent wrote them (Markdown source). */
   questions: string[]
+  /** The quick answers the agent offered for each question, in question order ([] for none). */
+  options: readonly (readonly string[])[]
   receivedAt: number
 }
 
 /**
- * The dialog's pending questions, read-only. Answering stays in the dialog: a
- * surface that wants a question answered opens its thread, which is exactly
- * what makes the dialog surface it.
+ * The dialog's pending questions. Answering goes through the dialog
+ * ({@link AskUserRequests.answer}), which releases a blocked agent through the
+ * same function its own buttons use, whether the question is on screen or still
+ * queued for another thread; a surface that would rather not answer opens the
+ * thread, which makes the dialog surface the question.
  */
 export interface AskUserRequests {
   /** Every question still waiting — on screen or queued — oldest first. */
   pending(): PendingQuestionSummary[]
+  /**
+   * Answer a pending question from another surface, one answer per question in
+   * order. Returns false, sending nothing, when the request is no longer pending
+   * (answered or withdrawn elsewhere) or the answers do not match its questions.
+   */
+  answer(id: string, answers: readonly string[]): boolean
   /** Called after any change to {@link pending}. Returns an unsubscribe. */
   onChange(listener: () => void): () => void
 }
@@ -175,13 +185,35 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     syncAttention()
   }
 
-  function respond(answers: string[]): void {
-    const current = active
-    if (!current) return
-    dialog.close()
-    active = null
-    void api.ask.respond(current.id, answers)
+  /**
+   * The one place a question is released: it leaves the screen or the queue, the
+   * agent is told, and whatever is next is shown. The dialog's own buttons and
+   * another surface answering both end here, so there is a single path that
+   * unblocks an agent.
+   */
+  function settle(request: AskUserRequest, answers: string[]): void {
+    if (active === request) {
+      dialog.close()
+      active = null
+    } else {
+      const idx = queue.indexOf(request)
+      if (idx === -1) return
+      queue.splice(idx, 1)
+    }
+    void api.ask.respond(request.id, answers)
     showNext()
+    syncAttention()
+  }
+
+  function respond(answers: string[]): void {
+    if (active) settle(active, answers)
+  }
+
+  function answerFrom(id: string, answers: readonly string[]): boolean {
+    const request = active?.id === id ? active : queue.find((req) => req.id === id)
+    if (request === undefined || answers.length !== request.questions.length) return false
+    settle(request, [...answers])
+    return true
   }
 
   function submit(): void {
@@ -275,8 +307,10 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           id: req.id,
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
+          options: req.questions.map((q) => q.options ?? []),
           receivedAt: req.receivedAt,
         })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener)
       return () => {

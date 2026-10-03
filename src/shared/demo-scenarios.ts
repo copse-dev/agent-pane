@@ -94,6 +94,13 @@ export interface DemoScenario {
     type: string
     allowRemember?: boolean
   }[]
+  /** Seed `ask_user` questions so a browser spec can answer them from the Activity view. */
+  askUserRequests?: readonly {
+    id: string
+    /** The thread the question belongs to, as on a real ask-user event. */
+    threadId?: string
+    questions: readonly { question: string; options?: readonly string[] }[]
+  }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
   /** Seed auto-update prompts so a browser spec can inspect the real dialog. */
@@ -1919,6 +1926,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         bodyAdvice: 'Auto-run for sandbox commands is disabled in Settings',
         bodyFooter: 'Allow running it once?',
         type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'activity-home-question',
+    label: 'Activity home with a question waiting',
+    project: project('demo-activity-home-question-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the active, empty one; the second is blocked on a question.
+    threads: [
+      {
+        id: 'demo-activity-home-question-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-home-question-schema',
+        title: 'Schema bump',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    askUserRequests: [
+      {
+        id: 'demo-activity-home-question',
+        threadId: 'demo-activity-home-question-schema',
+        questions: [
+          {
+            question: 'Which migration order should the schema bump use?',
+            options: ['Columns first', 'Backfill first'],
+          },
+          { question: 'Keep the old column until the next release?' },
+        ],
       },
     ],
   },
