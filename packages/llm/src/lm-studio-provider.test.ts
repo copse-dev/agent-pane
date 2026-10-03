@@ -6,9 +6,11 @@ import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 class FakePrediction {
   private readonly opts: LLMRespondOpts
+  private readonly toolCallId: string | null
 
-  constructor(opts: LLMRespondOpts) {
+  constructor(opts: LLMRespondOpts, toolCallId: string | null) {
     this.opts = opts
+    this.toolCallId = toolCallId
   }
 
   async result(): Promise<{
@@ -33,9 +35,11 @@ class FakePrediction {
       reasoningType: 'none',
       isStructural: false,
     })
-    this.opts.onToolCallRequestEnd?.(7, {
+    // The SDK's `callId` is a per-prediction counter, so the first tool call
+    // of every prediction reports 0 whatever the server called it.
+    this.opts.onToolCallRequestEnd?.(0, {
       toolCallRequest: {
-        id: 'call-7',
+        ...(this.toolCallId === null ? {} : { id: this.toolCallId }),
         type: 'function',
         name: 'list_dir',
         arguments: { path: '.' },
@@ -55,11 +59,16 @@ class FakePrediction {
 class FakeModel {
   chat: Chat | null = null
   opts: LLMRespondOpts | null = null
+  private readonly toolCallId: string | null
+
+  constructor(toolCallId: string | null) {
+    this.toolCallId = toolCallId
+  }
 
   respond(chat: Chat, opts: LLMRespondOpts): FakePrediction {
     this.chat = chat
     this.opts = opts
-    return new FakePrediction(opts)
+    return new FakePrediction(opts, this.toolCallId)
   }
 }
 
@@ -101,7 +110,12 @@ class FakeToolFailureClient {
 }
 
 class FakeClient {
-  readonly modelHandle = new FakeModel()
+  readonly modelHandle: FakeModel
+
+  /** `toolCallId` is the id the server reports; `null` omits it. */
+  constructor(toolCallId: string | null = 'call-7') {
+    this.modelHandle = new FakeModel(toolCallId)
+  }
 
   model(): Promise<FakeModel> {
     return Promise.resolve(this.modelHandle)
@@ -266,6 +280,23 @@ describe('LMStudioProvider', () => {
         },
       ],
     )
+  })
+
+  it('gives each id-less tool call a unique id across predictions', async () => {
+    // Falling back to the SDK's per-prediction `callId` named the first call of
+    // every turn `lmstudio-0`; the thread store keys tool-result blobs by id, so
+    // the second turn overwrote the first turn's result and the thread stopped
+    // loading.
+    const provider = new LMStudioProvider('local-model', { client: new FakeClient(null) })
+    const toolCallIds = async (): Promise<string[]> =>
+      (await collect(provider)).flatMap((chunk) =>
+        chunk.type === 'tool_call' ? [chunk.toolCall.id] : [],
+      )
+    const [first] = await toolCallIds()
+    const [second] = await toolCallIds()
+    assert.ok(first && second)
+    assert.match(first, /^tc_/)
+    assert.notEqual(first, second)
   })
 
   it('cancels the prediction when the model emits an unparseable tool call', async () => {

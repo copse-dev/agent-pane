@@ -104,3 +104,29 @@ describe('dispatchCanvasArtefacts', () => {
     assert.equal(calls, 0)
   })
 })
+
+describe('inline explainer dispatch', () => {
+  it('keeps a scoped explainer inline and emits its reference before completion', async () => {
+    const { runWithInlineCanvas } = await import('./inline-canvas-context.ts')
+    const seen: CanvasArtefact[] = []
+    const types: string[] = []
+    setCanvasArtefactSink((artefact) => seen.push(artefact))
+    await runWithInlineCanvas(
+      'a',
+      { emit: (_id, chunk) => types.push(chunk.type) },
+      async (host) => {
+        await dispatchCanvasArtefacts(uiResult(), 'a', true)
+        host.emit('a', { type: 'done' })
+      },
+    )
+    assert.equal(seen[0]?.presentation, 'inline')
+    assert.deepEqual(types, ['canvas_artefact', 'done'])
+  })
+
+  it('falls back to the ordinary canvas when no owning run can embed the card', async () => {
+    const seen: CanvasArtefact[] = []
+    setCanvasArtefactSink((artefact) => seen.push(artefact))
+    await dispatchCanvasArtefacts(uiResult(), 'a', true)
+    assert.equal(seen[0]?.presentation, undefined)
+  })
+})

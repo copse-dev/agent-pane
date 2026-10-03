@@ -127,6 +127,8 @@ import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
 import {
   conciseActivityLabel,
+  liveTurnStartId,
+  turnStartId,
   isConciseThread,
   syncConciseMessageClasses,
 } from './concise-thread.ts'
@@ -2645,13 +2647,47 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottomBtn,
   )
 
+  // The concise turn the user opened to debug, by its prompt's id. UI-only: it is
+  // never persisted, and only that turn renders in full (as with the setting off).
+  let expandedConciseTurnId: string | null = null
+  /** The experimental setting as it applies to one message: off inside the expanded turn. */
+  function conciseEnabledFor(thread: Thread | undefined, messageId: string): boolean {
+    const enabled = store.getState().conciseThreadsEnabled
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId
+  }
+
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
   activityBar.append(reasoningActivityIcon('reasoning-activity-icon'), activityLabel)
   // Non-reasoning activity can still reopen the latest trail (for example while
   // the answer is being written). During reasoning, the live disclosure itself
   // replaces this standalone row.
+  /**
+   * In a running concise turn the row is the only trace of the work, so it opens
+   * that one turn in the full view (tool cards, reasoning) and closes it again.
+   * Returns false when the row is not expandable, leaving the click to its
+   * other job.
+   */
+  function toggleConciseTurnExpansion(): boolean {
+    const thread = getActiveThread(store)
+    if (!thread || !isConciseTurnExpandable(thread)) return false
+    const turn = liveTurnStartId(thread.messages)
+    if (turn === null) return false
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null
+    syncConciseThreadClasses()
+    scrollToBottom()
+    return true
+  }
+  function isConciseTurnExpandable(thread: Thread): boolean {
+    return (
+      thread.status === 'running' &&
+      store.getState().conciseThreadsEnabled &&
+      isConciseThread(thread)
+    )
+  }
   activityBar.addEventListener('click', () => {
+    if (toggleConciseTurnExpansion()) return
     const trails = list.querySelectorAll<HTMLDetailsElement>(REOPENABLE_REASONING)
     const details = trails[trails.length - 1]
     if (!details) return
@@ -2660,6 +2696,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const key = details.dataset['disclosureKey']
     if (key) disclosurePreferences.set(key, true)
     details.scrollIntoView({ block: 'nearest' })
+  })
+  activityBar.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    if (activityBar.getAttribute('role') !== 'button') return
+    event.preventDefault()
+    toggleConciseTurnExpansion()
   })
   // Queued follow-ups live in a pinned panel below the scroll area so they stay
   // visible at the bottom of the screen instead of getting buried under the
@@ -3238,6 +3280,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? conciseActivityLabel(thread)
         : null
     const label = conciseLabel ?? requested
+    // While a concise turn runs, the row opens that turn's steps.
+    const expandable = thread !== undefined && isConciseTurnExpandable(thread)
+    const expanded = expandable && expandedConciseTurnId !== null
+    activityBar.setAttribute('role', expandable ? 'button' : 'status')
+    activityBar.classList.toggle('agent-activity-expandable', expandable)
+    activityBar.classList.toggle('agent-activity-expanded', expanded)
+    if (expandable) {
+      activityBar.tabIndex = 0
+      activityBar.setAttribute('aria-expanded', String(expanded))
+      activityBar.title = expanded ? 'Hide this turn’s steps' : 'Show this turn’s steps'
+    } else {
+      activityBar.removeAttribute('tabindex')
+      activityBar.removeAttribute('aria-expanded')
+      activityBar.removeAttribute('title')
+    }
     // Assigning textContent replaces the text node even when the string is
     // identical, and the row is aria-live, so an unconditional write re-announces
     // the same label. Emitters outside the agent controller (message queue,
@@ -3564,7 +3621,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
     // Tool calls arriving mid-stream turn a concise bubble's text into narration.
     const message = activeThread?.messages.find((m) => m.id === msgId)
-    if (message) syncConciseMessageClasses(msgEl, message, store.getState().conciseThreadsEnabled)
+    if (message) syncConciseMessageClasses(msgEl, message, conciseEnabledFor(activeThread, msgId))
 
     const nestReasoning =
       run === undefined &&
@@ -3821,7 +3878,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
-    syncConciseMessageClasses(msgEl, msg, store.getState().conciseThreadsEnabled)
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store), msgId))
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
@@ -4143,11 +4200,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncConciseThreadClasses(): void {
     const thread = getActiveThread(store)
     if (!thread) return
-    const enabled = store.getState().conciseThreadsEnabled
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
     list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((msgEl) => {
-      const msg = byId.get(msgEl.dataset['messageId'] ?? '')
-      if (msg) syncConciseMessageClasses(msgEl, msg, enabled)
+      const id = msgEl.dataset['messageId'] ?? ''
+      const msg = byId.get(id)
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id))
     })
     syncFromStore()
   }
@@ -4273,7 +4330,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // A failed turn keeps its text even in the concise view; the outcome lands
     // after the bubble was built, and this runs whenever it may have changed.
     const msg = thread?.messages.find((candidate) => candidate.id === messageId)
-    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled)
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId))
     const recovery = turnRecoveryForMessage(thread, messageId)
     if (!projectId || !msgEl || !recovery) return
 
@@ -4777,6 +4834,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           card.remove()
         })
       } else {
+        // The turn is over: its summary is the answer, so it returns to the concise view.
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null
+          syncConciseThreadClasses()
+        }
         setActivity(null)
         list.querySelectorAll<HTMLDetailsElement>('.message-reasoning-live').forEach((details) => {
           setReasoningDisclosureTitle(details, false)

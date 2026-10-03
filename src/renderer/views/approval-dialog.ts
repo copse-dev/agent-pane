@@ -5,6 +5,21 @@ import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.t
 import { setAttentionThreads } from '../controller/attention.ts'
 import { uiActions } from '../ui/actions.ts'
 
+function githubMarkIcon(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('class', 'approval-github-icon')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute(
+    'd',
+    'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12',
+  )
+  svg.append(path)
+  return svg
+}
+
 /**
  * How long the first pending request waits before the dialog pops, so a burst of
  * concurrent `session/request_permission` calls (an agent running several tool
@@ -196,6 +211,12 @@ export function mountApprovalDialog(
   )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
+  const githubBrand = el(
+    'div',
+    { class: 'approval-github-brand', hidden: '', 'aria-hidden': 'true' },
+    el('span', { class: 'approval-github-mark' }, githubMarkIcon()),
+    el('span', {}, 'GitHub'),
+  )
   const heading = el('h3', { class: 'approval-heading' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
@@ -217,6 +238,7 @@ export function mountApprovalDialog(
   )
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
+    githubBrand,
     heading,
     items,
     rememberLabel,
@@ -425,6 +447,9 @@ export function mountApprovalDialog(
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
+    const isGithubApproval = batch.some((request) => request.title.includes('GitHub'))
+    githubBrand.hidden = !isGithubApproval
+    dialog.classList.toggle('approval-dialog-github', isGithubApproval)
 
     const requestBody = (req: PendingApproval): HTMLElement => {
       // Shell commands stay monospaced; other prompts (PR targets, origins) use the
