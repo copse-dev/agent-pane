@@ -7,9 +7,8 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { getAppVersion } from './app-version.ts'
 import { getSetting } from './services/storage/settings.ts'
-import { getElectronBuildCommit } from './services/electron-app-runtime.ts'
+import { getElectronAppVersion, getElectronBuildCommit } from './services/electron-app-runtime.ts'
 
 /** Bundled next to main (dist/assets after build/dev copy). */
 const assetsDir = join(__dirname, '../assets')
@@ -58,7 +57,7 @@ function applyAboutPanel(variant: AppIconVariant): void {
   const commit = getElectronBuildCommit()
   app.setAboutPanelOptions({
     applicationName: app.name,
-    applicationVersion: getAppVersion(),
+    applicationVersion: getElectronAppVersion(),
     version: commit ? commit.slice(0, 7) : '',
     iconPath: getAppIconPath(variant),
   })

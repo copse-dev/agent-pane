@@ -42,7 +42,17 @@ app.setPath('userData', userData.dir)
 
 setElectronAppRuntime({
   userDataPath: app.getPath('userData'),
-  version: getAppVersion(),
+  version: app.getVersion(),
   isPackaged: app.isPackaged,
 })
 installElectronStoreBackend()
+
+// Stores need the profile path synchronously, while UI/runtime consumers wait for
+// asynchronous source metadata before any startup mode or window is initialized.
+export const appRuntimeReady = getAppVersion(app).then((version) => {
+  setElectronAppRuntime({
+    userDataPath: app.getPath('userData'),
+    version,
+    isPackaged: app.isPackaged,
+  })
+})

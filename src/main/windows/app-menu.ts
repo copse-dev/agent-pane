@@ -5,8 +5,7 @@ import { checkForUpdatesManually } from '../services/auto-update.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { buildAppFileMenuItems } from './app-menu-file-items.ts'
 import { buildAppHelpMenuItems, reportIssueUrl } from './app-menu-help-items.ts'
-import { getElectronBuildCommit } from '../services/electron-app-runtime.ts'
-import { getAppVersion } from '../app-version.ts'
+import { getElectronAppVersion, getElectronBuildCommit } from '../services/electron-app-runtime.ts'
 
 export interface AppMenuWindowProvider {
   getFocusedWindow(): BrowserWindow | null
@@ -235,7 +234,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
         reportIssue: () => {
           void shell.openExternal(
             reportIssueUrl({
-              version: getAppVersion(),
+              version: getElectronAppVersion(),
               buildCommit: getElectronBuildCommit(),
               packaged: app.isPackaged,
               platform: process.platform,
