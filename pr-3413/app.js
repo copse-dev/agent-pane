@@ -21318,6 +21318,7 @@ function parseDynamicModel(value) {
   if (body === "best-local") return { kind: "best-local" };
   if (body === "cheapest") return { kind: "cheapest" };
   if (body === "balanced") return { kind: "balanced" };
+  if (body === "balanced-included") return { kind: "balanced-included" };
   if (body.startsWith(MIN_INTELLECT_INFIX)) {
     const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
     if (!Number.isFinite(threshold) || threshold <= 0) return null;
@@ -21343,6 +21344,8 @@ function dynamicModelLabel(value) {
       return "Cheapest";
     case "balanced":
       return "Balanced";
+    case "balanced-included":
+      return "Balanced (no usage charges)";
     case "min-intellect":
       return `At least ${String(selector.threshold)} intelligence`;
     case "role":
@@ -21380,6 +21383,12 @@ function dynamicModelChoices() {
       label: "Balanced",
       description: "Strong capability at a fair price; favors plans",
       group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_INCLUDED_MODEL_SELECTOR,
+      label: "Balanced (no usage charges)",
+      description: "Uses only loaded local, available plan, or zero-priced routes",
+      group: AUTOMATIC_GROUP
     }
   ];
   for (const threshold of MIN_INTELLECT_THRESHOLDS) {
@@ -21400,7 +21409,7 @@ function dynamicModelChoices() {
   }
   return choices;
 }
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
 var init_dynamic_model = __esm({
   "packages/llm/src/dynamic-model.ts"() {
     init_agent_roles();
@@ -21411,6 +21420,7 @@ var init_dynamic_model = __esm({
     BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
     CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
     BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    BALANCED_INCLUDED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced-included`;
     MIN_INTELLECT_INFIX = "min-intellect:";
     ROLE_INFIX = "role:";
     MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
@@ -58819,6 +58829,15 @@ var init_projects = __esm({
   }
 });
 
+// src/shared/git/thread-link.ts
+var GIT_THREAD_LINK_SETTING, DEFAULT_GIT_THREAD_LINK_ENABLED;
+var init_thread_link = __esm({
+  "src/shared/git/thread-link.ts"() {
+    GIT_THREAD_LINK_SETTING = "gitThreadLinksEnabled";
+    DEFAULT_GIT_THREAD_LINK_ENABLED = false;
+  }
+});
+
 // src/shared/git/commit-attribution.ts
 var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
 var init_commit_attribution = __esm({
@@ -59257,6 +59276,18 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <div id="settings-gh-cli-host" class="settings-mount"></div>
+            <fieldset data-testid="git-thread-link-settings">
+              <legend>Thread links</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_THREAD_LINK_SETTING}" />
+                Link commits and pull requests back to their Copse thread
+              </label>
+              <p class="field-hint">
+                Adds a public link containing an opaque thread ID, independently of attribution.
+                The conversation stays on your device. Links only open where that thread exists.
+                Off by default.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="permissions">
@@ -62775,6 +62806,7 @@ var init_settings_dialog = __esm({
     init_terminal_history();
     init_appearance();
     init_projects();
+    init_thread_link();
     init_commit_attribution();
     init_appearance();
     init_nullish2();
@@ -62807,6 +62839,12 @@ var init_settings_dialog = __esm({
         save: true
       },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
+      {
+        name: GIT_THREAD_LINK_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_THREAD_LINK_ENABLED,
+        save: true
+      },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
         name: "subagentsEnabled",
@@ -66736,6 +66774,7 @@ function createDemoApi(scenario, options = {}) {
     review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
+    deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe
@@ -100980,7 +101019,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           "Containment",
           [
             "read-only rootfs, no capabilities",
-            run2.record.attestation.securityProfiles === "default" ? "default seccomp and AppArmor" : null,
+            // What separates the guest from this machine: a VM of its own
+            // under Apple container, the default syscall profiles on
+            // Docker's shared kernel.
+            run2.record.attestation.isolation === "vm" ? "its own VM (Apple container)" : run2.record.attestation.securityProfiles === "default" ? "default seccomp and AppArmor" : null,
             run2.record.attestation.network === "brokered" ? "brokered egress" : "no network",
             run2.record.attestation.perCommandNetwork === "token-gated" ? "shell commands off the network" : null
           ].filter((part) => part !== null).join(", ")
@@ -138947,6 +138989,31 @@ var init_alert_navigation = __esm({
   }
 });
 
+// src/renderer/controller/deep-link-navigation.ts
+function openDeepLinkThread(store2, target, open2) {
+  const { threadId, projectId } = target;
+  if (projectId === null || !store2.getState().projects.some((p2) => p2.id === projectId)) return false;
+  open2(projectId, threadId);
+  return true;
+}
+function mountDeepLinkNavigation(store2, api2) {
+  return api2.deepLinks.onOpenThread((target) => {
+    if (!openDeepLinkThread(store2, target, (projectId, threadId) => {
+      switchProjectThread(store2, api2, projectId, threadId);
+    })) {
+      showToast(
+        "Thread not found on this device. Open the link in the Copse profile that created it."
+      );
+    }
+  });
+}
+var init_deep_link_navigation = __esm({
+  "src/renderer/controller/deep-link-navigation.ts"() {
+    init_projects();
+    init_toast();
+  }
+});
+
 // src/renderer/views/ssh-prompt-dialog.ts
 function mountSshPromptDialog(api2) {
   const promptEl = el("pre", { class: "ssh-prompt-body" });
@@ -151911,6 +151978,10 @@ async function boot() {
     });
   }
   mobileRestored();
+  if (!popoutMode) {
+    mountDeepLinkNavigation(store, api);
+    await api.deepLinks.ready();
+  }
   if (popoutMode && store.getState().workspaceRoot) {
     await activatePopoutPane(popoutMode);
     return;
@@ -152182,6 +152253,7 @@ var init_main = __esm({
     init_approval_dialog();
     init_ask_user_dialog();
     init_alert_navigation();
+    init_deep_link_navigation();
     init_ssh_prompt_dialog();
     init_update_prompt_dialog();
     init_product_announcement_dialog();
