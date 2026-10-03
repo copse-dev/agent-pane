@@ -11,6 +11,7 @@ import {
   terminalLongRunningCommandHint,
   terminalBenchProfileToolNames,
   terminalBenchRuntimeConfiguration,
+  terminalReasoningSoftBudgetFromEnv,
   terminalBenchSystemPrompt,
   terminalReasoningRunawayRecoveryNudge,
   terminalReasoningSuppressedNudge,
@@ -28,10 +29,58 @@ import {
 import {
   terminalBenchProfile,
   terminalBenchStreamCapOverrides,
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
 } from './lib/terminal-bench-profiles.mts'
 import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
 
 describe('terminal benchmark bridge', () => {
+  it('reports the effective bounded soft budget without changing historical profile identities', () => {
+    const profile = terminalBenchProfile('product-aligned@5')
+    const originalHash = profile.contentHash
+    const budget = { tokens: 512, carryChars: 600, maxCutsPerRun: 3, maxConsecutiveCuts: 1 }
+    const runtime = terminalBenchRuntimeConfiguration(profile, {
+      COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '512',
+      COPSE_TERMINAL_REASONING_SOFT_CARRY_CHARS: '600',
+      COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS: '3',
+      COPSE_TERMINAL_REASONING_SOFT_MAX_CONSECUTIVE: '1',
+    })
+    assert.deepEqual(TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.parse(runtime), runtime)
+    assert.deepEqual(terminalBenchStreamCapOverrides(profile, runtime), {
+      softReasoningBudget: budget,
+    })
+    assert.deepEqual(
+      terminalBenchLoopOptions(profile, runtime, 'task').reasoningCheckpointPolicy
+        ?.softReasoningBudget,
+      budget,
+    )
+    assert.equal(profile.loop.softReasoningBudget, null)
+    assert.equal(profile.contentHash, originalHash)
+    for (const field of ['tokens', 'carryChars', 'maxCutsPerRun', 'maxConsecutiveCuts']) {
+      for (const invalid of [0, -1, 1.5]) {
+        assert.equal(
+          TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.safeParse({
+            ...runtime,
+            softReasoningBudget: { ...budget, [field]: invalid },
+          }).success,
+          false,
+        )
+      }
+    }
+    const disabled = terminalBenchRuntimeConfiguration(profile, {
+      COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '0',
+    })
+    assert.equal(disabled.softReasoningBudget, null)
+    assert.deepEqual(terminalBenchStreamCapOverrides(profile, disabled), {})
+    assert.equal(
+      terminalBenchLoopOptions(profile, disabled, 'task').reasoningCheckpointPolicy
+        ?.softReasoningBudget,
+      undefined,
+    )
+    const legacy = terminalBenchProfile('main-legacy')
+    const legacyRuntime = terminalBenchRuntimeConfiguration(legacy, {})
+    assert.equal(legacyRuntime.softReasoningBudget, null)
+    assert.deepEqual(terminalBenchStreamCapOverrides(legacy, legacyRuntime), {})
+  })
   it('keeps versioned profiles isolated and content-addressed', () => {
     const main = terminalBenchProfile('main-legacy')
     const pr = terminalBenchProfile('pr-1149')
@@ -129,8 +178,15 @@ describe('terminal benchmark bridge', () => {
     const runtime = terminalBenchRuntimeConfiguration(profile, {
       COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY: 'suppression-ladder-v1',
     })
+    assert.deepEqual(TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.parse(runtime), runtime)
     assert.deepEqual(terminalBenchStreamCapOverrides(profile, runtime), {
       recoveryStrategy: 'suppression-ladder-v1',
+      softReasoningBudget: {
+        tokens: 768,
+        carryChars: 1200,
+        maxCutsPerRun: 6,
+        maxConsecutiveCuts: 2,
+      },
     })
     const options = terminalBenchLoopOptions(profile, runtime, 'task')
     assert.equal(options.reasoningRunawayRecoveryStrategy, 'suppression-ladder-v1')
@@ -152,7 +208,12 @@ describe('terminal benchmark bridge', () => {
     assert.deepEqual(runtime, {
       recoveryStrategy: 'legacy-two-cut-v1',
       suppressedOutputTokens: 1024,
-      softReasoningBudget: null,
+      softReasoningBudget: {
+        tokens: 768,
+        carryChars: 1200,
+        maxCutsPerRun: 6,
+        maxConsecutiveCuts: 2,
+      },
       maxSteps: 10,
       maxLlmCalls: 13,
       maxContextTokens: 32_768,
@@ -172,7 +233,15 @@ describe('terminal benchmark bridge', () => {
       reasoningRunawayTextToleranceChars: 256,
       // The checkpoint policy is the profile's own; a stream-cap override does
       // not move its 2K visible-answer ceiling.
-      reasoningCheckpointPolicy: profile.loop.reasoningCheckpointPolicy,
+      reasoningCheckpointPolicy: {
+        ...profile.loop.reasoningCheckpointPolicy,
+        softReasoningBudget: {
+          tokens: 768,
+          carryChars: 1200,
+          maxCutsPerRun: 6,
+          maxConsecutiveCuts: 2,
+        },
+      },
       allowForcedTextEscalation: false,
       stuckToolRecoveryNudge: profile.stuckToolRecoveryNudge,
     })
@@ -371,6 +440,36 @@ describe('terminal benchmark bridge', () => {
     ]) {
       assert.equal(terminalBenchProfile(id).hintsLongRunningCommands, false)
     }
+  })
+  it('reads the soft reasoning budget from COPSE_TERMINAL_REASONING_SOFT_* with evidence-based defaults', () => {
+    assert.deepEqual(terminalReasoningSoftBudgetFromEnv({}), {
+      tokens: 768,
+      carryChars: 1_200,
+      maxCutsPerRun: 6,
+      maxConsecutiveCuts: 2,
+    })
+    assert.deepEqual(
+      terminalReasoningSoftBudgetFromEnv({
+        COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '512',
+        COPSE_TERMINAL_REASONING_SOFT_CARRY_CHARS: '600',
+        COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS: '3',
+        COPSE_TERMINAL_REASONING_SOFT_MAX_CONSECUTIVE: '1',
+      }),
+      { tokens: 512, carryChars: 600, maxCutsPerRun: 3, maxConsecutiveCuts: 1 },
+    )
+    assert.equal(
+      terminalReasoningSoftBudgetFromEnv({ COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '0' }),
+      undefined,
+    )
+    assert.throws(
+      () => terminalReasoningSoftBudgetFromEnv({ COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS: '0' }),
+      /COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS must be a positive integer/,
+    )
+    assert.throws(
+      () =>
+        terminalReasoningSoftBudgetFromEnv({ COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: 'x' }),
+      /non-negative integer/,
+    )
   })
   it('hints at background jobs for timed-out, slow, and install commands only', () => {
     const result = (exitCode: number): TerminalToolResult => ({

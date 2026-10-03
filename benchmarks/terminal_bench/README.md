@@ -469,6 +469,14 @@ Optional tuning variables:
   profile; terminal-only runaway guard)
 - `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` (default: the profile's own cap,
   `4096` for every profile; cap for the single nudged recovery stream)
+- `COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS` (default `768` for checkpoint-enabled profiles;
+  `0` disables; fixed-cap profiles keep this disabled). A tool-less,
+  answer-less stream that reaches this much reasoning is cut early and an excerpt of the
+  reasoning is carried into history with an "act now on the partial plan" message, instead of
+  running to the hard cap and being discarded. Companions:
+  `COPSE_TERMINAL_REASONING_SOFT_CARRY_CHARS` (default `1200`),
+  `COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS` (default `6` per run) and
+  `COPSE_TERMINAL_REASONING_SOFT_MAX_CONSECUTIVE` (default `2`).
 - `COPSE_TERMINAL_COMMAND_TIMEOUT_SEC` (default `120`; a timeout is returned to the agent as
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional

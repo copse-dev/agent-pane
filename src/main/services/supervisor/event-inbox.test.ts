@@ -56,6 +56,7 @@ interface FixtureState {
   deleted: boolean
   binding: EventAutomationBinding
   allowed: boolean
+  retryable: boolean
   filter: string | null
   pausePreparation: boolean
   crashInboxState: string | null
@@ -86,6 +87,7 @@ async function fixture(t: TestContext): Promise<Fixture> {
     deleted: false,
     binding: structuredClone(binding),
     allowed: true,
+    retryable: false,
     filter: null,
     pausePreparation: false,
     crashInboxState: null,
@@ -125,7 +127,13 @@ async function fixture(t: TestContext): Promise<Fixture> {
     authorize: () => {
       state.afterAuthorize?.()
       return Promise.resolve(
-        state.allowed ? { allowed: true } : { allowed: false, reason: 'Run budget exhausted' },
+        state.allowed
+          ? { allowed: true }
+          : {
+              allowed: false,
+              reason: 'Run budget exhausted',
+              ...(state.retryable ? { retryable: true } : {}),
+            },
       )
     },
     prepareRun: async (record, signal) => {
@@ -356,6 +364,66 @@ describe('event automation durable admission', () => {
     await f.settle()
     assert.equal(f.prepareCalls, 0)
     assert.equal((await f.records())[0]?.state, 'fenced')
+  })
+
+  it('keeps a delivery held only by a capacity limit pending, and starts it once there is room', async (t) => {
+    const f = await fixture(t)
+    await f.admit()
+    f.state.allowed = false
+    f.state.retryable = true
+
+    await f.settle()
+    assert.equal(f.prepareCalls, 0)
+    assert.equal((await f.records())[0]?.state, 'admitted')
+
+    f.state.allowed = true
+    await f.settle()
+    assert.equal(f.prepareCalls, 1)
+    assert.equal((await f.records())[0]?.state, 'prepared')
+  })
+
+  it('retains a capacity denial that arrives after enqueue and resumes after restart', async (t) => {
+    const f = await fixture(t)
+    await f.admit()
+    let authorizations = 0
+    f.state.afterAuthorize = (): void => {
+      authorizations++
+      if (authorizations === 2) {
+        f.state.allowed = false
+        f.state.retryable = true
+      }
+    }
+    await f.inbox.reconcile(binding.projectId)
+    await t.waitFor(() => {
+      assert.equal(f.supervisor.list()[0]?.state, 'waiting')
+    })
+    assert.equal(f.prepareCalls, 0)
+    assert.equal((await f.records())[0]?.state, 'queued')
+    f.state.afterAuthorize = null
+    f.state.allowed = true
+    await f.restart()
+    await f.supervisor.start()
+    const task = f.supervisor.list()[0]
+    assert.ok(task)
+    await f.supervisor.wake(task.projectId, task.taskId)
+    await t.waitFor(() => {
+      assert.equal(f.prepareCalls, 1)
+    })
+    await t.waitFor(async () => {
+      assert.equal((await f.records())[0]?.state, 'prepared')
+    })
+  })
+
+  it('still fences a delivery denied for a reason that will not clear', async (t) => {
+    const f = await fixture(t)
+    await f.admit()
+    f.state.allowed = false
+
+    await f.settle()
+    assert.equal((await f.records())[0]?.state, 'fenced')
+    f.state.allowed = true
+    await f.settle()
+    assert.equal(f.prepareCalls, 0)
   })
 
   it('retains filtered evidence and rejects automation causation by default', async (t) => {
