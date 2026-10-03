@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { formatTerminalResult } from './lib/terminal-bench-protocol.mts'
+import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import {
   DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
   TERMINAL_BENCH_SYSTEM_PROMPT,
