@@ -28,7 +28,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'

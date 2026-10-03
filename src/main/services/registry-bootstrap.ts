@@ -537,7 +537,7 @@ export function pluginEnableRefusal(pluginId: string, enabled: boolean): string 
   if (
     enabled &&
     pluginId === PARALLEL_SEARCH_PLUGIN_ID &&
-    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) === null
+    resolveApiKeyIfUnlocked(PARALLEL_SEARCH_PROVIDER_ID) === null
   ) {
     return 'Add a Parallel API key before enabling copse.parallel-search.'
   }
