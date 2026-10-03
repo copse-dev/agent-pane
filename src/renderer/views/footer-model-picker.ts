@@ -1,3 +1,5 @@
+import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
@@ -22,6 +24,8 @@ export interface FooterModelPickerOptions {
   getRecentModels?: () => readonly string[]
   /** Override the trigger label for the current picker value (resolved route). */
   formatCurrentLabel?: (current: string) => string | undefined
+  /** Actual route for a dynamic model, shared by its label and coverage badge. */
+  getCurrentRoute?: (current: string) => string | undefined
   /** This chat's reasoning override, if any. Omit to hide the effort selector. */
   getReasoning?: () => ReasoningLevel | undefined
   /** Applies an effort pick; `undefined` clears the chat's override. */
@@ -52,15 +56,33 @@ export function mountFooterModelPicker(
     })
   }
 
+  const usage = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost footer-plan-usage',
+      'aria-label': 'Manage ChatGPT usage',
+      title: 'Manage your ChatGPT plan and Copse’s allowance',
+    },
+    'Manage usage',
+  )
+  usage.addEventListener('click', () => {
+    void api.shell.openExternal('https://chatgpt.com/settings/usage')
+  })
+  function updateUsage(): void {
+    usage.hidden = !getCurrent().startsWith(CHATGPT_PLAN_MODEL_PREFIX)
+  }
+
   const picker = mountModelPicker(
     root,
     getCurrent,
     (model) => {
       onSelect(model)
+      updateUsage()
       void picker.refresh()
     },
     (current) =>
-      fetchModelOptions(api, current, {
+      fetchModelOptions(api, pickerOpts.getCurrentRoute?.(current) ?? current, {
         sshWorkspace: pickerOpts.isSshWorkspace?.() === true,
       }),
     {
@@ -92,8 +114,12 @@ export function mountFooterModelPicker(
       ...(pickerOpts.formatCurrentLabel
         ? { formatCurrentLabel: pickerOpts.formatCurrentLabel }
         : {}),
+      ...(pickerOpts.getCurrentRoute ? { getCurrentRoute: pickerOpts.getCurrentRoute } : {}),
     },
   )
+
+  root.append(usage)
+  updateUsage()
 
   // Selected-plugin models can appear or disappear while this footer remains
   // mounted. Refresh on explicit open so the menu reflects live plugin state.
@@ -102,13 +128,19 @@ export function mountFooterModelPicker(
   })
 
   return {
-    refresh: () => void picker.refresh(),
+    refresh: (): void => {
+      updateUsage()
+      void picker.refresh()
+    },
     // Same pairing as an explicit trigger click: refresh live plugin/provider
     // state, then show the menu.
     openMenu: (): void => {
       void picker.refresh()
       picker.openMenu()
     },
-    destroy: picker.destroy,
+    destroy: (): void => {
+      usage.remove()
+      picker.destroy()
+    },
   }
 }

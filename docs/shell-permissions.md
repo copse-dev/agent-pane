@@ -49,6 +49,13 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+Newline-separated commands are inspected independently. For example, an opaque
+`python3 - <<'PY'` heredoc followed by `wc -l src/a.ts` stays ambiguous and runs inside
+an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.
+A following script execution, download, or outside-project read still contributes
+its own escalation reason. Quoted newlines and backslash line continuations remain
+part of their original command's arguments.
+
 A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
 (`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
 gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's
@@ -70,10 +77,11 @@ because bubblewrap ignores missing file grants; it re-binds configuration, hooks
 metadata, and discovered sibling worktree administration read-only. Those protected paths remain
 outside the writable surface on every platform.
 
-Agent execution still rejects a detached thread checkout. Terminal creation has one recovery-only
-fallback: main must validate the persisted checkout path, Git registration, repository identity, and
-base commit, and the per-worktree Git directory must contain an active rebase or cherry-pick marker.
-An unrelated detached checkout remains blocked.
+A detached thread checkout remains usable by agent turns, file and editor operations, and terminals
+only during validated Git recovery. Main must validate the persisted checkout path, Git registration,
+repository identity, and base commit, and the per-worktree Git directory must contain an active Git
+recovery marker. The persisted branch identity is retained while HEAD is detached. An unrelated
+detached checkout remains blocked. The footer offers recovery continuation after the agent turn ends.
 
 ## Apple development operations
 
@@ -596,11 +604,13 @@ the registry still fails contained and offers to run outside.
   main-owned latest-run record.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
-  reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
-  read-only fs-server overlay: the same read confinement with no write rules. On Linux, a writable
-  overlay makes bubblewrap create empty host placeholders for missing mandatory write-deny paths
-  (`.bashrc`, `.gitconfig`, `.vscode`, ...), and ASRT removes them only once no sandbox is active,
-  so `git status` and the Changes pane would list them as untracked files.
+  reads, including the worktree manager's `show`/`for-each-ref` probes, the file-index listing,
+  fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the read-only fs-server overlay: the
+  same read confinement with no write rules. On Linux, a writable overlay makes bubblewrap create
+  empty host placeholders for missing mandatory write-deny paths (`.bashrc`, `.gitconfig`,
+  `.vscode`, ...), and ASRT removes them only once no sandbox is active, so `git status` and the
+  Changes pane would list them as untracked files. Every wrapped command therefore releases its
+  ASRT lease exactly once when its process exits, including after a timeout.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.

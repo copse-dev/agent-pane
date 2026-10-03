@@ -108,21 +108,36 @@ export function pickDynamicModel(
         null
       )
     }
-    case 'balanced': {
-      // Real API price, plan discount ignored: a plan-covered Fable is judged
-      // at $18/MTok, not $0. Plan-covered routes with headroom still get a
-      // small bias — the marginal dollar is already spent, so they cost the
-      // user nothing extra even though they aren't literally free.
-      const priced = pool.map((point) => ({
+    case 'balanced':
+    case 'balanced-included': {
+      const candidates = selector.kind === 'balanced-included' ? pool.filter(isFree) : pool
+      if (candidates.length === 0) return null
+      // Use confirmed subscription headroom before spending on an API route.
+      // A newly launched paid model must not displace an included model just
+      // because its benchmark or price moved. Missing/exhausted usage does not
+      // set plan + planDetail, so it never qualifies as confirmed coverage.
+      const covered = candidates.filter(
+        (point) => point.plan !== undefined && point.planDetail !== undefined,
+      )
+      // Preserve local and genuinely free alternatives as well; this preference
+      // prevents extra API spend, not the use of a better on-device model.
+      const eligible =
+        covered.length > 0
+          ? candidates.filter(
+              (point) => covered.includes(point) || point.local === true || point.costPerMTok <= 0,
+            )
+          : candidates
+      // Within that pool, real API prices still balance capability against
+      // likely plan consumption; an expensive included model is not scored $0.
+      const priced = eligible.map((point) => ({
         point,
         price: realApiPrice(point),
-        covered: point.plan !== undefined && point.planDetail !== undefined,
       }))
       const paidPrices = priced.filter((entry) => entry.price > 0).map((entry) => entry.price)
       const median = paidPrices.length > 0 ? medianOf(paidPrices) : 0
       const ranked = [...priced].sort((a, b) => {
-        const scoreA = balancedScore(a.point, median) + (a.covered ? 0.5 : 0)
-        const scoreB = balancedScore(b.point, median) + (b.covered ? 0.5 : 0)
+        const scoreA = balancedScore(a.point, median)
+        const scoreB = balancedScore(b.point, median)
         return (
           scoreB - scoreA ||
           b.point.intellect - a.point.intellect ||

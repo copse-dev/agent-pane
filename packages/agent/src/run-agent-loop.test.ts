@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
-import { runAgentLoop } from './run-agent-loop.ts'
+import { runAgentLoop, type AppliedNudgeRecord } from './run-agent-loop.ts'
 import {
   AGENT_RUN_ABORT_REASON_TIMEOUT,
   AgentRunDeadline,
@@ -11,11 +11,21 @@ import {
 } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import {
+  MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+  REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
+  TRUNCATED_TOOL_CALL_NUDGE,
+  REASONING_RUNAWAY_SUPPRESSED_NUDGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
-import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMStreamOptions,
+  ProviderStreamChunk,
+} from '@copse/llm/wire-types.ts'
+import type { StreamCutRecord } from './stream-cut-record.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 import { EXPLORE_WITHOUT_READ_NUDGE, STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
@@ -1062,34 +1072,186 @@ describe('runAgentLoop', () => {
     )
   })
 
-  it('gives up cleanly when reasoning keeps tripping the cap (#489)', async () => {
-    // The model ignores the force-answer nudge and loops in reasoning again. Rather
-    // than re-prime until the wall-clock deadline, the run ends after the second
-    // reasoning runaway with a surfaced explanation.
-    const flood: ProviderStreamChunk[] = []
-    for (let i = 0; i < 200; i++) flood.push({ type: 'reasoning', text: 'x'.repeat(1000) })
-    let streamCalls = 0
-    const provider: LLMProvider = {
-      async *stream(): AsyncGenerator<ProviderStreamChunk> {
-        streamCalls++
-        for (const c of flood) yield c // every stream loops, never emits `done`
-      },
+  describe('reasoning-runaway recovery ladder', () => {
+    const SHELL_TOOL = { name: 'run_shell', description: 'run', parameters: { type: 'object' } }
+    const flood = (): ProviderStreamChunk[] => {
+      const chunks: ProviderStreamChunk[] = []
+      for (let i = 0; i < 200; i++) chunks.push({ type: 'reasoning', text: 'x'.repeat(1000) })
+      return chunks
     }
-    const chunks: AgentStreamChunk[] = []
-    await runAgentLoop({
-      provider,
-      messages: [{ role: 'user', content: 'go' }],
-      tools: [],
-      maxSteps: 20,
-      onChunk: (c) => chunks.push(c),
-      executeTool: async () => 'ok',
+    interface ScriptedCall {
+      readonly options: LLMStreamOptions | undefined
+      readonly lastUser: string
+    }
+    /** Provider whose n-th stream replays `turns[n]` (a flood never emits `done`). */
+    function scripted(turns: ProviderStreamChunk[][]): {
+      provider: LLMProvider
+      calls: ScriptedCall[]
+    } {
+      const calls: ScriptedCall[] = []
+      const provider: LLMProvider = {
+        async *stream(messages, _tools, _signal, options): AsyncGenerator<ProviderStreamChunk> {
+          const last = messages.at(-1)
+          calls.push({
+            options,
+            lastUser: last?.role === 'user' && typeof last.content === 'string' ? last.content : '',
+          })
+          for (const c of turns[Math.min(calls.length, turns.length) - 1] ?? []) yield c
+        },
+      }
+      return { provider, calls }
+    }
+
+    it('keeps the explicit historical strategy on two cuts without suppression or a new stop reason', async () => {
+      const { provider, calls } = scripted([flood()])
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [SHELL_TOOL],
+        maxSteps: 20,
+        reasoningRunawayRecoveryStrategy: 'legacy-two-cut-v1',
+        onChunk: (chunk) => chunks.push(chunk),
+        executeTool: async () => 'ok',
+      })
+      assert.equal(calls.length, 2)
+      assert.deepEqual(
+        calls.map((call) => call.options?.suppressReasoning),
+        [undefined, undefined],
+      )
+      assert.deepEqual(chunks.at(-1), { type: 'done' })
+      assert.ok(
+        chunks.some(
+          (chunk) => chunk.type === 'text' && chunk.text === REASONING_RUNAWAY_GIVEUP_MESSAGE,
+        ),
+      )
     })
-    assert.equal(streamCalls, 2, 'ends after one force-answer retry, not the call budget')
-    assert.ok(
-      chunks.some((c) => c.type === 'text' && c.text === REASONING_RUNAWAY_GIVEUP_MESSAGE),
-      'surfaces the give-up message',
-    )
-    assert.equal(chunks.at(-1)?.type, 'done')
+
+    it('first runaway gets the force-answer nudge on an unsuppressed stream', async () => {
+      const { provider, calls } = scripted([
+        flood(),
+        [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+      ])
+      const applied: AppliedNudgeRecord[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [SHELL_TOOL],
+        maxSteps: 10,
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+        recordAppliedNudge: (r) => applied.push(r),
+      })
+      assert.equal(calls.length, 2)
+      assert.equal(calls[1]?.lastUser, REASONING_RUNAWAY_FORCE_ANSWER_NUDGE)
+      assert.equal(calls[0]?.options?.suppressReasoning, undefined)
+      assert.equal(calls[1].options?.suppressReasoning, undefined)
+      assert.deepEqual(
+        applied.map((r) => r.hookId),
+        ['reasoning-runaway'],
+      )
+    })
+
+    it('second consecutive runaway runs a reasoning-suppressed tool-enabled recovery turn', async () => {
+      const { provider, calls } = scripted([
+        flood(),
+        flood(),
+        [
+          { type: 'tool_call', toolCall: { id: 'act', name: 'run_shell', args: {} } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: ANSWER_PAST_TOLERANCE }, { type: 'done' }],
+      ])
+      const applied: AppliedNudgeRecord[] = []
+      const cuts: StreamCutRecord[] = []
+      const chunks: AgentStreamChunk[] = []
+      let toolRuns = 0
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [SHELL_TOOL],
+        maxSteps: 10,
+        reasoningRunawaySuppressedOutputTokens: 64,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => {
+          toolRuns++
+          return 'ok'
+        },
+        recordAppliedNudge: (r) => applied.push(r),
+        recordStreamCut: (r) => cuts.push(r),
+      })
+      // Success path: the suppressed turn's tool call ran and the loop carried on to an answer.
+      assert.equal(calls.length, 4)
+      assert.equal(toolRuns, 1)
+      assert.equal(calls[2]?.options?.suppressReasoning, true)
+      assert.equal(calls[2].lastUser, REASONING_RUNAWAY_SUPPRESSED_NUDGE)
+      assert.equal(
+        calls[3]?.options?.suppressReasoning,
+        undefined,
+        'streak reset after the tool call',
+      )
+      assert.deepEqual(
+        applied.map((r) => r.text),
+        [REASONING_RUNAWAY_FORCE_ANSWER_NUDGE, REASONING_RUNAWAY_SUPPRESSED_NUDGE],
+      )
+      assert.equal(chunks.at(-1)?.type, 'done')
+      assert.equal(
+        chunks.some((c) => c.type === 'text' && c.text === REASONING_RUNAWAY_GIVEUP_MESSAGE),
+        false,
+      )
+      assert.equal(cuts.length, 2, 'only the two reasoning-only streams were cut')
+    })
+
+    it('caps the suppressed turn far below the recovery cap', async () => {
+      const { provider, calls } = scripted([
+        flood(),
+        flood(),
+        // 80 chars of reasoning is ~20 tokens: past a 10-token suppressed cap, under the recovery cap.
+        [{ type: 'reasoning', text: 'z'.repeat(80) }],
+      ])
+      const cuts: StreamCutRecord[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [SHELL_TOOL],
+        maxSteps: 10,
+        reasoningRunawayRecoveryOutputTokens: 20_000,
+        reasoningRunawaySuppressedOutputTokens: 10,
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+        recordStreamCut: (r) => cuts.push(r),
+      })
+      assert.equal(calls.length, 3)
+      assert.equal(cuts.length, 3, 'the suppressed turn was cut by its own tiny cap')
+      assert.equal(cuts[2]?.streamOutputTokenLimit, 10)
+    })
+
+    it('ends the run with a terminal stop reason once the ladder is exhausted', async () => {
+      const { provider, calls } = scripted([flood()])
+      const applied: AppliedNudgeRecord[] = []
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [SHELL_TOOL],
+        maxSteps: 20,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => 'ok',
+        recordAppliedNudge: (r) => applied.push(r),
+      })
+      assert.equal(calls.length, 3, 'nudge, suppressed turn, then stop: not the call budget')
+      assert.deepEqual(
+        calls.map((c) => c.options?.suppressReasoning),
+        [undefined, undefined, true],
+      )
+      assert.equal(applied.length, 2)
+      assert.ok(
+        chunks.some((c) => c.type === 'text' && c.text === REASONING_RUNAWAY_GIVEUP_MESSAGE),
+        'surfaces the give-up message',
+      )
+      const done = chunks.at(-1)
+      assert.deepEqual(done, { type: 'done', stopReason: REASONING_RUNAWAY_EXHAUSTED_STOP_REASON })
+    })
   })
 
   it('skips duplicate explore tool execution', async () => {
@@ -2483,5 +2645,135 @@ describe('parallel explore fan-out', () => {
       { toolCallId: 'e2', isError: false },
     ])
     assertToolPairingValid(messages)
+  })
+})
+
+describe('runAgentLoop malformed tool call recovery', () => {
+  const PARSE_ERROR = 'Failed to parse tool call: Unexpected end of content.'
+
+  const malformed = (hitOutputCeiling: boolean): ProviderStreamChunk[] => [
+    { type: 'reasoning', text: 'planning a very large file' },
+    {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: PARSE_ERROR, hitOutputCeiling },
+    },
+  ]
+  const toolCall = (id: string): ProviderStreamChunk[] => [
+    { type: 'tool_call', toolCall: { id, name: 'shell', args: { command: `echo ${id}` } } },
+    { type: 'done', stopReason: 'tool_calls' },
+  ]
+  const answer: ProviderStreamChunk[] = [
+    { type: 'text', text: ANSWER_PAST_TOLERANCE },
+    { type: 'done', stopReason: 'stop' },
+  ]
+
+  function run(script: ProviderStreamChunk[][]): {
+    finished: Promise<void>
+    messages: LLMMessage[]
+    applied: import('./run-agent-loop.ts').AppliedNudgeRecord[]
+    calls: () => number
+  } {
+    let call = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        for (const chunk of script[call++] ?? answer) yield chunk
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'write the big file' }]
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    const finished = runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (record) => applied.push(record),
+    })
+    return { finished, messages, applied, calls: () => call }
+  }
+
+  it('nudges for a smaller call after a truncated tool call and continues', async () => {
+    const r = run([malformed(true), answer])
+    await r.finished
+    assert.equal(r.calls(), 2)
+    assert.ok(r.messages.some((m) => m.role === 'user' && m.content === TRUNCATED_TOOL_CALL_NUDGE))
+    assert.deepEqual(
+      r.applied.map((a) => a.hookId),
+      ['malformed-tool-call'],
+    )
+    assert.equal(r.applied[0]?.text, TRUNCATED_TOOL_CALL_NUDGE)
+  })
+
+  it('uses the generic malformed wording when the ceiling was not reached', async () => {
+    const r = run([malformed(false), answer])
+    await r.finished
+    assert.ok(r.messages.some((m) => m.role === 'user' && m.content === MALFORMED_TOOL_CALL_NUDGE))
+  })
+
+  it('still runs tool calls that parsed before the failure, keeping pairing valid', async () => {
+    const r = run([
+      [
+        { type: 'tool_call', toolCall: { id: 'ok1', name: 'shell', args: { command: 'ls' } } },
+        ...malformed(false),
+      ],
+      answer,
+    ])
+    await r.finished
+    assertToolPairingValid(r.messages)
+    const toolIndex = r.messages.findIndex((m) => m.role === 'tool')
+    const nudgeIndex = r.messages.findIndex(
+      (m) => m.role === 'user' && m.content === MALFORMED_TOOL_CALL_NUDGE,
+    )
+    assert.ok(toolIndex !== -1 && nudgeIndex > toolIndex)
+    assert.doesNotMatch(MALFORMED_TOOL_CALL_NUDGE, /nothing ran/)
+    assert.doesNotMatch(TRUNCATED_TOOL_CALL_NUDGE, /nothing ran/)
+  })
+
+  it('does not stack the truncation-continue nudge on a malformed stream', async () => {
+    const r = run([malformed(true), answer])
+    await r.finished
+    assert.equal(
+      r.messages.filter((m) => m.role === 'user' && m.content === TRUNCATION_CONTINUE_NUDGE).length,
+      0,
+    )
+  })
+
+  it('fails with the parse error after too many consecutive malformed calls', async () => {
+    const r = run([malformed(true), malformed(true), malformed(true), answer])
+    await assert.rejects(r.finished, /Failed to parse tool call: Unexpected end of content\./)
+    assert.equal(r.calls(), 3)
+    assert.equal(r.applied.length, 2)
+  })
+
+  it('resets the consecutive bound once a stream completes normally', async () => {
+    const r = run([
+      malformed(true),
+      malformed(true),
+      toolCall('a'),
+      malformed(true),
+      malformed(true),
+      answer,
+    ])
+    await r.finished
+    assert.equal(r.calls(), 6)
+  })
+
+  it('fails once the per-run cap is exceeded even when recoveries are not consecutive', async () => {
+    const r = run([
+      malformed(true),
+      toolCall('a'),
+      malformed(true),
+      toolCall('b'),
+      malformed(true),
+      toolCall('c'),
+      malformed(true),
+      toolCall('d'),
+      malformed(true),
+      answer,
+    ])
+    await assert.rejects(r.finished, /Failed to parse tool call/)
+    assert.equal(r.calls(), 9)
+    assert.equal(r.applied.length, 4)
   })
 })

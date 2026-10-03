@@ -13,11 +13,18 @@ interface CapturedChatCompletionRequest {
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
   prompt_cache_key?: string
+  reasoning_effort?: string
+  chat_template_kwargs?: { enable_thinking?: boolean }
   max_tokens?: number
   tool_choice?: { type: 'function'; function: { name: string } }
   tools?: Array<{
     type: 'function'
-    function: { name: string; description: string; parameters: Record<string, unknown> }
+    function: {
+      name: string
+      description: string
+      parameters: Record<string, unknown>
+      strict?: boolean
+    }
   }>
 }
 
@@ -597,6 +604,43 @@ describe('OpenAIProvider request options', () => {
     })
   })
 
+  it('applies the reasoning-suppression body only to calls that ask for it', async () => {
+    const provider = new OpenAIProvider('qwen-local', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'test-key',
+      reasoningSuppressionBody: {
+        reasoning_effort: 'none',
+        chat_template_kwargs: { enable_thinking: false },
+      },
+    })
+    const requests: CapturedChatCompletionRequest[] = []
+    withFakeCreate(provider, (request) => {
+      requests.push(request)
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+    await collect(provider, [], { suppressReasoning: true })
+
+    assert.equal(requests[0]?.reasoning_effort, undefined)
+    assert.equal(requests[0]?.chat_template_kwargs, undefined)
+    assert.equal(requests[1]?.reasoning_effort, 'none')
+    assert.deepEqual(requests[1].chat_template_kwargs, { enable_thinking: false })
+  })
+
+  it('ignores suppressReasoning when the provider has no suppression body', async () => {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider, [], { suppressReasoning: true })
+
+    assert.equal(captured.request?.reasoning_effort, undefined)
+  })
+
   it('sends prompt_cache_key when a promptCacheKey is configured', async () => {
     const provider = new OpenAIProvider('gpt-test', {
       apiKey: 'test-openai-key',
@@ -1015,4 +1059,66 @@ it('keeps reported hosting providers local to concurrent response streams', asyn
       undefined,
     )
   }
+})
+
+describe('OpenAIProvider strict tools', () => {
+  const tools: LLMTool[] = [
+    {
+      name: 'read_file',
+      description: 'Read',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, start_line: { type: 'integer' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+    },
+  ]
+
+  it('sends no strict field unless the provider opts in', async () => {
+    const provider = new OpenAIProvider('gpt-test', { baseURL: 'https://example.test/v1' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+    await collect(provider, tools)
+    const fn = captured.request?.tools?.[0]?.function
+    assert.equal(fn?.strict, undefined)
+    assert.deepEqual(fn?.parameters, tools[0]?.parameters)
+  })
+
+  it('sends the strict form and restores absent optionals when opted in', async () => {
+    const provider = new OpenAIProvider('gpt-test', { strictTools: true })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_1',
+                    function: { name: 'read_file', arguments: '{"path":"a","start_line":null}' },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+      ])
+    })
+    const chunks = await collect(provider, tools)
+    const fn = at(captured.request?.tools ?? [], 0).function
+    assert.equal(fn.strict, true)
+    assert.deepEqual(fn.parameters['required'], ['path', 'start_line'])
+    assert.deepEqual(
+      chunks.find((c) => c.type === 'tool_call'),
+      { type: 'tool_call', toolCall: { id: 'call_1', name: 'read_file', args: { path: 'a' } } },
+    )
+  })
 })

@@ -80,7 +80,7 @@ describe('remote agent model picker', () => {
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
       ].map((el) => el.textContent?.trim())
       const optionLabels = [
-        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+        ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
       ].map((el) => el.textContent?.trim() ?? '')
       return { groupLabels, optionLabels }
     })

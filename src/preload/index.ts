@@ -72,6 +72,7 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
       ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
@@ -555,6 +556,21 @@ const api: ApiClient = {
       }
     },
   },
+  deepLinks: {
+    ready: () => ipcRenderer.invoke('deep-links:ready'),
+    onOpenThread: (handler: (target: { threadId: string; projectId: string | null }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        target: { threadId: string; projectId: string | null },
+      ): void => {
+        handler(target)
+      }
+      ipcRenderer.on('deep-links:open-thread', listener)
+      return (): void => {
+        ipcRenderer.off('deep-links:open-thread', listener)
+      }
+    },
+  },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
@@ -823,6 +839,15 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    historySnapshot: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => ipcRenderer.invoke('threads:edit-history', projectId, threadId, request),
+    undoHistoryEdit: (projectId: string, threadId: string, expectedRevision: string) =>
+      ipcRenderer.invoke('threads:undo-history-edit', projectId, threadId, expectedRevision),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
@@ -1065,6 +1090,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('settings:fetch-provider-models', baseUrl, apiKey),
     refreshHuggingFaceModels: (apiKey?: string) =>
       ipcRenderer.invoke('settings:refresh-hugging-face-models', apiKey),
+  },
+  chatGptPlan: {
+    status: () => ipcRenderer.invoke('chat-gpt-plan:status'),
+    signIn: (clientId?: string) => ipcRenderer.invoke('chat-gpt-plan:sign-in', clientId),
+    refreshAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:refresh-account', clientId),
+    cancelSignIn: () => ipcRenderer.invoke('chat-gpt-plan:cancel-sign-in'),
+    selectAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:select-account', clientId),
+    signOut: (clientId: string) => ipcRenderer.invoke('chat-gpt-plan:sign-out', clientId),
+    models: () => ipcRenderer.invoke('chat-gpt-plan:models'),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
@@ -1627,11 +1663,10 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
-    },
-    requestAcpPackageUpgradeApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    requestAcpPackageInstallApproval(
+      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
+    ) {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

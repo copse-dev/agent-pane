@@ -89,6 +89,60 @@ export interface ExplodedMessage {
 const EVENTS_FILE = 'events.jsonl'
 const EVIDENCE_UNAVAILABLE_REASON = 'Evidence image is unavailable.'
 
+/** Ids written into file names verbatim: short, and nothing a path could interpret. */
+const PLAIN_ID_SEGMENT = /^[A-Za-z0-9_-]{1,128}$/
+const SEGMENT_SAFE_BYTE = /^[A-Za-z0-9_-]$/
+const MAX_ESCAPED_SEGMENT = 160
+
+function fnv1a32(bytes: Uint8Array, seed: number): string {
+  let h = seed
+  for (const byte of bytes) h = Math.imul(h ^ byte, 0x01000193)
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** UTF-8 for well-formed strings; preserve lone UTF-16 units as WTF-8 bytes. */
+function idBytes(id: string): Uint8Array {
+  const encoder = new TextEncoder()
+  if (!/[\uD800-\uDFFF]/u.test(id)) return encoder.encode(id)
+  const bytes: number[] = []
+  for (const character of id) {
+    const unit = character.charCodeAt(0)
+    if (character.length === 1 && unit >= 0xd800 && unit <= 0xdfff) {
+      bytes.push(0xe0 | (unit >> 12), 0x80 | ((unit >> 6) & 0x3f), 0x80 | (unit & 0x3f))
+    } else {
+      bytes.push(...encoder.encode(character))
+    }
+  }
+  return new Uint8Array(bytes)
+}
+
+/**
+ * The file-name form of a message, tool-call, or subagent id. Those ids arrive
+ * from model endpoints and ACP agents, so they are untrusted input to a path.
+ *
+ * A plain id (`[A-Za-z0-9_-]`, at most 128 characters — every id Copse and the
+ * mainstream providers mint) is used unchanged, so existing threads keep their
+ * exact file names. Anything else is marked with a leading `~` and each UTF-8/WTF-8
+ * byte outside that set becomes `~XX` (upper-case hex); the result can hold no
+ * separator, NUL, or `.`/`..` segment. Lone UTF-16 surrogates are retained rather
+ * than replaced with U+FFFD. The short form is injective because a plain id never
+ * contains `~`. An escaped form that would still be too long for a file name is
+ * replaced by `~h` plus a 64-bit digest.
+ */
+export function idPathSegment(id: string): string {
+  if (PLAIN_ID_SEGMENT.test(id)) return id
+  const bytes = idBytes(id)
+  let escaped = '~'
+  for (const byte of bytes) {
+    const char = String.fromCharCode(byte)
+    escaped += SEGMENT_SAFE_BYTE.test(char)
+      ? char
+      : `~${byte.toString(16).toUpperCase().padStart(2, '0')}`
+  }
+  if (escaped.length <= MAX_ESCAPED_SEGMENT) return escaped
+  return `~h${fnv1a32(bytes, 0x811c9dc5)}${fnv1a32(bytes, 0x050c5d1f)}`
+}
+
 function contentRef(ref: string, content: string, hash: HashFn): ContentRef {
   return { ref, sha256: hash(content) }
 }
@@ -137,21 +191,58 @@ function explodeVisualEvidence(
   }
 }
 
-/** Inline tool args below this UTF-8 size; larger args spill to `blobs/<id>.args.json`. */
+/** Inline tool args below this UTF-8 size; larger args spill to `blobs/<messageId>.tool-<n>.args.json`. */
 export const TOOL_ARGS_INLINE_MAX_BYTES = 2048
 
 function utf8ByteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength
 }
 
-function toolArgsBlobPath(toolCallId: string): string {
+/**
+ * Where a tool call sits in its spine. Its blobs are named from the owning
+ * message id (generated locally) and the call's position in that message —
+ * never from the tool-call id, which comes from a remote provider or ACP agent:
+ * it can repeat across messages (`call_0`, `functions.read:0`) and can carry
+ * `/`, `..`, or `:`, so naming files after it overwrote earlier blobs and could
+ * escape the thread directory.
+ */
+export interface ToolCallSlot {
+  messageId: string
+  index: number
+  toolCallId: string
+}
+
+/** Thread-relative path prefix shared by every blob one tool call spills. */
+function toolBlobBase(slot: ToolCallSlot): string {
+  return `blobs/${idPathSegment(slot.messageId)}.tool-${String(slot.index)}`
+}
+
+function toolArgsBlobPath(slot: ToolCallSlot): string {
+  return `${toolBlobBase(slot)}.args.json`
+}
+
+/** The name used before blobs were message-scoped, still accepted so older threads load. */
+function legacyToolArgsBlobPath(toolCallId: string): string {
   return `blobs/${toolCallId}.args.json`
 }
 
 /** True when spine `args` is the spilled blob ref for this tool call (not a coincidental object). */
-export function isToolArgsBlobRef(toolCallId: string, value: unknown): value is ContentRef {
-  return isContentRef(value) && value.ref === toolArgsBlobPath(toolCallId)
+export function isToolArgsBlobRef(slot: ToolCallSlot, value: unknown): value is ContentRef {
+  return (
+    isContentRef(value) &&
+    (value.ref === toolArgsBlobPath(slot) ||
+      value.ref === `blobs/${idPathSegment(slot.toolCallId)}.args.json` ||
+      value.ref === legacyToolArgsBlobPath(slot.toolCallId))
+  )
 }
+
+/**
+ * Shown in place of a tool result whose blob no longer matches its spine hash —
+ * for example one overwritten by a later call that reused its id before blobs
+ * were message-scoped. One damaged card must not hide the conversation around it.
+ */
+export const TOOL_RESULT_UNAVAILABLE =
+  'Tool result unavailable: its stored copy failed an integrity check.'
 
 function serializeToolArgsJson(args: unknown): string {
   return JSON.stringify(args === undefined ? null : args)
@@ -220,13 +311,15 @@ function parseAcpToolCallContent(raw: string): AcpToolCallContent[] {
 
 function explodeToolCall(
   tc: ToolCall,
+  slot: ToolCallSlot,
   hash: HashFn,
 ): { spine: SpineToolCall; files: FileToWrite[] } {
   const files: FileToWrite[] = []
+  const base = toolBlobBase(slot)
 
   let result: ContentRef | null = null
   if (tc.result !== null) {
-    const ref = `blobs/${tc.id}.result.txt`
+    const ref = `${base}.result.txt`
     files.push({ ref, contents: tc.result })
     result = contentRef(ref, tc.result, hash)
   }
@@ -234,7 +327,7 @@ function explodeToolCall(
   let images: SpineToolResultImage[] | undefined
   if (tc.images !== undefined && tc.images.length > 0) {
     images = tc.images.map((image, i) => {
-      const ref = `blobs/${tc.id}-img-${String(i)}.dataurl`
+      const ref = `${base}-img-${String(i)}.dataurl`
       files.push({ ref, contents: image.dataUrl })
       return {
         dataUrl: { ref, sha256: hash(image.dataUrl) },
@@ -247,7 +340,7 @@ function explodeToolCall(
   let content: ContentRef | undefined
   if (tc.content !== undefined) {
     const serialized = JSON.stringify(tc.content)
-    const ref = `blobs/${tc.id}.acp-content.json`
+    const ref = `${base}.acp-content.json`
     files.push({ ref, contents: serialized })
     content = contentRef(ref, serialized, hash)
   }
@@ -255,7 +348,7 @@ function explodeToolCall(
   const argsJson = serializeToolArgsJson(tc.args)
   let args: unknown = tc.args
   if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
-    const ref = toolArgsBlobPath(tc.id)
+    const ref = toolArgsBlobPath(slot)
     files.push({ ref, contents: argsJson })
     args = contentRef(ref, argsJson, hash)
   }
@@ -283,7 +376,8 @@ function explodeToolCall(
   }
 
   if (tc.subagent) {
-    const prefix = `subagents/${tc.subagent.id}/`
+    const segment = idPathSegment(tc.subagent.id)
+    const prefix = `subagents/${segment}/`
     const subLines: SpineMessageLine[] = []
     for (const msg of tc.subagent.messages) {
       const exploded = explodeOne(msg, hash)
@@ -293,6 +387,8 @@ function explodeToolCall(
     files.push({ ref: prefix + EVENTS_FILE, contents: serializeSpine(subLines) })
     spine.subagent = {
       ref: prefix,
+      // The directory name is the id unless it had to be escaped.
+      ...(segment !== tc.subagent.id ? { id: tc.subagent.id } : {}),
       kind: tc.subagent.kind,
       status: tc.subagent.status,
       prompt: tc.subagent.prompt,
@@ -314,7 +410,8 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   const files: FileToWrite[] = []
   const createdAt = msg.createdAt
 
-  const contentPath = `messages/${msg.id}.md`
+  const segment = idPathSegment(msg.id)
+  const contentPath = `messages/${segment}.md`
   files.push({
     contents: serializeOkfMessage(
       { type: 'Message', role: msg.role, id: msg.id, createdAt: createdAt ?? 0 },
@@ -334,7 +431,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   }
 
   if (msg.reasoning !== undefined) {
-    const ref = `messages/${msg.id}.reasoning.md`
+    const ref = `messages/${segment}.reasoning.md`
     files.push({
       contents: serializeOkfMessage(
         { type: 'Reasoning', role: msg.role, id: msg.id, createdAt: createdAt ?? 0 },
@@ -347,14 +444,14 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
 
   if (msg.contentBlocks !== undefined) {
     const serialized = JSON.stringify(msg.contentBlocks)
-    const ref = `blobs/${msg.id}.acp-content.json`
+    const ref = `blobs/${segment}.acp-content.json`
     files.push({ ref, contents: serialized })
     line.contentBlocks = contentRef(ref, serialized, hash)
   }
 
   if (msg.reasoningBlocks !== undefined) {
     const serialized = JSON.stringify(msg.reasoningBlocks)
-    const ref = `blobs/${msg.id}.acp-reasoning.json`
+    const ref = `blobs/${segment}.acp-reasoning.json`
     files.push({ ref, contents: serialized })
     line.reasoningBlocks = contentRef(ref, serialized, hash)
   }
@@ -362,7 +459,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.images !== undefined && msg.images.length > 0) {
     const images: ImageRef[] = []
     msg.images.forEach((dataUrl, i) => {
-      const ref = `blobs/${msg.id}-img-${String(i)}.dataurl`
+      const ref = `blobs/${segment}-img-${String(i)}.dataurl`
       files.push({ ref, contents: dataUrl })
       images.push({ ref, sha256: hash(dataUrl) })
     })
@@ -384,7 +481,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     line.attachments = msg.attachments.map((attachment, i) => {
       const { content, ...metadata } = attachment
       if (content === undefined) return metadata
-      const ref = `blobs/${msg.id}-attachment-${String(i)}.txt`
+      const ref = `blobs/${segment}-attachment-${String(i)}.txt`
       files.push({ ref, contents: content })
       return { ...metadata, content: contentRef(ref, content, hash) }
     })
@@ -400,8 +497,9 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.startingCommit !== undefined) line.startingCommit = msg.startingCommit
   if (msg.dirty !== undefined) line.dirty = msg.dirty
 
-  for (const tc of msg.toolCalls) {
-    const { spine, files: tcFiles } = explodeToolCall(tc, hash)
+  for (const [index, tc] of msg.toolCalls.entries()) {
+    const slot = { messageId: msg.id, index, toolCallId: tc.id }
+    const { spine, files: tcFiles } = explodeToolCall(tc, slot, hash)
     line.toolCalls.push(spine)
     for (const f of tcFiles) files.push(f)
   }
@@ -468,20 +566,50 @@ export function refsOfLine(line: SpineMessageLine): {
       if (attachment.content) files.push(attachment.content.ref)
     }
   }
-  for (const tc of line.toolCalls) {
+  for (const [index, tc] of line.toolCalls.entries()) {
     if (tc.result !== null) files.push(tc.result.ref)
     if (tc.content) files.push(tc.content.ref)
     if (tc.images) for (const image of tc.images) files.push(image.dataUrl.ref)
-    if (isToolArgsBlobRef(tc.id, tc.args)) files.push(tc.args.ref)
+    const slot = { messageId: line.id, index, toolCallId: tc.id }
+    if (isToolArgsBlobRef(slot, tc.args)) files.push(tc.args.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
   }
   return { files, subagentDirs }
+}
+
+/** How a fold checks what it reads. */
+export interface FoldOptions {
+  /** Verify every ref's sha256; omitted, refs are trusted as read. */
+  hash?: HashFn
+  /**
+   * Called with the thread-relative ref of a tool-call blob that failed its
+   * hash check. The fold degrades that one tool card instead of throwing.
+   */
+  onIntegrityFailure?: (ref: string) => void
 }
 
 function verify(ref: ContentRef, body: string, hash: HashFn | undefined): void {
   if (hash && hash(body) !== ref.sha256) {
     throw new Error(`Thread content hash mismatch for ${ref.ref}`)
   }
+}
+
+/**
+ * Resolve a tool-call blob, or `undefined` (reported) when it no longer matches
+ * its hash. A missing blob still throws — a mismatch proves the file is not the
+ * one the spine recorded, but a missing one may only be unreadable right now.
+ */
+function resolveToolBlob(
+  ref: ContentRef,
+  resolve: RefResolver,
+  ctx: FoldOptions,
+): string | undefined {
+  const body = resolve(ref.ref)
+  if (ctx.hash && ctx.hash(body) !== ref.sha256) {
+    ctx.onIntegrityFailure?.(ref.ref)
+    return undefined
+  }
+  return body
 }
 
 function foldVisualEvidenceAsset(
@@ -530,44 +658,51 @@ function readBody(ref: string, resolve: RefResolver): string {
 
 function foldToolCall(
   spine: SpineToolCall,
+  slot: ToolCallSlot,
   resolve: RefResolver,
-  hash: HashFn | undefined,
+  ctx: FoldOptions,
 ): ToolCall {
+  // Each tool-call blob that fails its hash check degrades just its own field.
   let result: string | null = null
+  let resultDegraded = false
   if (spine.result !== null) {
-    result = resolve(spine.result.ref)
-    verify(spine.result, result, hash)
+    result = resolveToolBlob(spine.result, resolve, ctx) ?? null
+    if (result === null) {
+      result = TOOL_RESULT_UNAVAILABLE
+      resultDegraded = true
+    }
   }
 
   let args: unknown = spine.args
-  if (isToolArgsBlobRef(spine.id, spine.args)) {
-    const raw = resolve(spine.args.ref)
-    verify(spine.args, raw, hash)
-    args = parseToolArgsJson(raw)
+  if (isToolArgsBlobRef(slot, spine.args)) {
+    const raw = resolveToolBlob(spine.args, resolve, ctx)
+    args = raw === undefined ? {} : parseToolArgsJson(raw)
   }
 
-  const images = spine.images?.map((image) => {
-    const dataUrl = resolve(image.dataUrl.ref)
-    verify(image.dataUrl, dataUrl, hash)
-    return {
-      dataUrl,
-      ...(image.name !== undefined ? { name: image.name } : {}),
-      ...(image.kind !== undefined ? { kind: image.kind } : {}),
-    }
+  const images = spine.images?.flatMap((image) => {
+    const dataUrl = resolveToolBlob(image.dataUrl, resolve, ctx)
+    if (dataUrl === undefined) return []
+    return [
+      {
+        dataUrl,
+        ...(image.name !== undefined ? { name: image.name } : {}),
+        ...(image.kind !== undefined ? { kind: image.kind } : {}),
+      },
+    ]
   })
 
   // Tool-call entries are not field-checked by the spine parser, and this one
   // decides which text the transcript shows as a Copse note: decode it, and
-  // drop a malformed value so the card falls back to the raw result.
-  const appendedReminderLengths = appendedReminderLengthsSchema.safeParse(
-    spine.appendedReminderLengths,
-  ).data
+  // drop a malformed value so the card falls back to the raw result. The
+  // lengths index into the original result, so a degraded result drops them.
+  const appendedReminderLengths = resultDegraded
+    ? undefined
+    : appendedReminderLengthsSchema.safeParse(spine.appendedReminderLengths).data
 
   let content: AcpToolCallContent[] | undefined
   if (spine.content !== undefined) {
-    const serialized = resolve(spine.content.ref)
-    verify(spine.content, serialized, hash)
-    content = parseAcpToolCallContent(serialized)
+    const serialized = resolveToolBlob(spine.content, resolve, ctx)
+    if (serialized !== undefined) content = parseAcpToolCallContent(serialized)
   }
 
   const tc: ToolCall = {
@@ -584,11 +719,11 @@ function foldToolCall(
     ...(spine.locations !== undefined ? { locations: spine.locations } : {}),
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
     ...(appendedReminderLengths !== undefined ? { appendedReminderLengths } : {}),
-    ...(images !== undefined ? { images } : {}),
+    ...(images !== undefined && images.length > 0 ? { images } : {}),
   }
 
   if (spine.subagent) {
-    tc.subagent = foldSubagent(spine.subagent, resolve, hash)
+    tc.subagent = foldSubagent(spine.subagent, resolve, ctx)
   }
   return tc
 }
@@ -596,12 +731,22 @@ function foldToolCall(
 function foldSubagent(
   ref: SpineSubagentRef,
   resolve: RefResolver,
-  hash: HashFn | undefined,
+  ctx: FoldOptions,
 ): SubagentSession {
   const nested: RefResolver = (r) => resolve(ref.ref + r)
+  const report = ctx.onIntegrityFailure
+  const nestedCtx: FoldOptions =
+    report === undefined
+      ? ctx
+      : {
+          ...ctx,
+          onIntegrityFailure: (r: string): void => {
+            report(ref.ref + r)
+          },
+        }
   const lines = parseSpine(nested(EVENTS_FILE))
   const messages: SubagentMessage[] = lines.map((line) => {
-    const folded = foldOne(line, nested, hash)
+    const folded = foldOne(line, nested, nestedCtx)
     const msg: SubagentMessage = {
       id: folded.id,
       role: folded.role === 'error' ? 'assistant' : folded.role,
@@ -614,7 +759,7 @@ function foldSubagent(
 
   const usage: ModelUsage | undefined = ref.usage
   return {
-    id: ref.ref.replace(/^subagents\//, '').replace(/\/$/, ''),
+    id: ref.id ?? ref.ref.replace(/^subagents\//, '').replace(/\/$/, ''),
     kind: ref.kind,
     status: ref.status,
     prompt: ref.prompt,
@@ -628,11 +773,8 @@ function foldSubagent(
   }
 }
 
-function foldOne(
-  line: SpineMessageLine,
-  resolve: RefResolver,
-  hash: HashFn | undefined,
-): MessageLike {
+function foldOne(line: SpineMessageLine, resolve: RefResolver, ctx: FoldOptions): MessageLike {
+  const hash = ctx.hash
   const content = readBody(line.content.ref, resolve)
   verify(line.content, content, hash)
 
@@ -640,7 +782,9 @@ function foldOne(
     id: line.id,
     role: line.role,
     content,
-    toolCalls: line.toolCalls.map((tc) => foldToolCall(tc, resolve, hash)),
+    toolCalls: line.toolCalls.map((tc, index) =>
+      foldToolCall(tc, { messageId: line.id, index, toolCallId: tc.id }, resolve, ctx),
+    ),
     ...(line.createdAt !== undefined ? { createdAt: line.createdAt } : {}),
   }
 
@@ -707,9 +851,9 @@ function foldOne(
 export function foldMessage(
   line: SpineMessageLine,
   resolve: RefResolver,
-  opts: { hash?: HashFn } = {},
+  opts: FoldOptions = {},
 ): Message {
-  const m = foldOne(line, resolve, opts.hash)
+  const m = foldOne(line, resolve, opts)
   return {
     id: m.id,
     role: m.role,
@@ -792,7 +936,7 @@ export function foldThread(
   meta: ThreadMeta,
   spine: SpineMessageLine[],
   resolve: RefResolver,
-  opts: { hash?: HashFn } = {},
+  opts: FoldOptions = {},
 ): Thread {
   return { ...meta, messages: spine.map((line) => foldMessage(line, resolve, opts)) }
 }

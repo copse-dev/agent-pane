@@ -202,6 +202,7 @@ export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
   private readonly active = new Map<string, Promise<unknown>>()
   private readonly deleting = new Set<string>()
+  private readonly editingHistory = new Set<string>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
@@ -271,6 +272,38 @@ export class AgentDispatcher {
     return this.active.has(dispatchKey(projectId, threadId))
   }
 
+  /**
+   * Run a history read-modify-write (a review or container-run exchange written
+   * outside a turn) while holding the thread's dispatch slot. Waits for any turn
+   * or earlier edit to release first, so the dispatcher's full-snapshot commit
+   * cannot overwrite the edit and the edit cannot overwrite that commit. A
+   * dispatch that arrives during the edit is refused as busy, like any other
+   * overlap; machine wakes wait for it.
+   */
+  async withExclusiveHistory<T>(
+    projectId: string,
+    threadId: string,
+    op: () => Promise<T>,
+  ): Promise<T> {
+    const key = dispatchKey(projectId, threadId)
+    for (;;) {
+      const active = this.active.get(key)
+      if (!active) break
+      try {
+        await active
+      } catch {
+        // A failed turn still releases the slot.
+      }
+    }
+    const running = op()
+    this.active.set(key, running)
+    try {
+      return await running
+    } finally {
+      if (this.active.get(key) === running) this.active.delete(key)
+    }
+  }
+
   /** Permanently fence a deleted id so queued machine wakes cannot reclaim it. */
   beginThreadDeletion(projectId: string, threadId: string): void {
     this.deleting.add(dispatchKey(projectId, threadId))
@@ -279,6 +312,21 @@ export class AgentDispatcher {
   /** Undo a deletion fence when cleanup failed before the store was removed. */
   cancelThreadDeletion(projectId: string, threadId: string): void {
     this.deleting.delete(dispatchKey(projectId, threadId))
+  }
+
+  /**
+   * Claim the same per-thread exclusion boundary an agent turn uses while the
+   * visible transcript and provider history are replaced together.
+   */
+  beginThreadHistoryEdit(projectId: string, threadId: string): boolean {
+    const key = dispatchKey(projectId, threadId)
+    if (this.active.has(key) || this.deleting.has(key) || this.editingHistory.has(key)) return false
+    this.editingHistory.add(key)
+    return true
+  }
+
+  endThreadHistoryEdit(projectId: string, threadId: string): void {
+    this.editingHistory.delete(dispatchKey(projectId, threadId))
   }
 
   /** Resolve once the thread no longer owns a dispatch slot, regardless of run outcome. */
@@ -513,8 +561,12 @@ export class AgentDispatcher {
   }
 
   private assertDispatchable(projectId: string, threadId: string): void {
-    if (this.deleting.has(dispatchKey(projectId, threadId))) {
+    const key = dispatchKey(projectId, threadId)
+    if (this.deleting.has(key)) {
       throw new Error(`Thread "${threadId}" is being deleted`)
+    }
+    if (this.editingHistory.has(key)) {
+      throw new AgentTurnBusyError(threadId)
     }
   }
 

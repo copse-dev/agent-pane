@@ -36,6 +36,41 @@ describe('shellSegments', () => {
     assert.deepEqual(segments('echo a && rm -rf b'), ['echo a', 'rm -rf b', 'echo a', 'rm -rf b'])
   })
 
+  it('keeps newline-separated commands out of the preceding argv', () => {
+    assert.deepEqual(shellSegments('python3 - <<EOF\nEOF\nwc -l src/a.ts', false), [
+      ['python3', '-'],
+      ['EOF'],
+      ['wc', '-l', 'src/a.ts'],
+    ])
+    assert.deepEqual(shellSegments('node\r\nwc -l src/a.ts', false), [
+      ['node'],
+      ['wc', '-l', 'src/a.ts'],
+    ])
+  })
+
+  it('preserves quoted newlines and escaped line continuations in argv', () => {
+    assert.deepEqual(shellSegments("printf '%s' 'first\nsecond'\nnode ./build.js", false), [
+      ['printf', '%s', 'first\nsecond'],
+      ['node', './build.js'],
+    ])
+    assert.deepEqual(shellSegments('node -e "first\nsecond"\nwc -l src/a.ts', false), [
+      ['node', '-e', 'first\nsecond'],
+      ['wc', '-l', 'src/a.ts'],
+    ])
+    assert.ok(
+      shellSegments('node \\\n./build.js', false).some(
+        (argv) => argv[0] === 'node' && argv.some((arg) => arg.endsWith('./build.js')),
+      ),
+    )
+  })
+
+  it('ends a shell comment at its newline even when it contains unmatched quotes', () => {
+    assert.deepEqual(shellSegments("echo ok # don't open a quote\nnode ./build.js", false), [
+      ['echo', 'ok'],
+      ['node', './build.js'],
+    ])
+  })
+
   it('keeps a globbed operand instead of dropping the target', () => {
     // shell-quote lexes `~/*` to {op:'glob'}. Treating that as a segment boundary
     // discarded the target, so `rm -rf ~/*` reached the harm gate as a bare

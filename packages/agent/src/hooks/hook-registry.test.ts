@@ -70,10 +70,16 @@ describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary list
     )
   })
 
-  it('registers the four E1 step-boundary nudge hooks', () => {
+  it('registers the E1 step-boundary nudge hooks', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
-      ['stuck-finalize-nudge', 'loop-nudge', 'truncation-continue', 'reasoning-runaway'],
+      [
+        'stuck-finalize-nudge',
+        'loop-nudge',
+        'truncation-continue',
+        'reasoning-runaway',
+        'malformed-tool-call',
+      ],
     )
   })
 })

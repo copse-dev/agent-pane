@@ -1,13 +1,18 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { runInNewContext } from 'node:vm'
+import { Window } from 'happy-dom'
 import {
   browserSelectionShare,
   captureBrowserPageText,
+  captureBrowserPageHtml,
   captureBrowserScreenshot,
   exportCanvasArtefact,
+  exportBrowserPageHtml,
   exportBrowserPagePdf,
   shareBrowserGuestContent,
   suggestedCanvasFilename,
+  suggestedHtmlFilename,
   suggestedPdfFilename,
 } from './browser-share.ts'
 
@@ -267,5 +272,97 @@ describe('canvas HTML export', () => {
       ),
       /Only HTML canvas artefacts can be downloaded/,
     )
+  })
+})
+
+describe('browser page HTML export', () => {
+  it('captures the current DOM and names it after the page', async () => {
+    let script = ''
+    const page = await captureBrowserPageHtml({
+      getTitle: () => 'Reference page',
+      getURL: () => 'https://example.com/guide',
+      executeJavaScript: (code) => {
+        script = code
+        return Promise.resolve({
+          title: 'Reference page',
+          url: 'https://example.com/guide',
+          body: '<!doctype html>\n<html><body><h1>Guide</h1></body></html>',
+        })
+      },
+    })
+
+    assert.match(script, /documentElement\.outerHTML/)
+    assert.equal(page.body, '<!doctype html>\n<html><body><h1>Guide</h1></body></html>')
+    assert.equal(suggestedHtmlFilename(page.title, page.url), 'Reference page.html')
+  })
+
+  for (const base of ['', '<base href="../assets/">']) {
+    it(`keeps the effective source base when reopened from disk (${base || 'no base'})`, async () => {
+      const source = new Window({ url: 'https://example.com/guide/page' })
+      source.document.write(
+        `<html><head>${base}</head><body><a href="next">Next</a><img src="image.png"></body></html>`,
+      )
+      // happy-dom does not implement base URI resolution; supply the native
+      // document contract while exercising the actual capture script and DOM.
+      const effectiveBase = new URL(base ? '../assets/' : '', source.location.href).href
+      Object.defineProperty(source.document, 'baseURI', { value: effectiveBase })
+      const before = source.document.documentElement.outerHTML
+      const page = await captureBrowserPageHtml({
+        getTitle: () => 'Reference',
+        getURL: () => source.location.href,
+        executeJavaScript: (code) => {
+          const result: unknown = runInNewContext(code, {
+            document: source.document,
+            location: source.location,
+          })
+          return Promise.resolve(result)
+        },
+      })
+      const saved = new Window({ url: 'file:///tmp/saved.html' })
+      saved.document.write(page.body)
+      const savedBase = saved.document.querySelector('base')?.getAttribute('href')
+      assert.equal(savedBase, effectiveBase)
+      const link = saved.document.querySelector('a')?.getAttribute('href')
+      const image = saved.document.querySelector('img')?.getAttribute('src')
+      assert.equal(link, 'next')
+      assert.equal(image, 'image.png')
+      assert.equal(new URL(link, savedBase).href, new URL('next', effectiveBase).href)
+      assert.equal(new URL(image, savedBase).href, new URL('image.png', effectiveBase).href)
+      assert.equal(
+        source.document.documentElement.outerHTML,
+        before,
+        'capture must not mutate the live page',
+      )
+      await source.happyDOM.close()
+      await saved.happyDOM.close()
+    })
+  }
+
+  it('writes the captured document and skips capture-side effects on cancel', async () => {
+    const writes: { filePath: string; body: string }[] = []
+    const body = '<!doctype html>\n<html><body><h1>Guide</h1></body></html>'
+    const saved = await exportBrowserPageHtml(
+      {
+        getTitle: () => 'Reference page',
+        getURL: () => 'https://example.com/guide',
+        executeJavaScript: () =>
+          Promise.resolve({
+            title: 'Reference page',
+            url: 'https://example.com/guide',
+            body,
+          }),
+      },
+      (defaultFilename) => {
+        assert.equal(defaultFilename, 'Reference page.html')
+        return Promise.resolve('/tmp/out/Reference page.html')
+      },
+      (filePath, html) => {
+        writes.push({ filePath, body: html })
+        return Promise.resolve()
+      },
+    )
+
+    assert.equal(saved, '/tmp/out/Reference page.html')
+    assert.deepEqual(writes, [{ filePath: '/tmp/out/Reference page.html', body }])
   })
 })

@@ -27,8 +27,11 @@ import {
 } from '../agent-loop-guards.ts'
 import { shouldForceTextAnswer, shouldInjectLoopNudge } from '../agent-loop-escalation.ts'
 import {
+  isMalformedToolCallStopReason,
   isTruncationStopReason,
+  MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+  TRUNCATED_TOOL_CALL_NUDGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
 
@@ -39,6 +42,7 @@ export const STUCK_FINALIZE_NUDGE_HOOK_ID = 'stuck-finalize-nudge'
 export const LOOP_NUDGE_HOOK_ID = 'loop-nudge'
 export const TRUNCATION_CONTINUE_HOOK_ID = 'truncation-continue'
 export const REASONING_RUNAWAY_HOOK_ID = 'reasoning-runaway'
+export const MALFORMED_TOOL_CALL_HOOK_ID = 'malformed-tool-call'
 
 /**
  * Force a text-only answer when the conversation is under enough context
@@ -126,6 +130,26 @@ export const reasoningRunawayHook: BlockingHook<'stepBoundary'> = {
 }
 
 /**
+ * Ask the model for a much smaller call after the provider ended the stream with
+ * `tool_call_malformed` (its tool call was cut off or unparseable). Selection
+ * only: the harness owns the consecutive / per-run bounds and falls back to
+ * failing the run when they are exceeded.
+ */
+export const malformedToolCallHook: BlockingHook<'stepBoundary'> = {
+  id: MALFORMED_TOOL_CALL_HOOK_ID,
+  event: 'stepBoundary',
+  run(payload) {
+    if (payload.phase !== 'postStream') return undefined
+    if (!isMalformedToolCallStopReason(payload.stopReason)) return undefined
+    return {
+      injectContext: payload.malformedToolCallHitCeiling
+        ? TRUNCATED_TOOL_CALL_NUDGE
+        : MALFORMED_TOOL_CALL_NUDGE,
+    }
+  },
+}
+
+/**
  * Step-boundary hooks in the order the previous inline blocks ran. Order among
  * the pre-stream pair mirrors the inline order (stuck-finalize evaluated before
  * loop-nudge); the harness reads each by id, so cross-nudge order is not itself
@@ -136,4 +160,5 @@ export const STEP_BOUNDARY_HOOKS: readonly BlockingHook<'stepBoundary'>[] = [
   loopNudgeHook,
   truncationContinueHook,
   reasoningRunawayHook,
+  malformedToolCallHook,
 ]

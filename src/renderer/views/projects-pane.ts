@@ -5,10 +5,10 @@ import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
   bellIcon,
   chevronRightIcon,
-  closeIcon,
   gitMergeIcon,
   gitPullRequestIcon,
   moreHorizontalIcon,
+  moreVerticalIcon,
   plusIcon,
   runningStatusIcon,
   searchIcon,
@@ -64,6 +64,7 @@ import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
+import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
@@ -730,7 +731,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         void dismissOrphanProject(api, orphan.id)
           .then(() => {
             orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            render()
+            render(true)
             showToast('Recoverable threads hidden. They remain on disk.')
           })
           .catch((err: unknown) => {
@@ -1076,7 +1077,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return entries
   }
 
-  function render(): void {
+  function render(preserveScroll = false): void {
+    // Rebuilding the list removes its children synchronously. In Chromium that
+    // clamps the scroll container to the top while the content is empty, so the
+    // dismiss action opts into keeping the reader's position.
+    const scrollTop = preserveScroll ? list.scrollTop : 0
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
     clear(list)
@@ -1087,6 +1092,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
+      if (preserveScroll) list.scrollTop = scrollTop
       return
     }
 
@@ -1161,10 +1167,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (renaming?.threadId === thread.id) return
         switchProjectThread(store, api, project.id, thread.id)
       })
-      chatRow.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        showContextMenu(e.clientX, e.clientY, [
+      const openThreadMenu = (x: number, y: number): void => {
+        showContextMenu(x, y, [
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1180,7 +1184,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 {
                   label: 'Fork',
                   onSelect: (): void => {
-                    forkProjectThread(project.id, thread.id)
+                    showContextMenu(x, y, [
+                      { heading: 'Fork' },
+                      {
+                        label: 'Fork a copy',
+                        onSelect: (): void => {
+                          forkProjectThread(project.id, thread.id)
+                        },
+                      },
+                      {
+                        label: 'Edit thread history…',
+                        onSelect: (): void => {
+                          openThreadHistoryEditor(store, api, {
+                            projectId: project.id,
+                            threadId: thread.id,
+                          })
+                        },
+                      },
+                    ])
                   },
                 },
                 {
@@ -1217,7 +1238,30 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
               ]
             : []),
+          ...(canMutate
+            ? [
+                {
+                  label: 'Delete',
+                  disabled: getSidebarThreads(store, project.id).length <= 1,
+                  onSelect: (): void => {
+                    if (
+                      store.getState().activeProjectId !== project.id ||
+                      getSidebarThreads(store, project.id).length <= 1
+                    ) {
+                      return
+                    }
+                    void api.agent.clearHistory(project.id, thread.id)
+                    deleteThread(store, thread.id)
+                  },
+                },
+              ]
+            : []),
         ])
+      }
+      chatRow.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openThreadMenu(e.clientX, e.clientY)
       })
 
       if (thread.status === 'running') {
@@ -1253,19 +1297,23 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
 
       if (canMutate) {
-        const del = el(
+        const menuButton = el(
           'button',
-          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
-          closeIcon('ui-icon ui-icon-sm'),
+          {
+            type: 'button',
+            class: 'chat-menu-btn',
+            'aria-label': `Thread menu for ${displayTitle}`,
+            'aria-haspopup': 'menu',
+            'data-tooltip': 'Thread menu',
+          },
+          moreVerticalIcon('ui-icon ui-icon-sm'),
         )
-        del.addEventListener('click', (e) => {
+        menuButton.addEventListener('click', (e) => {
           e.stopPropagation()
-          if (getSidebarThreads(store, project.id).length > 1) {
-            void api.agent.clearHistory(project.id, thread.id)
-            deleteThread(store, thread.id)
-          }
+          const rect = menuButton.getBoundingClientRect()
+          openThreadMenu(rect.left, rect.bottom)
         })
-        chatRow.append(del)
+        chatRow.append(menuButton)
       }
       return chatRow
     }
@@ -1387,9 +1435,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             })
             // A lone run has no schedule heading of its own to carry the setup
             // button, so the row carries it directly (kept quiet like the
-            // delete button beside it — see the `.chat-row:hover` reveal rule).
-            const del = row.querySelector('.chat-delete')
-            if (del) del.before(setupBtn)
+            // menu button beside it — see the `.chat-row:hover` reveal rule).
+            const menuButton = row.querySelector('.chat-menu-btn')
+            if (menuButton) menuButton.before(setupBtn)
             else row.append(setupBtn)
             rows.append(row)
             continue
@@ -1860,6 +1908,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       prBackfillObserver = observer
       for (const { row } of prBackfillRows) observer.observe(row)
     }
+    if (preserveScroll) list.scrollTop = scrollTop
   }
 
   const unsubs = [
@@ -1869,7 +1918,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('threads_changed', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store.on('thread_status_changed', render),
+    store.on('thread_status_changed', () => {
+      render()
+    }),
     store.on('workspace_changed', () => {
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.

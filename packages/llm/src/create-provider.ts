@@ -83,6 +83,9 @@ function openAiResponsesProvider(
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    // First-party OpenAI implements strict function tools; the extra
+    // Responses-style providers below do not get the flag.
+    strictTools: true,
     ...opts,
     ...(promptCacheKey ? { promptCacheKey } : {}),
     ...OPENAI_STORE_OPT_OUT,
@@ -144,6 +147,7 @@ export function createProvider(
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
+      strictTools: true,
       ...cacheKeyOpt,
       ...tierOpt,
       ...tunedOpts(m),
@@ -175,6 +179,7 @@ export function createProvider(
     }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
+      strictTools: true,
       ...cacheKeyOpt,
       ...tierOpt,
       ...tunedOpts(id),
@@ -184,6 +189,27 @@ export function createProvider(
   throw new Error(
     'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in Settings, pick an LM Studio model, or set COPSE_PANEL_MOCK_LLM=1 for development.',
   )
+}
+
+/**
+ * `verbosity` is OpenAI's own field; every other OpenAI-compatible route
+ * declares it unsupported, and its server may reject or ignore an unknown body
+ * field. Stored or stray values are dropped at the factory, not just hidden in
+ * the settings UI.
+ */
+function withoutVerbosity(params: ModelParameters): ModelParameters {
+  const { verbosity: _verbosity, ...rest } = params
+  return rest
+}
+
+/**
+ * Wire fields that switch off thinking on local OpenAI-compatible engines: the
+ * `reasoning_effort` ladder (LM Studio, Ollama) plus the Qwen3-style chat
+ * template switch (vLLM, llama.cpp). Engines ignore the spelling they lack.
+ */
+export const LOCAL_REASONING_SUPPRESSION_BODY: Readonly<Record<string, unknown>> = {
+  reasoning_effort: 'none',
+  chat_template_kwargs: { enable_thinking: false },
 }
 
 // OpenAI-compatible local servers speak the same chat API, so we reuse
@@ -203,7 +229,8 @@ export function createLocalOpenAIProvider(
     baseURL,
     apiKey: apiKey || 'lm-studio',
     includeUsage: true,
-    params,
+    params: withoutVerbosity(params),
+    reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
   })
 }
@@ -273,8 +300,11 @@ export function createOpenRouterProvider(
   // `reasoning_effort` alias, so it normalises across upstream vendors and can
   // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
   // reasoning level is dropped from `params` to avoid sending both spellings.
+  // `verbosity` is dropped too: it is OpenAI's own field, and an aggregator's
+  // upstream may reject it.
   const {
     reasoning: _reasoning,
+    verbosity: _verbosity,
     maxOutputTokens: _maxOutputTokens,
     ...sampling
   } = opts.params ?? {}
@@ -320,10 +350,11 @@ export function createExtraCloudProvider(
   model: string,
   apiKey: string,
   approvedHosts: readonly string[] = [],
-  params: ModelParameters = {},
+  requestedParams: ModelParameters = {},
   promptCacheKey?: string,
   urlOptions: CredentialUrlOptions = {},
 ): LLMProvider {
+  const params = withoutVerbosity(requestedParams)
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL', urlOptions)
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}

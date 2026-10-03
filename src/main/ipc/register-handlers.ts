@@ -1,4 +1,5 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
@@ -39,6 +40,7 @@ import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
 import {
   captureBrowserPageText,
+  exportBrowserPageHtml,
   captureBrowserScreenshot,
   exportCanvasArtefact,
   exportBrowserPagePdf,
@@ -188,6 +190,12 @@ import {
   readVideoForPlayback,
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
+import {
+  applyThreadHistoryEdit,
+  loadThreadHistorySnapshot,
+  undoThreadHistoryEdit,
+  type ThreadHistoryEditRuntime,
+} from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -555,6 +563,7 @@ export function registerAllHandlers(
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
+  threadHistoryEditRuntime: ThreadHistoryEditRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
@@ -820,6 +829,24 @@ export function registerAllHandlers(
       },
       async (filePath, data) => {
         await writeFile(filePath, data)
+      },
+    )
+  })
+
+  ipcMain.handle('browser:export-page', async (event, rawId: unknown) => {
+    const contents = interactiveBrowserContents(event, rawId)
+    return await exportBrowserPageHtml(
+      contents,
+      async (defaultFilename) => {
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Download page',
+          defaultPath: defaultFilename,
+          filters: [{ name: 'HTML document', extensions: ['html'] }],
+        })
+        return result.canceled || !result.filePath ? null : result.filePath
+      },
+      async (filePath, body) => {
+        await writeFile(filePath, body, 'utf8')
       },
     )
   })
@@ -1378,6 +1405,37 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+
+  ipcMain.handle('chat-gpt-plan:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().status()
+  })
+  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signIn(
+      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
+    )
+  })
+  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
+    assertMainFrameSender(event, win)
+    getChatGptPlanService().cancelSignIn()
+  })
+  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:models', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().models()
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {
@@ -1941,6 +1999,48 @@ export function registerAllHandlers(
         [projectId, sourceThreadId, targetThreadId, throughMessageId],
       )
       return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
+  ipcMain.handle('threads:history-snapshot', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadHistorySnapshot(pid, tid)
+  })
+  ipcMain.handle(
+    'threads:edit-history',
+    (event, projectId: unknown, threadId: unknown, request: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            expectedRevision: z.string().length(64),
+            messages: z
+              .array(
+                z.object({
+                  id: zNonEmptyString.max(256),
+                  content: z.string().max(1_000_000),
+                  included: z.boolean(),
+                }),
+              )
+              .max(10_000),
+          }),
+        ]),
+        [projectId, threadId, request],
+      )
+      return applyThreadHistoryEdit(pid, tid, payload, threadHistoryEditRuntime)
+    },
+  )
+  ipcMain.handle(
+    'threads:undo-history-edit',
+    (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, revision] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().length(64)]),
+        [projectId, threadId, expectedRevision],
+      )
+      return undoThreadHistoryEdit(pid, tid, revision, threadHistoryEditRuntime)
     },
   )
   // The whole thread directory, zipped — the archive counterpart to the
@@ -3286,24 +3386,29 @@ export function registerAllHandlers(
       win.webContents.send('workspace:opened', root)
       return root
     })
-    ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
+    ipcMain.handle('test:requestAcpPackageInstallApproval', (event, rawScenario: unknown) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
-    })
-    ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
-      assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
-      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
-      return requestAcpPackageInstallApproval([
-        {
-          agent: codex,
-          action: 'upgrade',
-          fromVersion: '1.1.0',
-          toVersion: '1.1.7',
-        },
-      ])
+      // Fixture at the detection boundary; no global package mutation runs here.
+      const scenario = parseIpcArgs(
+        z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
+        [rawScenario],
+      )
+      if (scenario === 'mixed-bootstrap') {
+        const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
+        if (!claude) throw new IpcValidationError('Claude ACP preset is missing')
+        return requestAcpPackageInstallApproval(
+          [
+            { agent: claude, action: 'install' },
+            { agent: codex, action: 'upgrade', fromVersion: '1.1.0', toVersion: '1.1.7' },
+          ],
+          false,
+        )
+      }
+      return scenario === 'firewall-bootstrap'
+        ? requestAcpPackageInstallApproval([{ agent: codex, action: 'upgrade' }], false)
+        : requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
     })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)

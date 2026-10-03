@@ -1,3 +1,4 @@
+import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
@@ -23,6 +24,7 @@ const DEMO_CODEX_ACP_AGENT = {
 export interface DemoScenario {
   id: string
   label: string
+  chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
@@ -85,6 +87,7 @@ export interface DemoScenario {
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
+    threadId?: string
     title: string
     body: string
     bodyAdvice?: string
@@ -1188,6 +1191,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'approval-thread-switch-scroll',
+    label: 'Switch between threads awaiting permission',
+    project: project('demo-approval-scroll-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: ['a', 'b'].map((suffix): Thread => ({
+      id: `demo-approval-scroll-${suffix}`,
+      title: `Permission wait ${suffix.toUpperCase()}`,
+      status: 'running',
+      messages: Array.from({ length: 20 }, (_, index) => ({
+        id: `approval-scroll-${suffix}-${String(index)}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content:
+          index === 19
+            ? `The checks are ready. I need permission to run command ${suffix.toUpperCase()}.`
+            : index % 2 === 0
+              ? `Review step ${String(index / 2 + 1)} for thread ${suffix.toUpperCase()}.`
+              : 'I checked the relevant code and recorded the result. The next check will confirm the remaining behavior.',
+        toolCalls:
+          index === 19
+            ? [
+                {
+                  id: `approval-scroll-tool-${suffix}`,
+                  name: 'run_shell',
+                  args: { command: `node scripts/check-${suffix}.mjs` },
+                  status: 'running',
+                  result: '',
+                },
+              ]
+            : [],
+        createdAt: FIXED_TIME + index,
+      })),
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME,
+      updatedAt: FIXED_TIME,
+    })),
+    approvalRequests: ['a', 'b'].map((suffix) => ({
+      id: `approval-scroll-request-${suffix}`,
+      threadId: `demo-approval-scroll-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: `node scripts/check-${suffix}.mjs`,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+      type: 'shell',
+    })),
+  },
+  {
     id: 'approval-light-accent',
     label: 'Light-theme approval with a bright accent',
     project: project('demo-approval-light-accent-project'),
@@ -1304,6 +1352,82 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-fresh',
+    label: 'Product announcements — fresh',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: false, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-existing',
+    label: 'Product announcements — existing',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-update',
+    label: 'Product announcements — update',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-seen',
+    label: 'Product announcements — seen',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released', 'demo-announcements-ready'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
       },
     ],
   },
@@ -1809,6 +1933,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Roadmap layout bounds',
         status: 'idle',
         messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'chatgpt-plan-settings',
+    label: 'ChatGPT plan onboarding and account options',
+    project: project('demo-chatgpt-plan-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    threads: [
+      {
+        id: 'demo-chatgpt-plan-thread',
+        title: 'ChatGPT plan',
+        model: 'chatgpt-plan:demo-plan-account#gpt-5.6-luna',
+        status: 'idle',
+        messages: [
+          {
+            id: 'plan-limit',
+            role: 'assistant',
+            toolCalls: [],
+            content:
+              '> [!CAUTION]\n> ChatGPT plan usage limit reached. Review your plan or Copse’s allowance.\n>\n> [Manage usage](https://chatgpt.com/settings/usage)',
+            createdAt: FIXED_TIME,
+          },
+        ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,

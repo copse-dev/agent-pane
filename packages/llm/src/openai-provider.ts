@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions'
 import type {
   ImageDetail,
   LLMProvider,
@@ -12,9 +13,12 @@ import { withAppAttribution } from './app-attribution.ts'
 import {
   isImageUnsupportedError,
   isOutputCeilingRejectedError,
+  isStrictSchemaRejectedError,
   yieldStreamWithRetry,
 } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
+import { prepareStrictTools, type StrictToolSet } from './strict-tool-schema.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
@@ -22,49 +26,14 @@ import { openAiParameterFields, type ModelParameters } from './model-parameters.
 import { markOpenRouterCacheBreakpoints } from './openrouter-prompt-cache.ts'
 import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
 
+/** A function tool as sent on Chat Completions, plus OpenRouter's block-cache marker. */
+type WireFunctionTool = ChatCompletionFunctionTool & { cache_control?: { type: 'ephemeral' } }
+
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
-
-function normalizeExclusiveBound(
-  schema: Record<string, unknown>,
-  inclusiveKey: 'minimum' | 'maximum',
-  exclusiveKey: 'exclusiveMinimum' | 'exclusiveMaximum',
-): void {
-  const exclusive = schema[exclusiveKey]
-  if (typeof exclusive !== 'boolean') return
-  const inclusive = schema[inclusiveKey]
-  if (exclusive && typeof inclusive === 'number') {
-    schema[exclusiveKey] = inclusive
-    Reflect.deleteProperty(schema, inclusiveKey)
-    return
-  }
-  Reflect.deleteProperty(schema, exclusiveKey)
-}
-
-/**
- * OpenAPI 3 represents exclusive numeric bounds as a boolean beside
- * `minimum`/`maximum`; current JSON Schema represents the exclusive keyword as
- * the bound itself. Some OpenAI-compatible servers validate tool parameters
- * against the current metaschema and reject the legacy boolean form before the
- * model runs. Clone and normalize recursively at this transport boundary so the
- * registry and the caller-owned schema remain unchanged.
- */
-function normalizeOpenAIToolSchema(value: Record<string, unknown>): Record<string, unknown>
-function normalizeOpenAIToolSchema(value: unknown): unknown
-function normalizeOpenAIToolSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => normalizeOpenAIToolSchema(item))
-  if (!value || typeof value !== 'object') return value
-
-  const normalized: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value)) {
-    normalized[key] = normalizeOpenAIToolSchema(child)
-  }
-  normalizeExclusiveBound(normalized, 'minimum', 'exclusiveMinimum')
-  normalizeExclusiveBound(normalized, 'maximum', 'exclusiveMaximum')
-  return normalized
-}
 
 function* yieldAssembledToolCalls(
   toolCallBuilders: Map<number, ToolCallBuilder>,
+  restoreArgs: ((toolName: string, args: unknown) => unknown) | undefined,
 ): Generator<ProviderStreamChunk> {
   for (const [, builder] of toolCallBuilders) {
     const parsed = parseToolArgs(builder.argsJson)
@@ -76,7 +45,7 @@ function* yieldAssembledToolCalls(
         // once the whole call has been assembled.
         id: toolCallIdOrSynthesized(builder.id),
         name: builder.name,
-        args: parsed.args,
+        args: restoreArgs && !parsed.error ? restoreArgs(builder.name, parsed.args) : parsed.args,
         ...(parsed.error ? { argsError: parsed.error } : {}),
       },
     }
@@ -106,6 +75,12 @@ export class OpenAIProvider implements LLMProvider {
       apiKey?: string
       includeUsage?: boolean
       extraBody?: Record<string, unknown>
+      /**
+       * Body fields merged into a call that sets `suppressReasoning`. Only
+       * servers known to accept them (local OpenAI-compatible engines) pass
+       * this; hosted APIs would reject the unknown or unsupported values.
+       */
+      reasoningSuppressionBody?: Record<string, unknown>
       promptCacheKey?: string
       defaultHeaders?: Readonly<Record<string, string>>
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
@@ -114,11 +89,14 @@ export class OpenAIProvider implements LLMProvider {
       maxOutputTokens?: number
       /** Explicit block caching, enabled only for Claude through OpenRouter. */
       openRouterCache?: boolean
+      /** First-party OpenAI only: send `strict: true` on tools whose schema qualifies. */
+      strictTools?: boolean
     } = {},
   ) {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
+    this.reasoningSuppressionBody = opts.reasoningSuppressionBody
     this.promptCacheKey = opts.promptCacheKey
     this.cacheDiagnostics = new PromptCacheDiagnostics(
       'chat-completions',
@@ -129,6 +107,7 @@ export class OpenAIProvider implements LLMProvider {
     this.serviceTier = opts.serviceTier
     this.maxOutputTokens = opts.maxOutputTokens
     this.openRouterCache = opts.openRouterCache ?? false
+    this.strictTools = opts.strictTools ?? false
     // Already sanitized for the selected model by the caller; empty unless the
     // user tuned this model, so an untouched request body is unchanged.
     this.tuned = openAiParameterFields(opts.params ?? {})
@@ -146,7 +125,9 @@ export class OpenAIProvider implements LLMProvider {
   private readonly includeUsage: boolean
   private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly openRouterCache: boolean
+  private strictTools: boolean
   private readonly extraBody: Record<string, unknown> | undefined
+  private readonly reasoningSuppressionBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
   private readonly serviceTier: ServiceTier | undefined
   private readonly tuned: ReturnType<typeof openAiParameterFields>
@@ -168,19 +149,35 @@ export class OpenAIProvider implements LLMProvider {
     const self = this
     return yieldStreamWithRetry(
       async function* () {
-        const mappedTools = tools.length
-          ? tools.map((t, i) => ({
-              type: 'function' as const,
-              function: {
-                name: t.name,
-                description: t.description,
-                parameters: normalizeOpenAIToolSchema(t.parameters),
-              },
-              ...(self.openRouterCache && i === tools.length - 1
-                ? { cache_control: { type: 'ephemeral' as const } }
-                : {}),
-            }))
-          : undefined
+        // `strict: true` only where the caller vouches for the endpoint; see
+        // `strictTools`. Rebuilt per attempt so a rejected schema can fall back.
+        let strictOn = self.strictTools
+        const buildTools = (): {
+          mapped: WireFunctionTool[] | undefined
+          restore: StrictToolSet['restoreArgs'] | undefined
+        } => {
+          const strictSet = strictOn ? prepareStrictTools(tools, true) : null
+          const mapped = tools.length
+            ? tools.map((t, i) => {
+                const strict = strictSet?.tools[i]
+                return {
+                  type: 'function' as const,
+                  function: {
+                    name: t.name,
+                    description: t.description,
+                    parameters: strict?.strict
+                      ? strict.parameters
+                      : normalizeOpenAIToolSchema(t.parameters),
+                    ...(strict ? { strict: strict.strict } : {}),
+                  },
+                  ...(self.openRouterCache && i === tools.length - 1
+                    ? { cache_control: { type: 'ephemeral' as const } }
+                    : {}),
+                }
+              })
+            : undefined
+          return { mapped, restore: strictSet?.restoreArgs }
+        }
         // Two request-changing retries, each taken at most once. Deliberately
         // not part of `isRetryableStreamError`: those are blind replays, and
         // these send something different.
@@ -198,6 +195,7 @@ export class OpenAIProvider implements LLMProvider {
         let droppedCeiling = false
         let stream
         let reportCache: ((usage: ModelUsage | null) => void) | undefined
+        let mappedTools = buildTools()
         for (;;) {
           try {
             const request = {
@@ -207,7 +205,7 @@ export class OpenAIProvider implements LLMProvider {
                 ? markOpenRouterCacheBreakpoints(toOpenAIMessages(outbound))
                 : toOpenAIMessages(outbound),
               ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
-              ...(mappedTools ? { tools: mappedTools } : {}),
+              ...(mappedTools.mapped ? { tools: mappedTools.mapped } : {}),
               ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
               ...serviceTierBody(self.serviceTier),
               ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
@@ -216,6 +214,7 @@ export class OpenAIProvider implements LLMProvider {
               // invariant and must not be weakened back to `auto`.
               ...self.tuned,
               ...(self.extraBody ?? {}),
+              ...(options?.suppressReasoning ? (self.reasoningSuppressionBody ?? {}) : {}),
               ...(options?.toolChoice
                 ? {
                     tool_choice: {
@@ -233,6 +232,12 @@ export class OpenAIProvider implements LLMProvider {
             stream = await client.chat.completions.create(request, { signal })
             break
           } catch (err) {
+            if (strictOn && isStrictSchemaRejectedError(err)) {
+              strictOn = false
+              self.strictTools = false
+              mappedTools = buildTools()
+              continue
+            }
             if (!droppedImages && isImageUnsupportedError(err)) {
               droppedImages = true
               outbound = dropImageContent(messages)
@@ -318,13 +323,13 @@ export class OpenAIProvider implements LLMProvider {
           if (reason) finishReason = reason
 
           if (reason === 'tool_calls') {
-            yield* yieldAssembledToolCalls(toolCallBuilders)
+            yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
             toolCallBuilders.clear()
           }
         }
         // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
         if (toolCallBuilders.size > 0) {
-          yield* yieldAssembledToolCalls(toolCallBuilders)
+          yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
           toolCallBuilders.clear()
         }
         // Emit usage per-stream so consumers attribute it to this exact stream

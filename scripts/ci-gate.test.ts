@@ -40,6 +40,12 @@ const successfulPr = {
   ANY_CANCELLED: 'false',
   PRECHECK_RESULT: 'success',
   CHECK_RESULT: 'success',
+  MERGE_GROUP: 'false',
+  BUILD_RESULT: 'success',
+  REVIEW_CELL_REQUIRED: 'false',
+  REVIEW_CELL_RESULT: 'skipped',
+  QUEUE_BASE_REF: 'refs/heads/main',
+  BENCH_RESULT: 'skipped',
   E2E_REQUIRED: 'true',
   E2E_SHARD_TOTAL: '8',
   E2E_RESULT: 'success',
@@ -64,6 +70,8 @@ function gate(overrides: Record<string, string> = {}): number | null {
 describe('required CI gate bindings', () => {
   it('receives cancellation and dependency results directly from Actions, without shell interpolation', () => {
     assert.deepEqual(bindings, {
+      METADATA_ONLY:
+        "${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}",
       FORK_PR:
         "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
       MODE: '${{ needs.precheck.outputs.mode }}',
@@ -71,8 +79,14 @@ describe('required CI gate bindings', () => {
       ANY_CANCELLED: "${{ contains(needs.*.result, 'cancelled') }}",
       PRECHECK_RESULT: '${{ needs.precheck.result }}',
       CHECK_RESULT: '${{ needs.check.result }}',
+      MERGE_GROUP: "${{ github.event_name == 'merge_group' }}",
+      BUILD_RESULT: '${{ needs.build.result }}',
+      REVIEW_CELL_REQUIRED: '${{ needs.precheck.outputs.review_cell_required }}',
+      REVIEW_CELL_RESULT: '${{ needs.review-cell.result }}',
+      QUEUE_BASE_REF: '${{ github.event.merge_group.base_ref }}',
+      BENCH_RESULT: '${{ needs.bench.result }}',
       E2E_REQUIRED:
-        "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}",
+        "${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full'))) }}",
       E2E_SHARD_TOTAL: '${{ needs.precheck.outputs.e2e_shard_total }}',
       E2E_RESULT: '${{ needs.e2e.result }}',
       NEEDS_JSON: '${{ toJSON(needs) }}',
@@ -82,6 +96,15 @@ describe('required CI gate bindings', () => {
 })
 
 describe('required CI gate decisions', { skip: process.platform === 'win32' }, () => {
+  it('allows the separately named metadata no-op only for the exact trusted true binding', () => {
+    const invalid = { ANY_FAILURE: 'true', PRECHECK_RESULT: 'skipped', CHECK_RESULT: 'skipped' }
+    assert.equal(gate({ ...invalid, METADATA_ONLY: 'true' }), 0)
+    for (const value of ['', 'false', 'TRUE', 'unknown']) {
+      assert.equal(gate({ ...invalid, METADATA_ONLY: value }), 1)
+    }
+    assert.equal(gate(invalid), 1)
+  })
+
   it('fails the whole-run cancellation step before dependency acceptance can run', () => {
     const result = spawnSync('bash', ['-e', '-c', cancellationScript], {
       encoding: 'utf8',
@@ -139,6 +162,89 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
     assert.equal(gate({ MODE: 'skip', E2E_SHARD_TOTAL: '0', E2E_RESULT: 'skipped' }), 0)
     assert.equal(gate({ E2E_SHARD_TOTAL: '0', E2E_RESULT: 'skipped' }), 0)
     assert.equal(gate({ E2E_REQUIRED: 'false', E2E_RESULT: 'skipped' }), 0)
+  })
+
+  it('requires the queue build even when the oracle skips e2e', () => {
+    for (const mode of ['full', 'subset', 'skip']) {
+      for (const result of ['failure', 'cancelled', 'skipped', '']) {
+        assert.equal(gate({ MERGE_GROUP: 'true', MODE: mode, BUILD_RESULT: result }), 1)
+      }
+    }
+    assert.equal(
+      gate({ MERGE_GROUP: 'true', MODE: 'skip', E2E_SHARD_TOTAL: '0', E2E_RESULT: 'skipped' }),
+      0,
+    )
+  })
+
+  it('requires a positive shard count for every queue plan that requests e2e', () => {
+    for (const mode of ['full', 'subset']) {
+      assert.equal(gate({ MERGE_GROUP: 'true', MODE: mode }), 0)
+      for (const total of ['0', '00', '', '-1', 'invalid']) {
+        assert.equal(gate({ MERGE_GROUP: 'true', MODE: mode, E2E_SHARD_TOTAL: total }), 1)
+      }
+    }
+  })
+
+  it('rejects queue e2e that did not successfully execute', () => {
+    for (const mode of ['full', 'subset']) {
+      for (const result of ['failure', 'cancelled', 'skipped', '']) {
+        assert.equal(gate({ MERGE_GROUP: 'true', MODE: mode, E2E_RESULT: result }), 1)
+      }
+    }
+  })
+
+  it('rejects missing queue base or reviewer-cell metadata', () => {
+    for (const required of ['', 'invalid']) {
+      assert.equal(gate({ MERGE_GROUP: 'true', REVIEW_CELL_REQUIRED: required }), 1)
+    }
+    for (const base of ['', 'main', 'refs/heads/unknown']) {
+      assert.equal(gate({ MERGE_GROUP: 'true', QUEUE_BASE_REF: base }), 1)
+    }
+  })
+
+  it('requires queue reviewer-cell conformance when the plan demands it', () => {
+    for (const mode of ['full', 'subset', 'skip']) {
+      assert.equal(
+        gate({
+          MERGE_GROUP: 'true',
+          MODE: mode,
+          REVIEW_CELL_REQUIRED: 'true',
+          REVIEW_CELL_RESULT: 'success',
+        }),
+        0,
+      )
+      for (const result of ['failure', 'cancelled', 'skipped', '']) {
+        assert.equal(
+          gate({
+            MERGE_GROUP: 'true',
+            MODE: mode,
+            REVIEW_CELL_REQUIRED: 'true',
+            REVIEW_CELL_RESULT: result,
+          }),
+          1,
+        )
+      }
+    }
+  })
+
+  it('requires benchmarks on release queue groups but permits intentional main skips', () => {
+    assert.equal(gate({ MERGE_GROUP: 'true', BENCH_RESULT: 'skipped' }), 0)
+    assert.equal(
+      gate({ MERGE_GROUP: 'true', QUEUE_BASE_REF: 'refs/heads/release', BENCH_RESULT: 'success' }),
+      0,
+    )
+    for (const result of ['failure', 'cancelled', 'skipped', '']) {
+      assert.equal(
+        gate({ MERGE_GROUP: 'true', QUEUE_BASE_REF: 'refs/heads/release', BENCH_RESULT: result }),
+        1,
+      )
+    }
+  })
+
+  it('rejects canceled queue dependencies even when e2e was intentionally skipped', () => {
+    for (const mode of ['full', 'subset', 'skip']) {
+      assert.equal(gate({ MERGE_GROUP: 'true', MODE: mode, ANY_CANCELLED: 'true' }), 1)
+    }
   })
 
   it('requires successful e2e when the PR dispatch contract demands it', () => {

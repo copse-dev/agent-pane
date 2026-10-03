@@ -1,5 +1,4 @@
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
-import { randomBytes } from 'node:crypto'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { execFileSync } from 'node:child_process'
@@ -16,6 +15,7 @@ import {
   adoptCarryOut,
   assertThreadContainerEngine,
   buildWorkerImage,
+  hasRecordedRuns,
   loadCarryOutForAdoption,
   loadRunForContinuation,
   newRuntimeId,
@@ -30,6 +30,7 @@ import {
   type ThreadContainerRequest,
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
+import type { ThreadContainerEngine } from './container-engine.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -49,14 +50,20 @@ const LOG_TAIL = 60
 
 interface RunDependencies {
   run: typeof runThreadInContainer
-  ensureImage: () => Promise<void>
+  /** Build the worker image on `engine` unless the one there is this build's. */
+  ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
-   * Reachable Docker daemon for this product path. Injected so tests can
-   * refuse a start without spawning docker; production uses
-   * {@link assertThreadContainerEngine}.
+   * The engine a run will use (Docker, or Apple container on Apple silicon),
+   * or a readable refusal. Asked once per run; the answer is passed on, never
+   * asked again mid-run. Injected so tests can refuse a start without spawning
+   * an engine CLI; production uses {@link assertThreadContainerEngine}.
    */
-  assertEngine: () => void | Promise<void>
-  /** Force-remove a live run's container; the runner's wait then settles. */
+  assertEngine: () => Promise<ThreadContainerEngine>
+  /**
+   * Force-remove a live run's container; the runner's wait then settles.
+   * Without an engine (a run this session did not start) every engine that is
+   * up is asked.
+   */
   stop: typeof teardownRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
@@ -65,6 +72,12 @@ interface RunDependencies {
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
   /** Remove what earlier app sessions left behind; see {@link sweepOrphanedRuntimes}. */
   sweep: typeof sweepOrphanedRuntimes
+  /**
+   * Whether the start-up sweep has anything to look for: the feature is on,
+   * or this profile ran a container before it was turned off. Otherwise the
+   * sweep would start the Docker CLI on every launch for a feature that is off.
+   */
+  sweepWanted: () => boolean
   /** Apply a run's commits to a checkout; see {@link adoptCarryOut}. */
   adopt: typeof adoptCarryOut
   /** A finished run's ref and base from its record on disk, for a run this session did not start. */
@@ -77,6 +90,7 @@ const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
   stop: teardownRuntime,
   sweep: sweepOrphanedRuntimes,
+  sweepWanted: () => getSetting<boolean>('containerRunsEnabled', false) || hasRecordedRuns(),
   adopt: adoptCarryOut,
   loadCarryOut: loadCarryOutForAdoption,
   loadContinuation: loadRunForContinuation,
@@ -84,10 +98,10 @@ const productionDependencies: RunDependencies = {
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
-  ensureImage: async (): Promise<void> => {
+  ensureImage: async (engine): Promise<void> => {
     const wanted = workerBuildFingerprint()
-    if ((await workerImageFingerprint(WORKER_IMAGE)) === wanted) return
-    await buildWorkerImage({ image: WORKER_IMAGE })
+    if ((await workerImageFingerprint(WORKER_IMAGE, engine)) === wanted) return
+    await buildWorkerImage({ image: WORKER_IMAGE, engine })
   },
   resolveContext: resolveThreadExecutionContext,
 }
@@ -125,8 +139,12 @@ export class ContainerRunService {
   >()
   /** One per live run: aborted on stop, so the runner can refuse to create the container. */
   private readonly stopSignals = new Map<string, AbortController>()
+  /** The engine each run this session started is on, by runtime id, for its stop. */
+  private readonly engines = new Map<string, ThreadContainerEngine>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
+  /** The one start-up sweep; later windows share it rather than sweeping again. */
+  private orphanSweep: Promise<OrphanSweep | null> | null = null
 
   constructor(deps: Partial<RunDependencies> = {}) {
     this.deps = { ...productionDependencies, ...deps }
@@ -140,7 +158,7 @@ export class ContainerRunService {
       if (progress?.runtimeId === task.processHandleId) {
         await this.stopRuntime(task.threadId)
       } else if (task.processHandleId) {
-        await this.deps.stop(task.processHandleId)
+        await this.deps.stop(task.processHandleId, this.engines.get(task.processHandleId))
       }
     })
     this.supervisor = supervisor
@@ -162,8 +180,19 @@ export class ContainerRunService {
    * that this process did not start is an orphan: a container and a volume
    * of several gigabytes from a run the previous session quit on. Docker
    * being absent is not an error here; there is nothing to sweep.
+   *
+   * Every window asks, and only the first ask sweeps: a later sweep could
+   * take a run this session just created, and not yet started, for an
+   * orphan. A profile that never ran a container, with the feature off, does
+   * not start Docker at all.
    */
-  async sweepOrphans(): Promise<OrphanSweep | null> {
+  sweepOrphans(): Promise<OrphanSweep | null> {
+    this.orphanSweep ??= this.sweepOnce()
+    return this.orphanSweep
+  }
+
+  private async sweepOnce(): Promise<OrphanSweep | null> {
+    if (!this.deps.sweepWanted()) return null
     try {
       const sweep = await this.deps.sweep()
       if (sweep.removed.length > 0 || sweep.failed.length > 0) {
@@ -240,7 +269,7 @@ export class ContainerRunService {
       log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
     })
     if (progress.runtimeId !== null && progress.phase !== 'building-image') {
-      const outcome = await this.deps.stop(progress.runtimeId)
+      const outcome = await this.deps.stop(progress.runtimeId, this.engines.get(progress.runtimeId))
       if (outcome === 'failed') {
         this.update(progress, {
           log: [...progress.log, '[thread-container] the container could not be removed'].slice(
@@ -346,9 +375,10 @@ export class ContainerRunService {
         ...(request.extraEgress ?? []),
       ]),
     ]
-    // Decided before Docker is touched: a down daemon (or Apple-only host) must
+    // Decided before any engine is touched: a host with neither engine up must
     // fail here with a recovery path, not mid-build as a raw socket error.
-    await this.deps.assertEngine()
+    // The answer is the engine for the whole run.
+    const engine = await this.deps.assertEngine()
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -427,7 +457,7 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, checkout.root, progress, continuation, stopSignal)
+    void this.drive(request, plan, engine, checkout.root, progress, continuation, stopSignal)
     return first
   }
 
@@ -474,17 +504,17 @@ export class ContainerRunService {
   private async drive(
     request: ContainerRunRequest,
     plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
+    engine: ThreadContainerEngine,
     workspace: string,
     progress: ContainerRunProgress,
     continuation: RunContinuation | null,
     stopSignal: AbortController,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
-    // The key travels as an environment variable the runner names on the
-    // `docker run` command line, so neither the value nor a host variable name
-    // appears in argv or in the run's files; it is removed once the container
-    // is up.
-    const keyEnv = `COPSE_CONTAINER_RUN_KEY_${randomBytes(4).toString('hex').toUpperCase()}`
+    this.engines.set(runtimeId, engine)
+    // The key stays in memory: the runner hands it to the guest over the
+    // container's stdio link (decision A17). This process's environment, and
+    // so every terminal or tool it spawns meanwhile, never holds it.
     const apiKey = plan.apiKey
     const log = (line: string): void => {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
@@ -524,12 +554,11 @@ export class ContainerRunService {
         taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
-      await this.deps.ensureImage()
+      await this.deps.ensureImage(engine)
       if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
       this.update(progress, { phase: 'starting' })
-      if (apiKey) process.env[keyEnv] = apiKey
       const runRequest: ThreadContainerRequest = {
         workspace,
         threadId: request.threadId,
@@ -547,11 +576,12 @@ export class ContainerRunService {
               ...(plan.egressResolve ? { egressResolve: plan.egressResolve } : {}),
             }
           : { acp: plan.harness }),
-        ...(apiKey ? { apiKeyEnv: keyEnv } : {}),
+        ...(apiKey ? { apiKey } : {}),
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
+        engine,
       }
       const record = await this.deps.run(runRequest, {
         runtimeId,
@@ -562,10 +592,6 @@ export class ContainerRunService {
           }
         },
         signal: stopSignal.signal,
-        onStarted: () => {
-          // The container has the key now; the host process no longer needs it.
-          process.env[keyEnv] = ''
-        },
       })
       const outcome = judgeRun(record)
       // A run the user stopped is not a guest failure; say what happened.
@@ -584,7 +610,6 @@ export class ContainerRunService {
         error: error instanceof Error ? error.message : String(error),
       })
     } finally {
-      process.env[keyEnv] = ''
       if (supervisor && taskId) {
         try {
           if (stoppedByUser()) await supervisor.cancel(request.projectId, taskId)

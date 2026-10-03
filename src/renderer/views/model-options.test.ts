@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
@@ -13,11 +14,50 @@ import {
 } from './model-options.ts'
 import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import type { ModelCoverage } from './model-coverage.ts'
+
+describe('native ChatGPT plan picker', () => {
+  it('offers subscription models without an API key and preserves their registration', async () => {
+    const base = mockApi()
+    const api = {
+      ...base,
+      chatGptPlan: {
+        ...base.chatGptPlan,
+        models: async (): ReturnType<ApiClient['chatGptPlan']['models']> => ({
+          clientId: 'oaiapp_account',
+          models: [{ slug: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }],
+        }),
+      },
+    }
+    const options = await fetchModelOptions(api, '')
+    const plan = options.find((option) => option.group === 'ChatGPT plan')
+    assert.ok(plan)
+    assert.equal(plan.value, 'chatgpt-plan:oaiapp_account#gpt-6.1-sol')
+    assert.equal(plan.label, 'GPT-6.1 Sol · ChatGPT plan')
+    assert.equal(
+      options.some((option) => option.value === 'gpt-6.1-sol'),
+      false,
+    )
+  })
+  it('retains a disconnected selection as disabled instead of substituting API billing', async () => {
+    const current = 'chatgpt-plan:oaiapp_old#gpt-6.1-sol'
+    const options = await fetchModelOptions(mockApi(), current)
+    const plan = options.find((option) => option.value === current)
+    assert.ok(plan)
+    assert.equal(plan.disabled, true)
+    assert.match(plan.label, /ChatGPT plan/)
+  })
+})
 
 interface MockOpts {
   available?: Record<string, boolean>
   extraProviders?: ExtraProvider[]
-  openRouterModels?: Array<{ id: string; name: string }>
+  openRouterModels?: Array<{
+    id: string
+    name: string
+    inputPricePerMTok?: number | null
+    outputPricePerMTok?: number | null
+  }>
   cursorCloudModels?: Array<{ id: string; label: string }>
   lmStudioModels?: string[]
   lmStudioModelInfo?: Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>
@@ -28,6 +68,7 @@ interface MockOpts {
   acpAgents?: AcpAgentConfig[]
   pluginModels?: Array<{ id: string; label: string; group?: string }>
   pluginEnabled?: boolean
+  planUsage?: PlanUsageSnapshot
 }
 
 // availableProviders() returns explicit booleans for every provider; mirror that
@@ -62,6 +103,10 @@ function mockApi(opts: MockOpts = {}): ApiClient {
     const base = createFakeApi()
     return {
       ...base,
+      usage: {
+        ...base.usage,
+        getPlanUsage: async () => opts.planUsage ?? { checkedAt: '', providers: [] },
+      },
       settings: {
         ...base['settings'],
         availableProviders: async () => ({ ...ALL_UNCONFIGURED, ...(opts.available ?? {}) }),
@@ -80,8 +125,8 @@ function mockApi(opts: MockOpts = {}): ApiClient {
         models: async () =>
           (opts.openRouterModels ?? []).map((model) => ({
             ...model,
-            inputPricePerMTok: null,
-            outputPricePerMTok: null,
+            inputPricePerMTok: model.inputPricePerMTok ?? null,
+            outputPricePerMTok: model.outputPricePerMTok ?? null,
           })),
       },
       remoteAgent: {
@@ -132,6 +177,102 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('marks only catalog routes with both known zero token prices as free', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        openRouterModels: [
+          { id: 'vendor/zero', name: 'Zero', inputPricePerMTok: 0, outputPricePerMTok: 0 },
+          {
+            id: 'vendor/input-paid',
+            name: 'Input paid',
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 0,
+          },
+          {
+            id: 'vendor/output-paid',
+            name: 'Output paid',
+            inputPricePerMTok: 0,
+            outputPricePerMTok: 1,
+          },
+          { id: 'vendor/unknown:free', name: 'Free in name', inputPricePerMTok: 0 },
+          {
+            id: 'vendor/router:free',
+            name: 'Free router',
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 1,
+          },
+        ],
+        openRouterModelSetting: 'vendor/custom:free',
+      }),
+      '',
+    )
+    const coverage = (id: string): ModelCoverage | undefined =>
+      options.find((option) => option.value === `openrouter:${id}`)?.coverage
+    assert.equal(coverage('vendor/zero'), 'free')
+    for (const id of [
+      'vendor/input-paid',
+      'vendor/output-paid',
+      'vendor/unknown:free',
+      'vendor/router:free',
+      'vendor/custom:free',
+    ]) {
+      assert.equal(coverage(id), 'paid', id)
+    }
+  })
+
+  it('attaches plan coverage to the agent route without covering the same API model', async () => {
+    const api = mockApi({
+      available: { anthropic: true },
+      lmStudioModels: ['qwen-local'],
+      acpAgents: [
+        {
+          id: 'claude-acp',
+          title: 'Claude Code',
+          command: 'claude-agent-acp',
+          enabled: true,
+          availableModels: [{ value: 'sonnet', label: 'Claude Sonnet 4.6' }],
+        },
+      ],
+      planUsage: {
+        checkedAt: '2026-10-01T00:00:00Z',
+        providers: [
+          {
+            provider: 'claude',
+            status: 'ok',
+            usage: {
+              provider: 'claude',
+              plan: 'Max',
+              checkedAt: '2026-10-01T00:00:00Z',
+              windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 20, resetsAt: null }],
+            },
+          },
+        ],
+      },
+    })
+    const options = await fetchModelOptions(api, '')
+    assert.equal(
+      options.find((option) => option.value === 'acp:claude-acp#sonnet')?.coverage,
+      'plan',
+    )
+    assert.equal(options.find((option) => option.value === 'claude-sonnet-4-6')?.coverage, 'paid')
+    assert.equal(
+      options.find((option) => option.value === 'lmstudio:qwen-local')?.coverage,
+      'local',
+    )
+    api.usage.getPlanUsage = (): Promise<PlanUsageSnapshot> =>
+      Promise.reject(new Error('Usage unavailable'))
+    const fallback = await fetchModelOptions(api, '')
+    assert.equal(
+      fallback.find((option) => option.value === 'acp:claude-acp#sonnet')?.coverage,
+      'paid',
+    )
+    assert.equal(
+      fallback.find((option) => option.value === 'lmstudio:qwen-local')?.coverage,
+      'local',
+    )
+  })
+
   it('lists fetched Perplexity models only when its key is configured', async () => {
     const providers = resolveExtraProviders([
       { slug: 'perplexity', models: [{ id: 'openai/gpt-live' }] },
@@ -162,10 +303,11 @@ describe('fetchModelOptions visibility', () => {
 
   it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    // Automatic choices plus the empty placeholder.
     const values = options.map((o) => o.value)
     assert.ok(values.includes('auto:best-value'))
     assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    assert.ok(values.includes('auto:balanced-included'), 'no-charge balanced should be selectable')
     const bestValue = options.find((o) => o.value === 'auto:best-value')
     assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
@@ -576,6 +718,7 @@ describe('fetchModelOptions visibility', () => {
       value: 'acp:codex',
       label: 'Codex',
       group: 'Codex on this device',
+      coverage: 'paid',
     })
   })
 
@@ -600,6 +743,7 @@ describe('fetchModelOptions visibility', () => {
       value: staleValue,
       label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
       group: 'Cursor on this device',
+      coverage: 'paid',
     })
   })
 
@@ -627,6 +771,7 @@ describe('fetchModelOptions visibility', () => {
       value: staleValue,
       label: 'Cursor — agent default (not currently advertised)',
       group: 'Cursor on this device',
+      coverage: 'paid',
     })
   })
 
@@ -749,6 +894,7 @@ describe('fetchModelOptions visibility', () => {
         value: 'plugin-model:personal.reference-model:judge%3Adefault',
         label: 'Reference judge',
         group: 'Personal models',
+        coverage: 'paid',
       },
     )
     assert.equal(

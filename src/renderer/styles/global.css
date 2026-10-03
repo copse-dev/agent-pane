@@ -20,6 +20,7 @@
 @import './global/ask-user.css';
 @import './global/ssh-prompt.css';
 @import './global/update-prompt.css';
+@import './global/product-announcement.css';
 @import './global/confirm-dialog.css';
 @import './global/container-run.css';
 @import './global/new-project-dialog.css';
@@ -40,6 +41,7 @@
 @import './global/apple-development.css';
 @import './global/app-run.css';
 @import './global/thread-proposal.css';
+@import './global/thread-history-editor.css';
 @import './global/reviewer-input.css';
 @import './global/toasts.css';
 @import './global/tooltip.css';

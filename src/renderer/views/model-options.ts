@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { chatGptPlanModelValue, parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { getLocalModelCapability, localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
@@ -23,12 +24,14 @@ import {
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 
 export interface ModelOptionsApi {
+  chatGptPlan?: Pick<ApiClient['chatGptPlan'], 'models'>
   settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
   openRouter: Pick<ApiClient['openRouter'], 'models'>
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
   lmStudio: Pick<ApiClient['lmStudio'], 'models'> &
     Partial<Pick<ApiClient['lmStudio'], 'modelInfo'>>
   plugins?: Pick<ApiClient['plugins'], 'list'>
+  usage?: Pick<ApiClient['usage'], 'getPlanUsage'>
 }
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
@@ -71,6 +74,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
+import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -89,6 +93,8 @@ export interface ModelOption {
   label: string
   group?: string
   disabled?: boolean
+  /** Billing coverage of this concrete route; automatic/placeholder rows omit it. */
+  coverage?: ModelCoverage
   /** Image-input support when known; absent means the provider did not advertise it. */
   supportsImages?: boolean
 }
@@ -218,7 +224,7 @@ async function openRouterOptions(
     /* keep the plain heading */
   }
 
-  let liveModels: Array<{ id: string; name: string; supportsImages?: boolean }> = []
+  let liveModels: Awaited<ReturnType<ModelOptionsApi['openRouter']['models']>> = []
   try {
     liveModels = await api.openRouter.models()
   } catch {
@@ -235,7 +241,7 @@ async function openRouterOptions(
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
-  const add = (id: string, label: string, supportsImages?: boolean): void => {
+  const add = (id: string, label: string, supportsImages?: boolean, free = false): void => {
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
@@ -250,11 +256,17 @@ async function openRouterOptions(
       label: hint ? `${label} — ${hint}` : label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
+      ...(free ? { coverage: 'free' } : {}),
     })
   }
 
   for (const model of liveModels)
-    add(model.id, modelDisplayName(model.name || model.id), model.supportsImages)
+    add(
+      model.id,
+      modelDisplayName(model.name || model.id),
+      model.supportsImages,
+      model.inputPricePerMTok === 0 && model.outputPricePerMTok === 0,
+    )
   if (customId) add(customId, `${customId} (custom)`)
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
@@ -473,6 +485,11 @@ export async function fetchModelOptions(
   const acpOverSsh = isSshWorkspace && (await api.settings.get('acpOverSshEnabled')) === true
   const sshWorkspace = isSshWorkspace && !acpOverSsh
   const includeAgentModels = opts.includeAgentModels !== false
+  // The main process caches plan probes. Run alongside catalog discovery; a
+  // failed/unsupported probe makes no claim of included usage.
+  const planUsage = includeAgentModels
+    ? (api.usage?.getPlanUsage().catch(() => null) ?? Promise.resolve(null))
+    : Promise.resolve(null)
 
   let available: AvailableProviders = {}
   try {
@@ -486,6 +503,20 @@ export async function fetchModelOptions(
   // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
+  try {
+    const catalog = await api.chatGptPlan?.models()
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} · ChatGPT plan`,
+          group: 'ChatGPT plan',
+        })
+      }
+    }
+  } catch {
+    /* A failed/expired plan connection cannot expose API-key models as substitutes. */
+  }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue
     // GPT-6 Astra is a staged OpenAI rollout. A valid provider credential is
@@ -618,6 +649,13 @@ export async function fetchModelOptions(
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: 'ChatGPT plan',
+        disabled: true,
+      })
     } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,
@@ -664,7 +702,11 @@ export async function fetchModelOptions(
     })
   }
 
-  return visibleOptions
+  const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage }
+  return visibleOptions.map((option) => {
+    const coverage = option.coverage ?? modelCoverage(option.value, coverageContext)
+    return coverage ? { ...option, coverage } : option
+  })
 }
 
 function autoModelOption(label: string): ModelOption {

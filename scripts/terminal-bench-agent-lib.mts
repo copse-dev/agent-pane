@@ -1,37 +1,51 @@
 import { createInterface } from 'node:readline'
-import { copyFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
-import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
-import {
-  PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS,
-  PRODUCT_REASONING_CHECKPOINT_POLICY,
-  PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
-} from '@copse/agent/reasoning-checkpoint-policy.ts'
+import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
-import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
-import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
+import { LOCAL_REASONING_SUPPRESSION_BODY } from '@copse/llm/create-provider.ts'
+import { REASONING_RUNAWAY_SUPPRESSED_NUDGE } from '@copse/llm/provider-stop-reason.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
 import {
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
   MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE,
   MAIN_LEGACY_STUCK_TOOL_RECOVERY_NUDGE,
   MAIN_LEGACY_SYSTEM_PROMPT,
+  runnableTerminalBenchProfile,
   terminalBenchProfile,
   type TerminalBenchProfile,
+  type TerminalBenchRuntimeConfiguration,
 } from './lib/terminal-bench-profiles.mts'
 import {
   loadTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
+import {
+  TERMINAL_MAX_OUTPUT_TOKENS_ENV,
+  TERMINAL_MODEL_PARAMETERS_ENV,
+  buildTerminalProviders,
+  resolveTerminalModelParameters,
+  terminalMaxOutputTokens,
+  terminalModelParametersMode,
+  writeTerminalModelParametersRecord,
+} from './lib/terminal-bench-model-parameters.mts'
+import {
+  injectTerminalPreflight,
+  runTerminalPreflight,
+  TERMINAL_PREFLIGHT_TOOL_ID,
+} from './lib/terminal-bench-preflight.mts'
 import { BenchTranscript } from './lib/bench-transcript.mts'
+import {
+  appendStepTimingSink,
+  STEP_TIMING_FILE,
+  StepTimingRecorder,
+} from './lib/terminal-bench-step-timing.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
-export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
-export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS =
-  PRODUCT_REASONING_RECOVERY_MAX_TOKENS
 export const DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC = 600
 const TERMINAL_COMMAND_TIMEOUT_DESCRIPTION =
   'Optional timeout for a command that is expected to run longer than the default, such as a final build, training run, or verifier. Keep the default for inspection and broad searches.'
@@ -42,6 +56,16 @@ export const TERMINAL_STUCK_TOOL_RECOVERY_NUDGE = MAIN_LEGACY_STUCK_TOOL_RECOVER
 function withOriginalTerminalTask(nudge: string, instruction: string): string {
   const task = instruction.trim()
   return task ? `${nudge}\n\nOriginal task:\n${task}` : nudge
+}
+
+/**
+ * LM Studio ignores `reasoning_effort: none` and `enable_thinking: false` for
+ * Qwen3-family models, so the suppressed recovery turn would still think at
+ * length. Qwen3's chat template honours a `/no_think` soft switch in the last
+ * user message, which is the recovery nudge.
+ */
+export function terminalReasoningSuppressedNudge(model: string): string | undefined {
+  return /qwen3/i.test(model) ? `${REASONING_RUNAWAY_SUPPRESSED_NUDGE}\n/no_think` : undefined
 }
 
 export function terminalReasoningRunawayRecoveryNudge(instruction: string): string {
@@ -61,11 +85,102 @@ export function terminalStuckToolRecoveryNudge(instruction: string): string {
 export function terminalReasoningCheckpointPolicy(
   profile: TerminalBenchProfile,
 ): ReasoningCheckpointPolicy | undefined {
-  if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
+  const policy = profile.loop.reasoningCheckpointPolicy
+  return policy ? { ...policy } : undefined
+}
+
+/**
+ * Resolve the run-level knobs a benchmark host reads from the environment.
+ * Stream caps fall back to the profile's own values rather than to product
+ * constants; an override is reported with the result so comparisons can
+ * refuse runs whose effective caps differ (see `terminalBenchStreamCapOverrides`).
+ */
+export function terminalBenchRuntimeConfiguration(
+  profile: TerminalBenchProfile,
+  env: Readonly<Record<string, string | undefined>>,
+): TerminalBenchRuntimeConfiguration {
+  const maxSteps = envPositiveInt(env, 'COPSE_TERMINAL_MAX_STEPS', 80)
+  const recoveryStrategy = env['COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY']?.trim()
   return {
-    ...PRODUCT_REASONING_CHECKPOINT_POLICY,
-    // Terminal-Bench retains its action-oriented 2K visible-answer ceiling.
-    maxNonReasoningTokens: DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
+    maxSteps,
+    recoveryStrategy: TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.shape.recoveryStrategy.parse(
+      recoveryStrategy === undefined || recoveryStrategy === ''
+        ? profile.loop.recoveryStrategy
+        : recoveryStrategy,
+    ),
+    suppressedOutputTokens: profile.loop.suppressedOutputTokens,
+    softReasoningBudget: null,
+    maxLlmCalls: envPositiveInt(env, 'COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3),
+    maxContextTokens: envPositiveInt(env, 'COPSE_TERMINAL_CONTEXT_TOKENS', 32_768),
+    maxStreamOutputTokens: envPositiveInt(
+      env,
+      'COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS',
+      profile.loop.maxStreamOutputTokens,
+    ),
+    reasoningRunawayRecoveryOutputTokens: envPositiveInt(
+      env,
+      'COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS',
+      profile.loop.reasoningRunawayRecoveryOutputTokens,
+    ),
+    maxCommandTimeoutSec: envPositiveInt(
+      env,
+      'COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC',
+      DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
+    ),
+  }
+}
+
+/**
+ * The `runAgentLoop` options a profile and run configuration determine,
+ * independent of the bridge's I/O callbacks. Every behavioural setting comes
+ * from the profile or the reported runtime configuration; nothing here may
+ * read a product constant directly.
+ */
+export function terminalBenchLoopOptions(
+  profile: TerminalBenchProfile,
+  runtime: TerminalBenchRuntimeConfiguration,
+  instruction: string,
+): Pick<
+  AgentLoopOptions,
+  | 'maxSteps'
+  | 'maxLlmCalls'
+  | 'adaptiveExtensions'
+  | 'maxContextTokens'
+  | 'maxStreamOutputTokens'
+  | 'reasoningRunawayRecoveryOutputTokens'
+  | 'reasoningRunawayRecoveryStrategy'
+  | 'reasoningRunawaySuppressedNudge'
+  | 'reasoningRunawaySuppressedOutputTokens'
+  | 'reasoningRunawayRecoveryNudge'
+  | 'reasoningRunawayTextToleranceChars'
+  | 'reasoningCheckpointPolicy'
+  | 'allowForcedTextEscalation'
+  | 'stuckToolRecoveryNudge'
+> {
+  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  return {
+    maxSteps: runtime.maxSteps,
+    reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
+    ...(runtime.recoveryStrategy === 'suppression-ladder-v1'
+      ? {
+          reasoningRunawaySuppressedNudge: profile.loop.suppressedNudge,
+          reasoningRunawaySuppressedOutputTokens: runtime.suppressedOutputTokens,
+        }
+      : {}),
+    maxLlmCalls: runtime.maxLlmCalls,
+    adaptiveExtensions: profile.loop.adaptiveExtensions,
+    maxContextTokens: runtime.maxContextTokens,
+    maxStreamOutputTokens: runtime.maxStreamOutputTokens,
+    reasoningRunawayRecoveryOutputTokens: runtime.reasoningRunawayRecoveryOutputTokens,
+    reasoningRunawayRecoveryNudge: profile.forcesRequestedOutputRecovery
+      ? withOriginalTerminalTask(profile.reasoningRunawayRecoveryNudge, instruction)
+      : profile.reasoningRunawayRecoveryNudge,
+    reasoningRunawayTextToleranceChars: profile.loop.reasoningRunawayTextToleranceChars,
+    ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
+    allowForcedTextEscalation: profile.loop.allowForcedTextEscalation,
+    stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
+      ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, instruction)
+      : profile.stuckToolRecoveryNudge,
   }
 }
 
@@ -153,6 +268,40 @@ export function terminalResultEvidenceWarning(result: TerminalToolResult): strin
     )
   }
   return null
+}
+
+export const TERMINAL_SLOW_COMMAND_HINT_SEC = 30
+
+const BACKGROUND_LAUNCH = /(?<!&)&\s*$/
+const PACKAGE_INSTALL =
+  /\b(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install\b|\bapt(?:-get)?\s+(?:-\S+\s+)*(?:install|update|upgrade)\b|\b(?:npm|pnpm|yarn)\s+(?:install|add|i)\b|\bcargo\s+(?:install|build)\b/
+
+/**
+ * Deterministic hint appended to a foreground run_shell result that timed out
+ * (exit 124) or ran slowly, steering the model to background jobs and polling.
+ */
+export function terminalLongRunningCommandHint(
+  command: string,
+  result: TerminalToolResult,
+  elapsedMs: number,
+): string | null {
+  if (BACKGROUND_LAUNCH.test(command.trimEnd())) return null
+  const timedOut = result.exitCode === 124
+  const slow = elapsedMs >= TERMINAL_SLOW_COMMAND_HINT_SEC * 1000
+  if (!timedOut && !slow) return null
+  const elapsed = `${String(Math.round(elapsedMs / 1000))}s`
+  const lines = [
+    timedOut
+      ? 'Long-running command hint: this command hit its timeout and was killed.'
+      : `Long-running command hint: this command blocked for ${elapsed}.`,
+    'Do not rerun it in the foreground. Start it in the background with a log, e.g. `nohup <command> > /tmp/job.log 2>&1 &`, then poll with short `tail -n 20 /tmp/job.log` or `pgrep -f <name>` calls and do other work between polls.',
+  ]
+  if (PACKAGE_INSTALL.test(command)) {
+    lines.push(
+      'This was a package install: first check whether the package or a lighter alternative is already available (e.g. `python3 -c "import X"`, `pip list`, `which X`) and use the task\'s local files before downloading.',
+    )
+  }
+  return lines.join('\n')
 }
 
 interface StartMessage {
@@ -308,8 +457,12 @@ export function terminalShellResultIsError(
   return profile.nonzeroShellResultIsError && result.exitCode !== 0
 }
 
-function envPositiveInt(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim()
+function envPositiveInt(
+  env: Readonly<Record<string, string | undefined>>,
+  name: string,
+  fallback: number,
+): number {
+  const raw = env[name]?.trim()
   if (!raw) return fallback
   const parsed = Number(raw)
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -344,60 +497,80 @@ export async function runTerminalBenchAgent(): Promise<void> {
   )
   if (!apiKey) throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running the bench.')
   const baseUrl = nonEmptyStringOr(process.env['LM_STUDIO_URL']?.trim(), 'http://localhost:1234/v1')
-  const maxSteps = envPositiveInt('COPSE_TERMINAL_MAX_STEPS', 80)
-  const maxLlmCalls = envPositiveInt('COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3)
-  const maxContextTokens = envPositiveInt('COPSE_TERMINAL_CONTEXT_TOKENS', 32_768)
-  const maxStreamOutputTokens = envPositiveInt(
-    'COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS',
-    DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
-  )
-  const reasoningRunawayRecoveryOutputTokens = envPositiveInt(
-    'COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS',
-    DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
-  )
-  const maxCommandTimeoutSec = envPositiveInt(
-    'COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC',
-    DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
-  )
   if (typeof parsed.threadDir !== 'string' || !parsed.threadDir.trim()) {
     throw new Error('Terminal agent bridge expected a thread transcript directory.')
   }
   if (typeof parsed.workspaceRoot !== 'string' || !parsed.workspaceRoot.trim()) {
     throw new Error('Terminal agent bridge expected a workspace root.')
   }
-  const profile = terminalBenchProfile(
+  const profile = runnableTerminalBenchProfile(
     process.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'] ?? process.env['COPSE_TERMINAL_PROFILE'],
   )
-  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  const runtimeConfiguration = terminalBenchRuntimeConfiguration(profile, process.env)
+  const { maxCommandTimeoutSec } = runtimeConfiguration
   const agentDirectory = dirname(parsed.threadDir)
-  const baseProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, { baseURL: baseUrl, apiKey, includeUsage: true })
-    : createLMStudioProvider(baseUrl, parsed.model, apiKey)
-  const forcedWriteProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, {
-        baseURL: baseUrl,
-        apiKey,
-        includeUsage: true,
-        extraBody: { tool_choice: { type: 'function', function: { name: 'write_file' } } },
-      })
-    : undefined
+  const modelParameters = resolveTerminalModelParameters(
+    terminalModelParametersMode(process.env[TERMINAL_MODEL_PARAMETERS_ENV]),
+    parsed.model,
+    terminalMaxOutputTokens(process.env[TERMINAL_MAX_OUTPUT_TOKENS_ENV]),
+  )
+  writeTerminalModelParametersRecord(agentDirectory, modelParameters)
+  const { base: baseProvider, forcedWrite: forcedWriteProvider } = buildTerminalProviders({
+    baseUrl,
+    model: parsed.model,
+    apiKey,
+    forcesRequestedOutputRecovery: profile.forcesRequestedOutputRecovery,
+    record: modelParameters,
+    ...(runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? { reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY }
+      : {}),
+  })
   let recoveryOutputPaths: string[] = []
   const adaptiveProvider: LLMProvider = {
-    stream(messages, tools, signal) {
+    stream(messages, tools, signal, options) {
       const selected = recoveryOutputPaths.length > 0 ? forcedWriteProvider : baseProvider
       if (!selected) throw new Error('Forced recovery provider is unavailable for this profile.')
-      return selected.stream(messages, tools, signal)
+      return selected.stream(messages, tools, signal, options)
     },
   }
   const provider = recordTerminalBenchProviderRequests(
     adaptiveProvider,
     join(agentDirectory, 'provider-requests.jsonl'),
+    { mode: modelParameters.mode, params: modelParameters.params },
   )
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model
     : `lmstudio:${parsed.model}`
+  const suppressedNudge =
+    runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? terminalReasoningSuppressedNudge(parsed.model)
+      : undefined
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
+  let userContent = parsed.instruction
+  if (profile.preflightProbe) {
+    // Exactly one bridge round trip; every failure degrades to a short "unavailable" block.
+    const preflight = await runTerminalPreflight(async (command, timeoutSec) => {
+      writeProtocol({ type: 'tool_request', id: TERMINAL_PREFLIGHT_TOOL_ID, command, timeoutSec })
+      const next = await input.next()
+      if (next.done) throw new Error('Terminal bridge closed during pre-flight.')
+      const response: unknown = JSON.parse(next.value)
+      if (
+        !isInputMessage(response) ||
+        response.type !== 'tool_result' ||
+        response.id !== TERMINAL_PREFLIGHT_TOOL_ID
+      ) {
+        throw new Error('Terminal bridge returned an invalid pre-flight result.')
+      }
+      return response
+    })
+    userContent = injectTerminalPreflight(parsed.instruction, preflight.block)
+    try {
+      writeFileSync(join(dirname(parsed.threadDir), 'preflight.txt'), `${preflight.block}\n`)
+    } catch {
+      // Evidence capture is best-effort.
+    }
+  }
   const messages = [
     {
       role: 'system' as const,
@@ -411,7 +584,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           },
         ]
       : []),
-    { role: 'user' as const, content: parsed.instruction },
+    { role: 'user' as const, content: userContent },
   ]
   const usage = {
     inputTokens: 0,
@@ -425,6 +598,9 @@ export async function runTerminalBenchAgent(): Promise<void> {
     copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
   const transcript = new BenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
+  const stepTiming = new StepTimingRecorder({
+    sink: appendStepTimingSink(join(agentDirectory, STEP_TIMING_FILE)),
+  })
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>
@@ -442,24 +618,12 @@ export async function runTerminalBenchAgent(): Promise<void> {
       provider,
       messages,
       tools: terminalTools,
-      maxSteps,
-      maxLlmCalls,
-      adaptiveExtensions: false,
-      maxContextTokens,
-      maxStreamOutputTokens,
-      reasoningRunawayRecoveryOutputTokens,
-      reasoningRunawayRecoveryNudge: profile.forcesRequestedOutputRecovery
-        ? withOriginalTerminalTask(profile.reasoningRunawayRecoveryNudge, parsed.instruction)
-        : profile.reasoningRunawayRecoveryNudge,
-      reasoningRunawayTextToleranceChars: 256,
-      ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
-      allowForcedTextEscalation: false,
-      stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
-        ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, parsed.instruction)
-        : profile.stuckToolRecoveryNudge,
+      ...terminalBenchLoopOptions(profile, runtimeConfiguration, parsed.instruction),
+      ...(suppressedNudge ? { reasoningRunawaySuppressedNudge: suppressedNudge } : {}),
       usageModel,
       onLlmCall: (count) => {
         usage.llmCalls = count
+        stepTiming.stepStarted(count)
       },
       recordAppliedNudge: (record) => {
         if (
@@ -478,6 +642,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
         transcript.recordHookRun(record)
       },
       recordStreamCut: (record) => {
+        stepTiming.streamCut(record.cutReason)
         transcript.recordStreamCut(record)
       },
       recordReasoningCheckpoint: (record) => {
@@ -490,6 +655,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           usage.outputTokens += chunk.outputTokens
         }
         if (chunk.type === 'done') stopReason = chunk.stopReason
+        stepTiming.chunk(chunk)
         transcript.record(chunk)
         traceEvents.push(chunk)
         if (traceEvents.length >= TRACE_EVENT_BATCH_SIZE) flushTraceEvents()
@@ -550,22 +716,37 @@ export async function runTerminalBenchAgent(): Promise<void> {
           )
         }
         flushTraceEvents()
-        writeProtocol({
-          type: 'tool_request',
-          id,
-          command,
-          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-        })
-        const next = await input.next()
-        if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
-        const response: unknown = JSON.parse(next.value)
-        if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
-          throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+        const requestStartedAt = Date.now()
+        stepTiming.toolStarted(id, name)
+        let toolFailed = true
+        let response: unknown
+        try {
+          writeProtocol({
+            type: 'tool_request',
+            id,
+            command,
+            ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+          })
+          const next = await input.next()
+          if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
+          response = JSON.parse(next.value)
+          if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
+            throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+          }
+          toolFailed = response.exitCode !== 0
+        } finally {
+          stepTiming.toolFinished(id, toolFailed)
         }
         if (response.exitCode === 124) {
           usage.commandTimeouts += 1
         }
-        const formatted = formatTerminalResult(response)
+        const longRunningHint =
+          name === 'run_shell' && profile.hintsLongRunningCommands
+            ? terminalLongRunningCommandHint(command, response, Date.now() - requestStartedAt)
+            : null
+        const formatted = longRunningHint
+          ? `${formatTerminalResult(response)}\n\n${longRunningHint}`
+          : formatTerminalResult(response)
         if (terminalShellResultIsError(profile, response)) {
           throw new Error(formatted)
         }
@@ -579,12 +760,14 @@ export async function runTerminalBenchAgent(): Promise<void> {
       },
     })
   } catch (error) {
+    stepTiming.finish()
     transcript.fail(error)
     transcript.write()
     flushTraceEvents()
     throw error
   }
 
+  stepTiming.finish()
   flushTraceEvents()
   transcript.write()
   writeProtocol({
@@ -593,6 +776,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
     stopReason: stopReason ?? null,
     profile: profile.versionedId,
     profileHash: profile.contentHash,
+    runtimeConfiguration,
   })
   lines.close()
 }

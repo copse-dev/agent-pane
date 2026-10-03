@@ -27,6 +27,7 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
   private tasks: SupervisedTaskMeta[] = []
   private started: Promise<void> | null = null
   private nextId = 0
+  private readonly listeners = new Set<(task: SupervisedTaskMeta) => void>()
 
   constructor(durable: readonly SupervisedTaskMeta[] = []) {
     this.durable = [...durable]
@@ -74,6 +75,22 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
 
   registerHandler(): () => void {
     return () => {}
+  }
+
+  subscribe(listener: (task: SupervisedTaskMeta) => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  /** Move a task to a new state and tell subscribers, as the real supervisor does. */
+  setState(taskId: string, state: SupervisedTaskMeta['state']): void {
+    const task = this.tasks.find((candidate) => candidate.taskId === taskId)
+    if (!task) throw new Error(`No task ${taskId}`)
+    const next: SupervisedTaskMeta = { ...task, state }
+    this.tasks = this.tasks.map((candidate) => (candidate === task ? next : candidate))
+    for (const listener of this.listeners) listener(next)
   }
 }
 
@@ -817,5 +834,300 @@ describe('AutomationService', () => {
     assert.equal(supervisor.enqueued.length, 1)
     assert.equal(supervisor.enqueued[0]?.threadId, scheduleId)
     assert.deepEqual(supervisor.cancelled, [])
+  })
+
+  describe('scheduler task recovery', () => {
+    const SCHEDULE_ID = 'schedule-1'
+    function seedSchedule(): void {
+      storageSet(STORAGE_KEY, [
+        {
+          id: SCHEDULE_ID,
+          projectId: 'project-a',
+          name: 'Morning review',
+          cron: '* * * * *',
+          prompt: 'Review the current project.',
+          model: 'gpt-5.4',
+          enabled: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ])
+    }
+    function serviceFor(
+      supervisor: FakeTaskSupervisor,
+    ): ReturnType<typeof createAutomationService> {
+      return createAutomationService({
+        now: () => 0,
+        isPluginEnabled: () => true,
+        createProjectThread: () => Promise.resolve(),
+        loadProjectThreads: () => Promise.resolve([]),
+        releasePreviousRun: () => Promise.resolve(true),
+        supervisor: () => supervisor,
+        recoveryDelayMs: 0,
+      })
+    }
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10))
+
+    it('replaces a scheduler task left blocked by an interrupted restart', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        {
+          ...schedulerTask({ taskId: 'stale', projectId: 'project-a', threadId: SCHEDULE_ID }),
+          state: 'blocked',
+        },
+      ])
+      const service = serviceFor(supervisor)
+
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      assert.deepEqual(supervisor.cancelled, ['stale'])
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('replaces a scheduler task that fails while the app is running', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+      assert.equal(supervisor.enqueued.length, 0)
+
+      supervisor.setState('live', 'failed')
+      await settle()
+      service.stop()
+
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('does not replace the scheduler task more than once for a burst of failures', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+
+      supervisor.setState('live', 'blocked')
+      supervisor.setState('live', 'failed')
+      await settle()
+      service.stop()
+
+      assert.equal(supervisor.enqueued.length, 1)
+    })
+
+    it('stops reacting to the supervisor once stopped', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor([
+        schedulerTask({ taskId: 'live', projectId: 'project-a', threadId: SCHEDULE_ID }),
+      ])
+      const service = serviceFor(supervisor)
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      supervisor.setState('live', 'failed')
+      await settle()
+
+      assert.equal(supervisor.enqueued.length, 0)
+    })
+
+    it('enqueues a scheduler task that survives an interrupted tick and has room to finish', async () => {
+      seedSchedule()
+      const supervisor = new FakeTaskSupervisor()
+      const service = serviceFor(supervisor)
+
+      service.start(() => {})
+      await service.sync()
+      service.stop()
+
+      const [input] = supervisor.enqueued
+      assert.ok(input)
+      assert.equal(input.restartPolicy, 'retry')
+      assert.ok(input.maxAttempts > 1, 'a requeued tick keeps its attempt count')
+      assert.ok((input.resourceBudget?.maxDurationMs ?? 0) >= 120_000)
+    })
+  })
+
+  it('triggers schedules due in the same minute together, so a slow one cannot starve the rest', async () => {
+    storageSet(
+      STORAGE_KEY,
+      ['a', 'b', 'c'].map((id) => ({
+        id,
+        projectId: 'project-a',
+        name: id,
+        cron: '* * * * *',
+        prompt: 'p',
+        model: 'm',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      })),
+    )
+    // Every thread creation waits until all three have begun. A sequential tick
+    // would never get the second one started, and the guard below would fire.
+    const begun: string[] = []
+    let openBarrier: () => void = () => {}
+    const barrier = new Promise<void>((resolve) => {
+      openBarrier = resolve
+    })
+    const service = createAutomationService({
+      now: () => new Date(2026, 6, 27, 9, 0, 5).getTime(),
+      isPluginEnabled: () => true,
+      createProjectThread: async (_projectId, thread) => {
+        begun.push(thread.title)
+        if (begun.length === 3) openBarrier()
+        await barrier
+      },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+
+    const outcome = await Promise.race([
+      service.tick().then(() => 'done'),
+      new Promise<string>((resolve) => {
+        setTimeout(() => {
+          resolve('serialised')
+        }, 500)
+      }),
+    ])
+
+    assert.equal(outcome, 'done')
+    assert.deepEqual(begun.sort(), ['a', 'b', 'c'])
+  })
+
+  describe('trigger problems the user can see', () => {
+    function harness(): {
+      threads: Map<string, Thread>
+      service: ReturnType<typeof createAutomationService>
+      setNow: (value: number) => void
+      failNextCreate: (message: string) => void
+    } {
+      let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+      let failure: string | null = null
+      const threads = new Map<string, Thread>()
+      const service = createAutomationService({
+        now: () => now,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          if (failure !== null) {
+            const message = failure
+            failure = null
+            return Promise.reject(new Error(message))
+          }
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        releasePreviousRun: () => Promise.resolve(true),
+      })
+      return {
+        threads,
+        service,
+        setNow: (value: number): void => {
+          now = value
+        },
+        failNextCreate: (message: string): void => {
+          failure = message
+        },
+      }
+    }
+    const input = {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    }
+
+    it('keeps a failed start from blocking the next run', async () => {
+      const { threads, service, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const stuck = threads.get(first.threadId)
+      assert.ok(stuck?.automation)
+      // The renderer could not start it: the draft is kept, marked as failed.
+      threads.set(first.threadId, {
+        ...stuck,
+        automation: { ...stuck.automation, startFailedAt: 1 },
+      })
+
+      setNow(new Date(2026, 6, 27, 9, 1, 0).getTime())
+      const next = await service.runNow('project-a', schedule.id)
+
+      assert.equal(next.disposition, 'started')
+      assert.notEqual(next.threadId, first.threadId)
+      assert.equal(threads.size, 2)
+    })
+
+    it('records a skipped run behind an unstarted draft, and clears it once a run starts', async () => {
+      const { threads, service, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const triggeredAt = new Date(2026, 6, 27, 9, 1, 0).getTime()
+
+      setNow(triggeredAt)
+      const skipped = await service.runNow('project-a', schedule.id)
+      assert.equal(skipped.disposition, 'coalesced')
+      const problem = service.list('project-a')[0]?.lastProblem
+      assert.equal(problem?.kind, 'pending-start')
+      assert.equal(problem.at, triggeredAt)
+      assert.match(problem.message, /never started/)
+
+      const pending = threads.get(first.threadId)
+      assert.ok(pending)
+      threads.set(first.threadId, { ...pending, draftPrompt: '' })
+      setNow(new Date(2026, 6, 27, 9, 2, 0).getTime())
+      const started = await service.runNow('project-a', schedule.id)
+      assert.equal(started.disposition, 'started')
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+    })
+
+    it('does not report a run that is simply still going as a problem', async () => {
+      const { threads, service } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const pending = threads.get(first.threadId)
+      assert.ok(pending)
+      threads.set(first.threadId, { ...pending, status: 'running', draftPrompt: '' })
+
+      const overlap = await service.runNow('project-a', schedule.id)
+
+      assert.equal(overlap.disposition, 'coalesced')
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+    })
+
+    it('records a tick that failed to create its task, and clears it after a good run', async (context) => {
+      context.mock.method(console, 'error', () => {})
+      const { service, failNextCreate, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      failNextCreate('disk unavailable')
+
+      await service.tick()
+      const problem = service.list('project-a')[0]?.lastProblem
+      assert.equal(problem?.kind, 'failed')
+      assert.equal(problem.message, 'disk unavailable')
+
+      setNow(new Date(2026, 6, 27, 9, 1, 0).getTime())
+      await service.tick()
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+      assert.equal(service.list('project-a')[0]?.id, schedule.id)
+    })
+
+    it('keeps the problem when the schedule is edited', async (context) => {
+      context.mock.method(console, 'error', () => {})
+      const { service, failNextCreate } = harness()
+      const schedule = await service.upsert('project-a', input)
+      failNextCreate('disk unavailable')
+      await service.tick()
+
+      await service.upsert('project-a', { ...input, id: schedule.id, name: 'Renamed' })
+
+      assert.equal(service.list('project-a')[0]?.lastProblem?.message, 'disk unavailable')
+    })
   })
 })

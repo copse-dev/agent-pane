@@ -917,6 +917,26 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   is not a general response cap. The primary host persists metadata-only decisions (never reasoning
   text) to `reasoning-checkpoints.jsonl`. ACP and other externally hosted agent loops remain outside
   this policy.
+- **Reasoning-runaway is a three-rung recovery ladder, not a two-strike give-up.** A stream cut by
+  the reasoning cap with no answer and no tool call used to nudge once and, on the second
+  consecutive cut, end the run as a finished answer — which in Terminal-Bench scored the give-up
+  rule instead of the model (a thinking model abandoned the task unattempted). The loop-owned streak
+  (`MAX_REASONING_RUNAWAY_STREAK = 3`) now climbs: cut 1 applies the existing `reasoning-runaway`
+  hook nudge (host override `reasoningRunawayRecoveryNudge` still wins) on the recovery cap; cut 2
+  applies `REASONING_RUNAWAY_SUPPRESSED_NUDGE` (host override `reasoningRunawaySuppressedNudge`) and
+  streams a **reasoning-suppressed, tool-enabled** recovery turn — `LLMStreamOptions.suppressReasoning`
+  (a best-effort provider hint: `OpenAIProvider` sends its `reasoningSuppressionBody`, set only by
+  `createLocalOpenAIProvider` and the Terminal-Bench providers as `reasoning_effort: 'none'` +
+  `chat_template_kwargs.enable_thinking: false`; the native LM Studio SDK, Anthropic and hosted
+  OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
+  exempt, so a bare tool call always lands) and a checkpoint hard max clamped to match; cut 3 ends
+  the run with the give-up message and `done.stopReason = 'reasoning_runaway_exhausted'`
+  (`REASONING_RUNAWAY_EXHAUSTED_STOP_REASON`), which the bench harness records as its stop reason.
+  Any answer or tool call resets the streak. The ladder is still an in-loop nudge sequence: it takes
+  no `ContinuationGrant`, adds at most one extra LLM call over the old rule, and remains bounded by
+  `maxSteps`/LLM-call caps and the deadline. The desktop app inherits the ladder; where its provider
+  cannot suppress reasoning the suppressed turn degrades to the tighter cap plus the tool-focused
+  nudge.
 - **Reasoning after the answer is policed on its own budget.** The checkpoint above classifies a
   stream as reasoning-dominated only while no visible answer has landed, so a model that answers and
   _then_ keeps thinking used to ride the 32K non-reasoning ceiling and be handed a
@@ -928,6 +948,33 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   the pre-existing ceiling (SkillsBench profiles construct their policy explicitly and stay opted
   out; Terminal-Bench spreads the product policy and inherits it). Ordinary long visible answers are
   untouched: only reasoning is counted against this budget.
+- **An unparseable tool call is a recoverable outcome, not an exception.** LM Studio's SDK reports a
+  tool call it cannot parse (typically one cut off at the per-request output ceiling) through a
+  callback; the provider used to fail the stream, which killed the whole run or turn after the
+  expensive generation had already been paid for, and replaying the identical prompt would only
+  reproduce the broken call. `LMStudioProvider` now ends the stream with a `done` chunk carrying
+  stop reason `tool_call_malformed` (plus `malformedToolCall` with the parse message,
+  `hitOutputCeiling`, and optional `outputTokens`; the ceiling verdict is approximate because aborting the prediction discards the
+  SDK's own stats) and still cancels the prediction. A fifth `stepBoundary` hook,
+  `malformed-tool-call`, selects the nudge text (a "your call was cut off, emit a much smaller one,
+  write large files in short pieces" message, worded differently when the ceiling was hit); the
+  loop applies it as a plain user message and continues, after first running any tool calls that
+  parsed before the failure so tool_use/tool_result pairing stays valid. Request-local streamed
+  output usage accompanies the outcome, even when the count is zero; prompt usage
+  remains unmeasured because cancellation discards final SDK stats. Recovery copy refers only to
+  the discarded call and does not claim that the valid preceding calls did not execute. The stop reason is
+  deliberately not a truncation reason, so `truncation-continue` never stacks on it, and it resets
+  `reasoningRunawayStreak` (a tool-call attempt is not a reasoning-only runaway). The bounds are loop
+  mechanism: at most `MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS` (2) in a row and
+  `MAX_MALFORMED_TOOL_CALLS_PER_RUN` (4) per run; past either the loop throws the provider's parse
+  error, i.e. the pre-recovery failure behaviour, so a model that cannot stop emitting broken calls
+  still ends rather than looping to the wall-clock deadline. Like the other in-loop nudges it does
+  not touch the continuation budget, and it is recorded through `recordAppliedNudge` (so it shows
+  in the bench transcript and, as a generic hook card, in the desktop spine). The text-only
+  finalize/forced turns and the todo-closeout turn do not recover: they treat a malformed stream as
+  an empty turn and fall through to their existing bounded handling. OpenAI-compatible streaming
+  already recovers (an unparseable argument string becomes `argsError`, answered with a tool
+  result), so only LM Studio needed the typed outcome.
 
 ## Codebase impact
 
@@ -977,3 +1024,14 @@ when submitted at idle; they do not carry hook origin or consume the machine
 continuation budget. The phone API cannot call hooks, grant leases, or dispatch a
 machine continuation. Checkout preparation and permission prompts retain their
 existing desktop paths. See `mobile-web-experience.md`, revised decision 5.
+
+### Benchmark recovery compatibility foundation
+
+The benchmark profile host explicitly records and selects `legacy-two-cut-v1` for every existing
+profile. Those profiles preserve two-cut give-up, without a suppression request or the new exhausted
+stop reason; their loop settings and content hashes remain frozen. The product's three-rung ladder
+does not replace that explicit historical strategy. Terminal-Bench opts into the same ladder only
+through `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY=suppression-ladder-v1`, recorded in runtime
+configuration and stream-cap overrides. It changes no continuation budget and introduces no soft
+reasoning budget. Sampling/output-ceiling provenance remains independent of this explicit runtime
+experiment; the same model-parameter builder serves both provider paths.

@@ -59,6 +59,17 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('uses the dispatch slot as an exclusive history-edit fence', async () => {
+    const dispatcher = new AgentDispatcher(host, registry, dependencies())
+
+    assert.equal(dispatcher.beginThreadHistoryEdit('project-1', 'thread-1'), true)
+    assert.equal(dispatcher.beginThreadHistoryEdit('project-1', 'thread-1'), false)
+    await assert.rejects(dispatcher.dispatch(request()), /already running/)
+
+    dispatcher.endThreadHistoryEdit('project-1', 'thread-1')
+    await dispatcher.dispatch(request())
+  })
+
   it('loads history once and commits each completed turn', async () => {
     const loaded: LLMMessage[] = [{ role: 'assistant', content: 'prior' }]
     const saved: LLMMessage[][] = []
@@ -452,6 +463,47 @@ describe('AgentDispatcher', () => {
     release()
     await Promise.all([dispatch, wait])
     assert.equal(idle, true)
+  })
+
+  it('fences an out-of-turn history edit behind a running turn instead of racing its commit', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let disk: LLMMessage[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: async () => disk,
+        saveHistory: async (_p, _t, messages) => {
+          disk = messages
+        },
+        run: async (_threadId, userContent: UserContent, priorMessages) => {
+          await gate
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    const dispatch = dispatcher.dispatch(request())
+    await settle()
+    const edit = dispatcher.withExclusiveHistory('project-1', 'thread-1', async () => {
+      disk = [...disk, { role: 'assistant', content: 'review' }]
+    })
+    await settle()
+    // The edit has not read or written while the turn owns the thread.
+    assert.deepEqual(disk, [])
+
+    release()
+    await Promise.all([dispatch, edit])
+    assert.deepEqual(disk, [
+      { role: 'user', content: 'continue' },
+      { role: 'assistant', content: 'review' },
+    ])
   })
 
   it('waits for machine bookkeeping that began before the deletion fence', async () => {

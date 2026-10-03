@@ -13,16 +13,33 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
 
 - `main-legacy@1` freezes the pre-migration prompt, single `run_shell` tool, result formatting,
   and recovery behavior.
+- `main-legacy@2` is `main-legacy@1` plus a bounded pre-flight: one read-only bridge command (cwd,
+  `ls -la /tests /app`, size-capped readable `/tests` files, python/pip locations, `/logs/verifier`
+  state) runs before the first model turn and its output (hard cap 8,000 characters, 30 s timeout)
+  is appended to the task message in an `<environment_preflight>` block. A missing or unreadable
+  `/tests` is stated explicitly; probe failure degrades to a short "unavailable" note. It is
+  opt-in (`--profile=main-legacy@2`); the unversioned `main-legacy` alias stays on `@1`.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
 - `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
   recovery logic.
-- `product-aligned@3` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
-  Clean reasoning receives another 2k window, checked again up to the product's 32k hard ceiling;
-  explicit self-diagnosis, repeated blocks/headings/plans, or a 100-item list cuts the stream into
-  the existing bounded recovery path. Historical v1/v2 capsules remain readable; the unversioned
-  CLI and workflow selection resolves to v3.
+- `product-aligned@4` has two archived `(id, hash)` identities: the long-command arm from
+  #3423 (`516606b6…`) and the effective baseline from #3410 (`252de9d8…`). Readers retain
+  both tuples separately; new runs reject this ambiguous version. No old artifact is relabeled.
+- `product-aligned@5` is the unhinted checkpoint baseline with the existing two-cut recovery
+  and no soft budget. The `product-aligned` alias selects this explicit baseline.
+- `product-aligned@3` remains retired because its descriptive hash relied on live product
+  constants. Historical capsules remain readable; new runs reject it.
+
+The default benchmark alias remains `main-legacy@1`. Historical runnable profiles explicitly
+select legacy recovery. This foundation changes no Electron recovery behavior and adds no
+suppression ladder, long-command experiment or soft-budget implementation. New experiments
+need their own immutable versioned identities and owning PRs.
+Since v5, canonical hashes cover literal loop settings and compatibility policy metadata.
+Disabled suppression/soft settings are recorded as inert metadata, without enabling those features.
+Readers, reports, sealing and debug selection retain full `(versioned id, hash)` tuples and reject
+conflicting or ambiguous provenance. Archived, custom or unrecorded identities cannot be promoted.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
@@ -71,7 +88,7 @@ sources to the host Docker daemon, so remapping that path would make verifier re
 to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
-`product-aligned@2,product-aligned@3` and set `steered_rerun` to false. The workflow provisions one
+`product-aligned@2,product-aligned@5` and set `steered_rerun` to false. The workflow provisions one
 fleet, then each worker runs one task across every profile before advancing to its next task. The
 profile order rotates by the task's global cohort position to counterbalance ordering effects:
 task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
@@ -257,7 +274,8 @@ npm run bench:terminal:debug -- fetch --run 123456 --task circuit-fibsqrt
 npm run bench:terminal:debug -- thread --run 123456 --task circuit-fibsqrt
 ```
 
-Use `--trial-id` instead of `--task` to select a particular repeated attempt, and `--json` with
+Use `--trial-id` instead of `--task` to select a particular repeated attempt. It is required when
+a task has multiple profile identities, and `--json` with
 `list` for agent-friendly discovery. Downloads are SHA-256 and size verified against the shard
 index before extraction. Extraction rejects absolute/traversing paths, links, special entries,
 archives over 200,000 entries, and expanded content over 1 GiB. Existing extraction directories
@@ -439,19 +457,50 @@ weights unless the verifier requires them and there is no smaller route.
 
 Optional tuning variables:
 
+- `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY` (default: the profile's immutable
+  `legacy-two-cut-v1`; `suppression-ladder-v1` explicitly opts into the bounded three-cut
+  recovery experiment). The runtime record and stream-cap overrides identify this experiment;
+  it does not change any existing profile's content hash or baseline behavior. The ladder's
+  second recovery stream uses the profile's recorded suppression protocol and 1024-token cap.
 - `COPSE_TERMINAL_MAX_STEPS` (default `80`)
 - `COPSE_TERMINAL_MAX_LLM_CALLS` (default: step limit plus `3` finalization calls)
 - `COPSE_TERMINAL_CONTEXT_TOKENS` (default `32768`)
-- `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` (default `2048`; terminal-only runaway guard)
-- `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` (default `4096`; cap for the
-  single nudged recovery stream)
+- `COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS` (default: the profile's own cap, `2048` for every
+  profile; terminal-only runaway guard)
+- `COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS` (default: the profile's own cap,
+  `4096` for every profile; cap for the single nudged recovery stream)
 - `COPSE_TERMINAL_COMMAND_TIMEOUT_SEC` (default `120`; a timeout is returned to the agent as
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `server`, which sends no sampling so LM Studio's own
+  sampling applies, as in every run made before this switch; `client` sends the product's curated
+  per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings, and is opt-in
+  because it has not been shown to improve outcomes). Results from the two modes are not
+  comparable. Each trial records the mode and values in
+  `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
+  read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
+  historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
+  fail sealing rather than substituting current defaults.
+- `COPSE_TERMINAL_MAX_OUTPUT_TOKENS` (unset by default; a positive integer that replaces the
+  per-request output ceiling in both parameter modes, e.g. `16384`). The loop's stream caps cannot
+  see a tool call's arguments growing, because the SDK transport delivers a tool call as one chunk
+  when it ends, so one runaway call can otherwise generate to the 81,920-token card ceiling, about
+  19 minutes at 70 tokens/s. Recorded as `outputCeiling` and `params.maxOutputTokens` in
+  `agent/model-parameters.json`)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)
 
+The agent reports the effective step, call, context, stream-cap and command-timeout settings with
+every trial (`agent_result.metadata.runtime_configuration`). Overriding a stream cap does not
+change the profile's hash, because the hash identifies the profile definition and historical
+capsules pin it. Instead, `npm run bench:terminal:compare` refuses to compare reports whose trials
+used different runtime settings or different stream-cap overrides, and never marks a profile
+eligible as the default when any trial overrode a cap or predates this record.
+
 The launcher pins Harbor so the custom-agent API and result shape do not drift between
 runs. Change that pin deliberately and revalidate the adapter before comparing results.
+
+#3423's long-command hint experiment uses explicit `product-aligned@6` on the current checkpoint baseline. Historical @4 hashes remain archived; the default alias remains @5.

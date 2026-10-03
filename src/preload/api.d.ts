@@ -164,6 +164,7 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     manage: () => Promise<void>
     onChat: (
@@ -215,6 +216,8 @@ export interface ApiClient {
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
+    /** Download the current live browser page as HTML. */
+    exportPage: (webContentsId: number) => Promise<string | null>
     /** Download an HTML canvas artefact as a self-contained document. */
     exportArtefact: (
       artefact: Pick<CanvasArtefact, 'title' | 'mimeType' | 'body'>,
@@ -445,6 +448,12 @@ export interface ApiClient {
       handler: (target: { threadId: string; projectId: string | null }) => void,
     ) => () => void
   }
+  deepLinks: {
+    ready: () => Promise<void>
+    onOpenThread: (
+      handler: (target: { threadId: string; projectId: string | null }) => void,
+    ) => () => void
+  }
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
@@ -600,6 +609,20 @@ export interface ApiClient {
       targetThreadId: string,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
+    historySnapshot: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistorySnapshot>
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistoryEditResult>
+    undoHistoryEdit: (
+      projectId: string,
+      threadId: string,
+      expectedRevision: string,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistoryEditResult>
     catalog: (
       projectId: string,
       query?: string,

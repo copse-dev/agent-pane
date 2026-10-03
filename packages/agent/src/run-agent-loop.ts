@@ -4,6 +4,7 @@ import type {
   LLMMessage,
   LLMStreamOptions,
   LLMTool,
+  MalformedToolCallInfo,
   ToolCallChunk,
   ToolResult,
 } from '@copse/llm/wire-types.ts'
@@ -34,8 +35,13 @@ import {
 import {
   CONTEXT_OVERFLOW_USER_MESSAGE,
   isContextOverflowStopReason,
+  isMalformedToolCallStopReason,
   isRefusalStopReason,
+  MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS,
+  MAX_MALFORMED_TOOL_CALLS_PER_RUN,
+  REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
+  REASONING_RUNAWAY_SUPPRESSED_NUDGE,
   REFUSAL_USER_MESSAGE,
 } from '@copse/llm/provider-stop-reason.ts'
 import {
@@ -55,6 +61,7 @@ import type { HookEmitResult } from './hooks/hook-registry.ts'
 import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
 import {
   LOOP_NUDGE_HOOK_ID,
+  MALFORMED_TOOL_CALL_HOOK_ID,
   REASONING_RUNAWAY_HOOK_ID,
   STUCK_FINALIZE_NUDGE_HOOK_ID,
   TRUNCATION_CONTINUE_HOOK_ID,
@@ -92,8 +99,17 @@ const RECENT_FINGERPRINT_WINDOW = 32
  * dedup).
  */
 const RECENT_REASONING_TEXT_WINDOW = 6
-/** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
-const MAX_REASONING_RUNAWAY_STREAK = 2
+/**
+ * Recovery ladder for consecutive reasoning-only runaway streams (no answer, no
+ * tool call). Cut 1: force-answer nudge. Cut 2: a reasoning-suppressed,
+ * tool-enabled recovery turn under a tiny cap. Cut 3 (a suppressed turn that
+ * still ran away): the ladder is exhausted and the run ends terminally. Any
+ * answer or tool call resets the streak, so this is a per-stall bound.
+ */
+const REASONING_SUPPRESSION_STREAK = 2
+const MAX_REASONING_RUNAWAY_STREAK = 3
+/** Reasoning/text cap for the suppressed recovery turn (tool calls are exempt). */
+const DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS = 1_024
 /** Do not compact on the first tool round unless the transcript is critically full. */
 const TRIM_CRITICAL_FILL = 0.95
 /** After this many tool rounds, always allow normal in-loop compaction. */
@@ -110,6 +126,7 @@ interface StepBoundaryNudges {
   loop: string | undefined
   truncation: string | undefined
   reasoningRunaway: string | undefined
+  malformedToolCall: string | undefined
   artifactCheckpoint: string | undefined
 }
 
@@ -178,6 +195,8 @@ export interface AgentLoopOptions {
    * product-wide limit; benchmark hosts may lower it for slower local models.
    */
   maxStreamOutputTokens?: number
+  /** Explicit historical strategy selected by immutable benchmark profiles. */
+  reasoningRunawayRecoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   /**
    * Optional per-stream cap for the single retry after a reasoning-runaway
    * nudge. Hosts may allow that bounded recovery more room to reach a tool call
@@ -189,6 +208,16 @@ export interface AgentLoopOptions {
    * cap. The default remains the product's concise final-answer nudge.
    */
   reasoningRunawayRecoveryNudge?: string
+  /**
+   * Text for the reasoning-suppressed recovery turn (second consecutive runaway).
+   * Defaults to a product nudge asking for one concrete tool call.
+   */
+  reasoningRunawaySuppressedNudge?: string
+  /**
+   * Per-stream reasoning/text cap for that suppressed turn. A tool call is never
+   * cut by it. Defaults to {@link DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS}.
+   */
+  reasoningRunawaySuppressedOutputTokens?: number
   /**
    * Visible-text allowance when classifying a capped stream as reasoning-only.
    * Defaults to zero; terminal hosts may ignore a short planning preamble.
@@ -1107,6 +1136,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxStreamOutputTokens,
     reasoningRunawayRecoveryOutputTokens,
     reasoningRunawayRecoveryNudge,
+    reasoningRunawaySuppressedNudge = REASONING_RUNAWAY_SUPPRESSED_NUDGE,
+    reasoningRunawaySuppressedOutputTokens = DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS,
     reasoningRunawayTextToleranceChars = 0,
     reasoningCheckpointPolicy,
     allowForcedTextEscalation = true,
@@ -1157,9 +1188,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let initialToolChoice = opts.initialToolChoice
   let trimEvents = 0
   // Consecutive streams cut off by the per-stream output cap while producing only
-  // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
-  // second means the model is stuck looping, so the run ends instead of re-priming.
+  // reasoning (no answer, no tool call). Legacy recovery ends after two cuts;
+  // the suppression ladder allows a final answer attempt after disabling reasoning.
+  const legacyRunawayRecovery = opts.reasoningRunawayRecoveryStrategy === 'legacy-two-cut-v1'
   let reasoningRunawayStreak = 0
+  // Streams whose tool call the provider could not parse (cut off at the output
+  // ceiling, or malformed). Each gets a bounded "emit a smaller call" nudge; past
+  // the consecutive or per-run bound the run fails with the parse error, as it
+  // did before recovery existed, rather than looping to the deadline.
+  let consecutiveMalformedToolCalls = 0
+  let malformedToolCallsThisRun = 0
+  let reasoningRunawayExhausted = false
   const recentFingerprints: string[] = []
   // One entry per recent tool attempt: a fingerprint means successful,
   // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
@@ -1195,6 +1234,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       loop: nudgeFrom(result, LOOP_NUDGE_HOOK_ID),
       truncation: nudgeFrom(result, TRUNCATION_CONTINUE_HOOK_ID),
       reasoningRunaway: nudgeFrom(result, REASONING_RUNAWAY_HOOK_ID),
+      malformedToolCall: nudgeFrom(result, MALFORMED_TOOL_CALL_HOOK_ID),
       artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
     }
   }
@@ -1412,6 +1452,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let assistantText = ''
     const pendingToolCalls: ToolCallChunk[] = []
     let stopReason: string | undefined
+    let malformedToolCall: MalformedToolCallInfo | undefined
     let streamUsage: StepUsage | null = null
 
     if (!reserveLlmCall(budget)) {
@@ -1429,23 +1470,44 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let trailingReasoningCutTokens: number | undefined
     let streamCappedAsRunaway = false
     let streamCutReason: StreamCutRecord['cutReason'] = 'reasoning_runaway_cap'
-    const effectiveMaxStreamOutputTokens =
-      reasoningRunawayStreak > 0
+    // Rung 2 of the runaway ladder: this stream is the reasoning-suppressed
+    // recovery turn, so it gets a much tighter cap and a provider hint to skip
+    // thinking. Tool calls are exempt from the cap, so a bare tool call lands.
+    const suppressReasoning =
+      !legacyRunawayRecovery && reasoningRunawayStreak >= REASONING_SUPPRESSION_STREAK
+    const effectiveMaxStreamOutputTokens = suppressReasoning
+      ? reasoningRunawaySuppressedOutputTokens
+      : reasoningRunawayStreak > 0
         ? (reasoningRunawayRecoveryOutputTokens ?? maxStreamOutputTokens)
         : maxStreamOutputTokens
     const reasoningCheckpointHardMax = reasoningCheckpointPolicy
-      ? reasoningRunawayStreak > 0
-        ? reasoningCheckpointPolicy.maxRecoveryTokens
-        : reasoningCheckpointPolicy.maxInitialTokens
+      ? suppressReasoning
+        ? Math.min(
+            reasoningRunawaySuppressedOutputTokens,
+            reasoningCheckpointPolicy.maxRecoveryTokens,
+          )
+        : reasoningRunawayStreak > 0
+          ? reasoningCheckpointPolicy.maxRecoveryTokens
+          : reasoningCheckpointPolicy.maxInitialTokens
       : undefined
-    let nextReasoningCheckpoint = reasoningCheckpointPolicy?.intervalTokens
+    let nextReasoningCheckpoint = reasoningCheckpointPolicy
+      ? suppressReasoning
+        ? Math.min(reasoningCheckpointPolicy.intervalTokens, reasoningRunawaySuppressedOutputTokens)
+        : reasoningCheckpointPolicy.intervalTokens
+      : undefined
     let nextTrailingReasoningCheckpoint = reasoningCheckpointPolicy?.maxTrailingReasoningTokens
       ? reasoningCheckpointPolicy.intervalTokens
       : undefined
 
     budget.deadline.pause()
     try {
-      const streamOptions = initialToolChoice ? { toolChoice: initialToolChoice } : undefined
+      const streamOptions: LLMStreamOptions | undefined =
+        initialToolChoice || suppressReasoning
+          ? {
+              ...(initialToolChoice ? { toolChoice: initialToolChoice } : {}),
+              ...(suppressReasoning ? { suppressReasoning: true } : {}),
+            }
+          : undefined
       initialToolChoice = undefined
       for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
         if (signal?.aborted) break
@@ -1495,6 +1557,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         }
         if (chunk.type === 'done') {
           stopReason = chunk.stopReason
+          malformedToolCall = chunk.malformedToolCall
           break
         }
         // Backstop against a single runaway generation (common with local
@@ -1669,7 +1732,26 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
       streamCappedAsRunaway,
       ...(stopReason !== undefined ? { stopReason } : {}),
+      ...(malformedToolCall !== undefined
+        ? { malformedToolCallHitCeiling: malformedToolCall.hitOutputCeiling }
+        : {}),
     })
+    const malformedToolCallNudge = isMalformedToolCallStopReason(stopReason)
+      ? postNudges.malformedToolCall
+      : undefined
+    if (isMalformedToolCallStopReason(stopReason)) {
+      consecutiveMalformedToolCalls++
+      malformedToolCallsThisRun++
+      if (
+        malformedToolCallNudge === undefined ||
+        consecutiveMalformedToolCalls > MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS ||
+        malformedToolCallsThisRun > MAX_MALFORMED_TOOL_CALLS_PER_RUN
+      ) {
+        throw new Error(malformedToolCall?.message ?? 'Failed to parse tool call')
+      }
+    } else {
+      consecutiveMalformedToolCalls = 0
+    }
     const truncationNudge = postNudges.truncation
     const reasoningRunawayNudge =
       postNudges.reasoningRunaway === undefined
@@ -1700,6 +1782,45 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         reasoningRunawayStreak,
         willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,
       })
+    }
+
+    if (malformedToolCallNudge !== undefined) {
+      // The provider could not parse this stream's tool call. Keep whatever
+      // usable output arrived (calls that parsed before the failure still run),
+      // then ask for a much smaller call. Reasoning never lands in history, and
+      // the call itself was discarded, so a reasoning-only stream just gets the
+      // nudge. The stop reason is not a truncation one, so the
+      // `truncation-continue` hook stays silent and the nudges never stack.
+      reasoningRunawayStreak = 0
+      if (pendingToolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
+        })
+        await executeToolBatch({
+          pendingToolCalls,
+          messages,
+          executeTool: opts.executeTool,
+          signal,
+          onChunk,
+          recentFingerprints,
+          recentToolProgress,
+          budget,
+          consecutiveExploreWithoutRead,
+        })
+        toolOnlySteps++
+        if (signal?.aborted) break
+      } else if (assistantText.trim()) {
+        messages.push({ role: 'assistant', content: assistantText })
+      }
+      messages.push({ role: 'user', content: malformedToolCallNudge })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: MALFORMED_TOOL_CALL_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: malformedToolCallNudge,
+      })
+      continue
     }
 
     // Push assistant message to history
@@ -1762,24 +1883,32 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // the truncation-continue nudge ("continue from where you left off") has
         // nothing to continue and just re-primes the same loop. The
         // `reasoning-runaway` hook fires instead (`reasoningRunawayNudge`),
-        // pushing the model to commit to an answer; if it ignores that and runs
-        // the cap again, it is stuck looping, so the run ends rather than
-        // re-priming until the wall-clock deadline (the streak / give-up terminal
-        // stays a bounded loop mechanism).
+        // pushing the model to commit to an answer. Consecutive cuts climb a
+        // bounded ladder (see REASONING_SUPPRESSION_STREAK): a second cut runs a
+        // reasoning-suppressed, tightly capped, tool-enabled recovery turn, and
+        // only a third ends the run (terminal stop reason), rather than
+        // re-priming until the wall-clock deadline.
         if (reasoningRunawayNudge !== undefined) {
           reasoningRunawayStreak++
-          if (reasoningRunawayStreak >= MAX_REASONING_RUNAWAY_STREAK) {
+          if (
+            reasoningRunawayStreak >= (legacyRunawayRecovery ? 2 : MAX_REASONING_RUNAWAY_STREAK)
+          ) {
             onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             messages.push({ role: 'assistant', content: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             finishedWithAnswer = true
+            reasoningRunawayExhausted = !legacyRunawayRecovery
             break
           }
-          messages.push({ role: 'user', content: reasoningRunawayNudge })
+          const ladderNudge =
+            reasoningRunawayStreak >= REASONING_SUPPRESSION_STREAK
+              ? reasoningRunawaySuppressedNudge
+              : reasoningRunawayNudge
+          messages.push({ role: 'user', content: ladderNudge })
           recordAppliedNudge(appliedNudgeSink, {
             step: budget.llmCalls,
             hookId: REASONING_RUNAWAY_HOOK_ID,
             mechanism: 'tool-enabled-message',
-            text: reasoningRunawayNudge,
+            text: ladderNudge,
           })
           continue
         }
@@ -1964,6 +2093,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
   const terminalRunLimitStopReason =
     runLimitStopReason ?? (isAgentRunTimeoutAbort(signal) ? 'timeout' : null)
+  const terminalStopReason: string | null = reasoningRunawayExhausted
+    ? REASONING_RUNAWAY_EXHAUSTED_STOP_REASON
+    : terminalRunLimitStopReason
   if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
@@ -1977,8 +2109,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   repairToolUseToolResultPairing(messages)
 
   onChunk(
-    terminalRunLimitStopReason === null
+    terminalStopReason === null
       ? { type: 'done' }
-      : { type: 'done', stopReason: terminalRunLimitStopReason },
+      : { type: 'done', stopReason: terminalStopReason },
   )
 }

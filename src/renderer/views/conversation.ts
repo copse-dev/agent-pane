@@ -171,6 +171,7 @@ import { showToast } from './toast.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
+import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
@@ -4019,8 +4020,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       'Fork from here',
     )
     fork.addEventListener('click', () => {
-      fork.disabled = true
-      void runFork(threadId, msgId).finally(() => (fork.disabled = false))
+      const rect = fork.getBoundingClientRect()
+      showContextMenu(rect.left, rect.bottom + 4, [
+        { heading: 'Fork from here' },
+        {
+          label: 'Fork a copy',
+          onSelect: (): void => {
+            fork.disabled = true
+            void runFork(threadId, msgId).finally(() => (fork.disabled = false))
+          },
+        },
+        {
+          label: 'Edit thread history…',
+          onSelect: (): void => {
+            const projectId = store.getState().activeProjectId
+            if (!projectId) return
+            openThreadHistoryEditor(store, api, { projectId, threadId, focusMessageId: msgId })
+          },
+        },
+      ])
     })
     const resend = el(
       'button',
@@ -4336,6 +4354,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
+      ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
@@ -4519,17 +4538,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (m) appendMessageEl(thread.id, m.id, true)
     }
     // Batched tail work for the whole window, in the order the per-message path
-    // would have left things in: labels and actions reflect the final DOM, and
-    // the view lands at the bottom before the chrome is inserted around it.
+    // would have left things in: labels, actions, and chrome must be in place
+    // before measuring the bottom. Reattaching an unchanged activity row does
+    // not trigger setActivity's scroll correction on a switch between live threads.
     syncModelLabels()
     syncUserActions()
     syncAcpResourceReferences(list, api, store)
+    finishThreadChrome(thread)
     if (preservedScrollTop === null) {
       scrollToBottom(true)
     } else {
       setScrollTopProgrammatically(preservedScrollTop)
+      updateScrollButton()
     }
-    finishThreadChrome(thread)
     if (thread.status === 'running') cancelThreadCompaction(thread.id)
     else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
       scheduleThreadCompaction(thread.id)
@@ -4842,7 +4863,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           setReasoningDisclosureTitle(details, false)
         })
         const last = getThreadById(store, tid)?.messages.at(-1)
-        if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
+        if (last) renderMessageTurnRecovery(tid, last.id)
       }
       syncAvatarMotion()
     }),

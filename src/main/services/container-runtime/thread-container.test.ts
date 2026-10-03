@@ -1,13 +1,26 @@
+import { isRecord } from '@shared/unknown-value.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
-import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
+import { WORKER_BASE_IMAGE, WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
+  appleConfigShortfall,
+  appleContainerStarted,
+  appleCreateArgs,
+  appleImageDigest,
+  appleImageLabel,
+  appleVolumePrepareArgs,
   buildAttestation,
+  containerCreateArgs,
+  FINGERPRINT_LABEL,
+  MANAGED_LABEL,
+  parseAppleManagedRuntimes,
+  parseAppleManagedVolumes,
+  RUNTIME_LABEL,
   waitForContainer,
   workerBuildFingerprint,
   containerName,
@@ -17,25 +30,27 @@ import {
   dockerRunArgs,
   fetchCarryOut,
   loadCarryOutForAdoption,
+  hasRecordedRuns,
   loadRunForContinuation,
   providerOrigin,
   runThreadInContainer,
   secretCanaryCheck,
   WORKER_UID,
   writeCarryInBundle,
-  type DockerRunInput,
+  type ContainerRunInput,
 } from './thread-container.ts'
 import { containerAttestationShortfall } from '../security/runtime-containment.ts'
 
-function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
+function input(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
   return {
+    engine: 'docker',
     runtimeId: 'run-test',
     image: 'copse-worker:test',
     runDir: '/tmp/copse-runs/run-test',
     egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
     egressToken: 'test-run-token',
     sharedStore: false,
-    apiKeyEnv: null,
+    keyOverLink: false,
     memoryLimit: '4g',
     pidsLimit: 512,
     cpus: 2,
@@ -104,6 +119,7 @@ describe('dockerRunArgs', () => {
         .find((a, i) => args[i - 1] === '--env' && a.startsWith(`${name}=`))
         ?.slice(name.length + 1)
     assert.equal(env('COPSE_EGRESS'), 'stdio')
+    assert.equal(env('COPSE_HOST_LINK'), 'stdio')
     assert.equal(args[0], 'create')
     assert.ok(args.includes('--interactive'), 'stdin is the link, so it must stay open')
     // The proxy URL carries the run's token (A7); the worker blanks it after
@@ -122,11 +138,12 @@ describe('dockerRunArgs', () => {
       false,
       'a run with no egress gets no proxy and no link',
     )
+    assert.ok(!none.some((a) => a.startsWith('COPSE_HOST_LINK=')))
     assert.ok(!none.some((a) => a.startsWith('--sysctl')))
   })
 
-  it('mounts only the run directory, and passes the key by name of the variable only', () => {
-    const args = dockerRunArgs(input({ apiKeyEnv: 'COPSE_RUN_KEY' }))
+  it('mounts only the run directory, and never puts the key in the container configuration', () => {
+    const args = dockerRunArgs(input({ keyOverLink: true }))
     const volumes = args.filter((_, i) => args[i - 1] === '--volume')
     assert.equal(volumes.length, 3)
     for (const volume of volumes) {
@@ -140,7 +157,7 @@ describe('dockerRunArgs', () => {
     ])
     // An installing run also mounts the host's shared pnpm store, nested in
     // the fresh workspace (A12); one that does not install never sees it.
-    const installing = dockerRunArgs(input({ apiKeyEnv: 'COPSE_RUN_KEY', sharedStore: true }))
+    const installing = dockerRunArgs(input({ keyOverLink: true, sharedStore: true }))
     assert.ok(
       installing.includes(
         '--mount=type=volume,source=copse-pnpm-store,target=/workspace/.pnpm-store,volume-nocopy=false',
@@ -158,8 +175,41 @@ describe('dockerRunArgs', () => {
     // guest: their hosts are never admitted.
     assert.ok(!args.includes('ELECTRON_SKIP_BINARY_DOWNLOAD=1'), 'Electron comes from GitHub (A11)')
     assert.ok(args.includes('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1'))
-    assert.ok(args.includes('COPSE_RUN_KEY'))
-    assert.ok(!args.some((a) => a.includes('COPSE_RUN_KEY=')))
+    // The key crosses the stdio link when the worker asks (A17): no `--env`
+    // names it, so `docker inspect` and the worker's initial environment
+    // never hold it. Environment entries are exactly the known, secret-free set.
+    const envNames = args
+      .filter((_, i) => args[i - 1] === '--env')
+      .map((entry) => entry.split('=')[0])
+    assert.deepEqual(
+      envNames.filter(
+        (name) =>
+          ![
+            'COPSE_DIR',
+            'HOME',
+            'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD',
+            'PUPPETEER_SKIP_DOWNLOAD',
+            'CYPRESS_INSTALL_BINARY',
+            'COPSE_HOST_LINK',
+            'COPSE_EGRESS',
+            'COPSE_EGRESS_TOKEN',
+            'HTTPS_PROXY',
+            'HTTP_PROXY',
+            'https_proxy',
+            'http_proxy',
+            'NO_PROXY',
+            'no_proxy',
+            'NODE_USE_ENV_PROXY',
+            'NODE_OPTIONS',
+          ].includes(name ?? ''),
+      ),
+      [],
+    )
+    // A run with a key and no egress still gets the link, to collect the key
+    // over, and still no proxy.
+    const keyOnly = dockerRunArgs(input({ keyOverLink: true, egress: [], egressToken: null }))
+    assert.ok(keyOnly.includes('COPSE_HOST_LINK=stdio'))
+    assert.ok(!keyOnly.some((a) => a.startsWith('COPSE_EGRESS=') || a.startsWith('HTTPS_PROXY=')))
   })
 
   it('produces an attestation that meets the containment bar', () => {
@@ -168,6 +218,522 @@ describe('dockerRunArgs', () => {
     assert.equal(attestation.network, 'brokered')
     assert.deepEqual(attestation.egressAllowlist, ['model.copse.internal:8080'])
     assert.equal(buildAttestation(input({ egress: [] }), undefined).network, 'none')
+    assert.equal(attestation.engine, 'docker')
+    assert.equal(attestation.isolation, 'shared-kernel')
+    assert.equal(attestation.securityProfiles, 'default')
+    assert.equal(attestation.processLimit, 'cgroup-pids')
+  })
+
+  it('is the create argv for a Docker run', () => {
+    assert.deepEqual(containerCreateArgs(input()), dockerRunArgs(input()))
+    assert.throws(() => dockerRunArgs(input({ engine: 'apple' })), /called for apple/)
+  })
+})
+
+function appleInput(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
+  return input({ engine: 'apple', ...overrides })
+}
+
+/** The value after `flag` in an argv, for flags Apple container takes as two words. */
+function after(args: readonly string[], flag: string): string[] {
+  return args.flatMap((arg, index) => (arg === flag ? [args[index + 1] ?? ''] : []))
+}
+
+describe('appleCreateArgs', () => {
+  it('is the exact argv Apple container is asked for', () => {
+    const args = appleCreateArgs(appleInput())
+    const hardening = args.slice(0, args.indexOf('--volume'))
+    assert.deepEqual(hardening, [
+      'create',
+      '--interactive',
+      '--name',
+      containerName('run-test'),
+      '--label',
+      `${MANAGED_LABEL}=1`,
+      '--label',
+      `${RUNTIME_LABEL}=run-test`,
+      '--init',
+      '--read-only',
+      '--cap-drop',
+      'ALL',
+      '--ulimit',
+      'nproc=512:512',
+      '--memory',
+      '4g',
+      '--cpus',
+      '2',
+      '--user',
+      `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+      '--tmpfs',
+      '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777',
+      '--mount',
+      `type=volume,source=${workspaceVolumeName('run-test')},target=/workspace`,
+      '--network',
+      'none',
+    ])
+    assert.deepEqual(containerCreateArgs(appleInput()), args)
+  })
+
+  it('shares the mounts, environment and image with the Docker argv', () => {
+    const apple = appleCreateArgs(appleInput({ keyOverLink: true, egress: [], egressToken: null }))
+    const docker = dockerRunArgs(input({ keyOverLink: true, egress: [], egressToken: null }))
+    assert.deepEqual(
+      apple.slice(apple.indexOf('--volume')),
+      docker.slice(docker.indexOf('--volume')),
+    )
+    assert.deepEqual(after(apple, '--volume'), [
+      '/tmp/copse-runs/run-test:/run/copse:ro',
+      '/tmp/copse-runs/run-test/state:/run/copse/state:rw',
+      '/tmp/copse-runs/run-test/out:/run/copse/out:rw',
+    ])
+    assert.equal(apple.at(-1), 'copse-worker:test')
+    assert.ok(after(apple, '--env').includes('COPSE_HOST_LINK=stdio'))
+    assert.ok(!after(apple, '--env').some((value) => value.startsWith('COPSE_EGRESS=')))
+  })
+
+  it('asks for nothing Apple container would take as a host channel or a false claim', () => {
+    const args = appleCreateArgs(appleInput())
+    for (const flag of [
+      '--ssh',
+      '--publish',
+      '--publish-socket',
+      '--virtualization',
+      '--rosetta',
+    ]) {
+      assert.ok(!args.includes(flag), flag)
+    }
+    // No Docker-only spellings that Apple container would reject or ignore.
+    assert.ok(
+      !args.some((arg) => arg.startsWith('--security-opt') || arg.startsWith('--pids-limit')),
+    )
+    assert.ok(!args.some((arg) => arg.includes('seccomp') || arg.includes('apparmor')))
+  })
+
+  it('refuses the shared pnpm store, which an Apple volume cannot be', () => {
+    assert.throws(
+      () => appleCreateArgs(appleInput({ sharedStore: true })),
+      /cannot share the pnpm store/,
+    )
+    assert.throws(() => appleCreateArgs(input()), /called for docker/)
+  })
+
+  it('hands the fresh volume to the worker uid with nothing but CAP_CHOWN', () => {
+    assert.deepEqual(appleVolumePrepareArgs(appleInput()), [
+      'run',
+      '--rm',
+      '--network',
+      'none',
+      '--read-only',
+      '--cap-drop',
+      'ALL',
+      '--cap-add',
+      'CAP_CHOWN',
+      '--user',
+      '0:0',
+      '--mount',
+      `type=volume,source=${workspaceVolumeName('run-test')},target=/workspace`,
+      '--entrypoint',
+      'chown',
+      'copse-worker:test',
+      `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+      '/workspace',
+    ])
+  })
+
+  it('attests a VM with no seccomp claim, an rlimit process cap, and meets the bar', () => {
+    const attestation = buildAttestation(appleInput(), 'sha256:abc')
+    assert.equal(attestation.engine, 'apple')
+    assert.equal(attestation.isolation, 'vm')
+    assert.equal(attestation.securityProfiles, 'none')
+    assert.equal(attestation.processLimit, 'rlimit-nproc')
+    assert.equal(attestation.noNewPrivileges, true)
+    assert.equal(attestation.pidsLimit, 512)
+    assert.equal(containerAttestationShortfall(attestation), null)
+  })
+})
+
+/**
+ * `container inspect` for a container made from {@link appleCreateArgs}, in
+ * the shape Apple container 1.4.1 reported it (environment and paths trimmed).
+ */
+function appleInspect(
+  mutate: (config: Record<string, unknown>) => void = () => undefined,
+  status: Record<string, unknown> = { networks: [], state: 'stopped' },
+): string {
+  const configuration: Record<string, unknown> = {
+    id: containerName('run-test'),
+    capAdd: [],
+    capDrop: ['ALL'],
+    readOnly: true,
+    networks: [],
+    useInit: true,
+    ssh: false,
+    virtualization: false,
+    rosetta: false,
+    publishedPorts: [],
+    publishedSockets: [],
+    sysctls: {},
+    labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-test' },
+    resources: { cpuOverhead: 1, cpus: 2, memoryInBytes: 4294967296 },
+    initProcess: {
+      executable: '/app/entrypoint.sh',
+      arguments: [],
+      rlimits: [{ hard: 512, limit: 'RLIMIT_NPROC', soft: 512 }],
+      user: { raw: { userString: '1001:1001' } },
+      workingDirectory: '/workspace',
+    },
+    mounts: [
+      {
+        destination: '/tmp',
+        options: ['rw', 'exec', 'nosuid', 'nodev', 'size=1g', 'mode=1777'],
+        source: 'tmpfs',
+        type: { tmpfs: {} },
+      },
+      {
+        destination: '/run/copse',
+        options: ['ro'],
+        source: '/tmp/copse-runs/run-test',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/run/copse/state',
+        options: ['rw'],
+        source: '/tmp/copse-runs/run-test/state',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/run/copse/out',
+        options: ['rw'],
+        source: '/tmp/copse-runs/run-test/out',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/workspace',
+        options: [],
+        source: '/volumes/copse-ws-run-test/volume.img',
+        type: { volume: { format: 'ext4', name: workspaceVolumeName('run-test') } },
+      },
+    ],
+  }
+  mutate(configuration)
+  return JSON.stringify([{ id: containerName('run-test'), configuration, status }])
+}
+
+function mounts(config: Record<string, unknown>): Array<Record<string, unknown>> {
+  const value = config['mounts']
+  assert.ok(Array.isArray(value))
+  return value.filter((mount): mount is Record<string, unknown> => typeof mount === 'object')
+}
+
+function appleVolumeInspect(): string {
+  return JSON.stringify([
+    {
+      configuration: {
+        name: workspaceVolumeName('run-test'),
+        source: '/volumes/copse-ws-run-test/volume.img',
+        format: 'ext4',
+        labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-test' },
+      },
+    },
+  ])
+}
+
+describe('appleConfigShortfall', () => {
+  it('accepts the container the run asked for', () => {
+    assert.equal(appleConfigShortfall(appleInput(), appleInspect(), appleVolumeInspect()), null)
+  })
+
+  it('refuses a container missing any hardening the attestation will claim', () => {
+    const set =
+      (key: string, value: unknown) =>
+      (config: Record<string, unknown>): void => {
+        config[key] = value
+      }
+    const cases: Array<[string, (config: Record<string, unknown>) => void, RegExp]> = [
+      ['caps kept', set('capDrop', []), /capabilities were not dropped/],
+      ['caps added', set('capAdd', ['CAP_SYS_ADMIN']), /added: CAP_SYS_ADMIN/],
+      ['writable root', set('readOnly', false), /root filesystem is writable/],
+      ['a network', set('networks', [{ network: 'default' }]), /attached to a network/],
+      [
+        'another user',
+        set('initProcess', { rlimits: [], user: { raw: { userString: '0:0' } } }),
+        /runs as 0:0/,
+      ],
+      [
+        'no process limit',
+        set('initProcess', { rlimits: [], user: { raw: { userString: '1001:1001' } } }),
+        /process limit was not applied/,
+      ],
+      ['less memory', set('resources', { cpus: 2, memoryInBytes: 1073741824 }), /memory limit/],
+      ['more cpus', set('resources', { cpus: 4, memoryInBytes: 4294967296 }), /CPU limit/],
+      ['the ssh agent', set('ssh', true), /SSH agent is forwarded/],
+      ['virtualization', set('virtualization', true), /nested virtualization/],
+      [
+        'a published socket',
+        set('publishedSockets', [{ host: '/tmp/x.sock' }]),
+        /port or socket is published/,
+      ],
+      ['no init', set('useInit', false), /init process is missing/],
+      ['unlabelled', set('labels', {}), /not labelled as this run/],
+      [
+        'a writable run directory',
+        (c): void => {
+          const run = mounts(c).find((m) => m['destination'] === '/run/copse')
+          if (run) run['options'] = ['rw']
+        },
+        /mount at \/run\/copse is not the one asked for/,
+      ],
+      [
+        'a host path mounted',
+        (c): void => {
+          c['mounts'] = [
+            ...mounts(c),
+            { destination: '/host', options: [], source: '/Users/me', type: { virtiofs: {} } },
+          ]
+        },
+        /unexpected mount at \/host/,
+      ],
+      [
+        'the workspace missing',
+        (c): void => {
+          c['mounts'] = mounts(c).filter((m) => m['destination'] !== '/workspace')
+        },
+        /mount at \/workspace is missing/,
+      ],
+      [
+        "another run's volume",
+        (c): void => {
+          const ws = mounts(c).find((m) => m['destination'] === '/workspace')
+          if (ws) ws['type'] = { volume: { name: 'copse-ws-other' } }
+        },
+        /mount at \/workspace is not the one asked for/,
+      ],
+    ]
+    for (const [label, mutate, reason] of cases) {
+      assert.match(
+        appleConfigShortfall(appleInput(), appleInspect(mutate), appleVolumeInspect()) ?? '',
+        reason,
+        label,
+      )
+    }
+  })
+
+  it('requires the exact unique mount sources, types and access modes', () => {
+    const cases: Array<[string, (config: Record<string, unknown>) => void]> = [
+      ...['/run/copse', '/run/copse/state', '/run/copse/out'].map(
+        (target) =>
+          [
+            `foreign source at ${target}`,
+            (config: Record<string, unknown>): void => {
+              const mount = mounts(config).find((entry) => entry['destination'] === target)
+              assert.ok(mount)
+              mount['source'] = '/Users/me/.ssh'
+            },
+          ] satisfies [string, (config: Record<string, unknown>) => void],
+      ),
+      ...['/tmp', '/workspace', '/run/copse', '/run/copse/state', '/run/copse/out'].flatMap(
+        (target): Array<[string, (config: Record<string, unknown>) => void]> => [
+          [
+            `missing ${target}`,
+            (config): void => {
+              config['mounts'] = mounts(config).filter((entry) => entry['destination'] !== target)
+            },
+          ],
+          [
+            `duplicate ${target}`,
+            (config): void => {
+              const mount = mounts(config).find((entry) => entry['destination'] === target)
+              assert.ok(mount)
+              config['mounts'] = [...mounts(config), { ...mount }]
+            },
+          ],
+          [
+            `wrong type at ${target}`,
+            (config): void => {
+              const mount = mounts(config).find((entry) => entry['destination'] === target)
+              assert.ok(mount)
+              mount['type'] = { unrelated: {} }
+            },
+          ],
+          [
+            `ambiguous type at ${target}`,
+            (config): void => {
+              const mount = mounts(config).find((entry) => entry['destination'] === target)
+              assert.ok(mount)
+              assert.ok(isRecord(mount['type']))
+              mount['type'] = { ...mount['type'], unrelated: {} }
+            },
+          ],
+        ],
+      ),
+      [
+        'foreign volume source',
+        (config): void => {
+          const mount = mounts(config).find((entry) => entry['destination'] === '/workspace')
+          assert.ok(mount)
+          mount['source'] = '/volumes/another-run/volume.img'
+        },
+      ],
+      ...['/run/copse/state', '/run/copse/out'].flatMap(
+        (target): Array<[string, (config: Record<string, unknown>) => void]> =>
+          [[], ['ro'], ['rw', 'ro']].map((options) => [
+            `invalid writable mode ${options.join(',')} at ${target}`,
+            (config): void => {
+              const mount = mounts(config).find((entry) => entry['destination'] === target)
+              assert.ok(mount)
+              mount['options'] = options
+            },
+          ]),
+      ),
+      [
+        'contradictory read-only mode',
+        (config): void => {
+          const mount = mounts(config).find((entry) => entry['destination'] === '/run/copse')
+          assert.ok(mount)
+          mount['options'] = ['ro', 'rw']
+        },
+      ],
+      [
+        'missing reported source',
+        (config): void => {
+          const mount = mounts(config).find((entry) => entry['destination'] === '/run/copse/state')
+          assert.ok(mount)
+          Reflect.deleteProperty(mount, 'source')
+        },
+      ],
+    ]
+    for (const [label, mutate] of cases) {
+      assert.notEqual(
+        appleConfigShortfall(appleInput(), appleInspect(mutate), appleVolumeInspect()),
+        null,
+        label,
+      )
+    }
+  })
+
+  it('fails closed when volume inspection is missing or describes another run', () => {
+    for (const data of [
+      'not json',
+      '[]',
+      '{}',
+      JSON.stringify([
+        {
+          configuration: {
+            name: workspaceVolumeName('another-run'),
+            source: '/volumes/other/volume.img',
+            format: 'ext4',
+            labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'another-run' },
+          },
+        },
+      ]),
+    ]) {
+      assert.match(appleConfigShortfall(appleInput(), appleInspect(), data) ?? '', /volume inspect/)
+    }
+  })
+
+  it('fails closed on output it cannot read', () => {
+    assert.match(
+      appleConfigShortfall(appleInput(), 'not json', appleVolumeInspect()) ?? '',
+      /did not describe/,
+    )
+    assert.match(
+      appleConfigShortfall(
+        appleInput(),
+        appleInspect((c) => {
+          delete c['capDrop']
+        }),
+        appleVolumeInspect(),
+      ) ?? '',
+      /did not describe/,
+    )
+    assert.match(
+      appleConfigShortfall(appleInput(), '[]', appleVolumeInspect()) ?? '',
+      /did not describe/,
+    )
+  })
+
+  it('tells a created container from a started one', () => {
+    assert.equal(appleContainerStarted(appleInspect()), false)
+    assert.equal(
+      appleContainerStarted(appleInspect(undefined, { networks: [], state: 'running' })),
+      true,
+    )
+    // Exited before the first poll: stopped again, but it has a start date.
+    assert.equal(
+      appleContainerStarted(
+        appleInspect(undefined, { state: 'stopped', startedDate: '2026-09-26T15:10:48Z' }),
+      ),
+      true,
+    )
+    assert.equal(appleContainerStarted('garbage'), false)
+  })
+})
+
+describe('Apple container listings', () => {
+  it('finds the managed runtimes and volumes, and whether each is running', () => {
+    const list = JSON.stringify([
+      {
+        configuration: {
+          id: 'buildkit',
+          labels: { 'com.apple.container.resource.role': 'builder' },
+        },
+        status: { state: 'running' },
+      },
+      {
+        configuration: {
+          id: 'copse-run-a',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-a' },
+        },
+        status: { state: 'running', startedDate: '2026-09-26T14:00:00Z' },
+      },
+      {
+        configuration: {
+          id: 'copse-run-b',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-b' },
+        },
+        status: { state: 'stopped' },
+      },
+    ])
+    assert.deepEqual(parseAppleManagedRuntimes(list), [
+      { runtimeId: 'run-a', status: 'running', running: true },
+      { runtimeId: 'run-b', status: 'stopped', running: false },
+    ])
+    const volumes = JSON.stringify([
+      {
+        id: 'copse-ws-run-b',
+        configuration: {
+          name: 'copse-ws-run-b',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-b' },
+        },
+      },
+      { id: 'other', configuration: { name: 'other', labels: {} } },
+    ])
+    assert.deepEqual(parseAppleManagedVolumes(volumes), ['run-b'])
+    assert.throws(() => parseAppleManagedRuntimes('{}'), /something other than a list/)
+  })
+
+  it('reads the worker fingerprint and digest from an image inspect', () => {
+    const inspect = JSON.stringify([
+      {
+        id: '1a33',
+        configuration: {
+          name: 'copse-worker:local',
+          descriptor: {
+            digest: 'sha256:1a33',
+            mediaType: 'application/vnd.oci.image.index.v1+json',
+          },
+        },
+        variants: [
+          {
+            config: { architecture: 'arm64', config: { Labels: { [FINGERPRINT_LABEL]: 'fp-1' } } },
+          },
+        ],
+      },
+    ])
+    assert.equal(appleImageLabel(inspect, FINGERPRINT_LABEL), 'fp-1')
+    assert.equal(appleImageLabel(inspect, 'missing'), null)
+    assert.equal(appleImageDigest(inspect), 'sha256:1a33')
+    assert.equal(appleImageLabel('[]', FINGERPRINT_LABEL), null)
   })
 })
 
@@ -386,6 +952,103 @@ describe('adoptCarryOut', () => {
   })
 })
 
+describe('hasRecordedRuns', () => {
+  it('is true only once a run directory exists', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-recorded-'))
+    try {
+      assert.equal(hasRecordedRuns(join(dir, 'missing')), false)
+      assert.equal(hasRecordedRuns(dir), false)
+      mkdirSync(join(dir, 'run-abc'))
+      assert.equal(hasRecordedRuns(dir), true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('run key delivery', () => {
+  it(
+    'keeps the key out of docker argv, the docker environment and this process, in a private runtimes directory',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const key = 'sk-synthetic-delivery-key-0123456789'
+      const workspace = initRepo()
+      const parent = mkdtempSync(join(tmpdir(), 'copse-runtimes-parent-'))
+      const runtimesDir = join(parent, 'runtimes')
+      const bin = mkdtempSync(join(tmpdir(), 'copse-docker-record-'))
+      const argvLog = join(bin, 'argv.log')
+      const envLog = join(bin, 'env.log')
+      const previousPath = process.env['PATH']
+      try {
+        // Records every call; refuses to create the container, which ends the
+        // run before anything would need a daemon.
+        writeFileSync(
+          join(bin, 'docker'),
+          [
+            '#!/bin/sh',
+            `printf '%s\\n' "$@" >> '${argvLog}'`,
+            `env >> '${envLog}'`,
+            'case "$1" in',
+            '  info) echo 27.0.0 ;;',
+            '  create) exit 1 ;;',
+            'esac',
+            'exit 0',
+            '',
+          ].join('\n'),
+          { mode: 0o755 },
+        )
+        process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+        await assert.rejects(
+          runThreadInContainer(
+            {
+              workspace,
+              runtimesDir,
+              prompt: 'work',
+              model: 'scripted',
+              provider: {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'test',
+                url: 'http://model.copse.internal:8080/v1',
+                label: 'scripted',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: {},
+              },
+              apiKey: key,
+              budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
+              egressAllowlist: ['model.copse.internal:8080'],
+              // As a real run does: the alias is dialled on the host's loopback (A16).
+              egressResolve: { 'model.copse.internal': '127.0.0.1' },
+            },
+            { runtimeId: 'run-key-delivery', onLog: () => {} },
+          ),
+        )
+        const argv = readFileSync(argvLog, 'utf8')
+        assert.ok(argv.split('\n').includes('create'), 'the container create was attempted')
+        assert.ok(argv.includes('COPSE_HOST_LINK=stdio'))
+        assert.ok(!argv.includes(key), 'the key is not an argument')
+        assert.ok(!readFileSync(envLog, 'utf8').includes(key), 'docker never inherits the key')
+        assert.ok(!Object.values(process.env).includes(key), 'this process never holds it')
+        const spec = readFileSync(join(runtimesDir, 'run-key-delivery', 'run.json'), 'utf8')
+        assert.ok(!spec.includes(key))
+        assert.match(spec, /"apiKeyOverLink": true/)
+        // Other local accounts cannot reach the run directory (checkout
+        // snapshot, staged sign-in); the guest's mount root is below this.
+        assert.equal(statSync(runtimesDir).mode & 0o777, 0o700)
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        rmSync(workspace, { recursive: true, force: true })
+        rmSync(parent, { recursive: true, force: true })
+        rmSync(bin, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
 describe('waitForContainer', () => {
   /** A wait that never closes: the container is gone but `docker wait` hangs. */
   function hungWait(): { output: Promise<string>; cancel: () => void } {
@@ -458,6 +1121,16 @@ describe('workerBuildFingerprint', () => {
         workerBuildFingerprint({ workerBundle: bundle, baseImage: 'other:latest' }),
         workerBuildFingerprint({ workerBundle: bundle }),
       )
+      // The default base is pinned by digest, not a tag that moves under it,
+      // and moving the pin — same tag, new digest — is a different guest.
+      assert.match(WORKER_BASE_IMAGE, /^node:24-trixie-slim@sha256:[0-9a-f]{64}$/)
+      assert.notEqual(
+        workerBuildFingerprint({
+          workerBundle: bundle,
+          baseImage: WORKER_BASE_IMAGE.replace(/@sha256:.*/, `@sha256:${'0'.repeat(64)}`),
+        }),
+        workerBuildFingerprint({ workerBundle: bundle }),
+      )
       // And the agents baked in: a version bump is a different guest too. The
       // default is the key-capable catalogue set, so an explicit empty list and
       // an explicit older pin both differ from it.
@@ -497,6 +1170,12 @@ describe('WORKER_DOCKERFILE', () => {
     const user = lines.findIndex((line) => line.startsWith('USER '))
     assert.ok(arg !== -1 && install !== -1 && user !== -1)
     assert.ok(arg < install && install < user)
+    const copyRuntime = lines.findIndex((line) => line.includes('node_modules ./node_modules'))
+    const readableRuntime = lines.findIndex((line) =>
+      line.includes('chmod -R a+rX /app/node_modules'),
+    )
+    assert.ok(copyRuntime !== -1 && readableRuntime !== -1)
+    assert.ok(copyRuntime < readableRuntime && readableRuntime < user)
     // An empty argument skips the layer rather than running `npm install -g`
     // with nothing, so a build without agents stays a build.
     assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)
@@ -504,7 +1183,7 @@ describe('WORKER_DOCKERFILE', () => {
     // base, which is what the projects a run carries in expect.
     const pnpm = lines.findIndex((line) => /npm install -g .*"pnpm@\$\{PNPM_VERSION\}"/.test(line))
     assert.ok(pnpm !== -1 && pnpm < user)
-    assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-trixie-slim'))
+    assert.ok(lines.some((line) => line === `ARG BASE_IMAGE=${WORKER_BASE_IMAGE}`))
     // node-gyp's toolchain, so a project's native modules build in the guest,
     // and a virtual display with Electron's libraries, so an e2e suite runs (A11).
     for (const tool of [
@@ -529,6 +1208,22 @@ describe('WORKER_DOCKERFILE', () => {
     assert.ok(!/^\s+(?:bubblewrap|socat) \\$/m.test(WORKER_DOCKERFILE))
     assert.ok(!WORKER_ENTRYPOINT_SH.includes('socat'))
   })
+
+  it('starts the worker under no-new-privileges and ships no setuid binary', () => {
+    // Apple container has no no-new-privileges flag; the entrypoint sets it
+    // for both engines, and the worker checks it before declaring containment.
+    assert.match(WORKER_ENTRYPOINT_SH, /^exec setpriv --no-new-privs -- node \/app\/worker\.cjs$/m)
+    const lines = WORKER_DOCKERFILE.split('\n')
+    const strip = lines.findIndex((line) => line.startsWith('RUN command -v setpriv'))
+    const lastCopy = lines.findLastIndex((line) => line.startsWith('COPY '))
+    const user = lines.findIndex((line) => line.startsWith('USER '))
+    assert.ok(strip > lastCopy && strip < user, 'after everything is in the image, before USER')
+    assert.match(WORKER_DOCKERFILE, /find \/ -xdev -type f -perm \/6000 -exec chmod ug-s/)
+    // A builder that silently drops the context's nested files fails the build.
+    assert.ok(
+      lines.includes('RUN test -f /app/node_modules/@anthropic-ai/sandbox-runtime/package.json'),
+    )
+  })
 })
 
 describe('secretCanaryCheck', () => {
@@ -550,11 +1245,7 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
   // before anything starts unless the broker will dial the alias on the host's
   // loopback — the CLI takes the URL, allowlist and remap from its caller.
   const url = 'http://model.copse.internal:1234/v1'
-  const aliasRun = (
-    dir: string,
-    egressResolve: Record<string, string>,
-    apiKeyEnv: string,
-  ): Promise<unknown> =>
+  const aliasRun = (dir: string, egressResolve: Record<string, string>): Promise<unknown> =>
     runThreadInContainer({
       workspace: join(dir, 'missing-checkout'),
       runtimesDir: join(dir, 'runtimes'),
@@ -572,7 +1263,7 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
         extraBody: null,
         params: {},
       },
-      apiKeyEnv,
+      apiKey: 'sk-test',
       budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
       egressAllowlist: ['model.copse.internal:1234'],
       egressResolve,
@@ -580,7 +1271,6 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
 
   it('refuses a run whose alias the broker would dial off the loopback', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
-    process.env['COPSE_TEST_ALIAS_KEY'] = 'sk-test'
     try {
       for (const egressResolve of [
         { 'model.copse.internal': '203.0.113.5' },
@@ -591,31 +1281,33 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
         {},
       ]) {
         await assert.rejects(
-          aliasRun(dir, egressResolve, 'COPSE_TEST_ALIAS_KEY'),
+          aliasRun(dir, egressResolve),
           /model\.copse\.internal .*loopback/,
           JSON.stringify(egressResolve),
         )
       }
     } finally {
-      delete process.env['COPSE_TEST_ALIAS_KEY']
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
   it('lets a run map the alias to a loopback literal or localhost', async () => {
-    // The key variable is left unset, so an admitted run stops at the next
-    // check — past the alias guard, before anything starts.
+    // The checkout does not exist, so an admitted run still stops before any
+    // container starts — at the engine check, or at the carry-in — but never
+    // at the alias guard.
     const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
-    delete process.env['COPSE_TEST_ALIAS_UNSET']
+    const canary = process.env['COPSE_SECRET_CANARY']
     try {
       for (const dial of ['127.0.0.1', '::1', '[::1]:1234', 'localhost', 'LOCALHOST:1234']) {
         await assert.rejects(
-          aliasRun(dir, { 'model.copse.internal': dial }, 'COPSE_TEST_ALIAS_UNSET'),
-          /COPSE_TEST_ALIAS_UNSET is not set on the host/,
+          aliasRun(dir, { 'model.copse.internal': dial }),
+          (error: unknown) => error instanceof Error && !/loopback/.test(error.message),
           dial,
         )
       }
     } finally {
+      if (canary === undefined) delete process.env['COPSE_SECRET_CANARY']
+      else process.env['COPSE_SECRET_CANARY'] = canary
       rmSync(dir, { recursive: true, force: true })
     }
   })

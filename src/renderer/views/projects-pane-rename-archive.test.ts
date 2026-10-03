@@ -102,7 +102,7 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.ok(rowFor('Renamed chat'))
   })
 
-  it('right-click offers Rename, Fork and Archive; Archive soft-hides the row', () => {
+  it('right-click offers Rename, Fork, Archive and Delete; Archive soft-hides the row', () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -125,7 +125,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const menu = document.querySelector<HTMLElement>('.context-menu')
     assert.ok(menu)
     const labels = Array.from(menu.querySelectorAll('.context-menu-item')).map((i) => i.textContent)
-    assert.deepEqual(labels, ['Rename', 'Fork', 'Archive'])
+    assert.deepEqual(labels, ['Rename', 'Fork', 'Archive', 'Delete'])
 
     const archiveItem = Array.from(
       menu.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
@@ -141,6 +141,98 @@ describe('projects pane thread rename + archive (component)', () => {
     const archived = store.getState().threads.find((t) => t.id === 't2')
     assert.ok(archived)
     assert.equal(isThreadArchived(archived), true)
+  })
+
+  it('the vertical-dot button opens the same menu without switching threads; Delete removes its thread', () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Delete me')],
+      activeThreadId: 't1',
+    })
+    const cleared: string[][] = []
+    const api = makeApi()
+    api.agent.clearHistory = async (projectId, threadId): Promise<void> => {
+      cleared.push([projectId, threadId])
+    }
+    mount(store, api)
+    const row = rowFor('Delete me')
+    const button = row.querySelector<HTMLButtonElement>('.chat-menu-btn')
+    assert.ok(button)
+    assert.equal(button.getAttribute('aria-label'), 'Thread menu for Delete me')
+    assert.equal(button.getAttribute('aria-haspopup'), 'menu')
+    assert.ok(button.querySelector('[data-icon="more-vertical"]'))
+    button.click()
+
+    const labels = (): (string | null)[] =>
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent)
+    const buttonLabels = labels()
+    assert.deepEqual(buttonLabels, ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.equal(store.getState().activeThreadId, 't1')
+    assert.equal(store.getState().threads.length, 2)
+    assert.deepEqual(cleared, [])
+    dismissContextMenu()
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    assert.deepEqual(labels(), buttonLabels)
+    dismissContextMenu()
+    button.click()
+
+    const deleteItem = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Delete')
+    assert.ok(deleteItem)
+    assert.equal(deleteItem.disabled, false)
+    deleteItem.click()
+    assert.equal(document.querySelector('.context-menu'), null)
+    assert.deepEqual(
+      store.getState().threads.map((item) => item.id),
+      ['t1'],
+    )
+    assert.equal(store.getState().activeThreadId, 't1')
+    assert.deepEqual(cleared, [['a', 't2']])
+
+    rowFor('Keep me').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+    const lastDeleteItem = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Delete')
+    assert.ok(lastDeleteItem)
+    assert.equal(lastDeleteItem.disabled, true)
+    lastDeleteItem.click()
+    assert.equal(store.getState().threads.length, 1)
+    assert.deepEqual(cleared, [['a', 't2']])
+  })
+
+  it('keeps same-thread history editing inside the Fork menu', () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Editable chat')],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    rowFor('Editable chat').dispatchEvent(
+      new window.MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 40,
+        clientY: 80,
+      }),
+    )
+    const fork = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Fork')
+    assert.ok(fork)
+    fork.click()
+
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Fork a copy', 'Edit thread history…'],
+    )
   })
 
   it('context-menu Rename starts inline editing', () => {

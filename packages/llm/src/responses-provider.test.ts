@@ -2,7 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
 import { ResponsesProvider, toResponsesInput } from './responses-provider.ts'
-import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
+import { createProvider } from './create-provider.ts'
+import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 interface CapturedRequest {
   model: string
@@ -11,9 +12,13 @@ interface CapturedRequest {
   tools: Array<Record<string, unknown>>
   max_output_tokens?: number
   reasoning?: { summary?: string; effort?: string }
+  text?: { verbosity?: string }
+  parallel_tool_calls?: boolean
   include?: readonly string[]
   prompt_cache_key?: string
   store?: boolean
+  temperature?: number
+  metadata?: unknown
 }
 
 type TestEvent =
@@ -117,6 +122,203 @@ function collectImageDetails(value: unknown, found: string[] = []): string[] {
   }
   return found
 }
+
+describe('ChatGPT plan Responses contract', () => {
+  it('namespaces local tools, maps system instructions, and omits unsupported overrides', async () => {
+    const provider = new ResponsesProvider('gpt-6.1-sol', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+      params: { temperature: 0.5, topP: 0.7, reasoning: 'high' },
+      maxOutputTokens: 100,
+      serverTools: [{ type: 'web_search' }],
+      extraBody: { store: true, metadata: { leaked: true }, temperature: 1 },
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (body) => {
+        request = body
+      },
+      [
+        {
+          type: 'response.completed',
+          response: {
+            output: [],
+            usage: {
+              input_tokens: 10,
+              output_tokens: 3,
+              input_tokens_details: { cached_tokens: 0 },
+            },
+          },
+        },
+      ],
+    )
+    const chunks = await collect(provider, [{ role: 'system', content: 'Use Copse tools.' }])
+    assert.ok(request)
+    assert.equal(request.store, false)
+    assert.equal(request.stream, true)
+    assert.equal(request.temperature, undefined)
+    assert.equal(request.metadata, undefined)
+    assert.equal(request.max_output_tokens, undefined)
+    assert.deepEqual(request.input, [{ role: 'developer', content: 'Use Copse tools.' }])
+    assert.deepEqual(
+      request.tools.map((tool) => [tool['type'], tool['name']]),
+      [['namespace', 'copse']],
+    )
+    assert.equal(request.reasoning?.effort, 'high')
+    assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('does not retry a non-strict plan schema rejection when strict tools are configured', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-luna', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+      strictTools: true,
+    })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (request) => {
+      requests.push(request)
+      throw Object.assign(
+        new Error("400 Invalid schema for function 'read_file': invalid parameters"),
+        {
+          status: 400,
+        },
+      )
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+    await assert.rejects(collect(provider), /Invalid schema for function/)
+    assert.equal(requests.length, 1)
+    assert.equal(at(requests, 0).store, false)
+    assert.equal(at(at(requests, 0).tools, 0)['type'], 'namespace')
+  })
+
+  it('keeps plan tools non-strict while normalizing legacy bounds without mutating them', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-luna', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+      strictTools: true,
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (body) => {
+        request = body
+      },
+      [
+        {
+          type: 'response.completed',
+          response: {
+            output: [],
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              input_tokens_details: { cached_tokens: 0 },
+            },
+          },
+        },
+      ],
+    )
+    const parameters = {
+      type: 'object',
+      properties: {
+        runId: { type: 'integer', minimum: 0, exclusiveMinimum: true },
+        limit: { type: 'integer', maximum: 100, exclusiveMaximum: false },
+        nested: {
+          anyOf: [{ type: 'number', maximum: 1, exclusiveMaximum: true }, { type: 'null' }],
+        },
+        modern: { type: 'number', exclusiveMinimum: 2 },
+      },
+    }
+    const original = structuredClone(parameters)
+    for await (const _chunk of provider.stream(
+      [{ role: 'user', content: 'test' }],
+      [
+        {
+          name: 'get_ci_failure_logs',
+          description: 'Read CI failure logs',
+          parameters,
+        },
+      ],
+    )) {
+      /* Drain the request. */
+    }
+    assert.ok(request)
+    assert.deepEqual(request.tools, [
+      {
+        type: 'namespace',
+        name: 'copse',
+        description: 'Copse local tools',
+        tools: [
+          {
+            type: 'function',
+            name: 'get_ci_failure_logs',
+            description: 'Read CI failure logs',
+            strict: false,
+            parameters: {
+              type: 'object',
+              properties: {
+                runId: { type: 'integer', exclusiveMinimum: 0 },
+                limit: { type: 'integer', maximum: 100 },
+                nested: { anyOf: [{ type: 'number', exclusiveMaximum: 1 }, { type: 'null' }] },
+                modern: { type: 'number', exclusiveMinimum: 2 },
+              },
+            },
+          },
+        ],
+      },
+    ])
+    assert.deepEqual(parameters, original)
+  })
+
+  it('replays namespaced calls and tool outputs as full stateless input', () => {
+    const input = toResponsesInput(
+      [
+        {
+          role: 'assistant',
+          content: [{ id: 'call-1', name: 'read_file', args: { path: 'index.ts' } }],
+        },
+        { role: 'tool', toolResults: [{ toolCallId: 'call-1', result: 'contents' }] },
+      ],
+      new Map(),
+      true,
+    )
+    assert.deepEqual(input, [
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'read_file',
+        namespace: 'copse',
+        arguments: '{"path":"index.ts"}',
+      },
+      { type: 'function_call_output', call_id: 'call-1', output: 'contents' },
+    ])
+  })
+
+  it('fails on a truncated stream and never retries a partially delivered response', async () => {
+    const provider = new ResponsesProvider('gpt-6.1-sol', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+    })
+    let calls = 0
+    withFakeStream(provider, () => {
+      calls++
+    }, [{ type: 'response.output_text.delta', delta: 'partial' }])
+    await assert.rejects(collect(provider), /before response.completed/)
+    assert.equal(calls, 1)
+    assert.throws(
+      () =>
+        new ResponsesProvider('model', {
+          apiKey: 'oauth-token',
+          chatGptPlan: true,
+          baseURL: 'https://example.com/v1',
+        }),
+      /public OpenAI API/,
+    )
+  })
+})
 
 describe('ResponsesProvider input mapping', () => {
   it('maps messages, function calls, and function outputs to Responses items', () => {
@@ -729,4 +931,358 @@ describe('ResponsesProvider reasoning', () => {
       { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{}' },
     ])
   })
+})
+
+describe('ResponsesProvider request body: verbosity and parallel_tool_calls', () => {
+  async function bodyFor(
+    opts: ConstructorParameters<typeof ResponsesProvider>[1],
+  ): Promise<CapturedRequest> {
+    const provider = new ResponsesProvider('gpt-5.6-sol', opts)
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+    await collect(provider)
+    assert.ok(request)
+    return request
+  }
+
+  it('sends text.verbosity when tuned', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.deepEqual(body.text, { verbosity: 'low' })
+    assert.equal(Object.hasOwn(body, 'verbosity'), false)
+  })
+
+  it('sends no text field at all by default', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test' })
+    assert.equal(Object.hasOwn(body, 'text'), false)
+  })
+
+  it('sends verbosity alongside reasoning effort', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'high', reasoning: 'medium' },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+    assert.equal(body.reasoning?.effort, 'medium')
+  })
+
+  it('lets extraBody override it, last', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'low' },
+      extraBody: { text: { verbosity: 'high' } },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+  })
+
+  it('never sends parallel_tool_calls: the API default (true) is what Copse handles', async () => {
+    // The agent loop executes a batch's calls in order and answers them in one
+    // tool message, and reasoning replay is keyed to the whole batch (see
+    // "replays one reasoning block once for a parallel batch"), so there is
+    // nothing for an explicit value to fix. Pinned so a future change has to
+    // argue with docs/plans rather than slip in.
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.equal(Object.hasOwn(body, 'parallel_tool_calls'), false)
+  })
+})
+
+describe('ResponsesProvider strict tools', () => {
+  const tools: LLMTool[] = [
+    {
+      name: 'read_file',
+      description: 'Read a file',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, start_line: { type: 'integer' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'device_hub',
+      description: 'A root-level union cannot be strict',
+      parameters: {
+        oneOf: [{ type: 'object', properties: {}, required: [], additionalProperties: false }],
+      },
+    },
+  ]
+
+  async function run(provider: ResponsesProvider): Promise<ProviderStreamChunk[]> {
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], tools)) {
+      chunks.push(chunk)
+    }
+    return chunks
+  }
+
+  function strictFlags(request: CapturedRequest | undefined): Array<[unknown, unknown]> {
+    assert.ok(request)
+    return request.tools.map((tool) => [tool['name'], tool['strict']])
+  }
+
+  it('sends strict only on tools whose schema qualifies when the provider opts in', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    let request: CapturedRequest | undefined
+    withFakeStream(provider, (captured) => (request = captured), [])
+    await run(provider)
+
+    assert.deepEqual(strictFlags(request), [
+      ['read_file', true],
+      ['device_hub', false],
+    ])
+    const read = at(request?.tools ?? [], 0)
+    assert.deepEqual(read['parameters'], {
+      type: 'object',
+      properties: { path: { type: 'string' }, start_line: { type: ['integer', 'null'] } },
+      required: ['path', 'start_line'],
+      additionalProperties: false,
+    })
+    assert.deepEqual(at(request?.tools ?? [], 1)['parameters'], tools[1]?.parameters)
+  })
+
+  it('never sends strict for a provider that did not opt in', async () => {
+    const provider = new ResponsesProvider('gpt-test', {
+      apiKey: 'k',
+      baseURL: 'https://third-party.example/v1',
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(provider, (captured) => (request = captured), [])
+    await run(provider)
+
+    assert.deepEqual(strictFlags(request), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(at(request?.tools ?? [], 0)['parameters'], tools[0]?.parameters)
+  })
+
+  it('maps a null for an optional argument back to absent before the caller sees it', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'read_file',
+          arguments: '{"path":"a.ts","start_line":null}',
+        },
+      },
+    ])
+    const chunks = await run(provider)
+    assert.deepEqual(chunks, [
+      { type: 'tool_call', toolCall: { id: 'call_1', name: 'read_file', args: { path: 'a.ts' } } },
+    ])
+  })
+
+  it('leaves malformed arguments to the existing parse-error path', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'read_file',
+          arguments: '{"path":',
+        },
+      },
+    ])
+    const chunk = at(await run(provider), 0)
+    assert.equal(chunk.type, 'tool_call')
+    assert.match(JSON.stringify(chunk), /"args":\{\}/)
+    assert.match(JSON.stringify(chunk), /Could not parse tool arguments/)
+  })
+
+  it('falls back to non-strict once OpenAI rejects a strict schema, and stays there', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (
+      request,
+    ): Promise<AsyncIterable<TestEvent>> => {
+      requests.push(request)
+      if (requests.length === 1) {
+        throw Object.assign(
+          new Error("400 Invalid schema for function 'read_file': 'required' is required"),
+          { status: 400 },
+        )
+      }
+      return streamEvents([{ type: 'response.output_text.delta', delta: 'ok' }])
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+
+    assert.deepEqual(await run(provider), [{ type: 'text', text: 'ok' }])
+    assert.deepEqual(strictFlags(at(requests, 0)), [
+      ['read_file', true],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(strictFlags(at(requests, 1)), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(at(at(requests, 1).tools, 0)['parameters'], tools[0]?.parameters)
+
+    await run(provider)
+    assert.deepEqual(strictFlags(at(requests, 2)), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+  })
+
+  it('does not swallow an unrelated 400', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async () => {
+      throw Object.assign(new Error('400 Unsupported parameter: nope'), { status: 400 })
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+    await assert.rejects(run(provider), /Unsupported parameter/)
+  })
+})
+
+describe('first-party strict tools with opt-in verbosity', () => {
+  for (const verbosity of [undefined, 'low'] as const) {
+    it(`preserves discriminator restoration and ambiguous-union fallback with verbosity ${verbosity ?? 'unset'}`, async () => {
+      const provider = createProvider('gpt-5.6-sol', { openAiApiKey: 'test-key' }, undefined, {
+        params: verbosity === undefined ? {} : { verbosity },
+      })
+      assert.ok(provider instanceof ResponsesProvider)
+      const tools: LLMTool[] = [
+        {
+          name: 'check',
+          description: 'Check a discriminated value',
+          parameters: {
+            type: 'object',
+            properties: {
+              check: {
+                oneOf: [
+                  {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: ['optional'] },
+                      note: { type: 'string' },
+                    },
+                    required: ['kind'],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: ['nullable'] },
+                      note: { type: ['string', 'null'] },
+                    },
+                    required: ['kind', 'note'],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            },
+            required: ['check'],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: 'ambiguous',
+          description: 'Preserve raw arguments when branches overlap',
+          parameters: {
+            type: 'object',
+            properties: {
+              check: {
+                anyOf: [
+                  { type: 'object', properties: { note: { type: 'string' } }, required: [] },
+                  {
+                    type: 'object',
+                    properties: { note: { type: ['string', 'null'] } },
+                    required: ['note'],
+                  },
+                ],
+              },
+            },
+            required: ['check'],
+          },
+        },
+      ]
+      let request: CapturedRequest | undefined
+      withFakeStream(
+        provider,
+        (body) => {
+          request = body
+        },
+        [
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'required-null',
+              name: 'check',
+              arguments: '{"check":{"kind":"nullable","note":null}}',
+            },
+          },
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'optional-null',
+              name: 'check',
+              arguments: '{"check":{"kind":"optional","note":null}}',
+            },
+          },
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'ambiguous-null',
+              name: 'ambiguous',
+              arguments: '{"check":{"note":null}}',
+            },
+          },
+        ],
+      )
+      const chunks: ProviderStreamChunk[] = []
+      for await (const chunk of provider.stream(
+        [{ role: 'user', content: 'Check both cases.' }],
+        tools,
+      ))
+        chunks.push(chunk)
+      assert.ok(request)
+      assert.deepEqual(request.text, verbosity === undefined ? undefined : { verbosity })
+      assert.equal(Object.hasOwn(request, 'parallel_tool_calls'), false)
+      assert.deepEqual(
+        request.tools.map((tool) => [tool['name'], tool['strict']]),
+        [
+          ['check', true],
+          ['ambiguous', false],
+        ],
+      )
+      assert.deepEqual(request.tools[1]?.['parameters'], tools[1]?.parameters)
+      assert.deepEqual(chunks, [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'required-null',
+            name: 'check',
+            args: { check: { kind: 'nullable', note: null } },
+          },
+        },
+        {
+          type: 'tool_call',
+          toolCall: { id: 'optional-null', name: 'check', args: { check: { kind: 'optional' } } },
+        },
+        {
+          type: 'tool_call',
+          toolCall: { id: 'ambiguous-null', name: 'ambiguous', args: { check: { note: null } } },
+        },
+      ])
+    })
+  }
 })

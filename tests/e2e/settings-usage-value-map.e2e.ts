@@ -79,7 +79,7 @@ describe('settings usage model value map cost axis', () => {
       false,
       'only the Codex ACP route should be marked as plan included',
     )
-    assert.match(await chart.getText(), /GPT-6 Astra · plan/)
+    assert.match(await chart.getText(), /GPT-6 Astra \(~\) · plan/)
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
     await prepareE2eScreenshot()
@@ -103,7 +103,7 @@ describe('settings usage model value map cost axis', () => {
     const taskChartText = await chart.getText()
     assert.match(taskChartText, /AA cost per Intelligence Index task/)
     // Subscription-backed Codex models remain plan routes on the task axis.
-    assert.match(taskChartText, /GPT-6 Astra · plan/)
+    assert.match(taskChartText, /GPT-6 Astra \(~\) · plan/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
