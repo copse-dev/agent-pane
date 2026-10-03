@@ -5,20 +5,34 @@ function footerNaturalWidth(footer: HTMLElement): number {
   const previousFlex = [...items].map((el) => el.style.flex)
   const usage = footer.querySelector<HTMLElement>('.footer-usage')
   const previousUsageDisplay = usage?.style.display
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority('display')
 
   // The pickers lay out from a zero basis (input-bar.css), so measure each at
   // its own width rather than at whatever share of the room it was given.
   items.forEach((el) => {
     el.style.flex = '0 0 auto'
   })
-  if (usage) usage.style.display = 'inline'
+  // `updateFooter` also sets the native `hidden` attribute while usage is
+  // tucked into the context wheel. The global `[hidden] { display: none
+  // !important }` backstop outranks an ordinary inline display declaration,
+  // which made a compact footer measure without usage and expand again. That
+  // expansion unhides usage, overflows, and repeats forever. An inline
+  // important declaration wins for this synchronous measurement without
+  // mutating `hidden` (and therefore without feeding its observers).
+  if (usage) usage.style.setProperty('display', 'inline', 'important')
 
   const width = footer.scrollWidth
 
   items.forEach((el, index) => {
     el.style.flex = previousFlex[index] ?? ''
   })
-  if (usage) usage.style.display = previousUsageDisplay ?? ''
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty('display', previousUsageDisplay, previousUsageDisplayPriority)
+    } else {
+      usage.style.removeProperty('display')
+    }
+  }
   return width
 }
 

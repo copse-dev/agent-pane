@@ -1,3 +1,4 @@
+import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { randomUUID } from 'node:crypto'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -756,6 +757,19 @@ export interface RunAgentResult {
 }
 
 export async function runAgent(
+  threadId: string,
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  host: AgentHost<StreamChunk>,
+  registry: ToolRegistry,
+  options?: RunAgentOptions,
+): Promise<RunAgentResult> {
+  return runWithInlineCanvas(threadId, host, (inlineHost) =>
+    runAgentWithInlineCanvas(threadId, userPrompt, priorMessages, inlineHost, registry, options),
+  )
+}
+
+async function runAgentWithInlineCanvas(
   threadId: string,
   userPrompt: UserContent,
   priorMessages: LLMMessage[],

@@ -91,14 +91,14 @@ describe('sshExecArgs / ControlPath', () => {
     // Imported ProxyCommand hosts must be invoked as the bare alias so OpenSSH
     // applies Port/User/IdentityFile/ProxyCommand from ~/.ssh/config.
     const aliasOnly: SshWorkspaceHost = {
-      id: 'euw-serp-dev-testing16',
-      label: 'euw-serp-dev-testing16',
-      host: 'euw-serp-dev-testing16',
+      id: 'remote-dev-testing-016',
+      label: 'remote-dev-testing-016',
+      host: 'remote-dev-testing-016',
     }
     const args = sshExecArgs(aliasOnly, 'true')
     assert.ok(!args.includes('-p'))
     assert.ok(!args.includes('-i'))
-    assert.equal(args[args.length - 2], 'euw-serp-dev-testing16')
+    assert.equal(args[args.length - 2], 'remote-dev-testing-016')
   })
 })
 
