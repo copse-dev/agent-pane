@@ -169,10 +169,11 @@ describe('ChatGPT plan Responses contract', () => {
     assert.equal(chunks.at(-1)?.type, 'done')
   })
 
-  it('normalizes legacy numeric bounds inside namespaced tool schemas without mutating them', async () => {
+  it('keeps plan tools non-strict while normalizing legacy bounds without mutating them', async () => {
     const provider = new ResponsesProvider('gpt-5.6-luna', {
       apiKey: 'oauth-token',
       chatGptPlan: true,
+      strictTools: true,
     })
     let request: CapturedRequest | undefined
     withFakeStream(
