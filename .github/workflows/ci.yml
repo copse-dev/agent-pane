@@ -46,16 +46,16 @@ on:
 permissions:
   contents: read
 
-# Only recognized title/body edits without a base retarget and the known
-# Copse feedback label may skip CI. Missing/unrecognized edits run normal CI.
+# Only the known Copse feedback label may skip CI. Every edited event runs
+# normal CI, including title/body edits: Actions cannot whitelist change keys.
 # The same predicate controls concurrency, roots of the job graph, and the
 # aggregate NAME: a skipped required check would otherwise authorize a red head.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
   group: >-
-    ${{ (github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback'))) && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+    ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
-    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback'))) }}
+    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -119,7 +119,7 @@ jobs:
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
     if: >-
-      ${{ !(github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback'))) }}
+      ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -523,7 +523,7 @@ jobs:
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')))
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
@@ -2025,7 +2025,7 @@ jobs:
     # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
-      ${{ (github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback'))) && 'CI metadata ignored' ||
+      ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && 'CI metadata ignored' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
@@ -2049,7 +2049,7 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
-          METADATA_ONLY: ${{ github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')) }}
+          METADATA_ONLY: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}

@@ -71,7 +71,7 @@ describe('required CI gate bindings', () => {
   it('receives cancellation and dependency results directly from Actions, without shell interpolation', () => {
     assert.deepEqual(bindings, {
       METADATA_ONLY:
-        "${{ github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')) }}",
+        "${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}",
       FORK_PR:
         "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
       MODE: '${{ needs.precheck.outputs.mode }}',

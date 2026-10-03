@@ -105,12 +105,7 @@ function admitted(github: EventContext): {
   }
 }
 
-const cosmetics = [
-  context('edited', { title: { from: 'Previous title' } }),
-  context('edited', { body: { from: '' } }),
-  context('edited', { title: { from: '' }, body: { from: 'Previous body' } }),
-  context('labeled', {}, 'review-has-feedback'),
-]
+const cosmetics = [context('labeled', {}, 'review-has-feedback')]
 
 describe('cosmetic CI event routing', () => {
   it('never publishes the required aggregate or executes either independent root for metadata', () => {
@@ -172,10 +167,15 @@ describe('cosmetic CI event routing', () => {
 
   it('runs normal CI for retargets, meaningful labels, unknown edits and ordinary events', () => {
     const real = [
+      context('edited', { title: { from: 'Previous title' } }),
+      context('edited', { body: { from: '' } }),
+      context('edited', { title: { from: '' }, body: { from: 'Previous body' } }),
       context('edited', { base: { ref: { from: 'release' } } }),
       context('edited', { base: { ref: { from: 'release' } }, body: { from: '' } }),
       context('edited'),
       context('edited', { unknown: { from: '' } }),
+      context('edited', { title: { from: '' }, reviewer: { from: '' } }),
+      context('edited', { body: { from: '' }, unknown: { from: '' } }),
       context('labeled', {}, 'future-ci-label'),
       context('future-action'),
       ...meaningfulLabels.map((name) => context('labeled', {}, name)),
