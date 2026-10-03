@@ -40,7 +40,7 @@ export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkp
  * thresholds no longer match the product, because the host cannot pin them.
  */
 export interface TerminalBenchLoopSettings {
-  recoveryStrategy: 'legacy-two-cut-v1'
+  recoveryStrategy: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   suppressedOutputTokens: number
   suppressedNudge: string
   suppressionProtocol: string
@@ -71,7 +71,9 @@ export const TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA = z
     maxStreamOutputTokens: positiveInteger,
     reasoningRunawayRecoveryOutputTokens: positiveInteger,
     maxCommandTimeoutSec: positiveInteger,
-    recoveryStrategy: z.literal('legacy-two-cut-v1').default('legacy-two-cut-v1'),
+    recoveryStrategy: z
+      .enum(['legacy-two-cut-v1', 'suppression-ladder-v1'])
+      .default('legacy-two-cut-v1'),
     suppressedOutputTokens: positiveInteger.default(1024),
     softReasoningBudget: z.null().default(null),
   })
@@ -82,7 +84,7 @@ export type TerminalBenchRuntimeConfiguration = z.infer<
 >
 
 export interface TerminalBenchStreamCapOverrides {
-  recoveryStrategy?: 'legacy-two-cut-v1'
+  recoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   suppressedOutputTokens?: number
   softReasoningBudget?: null
   maxStreamOutputTokens?: number
@@ -626,6 +628,10 @@ export function terminalBenchStreamCapOverrides(
     >,
 ): TerminalBenchStreamCapOverrides {
   return {
+    ...(runtime.recoveryStrategy !== undefined &&
+    runtime.recoveryStrategy !== profile.loop.recoveryStrategy
+      ? { recoveryStrategy: runtime.recoveryStrategy }
+      : {}),
     ...(runtime.suppressedOutputTokens !== undefined &&
     runtime.suppressedOutputTokens !== profile.loop.suppressedOutputTokens
       ? { suppressedOutputTokens: runtime.suppressedOutputTokens }

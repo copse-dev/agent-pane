@@ -145,6 +145,7 @@ export function buildTerminalProviders(options: {
   apiKey: string
   forcesRequestedOutputRecovery: boolean
   record: TerminalModelParametersRecord
+  reasoningSuppressionBody?: Readonly<Record<string, unknown>>
 }): TerminalProviders {
   const { baseUrl, model, apiKey, forcesRequestedOutputRecovery, record } = options
   const params = record.params
@@ -158,6 +159,9 @@ export function buildTerminalProviders(options: {
       baseURL: baseUrl,
       apiKey,
       includeUsage: true,
+      ...(options.reasoningSuppressionBody
+        ? { reasoningSuppressionBody: options.reasoningSuppressionBody }
+        : {}),
       ...(applied ? { params } : {}),
       ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
       ...(extraBody ? { extraBody } : {}),

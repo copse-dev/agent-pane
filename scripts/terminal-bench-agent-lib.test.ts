@@ -12,6 +12,7 @@ import {
   terminalBenchRuntimeConfiguration,
   terminalBenchSystemPrompt,
   terminalReasoningRunawayRecoveryNudge,
+  terminalReasoningSuppressedNudge,
   terminalReasoningCheckpointPolicy,
   terminalRecoveryWriteBlockReason,
   terminalRecoveryWriteTool,
@@ -23,7 +24,10 @@ import {
   terminalWriteFileCommand,
   terminalWorkspaceWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
-import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import {
+  terminalBenchProfile,
+  terminalBenchStreamCapOverrides,
+} from './lib/terminal-bench-profiles.mts'
 import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
 
 describe('terminal benchmark bridge', () => {
@@ -111,6 +115,31 @@ describe('terminal benchmark bridge', () => {
       maxRecoveryTokens: 4_096,
       maxTrailingReasoningTokens: 4_096,
     })
+  })
+
+  it('keeps historical profiles on their declared strategy and records an explicit ladder experiment', () => {
+    const profile = terminalBenchProfile('product-aligned@5')
+    const baseline = terminalBenchRuntimeConfiguration(profile, {})
+    assert.equal(baseline.recoveryStrategy, 'legacy-two-cut-v1')
+    assert.equal(
+      terminalBenchLoopOptions(profile, baseline, 'task').reasoningRunawaySuppressedNudge,
+      undefined,
+    )
+    const runtime = terminalBenchRuntimeConfiguration(profile, {
+      COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY: 'suppression-ladder-v1',
+    })
+    assert.deepEqual(terminalBenchStreamCapOverrides(profile, runtime), {
+      recoveryStrategy: 'suppression-ladder-v1',
+    })
+    const options = terminalBenchLoopOptions(profile, runtime, 'task')
+    assert.equal(options.reasoningRunawayRecoveryStrategy, 'suppression-ladder-v1')
+    assert.equal(options.reasoningRunawaySuppressedOutputTokens, 1024)
+    assert.equal(options.reasoningRunawaySuppressedNudge, profile.loop.suppressedNudge)
+    assert.throws(() =>
+      terminalBenchRuntimeConfiguration(profile, {
+        COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY: 'unknown',
+      }),
+    )
   })
 
   it('takes every loop setting from the profile and reports environment overrides', () => {
@@ -341,5 +370,18 @@ describe('terminal benchmark bridge', () => {
     ]) {
       assert.equal(terminalBenchProfile(id).hintsLongRunningCommands, false)
     }
+  })
+})
+
+describe('terminalReasoningSuppressedNudge', () => {
+  it('adds the Qwen3 /no_think soft switch because LM Studio ignores the API flags', () => {
+    assert.match(
+      terminalReasoningSuppressedNudge('lmstudio:qwen3.6-35b-a3b') ?? '',
+      /\n\/no_think$/,
+    )
+  })
+
+  it('leaves other model families on the default suppressed nudge', () => {
+    assert.equal(terminalReasoningSuppressedNudge('lmstudio:glm-4.7-flash'), undefined)
   })
 })

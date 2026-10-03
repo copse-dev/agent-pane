@@ -4,11 +4,14 @@ import { dirname, join, posix } from 'node:path'
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import { LOCAL_REASONING_SUPPRESSION_BODY } from '@copse/llm/create-provider.ts'
+import { REASONING_RUNAWAY_SUPPRESSED_NUDGE } from '@copse/llm/provider-stop-reason.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
 import {
+  TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA,
   MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE,
   MAIN_LEGACY_STUCK_TOOL_RECOVERY_NUDGE,
   MAIN_LEGACY_SYSTEM_PROMPT,
@@ -55,6 +58,16 @@ function withOriginalTerminalTask(nudge: string, instruction: string): string {
   return task ? `${nudge}\n\nOriginal task:\n${task}` : nudge
 }
 
+/**
+ * LM Studio ignores `reasoning_effort: none` and `enable_thinking: false` for
+ * Qwen3-family models, so the suppressed recovery turn would still think at
+ * length. Qwen3's chat template honours a `/no_think` soft switch in the last
+ * user message, which is the recovery nudge.
+ */
+export function terminalReasoningSuppressedNudge(model: string): string | undefined {
+  return /qwen3/i.test(model) ? `${REASONING_RUNAWAY_SUPPRESSED_NUDGE}\n/no_think` : undefined
+}
+
 export function terminalReasoningRunawayRecoveryNudge(instruction: string): string {
   return withOriginalTerminalTask(
     terminalBenchProfile('pr-1149').reasoningRunawayRecoveryNudge,
@@ -87,9 +100,14 @@ export function terminalBenchRuntimeConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): TerminalBenchRuntimeConfiguration {
   const maxSteps = envPositiveInt(env, 'COPSE_TERMINAL_MAX_STEPS', 80)
+  const recoveryStrategy = env['COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY']?.trim()
   return {
     maxSteps,
-    recoveryStrategy: profile.loop.recoveryStrategy,
+    recoveryStrategy: TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA.shape.recoveryStrategy.parse(
+      recoveryStrategy === undefined || recoveryStrategy === ''
+        ? profile.loop.recoveryStrategy
+        : recoveryStrategy,
+    ),
     suppressedOutputTokens: profile.loop.suppressedOutputTokens,
     softReasoningBudget: null,
     maxLlmCalls: envPositiveInt(env, 'COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3),
@@ -131,6 +149,8 @@ export function terminalBenchLoopOptions(
   | 'maxStreamOutputTokens'
   | 'reasoningRunawayRecoveryOutputTokens'
   | 'reasoningRunawayRecoveryStrategy'
+  | 'reasoningRunawaySuppressedNudge'
+  | 'reasoningRunawaySuppressedOutputTokens'
   | 'reasoningRunawayRecoveryNudge'
   | 'reasoningRunawayTextToleranceChars'
   | 'reasoningCheckpointPolicy'
@@ -141,6 +161,12 @@ export function terminalBenchLoopOptions(
   return {
     maxSteps: runtime.maxSteps,
     reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
+    ...(runtime.recoveryStrategy === 'suppression-ladder-v1'
+      ? {
+          reasoningRunawaySuppressedNudge: profile.loop.suppressedNudge,
+          reasoningRunawaySuppressedOutputTokens: runtime.suppressedOutputTokens,
+        }
+      : {}),
     maxLlmCalls: runtime.maxLlmCalls,
     adaptiveExtensions: profile.loop.adaptiveExtensions,
     maxContextTokens: runtime.maxContextTokens,
@@ -461,13 +487,16 @@ export async function runTerminalBenchAgent(): Promise<void> {
     apiKey,
     forcesRequestedOutputRecovery: profile.forcesRequestedOutputRecovery,
     record: modelParameters,
+    ...(runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? { reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY }
+      : {}),
   })
   let recoveryOutputPaths: string[] = []
   const adaptiveProvider: LLMProvider = {
-    stream(messages, tools, signal) {
+    stream(messages, tools, signal, options) {
       const selected = recoveryOutputPaths.length > 0 ? forcedWriteProvider : baseProvider
       if (!selected) throw new Error('Forced recovery provider is unavailable for this profile.')
-      return selected.stream(messages, tools, signal)
+      return selected.stream(messages, tools, signal, options)
     },
   }
   const provider = recordTerminalBenchProviderRequests(
@@ -478,6 +507,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model
     : `lmstudio:${parsed.model}`
+  const suppressedNudge =
+    runtimeConfiguration.recoveryStrategy === 'suppression-ladder-v1'
+      ? terminalReasoningSuppressedNudge(parsed.model)
+      : undefined
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
   let userContent = parsed.instruction
@@ -552,6 +585,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
       messages,
       tools: terminalTools,
       ...terminalBenchLoopOptions(profile, runtimeConfiguration, parsed.instruction),
+      ...(suppressedNudge ? { reasoningRunawaySuppressedNudge: suppressedNudge } : {}),
       usageModel,
       onLlmCall: (count) => {
         usage.llmCalls = count
