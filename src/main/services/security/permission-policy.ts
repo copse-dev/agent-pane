@@ -63,9 +63,9 @@ export const GITHUB_WRITE_TOOLS = new Set([
 /** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
 const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
   gh_pr_create: 'Open pull request on GitHub?',
-  gh_pr_rerun_failed_ci: 'Re-run failed CI?',
+  gh_pr_rerun_failed_ci: 'Re-run failed CI on GitHub?',
   gh_pr_approve: 'Approve pull request on GitHub?',
-  gh_pr_mark_ready: 'Mark pull request ready for review?',
+  gh_pr_mark_ready: 'Mark pull request ready for review on GitHub?',
   gh_pr_enable_auto_merge: 'Enable auto-merge on GitHub?',
 }
 
