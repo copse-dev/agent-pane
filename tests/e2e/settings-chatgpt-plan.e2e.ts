@@ -1,10 +1,37 @@
 import { $, browser, expect } from '@wdio/globals'
+import { delimiter, join } from 'node:path'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+
+async function rejectFreshAcpBootstrap(): Promise<void> {
+  // This settings/usage spec does not authorize a real adapter installation.
+  // Exercise and reject its genuine fresh-install consent before continuing.
+  const dialog = $('#approval-dialog')
+  await dialog.waitForDisplayed({ timeout: 10_000 })
+  await expect(dialog.$('.approval-heading')).toHaveText('Install ACP adapters globally?')
+  await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
+    containing: true,
+  })
+  await expect(dialog.$('.approval-body')).toHaveText('Socket Firewall', { containing: true })
+  await dialog.$('.approval-reject').click()
+  await expect(dialog).not.toBeDisplayed()
+  await expect($('#settings-dialog')).toBeDisplayed()
+}
 
 describe('native ChatGPT plan connection settings', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
   before(async () => {
     resetUserData()
+    // Isolate adapter detection from ambient host CLIs, as in the API-tier spec.
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH: (process.platform === 'win32'
+        ? [join(process.env['SystemRoot'] ?? 'C:\Windows', 'System32')]
+        : ['/usr/bin', '/bin']
+      ).join(delimiter),
+    })
     seedEmptyProject(process.cwd(), 'e2e-chatgpt-plan', {
       registeredAcpAgents: [
         { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
@@ -35,6 +62,7 @@ describe('native ChatGPT plan connection settings', () => {
     await browser.reloadSession()
   })
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
   })
 
@@ -42,7 +70,12 @@ describe('native ChatGPT plan connection settings', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    await expect($('.openai-connection-card:first-child h4')).toHaveText('Codex ACP')
+    await rejectFreshAcpBootstrap()
+    await expect($('.openai-connection-card[data-connection="chatgpt"] h4')).toHaveText(
+      'ChatGPT plan',
+    )
+    await expect($('.openai-connection-card[data-connection="api"] h4')).toHaveText('OpenAI API')
+    await expect($('.openai-connection-card[data-connection="codex"] h4')).toHaveText('Codex ACP')
     const section = $('[data-testid="chatgpt-plan-section"]')
     await $('#settings-providers-host').scrollIntoView()
     await expect(section).toBeDisplayed()
@@ -69,7 +102,8 @@ describe('native ChatGPT plan connection settings', () => {
     await expect(apiDetails.$('[data-testid="openai-service-tier-block"]')).toBeDisplayed()
     await apiDetails.$('summary').click()
     await codexDetails.$('summary').click()
-    await expect(codexDetails.$('input[placeholder="gemini"]')).toExist()
+    await expect(codexDetails.$('.acp-known-status')).toHaveText('not installed')
+    await expect(codexDetails).toHaveText('Re-scan device', { containing: true })
     await saveAppScreenshot('settings-openai-codex-expanded.png')
   })
   it('shows a readable plan model label in Usage without its client ID', async () => {
