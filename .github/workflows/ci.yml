@@ -1156,7 +1156,12 @@ jobs:
       # this tier and attached its immutable render evidence.
       - run: npm run build:demo
         if: needs.precheck.outputs.mode != 'skip'
-      - run: npm run test:demo
+      # Keep the frame-by-frame motion eval off the other Chrome workers: CPU
+      # contention delays RAF callbacks and creates catch-up scroll steps that
+      # do not measure the renderer's idle motion. Keep its strict limits.
+      - run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
+        if: needs.precheck.outputs.mode != 'skip'
+      - run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
         if: needs.precheck.outputs.mode != 'skip'
       - name: Collect changed browser reference screenshots
         if: >-

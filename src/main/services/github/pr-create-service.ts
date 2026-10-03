@@ -14,6 +14,11 @@ import {
   GIT_ATTRIBUTION_SETTING,
 } from '@shared/git/commit-attribution.ts'
 import { getSetting } from '../storage/settings.ts'
+import {
+  appendThreadLink,
+  DEFAULT_GIT_THREAD_LINK_ENABLED,
+  GIT_THREAD_LINK_SETTING,
+} from '@shared/git/thread-link.ts'
 import { getThreadModels } from '../thread-models.ts'
 import { recordThreadPrRefs } from '../thread-store.ts'
 import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
@@ -40,6 +45,7 @@ export interface PrCreateDependencies {
   createPullRequest: typeof createPullRequest
   getThreadModels: (threadId: string) => string[]
   isAttributionEnabled: () => boolean
+  isThreadLinkEnabled: () => boolean
   backendKind: () => PrCreateResult['backend']
   /**
    * Push a renderer event. Injected alongside the lookups because the pushes a
@@ -62,6 +68,8 @@ const defaultDependencies: PrCreateDependencies = {
   getThreadModels,
   isAttributionEnabled: () =>
     getSetting<boolean>(GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED),
+  isThreadLinkEnabled: () =>
+    getSetting<boolean>(GIT_THREAD_LINK_SETTING, DEFAULT_GIT_THREAD_LINK_ENABLED),
   backendKind: () => resolveGitHubBackend().kind,
   broadcast: broadcastToAppWindows,
 }
@@ -165,15 +173,17 @@ export async function createPrForThread(
   }
 
   const models = context ? deps.getThreadModels(context.threadId) : []
+  let body = deps.isAttributionEnabled()
+    ? appendPrBodyAttribution(request.body ?? '', models)
+    : (request.body ?? '')
+  if (deps.isThreadLinkEnabled()) body = appendThreadLink(body, context?.threadId ?? null)
   const input = {
     owner: targetOwner,
     repo: targetRepo,
     head: headBranch,
     base: baseBranch,
     title: request.title,
-    body: deps.isAttributionEnabled()
-      ? appendPrBodyAttribution(request.body ?? '', models)
-      : (request.body ?? ''),
+    body,
     ...(draft === undefined ? {} : { draft }),
   }
   let result = await deps.createPullRequest(input)

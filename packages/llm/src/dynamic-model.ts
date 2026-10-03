@@ -42,6 +42,8 @@ export type DynamicModelSelector =
   | { kind: 'cheapest' }
   /** Intellect/cost trade-off; confirmed plan coverage and free routes take precedence over paid APIs. */
   | { kind: 'balanced' }
+  /** Balanced trade-off restricted to routes with no per-token charge. */
+  | { kind: 'balanced-included' }
   /** Cheapest routable model scoring at least `threshold` on the Intelligence Index. */
   | { kind: 'min-intellect'; threshold: number }
   /** Whatever the user assigned to this agent role (Settings → model roles). */
@@ -52,6 +54,7 @@ export const BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect
 export const BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`
 export const CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`
 export const BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`
+export const BALANCED_INCLUDED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced-included`
 
 const MIN_INTELLECT_INFIX = 'min-intellect:'
 const ROLE_INFIX = 'role:'
@@ -99,6 +102,7 @@ export function parseDynamicModel(value: string | null | undefined): DynamicMode
   if (body === 'best-local') return { kind: 'best-local' }
   if (body === 'cheapest') return { kind: 'cheapest' }
   if (body === 'balanced') return { kind: 'balanced' }
+  if (body === 'balanced-included') return { kind: 'balanced-included' }
   if (body.startsWith(MIN_INTELLECT_INFIX)) {
     const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length))
     if (!Number.isFinite(threshold) || threshold <= 0) return null
@@ -126,6 +130,8 @@ export function dynamicModelLabel(value: string): string | null {
       return 'Cheapest'
     case 'balanced':
       return 'Balanced'
+    case 'balanced-included':
+      return 'Balanced (no usage charges)'
     case 'min-intellect':
       return `At least ${String(selector.threshold)} intelligence`
     case 'role':
@@ -182,6 +188,12 @@ export function dynamicModelChoices(): DynamicModelChoice[] {
       value: BALANCED_MODEL_SELECTOR,
       label: 'Balanced',
       description: 'Strong capability at a fair price; favors plans',
+      group: AUTOMATIC_GROUP,
+    },
+    {
+      value: BALANCED_INCLUDED_MODEL_SELECTOR,
+      label: 'Balanced (no usage charges)',
+      description: 'Uses only loaded local, available plan, or zero-priced routes',
       group: AUTOMATIC_GROUP,
     },
   ]

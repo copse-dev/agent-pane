@@ -66,6 +66,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
     },
     getThreadModels: () => ['claude-opus-5'],
     isAttributionEnabled: () => true,
+    isThreadLinkEnabled: () => false,
     backendKind: () => 'cli',
     broadcast: (channel, ...args) => {
       broadcasts.push({ channel, args })
@@ -81,6 +82,22 @@ function announcements(recorded: Recorded): unknown[][] {
 }
 
 describe('createPrForThread', () => {
+  it('links the originating thread independently of co-author attribution', async () => {
+    const recorded = deps({ isThreadLinkEnabled: () => true, isAttributionEnabled: () => false })
+    const context = { ...WORKTREE_CONTEXT, threadId: '12345678-1234-1234-1234-123456789abc' }
+    await createPrForThread({ title: 'T', body: 'Details' }, context, recorded.deps)
+    assert.equal(
+      recorded.created[0]?.body,
+      `Details\n\nCopse-Thread: https://copse.dev/open/#thread=${context.threadId}\n`,
+    )
+  })
+
+  it('does not create a thread link without thread context', async () => {
+    const recorded = deps({ isThreadLinkEnabled: () => true, isAttributionEnabled: () => false })
+    await createPrForThread({ title: 'T', body: 'Details' }, null, recorded.deps)
+    assert.equal(recorded.created[0]?.body, 'Details')
+  })
+
   it("reads branches from the thread's own checkout, not the ambient root", async () => {
     // The whole point of threading context through: a worktree thread that
     // resolved the shared tree's branch would open the PR from the wrong place.

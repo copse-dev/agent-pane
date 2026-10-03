@@ -447,6 +447,12 @@ export interface ApiClient {
       handler: (target: { threadId: string; projectId: string | null }) => void,
     ) => () => void
   }
+  deepLinks: {
+    ready: () => Promise<void>
+    onOpenThread: (
+      handler: (target: { threadId: string; projectId: string | null }) => void,
+    ) => () => void
+  }
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
