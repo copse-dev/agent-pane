@@ -3,7 +3,7 @@ import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { loadTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
-import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { runnableTerminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 import { isRecord } from '../src/shared/unknown-value.mts'
@@ -14,7 +14,7 @@ const profileArgs = rawArgs.filter((arg) => arg.startsWith('--profile='))
 if (profileArgs.length > 1 || rawArgs.some((arg) => !arg.startsWith('--profile='))) {
   throw new Error('Usage: npm run bench:terminal:steered -- [--profile=<id>]')
 }
-const profile = terminalBenchProfile(profileArgs[0]?.slice('--profile='.length))
+const profile = runnableTerminalBenchProfile(profileArgs[0]?.slice('--profile='.length))
 
 function stringField(value: unknown, key: string): string | undefined {
   if (!isRecord(value)) return undefined

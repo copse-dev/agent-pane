@@ -7,6 +7,7 @@ import {
   runConfig,
   terminalBenchHostShardIndices,
   workerFollowRemoteScript,
+  workerEnvironment,
 } from './run-terminal-bench-fleet.mts'
 import { rotateTerminalBenchProfiles } from './lib/terminal-bench-profiles.mts'
 
@@ -110,11 +111,18 @@ test('fleet validates and carries an explicit ablation profile', () => {
 
 test('fleet carries explicit product profile versions for a paired study', () => {
   const config = runConfig({
-    profiles: 'product-aligned@2,product-aligned@3',
+    profiles: 'product-aligned@2,product-aligned@5',
     'no-steered-rerun': true,
     'worker-image': workerImage,
   })
-  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@3'])
+  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@5'])
+})
+
+test('fleet refuses the retired product-aligned v3 profile', () => {
+  assert.throws(
+    () => runConfig({ profile: 'product-aligned@3', 'worker-image': workerImage }),
+    /Run product-aligned@5 instead/,
+  )
 })
 
 test('fleet carries unique profiles for task-major rotation', () => {
@@ -271,4 +279,46 @@ test('worker follow script reattaches to a still-running container after SSH dro
 test('worker image ships the Docker Compose CLI plugin for Harbor', () => {
   const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
   assert.match(dockerfile, /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins/)
+})
+
+test('fleet forwards explicit sampling and output caps to the worker environment', () => {
+  const fixture = {
+    SCW_GENERATIVE_API_KEY: 'test-generative-key',
+    LM_STUDIO_MODEL: 'test-model',
+    SCW_OBJECT_STORAGE_ACCESS_KEY_ID: 'test-access',
+    SCW_OBJECT_STORAGE_SECRET_KEY: 'test-secret',
+    SCW_OBJECT_STORAGE_BUCKET: 'test-bucket',
+    COPSE_TERMINAL_MODEL_PARAMETERS: 'server',
+    COPSE_TERMINAL_MAX_OUTPUT_TOKENS: '16384',
+  }
+  const previous = Object.fromEntries(Object.keys(fixture).map((key) => [key, process.env[key]]))
+  try {
+    Object.assign(process.env, fixture)
+    const config = runConfig({ 'worker-image': workerImage })
+    const environment = workerEnvironment(config, 0)
+    assert.equal(
+      environment.split('\n').find((line) => line.startsWith('COPSE_TERMINAL_MODEL_PARAMETERS=')),
+      'COPSE_TERMINAL_MODEL_PARAMETERS=server',
+    )
+    assert.equal(
+      environment.split('\n').find((line) => line.startsWith('COPSE_TERMINAL_MAX_OUTPUT_TOKENS=')),
+      'COPSE_TERMINAL_MAX_OUTPUT_TOKENS=16384',
+    )
+    delete process.env['COPSE_TERMINAL_MODEL_PARAMETERS']
+    delete process.env['COPSE_TERMINAL_MAX_OUTPUT_TOKENS']
+    const defaults = workerEnvironment(config, 0)
+    assert.equal(
+      defaults.split('\n').some((line) => line.startsWith('COPSE_TERMINAL_MODEL_PARAMETERS=')),
+      false,
+    )
+    assert.equal(
+      defaults.split('\n').some((line) => line.startsWith('COPSE_TERMINAL_MAX_OUTPUT_TOKENS=')),
+      false,
+    )
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      else process.env[key] = value
+    }
+  }
 })

@@ -634,6 +634,7 @@ test('resumePendingQueues resets a stale running status when the queue is empty'
 
   const thread = getThread(store, threadId)
   assert.equal(thread.status, 'idle')
+  assert.equal(typeof thread.interruptedTurnAt, 'number')
   assert.equal(api.runs.length, 0)
 })
 
@@ -663,7 +664,9 @@ test('resumePendingQueues (#1406): still resets a different thread whose run is 
   await resumePendingQueues(store, api)
 
   assert.equal(getThread(store, liveId).status, 'running')
+  assert.equal(getThread(store, liveId).interruptedTurnAt, undefined)
   assert.equal(getThread(store, staleId).status, 'idle')
+  assert.equal(typeof getThread(store, staleId).interruptedTurnAt, 'number')
 })
 
 test('resumePendingQueues (#1406): a failed liveness query still resumes, it does not strand the queues', async () => {
@@ -692,6 +695,25 @@ test('resumePendingQueues (#1406): a failed liveness query still resumes, it doe
   const thread = getThread(store, threadId)
   assert.ok(!thread.queuePaused, 'a stale persisted pause is still cleared')
   assert.equal(base.runs.length, 1, 'the pending queue still drains')
+})
+
+test('resumePendingQueues does not offer retry when liveness cannot be checked', async () => {
+  const store = createProjectStore()
+  const base = fakeApi()
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      runningThreadIds: (): Promise<string[]> => Promise.reject(new Error('ipc gone')),
+    },
+  }
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+
+  await resumePendingQueues(store, api)
+
+  assert.equal(getThread(store, threadId).status, 'idle')
+  assert.equal(getThread(store, threadId).interruptedTurnAt, undefined)
 })
 
 // --- C2 contract tests ------------------------------------------------------

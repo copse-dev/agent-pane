@@ -21,4 +21,11 @@ describe('Terminal-Bench Python adapter', () => {
     assert.match(source, /"workspaceRoot": workspace_root/)
     assert.match(source, /COPSE_TERMINAL_PROFILE_VERSIONED_ID/)
   })
+
+  it('retains the runtime settings the agent reports for comparison gating', () => {
+    assert.match(
+      source,
+      /context\.metadata\["runtime_configuration"\] = result_message\[\s*"runtimeConfiguration"\s*\]/,
+    )
+  })
 })

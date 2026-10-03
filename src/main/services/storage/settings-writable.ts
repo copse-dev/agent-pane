@@ -2,7 +2,7 @@ import { announcementHistorySchema } from '@shared/product-announcements.ts'
 import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
-import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { REASONING_LEVELS, VERBOSITY_LEVELS } from '@copse/llm/model-parameters.ts'
 import { MODEL_MAKER_IDS } from '@copse/llm/model-maker-block.ts'
 import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
@@ -11,6 +11,7 @@ import {
 } from '../security/web-origin-policy.ts'
 import { keyOf } from '@shared/member-of.ts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
+import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -140,6 +141,7 @@ export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
  */
 export const modelParametersSchema = z.object({
   reasoning: z.enum(REASONING_LEVELS).optional(),
+  verbosity: z.enum(VERBOSITY_LEVELS).optional(),
   maxOutputTokens: z.number().int().min(256).max(1_000_000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
@@ -298,6 +300,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // services/github/backend/backend.ts.
   githubBackend: z.enum(['auto', 'cli', 'api']),
   [GIT_ATTRIBUTION_SETTING]: z.boolean(),
+  [GIT_THREAD_LINK_SETTING]: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),

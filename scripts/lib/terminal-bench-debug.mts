@@ -163,7 +163,11 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
   if (!profile && (!profiles || profiles.length === 0)) {
     throw new Error('run manifest profile provenance is invalid')
   }
-  if (profiles && new Set(profiles.map((item) => item.id)).size !== profiles.length) {
+  if (
+    profiles &&
+    new Set(profiles.map((item) => `${item.versionedId}:${item.contentHash}`)).size !==
+      profiles.length
+  ) {
     throw new Error('run manifest profiles contain duplicates')
   }
   const infrastructureValue = property(value, 'infrastructure')
@@ -270,6 +274,16 @@ export function selectTerminalBenchCapsule(
   if (taskName === undefined) throw new Error('select exactly one of --task or --trial-id')
   const matches = capsules.filter((capsule) => capsule.taskName === taskName)
   if (matches.length === 0) throw new Error(`no capsule has task name '${taskName}'`)
+  if (
+    new Set(
+      matches.map(
+        (capsule) => `${capsule.profile ?? 'unrecorded'}:${capsule.profileHash ?? 'unrecorded'}`,
+      ),
+    ).size > 1
+  )
+    throw new Error(
+      `Task '${taskName}' has multiple profile identities; select an exact --trial-id`,
+    )
   const latest = [...matches]
     .sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? ''))
     .at(-1)

@@ -124,6 +124,49 @@ describe('interrupted turn recovery card', () => {
     unmount()
   })
 
+  it('offers retry below the user prompt when Copse closed before any reply', () => {
+    const store = createStore({ activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const userId = addMessage(store, threadId, 'user', 'Check the build')
+    setThreadStatus(store, threadId, 'running')
+    const runs: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        run: (_projectId, _threadId, payload) => {
+          runs.push(payload)
+          return Promise.resolve()
+        },
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const unmount = mountConversation(host, store, api)
+
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((thread) =>
+          thread.id === threadId ? { ...thread, interruptedTurnAt: Date.now() } : thread,
+        ),
+    })
+    setThreadStatus(store, threadId, 'idle')
+
+    const card = document.querySelector<HTMLElement>(`[data-turn-recovery-for="${userId}"]`)
+    assert.ok(card)
+    assert.equal(document.querySelector(`[data-message-id="${userId}"]`)?.nextElementSibling, card)
+    assert.match(card.textContent, /Copse closed before this turn finished/)
+    assert.equal(runs.length, 0)
+    const retry = card.querySelector<HTMLButtonElement>('.turn-recovery-button')
+    assert.ok(retry)
+    retry.click()
+    assert.equal(runs.length, 1)
+    assert.equal(parseAgentRunPayload(runs[0] ?? '').userContent, INTERRUPTED_TURN_CONTINUATION)
+    unmount()
+  })
+
   it('appears when a live failed turn settles, after its outcome arrived while running', () => {
     const { store, threadId, failedId, api } = setup()
     setThreadStatus(store, threadId, 'running')
