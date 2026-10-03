@@ -23,6 +23,7 @@ function git(cwd: string, args: string[]): string {
 
 describe('switching threads during first-message checkout', () => {
   let projectRoot = ''
+  let projectParent = ''
   let worktreeRoot = ''
 
   before(async function () {
@@ -34,7 +35,10 @@ describe('switching threads during first-message checkout', () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
-    projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'copse-checkout-switch-')))
+    // The header shows the project folder's name, so keep it fixed under a random parent.
+    projectParent = realpathSync(mkdtempSync(join(tmpdir(), 'copse-checkout-switch-')))
+    projectRoot = join(projectParent, 'checkout-switching')
+    mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT, ORIGINAL)
     rmSync(worktreeRoot, { recursive: true, force: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
@@ -103,7 +107,7 @@ describe('switching threads during first-message checkout', () => {
     // The app is still running: a sandboxed command can briefly materialize
     // mount points in the checkout while it is being removed (ENOTEMPTY).
     if (projectRoot) {
-      rmSync(projectRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      rmSync(projectParent, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     }
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
