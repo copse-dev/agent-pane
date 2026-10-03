@@ -1818,7 +1818,6 @@ export function registerAllHandlers(
       prompt: parsed.prompt,
       model: parsed.model,
       budgets: parsed.budgets,
-      ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
       ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
       ...(parsed.installDependencies !== undefined
         ? { installDependencies: parsed.installDependencies }
