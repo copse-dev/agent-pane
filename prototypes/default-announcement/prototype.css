@@ -1,0 +1,231 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 14px;
+}
+button {
+  font-family: inherit;
+}
+.preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.preview-controls > div {
+  display: flex;
+  gap: 8px;
+}
+#app {
+  height: calc(100vh - 100px);
+  display: flex;
+}
+.sidebar {
+  width: 230px;
+  padding: 24px 16px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.brand {
+  font-family: var(--font-display);
+  font-size: 26px;
+  margin-bottom: 20px;
+}
+.section-label,
+.eyebrow {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.selected,
+.chat-row {
+  padding: 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.selected {
+  background: var(--bg-selected);
+}
+#settings {
+  margin-top: auto;
+}
+.chat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-header {
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.transcript {
+  width: min(720px, 100%);
+  padding: 36px 30px;
+  margin: 0 auto;
+  line-height: 1.65;
+}
+.user-message {
+  background: var(--bg-elevated);
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  margin: 0 0 40px;
+}
+.activity {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.activity span {
+  float: right;
+}
+.composer {
+  margin: auto 30px 24px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-muted);
+}
+.composer span {
+  float: right;
+}
+dialog {
+  margin: auto;
+  padding: 0;
+  width: min(490px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+dialog:not([open]) {
+  display: none;
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.announcement-body {
+  padding: 30px;
+}
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 29px;
+  line-height: 1.15;
+  margin: 12px 0 16px;
+}
+p {
+  line-height: 1.6;
+}
+#announcement-copy {
+  color: var(--text-secondary);
+  margin: 0;
+}
+.layout-sample {
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+}
+.sample-activity {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.sample-answer {
+  margin: 18px 0 12px;
+  font-size: 15px;
+}
+.sample-line {
+  height: 5px;
+  width: 90%;
+  background: var(--border-subtle);
+  border-radius: 3px;
+  margin-top: 9px;
+}
+.sample-line.short {
+  width: 65%;
+}
+.settings-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 26px;
+}
+.settings-hint strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ui-btn {
+  border-radius: var(--action-radius);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 24px 0;
+  padding: 16px;
+}
+label {
+  display: block;
+  padding: 10px 0;
+}
+small {
+  display: block;
+  color: var(--text-secondary);
+  margin: 5px 0 0 24px;
+}
+input {
+  accent-color: var(--accent-fill);
+}
+#preview-status {
+  margin: 0;
+  padding: 8px 24px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+@media (max-width: 600px) {
+  .sidebar {
+    display: none;
+  }
+  .preview-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+  .preview-controls .ui-btn {
+    padding: 7px 12px;
+  }
+  .announcement-body {
+    padding: 24px;
+  }
+  h1,
+  h2 {
+    font-size: 26px;
+  }
+}
