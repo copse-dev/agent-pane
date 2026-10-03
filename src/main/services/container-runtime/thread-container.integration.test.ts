@@ -17,6 +17,8 @@ import type { ThreadContainerEngine } from './container-engine.ts'
 import { buildGuestProvider } from './guest-provider.ts'
 import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import { GUEST_ALLOWED_TOOLS } from './guest-tools.ts'
+import { createZipArchive } from '../storage/zip-archive.ts'
 import { startScriptedModelServer } from './scripted-model-server.ts'
 import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 
@@ -76,12 +78,22 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
-function seedRepo(): string {
+async function seedRepo(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'copse-tc-e2e-'))
   git(dir, ['init', '--quiet', '--initial-branch=main'])
   git(dir, ['config', 'user.name', 'test'])
   git(dir, ['config', 'user.email', 'test@copse.invalid'])
   writeFileSync(join(dir, 'README.md'), '# demo\n')
+  writeFileSync(
+    join(dir, 'fixture.zip'),
+    await createZipArchive([
+      {
+        path: 'inside.txt',
+        data: Buffer.from('archive fixture'),
+        modifiedAt: new Date(2026, 0, 1),
+      },
+    ]),
+  )
   git(dir, ['add', '-A'])
   git(dir, ['commit', '--quiet', '-m', 'init'])
   // Uncommitted work must travel too.
@@ -197,8 +209,13 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
   const model = await startScriptedModelServer([
     // In-guest destruction: the harm gate would prompt; the container tier allows.
     { kind: 'shell', command: 'rm -rf build && mkdir build && echo built > build/out.txt' },
+    // An invented external-write tool must not reach any handler.
+    { kind: 'tool', name: 'gh_pr_create', args: { title: 'Never create this PR' } },
+    // Archive reading remains supported in the actual guest.
+    { kind: 'tool', name: 'read_archive', args: { path: 'fixture.zip' } },
     // Outward effect: must be deferred to the review queue, never run.
     { kind: 'shell', command: 'git push origin HEAD' },
+    { kind: 'shell', command: 'npm publish' },
     // Host escape: must be refused outright.
     { kind: 'shell', command: 'docker ps' },
     // Ordinary work, committed with the product's own git tool (which runs
@@ -212,7 +229,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     },
     { kind: 'text', text: 'Finished the task; the push is waiting for your review.' },
   ])
-  const repo = seedRepo()
+  const repo = await seedRepo()
   const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
   const canary = 'copse-canary-e2e-0123456789abcdef'
   const logs: string[] = []
@@ -246,7 +263,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
         egressAllowlist: [HOST_INFERENCE_TARGET],
         image: IMAGE,
         runtimesDir,
-        maxSteps: 8,
+        maxSteps: 12,
       },
       { canary, onLog: (line) => logs.push(line) },
     )
@@ -259,6 +276,12 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     )
 
     // 1. Nobody was asked anything, and the record says Copse ran the loop.
+    assert.deepEqual([...result.toolNames].sort(), [...GUEST_ALLOWED_TOOLS].sort())
+    const calls = record.transcript.flatMap((message) => message.toolCalls)
+    assert.match(calls.find((call) => call.name === 'gh_pr_create')?.result ?? '', /Unknown tool/)
+    const archiveResult = calls.find((call) => call.name === 'read_archive')?.result ?? ''
+    assert.match(archiveResult, /extracted/)
+    assert.match(archiveResult, /inside.txt/)
     assert.equal(result.promptsAttempted, 0)
     assert.equal(result.harness, 'copse')
     // 2. The container declared its containment and the gate used it: the
@@ -269,7 +292,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     assert.equal(record.attestation.isolation, engine === 'apple' ? 'vm' : 'shared-kernel')
     assert.equal(record.attestation.securityProfiles, engine === 'apple' ? 'none' : 'default')
     // 3. The outward effect is in the review queue, and only that.
-    assert.equal(result.deferrals.length, 1)
+    assert.equal(result.deferrals.length, 2)
     assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
     // The refused host escape is in the record too, not only in the log.
     assert.equal(result.denials.length, 1)
