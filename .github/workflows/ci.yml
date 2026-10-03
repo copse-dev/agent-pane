@@ -46,31 +46,16 @@ on:
 permissions:
   contents: read
 
+# Only the known Copse feedback label may skip CI. Every edited event runs
+# normal CI, including title/body edits: Actions cannot whitelist change keys.
+# The same predicate controls concurrency, roots of the job graph, and the
+# aggregate NAME: a skipped required check would otherwise authorize a red head.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Nightly schedule must not cancel an in-flight tip push/PR: cron can fire
-  # hours late, and schedule+push share `ci-refs/heads/main`. They also use
-  # different e2e runners (hosted vs self-hosted), so running in parallel is
-  # fine. A new push/PR sync still cancels older runs in the group.
-  #
-  # A cosmetic `edited` must not cancel either. #2970 subscribed to `edited` so
-  # a base retarget re-runs (#2520), but GitHub fires the same action for a
-  # title or body edit, and those land in this group mid-run. Cancelling there
-  # is not a wasted run, it is a RED one: since #2722 `ci-passed` turns a
-  # cancelled run into an explicit failure rather than a skip, so editing a
-  # description while CI was running left a red `CI Passed` on a SHA that had
-  # been green. `changes.base` is present only on a retarget, which is the case
-  # that genuinely invalidates the in-flight run and must still cancel it.
-  #
-  # Deliberately not solved with a job-level `if:`. `ci-passed` is `always()`
-  # over `needs: [precheck, …]`, so skipping the upstream jobs either fails it
-  # (a green PR goes red on a title edit) or skips it — and GitHub accepts a
-  # skipped required check, which would let a RED PR be flipped to mergeable by
-  # editing its title. The cost of this shape is a duplicate run on a cosmetic
-  # edit; it never produces a false red or a false pass.
+  # Metadata must never replace a pending real run, even with cancellation off.
+  group: >-
+    ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
-    ${{ github.event_name != 'schedule' &&
-    (github.event.action != 'edited' || github.event.changes.base != null) }}
+    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -133,6 +118,8 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
+    if: >-
+      ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -536,7 +523,7 @@ jobs:
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
@@ -2038,12 +2025,16 @@ jobs:
     # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
-      ${{ (github.event_name == 'pull_request' &&
+      ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && 'CI metadata ignored' ||
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
+    # Queue this tiny aggregate even for metadata: GitHub leaves a skipped
+    # job's name expression unevaluated. Metadata gets its separate check name
+    # and exits before candidate-result validation; it never creates CI Passed.
     if: ${{ always() }}
     needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
@@ -2058,6 +2049,7 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
+          METADATA_ONLY: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
@@ -2076,6 +2068,10 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -eu
+          if [ "${METADATA_ONLY:-false}" = "true" ]; then
+            echo "Metadata event ignored; this check does not authorize a merge."
+            exit 0
+          fi
           # Supersession explains why work was canceled; it is never evidence
           # that THIS run passed. The new run must earn its own green check.
           # This guard precedes fork and skip-mode acceptance deliberately.
