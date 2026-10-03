@@ -24,7 +24,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   /* Cast the docked composer's shadow up onto the chat gradient so it reads
-     as floating above the conversation, matching the centered variant. */
+     as floating above the conversation. */
   box-shadow: var(--shadow-composer);
   /* #2489: the card is anchored to the pane's bottom edge and grows upward
      with its content (advisory strips, chips, the draft, the footer). Without

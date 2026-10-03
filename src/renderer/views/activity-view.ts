@@ -114,6 +114,8 @@ const defaultTimer: ApprovalTimer = (fn, ms) => {
 
 /** What the view needs from wherever it is placed. */
 export interface ActivityViewHost {
+  /** Prefix for the element ids the view sets, so two hosts can mount it on one page. */
+  idPrefix: string
   /** Leave the view (an overlay closes; a host with nothing to dismiss does nothing). */
   close: () => void
   /** Whether the view is on screen: updates and the age tick pause while it is not. */
@@ -131,7 +133,7 @@ export interface ActivityView {
   /** A polite live region for the result of an in-place answer. */
   status: HTMLElement
   /** Start a fresh look: most urgent row selected, drawn, focused, ages ticking. */
-  show: () => void
+  show: (options?: { focusFirstRow?: boolean }) => void
   /** Stop drawing and forget the selection. */
   hide: () => void
 }
@@ -147,11 +149,11 @@ export function createActivityView(
   const setTimer = deps.setTimer ?? defaultTimer
   const timings = trackRunTimings(store, now)
 
-  const summary = el('p', { id: 'activity-panel-summary', class: 'activity-panel-summary' })
+  const summary = el('p', { id: `${host.idPrefix}-summary`, class: 'activity-panel-summary' })
   const list = el('nav', { class: 'activity-list', 'aria-label': 'Threads' })
   const detail = el('section', {
     class: 'activity-detail',
-    'aria-labelledby': 'activity-detail-title',
+    'aria-labelledby': `${host.idPrefix}-detail-title`,
   })
   const body = el('div', { class: 'activity-panel-body' }, list, detail)
   const status = el('p', {
@@ -374,7 +376,11 @@ export function createActivityView(
           el('span', { class: 'activity-detail-state' }, STATE_LONG[row.state]),
           meta,
         ),
-        el('h3', { id: 'activity-detail-title', class: 'activity-detail-title' }, row.threadTitle),
+        el(
+          'h3',
+          { id: `${host.idPrefix}-detail-title`, class: 'activity-detail-title' },
+          row.threadTitle,
+        ),
       ),
       el('div', { class: 'activity-detail-body' }, ...detailContent(row)),
       detailActions(row),
@@ -476,7 +482,7 @@ export function createActivityView(
       hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total)
     let entry = groupCache.get(group.id)
     if (!entry) {
-      const titleId = `activity-group-${group.id}`
+      const titleId = `${host.idPrefix}-group-${group.id}`
       const countNode = el('span', { class: 'activity-group-count' }, count)
       const rowsNode = el('ul', {
         class: 'activity-rows',
@@ -773,7 +779,7 @@ export function createActivityView(
     rowCache.clear()
   }
 
-  function show(): void {
+  function show({ focusFirstRow = true }: { focusFirstRow?: boolean } = {}): void {
     // A fresh look starts on the most urgent row. If that is an approval, its
     // request has not been read yet: render() arms the settle window, so
     // nothing is approvable until it has been on screen.
@@ -782,9 +788,13 @@ export function createActivityView(
     selectedIndex = 0
     shownKey = null
     render()
-    const first = selectedOpener()
-    if (first) first.focus()
-    else host.fallbackFocus()
+    // A host whose focus already belongs elsewhere (the composer on the new-thread
+    // screen) asks for none: the view then only draws.
+    if (focusFirstRow) {
+      const first = selectedOpener()
+      if (first) first.focus()
+      else host.fallbackFocus()
+    }
     tickAges()
   }
 

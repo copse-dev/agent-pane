@@ -318,3 +318,54 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
 }
+
+/* ── The new-thread screen (views/activity-home.ts) ───────────────────────
+   The same list and detail as the overlay, in the chat pane above the docked
+   composer. The composer is positioned over the pane's bottom edge, so the home
+   reserves its height the way .conversation does. */
+.activity-home {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  box-sizing: border-box;
+  width: var(--chat-composer-width);
+  margin-inline: auto;
+  /* The composer sits one step above the pane's bottom edge; a second step
+     leaves a gap between it and the card instead of touching. */
+  padding: var(--spacing-lg) 0 calc(var(--chat-composer-height) + 2 * var(--spacing-md));
+}
+/* display above would otherwise beat the UA's [hidden] rule. */
+.activity-home[hidden] {
+  display: none;
+}
+.activity-home-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+}
+.activity-home-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 400;
+}
+.activity-home .activity-panel-body {
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+/* Narrow pane: the list above the detail, each scrolling on its own. */
+@container chat-pane (max-width: 640px) {
+  .activity-home .activity-panel-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .activity-home .activity-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

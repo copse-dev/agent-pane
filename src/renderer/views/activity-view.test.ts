@@ -75,6 +75,7 @@ function setup(threads: Thread[]): Harness {
   const needsYou: number[] = []
   const state: HostState = { shown: false, fallbackFocus: 0, needsYou, clock: 1_000_000 }
   const host: ActivityViewHost = {
+    idPrefix: 'test',
     close: () => {},
     isShown: () => state.shown,
     fallbackFocus: () => {

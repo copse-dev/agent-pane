@@ -823,15 +823,21 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 **completed** work, not cancelled work. Spec:
 [`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
 
-## Centered new-thread composer: one hairline, not two
+## New-thread screen: the Activity home above a docked composer
 
-Empty threads float `#input-bar` via `.pane-chat.composer-centered`. The docked composer keeps a
-real CSS `border: 1px solid var(--border)`; the centered variant must **clear the full border**
-(`border: none`) and paint its perimeter only with `box-shadow: 0 0 0 1px var(--border)`. Clearing
-just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
-outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
+An empty thread is the **Activity home** (`.pane-chat.is-activity-home`,
+[`activity-home.ts`](../src/renderer/views/activity-home.ts)): the Activity list and detail fill
+the chat pane, and `#input-bar` stays **docked** at the bottom exactly as it is in a conversation.
+There is no floating, centred composer variant, so there is no second ring to keep in step: the
+docked card's own `border: 1px solid var(--border)` is the only hairline. The home reserves the
+composer's height with the same `padding-bottom` the conversation uses, so a row is never hidden
+behind it. A thread that is still loading its transcript (`messagesLoaded: false`) is **not**
+empty: it keeps the conversation and its "Loading" / "Couldn't load" notice rather than flashing
+the home. Focus goes to the composer once on entering an empty thread, never again on later store
+events, because the list shares the pane. Specs: `modern-css.test.ts`,
+`tests/e2e/titlebar-workspace.e2e.ts`, `tests/demo/chat-layout-styling.demo.ts`.
 
-The docked (and centered) composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
+The docked composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
 `#input-bar` / `.prompt-input` / `.input-footer` reads as a black bounding box clipping the chat
 gradient and any transcript that passes behind the floating card. Clear those fills, paint a
 semi-transparent wash plus `backdrop-filter` on `#input-bar::before`, and lift direct children so

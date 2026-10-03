@@ -34,27 +34,31 @@ describe('titlebar workspace name', () => {
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
-    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
-    const centeredBorder = await browser.execute(() => {
+    // An empty thread is the Activity home: the list sits above a docked
+    // composer, never behind it, and nothing spills sideways.
+    await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
+    await expect($('#activity-home')).toBeDisplayed()
+    const home = await browser.execute(() => {
+      const root = document.getElementById('activity-home')
+      const body = root?.querySelector('.activity-panel-body')
       const input = document.getElementById('input-bar')
-      if (!input) return null
-      const style = getComputedStyle(input)
+      const conversation = document.getElementById('conversation')
+      if (!root || !body || !input || !conversation) return null
       return {
-        top: style.borderTopWidth,
-        right: style.borderRightWidth,
-        bottom: style.borderBottomWidth,
-        left: style.borderLeftWidth,
-        boxShadow: style.boxShadow,
+        bodyBottom: body.getBoundingClientRect().bottom,
+        inputTop: input.getBoundingClientRect().top,
+        overflowsSideways: root.scrollWidth > root.clientWidth,
+        conversationDisplay: getComputedStyle(conversation).display,
+        composerBorder: getComputedStyle(input).borderTopWidth,
       }
     })
-    await expect(centeredBorder).not.toBeNull()
-    if (!centeredBorder) throw new Error('Missing #input-bar')
-    await expect(centeredBorder.top).toBe('0px')
-    await expect(centeredBorder.right).toBe('0px')
-    await expect(centeredBorder.bottom).toBe('0px')
-    await expect(centeredBorder.left).toBe('0px')
-    await expect(centeredBorder.boxShadow).toMatch(/0px 0px 0px 1px/)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
+    await expect(home).not.toBeNull()
+    if (!home) throw new Error('Missing Activity home elements')
+    await expect(home.bodyBottom).toBeLessThanOrEqual(home.inputTop + 1)
+    await expect(home.overflowsSideways).toBe(false)
+    await expect(home.conversationDisplay).toBe('none')
+    await expect(home.composerBorder).toBe('1px')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()
     const blankRows = await $$('.chats-list .chat-row .chat-title')
