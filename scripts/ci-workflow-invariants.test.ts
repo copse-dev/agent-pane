@@ -344,7 +344,7 @@ describe('ci.yml workflow invariants', () => {
 
   it('runs the cancellation gate on hosted capacity without checkout or network dependencies', () => {
     const aggregate = jobBlock('ci-passed')
-    assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) && !/m)
+    assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m)
     assert.match(aggregate, /^ {4}runs-on: ubuntu-latest$/m)
     assert.match(aggregate, /^ {4}timeout-minutes: 5$/m)
     assert.match(aggregate, /^ {4}permissions: \{\}$/m)

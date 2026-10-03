@@ -2032,7 +2032,10 @@ jobs:
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
-    if: ${{ always() && !(github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback'))) }}
+    # Queue this tiny aggregate even for metadata: GitHub leaves a skipped
+    # job's name expression unevaluated. Metadata gets its separate check name
+    # and exits before candidate-result validation; it never creates CI Passed.
+    if: ${{ always() }}
     needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -2046,6 +2049,7 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
+          METADATA_ONLY: ${{ github.event_name == 'pull_request' && ((github.event.action == 'edited' && github.event.changes.base == null && (github.event.changes.title != null || github.event.changes.body != null)) || (github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')) }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
@@ -2064,6 +2068,10 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -eu
+          if [ "${METADATA_ONLY:-false}" = "true" ]; then
+            echo "Metadata event ignored; this check does not authorize a merge."
+            exit 0
+          fi
           # Supersession explains why work was canceled; it is never evidence
           # that THIS run passed. The new run must earn its own green check.
           # This guard precedes fork and skip-mode acceptance deliberately.

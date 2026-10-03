@@ -9,6 +9,11 @@ const jobSchema = z.object({
   if: z.string().optional(),
   name: z.string().optional(),
   needs: z.union([z.string(), z.array(z.string())]).optional(),
+  steps: z
+    .array(
+      z.object({ env: z.record(z.string(), z.string()).optional(), run: z.string().optional() }),
+    )
+    .optional(),
 })
 const workflow = z
   .object({
@@ -82,6 +87,7 @@ function admitted(github: EventContext): {
   name: unknown
   group: unknown
   cancels: unknown
+  metadataOnly: unknown
 } {
   return {
     precheck: evaluate(binding('precheck').if ?? '', github),
@@ -90,6 +96,12 @@ function admitted(github: EventContext): {
     name: evaluate(binding('ci-passed').name ?? '', github),
     group: evaluate(workflow.concurrency.group, github),
     cancels: evaluate(workflow.concurrency['cancel-in-progress'], github),
+    metadataOnly: evaluate(
+      workflow.jobs['ci-passed']?.steps?.find((step) => step.env?.['METADATA_ONLY'])?.env?.[
+        'METADATA_ONLY'
+      ] ?? '',
+      github,
+    ),
   }
 }
 
@@ -106,7 +118,8 @@ describe('cosmetic CI event routing', () => {
       const route = admitted(github)
       assert.equal(route.precheck, false)
       assert.equal(route.autoformat, false)
-      assert.equal(route.aggregate, false)
+      assert.equal(route.aggregate, true)
+      assert.equal(route.metadataOnly, true)
       assert.equal(route.name, 'CI metadata ignored')
       assert.equal(route.cancels, false)
     }
@@ -133,7 +146,7 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
-  it('cannot turn a red or absent required check green through a skipped metadata check', () => {
+  it('cannot turn a red or absent required check green through a successful metadata no-op', () => {
     for (const original of ['failure', undefined]) {
       for (const github of cosmetics) {
         const checks = new Map<string, string>()
@@ -141,7 +154,7 @@ describe('cosmetic CI event routing', () => {
         const route = admitted(github)
         assert.equal(typeof route.name, 'string')
         if (typeof route.name !== 'string') throw new Error('Missing aggregate name')
-        checks.set(route.name, 'skipped')
+        checks.set(route.name, 'success')
         assert.equal(checks.get('CI Passed'), original)
       }
     }
@@ -176,6 +189,7 @@ describe('cosmetic CI event routing', () => {
       const route = admitted(github)
       assert.equal(route.precheck, true, JSON.stringify(github))
       assert.equal(route.aggregate, true)
+      assert.equal(route.metadataOnly, false)
       assert.equal(route.name, 'CI Passed')
       assert.equal(route.group, 'ci-42')
       assert.equal(route.cancels, github.event_name !== 'schedule')
