@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
 import { patchChildren } from '../dom/patch-children.ts'
 import {
+  arrowUpRightIcon,
   checkIcon,
   chevronDownIcon,
   messageQuestionIcon,
@@ -136,6 +137,8 @@ export interface ActivityViewHost {
    * once, so it keeps the row it opened on.
    */
   followUrgent?: boolean
+  /** Draw an up-right arrow after "Open thread" (the screen does; the overlay does not). */
+  openThreadArrow?: boolean
 }
 
 export interface ActivityView {
@@ -296,6 +299,10 @@ export function createActivityView(
     const node = button('ui-btn-ghost activity-open-thread', 'open-thread', 'Open thread', () => {
       openThread(row)
     })
+    // An icon child also opts the button out of the kit's cap-trim, so only the
+    // host that wants the arrow pays for it.
+    if (host.openThreadArrow)
+      node.append(arrowUpRightIcon('ui-icon ui-icon-sm activity-open-arrow'))
     node.disabled = !canOpen(row)
     return node
   }

@@ -51,6 +51,7 @@ export function mountActivityHome(
     collapsibleGroups: true,
     projectStrip: true,
     followUrgent: true,
+    openThreadArrow: true,
   })
 
   // The prototype carries no visible heading, summary or status line: the strip
