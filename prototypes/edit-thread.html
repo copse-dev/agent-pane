@@ -806,8 +806,10 @@
         font-size: 10px;
       }
       .toast {
+        /* Informational status must not intercept the editor controls beneath it. */
+        pointer-events: none;
         position: fixed;
-        bottom: 43px;
+        bottom: 100px;
         left: 50%;
         transform: translateX(-50%);
         background: var(--raised);

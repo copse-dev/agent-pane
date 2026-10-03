@@ -1,4 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { Key } from 'webdriverio'
 import { prepareE2eScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function openPrototype(): Promise<void> {
@@ -12,6 +13,16 @@ async function openHistoryEditor(): Promise<void> {
   await $('#fork').click()
   await expect($('#edit-history')).toBeDisplayed()
   await $('#edit-history').click()
+}
+
+async function toastClearsEditorFooter(): Promise<void> {
+  const clear = await browser.execute(() => {
+    const toast = document.getElementById('toast')
+    const footer = document.querySelector('.edit-footer')
+    if (!toast || !footer || toast.hidden) return false
+    return toast.getBoundingClientRect().bottom <= footer.getBoundingClientRect().top
+  })
+  expect(clear).toBe(true)
 }
 
 async function noOverflow(): Promise<void> {
@@ -39,6 +50,10 @@ describe('edit thread prototype', () => {
     await openHistoryEditor()
     await expect($('#review')).toBeDisabled()
     await $('#sample').click()
+    await expect($('#toast')).toBeDisplayed()
+    await expect($('#toast')).toHaveText(expect.stringContaining('Sample suggestion'))
+    expect((await $('#toast').getCSSProperty('pointer-events')).value).toBe('none')
+    await toastClearsEditorFooter()
     await expect($('#draft-indicator')).toHaveText('1 edited · 3 excluded')
     await expect($('#result-count')).toHaveText('3')
     await expect($('[data-text="1"]')).toBeDisabled()
@@ -73,7 +88,10 @@ describe('edit thread prototype', () => {
     await expect($('#discard-dialog')).toBeDisplayed()
     await $('#keep-editing').click()
     await expect($('[data-text="0"]')).toHaveValue(expect.stringContaining('descriptions only'))
-    await $('[data-text="0"]').setValue('')
+    await $('[data-text="0"]').click()
+    await browser.keys([Key.Ctrl, 'a'])
+    await browser.keys('Backspace')
+    await expect($('[data-text="0"]')).toHaveValue('')
     await expect($('#review')).toBeDisabled()
     await expect($('#error-note')).toHaveText(expect.stringContaining('need some text'))
     for (let index = 0; index < 6; index++) await $('[data-include="' + index + '"]').click()
@@ -83,6 +101,8 @@ describe('edit thread prototype', () => {
     await $('#cancel').click()
     await $('#discard').click()
     await expect($('#messages')).toHaveText(expect.stringContaining('Add fuzzy search'))
+    await $('[data-fork="0"]').moveTo()
+    await $('[data-fork="0"]').waitForClickable()
     await $('[data-fork="0"]').click()
     await $('#edit-history').click()
     await $('[data-text="0"]').setValue(
@@ -97,6 +117,8 @@ describe('edit thread prototype', () => {
   })
 
   it('forks the selected transcript into a separate mock thread', async () => {
+    await $('[data-fork="0"]').moveTo()
+    await $('[data-fork="0"]').waitForClickable()
     await $('[data-fork="0"]').click()
     await $('#fork-copy').click()
     expect(await $$('.message').length).toBe(1)
@@ -123,6 +145,8 @@ describe('edit thread prototype', () => {
     await expect($('#history-preview')).toBeDisplayed()
     await expect($('#review')).toBeDisplayed()
     await noOverflow()
+    await expect($('#toast')).toBeDisplayed()
+    await toastClearsEditorFooter()
     await saveElementScreenshot('#app', 'edit-thread-review-narrow.png')
     await $('#review').click()
     expect(await $$('.message').length).toBe(3)
