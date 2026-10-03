@@ -106,7 +106,13 @@ revisiting this document, not silently diverging in an implementation PR.
    observed from renderer dispatches. A stale or exhausted wake never runs; its
    completed process state and logs remain available for explicit human inspection.
    The background operation id deduplicates delivery, so recovery cannot execute the
-   same machine turn twice. Each in-run grant carries its bounded mechanism reason
+   same machine turn twice. ACP native-tool bridges snapshot the owning human
+   turn-tree epoch when binding a turn's execution context and rebind that epoch
+   for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
+   without an explicit human epoch cannot synthesize one from its thread id.
+   Bounded background tasks launched through ACP therefore use the same wake
+   budget and stale-epoch checks as native launches.
+   Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit
    is reached and todos remain open, the host emits and persists one deterministic
