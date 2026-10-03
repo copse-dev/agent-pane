@@ -76,6 +76,32 @@ export function isConciseWorkingMessage(
 }
 
 /**
+ * The id of the user prompt that started the turn `messageId` belongs to: the
+ * nearest user message at or before it. Null for messages ahead of any prompt.
+ * A turn is the stretch from one prompt to the next, so this identifies it.
+ */
+export function turnStartId(
+  messages: readonly Pick<Message, 'id' | 'role'>[],
+  messageId: string,
+): string | null {
+  const at = messages.findIndex((msg) => msg.id === messageId)
+  for (let i = at; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg?.role === 'user') return msg.id
+  }
+  return null
+}
+
+/** The id of the newest user prompt: the turn that is live when a thread is running. */
+export function liveTurnStartId(messages: readonly Pick<Message, 'id' | 'role'>[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg?.role === 'user') return msg.id
+  }
+  return null
+}
+
+/**
  * Toggle the classes the stylesheet keys the concise view on. `enabled` is the
  * experimental setting; with it off both classes are cleared.
  */

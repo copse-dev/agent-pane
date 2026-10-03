@@ -52,6 +52,13 @@ export interface EgressBrokerOptions {
    * never on where the dial went.
    */
   resolve?: Readonly<Record<string, string>>
+  /**
+   * The run's provider key, handed to the guest over the link the first time
+   * it asks and then forgotten (decision A17). It is never an argument, an
+   * environment variable of this process or of `docker`, or part of the
+   * container's configuration.
+   */
+  runKey?: string
 }
 
 type LookupFunction = NonNullable<TcpSocketConnectOpts['lookup']>
@@ -212,12 +219,14 @@ export class EgressBroker {
   private readonly rules: readonly EgressRule[]
   private readonly resolve: Readonly<Record<string, string>>
   private readonly lookup = cachedLookup()
+  private runKey: string | null
 
   constructor(options: EgressBrokerOptions) {
     this.rules = options.rules
     this.resolve = options.resolve ?? {}
     const refusal = hostLocalAliasRefusal(this.rules, this.resolve)
     if (refusal !== null) throw new Error(refusal)
+    this.runKey = options.runKey !== undefined && options.runKey.length > 0 ? options.runKey : null
   }
 
   /**
@@ -230,6 +239,13 @@ export class EgressBroker {
     this.link = new EgressLink(input, output, {
       onOpen: (id, target): void => {
         this.open(id, target)
+      },
+      // Answered once: the worker asks before anything else in the guest runs,
+      // so a later request — from whatever else reached the link — gets nothing.
+      onKeyRequest: (): string => {
+        const key = this.runKey ?? ''
+        this.runKey = null
+        return key
       },
     })
   }
@@ -351,6 +367,7 @@ export class EgressBroker {
 
   /** Sever every stream and the link; the byte streams themselves are the caller's. */
   stop(): void {
+    this.runKey = null
     for (const stream of this.live) stream.destroy()
     this.live.clear()
     this.link?.close(undefined)

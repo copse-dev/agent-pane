@@ -44,6 +44,9 @@ export default ts.config(
       '.portable/',
       '.pr-validation/',
       '.tmp/',
+      // Downloaded browser/driver caches (wdio.demo.conf.ts fetches Chrome for Testing
+      // into .cache/wdio-demo/). ESLint does not read .gitignore, so list them here.
+      '.cache/',
       // Generated benchmark outputs, private research scripts and downloaded model caches.
       // The maintained benchmark harnesses under benchmarks/ are linted separately below.
       'bench-results/',
@@ -476,6 +479,30 @@ export default ts.config(
         globalThis: 'readonly',
         importScripts: 'readonly',
       },
+    },
+  },
+  {
+    // Shipped Canvas worker runtime is plain browser JavaScript, embedded in
+    // self-contained artefacts rather than compiled by a TypeScript project.
+    files: ['assets/explainers/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        globalThis: 'readonly',
+        self: 'readonly',
+        OffscreenCanvas: 'readonly',
+        ImageBitmap: 'readonly',
+        Worker: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

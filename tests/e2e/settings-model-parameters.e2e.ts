@@ -113,6 +113,57 @@ describe('per-model generation parameters', () => {
     }, LOCAL_MODEL)
   })
 
+  it('shows the GLM-4.7-Flash coding defaults and model-card source', async function () {
+    this.timeout(60_000)
+    await browser.execute(() => {
+      const select = document.querySelector<HTMLSelectElement>(
+        '#settings-models-section select[name="model"]',
+      )
+      if (!select) return
+      const model = 'lmstudio:zai-org/glm-4.7-flash'
+      if (![...select.options].some((option) => option.value === model)) {
+        select.append(new Option(model, model))
+      }
+      select.value = model
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const section = await $('[data-testid="model-parameters"]')
+    const recipe = await section.$('[data-testid="model-parameter-recommend"]')
+    await recipe.waitForDisplayed({ timeout: 10_000 })
+    for (const { field, value } of [
+      { field: 'temperature', value: '0.7' },
+      { field: 'top-p', value: '1' },
+      { field: 'max-output-tokens', value: '16384' },
+    ]) {
+      const input = await section.$(`[data-testid="model-parameter-${field}"]`)
+      await expect(input).toHaveValue('')
+      await expect(input).toHaveAttribute('placeholder', value)
+    }
+    const source = await section.$('.model-parameter-recommend-note a')
+    await expect(source).toHaveText('model card')
+    await expect(source).toHaveAttribute(
+      'href',
+      'https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters',
+    )
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="model-parameters"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await saveElementScreenshot(
+      '[data-testid="model-parameters"]',
+      'settings-model-parameters-glm-4-7-flash.png',
+    )
+    await browser.execute((model) => {
+      const select = document.querySelector<HTMLSelectElement>(
+        '#settings-models-section select[name="model"]',
+      )
+      if (!select) return
+      select.value = model
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }, LOCAL_MODEL)
+  })
+
   it('tunes a model without changing a rule chat model', async function () {
     this.timeout(60_000)
     // The reported dead end: with a rule as the chat model the section only said

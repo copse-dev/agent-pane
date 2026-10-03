@@ -34,7 +34,11 @@ describe('GitHub write approval', () => {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
-    await expect(dialog.$('.approval-heading')).toHaveText('Mark pull request ready for review?')
+    await expect(dialog.$('.approval-heading')).toHaveText(
+      'Mark pull request ready for review on GitHub?',
+    )
+    await expect(dialog.$('.approval-github-brand')).toBeDisplayed()
+    await expect(dialog.$('.approval-github-brand')).toHaveText('GitHub')
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toBe('PR #1478')

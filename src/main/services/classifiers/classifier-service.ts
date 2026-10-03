@@ -46,6 +46,7 @@ interface ClassifierConfiguration {
 const EMPTY_CONFIGURATION: ClassifierConfiguration = { version: 1, profiles: [] }
 const CONFIGURATION_KEY = 'classifierProviders'
 const SCREENING_KEY = 'safetyScreeningClassifier'
+const BACKGROUND_KEY = 'backgroundClassifier'
 
 function configuredProfiles(): ClassifierProfile[] {
   return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION).profiles
@@ -69,6 +70,18 @@ export function screeningClassifierId(): string | null {
   const id = getSetting<string>(SCREENING_KEY, '')
   const profile = configuredProfiles().find((entry) => entry.id === id)
   return profile && canScreen(profile) ? id : null
+}
+
+/**
+ * The saved connection that answers background questions (roadmap complexity
+ * and category), if one is chosen. Any connection qualifies, SemIf included:
+ * nothing waits on these answers, and the connection's own timeout applies. A
+ * choice naming a connection that no longer exists reads as none, so the
+ * small-tasks model answers.
+ */
+export function backgroundClassifierId(): string | null {
+  const id = getSetting<string>(BACKGROUND_KEY, '')
+  return configuredProfiles().some((entry) => entry.id === id) ? id : null
 }
 
 function credentialForProfile(id: string): string {
@@ -152,6 +165,21 @@ export async function setScreeningClassifier(id: string | null): Promise<string 
   return screeningClassifierId()
 }
 
+/**
+ * Choose which saved connection answers background questions, or pass `null`
+ * to hand them back to the small-tasks model. Like screening, choosing makes no
+ * inference call.
+ */
+export async function setBackgroundClassifier(id: string | null): Promise<string | null> {
+  if (id === null) {
+    await deleteSetting(BACKGROUND_KEY)
+    return null
+  }
+  getClassifierProfile(id)
+  await setSetting(BACKGROUND_KEY, id)
+  return backgroundClassifierId()
+}
+
 export async function saveClassifierProfile(
   raw: ClassifierProfile,
 ): Promise<ClassifierProfileStatus[]> {
@@ -195,6 +223,8 @@ export async function removeClassifierProfile(id: string): Promise<ClassifierPro
   deleteApiKey(credential)
   // Removing the screening connection hands screening back to the safety model.
   if (getSetting<string>(SCREENING_KEY, '') === id) await deleteSetting(SCREENING_KEY)
+  // Likewise, background questions go back to the small-tasks model.
+  if (getSetting<string>(BACKGROUND_KEY, '') === id) await deleteSetting(BACKGROUND_KEY)
   return listClassifierProfiles()
 }
 

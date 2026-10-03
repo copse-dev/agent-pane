@@ -5,19 +5,20 @@
 //
 // 1. **The plugin is registered** in `FIRST_PARTY_PLUGINS` with id
 //    `copse.mcp-ui-canvas` and trust `first-party`, and its manifest +
-//    contributions declare the `mcp-ui-canvas` capability plus exactly one
-//    turn-start hook (the prototype steering) and NO tool/prompt/ui.
+//    contributions declare the `mcp-ui-canvas` capability plus the prototype and explainer
+//    turn-start hooks and NO tool/prompt/ui.
 // 2. **Single owner.** Across the shipped seed the `mcp-ui-canvas` capability is
 //    declared exactly once, so the host read sites (`mcp-registry.ts`) resolve
 //    it unambiguously through `isCapabilityActive`.
 // 3. **Atomicity of disable.** One flag flip drops both the capability from
 //    `isCapabilityActive('mcp-ui-canvas')` and the steering hook from
-//    `activeBlockingHooks()`; plugin storage (none declared here) is irrelevant.
+//    `activeBlockingHooks()`; the separate explainer setting cannot override it.
 //    The default-OFF product behaviour is enforced by the plugin-service
 //    enablement migration, not by the raw registry seed, so this test toggles
 //    enablement explicitly.
 // 4. **The steering hook fires only on a prototype turn that offers the canvas
 //    tool**, and names the prefixed tool the turn actually got.
+import { ANIMATED_EXPLAINERS_SETTING_ID } from '../canvas-settings.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -40,7 +41,7 @@ describe('copse.mcp-ui-canvas plugin', () => {
     )
   })
 
-  it('declares the mcp-ui-canvas capability and only the steering hook alongside it', () => {
+  it('declares the mcp-ui-canvas capability and steering hooks alongside it', () => {
     assert.deepEqual(mcpUiCanvasPlugin.manifest.capabilities, [
       {
         name: MCP_UI_CANVAS_CAPABILITY,
@@ -49,18 +50,25 @@ describe('copse.mcp-ui-canvas plugin', () => {
       },
     ])
     assert.equal(mcpUiCanvasPlugin.contributions.capabilities[0]?.name, MCP_UI_CANVAS_CAPABILITY)
-    // A behaviour flag plus one conditional steering hook: nothing else is
+    // A behaviour flag plus conditional steering hooks: nothing else is
     // contributed. Pinning this shape makes any accidental extra contribution a
     // mechanical failure.
     assert.deepEqual(mcpUiCanvasPlugin.contributions.toolNames, [])
     assert.deepEqual(
       mcpUiCanvasPlugin.contributions.blockingHooks.map((hook) => hook.id),
-      ['canvas-prototype-steering'],
+      ['canvas-prototype-steering', 'explainer-steering'],
     )
     assert.deepEqual(mcpUiCanvasPlugin.contributions.asyncHooks, [])
     assert.deepEqual(mcpUiCanvasPlugin.contributions.promptBlocks, [])
     assert.deepEqual(mcpUiCanvasPlugin.contributions.uiContributions, [])
     assert.equal(mcpUiCanvasPlugin.manifest.tools, undefined)
+  })
+
+  it('keeps the explainer experiment off until the user opts in', () => {
+    assert.equal(mcpUiCanvasPlugin.manifest.stability, 'experimental')
+    const setting = mcpUiCanvasPlugin.manifest.settings?.[ANIMATED_EXPLAINERS_SETTING_ID]
+    assert.equal(setting?.kind, 'boolean')
+    assert.equal(setting.default, false)
   })
 
   it('declares mcp-ui-canvas exactly once across all first-party plugins', () => {
@@ -73,7 +81,9 @@ describe('copse.mcp-ui-canvas plugin', () => {
   it('atomically drops the capability and the steering hook on disable', () => {
     const registry = createFirstPartyPluginRegistry()
     const steeringActive = (): boolean =>
-      registry.activeBlockingHooks().some((hook) => hook.id === 'canvas-prototype-steering')
+      registry
+        .activeBlockingHooks()
+        .some((hook) => hook.id === 'canvas-prototype-steering' || hook.id === 'explainer-steering')
     assert.equal(registry.isEnabled(MCP_UI_CANVAS_PLUGIN_ID), true)
     assert.equal(registry.isCapabilityActive(MCP_UI_CANVAS_CAPABILITY), true)
     assert.equal(steeringActive(), true)

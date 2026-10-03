@@ -109,6 +109,7 @@ Options:
   --explain        show why each test was selected
   --json           machine-readable output
   --plan           emit a CI plan (mode=/count=/specs=) for $GITHUB_OUTPUT
+  --list-ci-specs   list the full CI e2e suite, retaining configured exclusions
   --run <tier>     run the recommendation: e2e (default) | unit | all
   --help           show this help
 
@@ -123,6 +124,7 @@ type Args = {
   explain: boolean
   json: boolean
   plan: boolean
+  listCiSpecs: boolean
   run: 'e2e' | 'unit' | 'all' | null
 }
 
@@ -134,6 +136,7 @@ function parseArgs(argv: string[]): Args {
     explain: false,
     json: false,
     plan: false,
+    listCiSpecs: false,
     run: null,
   }
   for (let i = 0; i < argv.length; i++) {
@@ -147,6 +150,7 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--explain') a.explain = true
     else if (arg === '--json') a.json = true
     else if (arg === '--plan') a.plan = true
+    else if (arg === '--list-ci-specs') a.listCiSpecs = true
     else if (arg === '--run') {
       const v = argv[i + 1]
       a.run = v === 'unit' || v === 'all' ? (++i, v) : 'e2e'
@@ -756,6 +760,15 @@ export function computeScreenshotGate(changed: string[], labeled: boolean): Scre
 // ── Main ─────────────────────────────────────────────────────────────────────
 function main(): void {
   const args = parseArgs(process.argv.slice(2))
+  if (args.listCiSpecs) {
+    const excluded = ciExcludedSpecs()
+    console.log(
+      listSpecs()
+        .filter((spec) => !excluded.has(spec))
+        .join('\n'),
+    )
+    return
+  }
   const sel = computeSelection(args.files ?? changedFiles(args.base))
 
   if (args.plan) {

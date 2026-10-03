@@ -40,7 +40,7 @@ export type DynamicModelSelector =
   | { kind: 'best-local' }
   /** Cheapest routable model (plan-covered and local count as free). */
   | { kind: 'cheapest' }
-  /** Intellect/cost trade-off judged on real API price (no plan discount), biased toward plan-covered routes with headroom. */
+  /** Intellect/cost trade-off; confirmed plan coverage and free routes take precedence over paid APIs. */
   | { kind: 'balanced' }
   /** Cheapest routable model scoring at least `threshold` on the Intelligence Index. */
   | { kind: 'min-intellect'; threshold: number }

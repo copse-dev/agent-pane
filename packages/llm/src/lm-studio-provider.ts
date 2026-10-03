@@ -16,6 +16,7 @@ import {
   type ModelParameters,
 } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -85,6 +86,15 @@ class AsyncChunkQueue<T> implements AsyncIterableIterator<T> {
   private waiter: QueueWaiter<T> | null = null
   private ended = false
   private failure: Error | null = null
+  private readonly onEarlyExit: (() => void) | undefined
+
+  /**
+   * `onEarlyExit` runs when the consumer stops iterating before the producer
+   * has ended the queue (a `break` out of `for await`, or a generator `return`).
+   */
+  constructor(onEarlyExit?: () => void) {
+    this.onEarlyExit = onEarlyExit
+  }
 
   push(value: T): void {
     if (this.ended) return
@@ -127,6 +137,21 @@ class AsyncChunkQueue<T> implements AsyncIterableIterator<T> {
     return new Promise<IteratorResult<T>>((resolve, reject) => {
       this.waiter = { resolve, reject }
     })
+  }
+
+  /**
+   * Called by `for await`/`yield*` when the consumer stops early. Without it the
+   * SDK prediction behind the queue keeps generating on the server: the agent
+   * loop abandons a stream it cut for runaway reasoning, and LM Studio goes on
+   * predicting up to the output ceiling while the next request queues behind it.
+   */
+  return(): Promise<IteratorResult<T>> {
+    if (!this.ended) {
+      this.ended = true
+      this.values.length = 0
+      this.onEarlyExit?.()
+    }
+    return Promise.resolve({ value: undefined, done: true })
   }
 
   [Symbol.asyncIterator](): AsyncIterableIterator<T> {
@@ -179,8 +204,13 @@ export class LMStudioProvider implements LLMProvider {
     tools: LLMTool[],
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
-    const queue = new AsyncChunkQueue<ProviderStreamChunk>()
-    void this.produce(messages, tools, signal, queue)
+    // Own the prediction's abort controller here so the consumer walking away
+    // cancels it, not just the producer's own error paths.
+    const cancel = new AbortController()
+    const queue = new AsyncChunkQueue<ProviderStreamChunk>(() => {
+      cancel.abort(new Error('Prediction cancelled: the consumer stopped reading the stream.'))
+    })
+    void this.produce(messages, tools, signal, queue, cancel)
     yield* queue
   }
 
@@ -213,12 +243,13 @@ export class LMStudioProvider implements LLMProvider {
     tools: LLMTool[],
     signal: AbortSignal | undefined,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
+    cancel: AbortController,
   ): Promise<void> {
     // Failing the queue ends the stream for our consumer, but the server keeps
-    // predicting until it is told to stop. Own an abort controller for the
-    // prediction so those exits can cancel it instead of leaving a local model
-    // generating tokens nobody will read.
-    const cancel = new AbortController()
+    // predicting until it is told to stop. `cancel` lets those exits (and the
+    // consumer stopping early, see `AsyncChunkQueue.return`) stop the
+    // prediction instead of leaving a local model generating tokens nobody will
+    // read.
     try {
       const [model, chat] = await Promise.all([
         this.client.model(this.modelName),
@@ -236,8 +267,8 @@ export class LMStudioProvider implements LLMProvider {
           const chunk = chunkFromPredictionFragment(fragment)
           if (chunk) queue.push(chunk)
         },
-        onToolCallRequestEnd: (callId, { toolCallRequest }) => {
-          queue.push(toolCallChunk(callId, toolCallRequest))
+        onToolCallRequestEnd: (_callId, { toolCallRequest }) => {
+          queue.push(toolCallChunk(toolCallRequest))
         },
         onToolCallRequestFailure: (_callId, error) => {
           // The model emitted a tool call we cannot parse; nothing later in this
@@ -283,13 +314,14 @@ function chunkFromPredictionFragment(
 }
 
 function toolCallChunk(
-  callId: number,
   request: FunctionToolCallRequest,
 ): Extract<ProviderStreamChunk, { type: 'tool_call' }> {
   return {
     type: 'tool_call',
     toolCall: {
-      id: request.id ?? `lmstudio-${callId.toString()}`,
+      // Not the SDK's `callId`: that counts from 0 in every prediction, so it
+      // would repeat across turns of one thread.
+      id: toolCallIdOrSynthesized(request.id),
       name: request.name,
       args: request.arguments ?? {},
     },
