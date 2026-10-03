@@ -287,6 +287,27 @@ describe('worktree inventory', () => {
     assert.ok(existsSync(join(worktreePath, 'vendor', 'authored')), 'tracked-shaped vendor is kept')
   })
 
+  it('measures every file across multiple bounded stat batches', async () => {
+    const { repo, worktreePath } = await setup()
+    await writeFile(join(worktreePath, '.gitignore'), 'node_modules/\n')
+    const root = join(worktreePath, 'node_modules')
+    await mkdir(join(root, 'nested'), { recursive: true })
+    for (let index = 0; index < 99; index += 1) {
+      await writeFile(join(root, `file-${String(index)}`), 'x'.repeat(index))
+    }
+    await writeFile(join(root, 'nested', 'file'), 'nested')
+    const result = await cleanupWorktreePackages({
+      projectId: 'project-1',
+      projectRoot: repo,
+      path: worktreePath,
+      remove: false,
+      runningThreadIds: NO_RUNS,
+    })
+    assert.equal(result.status, 'ready')
+    assert.equal(result.bytes, (98 * 99) / 2 + 6)
+    assert.equal(result.truncated, false)
+  })
+
   it('does not clean package directories while the owning thread is running', async () => {
     const { repo, worktreePath } = await setup()
     const result = await cleanupWorktreePackages({

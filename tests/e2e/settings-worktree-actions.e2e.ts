@@ -189,12 +189,17 @@ describe('settings → Storage → worktree actions', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="storage"]').click()
     await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(2)
-    // Keep the confirmed action in flight long enough to inspect its real
-    // pending state. The production path walks files serially to avoid an I/O
-    // spike, so a few thousand tiny entries are a deterministic visual fixture.
-    const pendingFixture = join(secondWorktreeRoot, 'node_modules', 'pending-evidence')
+    // Keep the first selected checkout busy long enough to cancel the real
+    // IPC-backed batch and prove that the second checkout stays untouched.
+    const firstWorktreePath = await $('.sources-row[data-worktree-path]').getAttribute(
+      'data-worktree-path',
+    )
+    assert.ok(firstWorktreePath)
+    const untouchedWorktreePath =
+      firstWorktreePath === worktreeRoot ? secondWorktreeRoot : worktreeRoot
+    const pendingFixture = join(firstWorktreePath, 'node_modules', 'pending-evidence')
     mkdirSync(pendingFixture, { recursive: true })
-    for (let index = 0; index < 40_000; index += 1) {
+    for (let index = 0; index < 200_000; index += 1) {
       writeFileSync(join(pendingFixture, `file-${String(index)}.js`), '')
     }
     await expect($('#sources-worktrees-bulk-actions')).not.toBeDisplayed()
@@ -246,8 +251,32 @@ describe('settings → Storage → worktree actions', function () {
       { timeout: 10_000, timeoutMsg: 'expected the confirmation to show cleanup progress' },
     )
     await expect(confirm.$('.confirm-dialog-confirm')).toBeDisabled()
+    await expect(confirm.$('.confirm-dialog-cancel')).toBeClickable()
+    await expect(confirm.$('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('stops after the current worktree finishes'),
+    )
     await expect($('.sources-row[data-cleanup-state="cleaning"]')).toExist()
     await saveAppScreenshot('settings-worktree-cleanup-pending.png')
+    await confirm.$('.confirm-dialog-cancel').click()
+    await expect(confirm).not.toBeDisplayed()
+    await expect($('#sources-worktrees-status')).toHaveText(
+      expect.stringContaining('Cleanup stopped.'),
+    )
+    assert.equal(existsSync(join(firstWorktreePath, 'node_modules')), false)
+    assert.equal(existsSync(join(untouchedWorktreePath, 'node_modules')), true)
+    await expect($('#sources-worktrees-selected-count')).toHaveText('1 selected')
+    await saveElementScreenshot(
+      '.sources-worktrees-fieldset',
+      'settings-worktree-cleanup-cancelled.png',
+    )
+
+    // Restart through the same product controls after cancellation settles.
+    mkdirSync(join(firstWorktreePath, 'node_modules'), { recursive: true })
+    writeFileSync(join(firstWorktreePath, 'node_modules', 'package.js'), 'module.exports = true\n')
+    await $('#sources-worktrees-select-all').click()
+    await $('#sources-worktrees-cleanup').click()
+    await confirm.waitForDisplayed()
+    await confirm.$('.confirm-dialog-confirm').click()
     await expect($('#sources-worktrees-status')).toHaveText(
       expect.stringContaining('Cleaned up 2 directories'),
     )

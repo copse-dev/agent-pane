@@ -48,6 +48,7 @@ import {
  * number that quietly understates the directory.
  */
 const SIZE_ENTRY_BUDGET = 400_000
+const SIZE_STAT_CONCURRENCY = 32
 
 export interface WorktreeInventoryInput {
   projectId: string
@@ -401,8 +402,11 @@ async function measureTree(root: string): Promise<{
     } catch {
       continue
     }
-    for (const entry of entries) {
-      if (++visited > SIZE_ENTRY_BUDGET) return { bytes, fileCount, truncated: true }
+    const remaining = SIZE_ENTRY_BUDGET - visited
+    const withinBudget = entries.slice(0, remaining)
+    visited += withinBudget.length
+    const files: string[] = []
+    for (const entry of withinBudget) {
       if (entry.isSymbolicLink()) continue
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -410,13 +414,28 @@ async function measureTree(root: string): Promise<{
         continue
       }
       if (!entry.isFile()) continue
-      try {
-        bytes += (await lstat(full)).size
+      files.push(full)
+    }
+    // Keep I/O bounded while avoiding one event-loop round trip per file in
+    // dependency trees containing tens of thousands of tiny entries.
+    for (let offset = 0; offset < files.length; offset += SIZE_STAT_CONCURRENCY) {
+      const sizes = await Promise.all(
+        files.slice(offset, offset + SIZE_STAT_CONCURRENCY).map(async (file) => {
+          try {
+            return (await lstat(file)).size
+          } catch {
+            // A file may disappear during an agent turn or build.
+            return null
+          }
+        }),
+      )
+      for (const size of sizes) {
+        if (size === null) continue
+        bytes += size
         fileCount += 1
-      } catch {
-        // Raced with the agent or a build; one missing file should not fail the total.
       }
     }
+    if (entries.length > remaining) return { bytes, fileCount, truncated: true }
   }
   return { bytes, fileCount, truncated: false }
 }
