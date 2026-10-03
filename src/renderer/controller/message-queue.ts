@@ -569,7 +569,7 @@ export function sendQueuedMessageNow(
     // queue head. Remote follow-up create retries on `409 agent_busy` until the
     // cancelled run settles — see `createRemoteRun` in remote-agent-client.ts.
     markSendNowAbort(threadId)
-    void api.agent.abort(threadId)
+    void api.agent.abort(threadId, 'send_now')
   } else {
     drainMessageQueue(store, api, threadId)
   }

@@ -378,7 +378,12 @@ disable the OS sandbox.
 While active:
 
 - Routine shell commands skip ordinary scope prompts, subject to the host-owned harm gate in
-  `shell-harm.ts` (`allow` / one-time `prompt` / hard `deny`).
+  `shell-harm.ts` (`allow` / one-time `prompt` / hard `deny`). Safety confirmations in Guarded
+  YOLO deny after two minutes without an answer and dismiss the prompt, returning a rewrite
+  hint so unattended work can continue. Dangerous-command confirmations (including flagged
+  recursive `rm`) in ordinary auto-run use the same deadline. Standard-mode prompts with
+  auto-run disabled or an explicit Always ask policy keep their existing indefinite wait;
+  hard denials remain immediate.
 - The thread is treated as holding the outside-project read grant above. Eligible plain reads of
   non-credential paths auto-run; on macOS/Linux they stay contained with a widened `allowRead`
   seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`

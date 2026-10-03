@@ -71,7 +71,10 @@ revisiting this document, not silently diverging in an implementation PR.
    the complete turn uses blocking mode.
 4. **The pending-message queue is the only async output channel.** An async hook's
    results land as queued messages (consumed at idle drain, or immediately if the hook
-   sets send-now — byte-for-byte the user's send-now semantics). No mid-turn injection
+   sets send-now — byte-for-byte the user's send-now semantics). Send-now interrupts
+   the model turn but transfers an already-running native shell command to the owned
+   background-task supervisor, preserving its process, containment, logs and original
+   deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
    descending from one human-originated submission). The ledger counts
@@ -888,7 +891,8 @@ Collected from design review — each of these was _almost_ a bug in the plan it
 
 - **`drainMessageQueue` auto-submits plain queued messages at idle.** Any "queued for
   the human" semantics must use the held state; a plain enqueue is an auto-submit.
-- **`sendQueuedMessageNow` aborts the active local run.** Check epoch staleness _before_
+- **`sendQueuedMessageNow` interrupts the active model turn while preserving a running
+  native shell command as a background task.** Check epoch staleness _before_
   reaching that path, or a late hook kills an unrelated turn.
 - **`writeThread` regenerates `events.jsonl` from `thread.messages` alone.** Appending a
   spine line without full-save round-tripping means it vanishes on the next save.

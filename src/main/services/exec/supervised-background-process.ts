@@ -6,11 +6,13 @@ import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import {
   startBackgroundProcess,
+  adoptBackgroundProcess,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
   type BackgroundProcessCompletion,
   type BackgroundProcessInfo,
   type StartBackgroundProcessOptions,
+  type AdoptBackgroundProcessOptions,
 } from './background-process.ts'
 
 export const BACKGROUND_PROCESS_HANDLER = 'shell_process'
@@ -75,6 +77,25 @@ export interface StartSupervisedBackgroundProcessOptions extends Omit<
 export async function startSupervisedBackgroundProcess(
   opts: StartSupervisedBackgroundProcessOptions,
 ): Promise<BackgroundProcessInfo> {
+  return superviseBackgroundProcess(opts, (onCompletion) =>
+    startBackgroundProcess({ ...opts, onCompletion }),
+  )
+}
+
+export async function adoptSupervisedBackgroundProcess(
+  opts: AdoptBackgroundProcessOptions,
+): Promise<BackgroundProcessInfo> {
+  return superviseBackgroundProcess(opts, (onCompletion) =>
+    Promise.resolve(adoptBackgroundProcess({ ...opts, onCompletion })),
+  )
+}
+
+async function superviseBackgroundProcess(
+  opts: Pick<StartSupervisedBackgroundProcessOptions, 'owner' | 'timeoutMs' | 'onCompletion'>,
+  start: (
+    onCompletion: NonNullable<StartBackgroundProcessOptions['onCompletion']>,
+  ) => Promise<BackgroundProcessInfo>,
+): Promise<BackgroundProcessInfo> {
   const installedSupervisor = activeSupervisor()
   if (!installedSupervisor) throw new Error('Background process supervisor is unavailable')
 
@@ -102,12 +123,9 @@ export async function startSupervisedBackgroundProcess(
     await opts.onCompletion?.(completion)
   }
 
-  const info = await startBackgroundProcess({
-    ...opts,
-    onCompletion: async (completed): Promise<void> => {
-      completion = completed
-      await settle()
-    },
+  const info = await start(async (completed): Promise<void> => {
+    completion = completed
+    await settle()
   })
 
   try {
@@ -122,7 +140,7 @@ export async function startSupervisedBackgroundProcess(
         permissionSnapshot: {
           capturedAt: Date.now(),
           autoRunSandboxCommands: getSetting<boolean>('autoRunSandboxCommands', true),
-          projectSandboxEnabled: isProjectSandboxEnabled(),
+          projectSandboxEnabled: !info.unsandboxed && isProjectSandboxEnabled(),
           executionRoot: info.cwd,
           workspaceTargetKind: executionTarget?.kind ?? 'local',
           ...(executionTarget?.kind === 'ssh' ? { workspaceTargetId: executionTarget.hostId } : {}),

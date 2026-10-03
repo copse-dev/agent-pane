@@ -307,7 +307,7 @@ export interface ApiClient {
       threadId: string,
       payload: string,
     ) => Promise<ContextBreakdown>
-    abort: (threadId: string) => Promise<void>
+    abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>

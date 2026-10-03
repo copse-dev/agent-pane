@@ -430,14 +430,25 @@ async function promptShell(
   return approved
 }
 
+export const AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS = 120_000
+
+function checkSafetyPromptTimeout(response: { resolution?: string }): void {
+  if (response.resolution === 'timeout') {
+    throw new Error(
+      'Command denied: safety confirmation timed out after two minutes. Rewrite the command to avoid recursive or broad deletion, use explicit scoped paths, and continue with safer work. Do not retry the same command unattended.',
+    )
+  }
+}
+
 async function promptGuardedYoloHarm(
   command: string,
   reasons: string[],
   sandboxed: boolean,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const { approved } = await requestApproval(
+  const response = await requestApproval(
     {
+      timeoutMs: AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS,
       title: 'Guarded YOLO safety check',
       body: command,
       bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
@@ -451,7 +462,8 @@ async function promptGuardedYoloHarm(
     },
     signal,
   )
-  return approved
+  checkSafetyPromptTimeout(response)
+  return response.approved
 }
 
 /**
@@ -1465,6 +1477,32 @@ export async function ensureShellCommandPermitted(
   // Distinguish "contained, but policy still wants a human" from "nothing is
   // containing this at all" — the second is the prompt a container would remove,
   // and collapsing them would make the U0 measurement unreadable.
+  if (autoRun && !forceAsk && dangerousInSandboxReasons(command).length > 0) {
+    const response = await requestApproval(
+      {
+        timeoutMs: AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS,
+        title: 'Run shell command?',
+        type: 'shell',
+        ...shellPromptToApprovalFields(
+          outsideSandbox || !sandboxEnabled
+            ? formatExternalSandboxPromptParts(command, effectiveReasons)
+            : formatShellPromptParts(command, effectiveReasons),
+        ),
+        subject: SHELL_DECISION_SUBJECT,
+        scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
+        cause: !sandboxEnabled
+          ? 'shell-no-containment'
+          : outsideSandbox
+            ? 'shell-sandbox-escalation'
+            : 'shell-in-sandbox',
+        allowRemember: false,
+      },
+      opts.signal,
+    )
+    checkSafetyPromptTimeout(response)
+    return response.approved
+  }
+
   return promptShell(
     command,
     effectiveReasons,

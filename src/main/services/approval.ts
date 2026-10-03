@@ -96,6 +96,8 @@ export function approvalPendingMessage(title: string): string {
 export const ABANDONED_VERDICT_TTL_MS = 10 * 60_000
 
 export interface ApprovalRequest {
+  /** Optional fail-closed deadline for a safety check in an automatic run. */
+  timeoutMs?: number
   title: string
   body: string
   /** Explanatory copy rendered outside the monospaced command block when set. */
@@ -179,8 +181,7 @@ export interface ApprovalResponse {
   grantScope?: 'once' | 'turn-tree'
   /**
    * How the prompt settled; omitted by external handlers means a user decision.
-   * There is no wall-clock timeout — `timeout` remains in the union for older
-   * recorded logs / handlers that still emit it.
+   * Ordinary prompts have no deadline; automatic-run safety checks may time out.
    */
   resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
 }
@@ -194,6 +195,7 @@ const DENIED: ApprovalResponse = { approved: false, remember: false }
  */
 export function approvalDedupeKey(req: ApprovalRequest): string {
   return JSON.stringify({
+    timeoutMs: req.timeoutMs ?? null,
     title: req.title,
     body: req.body,
     bodyAdvice: req.bodyAdvice ?? '',
@@ -245,6 +247,7 @@ export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T
 
 /** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
 interface InflightApproval {
+  timer?: ReturnType<typeof setTimeout>
   /** Aborts the underlying handler prompt once every waiter has left. */
   controller: AbortController
   request: ApprovalRequest
@@ -390,6 +393,7 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
   // the next handler never inherits a stale shared prompt.
   if (!next) {
     for (const entry of inflight.values()) {
+      if (entry.timer) clearTimeout(entry.timer)
       entry.controller.abort()
       for (const waiter of entry.waiters) {
         waiter.signal?.removeEventListener('abort', waiter.onAbort)
@@ -413,6 +417,7 @@ function settleInflight(
 ): void {
   if (inflight.get(key) !== entry) return
   inflight.delete(key)
+  if (entry.timer) clearTimeout(entry.timer)
   // One shared prompt → one audit event (not one per coalesced waiter).
   recordApprovalDecision(req, response)
   for (const waiter of entry.waiters) {
@@ -508,9 +513,8 @@ export function pendingApprovalRequestsForThread(
  * share one underlying prompt — the first call opens it; later duplicates wait on
  * the same answer. The prompt stays open until the user responds, the window
  * closes, or every waiter aborts (e.g. Stop / ACP `$/cancel_request`). There is
- * no wall-clock timeout: auto-denying after a few minutes let the agent continue
- * underneath an still-open dialog and was a common source of "Approve all (N)"
- * growth plus ACP session drops after long waits.
+ * no deadline unless the caller explicitly sets a safety-check timeout. A timed
+ * out prompt is dismissed as it denies; ordinary interactive prompts stay open.
  *
  * While the prompt is open the active run's sliding idle deadline is paused so a
  * long think-before-click cannot abort the turn (and cancel the dialog) underneath
@@ -680,6 +684,7 @@ function requestApprovalUnpaused(
       // sibling tool call may still need the user's answer.
       if (active.waiters.size === 0 && inflight.get(key) === active) {
         inflight.delete(key)
+        if (active.timer) clearTimeout(active.timer)
         active.controller.abort()
       }
     }
@@ -716,6 +721,18 @@ function requestApprovalUnpaused(
     signal?.addEventListener('abort', waiter.onAbort, { once: true })
 
     if (!isLeader) return
+
+    if (req.timeoutMs !== undefined) {
+      active.timer = setTimeout(() => {
+        settleInflight(
+          key,
+          active,
+          { approved: false, remember: false, resolution: 'timeout' },
+          req,
+        )
+        active.controller.abort()
+      }, req.timeoutMs)
+    }
 
     void activeHandler(req, active.controller.signal).then(
       (response) => {
