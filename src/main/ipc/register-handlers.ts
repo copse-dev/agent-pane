@@ -39,6 +39,7 @@ import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
 import {
   captureBrowserPageText,
+  exportBrowserPageHtml,
   captureBrowserScreenshot,
   exportCanvasArtefact,
   exportBrowserPagePdf,
@@ -820,6 +821,24 @@ export function registerAllHandlers(
       },
       async (filePath, data) => {
         await writeFile(filePath, data)
+      },
+    )
+  })
+
+  ipcMain.handle('browser:export-page', async (event, rawId: unknown) => {
+    const contents = interactiveBrowserContents(event, rawId)
+    return await exportBrowserPageHtml(
+      contents,
+      async (defaultFilename) => {
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Download page',
+          defaultPath: defaultFilename,
+          filters: [{ name: 'HTML document', extensions: ['html'] }],
+        })
+        return result.canceled || !result.filePath ? null : result.filePath
+      },
+      async (filePath, body) => {
+        await writeFile(filePath, body, 'utf8')
       },
     )
   })
