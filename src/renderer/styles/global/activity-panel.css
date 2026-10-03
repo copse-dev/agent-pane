@@ -135,6 +135,15 @@ dialog.activity-panel-overlay {
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
 }
+/* A folded schedule's runs, once opened out, sit under it as ordinary rows. */
+.activity-fold-run .activity-row-open {
+  padding-left: calc(var(--spacing-lg) + var(--spacing-lg));
+}
+.activity-fold-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
 .activity-glyph {
   grid-area: glyph;
   justify-self: center;

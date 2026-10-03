@@ -367,3 +367,110 @@ describe('formatAge', () => {
     assert.equal(formatAgeLong(26 * 3_600_000), '1 day')
   })
 })
+
+describe('automation runs in Recently finished', () => {
+  const docs = { id: 'schedule-docs', name: 'Docs freshness' }
+  const run = (id: string, patch: Partial<ActivityThread> = {}): ActivityThread =>
+    info(id, { schedule: docs, ...patch })
+  const ended = (...ids: string[]): Map<string, RunTiming> =>
+    new Map(
+      ids.map((id, index): [string, RunTiming] => [id, { startedAt: 1, endedAt: 100 - index }]),
+    )
+
+  it("folds a schedule's finished runs into one row at the start of the group", () => {
+    const groups = deriveActivity(
+      input({
+        threads: [run('a'), run('b'), run('c'), info('chat')],
+        runs: ended('a', 'b', 'c', 'chat'),
+      }),
+    )
+    const recent = group(groups, 'recent')
+    assert.deepEqual(
+      recent.rows.map((row) => [row.key, row.fold?.runs.map((r) => r.threadId)]),
+      [
+        ['fold:finished:p1:schedule-docs', ['a', 'b', 'c']],
+        ['thread:chat', undefined],
+      ],
+    )
+    const fold = recent.rows[0]
+    assert.ok(fold)
+    assert.equal(fold.threadTitle, 'Docs freshness')
+    assert.equal(fold.want, '3 runs')
+    assert.equal(fold.threadId, null)
+    assert.equal(recent.total, 2)
+  })
+
+  it('leaves a lone run of a schedule as its own row', () => {
+    const recent = group(
+      deriveActivity(input({ threads: [run('a'), info('chat')], runs: ended('a', 'chat') })),
+      'recent',
+    )
+    assert.equal(
+      recent.rows.every((row) => row.fold === undefined),
+      true,
+    )
+    assert.equal(recent.rows.length, 2)
+  })
+
+  it('folds failures apart from clean finishes, failures first', () => {
+    const recent = group(
+      deriveActivity(
+        input({
+          threads: [
+            run('ok-1'),
+            run('ok-2'),
+            run('bad-1', { status: 'error' }),
+            run('bad-2', { status: 'error' }),
+          ],
+          runs: ended('ok-1', 'ok-2', 'bad-1', 'bad-2'),
+        }),
+      ),
+      'recent',
+    )
+    assert.deepEqual(
+      recent.rows.map((row) => [row.fold?.kind, row.want]),
+      [
+        ['failed', '2 runs'],
+        ['finished', '2 runs'],
+      ],
+    )
+  })
+
+  it('does not fold runs of different schedules or projects together', () => {
+    const other = { id: 'schedule-other', name: 'Other' }
+    const recent = group(
+      deriveActivity(
+        input({
+          threads: [
+            run('a'),
+            run('b', { projectId: 'p2', projectName: 'beta' }),
+            run('c', { schedule: other }),
+          ],
+          runs: ended('a', 'b', 'c'),
+        }),
+      ),
+      'recent',
+    )
+    assert.equal(recent.rows.length, 3)
+    assert.equal(
+      recent.rows.every((row) => row.fold === undefined),
+      true,
+    )
+  })
+
+  it('keeps the cap for single rows and never caps a fold away', () => {
+    const many = Array.from({ length: RECENT_ROW_LIMIT + 3 }, (_, i) => info(`chat-${String(i)}`))
+    const recent = group(
+      deriveActivity(
+        input({
+          threads: [...many, run('a'), run('b')],
+          runs: ended(...many.map((t) => t.id), 'a', 'b'),
+        }),
+      ),
+      'recent',
+    )
+    assert.equal(recent.rows[0]?.fold?.kind, 'finished')
+    assert.equal(recent.rows.length, RECENT_ROW_LIMIT + 1)
+    assert.equal(recent.total, RECENT_ROW_LIMIT + 3 + 1)
+  })
+})
