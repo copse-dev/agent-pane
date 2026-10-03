@@ -441,6 +441,11 @@ export interface Thread {
     scheduleId: string
     scheduleName: string
     triggeredAt: number
+    /**
+     * Set when the renderer could not start this run, leaving its prompt as an
+     * unsent draft. Such a run no longer blocks the schedule's next trigger.
+     */
+    startFailedAt?: number
   }
   /**
    * Videos the user has attached to this thread, in the order they were sent.

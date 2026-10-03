@@ -354,6 +354,67 @@ describe('guest egress proxy', () => {
     }
   })
 
+  for (const scenario of [
+    {
+      name: 'missing proxy authentication',
+      target: 'evil.example:443',
+      authorised: false,
+      status: 407,
+    },
+    { name: 'a broker refusal', target: 'evil.example:443', authorised: true, status: 403 },
+    { name: 'a malformed target', target: 'not-a-target', authorised: true, status: 400 },
+  ]) {
+    it(`survives a CONNECT client reset after ${scenario.name}`, { timeout: 5_000 }, async () => {
+      const token = 'reset-test-token'
+      const auth = `Basic ${Buffer.from(`run:${token}`).toString('base64')}`
+      const gated = await startGuestEgressProxy(link, { host: '127.0.0.1', port: 0 }, { token })
+      try {
+        const reply = await new Promise<string>((resolveReply, reject) => {
+          const socket = connect({ ...gated.address, allowHalfOpen: true })
+          let received = ''
+          socket.on('error', reject)
+          socket.once('connect', () => {
+            socket.write(
+              `CONNECT ${scenario.target} HTTP/1.1\r\nHost: ${scenario.target}\r\n` +
+                (scenario.authorised ? `Proxy-Authorization: ${auth}\r\n` : '') +
+                '\r\n',
+            )
+          })
+          socket.on('data', (chunk: Buffer) => {
+            received += chunk.toString('utf8')
+            if (received.includes('\r\n\r\n')) socket.resetAndDestroy()
+          })
+          socket.once('close', () => {
+            resolveReply(received)
+          })
+        })
+        assert.match(reply, new RegExp(`^HTTP/1\\.1 ${String(scenario.status)} `))
+        // A refused client's RST must not kill the worker or its proxy. Exercise
+        // an allowed request afterwards, rather than only observing the refusal.
+        const status = await new Promise<number>((resolveRequest, reject) => {
+          const request = httpRequest(
+            {
+              ...gated.address,
+              path: `http://model.copse.internal:${String(origin.port)}/after-reset`,
+              headers: { 'Proxy-Authorization': auth },
+            },
+            (response) => {
+              response.resume()
+              response.once('end', () => {
+                resolveRequest(response.statusCode ?? 0)
+              })
+            },
+          )
+          request.on('error', reject)
+          request.end()
+        })
+        assert.equal(status, 200)
+      } finally {
+        await gated.close()
+      }
+    })
+  }
+
   it('rejects a request that is not absolute-form', async () => {
     const result = await new Promise<number>((resolveRequest, reject) => {
       const req = httpRequest(

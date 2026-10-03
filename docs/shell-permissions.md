@@ -49,6 +49,13 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+Newline-separated commands are inspected independently. For example, an opaque
+`python3 - <<'PY'` heredoc followed by `wc -l src/a.ts` stays ambiguous and runs inside
+an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.
+A following script execution, download, or outside-project read still contributes
+its own escalation reason. Quoted newlines and backslash line continuations remain
+part of their original command's arguments.
+
 A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
 (`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
 gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's

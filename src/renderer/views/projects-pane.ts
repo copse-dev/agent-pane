@@ -64,6 +64,7 @@ import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
+import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
@@ -1183,7 +1184,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 {
                   label: 'Fork',
                   onSelect: (): void => {
-                    forkProjectThread(project.id, thread.id)
+                    showContextMenu(x, y, [
+                      { heading: 'Fork' },
+                      {
+                        label: 'Fork a copy',
+                        onSelect: (): void => {
+                          forkProjectThread(project.id, thread.id)
+                        },
+                      },
+                      {
+                        label: 'Edit thread history…',
+                        onSelect: (): void => {
+                          openThreadHistoryEditor(store, api, {
+                            projectId: project.id,
+                            threadId: thread.id,
+                          })
+                        },
+                      },
+                    ])
                   },
                 },
                 {
