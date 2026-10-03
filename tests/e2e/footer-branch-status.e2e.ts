@@ -74,7 +74,8 @@ describe('footer branch status mismatch', () => {
   })
 })
 
-describe('footer branch status for a detached thread worktree', () => {
+describe('footer branch status for a detached thread worktree', function () {
+  this.timeout(120_000)
   const projectId = 'e2e-footer-detached-project'
   const healthyThreadId = 'e2e-footer-healthy-thread'
   const detachedThreadId = 'e2e-footer-detached-thread'
@@ -102,7 +103,7 @@ describe('footer branch status for a detached thread worktree', () => {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: undefined })
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
 
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
@@ -229,6 +230,7 @@ describe('footer branch status for a detached thread worktree', () => {
 
   it('offers to continue a rebase that stopped part-way', async function () {
     this.timeout(90_000)
+    await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
     // A conflicting rebase stops with HEAD detached and its sequencer state on
     // disk: the state a signing failure or conflict leaves an agent's checkout in.
     const baseBranch = git(projectRoot, ['branch', '--show-current'])

@@ -1299,8 +1299,8 @@ export async function validateThreadWorktree(
 }
 
 /**
- * Validate a detached checkout for a terminal that can repair an interrupted
- * Git operation. Detached checkouts without a sequencer marker stay blocked.
+ * Validate a detached checkout for thread operations during interrupted Git
+ * recovery. Detached checkouts without a recovery marker stay blocked.
  */
 export async function validateThreadWorktreeRecovery(
   input: ValidateWorktreeInput,
