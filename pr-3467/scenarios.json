@@ -96,6 +96,10 @@
     "label": "Activity home on a new thread"
   },
   {
+    "id": "activity-home-empty",
+    "label": "Activity home with nothing to list"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   },

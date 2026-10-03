@@ -38683,6 +38683,28 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-empty",
+        label: "Activity home with nothing to list",
+        project: project("demo-activity-home-empty-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first-run case: one empty thread and nothing running or waiting.
+        threads: [
+          {
+            id: "demo-activity-home-empty-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
