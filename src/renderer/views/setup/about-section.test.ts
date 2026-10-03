@@ -57,6 +57,42 @@ function apiWith(info: AboutInfo, opened: LicenseFileKind[] = []): ApiClient {
   } satisfies ApiClient
 }
 
+function apiWithSettings(
+  info: AboutInfo,
+  store: Record<string, unknown>,
+  failSet = false,
+): ApiClient {
+  const base = apiWith(info)
+  return {
+    ...base,
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> => store[key],
+      set: async (key: string, value: unknown): Promise<void> => {
+        if (failSet) throw new Error('settings are read-only here')
+        store[key] = value
+      },
+    },
+  } satisfies ApiClient
+}
+
+/** Let the section's version-dependent work and saves settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function channelSelect(root: HTMLElement): HTMLSelectElement {
+  const select = root.querySelector<HTMLSelectElement>('select[name="updateChannel"]')
+  assert.ok(select, 'the Updates fieldset has a channel select')
+  return select
+}
+
+function chooseChannel(root: HTMLElement, value: string): void {
+  const select = channelSelect(root)
+  select.value = value
+  select.dispatchEvent(new Event('change'))
+}
+
 function rows(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>('.about-licenses-list > li'))
 }
@@ -121,7 +157,8 @@ describe('Settings → About', () => {
     const section = createAboutSection(apiWith(INFO))
     await section.refresh()
     assert.equal(section.root.querySelector('.about-licenses-list')?.closest('fieldset'), null)
-    assert.equal(section.root.querySelectorAll('fieldset').length, 2)
+    // Copse, Updates, and Open-source licences; the list itself is outside them.
+    assert.equal(section.root.querySelectorAll('fieldset').length, 3)
   })
 
   it('opens each licence file by kind', async () => {
@@ -144,5 +181,75 @@ describe('Settings → About', () => {
       /no licence report/,
     )
     assert.equal(rows(section.root).length, 0)
+  })
+
+  describe('update channel', () => {
+    it('shows the saved channel, or the installed build’s own before anything is saved', async () => {
+      const cases: [string, Record<string, unknown>, string][] = [
+        ['0.1.0-beta.9', {}, 'beta'],
+        ['0.1.0', {}, 'stable'],
+        ['0.1.0-beta.9', { updateChannel: 'stable' }, 'stable'],
+        ['0.1.0', { updateChannel: 'beta' }, 'beta'],
+        ['0.1.0', { updateChannel: 'nightly' }, 'stable'],
+      ]
+      for (const [version, store, expected] of cases) {
+        const section = createAboutSection(apiWithSettings({ ...INFO, version }, store))
+        await section.refresh()
+        await settle()
+        assert.equal(
+          channelSelect(section.root).value,
+          expected,
+          `${version} ${JSON.stringify(store)}`,
+        )
+      }
+    })
+
+    it('explains switching to stable in one sentence', async () => {
+      const section = createAboutSection(apiWithSettings(INFO, {}))
+      assert.equal(
+        section.root.querySelector('.about-update-channel .field-hint')?.textContent,
+        'Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases.',
+      )
+    })
+
+    it('saves a choice at once and says what happens next for this build', async () => {
+      const store: Record<string, unknown> = {}
+      const beta = createAboutSection(apiWithSettings(INFO, store))
+      await beta.refresh()
+      await settle()
+      chooseChannel(beta.root, 'stable')
+      await settle()
+      assert.equal(store['updateChannel'], 'stable')
+      assert.equal(
+        beta.root.querySelector('.about-update-status')?.textContent,
+        'Copse keeps updating to betas until the next stable release.',
+      )
+
+      const stable = createAboutSection(
+        apiWithSettings({ ...INFO, version: '0.1.0' }, { updateChannel: 'beta' }),
+      )
+      await stable.refresh()
+      await settle()
+      chooseChannel(stable.root, 'stable')
+      await settle()
+      assert.equal(
+        stable.root.querySelector('.about-update-status')?.textContent,
+        'Copse now updates to stable releases only.',
+      )
+    })
+
+    it('puts the previous choice back when saving fails', async () => {
+      const section = createAboutSection(apiWithSettings(INFO, { updateChannel: 'beta' }, true))
+      await section.refresh()
+      await settle()
+      chooseChannel(section.root, 'stable')
+      await settle()
+      assert.equal(channelSelect(section.root).value, 'beta')
+      assert.match(
+        section.root.querySelector('.about-update-status')?.textContent ?? '',
+        /read-only/,
+      )
+      assert.equal(channelSelect(section.root).disabled, false)
+    })
   })
 })
