@@ -65729,6 +65729,10 @@ var init_demo_scenarios = __esm({
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
           credential: "key",
+          settings: {
+            budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
+            installDependencies: false
+          },
           warnings: [],
           checkout: {
             root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
@@ -67103,7 +67107,11 @@ function createDemoApi(scenario, options = {}) {
         prompt: request.prompt,
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
-        credential: "key",
+        credential: request.useAgentLogin ? "login" : "key",
+        settings: {
+          budgets: { ...request.budgets },
+          installDependencies: request.installDependencies === true
+        },
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
         warnings: [],
         checkout: { root: "/repo", mode: "shared", branch: "main" },
@@ -77837,6 +77845,99 @@ var init_inline_artefact = __esm({
   }
 });
 
+// src/shared/container-run-schema.ts
+var containerRunRequestSchema, containerRunSettingsSchema, threadContainerResultSchema, containerRuntimeAttestationSchema;
+var init_container_run_schema = __esm({
+  "src/shared/container-run-schema.ts"() {
+    init_zod();
+    containerRunRequestSchema = external_exports.object({
+      projectId: external_exports.string().min(1).max(256),
+      threadId: external_exports.string().min(1).max(256),
+      prompt: external_exports.string().min(1).max(2e5),
+      model: external_exports.string().min(1).max(256),
+      budgets: external_exports.object({
+        wallClockMs: external_exports.number().int().min(6e4).max(24 * 60 * 6e4),
+        tokenCeiling: external_exports.number().int().min(1e3).max(1e8)
+      }),
+      useAgentLogin: external_exports.boolean().optional(),
+      installDependencies: external_exports.boolean().optional(),
+      continueFrom: external_exports.string().regex(/^[a-z0-9-]{1,128}$/i).optional(),
+      continueContext: external_exports.object({
+        prompt: external_exports.string().max(2e5),
+        report: external_exports.string().max(2e5),
+        ref: external_exports.string().regex(/^refs\/copse\/runs\/[a-z0-9-]{1,128}$/i).nullable()
+      }).optional()
+    });
+    containerRunSettingsSchema = containerRunRequestSchema.pick({
+      budgets: true,
+      installDependencies: true
+    });
+    threadContainerResultSchema = external_exports.object({
+      threadId: external_exports.string(),
+      stopReason: external_exports.enum(["completed", "budget:wall-clock", "budget:tokens", "aborted", "error"]),
+      error: external_exports.string().optional(),
+      usage: external_exports.object({ inputTokens: external_exports.number(), outputTokens: external_exports.number() }),
+      harness: external_exports.union([external_exports.literal("copse"), external_exports.object({ acp: external_exports.string() })]),
+      promptsAttempted: external_exports.number(),
+      deferrals: external_exports.array(
+        external_exports.object({
+          id: external_exports.string(),
+          title: external_exports.string(),
+          subject: external_exports.string(),
+          reasons: external_exports.array(external_exports.string()).optional()
+        })
+      ),
+      denials: external_exports.array(external_exports.object({ subject: external_exports.string(), reasons: external_exports.array(external_exports.string()) })),
+      commits: external_exports.array(external_exports.string()),
+      containment: external_exports.object({
+        declared: external_exports.boolean(),
+        declineReason: external_exports.string().nullable(),
+        projectSandbox: external_exports.boolean()
+      }),
+      toolNames: external_exports.array(external_exports.string()),
+      finalText: external_exports.string()
+    });
+    containerRuntimeAttestationSchema = external_exports.object({
+      runtimeId: external_exports.string().min(1),
+      image: external_exports.string().min(1),
+      imageDigest: external_exports.string().min(1).optional(),
+      user: external_exports.number().int().positive(),
+      readOnlyRootfs: external_exports.boolean(),
+      capDropAll: external_exports.boolean(),
+      noNewPrivileges: external_exports.boolean(),
+      pidsLimit: external_exports.number().int().positive(),
+      memoryLimit: external_exports.string().min(1),
+      network: external_exports.enum(["none", "brokered"]),
+      egressAllowlist: external_exports.array(external_exports.string().min(1)),
+      hostMounts: external_exports.array(external_exports.string().min(1)),
+      /**
+       * `none` is an engine with no seccomp or AppArmor at all — Apple container,
+       * whose boundary is a VM of its own instead (`isolation: 'vm'`).
+       */
+      securityProfiles: external_exports.enum(["default", "unconfined", "none"]).optional(),
+      perCommandNetwork: external_exports.enum(["token-gated", "none"]).optional(),
+      /**
+       * The engine that started the guest. Absent on records written before a
+       * second engine existed, which were all Docker.
+       */
+      engine: external_exports.enum(["docker", "apple"]).optional(),
+      /**
+       * What separates the guest from the host: namespaces on the host's own
+       * kernel (Docker), or a lightweight VM with a kernel of its own per
+       * container (Apple container). Absent means Docker's, as for `engine`.
+       */
+      isolation: external_exports.enum(["shared-kernel", "vm"]).optional(),
+      /**
+       * How `pidsLimit` is enforced: a cgroup `pids.max` over the container
+       * (Docker's `--pids-limit`), or `RLIMIT_NPROC` on the worker uid inside a
+       * guest kernel that runs nothing else as that uid (Apple container's
+       * `--ulimit nproc`). Absent means Docker's.
+       */
+      processLimit: external_exports.enum(["cgroup-pids", "rlimit-nproc"]).optional()
+    });
+  }
+});
+
 // src/shared/store/container-run-card.ts
 function argsOf(toolCall) {
   const record2 = toolCall.args;
@@ -77849,6 +77950,7 @@ function argsOf(toolCall) {
   const credential = record2["credential"];
   const continuedFrom = record2["continuedFrom"];
   const report = record2["report"];
+  const settings = containerRunSettingsSchema.safeParse(record2["settings"]);
   return {
     task,
     model,
@@ -77856,7 +77958,8 @@ function argsOf(toolCall) {
     ref: typeof ref === "string" ? ref : null,
     credential: credential === "key" || credential === "login" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
-    report: typeof report === "string" ? report : null
+    report: typeof report === "string" ? report : null,
+    ...settings.success ? { settings: settings.data } : {}
   };
 }
 function latestContainerRun(thread) {
@@ -77875,6 +77978,7 @@ function latestContainerRun(thread) {
       report: args.report,
       model: args.model,
       credential: args.credential,
+      ...args.settings ? { settings: args.settings } : {},
       ref: args.ref,
       status: toolCall.status,
       isLastTurn: index === thread.messages.length - 1
@@ -77976,6 +78080,7 @@ function containerRunToolCall(progress) {
     runtimeId: progress.runtimeId,
     ref: progress.record?.carryOut.ref ?? null,
     credential: progress.credential,
+    ...progress.settings ? { settings: progress.settings } : {},
     continuedFrom: progress.continuedFrom,
     report: progress.record?.result?.finalText ?? null
   };
@@ -78034,6 +78139,7 @@ ${note}` : note
 var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
 var init_container_run_card = __esm({
   "src/shared/store/container-run-card.ts"() {
+    init_container_run_schema();
     init_unknown_value3();
     init_thread_helpers();
     CONTAINER_RUN_TOOL = "container_run";
@@ -101465,6 +101571,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   let refreshSequence = 0;
   let overlay = null;
   let lastPrompt = "";
+  let pendingContinuation = null;
   let modelPicker = null;
   const text2 = el("span", { class: "container-run-text" });
   const details = el(
@@ -101528,7 +101635,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         id: "container-run-dialog",
         className: "container-run-dialog"
       });
-      overlay.dialog.addEventListener("close", stopElapsedClock);
+      overlay.dialog.addEventListener("close", () => {
+        stopElapsedClock();
+        pendingContinuation = null;
+      });
     }
     return overlay;
   }
@@ -101551,7 +101661,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   }
   function renderDialog() {
     if (!overlay?.isOpen()) return;
-    const run2 = activeRun();
+    if (pendingContinuation && (pendingContinuation.threadId !== context.getActiveThreadId() || pendingContinuation.projectId !== context.getActiveProjectId())) {
+      pendingContinuation = null;
+      overlay.close();
+      return;
+    }
+    if (isLive2(activeRun())) pendingContinuation = null;
+    const run2 = pendingContinuation ? null : activeRun();
     modelPicker?.destroy();
     modelPicker = null;
     clear(overlay.dialog);
@@ -101560,7 +101676,9 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     else stopElapsedClock();
   }
   function armForm() {
-    const draft = context.getDraft().trim();
+    const continuation = pendingContinuation;
+    const previousSettings = continuation?.previous.settings;
+    const draft = continuation?.prompt ?? context.getDraft().trim();
     const quotesDraft = draft.length > 0;
     const task = el("textarea", {
       class: "container-run-prompt",
@@ -101576,7 +101694,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       class: "container-run-model",
       name: "containerRunModel"
     });
-    let chosenModel = context.getModel();
+    let chosenModel = continuation?.previous.model ?? context.getModel();
     modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
     modelSelect.value = chosenModel;
     modelSelect.addEventListener("change", () => {
@@ -101625,14 +101743,16 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       max: "1440",
       step: "1"
     });
-    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    minutes2.value = String(
+      previousSettings ? Math.max(1, Math.round(previousSettings.budgets.wallClockMs / 6e4)) : DEFAULT_WALL_CLOCK_MINUTES
+    );
     const tokens = el("input", {
       type: "number",
       class: "container-run-tokens",
       min: "1000",
       step: "1000"
     });
-    tokens.value = String(DEFAULT_TOKEN_CEILING);
+    tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
       egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
@@ -101678,6 +101798,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       name: "containerRunInstall",
       checked: ""
     });
+    installOptIn.checked = previousSettings?.installDependencies ?? continuation === null;
     const installField = el(
       "div",
       { class: "container-run-install-field" },
@@ -101696,7 +101817,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const start = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
-      "Start unattended run"
+      continuation ? "Start follow-up run" : "Start unattended run"
     );
     const cancel = el(
       "button",
@@ -101721,6 +101842,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       const threadId = context.getActiveThreadId();
       const projectId = context.getActiveProjectId();
       if (!threadId || !projectId) return;
+      if (continuation && (continuation.threadId !== threadId || continuation.projectId !== projectId)) {
+        overlay?.close();
+        return;
+      }
       const prompt = task.value.trim();
       if (!prompt) return;
       lastPrompt = prompt;
@@ -101734,7 +101859,15 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         model: chosenModel,
         budgets: { wallClockMs, tokenCeiling },
         ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
-        installDependencies: installOptIn.checked
+        installDependencies: installOptIn.checked,
+        ...continuation ? {
+          continueFrom: continuation.runtimeId,
+          continueContext: {
+            prompt: continuation.previous.task,
+            report: continuation.previous.report ?? "",
+            ref: continuation.previous.ref
+          }
+        } : {}
       }).then((started) => {
         if (!started) start.disabled = false;
       });
@@ -101742,7 +101875,11 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     return el(
       "div",
       { class: "container-run-form" },
-      el("h2", { class: "container-run-title" }, "Run this thread unattended in a container"),
+      el(
+        "h2",
+        { class: "container-run-title" },
+        continuation ? "Review the container follow-up" : "Run this thread unattended in a container"
+      ),
       el(
         "p",
         { class: "container-run-intro" },
@@ -102030,10 +102167,6 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       return false;
     }
   }
-  const DEFAULT_BUDGETS = {
-    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
-    tokenCeiling: DEFAULT_TOKEN_CEILING
-  };
   function latestOnActiveThread() {
     const threadId = context.getActiveThreadId();
     const thread = threadId ? getThreadById(context.store, threadId) : void 0;
@@ -102052,32 +102185,32 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
     };
   }
-  async function followUp(prompt) {
+  function followUp(prompt) {
     const threadId = context.getActiveThreadId();
     const projectId = context.getActiveProjectId();
-    if (!threadId || !projectId) return false;
+    if (!threadId || !projectId) return Promise.resolve(false);
     if (isLive2(activeRun())) {
       showToast("The container is still busy with the previous run; wait for it or stop it.", {
         variant: "error"
       });
-      return false;
+      return Promise.resolve(false);
     }
     const latest = latestOnActiveThread();
     if (!latest || latest.runtimeId === null) {
       showToast("This thread has no container run to continue.", { variant: "error" });
-      return false;
+      return Promise.resolve(false);
     }
-    return startRun({
+    pendingContinuation = {
       projectId,
       threadId,
       prompt,
-      model: latest.model,
-      budgets: DEFAULT_BUDGETS,
-      ...latest.credential === "login" ? { useAgentLogin: true } : {},
-      installDependencies: true,
-      continueFrom: latest.runtimeId,
-      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
-    });
+      runtimeId: latest.runtimeId,
+      previous: latest
+    };
+    const dialog2 = ensureDialog5();
+    dialog2.open();
+    renderDialog();
+    return Promise.resolve(false);
   }
   const usageFolded = /* @__PURE__ */ new Set();
   function settle2(progress) {
