@@ -27,6 +27,69 @@ const activity: GhPrActivity = {
 }
 
 describe('PR activity views', () => {
+  it('renders quoted and fenced Markdown with copy controls but no command execution', () => {
+    const host = document.createElement('div')
+    const comment = activity.comments[0]
+    assert.ok(comment)
+    renderPrActivity(
+      host,
+      'comments',
+      {
+        ...activity,
+        comments: [
+          {
+            ...comment,
+            body: '> Keep failures visible.\n\n```sh\npnpm test\n```\n\n- [x] CI results',
+          },
+        ],
+      },
+      () => {},
+    )
+    assert.equal(host.querySelector('blockquote')?.textContent.trim(), 'Keep failures visible.')
+    assert.equal(host.querySelector('pre code')?.textContent.trim(), 'pnpm test')
+    assert.equal(host.querySelectorAll('.code-block-copy').length, 1)
+    assert.equal(host.querySelector('.code-block-run'), null)
+    assert.equal(host.querySelector('time')?.getAttribute('datetime'), comment.createdAt)
+    assert.ok(host.querySelector('time')?.getAttribute('title'))
+    assert.equal(
+      host.querySelector('.pr-review-state-changes_requested')?.textContent,
+      'changes requested',
+    )
+  })
+
+  it('puts failed and running checks before collapsed successes and neutral results', () => {
+    const host = document.createElement('div')
+    renderPrActivity(
+      host,
+      'checks',
+      {
+        ...activity,
+        checks: [
+          { name: 'Passed first', state: 'SUCCESS', url: null },
+          { name: 'Neutral', state: 'NEUTRAL', url: null },
+          ...activity.checks,
+        ],
+      },
+      () => {},
+    )
+    assert.deepEqual(
+      [...host.querySelectorAll('.pr-check-group-heading > span:first-of-type')].map(
+        (group) => group.textContent,
+      ),
+      ['Needs attention', 'In progress', 'Passed', 'Other results'],
+    )
+    assert.equal(host.querySelector('.pr-check-name')?.textContent, 'Test <img>')
+    assert.equal(host.querySelector('details[open]'), null)
+    assert.equal(host.querySelectorAll('.pr-check-state-success').length, 1)
+    assert.equal(host.querySelectorAll('.pr-check-state-unknown').length, 3)
+    renderPrActivity(
+      host,
+      'checks',
+      { ...activity, checks: [{ name: 'Passed', state: 'SUCCESS', url: null }] },
+      () => {},
+    )
+    assert.ok(host.querySelector('details[open]'))
+  })
   it('renders markdown and review outcomes with literal author text and no per-comment action', () => {
     const host = document.createElement('div')
     renderPrActivity(host, 'comments', activity, () => {})

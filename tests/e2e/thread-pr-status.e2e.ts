@@ -151,9 +151,12 @@ describe('thread GitHub PR status icon', () => {
         sidebarFailureFill: sidebarFailing ? getComputedStyle(sidebarFailing).fill : null,
         iconWidth: paneIcon?.getBoundingClientRect().width ?? 0,
         sidebarIconWidth: sidebar?.getBoundingClientRect().width ?? 0,
-        overlapsTitle:
-          (title?.getBoundingClientRect().right ?? 0) >
-          (paneIcon?.getBoundingClientRect().left ?? 0),
+        overlapsTitle: Boolean(
+          title &&
+          paneIcon &&
+          title.getBoundingClientRect().bottom > paneIcon.getBoundingClientRect().top &&
+          title.getBoundingClientRect().right > paneIcon.getBoundingClientRect().left,
+        ),
       }
     })
     expect(status.paneColour).not.toBeNull()
