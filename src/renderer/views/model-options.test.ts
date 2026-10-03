@@ -16,6 +16,39 @@ import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { ModelCoverage } from './model-coverage.ts'
 
+describe('native ChatGPT plan picker', () => {
+  it('offers subscription models without an API key and preserves their registration', async () => {
+    const base = mockApi()
+    const api = {
+      ...base,
+      chatGptPlan: {
+        ...base.chatGptPlan,
+        models: async (): ReturnType<ApiClient['chatGptPlan']['models']> => ({
+          clientId: 'oaiapp_account',
+          models: [{ slug: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }],
+        }),
+      },
+    }
+    const options = await fetchModelOptions(api, '')
+    const plan = options.find((option) => option.group === 'ChatGPT plan')
+    assert.ok(plan)
+    assert.equal(plan.value, 'chatgpt-plan:oaiapp_account#gpt-6.1-sol')
+    assert.equal(plan.label, 'GPT-6.1 Sol · ChatGPT plan')
+    assert.equal(
+      options.some((option) => option.value === 'gpt-6.1-sol'),
+      false,
+    )
+  })
+  it('retains a disconnected selection as disabled instead of substituting API billing', async () => {
+    const current = 'chatgpt-plan:oaiapp_old#gpt-6.1-sol'
+    const options = await fetchModelOptions(mockApi(), current)
+    const plan = options.find((option) => option.value === current)
+    assert.ok(plan)
+    assert.equal(plan.disabled, true)
+    assert.match(plan.label, /ChatGPT plan/)
+  })
+})
+
 interface MockOpts {
   available?: Record<string, boolean>
   extraProviders?: ExtraProvider[]

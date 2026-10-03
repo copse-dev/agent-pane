@@ -269,6 +269,8 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
   assert.match(note.content, /could not start/)
   assert.match(note.content, /checkout unavailable/)
   assert.match(note.content, /kept as a draft/)
+  // Marked as failed, so the schedule's next trigger is not held up behind it.
+  assert.notEqual(thread.automation?.startFailedAt, undefined)
   // No user bubble — the prompt was never submitted.
   assert.equal(thread.messages.filter((message) => message.role === 'user').length, 0)
 
@@ -345,5 +347,41 @@ test('a trigger for an inactive project remains persisted until that project ope
   assert.equal(harness.prepared.length, 1)
   assert.equal(harness.runs.length, 1)
 
+  detach()
+})
+
+test('a run whose start failed is not started again when the workspace reloads', async (context) => {
+  context.mock.method(console, 'error', () => {})
+  const store = createStore({
+    activeProjectId: 'project-a',
+    workspaceRoot: '/repo',
+    threads: [automationThread()],
+  })
+  let checkouts = 0
+  const api: AutomationControllerApi = {
+    agent: {
+      prepareCheckout: () => {
+        checkouts += 1
+        return Promise.reject(new Error('checkout unavailable'))
+      },
+      run: () => Promise.resolve(),
+    },
+    automations: {
+      onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
+    },
+    threads: {
+      loadProject: () => Promise.resolve([]),
+    },
+  }
+  const detach = attachAutomationController(store, api)
+  await tick()
+  assert.equal(checkouts, 1)
+
+  store.emit('workspace_changed')
+  await tick()
+
+  assert.equal(checkouts, 1)
+  assert.equal(store.getState().threads[0]?.draftPrompt, 'Review CI and report any failures.')
   detach()
 })

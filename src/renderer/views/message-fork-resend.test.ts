@@ -8,6 +8,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 
 // Component-level cover for the per-prompt actions on a user bubble. The pure
 // transforms are unit-tested (shared/store/fork-thread.test.ts,
@@ -70,6 +71,7 @@ function userBubbles(): HTMLElement[] {
 }
 
 afterEach(() => {
+  dismissContextMenu()
   document.body.replaceChildren()
 })
 
@@ -102,6 +104,11 @@ describe('per-prompt fork + resend actions (component)', () => {
     const forkPointId = firstBubble.dataset['messageId']
 
     firstBubble.querySelector<HTMLButtonElement>('.msg-fork')?.click()
+    const forkCopy = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Fork a copy')
+    assert.ok(forkCopy)
+    forkCopy.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const activeId = store.getState().activeThreadId

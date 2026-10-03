@@ -13,6 +13,8 @@ interface CapturedChatCompletionRequest {
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
   prompt_cache_key?: string
+  reasoning_effort?: string
+  chat_template_kwargs?: { enable_thinking?: boolean }
   max_tokens?: number
   tool_choice?: { type: 'function'; function: { name: string } }
   tools?: Array<{
@@ -600,6 +602,43 @@ describe('OpenAIProvider request options', () => {
       type: 'function',
       function: { name: 'finish_review' },
     })
+  })
+
+  it('applies the reasoning-suppression body only to calls that ask for it', async () => {
+    const provider = new OpenAIProvider('qwen-local', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'test-key',
+      reasoningSuppressionBody: {
+        reasoning_effort: 'none',
+        chat_template_kwargs: { enable_thinking: false },
+      },
+    })
+    const requests: CapturedChatCompletionRequest[] = []
+    withFakeCreate(provider, (request) => {
+      requests.push(request)
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+    await collect(provider, [], { suppressReasoning: true })
+
+    assert.equal(requests[0]?.reasoning_effort, undefined)
+    assert.equal(requests[0]?.chat_template_kwargs, undefined)
+    assert.equal(requests[1]?.reasoning_effort, 'none')
+    assert.deepEqual(requests[1].chat_template_kwargs, { enable_thinking: false })
+  })
+
+  it('ignores suppressReasoning when the provider has no suppression body', async () => {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider, [], { suppressReasoning: true })
+
+    assert.equal(captured.request?.reasoning_effort, undefined)
   })
 
   it('sends prompt_cache_key when a promptCacheKey is configured', async () => {

@@ -2,6 +2,7 @@ import { el } from '../dom/helpers.ts'
 import { refreshIcon, warningIcon } from '../dom/icons.ts'
 
 export interface TurnRecoveryCardOptions {
+  interruptedByRestart?: true
   lastKnownGoodLabel?: string
   onRetry: () => boolean
   onRetryWithLastKnownGood?: () => boolean
@@ -40,7 +41,9 @@ export function createTurnRecoveryCard(options: TurnRecoveryCardOptions): HTMLEl
     el(
       'div',
       { class: 'turn-recovery-detail' },
-      'Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically.',
+      options.interruptedByRestart
+        ? 'Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action.'
+        : 'Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically.',
     ),
   )
   if (options.lastKnownGoodLabel !== undefined) {

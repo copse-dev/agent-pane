@@ -6,6 +6,7 @@ import {
   engineCommand,
   reachableThreadContainerEngines,
   resolveThreadContainerEngine,
+  runContainerImageBuild,
   type CommandProbeResult,
   type ContainerEngineProbe,
 } from './container-engine.ts'
@@ -13,6 +14,35 @@ import {
 const DOCKER = 'docker info --format {{.ServerVersion}}'
 const APPLE_VERSION = 'container --version'
 const APPLE_STATUS = 'container system status'
+
+describe('container image build concurrency', () => {
+  it('queues Apple builds, allows Docker through, and releases the queue after failure', async () => {
+    const events: string[] = []
+    let release = (): void => {}
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const first = runContainerImageBuild('apple', async () => {
+      events.push('first')
+      await blocked
+      throw new Error('first build failed')
+    })
+    // Attach the rejection handler before releasing the failed build.
+    const failed = assert.rejects(first, /first build failed/)
+    const second = runContainerImageBuild('apple', async () => {
+      events.push('second')
+      return 'built'
+    })
+    await runContainerImageBuild('docker', async () => {
+      events.push('docker')
+    })
+    assert.deepEqual(events, ['docker', 'first'])
+    release()
+    await failed
+    assert.equal(await second, 'built')
+    assert.deepEqual(events, ['docker', 'first', 'second'])
+  })
+})
 
 function probeMap(map: Record<string, boolean | string>): ContainerEngineProbe & {
   asked: string[]
