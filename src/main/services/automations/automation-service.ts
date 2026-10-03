@@ -30,6 +30,8 @@ const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 const SCHEDULER_MAX_DURATION_MS = 120_000
 const SCHEDULER_RECOVERY_DELAY_MS = 5_000
+/** How late a wake may be and still run the minute it was armed for rather than the current one. */
+const MAX_WAKE_LATENESS_MS = 2 * 60_000
 
 interface CopseAutomationAction {
   toolName: string
@@ -180,6 +182,21 @@ function readSchedules(): AutomationSchedule[] {
     )
 }
 
+/**
+ * Rewrite the readable schedules in storage while carrying every other row
+ * through untouched. A row this version cannot read (for example one written
+ * by a newer build) is not ours to delete, and rewriting from the filtered list
+ * used to drop it on the next unrelated edit or run.
+ */
+function updateSchedules(
+  update: (schedules: AutomationSchedule[]) => AutomationSchedule[],
+): Promise<void> {
+  return storageUpdate(STORAGE_KEY, (raw) => {
+    const rows: unknown[] = Array.isArray(raw) ? raw : []
+    return [...rows.filter((row) => !isSchedule(row)), ...update(rows.filter(isSchedule))]
+  })
+}
+
 function minuteStamp(timestamp: number): number {
   return Math.floor(timestamp / 60_000)
 }
@@ -204,7 +221,11 @@ export interface AutomationService {
   start(notify: (event: AutomationTriggerEvent) => void): void
   sync(): Promise<void>
   stop(): void
-  tick(): Promise<void>
+  /**
+   * Run the schedules due now. `scheduledFor` is the minute the supervisor's timer
+   * was armed for: a timer that fires late still runs the minute it was owed.
+   */
+  tick(scheduledFor?: number): Promise<void>
 }
 
 /**
@@ -249,8 +270,7 @@ export function createAutomationService(
     problem: AutomationProblem,
   ): Promise<void> {
     try {
-      await storageUpdate(STORAGE_KEY, (raw) => {
-        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      await updateSchedules((schedules) => {
         return schedules.map((candidate) =>
           candidate.projectId === schedule.projectId && candidate.id === schedule.id
             ? { ...candidate, lastProblem: problem }
@@ -270,8 +290,7 @@ export function createAutomationService(
   }
 
   async function replaceSchedule(next: AutomationSchedule): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return [...schedules.filter((schedule) => schedule.id !== next.id), next]
     })
   }
@@ -282,8 +301,7 @@ export function createAutomationService(
     triggeredAt: number,
     attemptedLimit: number,
   ): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return schedules.map((schedule) =>
         schedule.projectId === projectId &&
         schedule.id === scheduleId &&
@@ -300,8 +318,7 @@ export function createAutomationService(
     triggeredAt: number,
     threadId: string,
   ): Promise<void> {
-    await storageUpdate(STORAGE_KEY, (raw) => {
-      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+    await updateSchedules((schedules) => {
       return schedules.map((schedule) => {
         if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
         const updated = {
@@ -525,8 +542,7 @@ export function createAutomationService(
     async grantPermission(projectId, scheduleId, permission) {
       if (!canGrantPermissionFromPrompt(permission)) return false
       let found = false
-      await storageUpdate(STORAGE_KEY, (raw) => {
-        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      await updateSchedules((schedules) => {
         return schedules.map((schedule) => {
           if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
           found = true
@@ -601,8 +617,7 @@ export function createAutomationService(
       return schedule
     },
     async remove(projectId, scheduleId) {
-      await storageUpdate(STORAGE_KEY, (raw) => {
-        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      await updateSchedules((schedules) => {
         return schedules.filter(
           (schedule) => !(schedule.projectId === projectId && schedule.id === scheduleId),
         )
@@ -619,8 +634,8 @@ export function createAutomationService(
       notify = sender
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
-        async () => {
-          await service.tick()
+        async (task) => {
+          await service.tick(task.nextWakeAt)
           return {}
         },
       )
@@ -648,9 +663,18 @@ export function createAutomationService(
       recoveryTimer = null
       notify = null
     },
-    async tick() {
+    async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return
-      const now = dependencies.now()
+      const clock = dependencies.now()
+      // Matching against the wall clock alone skips a schedule whenever the timer
+      // fires after the minute it was armed for (a slow previous tick, a busy main
+      // process): the next minute is evaluated and the owed one is never seen.
+      const now =
+        scheduledFor !== undefined &&
+        scheduledFor <= clock &&
+        clock - scheduledFor < MAX_WAKE_LATENESS_MS
+          ? scheduledFor
+          : clock
       const date = new Date(now)
       const currentMinute = minuteStamp(now)
       const due: AutomationSchedule[] = []
