@@ -608,6 +608,20 @@ export interface ApiClient {
       targetThreadId: string,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
+    historySnapshot: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistorySnapshot>
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistoryEditResult>
+    undoHistoryEdit: (
+      projectId: string,
+      threadId: string,
+      expectedRevision: string,
+    ) => Promise<import('@shared/threads/history-edit.ts').ThreadHistoryEditResult>
     catalog: (
       projectId: string,
       query?: string,

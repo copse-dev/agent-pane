@@ -839,6 +839,15 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    historySnapshot: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => ipcRenderer.invoke('threads:edit-history', projectId, threadId, request),
+    undoHistoryEdit: (projectId: string, threadId: string, expectedRevision: string) =>
+      ipcRenderer.invoke('threads:undo-history-edit', projectId, threadId, expectedRevision),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),

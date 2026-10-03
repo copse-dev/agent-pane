@@ -34,6 +34,7 @@ describe('fork a thread and resend the last message', function () {
     await sourceRow.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Fork').click()
+    await $('.context-menu-item*=Fork a copy').click()
 
     await browser.waitUntil(
       async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== sourceThreadId,
@@ -109,6 +110,7 @@ describe('fork a thread and resend the last message', function () {
     // Fork from the FIRST prompt: the new thread carries only that exchange.
     await firstPrompt.moveTo()
     await firstPrompt.$('.msg-fork').click()
+    await $('.context-menu-item*=Fork a copy').click()
 
     const forkedTitle = `${title} (fork)`
     await browser.waitUntil(

@@ -44,6 +44,8 @@ installs the profile and tracing environment first.
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     acp-session.json                 # private external ACP session binding (optional)
+    history-edit-transaction.json    # pending edit rollback journal (temporary, private)
+    history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
@@ -139,6 +141,18 @@ installs the profile and tracing environment first.
   permissions and is not part of `meta.json`, `events.jsonl`, logs, telemetry,
   or transcript exports. Corrupt, incomplete, and future-version bindings fail
   closed instead of guessing a replacement session.
+- **`history-edit-transaction.json`** is a versioned rollback journal written
+  before a same-thread history reconstruction replaces `events.jsonl` and
+  `agent-history.json`. It contains the prior folded thread, the prior provider
+  history, and whether that provider sidecar existed. A thread or history read
+  that finds this file restores the prior state before returning, so a crash
+  cannot expose a transcript/provider mismatch. The journal is removed only
+  after the replacement and its Undo snapshot are durable.
+- **`history-edit-undo.json`** stores that prior state plus the revision hash of
+  the committed replacement. It enables one-step Undo across app restarts while
+  the current transcript still matches that revision. A later transcript
+  mutation makes the snapshot ineligible. Both history-edit sidecars are
+  atomically written with owner-only permissions and must never be logged.
 
 **Ids in file names.** `<messageId>`, `<toolCallId>` and `<subagentId>` above are
 the id as written only when it is 1–128 characters of `[A-Za-z0-9_-]` (UUIDs and
@@ -423,7 +437,7 @@ download `<title-slug>-<YYYY-MM-DD>`.
   already holds.
 - **`Export thread folder (ZIP)`** writes the thread's whole store directory,
   verbatim, under a `<threadId>/` folder inside the archive — spine, `meta.json`,
-  OKF prose, blobs, plans, the `agent-history.json` sidecar and nested
+  OKF prose, blobs, plans, the history and history-edit sidecars, and nested
   subagent directories. The directory lives in the chat store, so the main
   process assembles it ([`thread-archive.ts`](../src/main/services/thread-archive.ts)
   over the `threads:export-archive` IPC, zipped by the dependency-free writer in

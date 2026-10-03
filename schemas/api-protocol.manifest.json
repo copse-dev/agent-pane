@@ -1921,6 +1921,13 @@
           2
         ]
       },
+      "threads:edit-history": {
+        "api": "threads.editHistory",
+        "args": [
+          3,
+          3
+        ]
+      },
       "threads:export-archive": {
         "api": "threads.exportArchive",
         "args": [
@@ -1933,6 +1940,13 @@
         "args": [
           3,
           4
+        ]
+      },
+      "threads:history-snapshot": {
+        "api": "threads.historySnapshot",
+        "args": [
+          2,
+          2
         ]
       },
       "threads:list-orphans": {
@@ -1961,6 +1975,13 @@
         "args": [
           5,
           5
+        ]
+      },
+      "threads:undo-history-edit": {
+        "api": "threads.undoHistoryEdit",
+        "args": [
+          3,
+          3
         ]
       },
       "threads:update-meta": {
