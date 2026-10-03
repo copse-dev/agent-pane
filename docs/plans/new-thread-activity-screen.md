@@ -176,11 +176,24 @@ same list-and-detail design with real tokens. What differs and where it goes:
 - **Not adopted, because they contradict `ui-taste.md`:** dropping the state word from rows
   ("State is glyph + word") and pill-shaped Reject/Approve buttons (kit buttons with
   `--border-strong` outlined chips). Reopen only with an owner decision.
-- **Collapsible group headers (chevron, no count):** new interaction, not styling. **Open
-  question: do you want it in slice 3?** Until answered, the static headers stay.
+- **Collapsible group headers (decided: yes, in slice 3).** The prototype's headers are
+  buttons with a chevron (the prototype opens with Working collapsed and the others open).
+  Design points to settle in the slice, none of them in the prototype:
+  - **Count when collapsed.** The prototype shows no count, so a collapsed Working group
+    hides how many runs it holds. Proposed: keep the count visible, at least when collapsed.
+  - **Needs you never stays hidden.** A new approval or question arriving while Needs you is
+    collapsed expands it (the sidebar's Automations disclosure already auto-expands on
+    attention); the user can still collapse it again afterwards.
+  - **Selection and keyboard.** Arrow keys skip the rows of a collapsed group, and if the
+    selected row's group collapses, selection moves to the nearest visible row (today a row that
+    leaves hands selection to the next). The header is a `button` with `aria-expanded`.
+  - **Persistence.** Proposed: session-only state held by the view, reset on `hide()` like
+    selection, defaulting to the prototype's (Working collapsed). **Confirm** whether it should
+    persist across restarts.
+  - Keyed rows (slice 1b) keep expanded groups from rebuilding, so this builds on that.
 - The rounded card with no header or Esc hint is the screen host's layout (slice 3).
 
-### 3. New-thread screen host, with the Activity restyle (4.5-6.5 days)
+### 3. New-thread screen host, Activity restyle and collapsible groups (5-7 days)
 
 **Decided layout: A, composer docked, Activity list fills the pane above it** (spike below).
 
@@ -300,7 +313,7 @@ references stay stable.
 - If [#3407](https://github.com/copse-dev/agent-pane/pull/3407) is discarded, fold the
   context-ring work in here.
 
-**Total: about 17-26 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
+**Total: about 17.5-26.5 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
 effort (CI cycles, merging main, screenshot review). Slices 4 and 6 are independent of 3 and can
 run in parallel once slices 1 and 1b are merged. Add 0.25-0.5 day to any slice that changes the
 IPC surface (API protocol version bump).
@@ -357,5 +370,6 @@ settings keys.
 2. Thread drag between projects: **unsupported for now**; slice dropped.
 3. Sort and group-by: **persisted**, per profile.
 4. Attention colour: **fixed**; no token, no `?attn=` equivalent.
-5. Activity primary button label: **"Approve"** (the prototype's wording is intentional), with the
+5. Activity group headers: **collapsible** in slice 3 (chevron button, `aria-expanded`).
+6. Activity primary button label: **"Approve"** (the prototype's wording is intentional), with the
    same once-only behaviour. Lands with slice 3.
