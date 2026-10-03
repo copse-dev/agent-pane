@@ -45,7 +45,7 @@ export const REVISION_FIELD = 'revision'
 export const SOURCES_FIELD = 'sources'
 export const APPLIES_TO_FIELD = 'appliesTo'
 export const MEMORY_SCHEMA_FIELD = 'memorySchema'
-export const MEMORY_SCHEMA_VERSION = '1'
+export const MEMORY_SCHEMA_VERSION = '2'
 
 const LIST_SEPARATOR = ','
 const DEFAULT_RECALL_LIMIT = 20
@@ -58,8 +58,10 @@ function noteRevision(note: KnowledgeNote): number {
 
 function noteList(note: KnowledgeNote, field: string): string[] {
   const text = note.fields[field] ?? ''
-  const decoded = safeJsonParse(text, decodeWithSchema(z.array(z.string())))
-  if (decoded !== null) return decoded
+  if (note.fields[MEMORY_SCHEMA_FIELD] === MEMORY_SCHEMA_VERSION) {
+    const decoded = safeJsonParse(text, decodeWithSchema(z.array(z.string())))
+    if (decoded !== null) return decoded
+  }
   return text
     .split(LIST_SEPARATOR)
     .map((item) => item.trim())
@@ -160,6 +162,11 @@ export const rememberTool = defineTool({
         Object.entries(existing.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
       )
       if (tainted) fields[EXTERNAL_CONTEXT_FIELD] = 'true'
+      // Upgrade retained list fields before changing their encoding marker.
+      for (const field of [SOURCES_FIELD, APPLIES_TO_FIELD]) {
+        if (Object.hasOwn(existing.fields, field))
+          fields[field] = joinList(noteList(existing, field))
+      }
       fields[MEMORY_SCHEMA_FIELD] = MEMORY_SCHEMA_VERSION
       fields[REVISION_FIELD] = String(noteRevision(existing) + 1)
       if (sources) fields[SOURCES_FIELD] = joinList(sources)

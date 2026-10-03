@@ -197,9 +197,21 @@ describe('memory-tools', () => {
         type: MEMORY_TYPE,
         title: 'Legacy list',
         body: 'b',
-        fields: { sources: 'msg:old,tool:old', appliesTo: 'legacy/**' },
+        fields: { memorySchema: '1', sources: 'msg:old,tool:old', appliesTo: 'legacy/**' },
       })
       assert.ok((await run(recallTool, {})).includes('msg:old, tool:old'))
+      addKnowledgeNote({
+        type: MEMORY_TYPE,
+        title: 'Legacy JSON-looking reference',
+        body: 'b',
+        fields: { memorySchema: '1', sources: '["msg:literal"]' },
+      })
+      assert.ok((await run(recallTool, {})).includes('["msg:literal"]'))
+      await run(rememberTool, {
+        title: 'Legacy JSON-looking reference',
+        content: 'updated without replacing sources',
+      })
+      assert.ok((await run(recallTool, {})).includes('["msg:literal"]'))
     })
 
     it('treats legacy notes without revision as revision 1', async () => {
