@@ -21,8 +21,16 @@ import { EGRESS_TOKEN_STDIN_FLAG, GUEST_EGRESS_PROXY, GUEST_EGRESS_USER } from '
  * (trixie) rather than 12: a project's own tooling can be built against a
  * newer C++ runtime than bookworm's GCC 12 provides (`GLIBCXX_3.4.32`, seen
  * on the first install that got as far as running one).
+ *
+ * Pinned by the multi-platform index digest, so every build of one Copse
+ * version starts from the same bytes and the image fingerprint (which hashes
+ * this string) changes when the pin does. The tag stays for readers; Docker
+ * resolves the digest. To move it, run
+ * `docker buildx imagetools inspect node:24-trixie-slim` and copy the top-level
+ * `Digest:` line.
  */
-export const WORKER_BASE_IMAGE = 'node:24-trixie-slim'
+export const WORKER_BASE_IMAGE =
+  'node:24-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe'
 
 /**
  * The pnpm baked into the image for a carried-in project's install. A project
@@ -114,7 +122,13 @@ WORKDIR /app
 COPY --chown=root:root package.json ./
 COPY --chown=root:root node_modules ./node_modules
 COPY --chown=root:root worker.cjs entrypoint.sh ./
-RUN chmod 0755 /app/entrypoint.sh && mkdir -p /workspace/.pnpm-store && chown -R "\${WORKER_UID}" /workspace
+# pnpm can materialise package files as 0600 (notably from an APFS clone).
+# The image copies them as root, so normalise read/traverse bits before the
+# unprivileged worker loads the runtime. Preserve executable files with X.
+RUN chmod -R a+rX /app/node_modules \\
+    && chmod 0755 /app/entrypoint.sh \\
+    && mkdir -p /workspace/.pnpm-store \\
+    && chown -R "\${WORKER_UID}" /workspace
 
 USER \${WORKER_UID}:\${WORKER_UID}
 ENV NODE_PATH=/app/node_modules

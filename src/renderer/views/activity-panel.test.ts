@@ -477,6 +477,24 @@ describe('activity panel', () => {
     assert.equal(rowKeys('needs-you').length, 12)
   })
 
+  it('keeps the activity list scroll position when a new action arrives', () => {
+    mount([thread('focused'), ...Array.from({ length: 12 }, (_, i) => thread(`t${String(i)}`))])
+    for (let i = 0; i < 12; i++) setThreadStatus(store, `t${String(i)}`, 'running')
+    panel.open()
+
+    const list = qsRequired(document, '#activity-panel .activity-list')
+    list.scrollTop = 240
+    const replaceChildren = list.replaceChildren.bind(list)
+    list.replaceChildren = (...nodes): void => {
+      replaceChildren(...nodes)
+      list.scrollTop = 0
+    }
+    emitApproval(shell('new-action', 'focused'))
+    time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+
+    assert.equal(list.scrollTop, 240, 'a live update must not reset the reader position')
+  })
+
   it('is keyboard operable: arrows choose a row, Tab reaches its actions', () => {
     mount([thread('focused'), thread('auth', { title: 'Refactor auth' }), thread('deps')])
     setThreadStatus(store, 'deps', 'running')
@@ -516,12 +534,34 @@ describe('activity panel', () => {
     emitApproval(shell('first', 'a'))
     emitApproval(shell('second', 'b'))
     panel.open()
+    const list = qsRequired(document, '#activity-panel .activity-list')
+    const replaceChildren = list.replaceChildren.bind(list)
+    list.replaceChildren = (...nodes): void => {
+      replaceChildren(...nodes)
+      list.scrollTop = 0
+    }
+    const focusDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'focus')
+    assert.ok(focusDescriptor)
+    const nativeFocus: unknown = focusDescriptor.value
+    assert.ok(typeof nativeFocus === 'function')
+    HTMLElement.prototype.focus = function (options?: FocusOptions): void {
+      Reflect.apply(nativeFocus, this, [options])
+      if (this.classList.contains('activity-row-open') && options?.preventScroll !== true) {
+        list.scrollTop = 0
+      }
+    }
     const approve = review('approval:first')
-    approve.focus()
-    approve.click()
-    time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    list.scrollTop = 240
+    try {
+      approve.focus()
+      approve.click()
+      time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'focus', focusDescriptor)
+    }
     const opener = qsRequired(rowFor('approval:second'), '.activity-row-open')
     assert.equal(document.activeElement, opener)
+    assert.equal(list.scrollTop, 240, 'focus restoration must not undo scroll restoration')
   })
 
   it('offers Approve only beside the whole command, including its tail', () => {
