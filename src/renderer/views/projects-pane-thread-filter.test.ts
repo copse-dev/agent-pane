@@ -88,7 +88,7 @@ describe('projects pane thread filter (component)', () => {
     mount()
     const input = must('.projects-search-input')
     assert.equal(input.closest('[hidden]'), null)
-    assert.equal(input.getAttribute('placeholder'), 'Search threads…')
+    assert.equal(input.getAttribute('placeholder'), 'Search…')
   })
 
   it('narrows the thread list to title matches', () => {

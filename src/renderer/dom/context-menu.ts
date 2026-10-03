@@ -7,6 +7,10 @@ export interface ContextMenuItem {
   disabled?: boolean
   /** Renders a check and marks the row current — for menus that pick a value. */
   checked?: boolean
+  /** With `checked`, draws an on/off switch instead of a check, for a setting rather than a choice. */
+  toggle?: boolean
+  /** Muted text after the label, such as a count. */
+  detail?: string
 }
 
 /** A non-interactive label that groups the items under it. */
@@ -14,13 +18,40 @@ export interface ContextMenuHeading {
   heading: string
 }
 
-export type ContextMenuEntry = ContextMenuItem | ContextMenuHeading
+/** A rule between two groups of items. */
+export interface ContextMenuSeparator {
+  separator: true
+}
+
+export type ContextMenuEntry = ContextMenuItem | ContextMenuHeading | ContextMenuSeparator
 
 const isHeading: (entry: ContextMenuEntry) => entry is ContextMenuHeading = (entry) =>
   'heading' in entry
 
+const isSeparator: (entry: ContextMenuEntry) => entry is ContextMenuSeparator = (entry) =>
+  'separator' in entry
+
 /** Dismiss any open context menu (and its dismiss listeners). */
 let dismissOpenContextMenu: (() => void) | null = null
+
+/** The last press that closed a menu from outside it, so its own button can read the press as a toggle. */
+let outsidePress: { target: Node | null; at: number } | null = null
+
+/**
+ * True when the press that is being completed into a click on `anchor` is the one
+ * that just closed a menu. A button that opens a menu calls this first and returns,
+ * so a second click on it closes the menu rather than closing and reopening it.
+ */
+export function contextMenuClosedByPressOn(anchor: Element): boolean {
+  const press = outsidePress
+  outsidePress = null
+  return (
+    press !== null &&
+    press.target !== null &&
+    anchor.contains(press.target) &&
+    Date.now() - press.at < 1000
+  )
+}
 
 /**
  * Fixed-position right-click menu. One menu at a time — opening another
@@ -40,9 +71,10 @@ export function showContextMenu(
   withinDialog?: Element,
 ): void {
   dismissOpenContextMenu?.()
-  if (items.every(isHeading)) return
+  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return
 
   const buttons = items.map((entry) => {
+    if (isSeparator(entry)) return el('div', { class: 'context-menu-separator', role: 'separator' })
     if (isHeading(entry)) {
       return el('div', { class: 'context-menu-heading', role: 'presentation' }, entry.heading)
     }
@@ -52,11 +84,32 @@ export function showContextMenu(
       {
         type: 'button',
         class: 'context-menu-item',
-        role: item.checked === undefined ? 'menuitem' : 'menuitemradio',
+        role:
+          item.checked === undefined
+            ? 'menuitem'
+            : item.toggle === true
+              ? 'menuitemcheckbox'
+              : 'menuitemradio',
         ...(item.checked === undefined ? {} : { 'aria-checked': String(item.checked) }),
       },
       el('span', { class: 'context-menu-item-label' }, item.label),
-      ...(item.checked === true ? [checkIcon('ui-icon ui-icon-sm context-menu-item-check')] : []),
+      ...(item.detail === undefined
+        ? []
+        : [el('span', { class: 'context-menu-item-detail' }, item.detail)]),
+      ...(item.toggle === true && item.checked !== undefined
+        ? [
+            el(
+              'span',
+              {
+                class: item.checked ? 'context-menu-switch is-on' : 'context-menu-switch',
+                'aria-hidden': 'true',
+              },
+              el('i'),
+            ),
+          ]
+        : item.checked === true
+          ? [checkIcon('ui-icon ui-icon-sm context-menu-item-check')]
+          : []),
     )
     if (item.checked === true) btn.classList.add('is-checked')
     if (item.disabled) btn.disabled = true
@@ -96,7 +149,9 @@ export function showContextMenu(
     if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null
   }
   const onPointerDown = (e: PointerEvent): void => {
-    if (menu.contains(e.target instanceof Node ? e.target : null)) return
+    const target = e.target instanceof Node ? e.target : null
+    if (menu.contains(target)) return
+    outsidePress = { target, at: Date.now() }
     dismiss()
   }
   const onKeyDown = (e: KeyboardEvent): void => {

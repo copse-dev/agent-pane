@@ -1,6 +1,11 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
-import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
+import {
+  contextMenuClosedByPressOn,
+  dismissContextMenu,
+  showContextMenu,
+  type ContextMenuEntry,
+} from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import {
@@ -71,7 +76,6 @@ import {
   type SidebarRow,
 } from '../controller/thread-order.ts'
 import {
-  THREAD_GROUP_MODES,
   THREAD_SORT_MODES,
   type ThreadGroupMode,
   type ThreadSortMode,
@@ -276,6 +280,9 @@ function automationMenuEntries(
   ]
 }
 
+/** The prototype lists Status first; the shared tuple keeps its own order. */
+const GROUP_MENU_ORDER: readonly ThreadGroupMode[] = ['status', 'project', 'none']
+
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   // The sidebar's thread list is narrowed from two rows at its top, as in the prototype:
   // the search field with the Activity bell and "+" beside it, then the project
@@ -287,7 +294,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     {
       class: 'projects-add-btn',
       'aria-label': 'Add project',
-      'data-tooltip': 'New project or open a folder',
+      'data-tooltip': 'New thread, new project or open a folder',
     },
     plusIcon('ui-icon ui-icon-sm'),
   )
@@ -341,7 +348,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const searchInput = el('input', {
     type: 'text',
     class: 'projects-search-input',
-    placeholder: 'Search threads…',
+    placeholder: 'Search…',
     'aria-label': 'Filter threads',
     spellcheck: 'false',
     autocomplete: 'off',
@@ -360,6 +367,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     threadFilter = ''
   }
 
+  // One line per thread: the owning project's name is dropped. Session-only, like the project filter.
+  let compactRows = false
   // Which project the list shows. Session-only: a fresh launch shows them all.
   let projectFilterId: string | null = null
   const filterLabel = el('span', { class: 'projects-filter-label' }, 'All projects')
@@ -453,19 +462,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     sortDir.textContent = sidebarThreadSortReverse ? '↑' : '↓'
   }
   projectFilterBtn.addEventListener('click', () => {
+    if (contextMenuClosedByPressOn(projectFilterBtn)) return
     const rect = projectFilterBtn.getBoundingClientRect()
+    const { projects } = store.getState()
+    const counts = new Map(
+      projects.map((project) => [project.id, getSidebarThreads(store, project.id).length]),
+    )
+    const total = [...counts.values()].reduce((sum, n) => sum + n, 0)
     showContextMenu(rect.left, rect.bottom + 4, [
       { heading: 'Show' },
       {
         label: 'All projects',
+        detail: String(total),
         checked: projectFilterId === null,
         onSelect: (): void => {
           projectFilterId = null
           render()
         },
       },
-      ...store.getState().projects.map((project): ContextMenuEntry => ({
+      ...projects.map((project): ContextMenuEntry => ({
         label: projectDisplayName(project),
+        detail: String(counts.get(project.id) ?? 0),
         checked: project.id === projectFilterId,
         onSelect: (): void => {
           projectFilterId = project.id
@@ -475,11 +492,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     ])
   })
   sortBtn.addEventListener('click', () => {
+    if (contextMenuClosedByPressOn(sortBtn)) return
     const rect = sortBtn.getBoundingClientRect()
     const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store.getState()
     showContextMenu(rect.right - 4, rect.bottom + 4, [
       { heading: 'Group by' },
-      ...THREAD_GROUP_MODES.map((mode): ContextMenuEntry => ({
+      ...GROUP_MENU_ORDER.map((mode): ContextMenuEntry => ({
         label: GROUP_LABELS[mode],
         checked: mode === sidebarThreadGroup,
         onSelect: (): void => {
@@ -498,8 +516,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         },
       })),
+      { separator: true },
       {
         label: 'Reverse order',
+        toggle: true,
         checked: sidebarThreadSortReverse,
         onSelect: (): void => {
           store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
@@ -507,12 +527,33 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         },
       },
+      {
+        label: 'Compact rows',
+        toggle: true,
+        checked: compactRows,
+        onSelect: (): void => {
+          compactRows = !compactRows
+          list.classList.toggle('is-compact', compactRows)
+        },
+      },
     ])
   })
 
   addBtn.addEventListener('click', () => {
+    if (contextMenuClosedByPressOn(addBtn)) return
     const rect = addBtn.getBoundingClientRect()
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: 'New thread',
+        onSelect: (): void => {
+          if (!store.getState().workspaceRoot) {
+            void addProject(store, api)
+            return
+          }
+          openNewThread(store)
+        },
+      },
+      { separator: true },
       {
         label: 'New project',
         onSelect: (): void => {
