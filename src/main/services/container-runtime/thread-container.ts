@@ -1,6 +1,7 @@
 import type { ThreadContainerRunSpec } from './run-spec.ts'
 import {
   containerBuildCommand,
+  containerEngineInvocation,
   dockerDaemonReachable,
   engineCommand,
   reachableThreadContainerEngines,
@@ -1043,7 +1044,8 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
 // ---------------------------------------------------------------------------
 
 async function runEngine(engine: ThreadContainerEngine, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync(engineCommand(engine), args, {
+  const invocation = containerEngineInvocation(engine, args)
+  const { stdout } = await execFileAsync(invocation.command, invocation.args, {
     maxBuffer: 64 * 1024 * 1024,
   })
   return stdout.trim()

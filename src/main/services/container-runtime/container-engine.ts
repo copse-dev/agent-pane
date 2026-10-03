@@ -15,6 +15,7 @@
  * probe that picks the engine for a run, once, before anything is built.
  */
 import { execFile } from 'node:child_process'
+import { join } from 'node:path'
 
 export const CONTAINER_ENGINES = ['docker', 'apple'] as const
 export type ContainerEngine = (typeof CONTAINER_ENGINES)[number]
@@ -39,6 +40,27 @@ export async function runContainerImageBuild<T>(
     () => {},
   )
   return result
+}
+
+/** Apple’s builder is shared across profiles and processes of the same user. */
+export function containerEngineInvocation(
+  engine: ContainerEngine,
+  args: string[],
+): { command: string; args: string[] } {
+  if (engine !== 'apple' || args[0] !== 'build') {
+    return { command: engineCommand(engine), args }
+  }
+  // A fixed per-user OS temp path also covers callers with different COPSE_DIR
+  // or TMPDIR values. This file holds no state or secrets. Keep its inode: an
+  // unlink between waiting callers would let them lock different files.
+  const lock = join(
+    '/private/tmp',
+    `copse-apple-builder-${String(process.getuid?.() ?? 'unknown')}.lock`,
+  )
+  return {
+    command: '/usr/bin/lockf',
+    args: ['-k', '-t', '900', lock, engineCommand(engine), ...args],
+  }
 }
 
 export const CONTAINER_ENGINE_PREFERENCES = ['auto', 'docker', 'apple'] as const
