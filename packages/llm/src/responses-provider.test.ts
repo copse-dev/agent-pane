@@ -169,6 +169,32 @@ describe('ChatGPT plan Responses contract', () => {
     assert.equal(chunks.at(-1)?.type, 'done')
   })
 
+  it('does not retry a non-strict plan schema rejection when strict tools are configured', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-luna', {
+      apiKey: 'oauth-token',
+      chatGptPlan: true,
+      strictTools: true,
+    })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (request) => {
+      requests.push(request)
+      throw Object.assign(
+        new Error("400 Invalid schema for function 'read_file': invalid parameters"),
+        {
+          status: 400,
+        },
+      )
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+    await assert.rejects(collect(provider), /Invalid schema for function/)
+    assert.equal(requests.length, 1)
+    assert.equal(at(requests, 0).store, false)
+    assert.equal(at(at(requests, 0).tools, 0)['type'], 'namespace')
+  })
+
   it('keeps plan tools non-strict while normalizing legacy bounds without mutating them', async () => {
     const provider = new ResponsesProvider('gpt-5.6-luna', {
       apiKey: 'oauth-token',

@@ -123,7 +123,7 @@ export class ResponsesProvider implements LLMProvider {
     this.reasoningSummaries = opts.reasoningSummaries ?? false
     this.encryptedReasoning = opts.encryptedReasoning ?? false
     this.reasoningByToolCall = reasoningReplayFor(model, opts.promptCacheKey)
-    this.strictTools = opts.strictTools ?? false
+    this.strictTools = !this.chatGptPlan && (opts.strictTools ?? false)
     this.client = new OpenAI({
       ...(this.chatGptPlan
         ? { baseURL: 'https://api.openai.com/v1', organization: null, project: null }
