@@ -292,7 +292,9 @@ export function createActivityView(
    */
   function sendAnswer(row: ActivityRow): void {
     const requestId = row.requestId
-    if (!requestId || !hasAnswer(requestId)) return
+    // Not while the pane is settling after a change: a Cmd+Enter must not send a
+    // draft for a request the user has not looked at.
+    if (!requestId || settling || !hasAnswer(requestId)) return
     const asked = sources.questions.pending().find((request) => request.id === requestId)
     if (!asked) return
     const typed = drafts.get(requestId) ?? []
@@ -300,6 +302,7 @@ export function createActivityView(
       '.activity-answer, .activity-option, .activity-answer-input',
     )) {
       control.disabled = true
+      control.dataset['answered'] = 'true'
     }
     const sent = sources.questions.answer(
       requestId,
@@ -505,7 +508,8 @@ export function createActivityView(
         },
         `Send answer: ${row.want} (${row.threadTitle})`,
       )
-      answer.disabled = !hasAnswer(requestId)
+      answer.dataset['requestId'] = requestId
+      answer.disabled = settling || !hasAnswer(requestId)
       actions.push(answer)
     }
     return el('div', { class: 'activity-detail-actions' }, ...actions)
@@ -894,15 +898,24 @@ export function createActivityView(
   function armSettle(): void {
     cancelSettle?.()
     settling = true
-    for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
-      approve.disabled = true
+    // Approve and Send answer are the two controls that release an agent, so both
+    // wait out a change of what the pane shows.
+    for (const control of detail.querySelectorAll<HTMLButtonElement>(
+      '.activity-approve, .activity-answer',
+    )) {
+      control.disabled = true
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null
       settling = false
-      for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
+      for (const control of detail.querySelectorAll<HTMLButtonElement>(
+        '.activity-approve, .activity-answer',
+      )) {
         // A request already answered keeps its inert buttons.
-        if (!approve.dataset['answered']) approve.disabled = false
+        if (control.dataset['answered']) continue
+        // Send answer also needs something to send.
+        const requestId = control.dataset['requestId']
+        control.disabled = requestId !== undefined && !hasAnswer(requestId)
       }
     }, APPROVAL_SETTLE_MS)
   }
@@ -980,7 +993,8 @@ export function createActivityView(
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0
     // A different request in the detail pane has not been read yet.
-    if (listChanged || (selectedKey !== shownKey && selected?.state === 'needs-approval')) {
+    const releases = selected?.state === 'needs-approval' || selected?.state === 'needs-answer'
+    if (listChanged || (selectedKey !== shownKey && releases)) {
       armSettle()
     }
     shownKey = selectedKey

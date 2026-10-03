@@ -353,6 +353,8 @@ function showAsked(asked: PendingQuestionSummary[] = [ASKED]): {
   document.body.append(harness.view.body, harness.view.status)
   harness.state.shown = true
   harness.view.show()
+  // A question new to the pane waits out its settle window, as an approval does.
+  harness.flush()
   return { harness, fake }
 }
 
@@ -486,8 +488,10 @@ describe('activity view answering a question in place', () => {
     harness.flush()
     fake.settle('ask2')
     harness.flush()
-
     assert.equal(field(harness, 0).value, 'Post')
+    // The list changed, so Send waits out the settle window before it is live again.
+    harness.flush()
+
     assert.equal(sendButton(harness).disabled, false)
   })
 
@@ -505,6 +509,51 @@ describe('activity view answering a question in place', () => {
     assert.ok(field(harness, 0) === input, 'the same field node is still on screen')
     assert.ok(document.activeElement === input)
     assert.equal(input.value, 'Post')
+  })
+
+  it('holds Send answer off when another question takes the place of the one in view', () => {
+    const { harness, fake } = showAsked([ASKED, { ...ASKED, id: 'ask2', receivedAt: 2 }])
+    const open = (key: string): void => {
+      harness.view.body
+        .querySelector<HTMLElement>(`.activity-row[data-row-key="${key}"] .activity-row-open`)
+        ?.click()
+      harness.flush()
+      harness.flush()
+    }
+    open('question:ask2')
+    typeInto(field(harness, 0), 'for the second')
+    open('question:ask1')
+    typeInto(field(harness, 0), 'for the first')
+    assert.equal(sendButton(harness).disabled, false)
+
+    // The question in view is withdrawn; the other, with its draft, takes its place
+    // under the pointer. A click aimed at the old button must not send that draft.
+    fake.settle('ask1')
+    harness.flush()
+    assert.equal(field(harness, 0).value, 'for the second')
+    assert.equal(sendButton(harness).disabled, true, 'Send waits for the pane to settle')
+
+    harness.flush()
+    assert.equal(sendButton(harness).disabled, false, 'and comes back once it has')
+    assert.deepEqual(fake.answers, [])
+  })
+
+  it('does not send on Cmd+Enter while the pane is settling', () => {
+    const { harness, fake } = showAsked([ASKED, { ...ASKED, id: 'ask2', receivedAt: 2 }])
+    harness.view.body
+      .querySelector<HTMLElement>('.activity-row[data-row-key="question:ask2"] .activity-row-open')
+      ?.click()
+    harness.flush()
+    harness.flush()
+    const input = field(harness, 0)
+    typeInto(input, 'for the second')
+    fake.settle('ask1')
+    harness.flush()
+    field(harness, 0).dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }),
+    )
+
+    assert.deepEqual(fake.answers, [])
   })
 
   it('forgets a draft once its question is gone', () => {

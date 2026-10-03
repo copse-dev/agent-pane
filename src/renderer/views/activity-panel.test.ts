@@ -657,6 +657,8 @@ describe('activity panel', () => {
       input.value = text
       input.dispatchEvent(new window.Event('input', { bubbles: true }))
     }
+    // A question new to the pane waits out the same settle window as an approval.
+    time.advance(APPROVAL_SETTLE_MS)
     qsRequired<HTMLButtonElement>(detail(), '.activity-answer').click()
     assert.deepEqual(askResponses, [{ id: 'ask-1', answers: ['Schema first', 'Yes'] }])
     assert.equal(panel.isOpen(), true, 'answering does not leave the panel')
