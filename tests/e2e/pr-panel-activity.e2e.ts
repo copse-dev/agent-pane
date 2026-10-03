@@ -39,9 +39,38 @@ describe('PR comments and checks', () => {
     await expect(await $('.pr-comment .pr-activity-link')).not.toBeExisting()
     await expect(await $('.pr-open-external-btn')).toBeDisplayed()
     await expect(await $('.pr-activity')).toHaveText(expect.stringContaining('changes requested'))
+    await expect(await $('.pr-review-state-changes_requested')).toBeDisplayed()
+    await expect(await $('.pr-comment-body blockquote')).toBeDisplayed()
+    await expect(await $('.pr-comment-body pre code')).toExist()
+    await expect(await $('.pr-comment-body .code-block-copy')).toExist()
+    await expect(await $('.pr-comment-body .code-block-run')).not.toBeExisting()
+    await expect(await $('.pr-comment-body input[type="checkbox"]')).toExist()
+    const commentLayout = await browser.execute(() => {
+      const meta = document.querySelector<HTMLElement>('.pr-viewer-meta')
+      const comments = [...document.querySelectorAll<HTMLElement>('.pr-comment')]
+      return Boolean(
+        meta &&
+        meta.getBoundingClientRect().height < 220 &&
+        comments.every((comment) => comment.scrollWidth <= comment.clientWidth + 1),
+      )
+    })
+    expect(commentLayout).toBe(true)
     await expect(await $('.pr-viewer-description')).not.toBeDisplayed()
     await expect(await $('.pr-viewer-files')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-activity-comments.png')
+    const navigationFits = await browser.execute(() => {
+      const navigation = document.querySelector<HTMLElement>('.pr-detail-sections')
+      const files = navigation?.querySelector<HTMLElement>('[data-section="files"]')
+      return Boolean(
+        navigation &&
+        files &&
+        navigation.scrollWidth <= navigation.clientWidth + 1 &&
+        files.getBoundingClientRect().right <= navigation.getBoundingClientRect().right,
+      )
+    })
+    expect(navigationFits).toBe(true)
+    await $('.pr-comment[data-comment-id="review-1"]').scrollIntoView({ block: 'start' })
+    await saveElementScreenshot('#pane-files', 'pr-activity-comment-formatting.png')
 
     await $('.pr-detail-section[data-section="checks"]').click()
     await expect(await $$('.pr-check-state-success')).toBeElementsArrayOfSize(3)
@@ -52,6 +81,11 @@ describe('PR comments and checks', () => {
     await expect(await $$('.pr-check-row')).toBeElementsArrayOfSize(5)
     await expect(await $('.pr-check-state-failure')).toHaveText('failure')
     await expect(await $('.pr-check-state-pending')).toHaveText('in progress')
+    await expect(await $('.pr-check-state-failure')).toBeDisplayed()
+    await expect(await $('.pr-check-state-pending')).toBeDisplayed()
+    const checkOrder = await $$('.pr-check-group-heading').map((group) => group.getText())
+    expect(checkOrder[0]).toContain('Needs attention')
+    expect(checkOrder[1]).toContain('In progress')
     await expect(await $$('.pr-check-state-unknown')).toBeElementsArrayOfSize(2)
     const fits = await browser.execute(() => {
       const host = document.querySelector<HTMLElement>('.pr-activity')

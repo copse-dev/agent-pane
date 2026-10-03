@@ -60,7 +60,9 @@ describe('PR panel lifecycle actions (mock gh)', () => {
   }
 
   async function clickPrAction(label: string): Promise<void> {
-    await $(`button.pr-action-btn*=${label}`).click()
+    const action = await $(`button.pr-action-btn*=${label}`)
+    if (!(await action.isDisplayed())) await $('.pr-more-toggle').click()
+    await action.click()
     const confirm = await $('#confirm-dialog .confirm-dialog-confirm')
     await confirm.waitForDisplayed({ timeout: 10_000 })
     await confirm.click()
@@ -74,12 +76,18 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await waitForViewer('Add GitHub PR panel tab')
     await expect(await $('.pr-badge-draft')).toBeDisplayed()
 
-    // All four action buttons are present for an open PR.
-    await expect(await $('button.pr-action-btn*=Rerun CI')).toBeDisplayed()
+    // Approve stays visible; secondary actions use the native disclosure.
+    await expect(await $('button.pr-action-btn*=Rerun CI')).not.toBeDisplayed()
     await expect(await $('button.pr-action-btn*=Approve')).toBeDisplayed()
-    await expect(await $('button.pr-action-btn*=Mark ready')).toBeDisplayed()
-    await expect(await $('button.pr-action-btn*=Enable auto-merge')).toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Mark ready')).not.toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Enable auto-merge')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-actions-initial.png')
+    await $('.pr-more-toggle').click()
+    await expect(await $('button.pr-action-btn*=Mark ready')).toBeDisplayed()
+    await saveElementScreenshot('#pane-files', 'pr-actions-menu.png')
+    await browser.keys('Escape')
+    await expect(await $('.pr-more-toggle')).toBeFocused()
+    await expect(await $('button.pr-action-btn*=Mark ready')).not.toBeDisplayed()
 
     // Approve → outcome message + Approved badge.
     await clickPrAction('Approve')
@@ -115,7 +123,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     // kit buttons in one --spacing-md row, not a `.pr-action-btn` stack (#3065).
     const row = assertKitButtonRow(await measureKitButtonRow('.pr-viewer-actions'), 'PR actions', {
       compact: true,
-      minButtons: 3,
+      minButtons: 2,
     })
     for (const button of row.buttons) {
       const expected = button.classes.includes('pr-action-btn')
@@ -150,6 +158,11 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     assert.ok(statusColours, 'expected lifecycle glyph and failing CI marker')
     assert.equal(statusColours.lifecycle, await tokenColour('--accent'))
     assert.equal(statusColours.failure, await tokenColour('--pr-closed'))
+    // #3477 lifecycle/conflict SVGs remain intact in the redesigned rows.
+    await expect(
+      await $('.pr-list-status.is-open.has-ci-failure svg[data-icon="git-pull-request"]'),
+    ).toBeDisplayed()
+    await expect(await $('.pr-list-ci')).not.toBeExisting()
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
     await $('.pr-list-title*=Tidy up workspace status polling').click()
