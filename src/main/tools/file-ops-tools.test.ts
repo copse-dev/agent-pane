@@ -105,16 +105,12 @@ describe('file-ops tools (#122)', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  ownedIt('make_directory stages creation applied only after approval', async () => {
+  ownedIt('make_directory creates the directory directly without approval', async () => {
     const msg = await run(registry, 'make_directory', { path: 'new/nested/dir' })
-    assert.match(msg, /Creation of directory new\/nested\/dir staged/)
-    assert.equal(await exists(join(tempRoot, 'new/nested/dir')), false)
-
-    const [entry] = getDiffQueueForTest()
-    assert.ok(entry)
-    const result = await applyDiffEntry(entry)
-    assert.deepEqual(result, { status: 'written' })
+    assert.match(msg, /Created directory new\/nested\/dir directly/)
+    assert.match(msg, /Creating a directory destroys nothing/)
     assert.equal(await exists(join(tempRoot, 'new/nested/dir')), true)
+    assert.equal(getDiffQueueForTest().length, 0)
   })
 
   ownedIt('make_directory reports an already-existing directory without staging', async () => {
