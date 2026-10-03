@@ -1168,6 +1168,16 @@ var init_model_parameters = __esm({
     };
     RECOMMENDATIONS = [
       {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
         match: "glm-5.3-flash",
         label: "Copse\u2019s experimental balanced agent profile",
         source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
@@ -26134,14 +26144,11 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
-function handIcon(className = DEFAULT) {
+function shieldIcon(className = DEFAULT) {
   return outlineIcon(
-    "hand",
+    "shield",
     [
-      "M18 11V6a2 2 0 0 0-4 0v5",
-      "M14 10V4a2 2 0 0 0-4 0v7",
-      "M10 10.5V6a2 2 0 0 0-4 0v8",
-      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
     ],
     className
   );
@@ -26266,6 +26273,17 @@ function gitPullRequestIcon(className = DEFAULT) {
     className
   );
 }
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
 function penLineIcon(className = DEFAULT) {
   return outlineIcon(
     "pen-line",
@@ -26326,7 +26344,7 @@ var init_icons = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -26350,14 +26368,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -26397,7 +26415,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -26688,7 +26706,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -26769,12 +26787,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -26850,7 +26868,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -26871,7 +26889,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -27149,7 +27167,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -27158,7 +27176,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -27308,7 +27326,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -27319,17 +27337,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -27425,7 +27443,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -27461,7 +27479,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -27556,7 +27574,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -27570,7 +27588,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -27706,7 +27724,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -27717,17 +27735,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -28494,7 +28512,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -28511,7 +28529,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -28532,7 +28550,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -28545,7 +28563,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -28571,7 +28589,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -28623,7 +28641,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -28655,7 +28673,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -28694,7 +28712,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -28716,13 +28734,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -28755,7 +28773,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -28765,17 +28783,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -28828,13 +28846,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -29037,7 +29055,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -29066,7 +29084,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -29085,7 +29103,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -29104,7 +29122,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -29302,7 +29320,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -29313,7 +29331,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -29408,12 +29426,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -29710,7 +29728,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -29727,7 +29745,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -29777,7 +29795,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -29787,7 +29805,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -30006,7 +30024,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -30026,7 +30044,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -30122,7 +30140,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -30132,7 +30150,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -30581,7 +30599,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -30599,7 +30617,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -30699,7 +30717,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -30707,16 +30725,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -30763,7 +30781,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -30787,7 +30805,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -30856,7 +30874,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -30938,7 +30956,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -30976,7 +30994,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -30986,7 +31004,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -31160,7 +31178,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -31174,7 +31192,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -31289,14 +31307,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -31348,7 +31366,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -31533,7 +31551,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -31562,11 +31580,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -31615,13 +31633,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -31665,13 +31683,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -31712,11 +31730,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -31766,14 +31784,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -31879,7 +31897,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -31892,7 +31910,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -31937,7 +31955,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -31946,18 +31964,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -32059,7 +32077,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -32067,7 +32085,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -32254,7 +32272,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -33490,7 +33508,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -33932,7 +33950,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -34200,9 +34218,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -36624,6 +36642,421 @@ url: http://localhost:61025/index.html
   }
 });
 
+// src/shared/demo-site-tour.ts
+function earlierThreads(minutesAgo) {
+  return [
+    {
+      id: "demo-site-tour-coming-soon",
+      title: "Crumb & Bloom coming soon",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-coming-soon-user",
+          role: "user",
+          content: "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4
+        },
+        {
+          id: "demo-site-tour-coming-soon-assistant",
+          role: "assistant",
+          content: "Built the coming-soon page in `index.html`, `styles.css`, and `script.js`.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+    },
+    {
+      id: "demo-site-tour-menu-photos",
+      title: "Compress the menu photos",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-menu-photos-user",
+          role: "user",
+          content: "The menu photos are slow on mobile. Can you compress them?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4
+        },
+        {
+          id: "demo-site-tour-menu-photos-assistant",
+          role: "assistant",
+          content: 'Converted the six menu photos to WebP and added `loading="lazy"`.',
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+    }
+  ];
+}
+function siteTourScenario(id, label, thread, extra = {}) {
+  return {
+    id,
+    label,
+    project: CRUMB_AND_BLOOM,
+    settings: SITE_TOUR_SETTINGS,
+    threads: [thread, ...earlierThreads(30)],
+    ...extra
+  };
+}
+var SITE_TOUR_TIME, SITE_TOUR_MODEL, CRUMB_AND_BLOOM, SITE_TOUR_SETTINGS, SITE_TOUR_GITHUB_MCP, SITE_TOUR_TOOL_PERMISSIONS, SEASONAL_PR_BODY, SIGNUP_THREAD, SITE_TOUR_SCENARIOS;
+var init_demo_site_tour = __esm({
+  "src/shared/demo-site-tour.ts"() {
+    SITE_TOUR_TIME = Date.UTC(2026, 8, 14, 10, 30, 0);
+    SITE_TOUR_MODEL = "claude-opus-5-5";
+    CRUMB_AND_BLOOM = {
+      id: "demo-crumb-and-bloom",
+      name: "Crumb & Bloom",
+      path: "/demo/crumb-and-bloom"
+    };
+    SITE_TOUR_SETTINGS = {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model: SITE_TOUR_MODEL
+    };
+    SITE_TOUR_GITHUB_MCP = {
+      name: "github",
+      transport: "http",
+      state: "connected",
+      toolCount: 5,
+      tools: [
+        "search_issues",
+        "get_pull_request",
+        "create_issue",
+        "add_issue_comment",
+        "merge_pull_request"
+      ],
+      source: "/demo/crumb-and-bloom/.mcp.json",
+      origin: "project",
+      originDetail: ".mcp.json",
+      userEnabled: true,
+      configDisabled: false
+    };
+    SITE_TOUR_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            }
+          ]
+        },
+        {
+          id: "mcp:project:github",
+          name: "github",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/crumb-and-bloom/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:github:search-issues",
+              executionName: "mcp__github__search_issues",
+              name: "Search issues",
+              description: "Search issues and pull requests in a repository.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:get-pull-request",
+              executionName: "mcp__github__get_pull_request",
+              name: "Get pull request",
+              description: "Read a pull request, its diff, and its review comments.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:create-issue",
+              executionName: "mcp__github__create_issue",
+              name: "Create issue",
+              description: "Open a new issue in a repository.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:add-issue-comment",
+              executionName: "mcp__github__add_issue_comment",
+              name: "Add issue comment",
+              description: "Comment on an issue or pull request.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:merge-pull-request",
+              executionName: "mcp__github__merge_pull_request",
+              name: "Merge pull request",
+              description: "Merge a pull request into its base branch.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
+    SEASONAL_PR_BODY = [
+      "Adds a seasonal flavours section below the hero.",
+      "",
+      "- Reads the current menu from `flavours.json`, so the bakery can swap flavours without touching markup",
+      "- Pauses the flavour ticker for visitors who prefer reduced motion",
+      "- Keeps the section to a single column on narrow screens"
+    ].join("\n");
+    SIGNUP_THREAD = {
+      id: "demo-site-tour-signup",
+      title: "Send signups to the newsletter",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-signup-user-1",
+          role: "user",
+          content: "Where does the email signup get handled?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 4 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-1",
+          role: "assistant",
+          content: "In `script.js`: the form\u2019s submit handler checks the address, then shows the confirmation note under the form. Nothing is sent anywhere yet, so the address only lives in the page.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 3 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-user-2",
+          role: "user",
+          content: "Send new signups to the newsletter list instead of only showing the note.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 2 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-2",
+          role: "assistant",
+          content: "The submit handler now posts the address to the newsletter endpoint and only shows the confirmation note once the request succeeds. A failed request keeps what the visitor typed and offers to try again.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - 4 * 6e4,
+      updatedAt: SITE_TOUR_TIME - 6e4
+    };
+    SITE_TOUR_SCENARIOS = [
+      siteTourScenario("site-fork-resend", "Copse.dev tour: fork and resend a prompt", SIGNUP_THREAD, {
+        // The site the thread is about, open in the Browser pane beside it.
+        staticSite: "sites/cupcakes",
+        settings: {
+          ...SITE_TOUR_SETTINGS,
+          layout: { projectsPaneWidth: 240, filesPaneWidth: 560 }
+        }
+      }),
+      siteTourScenario("site-subagent", "Copse.dev tour: an expanded subagent", {
+        id: "demo-site-tour-accessibility",
+        title: "Accessibility audit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [
+          {
+            id: "demo-site-tour-accessibility-user",
+            role: "user",
+            content: "Check the coming-soon page for accessibility problems before we launch.",
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 3 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-assistant",
+            role: "assistant",
+            content: "I asked an explore agent to audit the markup and styles.",
+            toolCalls: [
+              {
+                id: "demo-site-tour-accessibility-explore",
+                name: "explore",
+                args: { query: "Audit index.html and styles.css for accessibility gaps" },
+                status: "done",
+                result: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                subagent: {
+                  id: "demo-site-tour-accessibility-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Audit index.html and styles.css for accessibility gaps",
+                  summary: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                  model: SITE_TOUR_MODEL,
+                  messages: [
+                    {
+                      id: "demo-site-tour-accessibility-explore-1",
+                      role: "assistant",
+                      content: "Reading the page structure and the stylesheet.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-read-html",
+                          name: "read_file",
+                          args: { path: "index.html" },
+                          status: "done",
+                          result: "<!doctype html>\n"
+                        },
+                        {
+                          id: "demo-site-tour-accessibility-read-css",
+                          name: "read_file",
+                          args: { path: "styles.css" },
+                          status: "done",
+                          result: ":root {\n"
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-2",
+                      role: "assistant",
+                      content: "Checking whether the ticker animation respects **reduced motion**.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-grep",
+                          name: "grep_search",
+                          args: { pattern: "prefers-reduced-motion" },
+                          status: "done",
+                          result: "No matches."
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-3",
+                      role: "assistant",
+                      content: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                      toolCalls: []
+                    }
+                  ]
+                }
+              }
+            ],
+            createdAt: SITE_TOUR_TIME - 2 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-findings",
+            role: "assistant",
+            content: [
+              "Two things to fix before launch:",
+              "",
+              "- The flavour ticker keeps scrolling for visitors who prefer reduced motion.",
+              "- The signup field relies on its placeholder, so it has no visible label.",
+              "",
+              "Want me to fix both?"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 6e4
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME - 3 * 6e4,
+        updatedAt: SITE_TOUR_TIME - 6e4
+      }),
+      siteTourScenario("site-archive-attachment", "Copse.dev tour: attach a zip archive", {
+        // Empty: the spec drops the archive into this thread's composer.
+        id: "demo-site-tour-brand-kit",
+        title: "Swap in the new brand kit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME,
+        updatedAt: SITE_TOUR_TIME
+      }),
+      // Settings opens over the same conversation the fork shot uses.
+      siteTourScenario("site-providers", "Copse.dev tour: provider settings", SIGNUP_THREAD),
+      siteTourScenario(
+        "site-create-pr",
+        "Copse.dev tour: create a pull request",
+        {
+          id: "demo-site-tour-seasonal",
+          title: "Add seasonal flavours",
+          status: "idle",
+          gitBranch: "seasonal-flavours",
+          model: SITE_TOUR_MODEL,
+          messages: [
+            {
+              id: "demo-site-tour-seasonal-user",
+              role: "user",
+              content: "Add a seasonal flavours section under the hero that reads from flavours.json, and make sure the ticker respects reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 3 * 6e4
+            },
+            {
+              id: "demo-site-tour-seasonal-assistant",
+              role: "assistant",
+              content: "Added the seasonal flavours section and committed it on `seasonal-flavours`. The ticker now pauses for visitors who prefer reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 6e4
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME - 3 * 6e4,
+          updatedAt: SITE_TOUR_TIME - 6e4
+        },
+        {
+          changeStats: { additions: 86, deletions: 12 },
+          followUps: [
+            { id: "create-pr", label: "Create PR", action: "create-pr" },
+            { id: "review", label: "Review changes", action: "review" }
+          ],
+          prBody: SEASONAL_PR_BODY
+        }
+      ),
+      siteTourScenario(
+        "site-mcp-permissions",
+        "Copse.dev tour: per-tool MCP permissions",
+        {
+          id: "demo-site-tour-triage",
+          title: "Triage launch issues",
+          status: "idle",
+          gitBranch: "main",
+          model: SITE_TOUR_MODEL,
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME,
+          updatedAt: SITE_TOUR_TIME
+        },
+        {
+          mcpServers: [SITE_TOUR_GITHUB_MCP],
+          toolPermissions: SITE_TOUR_TOOL_PERMISSIONS
+        }
+      )
+    ];
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
@@ -36719,7 +37152,104 @@ function conciseThreadMessages(model, live) {
     ]
   ];
 }
-function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
   return {
     id,
     label,
@@ -36737,7 +37267,10 @@ function conciseThreadScenario(id, label, model, { live = false, enabled = true 
         title: "Concise thread view",
         status: live ? "running" : "idle",
         model,
-        messages: conciseThreadMessages(model, live),
+        messages: multiTurn ? [
+          ...conciseMultiTurnMessages(model),
+          ...live ? conciseThreadMessages(model, true) : []
+        ] : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME
@@ -36749,6 +37282,7 @@ var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT,
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
+    init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -38114,6 +38648,18 @@ var init_demo_scenarios = __esm({
         "claude-opus-5-5"
       ),
       conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi-working",
+        "Concise thread view with finished turns and a live one",
+        "claude-opus-5-5",
+        { multiTurn: true, live: true }
+      ),
+      conciseThreadScenario(
         "concise-thread-full",
         "Full thread view for a model below the concise gate",
         "gpt-4o"
@@ -38151,7 +38697,9 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
-      }
+      },
+      // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+      ...SITE_TOUR_SCENARIOS
     ];
   }
 });
@@ -38209,7 +38757,8 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -38469,8 +39018,8 @@ function createDemoApi(scenario, options = {}) {
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...scenario.followUps ?? []])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -38561,7 +39110,7 @@ function createDemoApi(scenario, options = {}) {
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -38600,8 +39149,16 @@ function createDemoApi(scenario, options = {}) {
         return resolvedVoid();
       }
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) => resolved({
+        path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+        name: archive.name,
+        sizeBytes: archive.bytes?.byteLength ?? 0
+      })
+    },
     threads: {
       loadProject: (projectId) => resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -38751,7 +39308,16 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported,
       test: unsupported,
       screening: () => resolved(null),
-      setScreening: unsupported
+      setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -39041,7 +39607,7 @@ function createDemoApi(scenario, options = {}) {
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -39684,9 +40250,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -40623,7 +41189,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       maxlength: "80"
     });
     const explanation = el("p", { class: "app-run-notice" });
-    const apply2 = el("button", {
+    const apply3 = el("button", {
       type: "button",
       class: "ui-btn ui-btn-primary app-run-setup-apply"
     });
@@ -40636,17 +41202,17 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     const sync = () => {
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       const download2 = selected && !selected.installed;
-      apply2.textContent = download2 ? "Download selected image" : "Create device";
+      apply3.textContent = download2 ? "Download selected image" : "Create device";
       explanation.textContent = download2 ? "Downloads this system image into your Android SDK. Review any license agreement in Android Studio before continuing." : "Uses an installed runtime. Your existing devices are kept.";
-      apply2.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
+      apply3.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
     };
     runtime.addEventListener("change", sync);
     name.addEventListener("input", sync);
     dismiss.addEventListener("click", () => {
       setupHost.hidden = true;
     });
-    apply2.addEventListener("click", () => {
-      apply2.disabled = true;
+    apply3.addEventListener("click", () => {
+      apply3.disabled = true;
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       void api2.appRun.setup(owner, {
         platform,
@@ -40683,7 +41249,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       el("label", {}, "Device type", deviceType),
       el("label", {}, "Name", name),
       explanation,
-      el("div", { class: "app-run-actions" }, apply2, installApple, dismiss)
+      el("div", { class: "app-run-actions" }, apply3, installApple, dismiss)
     );
     sync();
   }
@@ -57054,6 +57620,19 @@ var init_presets = __esm({
         }
       },
       {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
         id: "kev",
         label: "Kev (local)",
         model: "kev-latest",
@@ -57062,6 +57641,18 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8009/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
           auth: "none"
         }
       },
@@ -57121,11 +57712,32 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const background = el("select", { name: "classifierBackground" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -57133,7 +57745,7 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, background questions and evals. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
     ),
     el(
       "label",
@@ -57146,12 +57758,25 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    el(
+      "label",
+      { class: "classifier-background" },
+      "Background questions",
+      background,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
+      )
+    ),
+    localHost,
     chips,
     formHost,
     status
   );
   let profiles = [];
   let screeningId = null;
+  let backgroundId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -57196,6 +57821,187 @@ function createClassifiersSection(api2) {
     });
     chips.append(add2);
   }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderBackground();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
+  }
   function renderScreening() {
     clear(screening);
     screening.append(el("option", { value: "" }, "Instruct / safety model"));
@@ -57205,34 +58011,59 @@ function createClassifiersSection(api2) {
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
   }
-  screening.addEventListener("change", () => {
-    const id = screening.value || null;
-    if (busy) {
-      renderScreening();
-      return;
+  function renderBackground() {
+    clear(background);
+    background.append(el("option", { value: "" }, "Small-tasks model"));
+    for (const { profile } of profiles) {
+      background.append(el("option", { value: profile.id }, profile.label));
     }
-    busy = true;
-    root.disabled = true;
-    void (async () => {
-      try {
-        screeningId = await api2.classifiers.setScreening(id);
-        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
-        setInlineStatus(
-          status,
-          "ok",
-          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
-        );
-      } catch (error62) {
-        setInlineStatus(status, "error", classifierErrorMessage(error62));
-      } finally {
-        busy = false;
-        root.disabled = false;
-        renderScreening();
+    background.value = profiles.some((item) => item.profile.id === backgroundId) ? backgroundId ?? "" : "";
+  }
+  function onRouteChange(select, renderRoute, save, describeChoice) {
+    select.addEventListener("change", () => {
+      const id = select.value || null;
+      if (busy) {
+        renderRoute();
+        return;
       }
-    })();
-  });
+      busy = true;
+      root.disabled = true;
+      void (async () => {
+        try {
+          const saved = await save(id);
+          const chosen = profiles.find((item) => item.profile.id === saved)?.profile.label;
+          setInlineStatus(status, "ok", describeChoice(chosen));
+        } catch (error62) {
+          setInlineStatus(status, "error", classifierErrorMessage(error62));
+        } finally {
+          busy = false;
+          root.disabled = false;
+          renderRoute();
+        }
+      })();
+    });
+  }
+  onRouteChange(
+    screening,
+    renderScreening,
+    async (id) => {
+      screeningId = await api2.classifiers.setScreening(id);
+      return screeningId;
+    },
+    (chosen) => chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+  );
+  onRouteChange(
+    background,
+    renderBackground,
+    async (id) => {
+      backgroundId = await api2.classifiers.setBackground(id);
+      return backgroundId;
+    },
+    (chosen) => chosen ? `Background questions now use ${chosen}. No test call has been made.` : "Background questions now use the small-tasks model."
+  );
   function render() {
     renderScreening();
+    renderBackground();
     renderChips();
     clear(formHost);
     clear(status);
@@ -57251,18 +58082,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -57377,6 +58197,8 @@ function createClassifiersSection(api2) {
           "Custom connections use ",
           el("code", {}, "COPSE_CLASSIFIER_*"),
           " variables. ",
+          el("code", {}, "LIQUID_API_KEY"),
+          ", ",
           el("code", {}, "TYPESAFE_API_KEY"),
           " and ",
           el("code", {}, "FEATHERLESS_API_KEY"),
@@ -57568,7 +58390,10 @@ function createClassifiersSection(api2) {
       void run2(async () => {
         if (saved) {
           profiles = await api2.classifiers.remove(profile.id);
-          screeningId = await api2.classifiers.screening();
+          [screeningId, backgroundId] = await Promise.all([
+            api2.classifiers.screening(),
+            api2.classifiers.background()
+          ]);
         }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
@@ -57587,11 +58412,13 @@ function createClassifiersSection(api2) {
     captureDraft?.();
     try {
       ;
-      [profiles, screeningId] = await Promise.all([
+      [profiles, screeningId, backgroundId] = await Promise.all([
         api2.classifiers.list(),
-        api2.classifiers.screening()
+        api2.classifiers.screening(),
+        api2.classifiers.background()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -57600,6 +58427,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -59115,8 +59943,15 @@ function providerWindows(snapshot, provider) {
 function resolvePlanInclusion(provider, modelId, snapshot) {
   const windows = providerWindows(snapshot, provider);
   if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
   const govern = new Set(governingWindowIds(provider, modelId));
-  const applicable = windows.filter((w2) => govern.has(w2.id));
+  let applicable = windows.filter((w2) => govern.has(w2.id));
+  if (availability === true) {
+    const pool = windows.filter((w2) => w2.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
   if (applicable.length === 0) return null;
   const binding = applicable.reduce(
     (tightest, w2) => w2.usedPercent > tightest.usedPercent ? w2 : tightest
@@ -59127,8 +59962,13 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
   };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
 }
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
@@ -61265,7 +62105,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.append(heading);
   const intro = document.createElement("p");
   intro.className = "settings-fieldset-desc";
-  intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
+  intro.textContent = "Live plan windows for the plans you have set up in Settings \u2192 General. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
   if (error62) {
     const err2 = document.createElement("p");
@@ -62137,6 +62977,14 @@ var init_ssh_workspace_section = __esm({
     init_inline_status();
     init_ssh_host_helpers();
     init_ssh_host_helpers();
+  }
+});
+
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
   }
 });
 
@@ -63687,7 +64535,7 @@ var init_tool_permissions_panel = __esm({
     };
     POLICY_ICON = {
       allow: checkIcon,
-      ask: handIcon,
+      ask: shieldIcon,
       block: banIcon
     };
   }
@@ -64386,6 +65234,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -64687,7 +65536,7 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Your subscription plan windows for the accounts you are signed in to, plus estimated
+              Your subscription plan windows for the plans you have set up in General, plus estimated
               spend and free on-device token usage across every project. Costs are approximate and
               based on published prices.
             </p>
@@ -65216,7 +66065,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -65460,6 +66309,23 @@ function mountSettingsDialog(store2, api2) {
               and are off by default.
             </p>
 
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
+
             <fieldset>
               <legend>Mobile Companion</legend>
               <p class="field-hint">
@@ -65576,6 +66442,18 @@ function mountSettingsDialog(store2, api2) {
                 Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
+            </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading\u2026</span>
+              </div>
             </fieldset>
           </section>
 
@@ -65845,6 +66723,7 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
+    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -65954,8 +66833,8 @@ function mountSettingsDialog(store2, api2) {
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
-          void refreshPlugins();
         }
+        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -66889,6 +67768,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -66924,9 +67814,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -67294,55 +68186,81 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
+  let pluginEntries = null;
+  function renderPluginLists() {
+    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
+    if (!pluginEntries) return;
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? "#experimental-plugins-list" : "#plugins-list"
+      );
+      const entries2 = pluginEntries.filter(
+        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
+      );
+      listEl.replaceChildren();
+      let lastEnabled = null;
+      for (const entry of entries2) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement("h4");
+          heading.className = "plugins-group-heading";
+          heading.textContent = entry.enabled ? "Active" : "Inactive";
+          listEl.append(heading);
+          lastEnabled = entry.enabled;
+        }
+        listEl.append(entry.row);
+      }
+      if (entries2.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "plugins-empty";
+        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
+        listEl.append(empty);
+      }
+    }
+  }
   async function refreshPlugins() {
-    const listEl = qsRequired(overlay, "#plugins-list");
-    const statusEl = qsRequired(overlay, "#plugins-reload-status");
-    statusEl.textContent = "Loading\u2026";
+    const statusEls = overlay.querySelectorAll(".plugins-load-status");
+    const setStatus = (text2) => {
+      statusEls.forEach((el3) => {
+        el3.textContent = text2;
+      });
+    };
+    setStatus("Loading\u2026");
     try {
       const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
         api2.cursorPlugins.list().catch(() => []),
         api2.bundledSkillPlugins.list().catch(() => [])
       ]);
-      listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "plugins-empty";
-        empty.textContent = "No plugins installed.";
-        listEl.append(empty);
-      } else {
-        const entries2 = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin)
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin)
-          })),
-          ...bundledPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: plugin.enabled && !plugin.suppressed,
-            render: () => makeBundledSkillPluginRow(plugin)
-          }))
-        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-        let lastEnabled = null;
-        for (const entry of entries2) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement("h4");
-            heading.className = "plugins-group-heading";
-            heading.textContent = entry.enabled ? "Active" : "Inactive";
-            listEl.append(heading);
-            lastEnabled = entry.enabled;
-          }
-          listEl.append(entry.render());
-        }
-      }
-      statusEl.textContent = "";
+      const entries2 = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === "experimental",
+          render: () => makePluginRow(plugin)
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: () => makeCursorPluginRow(plugin)
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: () => makeBundledSkillPluginRow(plugin)
+        }))
+      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+      pluginEntries = entries2.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render()
+      }));
+      renderPluginLists();
+      setStatus("");
     } catch {
-      statusEl.textContent = "Failed to load plugins.";
+      setStatus("Failed to load plugins.");
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -67553,8 +68471,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -67897,6 +68814,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
     if (openedSection === "about") void aboutSection.refresh();
+    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -68238,6 +69156,7 @@ var init_settings_dialog = __esm({
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -68976,6 +69895,20 @@ var init_activity_model = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function githubMarkIcon() {
+  const svg2 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg2.setAttribute("class", "approval-github-icon");
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  );
+  svg2.append(path);
+  return svg2;
+}
 function approvalCopyElement(className, text2) {
   const root = el("div", { class: className });
   let list = null;
@@ -69053,6 +69986,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
     "Allow retries for this task (up to 10, for 15 minutes)"
   );
+  const githubBrand = el(
+    "div",
+    { class: "approval-github-brand", hidden: "", "aria-hidden": "true" },
+    el("span", { class: "approval-github-mark" }, githubMarkIcon()),
+    el("span", {}, "GitHub")
+  );
   const heading = el("h3", { class: "approval-heading" });
   const items = el("div", { class: "approval-items" });
   const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
@@ -69073,6 +70012,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   );
   const dialog2 = el("dialog", { id: "approval-dialog" });
   dialog2.append(
+    githubBrand,
     heading,
     items,
     rememberLabel,
@@ -69183,6 +70123,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
       }
     }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
+    githubBrand.hidden = !isGithubApproval;
+    dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
       const body = el("div", { class: bodyClass }, req.body);
@@ -69487,7 +70430,7 @@ function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
   switch (state) {
     case "needs-approval":
-      return handIcon(className);
+      return shieldIcon(className);
     case "needs-answer":
       return messageQuestionIcon(className);
     case "working":
@@ -69819,6 +70762,31 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
+  function captureListScrollAnchor() {
+    const listRect = list.getBoundingClientRect();
+    for (const row2 of list.querySelectorAll(".activity-row")) {
+      const rowKey2 = row2.dataset["rowKey"];
+      if (!rowKey2) continue;
+      const rowRect = row2.getBoundingClientRect();
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey: rowKey2, viewportTop: rowRect.top };
+      }
+    }
+    return null;
+  }
+  function restoreListScrollAnchor(anchor2, fallbackScrollTop) {
+    if (anchor2) {
+      const row2 = [...list.querySelectorAll(".activity-row")].find(
+        (candidate) => candidate.dataset["rowKey"] === anchor2.rowKey
+      );
+      if (row2) {
+        const delta = row2.getBoundingClientRect().top - anchor2.viewportTop;
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta;
+        return;
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
+  }
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
@@ -69842,7 +70810,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
     }
     const opener = selectedOpener();
-    if (opener) opener.focus();
+    if (opener) opener.focus({ preventScroll: true });
     else closeButton.focus();
   }
   function armSettle() {
@@ -69865,6 +70833,8 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     const at3 = now();
     lastRenderAt = at3;
     const focus = captureFocus();
+    const previousListScrollTop = list.scrollTop;
+    const listScrollAnchor = captureListScrollAnchor();
     const groups = deriveActivity({
       threads: collectActivityThreads(store2),
       approvals: sources3.approvals.pending(),
@@ -69908,6 +70878,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       }
       children.push(...populated.map((group) => groupElement(group, at3)));
       list.replaceChildren(...children);
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
     dialog2.dataset["needsYou"] = String(needCount);
@@ -70600,14 +71571,14 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -70909,8 +71880,21 @@ function mountProjectsPane(root, store2, api2) {
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
+        const previous = prLifecycleCache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        prLifecycleCache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (generation !== prStatusGeneration) return;
+          const entry = prLifecycleCache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          prLifecycleCache.set(key, { ...entry, checks });
+        });
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached2 = prLifecycleCache.get(key);
@@ -70924,6 +71908,12 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function ciFailingForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    });
   }
   function rollupForThread(thread) {
     const refs = sidebarPrRefs(thread);
@@ -71452,7 +72442,9 @@ function mountProjectsPane(root, store2, api2) {
       const prRollup = rollupForThread(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+        );
       }
       if (thread.prRefs === void 0) {
         prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
@@ -72708,7 +73700,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -75264,6 +76258,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -75276,7 +76271,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -75289,7 +76284,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -75300,6 +76295,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -75336,7 +76332,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -75346,6 +76342,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -75388,7 +76385,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
@@ -76306,7 +77306,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -76490,7 +77490,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -77017,9 +78017,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -77571,12 +78571,12 @@ function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
 function forgetImageRead(read) {
   if (imageReads.get(read.key) === read) imageReads.delete(read.key);
 }
-function whenImageRead(read, apply2) {
+function whenImageRead(read, apply3) {
   if (read.src !== void 0) {
-    apply2(read.src);
+    apply3(read.src);
     return;
   }
-  read.promise.then(apply2, () => {
+  read.promise.then(apply3, () => {
   });
 }
 function messageIdOf(node2) {
@@ -79608,6 +80608,21 @@ function isConciseStepsMessage(msg) {
 }
 function isConciseWorkingMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
+}
+function turnStartId(messages, messageId) {
+  const at3 = messages.findIndex((msg) => msg.id === messageId);
+  for (let i2 = at3; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
+function liveTurnStartId(messages) {
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
 }
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
@@ -83081,10 +84096,30 @@ function mountConversation(root, store2, api2) {
     list,
     scrollToBottomBtn
   );
+  let expandedConciseTurnId = null;
+  function conciseEnabledFor(thread, messageId) {
+    const enabled = store2.getState().conciseThreadsEnabled;
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled;
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId;
+  }
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
+  function toggleConciseTurnExpansion() {
+    const thread = getActiveThread(store2);
+    if (!thread || !isConciseTurnExpandable(thread)) return false;
+    const turn = liveTurnStartId(thread.messages);
+    if (turn === null) return false;
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null;
+    syncConciseThreadClasses();
+    scrollToBottom();
+    return true;
+  }
+  function isConciseTurnExpandable(thread) {
+    return thread.status === "running" && store2.getState().conciseThreadsEnabled && isConciseThread(thread);
+  }
   activityBar.addEventListener("click", () => {
+    if (toggleConciseTurnExpansion()) return;
     const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
@@ -83093,6 +84128,12 @@ function mountConversation(root, store2, api2) {
     const key = details.dataset["disclosureKey"];
     if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
+  });
+  activityBar.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (activityBar.getAttribute("role") !== "button") return;
+    event.preventDefault();
+    toggleConciseTurnExpansion();
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
@@ -83573,6 +84614,20 @@ function mountConversation(root, store2, api2) {
     const thread = getActiveThread(store2);
     const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
     const label = conciseLabel ?? requested;
+    const expandable = thread !== void 0 && isConciseTurnExpandable(thread);
+    const expanded = expandable && expandedConciseTurnId !== null;
+    activityBar.setAttribute("role", expandable ? "button" : "status");
+    activityBar.classList.toggle("agent-activity-expandable", expandable);
+    activityBar.classList.toggle("agent-activity-expanded", expanded);
+    if (expandable) {
+      activityBar.tabIndex = 0;
+      activityBar.setAttribute("aria-expanded", String(expanded));
+      activityBar.title = expanded ? "Hide this turn\u2019s steps" : "Show this turn\u2019s steps";
+    } else {
+      activityBar.removeAttribute("tabindex");
+      activityBar.removeAttribute("aria-expanded");
+      activityBar.removeAttribute("title");
+    }
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
     if (label.startsWith("Reasoning\u2026") && [
@@ -83754,7 +84809,7 @@ function mountConversation(root, store2, api2) {
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
-    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
+    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const isInterrupted = (call) => userInterruption(call) !== void 0;
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
@@ -83910,7 +84965,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
-    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -84118,11 +85173,11 @@ function mountConversation(root, store2, api2) {
   function syncConciseThreadClasses() {
     const thread = getActiveThread(store2);
     if (!thread) return;
-    const enabled = store2.getState().conciseThreadsEnabled;
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
     list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
-      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
-      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+      const id = msgEl.dataset["messageId"] ?? "";
+      const msg = byId.get(id);
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id));
     });
     syncFromStore();
   }
@@ -84212,7 +85267,7 @@ function mountConversation(root, store2, api2) {
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
-    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -84609,6 +85664,10 @@ function mountConversation(root, store2, api2) {
           card.remove();
         });
       } else {
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null;
+          syncConciseThreadClasses();
+        }
         setActivity(null);
         list.querySelectorAll(".message-reasoning-live").forEach((details) => {
           setReasoningDisclosureTitle(details, false);
@@ -97456,15 +98515,22 @@ function footerNaturalWidth(footer) {
   const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -99383,18 +100449,18 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       );
     }
     if (!isLive2(run2) && run2.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
-      const apply2 = el(
+      const apply3 = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
         `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
       );
-      apply2.addEventListener("click", () => {
-        apply2.disabled = true;
+      apply3.addEventListener("click", () => {
+        apply3.disabled = true;
         void adopt(run2.record?.runtimeId ?? "", null).finally(() => {
-          apply2.disabled = false;
+          apply3.disabled = false;
         });
       });
-      actions.push(apply2);
+      actions.push(apply3);
     }
     if (!isLive2(run2)) {
       const again = el(
@@ -101985,12 +103051,12 @@ function watchEditorTheme(onChange, root = document.documentElement) {
   };
 }
 function installMonacoEditorTheme(monaco) {
-  const apply2 = (tokens) => {
+  const apply3 = (tokens) => {
     monaco.editor.defineTheme(COPSE_MONACO_THEME, monacoThemeFromTokens(tokens));
     monaco.editor.setTheme(COPSE_MONACO_THEME);
   };
-  apply2(readEditorThemeTokens());
-  return watchEditorTheme(apply2);
+  apply3(readEditorThemeTokens());
+  return watchEditorTheme(apply3);
 }
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
@@ -140891,7 +141957,10 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs
+// node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs
+function _OverloadYield(e3, d3) {
+  this.v = e3, this.k = d3;
+}
 function _arrayLikeToArray(r2, a3) {
   (null == a3 || a3 > r2.length) && (a3 = r2.length);
   for (var e3 = 0, n2 = Array(a3); e3 < a3; e3++) n2[e3] = r2[e3];
@@ -140905,8 +141974,10 @@ function _iterableToArrayLimit(r2, l2) {
   if (null != t2) {
     var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
-      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
+      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) {
+        if (Object(t2) !== t2) return;
+        f4 = false;
+      } else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
@@ -140932,42 +142003,68 @@ function _unsupportedIterableToArray(r2, a3) {
     return "Object" === t2 && r2.constructor && (t2 = r2.constructor.name), "Map" === t2 || "Set" === t2 ? Array.from(r2) : "Arguments" === t2 || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t2) ? _arrayLikeToArray(r2, a3) : void 0;
   }
 }
+function AsyncGenerator(e3) {
+  var t2, n2;
+  function resume(t3, n3) {
+    try {
+      var r2 = e3[t3](n3), o3 = r2.value, u2 = o3 instanceof _OverloadYield;
+      Promise.resolve(u2 ? o3.v : o3).then(function(n4) {
+        if (u2) {
+          var i2 = "return" === t3 && o3.k ? t3 : "next";
+          if (!o3.k || n4.done) return resume(i2, n4);
+          n4 = e3[i2](n4).value;
+        }
+        settle2(!!r2.done, n4);
+      }, function(e4) {
+        resume("throw", e4);
+      });
+    } catch (e4) {
+      settle2(2, e4);
+    }
+  }
+  function settle2(e4, r2) {
+    2 === e4 ? t2.reject(r2) : t2.resolve({
+      value: r2,
+      done: e4
+    }), (t2 = t2.next) ? resume(t2.key, t2.arg) : n2 = null;
+  }
+  this._invoke = function(e4, r2) {
+    return new Promise(function(o3, u2) {
+      var i2 = {
+        key: e4,
+        arg: r2,
+        resolve: o3,
+        reject: u2,
+        next: null
+      };
+      n2 ? n2 = n2.next = i2 : (t2 = n2 = i2, resume(e4, r2));
+    });
+  }, "function" != typeof e3.return && (this.return = void 0);
+}
 function unapply(func) {
   return function(thisArg) {
-    if (thisArg instanceof RegExp) {
-      thisArg.lastIndex = 0;
-    }
-    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-      args[_key3 - 1] = arguments[_key3];
-    }
+    if (thisArg instanceof RegExp) thisArg.lastIndex = 0;
+    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) args[_key3 - 1] = arguments[_key3];
     return apply(func, thisArg, args);
   };
 }
 function unconstruct(Func) {
   return function() {
-    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
-      args[_key4] = arguments[_key4];
-    }
+    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) args[_key4] = arguments[_key4];
     return construct(Func, args);
   };
 }
 function addToSet(set2, array2) {
   let transformCaseFunc = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : stringToLowerCase;
-  if (setPrototypeOf) {
-    setPrototypeOf(set2, null);
-  }
-  if (!arrayIsArray(array2)) {
-    return set2;
-  }
+  if (setPrototypeOf) setPrototypeOf(set2, null);
+  if (!arrayIsArray(array2)) return set2;
   let l2 = array2.length;
   while (l2--) {
     let element = array2[l2];
     if (typeof element === "string") {
       const lcElement = transformCaseFunc(element);
       if (lcElement !== element) {
-        if (!isFrozen(array2)) {
-          array2[l2] = lcElement;
-        }
+        if (!isFrozen(array2)) array2[l2] = lcElement;
         element = lcElement;
       }
     }
@@ -140976,12 +142073,7 @@ function addToSet(set2, array2) {
   return set2;
 }
 function cleanArray(array2) {
-  for (let index = 0; index < array2.length; index++) {
-    const isPropertyExist = objectHasOwnProperty(array2, index);
-    if (!isPropertyExist) {
-      array2[index] = null;
-    }
-  }
+  for (let index = 0; index < array2.length; index++) if (!objectHasOwnProperty(array2, index)) array2[index] = null;
   return array2;
 }
 function clone2(object2) {
@@ -140990,44 +142082,31 @@ function clone2(object2) {
     var _ref3 = _slicedToArray(_ref2, 2);
     const property = _ref3[0];
     const value = _ref3[1];
-    const isPropertyExist = objectHasOwnProperty(object2, property);
-    if (isPropertyExist) {
-      if (arrayIsArray(value)) {
-        newObject[property] = cleanArray(value);
-      } else if (value && typeof value === "object" && value.constructor === Object) {
-        newObject[property] = clone2(value);
-      } else {
-        newObject[property] = value;
-      }
+    if (objectHasOwnProperty(object2, property)) {
+      if (arrayIsArray(value)) newObject[property] = cleanArray(value);
+      else if (value && typeof value === "object" && value.constructor === Object) newObject[property] = clone2(value);
+      else newObject[property] = value;
     }
   }
   return newObject;
 }
 function stringifyValue(value) {
   switch (typeof value) {
-    case "string": {
+    case "string":
       return value;
-    }
-    case "number": {
+    case "number":
       return numberToString(value);
-    }
-    case "boolean": {
+    case "boolean":
       return booleanToString(value);
-    }
-    case "bigint": {
+    case "bigint":
       return bigintToString ? bigintToString(value) : "0";
-    }
-    case "symbol": {
+    case "symbol":
       return symbolToString ? symbolToString(value) : "Symbol()";
-    }
-    case "undefined": {
+    case "undefined":
       return objectToString(value);
-    }
     case "function":
     case "object": {
-      if (value === null) {
-        return objectToString(value);
-      }
+      if (value === null) return objectToString(value);
       const valueAsRecord = value;
       const valueToString = lookupGetter(valueAsRecord, "toString");
       if (typeof valueToString === "function") {
@@ -141036,21 +142115,16 @@ function stringifyValue(value) {
       }
       return objectToString(value);
     }
-    default: {
+    default:
       return objectToString(value);
-    }
   }
 }
 function lookupGetter(object2, prop) {
   while (object2 !== null) {
     const desc = getOwnPropertyDescriptor(object2, prop);
     if (desc) {
-      if (desc.get) {
-        return unapply(desc.get);
-      }
-      if (typeof desc.value === "function") {
-        return unapply(desc.value);
-      }
+      if (desc.get) return unapply(desc.get);
+      if (typeof desc.value === "function") return unapply(desc.value);
     }
     object2 = getPrototypeOf(object2);
   }
@@ -141070,7 +142144,7 @@ function isRegex(value) {
 function createDOMPurify() {
   let window2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : getGlobal();
   const DOMPurify = (root) => createDOMPurify(root);
-  DOMPurify.version = "3.4.15";
+  DOMPurify.version = "3.4.16";
   DOMPurify.removed = [];
   if (!window2 || !window2.document || window2.document.nodeType !== NODE_TYPE.document || !window2.Element) {
     DOMPurify.isSupported = false;
@@ -141080,8 +142154,8 @@ function createDOMPurify() {
   const originalDocument = document2;
   const currentScript = originalDocument.currentScript;
   window2.DocumentFragment;
-  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter, _window$NamedNodeMap = window2.NamedNodeMap;
-  _window$NamedNodeMap === void 0 ? window2.NamedNodeMap || window2.MozNamedAttrMap : _window$NamedNodeMap;
+  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter;
+  window2.NamedNodeMap === void 0 && (window2.NamedNodeMap || window2.MozNamedAttrMap);
   window2.HTMLFormElement;
   const DOMParser2 = window2.DOMParser, trustedTypes = window2.trustedTypes;
   const ElementPrototype = Element2.prototype;
@@ -141104,9 +142178,7 @@ function createDOMPurify() {
   };
   if (typeof HTMLTemplateElement === "function") {
     const template = document2.createElement("template");
-    if (template.content && template.content.ownerDocument) {
-      document2 = template.content.ownerDocument;
-    }
+    if (template.content && template.content.ownerDocument) document2 = template.content.ownerDocument;
   }
   let trustedTypesPolicy;
   let emptyHTML = "";
@@ -141114,9 +142186,7 @@ function createDOMPurify() {
   let defaultTrustedTypesPolicyResolved = false;
   let IN_TRUSTED_TYPES_POLICY = 0;
   const _assertNotInTrustedTypesPolicy = function _assertNotInTrustedTypesPolicy2() {
-    if (IN_TRUSTED_TYPES_POLICY > 0) {
-      throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
-    }
+    if (IN_TRUSTED_TYPES_POLICY > 0) throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
   };
   const _createTrustedHTML = function _createTrustedHTML2(html2) {
     _assertNotInTrustedTypesPolicy();
@@ -141150,9 +142220,20 @@ function createDOMPurify() {
   const MUSTACHE_EXPR$1 = MUSTACHE_EXPR, ERB_EXPR$1 = ERB_EXPR, TMPLIT_EXPR$1 = TMPLIT_EXPR, DATA_ATTR$1 = DATA_ATTR, ARIA_ATTR$1 = ARIA_ATTR, IS_SCRIPT_OR_DATA$1 = IS_SCRIPT_OR_DATA, ATTR_WHITESPACE$1 = ATTR_WHITESPACE, CUSTOM_ELEMENT$1 = CUSTOM_ELEMENT;
   let IS_ALLOWED_URI$1 = IS_ALLOWED_URI;
   let ALLOWED_TAGS2 = null;
-  const DEFAULT_ALLOWED_TAGS = addToSet({}, [...html$1, ...svg$1, ...svgFilters, ...mathMl$1, ...text]);
+  const DEFAULT_ALLOWED_TAGS = addToSet({}, [
+    ...html$1,
+    ...svg$1,
+    ...svgFilters,
+    ...mathMl$1,
+    ...text
+  ]);
   let ALLOWED_ATTR2 = null;
-  const DEFAULT_ALLOWED_ATTR = addToSet({}, [...html, ...svg, ...mathMl, ...xml]);
+  const DEFAULT_ALLOWED_ATTR = addToSet({}, [
+    ...html,
+    ...svg,
+    ...mathMl,
+    ...xml
+  ]);
   let CUSTOM_ELEMENT_HANDLING = Object.seal(create(null, {
     tagNameCheck: {
       writable: true,
@@ -141229,15 +142310,6 @@ function createDOMPurify() {
     "noscript",
     "plaintext",
     "script",
-    // <selectedcontent> mirrors the selected <option>'s subtree, cloned by
-    // the UA (customizable <select>) — including any on* handlers — and the
-    // engine re-mirrors synchronously whenever a removal changes which
-    // option/selectedcontent is current, even inside DOMPurify's inert
-    // DOMParser document. Hoisting its children on removal re-inserts a fresh
-    // mirror target ahead of the walk, which the engine refills, looping
-    // forever (DoS) and amplifying output. Dropping its content on removal
-    // (rather than hoisting) breaks that cascade; the content is a duplicate
-    // of the option, which is sanitized on its own. See campaign-3 F1/F6.
     "selectedcontent",
     "style",
     "svg",
@@ -141248,21 +142320,59 @@ function createDOMPurify() {
     "xmp"
   ]);
   let DATA_URI_TAGS = null;
-  const DEFAULT_DATA_URI_TAGS = addToSet({}, ["audio", "video", "img", "source", "image", "track"]);
+  const DEFAULT_DATA_URI_TAGS = addToSet({}, [
+    "audio",
+    "video",
+    "img",
+    "source",
+    "image",
+    "track"
+  ]);
   let URI_SAFE_ATTRIBUTES = null;
-  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, ["alt", "class", "for", "id", "label", "name", "pattern", "placeholder", "role", "summary", "title", "value", "style", "xmlns"]);
+  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, [
+    "alt",
+    "class",
+    "for",
+    "id",
+    "label",
+    "name",
+    "pattern",
+    "placeholder",
+    "role",
+    "summary",
+    "title",
+    "value",
+    "style",
+    "xmlns"
+  ]);
   const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
   let NAMESPACE = HTML_NAMESPACE;
   let IS_EMPTY_INPUT = false;
   let ALLOWED_NAMESPACES = null;
-  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [MATHML_NAMESPACE, SVG_NAMESPACE, HTML_NAMESPACE], stringToString);
-  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze(["mi", "mo", "mn", "ms", "mtext"]);
+  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [
+    MATHML_NAMESPACE,
+    SVG_NAMESPACE,
+    HTML_NAMESPACE
+  ], stringToString);
+  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze([
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext"
+  ]);
   let MATHML_TEXT_INTEGRATION_POINTS = addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS);
   const DEFAULT_HTML_INTEGRATION_POINTS = freeze(["annotation-xml"]);
   let HTML_INTEGRATION_POINTS = addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS);
-  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, ["title", "style", "font", "a", "script"]);
+  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, [
+    "title",
+    "style",
+    "font",
+    "a",
+    "script"
+  ]);
   let PARSER_MEDIA_TYPE = null;
   const SUPPORTED_PARSER_MEDIA_TYPES = ["application/xhtml+xml", "text/html"];
   const DEFAULT_PARSER_MEDIA_TYPE = "text/html";
@@ -141274,25 +142384,14 @@ function createDOMPurify() {
   };
   const _parseConfig = function _parseConfig2() {
     let cfg = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : {};
-    if (CONFIG && CONFIG === cfg) {
-      return;
-    }
-    if (!cfg || typeof cfg !== "object") {
-      cfg = {};
-    }
+    if (CONFIG && CONFIG === cfg) return;
+    if (!cfg || typeof cfg !== "object") cfg = {};
     cfg = clone2(cfg);
-    PARSER_MEDIA_TYPE = // eslint-disable-next-line unicorn/prefer-includes
-    SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
+    PARSER_MEDIA_TYPE = SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
     transformCaseFunc = PARSER_MEDIA_TYPE === "application/xhtml+xml" ? stringToString : stringToLowerCase;
-    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, {
-      transform: stringToString
-    });
+    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, { transform: transformCaseFunc });
+    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, { transform: transformCaseFunc });
+    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, { transform: stringToString });
     URI_SAFE_ATTRIBUTES = _resolveSetOption(cfg, "ADD_URI_SAFE_ATTR", DEFAULT_URI_SAFE_ATTRIBUTES, {
       transform: transformCaseFunc,
       base: DEFAULT_URI_SAFE_ATTRIBUTES
@@ -141301,15 +142400,9 @@ function createDOMPurify() {
       transform: transformCaseFunc,
       base: DEFAULT_DATA_URI_TAGS
     });
-    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, {
-      transform: transformCaseFunc
-    });
-    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), {
-      transform: transformCaseFunc
-    });
-    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), {
-      transform: transformCaseFunc
-    });
+    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, { transform: transformCaseFunc });
+    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), { transform: transformCaseFunc });
+    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), { transform: transformCaseFunc });
     USE_PROFILES = objectHasOwnProperty(cfg, "USE_PROFILES") ? cfg.USE_PROFILES && typeof cfg.USE_PROFILES === "object" ? clone2(cfg.USE_PROFILES) : cfg.USE_PROFILES : false;
     ALLOW_ARIA_ATTR = cfg.ALLOW_ARIA_ATTR !== false;
     ALLOW_DATA_ATTR = cfg.ALLOW_DATA_ATTR !== false;
@@ -141328,36 +142421,16 @@ function createDOMPurify() {
     IN_PLACE = cfg.IN_PLACE || false;
     IS_ALLOWED_URI$1 = isRegex(cfg.ALLOWED_URI_REGEXP) ? cfg.ALLOWED_URI_REGEXP : IS_ALLOWED_URI;
     NAMESPACE = typeof cfg.NAMESPACE === "string" ? cfg.NAMESPACE : HTML_NAMESPACE;
-    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "MATHML_TEXT_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS)
-      // Default built-in map
-    );
-    HTML_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "HTML_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS)
-      // Default built-in map
-    );
+    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(cfg, "MATHML_TEXT_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS));
+    HTML_INTEGRATION_POINTS = _resolveObjectOption(cfg, "HTML_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS));
     const customElementHandling = _resolveObjectOption(cfg, "CUSTOM_ELEMENT_HANDLING", () => create(null));
     CUSTOM_ELEMENT_HANDLING = create(null);
-    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") {
-      CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
-    }
+    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
     seal(CUSTOM_ELEMENT_HANDLING);
-    if (SAFE_FOR_TEMPLATES) {
-      ALLOW_DATA_ATTR = false;
-    }
-    if (RETURN_DOM_FRAGMENT) {
-      RETURN_DOM = true;
-    }
+    if (SAFE_FOR_TEMPLATES) ALLOW_DATA_ATTR = false;
+    if (RETURN_DOM_FRAGMENT) RETURN_DOM = true;
     if (USE_PROFILES) {
       ALLOWED_TAGS2 = addToSet({}, text);
       ALLOWED_ATTR2 = create(null);
@@ -141384,48 +142457,36 @@ function createDOMPurify() {
     EXTRA_ELEMENT_HANDLING.tagCheck = null;
     EXTRA_ELEMENT_HANDLING.attributeCheck = null;
     if (objectHasOwnProperty(cfg, "ADD_TAGS")) {
-      if (typeof cfg.ADD_TAGS === "function") {
-        EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
-      } else if (arrayIsArray(cfg.ADD_TAGS)) {
-        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) {
-          ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-        }
+      if (typeof cfg.ADD_TAGS === "function") EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
+      else if (arrayIsArray(cfg.ADD_TAGS)) {
+        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
         addToSet(ALLOWED_TAGS2, cfg.ADD_TAGS, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_ATTR")) {
-      if (typeof cfg.ADD_ATTR === "function") {
-        EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
-      } else if (arrayIsArray(cfg.ADD_ATTR)) {
-        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) {
-          ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-        }
+      if (typeof cfg.ADD_ATTR === "function") EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
+      else if (arrayIsArray(cfg.ADD_ATTR)) {
+        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
         addToSet(ALLOWED_ATTR2, cfg.ADD_ATTR, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_FORBID_CONTENTS") && arrayIsArray(cfg.ADD_FORBID_CONTENTS)) {
-      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) {
-        FORBID_CONTENTS = clone2(FORBID_CONTENTS);
-      }
+      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) FORBID_CONTENTS = clone2(FORBID_CONTENTS);
       addToSet(FORBID_CONTENTS, cfg.ADD_FORBID_CONTENTS, transformCaseFunc);
     }
-    if (KEEP_CONTENT) {
-      ALLOWED_TAGS2["#text"] = true;
-    }
-    if (WHOLE_DOCUMENT) {
-      addToSet(ALLOWED_TAGS2, ["html", "head", "body"]);
-    }
+    if (KEEP_CONTENT) ALLOWED_TAGS2["#text"] = true;
+    if (WHOLE_DOCUMENT) addToSet(ALLOWED_TAGS2, [
+      "html",
+      "head",
+      "body"
+    ]);
     if (ALLOWED_TAGS2.table) {
       addToSet(ALLOWED_TAGS2, ["tbody"]);
       delete FORBID_TAGS.tbody;
     }
     if (cfg.TRUSTED_TYPES_POLICY) {
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
-      }
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
-      }
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
       const previousTrustedTypesPolicy = trustedTypesPolicy;
       trustedTypesPolicy = cfg.TRUSTED_TYPES_POLICY;
       try {
@@ -141438,85 +142499,55 @@ function createDOMPurify() {
       trustedTypesPolicy = void 0;
       emptyHTML = "";
     } else {
-      if (trustedTypesPolicy === void 0) {
-        trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
-      }
-      if (trustedTypesPolicy && typeof emptyHTML === "string") {
-        emptyHTML = _createTrustedHTML("");
-      }
+      if (trustedTypesPolicy === void 0) trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
+      if (trustedTypesPolicy && typeof emptyHTML === "string") emptyHTML = _createTrustedHTML("");
     }
-    if (freeze) {
-      freeze(cfg);
-    }
+    if (freeze) freeze(cfg);
     CONFIG = cfg;
   };
-  const ALL_SVG_TAGS = addToSet({}, [...svg$1, ...svgFilters, ...svgDisallowed]);
+  const ALL_SVG_TAGS = addToSet({}, [
+    ...svg$1,
+    ...svgFilters,
+    ...svgDisallowed
+  ]);
   const ALL_MATHML_TAGS = addToSet({}, [...mathMl$1, ...mathMlDisallowed]);
   const _checkSvgNamespace = function _checkSvgNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "svg";
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE) {
-      return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "svg";
+    if (parent.namespaceURI === MATHML_NAMESPACE) return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
     return Boolean(ALL_SVG_TAGS[tagName]);
   };
   const _checkMathMlNamespace = function _checkMathMlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "math";
-    }
-    if (parent.namespaceURI === SVG_NAMESPACE) {
-      return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "math";
+    if (parent.namespaceURI === SVG_NAMESPACE) return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
     return Boolean(ALL_MATHML_TAGS[tagName]);
   };
   const _checkHtmlNamespace = function _checkHtmlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
+    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) return false;
+    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) return false;
     return !ALL_MATHML_TAGS[tagName] && (COMMON_SVG_AND_HTML_ELEMENTS[tagName] || !ALL_SVG_TAGS[tagName]);
   };
   const _checkValidNamespace = function _checkValidNamespace2(element) {
     let parent = getParentNode(element);
-    if (!parent || !parent.tagName) {
-      parent = {
-        namespaceURI: NAMESPACE,
-        tagName: "template"
-      };
-    }
+    if (!parent || !parent.tagName) parent = {
+      namespaceURI: NAMESPACE,
+      tagName: "template"
+    };
     const tagName = stringToLowerCase(element.tagName);
     const parentTagName = stringToLowerCase(parent.tagName);
-    if (!ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return false;
-    }
-    if (element.namespaceURI === SVG_NAMESPACE) {
-      return _checkSvgNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === MATHML_NAMESPACE) {
-      return _checkMathMlNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === HTML_NAMESPACE) {
-      return _checkHtmlNamespace(tagName, parent, parentTagName);
-    }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return true;
-    }
+    if (!ALLOWED_NAMESPACES[element.namespaceURI]) return false;
+    if (element.namespaceURI === SVG_NAMESPACE) return _checkSvgNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === MATHML_NAMESPACE) return _checkMathMlNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === HTML_NAMESPACE) return _checkHtmlNamespace(tagName, parent, parentTagName);
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) return true;
     return false;
   };
   const _forceRemove = function _forceRemove2(node2) {
-    arrayPush(DOMPurify.removed, {
-      element: node2
-    });
+    arrayPush(DOMPurify.removed, { element: node2 });
     try {
       getParentNode(node2).removeChild(node2);
     } catch (_3) {
       remove(node2);
-      if (!getParentNode(node2)) {
-        throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
-      }
+      if (!getParentNode(node2)) throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
     }
   };
   const _stripAttributeNode = function _stripAttributeNode2(element, attribute, name) {
@@ -141545,34 +142576,25 @@ function createDOMPurify() {
       });
     }
     const attributes = getAttributes(root);
-    if (attributes) {
-      for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
-        const attribute = attributes[i2];
-        const name = attribute && attribute.name;
-        if (typeof name === "string") {
-          _stripAttributeNode(root, attribute, name);
-        }
-      }
+    if (attributes) for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
+      const attribute = attributes[i2];
+      const name = attribute && attribute.name;
+      if (typeof name === "string") _stripAttributeNode(root, attribute, name);
     }
   };
   const _removeAttribute = function _removeAttribute2(name, element, attr) {
-    if (!attr) {
-      try {
-        attr = element.getAttributeNode(name);
-      } catch (_3) {
-        attr = null;
-      }
+    if (!attr) try {
+      attr = element.getAttributeNode(name);
+    } catch (_3) {
+      attr = null;
     }
     arrayPush(DOMPurify.removed, {
       attribute: attr || null,
       from: element
     });
     try {
-      if (attr) {
-        removeAttributeNode(element, attr);
-      } else {
-        element.removeAttribute(name);
-      }
+      if (attr) removeAttributeNode(element, attr);
+      else element.removeAttribute(name);
     } catch (_3) {
       try {
         element.removeAttribute(name);
@@ -141580,30 +142602,23 @@ function createDOMPurify() {
       }
     }
     if (name === "is") {
-      if (RETURN_DOM || RETURN_DOM_FRAGMENT) {
-        try {
-          _forceRemove(element);
-        } catch (_3) {
-        }
-      } else {
-        try {
-          element.setAttribute(name, "");
-        } catch (_3) {
-        }
+      if (RETURN_DOM || RETURN_DOM_FRAGMENT) try {
+        _forceRemove(element);
+      } catch (_3) {
+      }
+      else try {
+        element.setAttribute(name, "");
+      } catch (_3) {
       }
     }
   };
   const _stripDisallowedAttributes = function _stripDisallowedAttributes2(element) {
     const attributes = getAttributes(element);
-    if (!attributes) {
-      return;
-    }
+    if (!attributes) return;
     for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
       const attribute = attributes[i2];
       const name = attribute && attribute.name;
-      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) {
-        continue;
-      }
+      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) continue;
       _stripAttributeNode(element, attribute, name);
     }
   };
@@ -141611,31 +142626,18 @@ function createDOMPurify() {
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
-      const nodeType = _readNodeType(node2);
-      if (nodeType === NODE_TYPE.element) {
-        _stripDisallowedAttributes(node2);
-      }
+      if (_readNodeType(node2) === NODE_TYPE.element) _stripDisallowedAttributes(node2);
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _isPatchLinkageAttribute = function _isPatchLinkageAttribute2(lcName, lcTag) {
-    if (!SAFE_FOR_XML) {
-      return false;
-    }
-    if (lcName === "patchsrc") {
-      return true;
-    }
+    if (!SAFE_FOR_XML) return false;
+    if (lcName === "patchsrc") return true;
     return lcName === "for" && lcTag !== "label" && lcTag !== "output";
   };
   const _neutralizePatchLinkage = function _neutralizePatchLinkage2(root) {
-    if (!SAFE_FOR_XML) {
-      return;
-    }
+    if (!SAFE_FOR_XML) return;
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
@@ -141651,41 +142653,28 @@ function createDOMPurify() {
         const element = node2;
         const lcTag = transformCaseFunc(_readNodeName(node2));
         try {
-          if (element.hasAttribute && element.hasAttribute("patchsrc")) {
-            element.removeAttribute("patchsrc");
-          }
-          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) {
-            element.removeAttribute("for");
-          }
+          if (element.hasAttribute && element.hasAttribute("patchsrc")) element.removeAttribute("patchsrc");
+          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) element.removeAttribute("for");
         } catch (_3) {
         }
       }
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _initDocument = function _initDocument2(dirty) {
     let doc = null;
     let leadingWhitespace = null;
-    if (FORCE_BODY) {
-      dirty = "<remove></remove>" + dirty;
-    } else {
+    if (FORCE_BODY) dirty = "<remove></remove>" + dirty;
+    else {
       const matches2 = stringMatch(dirty, /^[\r\n\t ]+/);
       leadingWhitespace = matches2 && matches2[0];
     }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) {
-      dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
-    }
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
     const dirtyPayload = trustedTypesPolicy ? _createTrustedHTML(dirty) : dirty;
-    if (NAMESPACE === HTML_NAMESPACE) {
-      try {
-        doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
-      } catch (_3) {
-      }
+    if (NAMESPACE === HTML_NAMESPACE) try {
+      doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
+    } catch (_3) {
     }
     if (!doc || !doc.documentElement) {
       doc = implementation.createDocument(NAMESPACE, "template", null);
@@ -141695,23 +142684,13 @@ function createDOMPurify() {
       }
     }
     const body = doc.body || doc.documentElement;
-    if (dirty && leadingWhitespace) {
-      body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
-    }
-    if (NAMESPACE === HTML_NAMESPACE) {
-      return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
-    }
+    if (dirty && leadingWhitespace) body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
+    if (NAMESPACE === HTML_NAMESPACE) return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
     return WHOLE_DOCUMENT ? doc.documentElement : body;
   };
   const _createNodeIterator = function _createNodeIterator2(root) {
     const doc = getOwnerDocument ? getOwnerDocument(root) : root.ownerDocument;
-    return createNodeIterator.call(
-      doc || root,
-      root,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION,
-      null
-    );
+    return createNodeIterator.call(doc || root, root, NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION, null);
   };
   const _stripTemplateExpressions = function _stripTemplateExpressions2(value) {
     value = stringReplace(value, MUSTACHE_EXPR$1, " ");
@@ -141723,73 +142702,25 @@ function createDOMPurify() {
     var _node$querySelectorAl;
     node2.normalize();
     const doc = getOwnerDocument ? getOwnerDocument(node2) : node2.ownerDocument;
-    const walker = createNodeIterator.call(
-      doc || node2,
-      node2,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION,
-      null
-    );
+    const walker = createNodeIterator.call(doc || node2, node2, NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION, null);
     let currentNode = walker.nextNode();
     while (currentNode) {
       currentNode.data = _stripTemplateExpressions(currentNode.data);
       currentNode = walker.nextNode();
     }
     const templates = (_node$querySelectorAl = node2.querySelectorAll) === null || _node$querySelectorAl === void 0 ? void 0 : _node$querySelectorAl.call(node2, "template");
-    if (templates) {
-      arrayForEach(templates, (tmpl) => {
-        if (_isDocumentFragment(tmpl.content)) {
-          _scrubTemplateExpressions2(tmpl.content);
-        }
-      });
-    }
+    if (templates) arrayForEach(templates, (tmpl) => {
+      if (_isDocumentFragment(tmpl.content)) _scrubTemplateExpressions2(tmpl.content);
+    });
   };
   const _isClobbered = function _isClobbered2(element) {
     const realTagName = getNodeName ? getNodeName(element) : null;
-    if (typeof realTagName !== "string") {
-      return false;
-    }
-    if (transformCaseFunc(realTagName) !== "form") {
-      return false;
-    }
-    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || // Realm-safe NamedNodeMap detection: equality against the cached
-    // prototype getter. Clobbered .attributes (e.g. <input name="attributes">)
-    // makes the direct read diverge from the cached read; a clean form
-    // (same-realm OR foreign-realm) has both reads pointing at the same
-    // canonical NamedNodeMap.
-    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || // A form descendant named "removeAttributeNode" or "getAttributeNode"
-    // shadows these Attr-node methods via [LegacyOverrideBuiltIns].
-    // _removeAttribute() / _stripAttributeNode() reach for
-    // element.removeAttributeNode(attr) first; when it is shadowed the call
-    // throws and the name-based fallback element.removeAttribute(name)
-    // ASCII-lowercases its lookup key in an HTML document, silently missing
-    // a case-preserved event-handler attribute (e.g. an ONANIMATIONSTART
-    // that reached the sanitizer through an XML/XHTML parse). Flag the form
-    // so it is removed wholesale, exactly as for the other shadowed methods.
-    typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
-    // returns the integer 1 for any Element regardless of realm; direct
-    // read on a clobbered form (e.g. <input name="nodeType">) returns
-    // the named child element. Cheap addition — nodeType is read from
-    // an internal slot, no serialization cost — and removes a residual
-    // clobbering surface used by several mXSS / PI / comment branches
-    // in _sanitizeElements that compare currentNode.nodeType directly.
-    element.nodeType !== getNodeType(element) || // HTMLFormElement has [LegacyOverrideBuiltIns]: a descendant named
-    // "childNodes" shadows the prototype getter. Direct reads of
-    // form.childNodes from a clobbered form return the named child
-    // instead of the real NodeList, so any walk that reads it directly
-    // skips the form's real children. Compare the direct read to the
-    // cached Node.prototype getter — when the form's named-property
-    // getter intercepts the read, the two values differ and we flag
-    // the form. This catches every clobbering child type (input,
-    // select, etc.) regardless of whether the named child happens to
-    // carry a numeric .length, which a typeof-based probe would miss
-    // (e.g. HTMLSelectElement.length is a defined unsigned-long).
-    element.childNodes !== getChildNodes(element);
+    if (typeof realTagName !== "string") return false;
+    if (transformCaseFunc(realTagName) !== "form") return false;
+    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || element.nodeType !== getNodeType(element) || element.childNodes !== getChildNodes(element);
   };
   const _isDocumentFragment = function _isDocumentFragment2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return getNodeType(value) === NODE_TYPE.documentFragment;
     } catch (_3) {
@@ -141797,9 +142728,7 @@ function createDOMPurify() {
     }
   };
   const _isNode = function _isNode2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return typeof getNodeType(value) === "number";
     } catch (_3) {
@@ -141807,44 +142736,28 @@ function createDOMPurify() {
     }
   };
   function _executeHooks(hooks2, currentNode, data) {
-    if (hooks2.length === 0) {
-      return;
-    }
+    if (hooks2.length === 0) return;
     arrayForEach(hooks2, (hook) => {
       hook.call(DOMPurify, currentNode, data, CONFIG);
     });
   }
   const _isUnsafeNode = function _isUnsafeNode2(currentNode, tagName) {
-    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) {
-      return true;
-    }
-    if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) {
-      return true;
-    }
+    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) return true;
+    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) return true;
+    if (currentNode.nodeType === NODE_TYPE.processingInstruction) return true;
+    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) return true;
     return false;
   };
   const _matchesNameCheck = function _matchesNameCheck2(check2, name) {
-    if (check2 instanceof RegExp) {
-      return regExpTest(check2, name);
-    }
+    if (check2 instanceof RegExp) return regExpTest(check2, name);
     if (check2 instanceof Function) {
-      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-        args[_key - 2] = arguments[_key];
-      }
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
       return Boolean(check2(name, ...args));
     }
     return false;
   };
   const _sanitizeDisallowedNode = function _sanitizeDisallowedNode2(currentNode, tagName, root) {
-    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) {
-      return false;
-    }
+    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) return false;
     if (KEEP_CONTENT && !FORBID_CONTENTS[tagName]) {
       const parentNode = getParentNode(currentNode);
       const childNodes = getChildNodes(currentNode);
@@ -141860,25 +142773,17 @@ function createDOMPurify() {
     return true;
   };
   const _forkSharedAllowlist = function _forkSharedAllowlist2(hookList, set2, defaultSet, setConfigSet) {
-    if (hookList.length === 0) {
-      return set2;
-    }
+    if (hookList.length === 0) return set2;
     return set2 === defaultSet || set2 === setConfigSet ? clone2(set2) : set2;
   };
   const _handleHookDetachedNode = function _handleHookDetachedNode2(currentNode, root) {
-    if (currentNode === root || getParentNode(currentNode) !== null) {
-      return false;
-    }
-    if (IN_PLACE) {
-      _neutralizeSubtree(currentNode);
-    }
+    if (currentNode === root || getParentNode(currentNode) !== null) return false;
+    if (IN_PLACE) _neutralizeSubtree(currentNode);
     return true;
   };
   const _sanitizeElements = function _sanitizeElements2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeElements, currentNode, null);
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isClobbered(currentNode)) {
       _forceRemove(currentNode);
       return true;
@@ -141889,9 +142794,7 @@ function createDOMPurify() {
       tagName,
       allowedTags: ALLOWED_TAGS2
     });
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isUnsafeNode(currentNode, tagName)) {
       _forceRemove(currentNode);
       return true;
@@ -141900,11 +142803,11 @@ function createDOMPurify() {
       const removed = _sanitizeDisallowedNode(currentNode, tagName, root);
       if (removed === false) {
         _executeHooks(hooks.afterSanitizeElements, currentNode, null);
+        if (_handleHookDetachedNode(currentNode, root)) return true;
       }
       return removed;
     }
-    const nt2 = _readNodeType(currentNode);
-    if (nt2 === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
+    if (_readNodeType(currentNode) === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
       _forceRemove(currentNode);
       return true;
     }
@@ -141915,81 +142818,53 @@ function createDOMPurify() {
     if (SAFE_FOR_TEMPLATES && currentNode.nodeType === NODE_TYPE.text) {
       const content = _stripTemplateExpressions(currentNode.textContent);
       if (currentNode.textContent !== content) {
-        arrayPush(DOMPurify.removed, {
-          element: currentNode.cloneNode()
-        });
+        arrayPush(DOMPurify.removed, { element: currentNode.cloneNode() });
         currentNode.textContent = content;
       }
     }
     _executeHooks(hooks.afterSanitizeElements, currentNode, null);
-    return false;
+    return _handleHookDetachedNode(currentNode, root);
   };
   const _isValidAttribute = function _isValidAttribute2(lcTag, lcName, value) {
-    if (FORBID_ATTR[lcName]) {
-      return false;
-    }
-    if (_isPatchLinkageAttribute(lcName, lcTag)) {
-      return false;
-    }
-    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) {
-      return false;
-    }
+    if (FORBID_ATTR[lcName]) return false;
+    if (_isPatchLinkageAttribute(lcName, lcTag)) return false;
+    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) return false;
     const nameIsPermitted = ALLOWED_ATTR2[lcName] || EXTRA_ELEMENT_HANDLING.attributeCheck instanceof Function && EXTRA_ELEMENT_HANDLING.attributeCheck(lcName, lcTag);
-    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (!nameIsPermitted) {
-      return (
-        // Condition a) covers a basically valid custom element tag name whose
-        // tag passes the configured tagNameCheck and whose attribute name
-        // passes the configured attributeNameCheck ...
-        _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || // Condition b) covers an `is` attribute whose value passes the
-        // configured tagNameCheck while customized built-in elements are
-        // allowed.
-        lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value)
-      );
-    }
-    if (URI_SAFE_ATTRIBUTES[lcName]) {
-      return true;
-    }
-    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
-    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) {
-      return true;
-    }
-    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
+    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) return true;
+    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) return true;
+    if (!nameIsPermitted) return _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value);
+    if (URI_SAFE_ATTRIBUTES[lcName]) return true;
+    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
+    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) return true;
+    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
     return !value;
   };
-  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, ["annotation-xml", "color-profile", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "missing-glyph"]);
+  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, [
+    "annotation-xml",
+    "color-profile",
+    "font-face",
+    "font-face-format",
+    "font-face-name",
+    "font-face-src",
+    "font-face-uri",
+    "missing-glyph"
+  ]);
   const _isBasicCustomElement = function _isBasicCustomElement2(tagName) {
     return !RESERVED_CUSTOM_ELEMENT_NAMES[stringToLowerCase(tagName)] && regExpTest(CUSTOM_ELEMENT$1, tagName);
   };
   const _applyTrustedTypesToAttribute = function _applyTrustedTypesToAttribute2(lcTag, lcName, namespaceURI, value) {
-    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) {
-      switch (trustedTypes.getAttributeType(lcTag, lcName)) {
-        case "TrustedHTML": {
-          return _createTrustedHTML(value);
-        }
-        case "TrustedScriptURL": {
-          return _createTrustedScriptURL(value);
-        }
-      }
+    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) switch (trustedTypes.getAttributeType(lcTag, lcName)) {
+      case "TrustedHTML":
+        return _createTrustedHTML(value);
+      case "TrustedScriptURL":
+        return _createTrustedScriptURL(value);
     }
     return value;
   };
   const _setAttributeValue = function _setAttributeValue2(currentNode, name, namespaceURI, value) {
     try {
-      if (namespaceURI) {
-        currentNode.setAttributeNS(namespaceURI, name, value);
-      } else {
-        currentNode.setAttribute(name, value);
-      }
+      if (namespaceURI) currentNode.setAttributeNS(namespaceURI, name, value);
+      else currentNode.setAttribute(name, value);
       if (_isClobbered(currentNode)) {
         _forceRemove(currentNode);
         return false;
@@ -142000,12 +142875,11 @@ function createDOMPurify() {
       return false;
     }
   };
-  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode) {
+  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeAttributes, currentNode, null);
+    if (_handleHookDetachedNode(currentNode, root)) return;
     const attributes = currentNode.attributes;
-    if (!attributes || _isClobbered(currentNode)) {
-      return;
-    }
+    if (!attributes || _isClobbered(currentNode)) return;
     ALLOWED_ATTR2 = _forkSharedAllowlist(hooks.uponSanitizeAttribute, ALLOWED_ATTR2, DEFAULT_ALLOWED_ATTR, SET_CONFIG_ALLOWED_ATTR);
     const hookEvent = {
       attrName: "",
@@ -142042,9 +142916,7 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (hookEvent.forceKeepAttr) {
-        continue;
-      }
+      if (hookEvent.forceKeepAttr) continue;
       if (!hookEvent.keepAttr) {
         _removeAttribute(name, currentNode, attr);
         continue;
@@ -142053,22 +142925,18 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (SAFE_FOR_TEMPLATES) {
-        value = _stripTemplateExpressions(value);
-      }
+      if (SAFE_FOR_TEMPLATES) value = _stripTemplateExpressions(value);
       if (!_isValidAttribute(lcTag, lcName, value)) {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
       value = _applyTrustedTypesToAttribute(lcTag, lcName, namespaceURI, value);
       if (value !== initValue) {
-        const cleanWrite = _setAttributeValue(currentNode, name, namespaceURI, value);
-        if (cleanWrite && recreatedNamedProp) {
-          arrayPop(DOMPurify.removed);
-        }
+        if (_setAttributeValue(currentNode, name, namespaceURI, value) && recreatedNamedProp) arrayPop(DOMPurify.removed);
       }
     }
     _executeHooks(hooks.afterSanitizeAttributes, currentNode, null);
+    _handleHookDetachedNode(currentNode, root);
   };
   const _sanitizeShadowDOM2 = function _sanitizeShadowDOM(fragment) {
     let shadowNode = null;
@@ -142077,10 +142945,8 @@ function createDOMPurify() {
     while (shadowNode = shadowIterator.nextNode()) {
       _executeHooks(hooks.uponSanitizeShadowNode, shadowNode, null);
       _sanitizeElements(shadowNode, fragment);
-      _sanitizeAttributes(shadowNode);
-      if (_isDocumentFragment(shadowNode.content)) {
-        _sanitizeShadowDOM2(shadowNode.content);
-      }
+      _sanitizeAttributes(shadowNode, fragment);
+      if (_isDocumentFragment(shadowNode.content)) _sanitizeShadowDOM2(shadowNode.content);
       if (_readNodeType(shadowNode) === NODE_TYPE.element) {
         const innerSr = getShadowRoot(shadowNode);
         if (_isDocumentFragment(innerSr)) {
@@ -142103,40 +142969,31 @@ function createDOMPurify() {
         continue;
       }
       const node2 = item.node;
-      const nodeType = _readNodeType(node2);
-      const isElement = nodeType === NODE_TYPE.element;
+      const isElement = _readNodeType(node2) === NODE_TYPE.element;
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push({
-            node: childNodes[i2],
-            shadow: null
-          });
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push({
+        node: childNodes[i2],
+        shadow: null
+      });
       if (isElement) {
         const rootName = getNodeName ? getNodeName(node2) : null;
         if (typeof rootName === "string" && transformCaseFunc(rootName) === "template") {
           const content = node2.content;
-          if (_isDocumentFragment(content)) {
-            stack.push({
-              node: content,
-              shadow: null
-            });
-          }
+          if (_isDocumentFragment(content)) stack.push({
+            node: content,
+            shadow: null
+          });
         }
       }
       if (isElement) {
         const sr2 = getShadowRoot(node2);
-        if (_isDocumentFragment(sr2)) {
-          stack.push({
-            node: null,
-            shadow: sr2
-          }, {
-            node: sr2,
-            shadow: null
-          });
-        }
+        if (_isDocumentFragment(sr2)) stack.push({
+          node: null,
+          shadow: sr2
+        }, {
+          node: sr2,
+          shadow: null
+        });
       }
     }
   };
@@ -142147,30 +143004,18 @@ function createDOMPurify() {
     let currentNode = null;
     let returnNode = null;
     IS_EMPTY_INPUT = !dirty;
-    if (IS_EMPTY_INPUT) {
-      dirty = "<!-->";
-    }
+    if (IS_EMPTY_INPUT) dirty = "<!-->";
     if (typeof dirty !== "string" && !_isNode(dirty)) {
       dirty = stringifyValue(dirty);
-      if (typeof dirty !== "string") {
-        throw typeErrorCreate("dirty is not a string, aborting");
-      }
+      if (typeof dirty !== "string") throw typeErrorCreate("dirty is not a string, aborting");
     }
-    if (!DOMPurify.isSupported) {
-      return dirty;
-    }
+    if (!DOMPurify.isSupported) return dirty;
     if (SET_CONFIG) {
       ALLOWED_TAGS2 = SET_CONFIG_ALLOWED_TAGS;
       ALLOWED_ATTR2 = SET_CONFIG_ALLOWED_ATTR;
-    } else {
-      _parseConfig(cfg);
-    }
-    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-    }
-    if (hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-    }
+    } else _parseConfig(cfg);
+    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
+    if (hooks.uponSanitizeAttribute.length > 0) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
     DOMPurify.removed = [];
     const inPlace = IN_PLACE && typeof dirty !== "string" && _isNode(dirty);
     if (inPlace) {
@@ -142196,83 +143041,57 @@ function createDOMPurify() {
     } else if (_isNode(dirty)) {
       body = _initDocument("<!---->");
       importedNode = body.ownerDocument.importNode(dirty, true);
-      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") {
-        body = importedNode;
-      } else if (importedNode.nodeName === "HTML") {
-        body = importedNode;
-      } else {
-        body.appendChild(importedNode);
-      }
+      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") body = importedNode;
+      else if (importedNode.nodeName === "HTML") body = importedNode;
+      else body.appendChild(importedNode);
       _sanitizeAttachedShadowRoots(body);
     } else {
-      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && // eslint-disable-next-line unicorn/prefer-includes
-      dirty.indexOf("<") === -1) {
-        return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
-      }
+      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && dirty.indexOf("<") === -1) return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
       body = _initDocument(dirty);
-      if (!body) {
-        return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
-      }
+      if (!body) return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
     }
-    if (body && FORCE_BODY) {
-      _forceRemove(body.firstChild);
-    }
+    if (body && FORCE_BODY) _forceRemove(body.firstChild);
     const walkRoot = inPlace ? dirty : body;
     try {
       const nodeIterator = _createNodeIterator(walkRoot);
       while (currentNode = nodeIterator.nextNode()) {
         _sanitizeElements(currentNode, walkRoot);
-        _sanitizeAttributes(currentNode);
-        if (_isDocumentFragment(currentNode.content)) {
-          _sanitizeShadowDOM2(currentNode.content);
-        }
+        _sanitizeAttributes(currentNode, walkRoot);
+        if (_isDocumentFragment(currentNode.content)) _sanitizeShadowDOM2(currentNode.content);
       }
     } catch (error62) {
       if (inPlace) {
         _neutralizeRoot(dirty);
         arrayForEach(DOMPurify.removed, (entry) => {
-          if (entry.element) {
-            _neutralizeSubtree(entry.element);
-          }
+          if (entry.element) _neutralizeSubtree(entry.element);
         });
       }
       throw error62;
     }
     if (inPlace) {
+      let rootWasRemoved = false;
       arrayForEach(DOMPurify.removed, (entry) => {
         if (entry.element) {
+          if (entry.element === dirty) rootWasRemoved = true;
           _neutralizeSubtree(entry.element);
         }
       });
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(dirty);
-      }
+      if (rootWasRemoved) throw typeErrorCreate("a node selected for removal could not be safely returned; refusing to sanitize in place");
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(dirty);
       return dirty;
     }
     if (RETURN_DOM) {
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(body);
-      }
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(body);
       if (RETURN_DOM_FRAGMENT) {
         returnNode = createDocumentFragment.call(body.ownerDocument);
-        while (body.firstChild) {
-          returnNode.appendChild(body.firstChild);
-        }
-      } else {
-        returnNode = body;
-      }
-      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) {
-        returnNode = importNode.call(originalDocument, returnNode, true);
-      }
+        while (body.firstChild) returnNode.appendChild(body.firstChild);
+      } else returnNode = body;
+      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) returnNode = importNode.call(originalDocument, returnNode, true);
       return returnNode;
     }
     let serializedHTML = WHOLE_DOCUMENT ? body.outerHTML : body.innerHTML;
-    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) {
-      serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
-    }
-    if (SAFE_FOR_TEMPLATES) {
-      serializedHTML = _stripTemplateExpressions(serializedHTML);
-    }
+    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
+    if (SAFE_FOR_TEMPLATES) serializedHTML = _stripTemplateExpressions(serializedHTML);
     return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(serializedHTML) : serializedHTML;
   };
   DOMPurify.setConfig = function() {
@@ -142291,26 +143110,18 @@ function createDOMPurify() {
     emptyHTML = "";
   };
   DOMPurify.isValidAttribute = function(tag, attr, value) {
-    if (!CONFIG) {
-      _parseConfig({});
-    }
+    if (!CONFIG) _parseConfig({});
     const lcTag = transformCaseFunc(tag);
     const lcName = transformCaseFunc(attr);
     return _isValidAttribute(lcTag, lcName, value);
   };
   DOMPurify.addHook = function(entryPoint, hookFunction) {
-    if (typeof hookFunction !== "function") {
-      return;
-    }
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (typeof hookFunction !== "function") return;
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     arrayPush(hooks[entryPoint], hookFunction);
   };
   DOMPurify.removeHook = function(entryPoint, hookFunction) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return void 0;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     if (hookFunction !== void 0) {
       const index = arrayLastIndexOf(hooks[entryPoint], hookFunction);
       return index === -1 ? void 0 : arraySplice(hooks[entryPoint], index, 1)[0];
@@ -142318,9 +143129,7 @@ function createDOMPurify() {
     return arrayPop(hooks[entryPoint]);
   };
   DOMPurify.removeHooks = function(entryPoint) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     hooks[entryPoint] = [];
   };
   DOMPurify.removeAllHooks = function() {
@@ -142328,9 +143137,18 @@ function createDOMPurify() {
   };
   return DOMPurify;
 }
-var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify;
+var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify_default;
 var init_purify_es = __esm({
-  "node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs"() {
+  "node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs"() {
+    AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+      return this;
+    }, AsyncGenerator.prototype.next = function(e3) {
+      return this._invoke("next", e3);
+    }, AsyncGenerator.prototype.throw = function(e3) {
+      return this._invoke("throw", e3);
+    }, AsyncGenerator.prototype.return = function(e3) {
+      return this._invoke("return", e3);
+    };
     entries = Object.entries;
     setPrototypeOf = Object.setPrototypeOf;
     isFrozen = Object.isFrozen;
@@ -142342,36 +143160,26 @@ var init_purify_es = __esm({
     _ref = typeof Reflect !== "undefined" && Reflect;
     apply = _ref.apply;
     construct = _ref.construct;
-    if (!freeze) {
-      freeze = function freeze2(x2) {
-        return x2;
-      };
-    }
-    if (!seal) {
-      seal = function seal2(x2) {
-        return x2;
-      };
-    }
-    if (!apply) {
-      apply = function apply2(func, thisArg) {
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
-        }
-        return func.apply(thisArg, args);
-      };
-    }
-    if (!construct) {
-      construct = function construct2(Func) {
-        for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-          args[_key2 - 1] = arguments[_key2];
-        }
-        return new Func(...args);
-      };
-    }
+    if (!freeze) freeze = function freeze2(x2) {
+      return x2;
+    };
+    if (!seal) seal = function seal2(x2) {
+      return x2;
+    };
+    if (!apply) apply = function apply2(func, thisArg) {
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
+      return func.apply(thisArg, args);
+    };
+    if (!construct) construct = function construct2(Func) {
+      for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) args[_key2 - 1] = arguments[_key2];
+      return new Func(...args);
+    };
     arrayForEach = unapply(Array.prototype.forEach);
+    Array.prototype.indexOf;
     arrayLastIndexOf = unapply(Array.prototype.lastIndexOf);
     arrayPop = unapply(Array.prototype.pop);
     arrayPush = unapply(Array.prototype.push);
+    Array.prototype.slice;
     arraySplice = unapply(Array.prototype.splice);
     arrayIsArray = Array.isArray;
     stringToLowerCase = unapply(String.prototype.toLowerCase);
@@ -142388,31 +143196,662 @@ var init_purify_es = __esm({
     objectToString = unapply(Object.prototype.toString);
     regExpTest = unapply(RegExp.prototype.test);
     typeErrorCreate = unconstruct(TypeError);
-    html$1 = freeze(["a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "content", "data", "datalist", "dd", "decorator", "del", "details", "dfn", "dialog", "dir", "div", "dl", "dt", "element", "em", "fieldset", "figcaption", "figure", "font", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "img", "input", "ins", "kbd", "label", "legend", "li", "main", "map", "mark", "marquee", "menu", "menuitem", "meter", "nav", "nobr", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "search", "section", "select", "shadow", "slot", "small", "source", "spacer", "span", "strike", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr"]);
-    svg$1 = freeze(["svg", "a", "altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "enterkeyhint", "exportparts", "filter", "font", "g", "glyph", "glyphref", "hkern", "image", "inputmode", "line", "lineargradient", "marker", "mask", "metadata", "mpath", "part", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "stop", "style", "switch", "symbol", "text", "textpath", "title", "tref", "tspan", "view", "vkern"]);
-    svgFilters = freeze(["feBlend", "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence"]);
-    svgDisallowed = freeze(["animate", "color-profile", "cursor", "discard", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "foreignobject", "hatch", "hatchpath", "mesh", "meshgradient", "meshpatch", "meshrow", "missing-glyph", "script", "set", "solidcolor", "unknown", "use"]);
-    mathMl$1 = freeze(["math", "menclose", "merror", "mfenced", "mfrac", "mglyph", "mi", "mlabeledtr", "mmultiscripts", "mn", "mo", "mover", "mpadded", "mphantom", "mroot", "mrow", "ms", "mspace", "msqrt", "mstyle", "msub", "msup", "msubsup", "mtable", "mtd", "mtext", "mtr", "munder", "munderover", "mprescripts"]);
-    mathMlDisallowed = freeze(["maction", "maligngroup", "malignmark", "mlongdiv", "mscarries", "mscarry", "msgroup", "mstack", "msline", "msrow", "semantics", "annotation", "annotation-xml", "mprescripts", "none"]);
+    html$1 = freeze([
+      "a",
+      "abbr",
+      "acronym",
+      "address",
+      "area",
+      "article",
+      "aside",
+      "audio",
+      "b",
+      "bdi",
+      "bdo",
+      "big",
+      "blink",
+      "blockquote",
+      "body",
+      "br",
+      "button",
+      "canvas",
+      "caption",
+      "center",
+      "cite",
+      "code",
+      "col",
+      "colgroup",
+      "content",
+      "data",
+      "datalist",
+      "dd",
+      "decorator",
+      "del",
+      "details",
+      "dfn",
+      "dialog",
+      "dir",
+      "div",
+      "dl",
+      "dt",
+      "element",
+      "em",
+      "fieldset",
+      "figcaption",
+      "figure",
+      "font",
+      "footer",
+      "form",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "head",
+      "header",
+      "hgroup",
+      "hr",
+      "html",
+      "i",
+      "img",
+      "input",
+      "ins",
+      "kbd",
+      "label",
+      "legend",
+      "li",
+      "main",
+      "map",
+      "mark",
+      "marquee",
+      "menu",
+      "menuitem",
+      "meter",
+      "nav",
+      "nobr",
+      "ol",
+      "optgroup",
+      "option",
+      "output",
+      "p",
+      "picture",
+      "pre",
+      "progress",
+      "q",
+      "rp",
+      "rt",
+      "ruby",
+      "s",
+      "samp",
+      "search",
+      "section",
+      "select",
+      "shadow",
+      "slot",
+      "small",
+      "source",
+      "spacer",
+      "span",
+      "strike",
+      "strong",
+      "style",
+      "sub",
+      "summary",
+      "sup",
+      "table",
+      "tbody",
+      "td",
+      "template",
+      "textarea",
+      "tfoot",
+      "th",
+      "thead",
+      "time",
+      "tr",
+      "track",
+      "tt",
+      "u",
+      "ul",
+      "var",
+      "video",
+      "wbr"
+    ]);
+    svg$1 = freeze([
+      "svg",
+      "a",
+      "altglyph",
+      "altglyphdef",
+      "altglyphitem",
+      "animatecolor",
+      "animatemotion",
+      "animatetransform",
+      "circle",
+      "clippath",
+      "defs",
+      "desc",
+      "ellipse",
+      "enterkeyhint",
+      "exportparts",
+      "filter",
+      "font",
+      "g",
+      "glyph",
+      "glyphref",
+      "hkern",
+      "image",
+      "inputmode",
+      "line",
+      "lineargradient",
+      "marker",
+      "mask",
+      "metadata",
+      "mpath",
+      "part",
+      "path",
+      "pattern",
+      "polygon",
+      "polyline",
+      "radialgradient",
+      "rect",
+      "stop",
+      "style",
+      "switch",
+      "symbol",
+      "text",
+      "textpath",
+      "title",
+      "tref",
+      "tspan",
+      "view",
+      "vkern"
+    ]);
+    svgFilters = freeze([
+      "feBlend",
+      "feColorMatrix",
+      "feComponentTransfer",
+      "feComposite",
+      "feConvolveMatrix",
+      "feDiffuseLighting",
+      "feDisplacementMap",
+      "feDistantLight",
+      "feDropShadow",
+      "feFlood",
+      "feFuncA",
+      "feFuncB",
+      "feFuncG",
+      "feFuncR",
+      "feGaussianBlur",
+      "feImage",
+      "feMerge",
+      "feMergeNode",
+      "feMorphology",
+      "feOffset",
+      "fePointLight",
+      "feSpecularLighting",
+      "feSpotLight",
+      "feTile",
+      "feTurbulence"
+    ]);
+    svgDisallowed = freeze([
+      "animate",
+      "color-profile",
+      "cursor",
+      "discard",
+      "font-face",
+      "font-face-format",
+      "font-face-name",
+      "font-face-src",
+      "font-face-uri",
+      "foreignobject",
+      "hatch",
+      "hatchpath",
+      "mesh",
+      "meshgradient",
+      "meshpatch",
+      "meshrow",
+      "missing-glyph",
+      "script",
+      "set",
+      "solidcolor",
+      "unknown",
+      "use"
+    ]);
+    mathMl$1 = freeze([
+      "math",
+      "menclose",
+      "merror",
+      "mfenced",
+      "mfrac",
+      "mglyph",
+      "mi",
+      "mlabeledtr",
+      "mmultiscripts",
+      "mn",
+      "mo",
+      "mover",
+      "mpadded",
+      "mphantom",
+      "mroot",
+      "mrow",
+      "ms",
+      "mspace",
+      "msqrt",
+      "mstyle",
+      "msub",
+      "msup",
+      "msubsup",
+      "mtable",
+      "mtd",
+      "mtext",
+      "mtr",
+      "munder",
+      "munderover",
+      "mprescripts"
+    ]);
+    mathMlDisallowed = freeze([
+      "maction",
+      "maligngroup",
+      "malignmark",
+      "mlongdiv",
+      "mscarries",
+      "mscarry",
+      "msgroup",
+      "mstack",
+      "msline",
+      "msrow",
+      "semantics",
+      "annotation",
+      "annotation-xml",
+      "mprescripts",
+      "none"
+    ]);
     text = freeze(["#text"]);
-    html = freeze(["accept", "action", "align", "alt", "autocapitalize", "autocomplete", "autopictureinpicture", "autoplay", "background", "bgcolor", "border", "capture", "cellpadding", "cellspacing", "checked", "cite", "class", "clear", "color", "cols", "colspan", "command", "commandfor", "controls", "controlslist", "coords", "crossorigin", "datetime", "decoding", "default", "dir", "disabled", "disablepictureinpicture", "disableremoteplayback", "download", "draggable", "enctype", "enterkeyhint", "exportparts", "face", "for", "headers", "height", "hidden", "high", "href", "hreflang", "id", "inert", "inputmode", "integrity", "ismap", "kind", "label", "lang", "list", "loading", "loop", "low", "max", "maxlength", "media", "method", "min", "minlength", "multiple", "muted", "name", "nonce", "noshade", "novalidate", "nowrap", "open", "optimum", "part", "pattern", "placeholder", "playsinline", "popover", "popovertarget", "popovertargetaction", "poster", "preload", "pubdate", "radiogroup", "readonly", "rel", "required", "rev", "reversed", "role", "rows", "rowspan", "spellcheck", "scope", "selected", "shape", "size", "sizes", "slot", "span", "srclang", "start", "src", "srcset", "step", "style", "summary", "tabindex", "title", "translate", "type", "usemap", "valign", "value", "width", "wrap", "xmlns"]);
-    svg = freeze(["accent-height", "accumulate", "additive", "alignment-baseline", "amplitude", "ascent", "attributename", "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin", "bias", "by", "class", "clip", "clippathunits", "clip-path", "clip-rule", "color", "color-interpolation", "color-interpolation-filters", "color-profile", "color-rendering", "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dominant-baseline", "dur", "edgemode", "elevation", "end", "exponent", "fill", "fill-opacity", "fill-rule", "filter", "filterunits", "flood-color", "flood-opacity", "font-family", "font-size", "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx", "fy", "g1", "g2", "glyph-name", "glyphref", "gradientunits", "gradienttransform", "height", "href", "id", "image-rendering", "in", "in2", "intercept", "k", "k1", "k2", "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lang", "lengthadjust", "letter-spacing", "kernelmatrix", "kernelunitlength", "lighting-color", "local", "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth", "maskcontentunits", "maskunits", "max", "mask", "mask-type", "media", "method", "mode", "min", "name", "numoctaves", "offset", "operator", "opacity", "order", "orient", "orientation", "origin", "overflow", "paint-order", "path", "pathlength", "patterncontentunits", "patterntransform", "patternunits", "pointer-events", "points", "preservealpha", "preserveaspectratio", "primitiveunits", "r", "rx", "ry", "radius", "refx", "refy", "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed", "shape-rendering", "slope", "specularconstant", "specularexponent", "spreadmethod", "startoffset", "stddeviation", "stitchtiles", "stop-color", "stop-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "stroke", "stroke-width", "style", "surfacescale", "systemlanguage", "tabindex", "tablevalues", "targetx", "targety", "transform", "transform-origin", "text-anchor", "text-decoration", "text-orientation", "text-rendering", "textlength", "type", "u1", "u2", "unicode", "values", "vector-effect", "viewbox", "visibility", "version", "vert-adv-y", "vert-origin-x", "vert-origin-y", "width", "word-spacing", "wrap", "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "xmlns", "y", "y1", "y2", "z", "zoomandpan"]);
-    mathMl = freeze(["accent", "accentunder", "align", "bevelled", "close", "columnalign", "columnlines", "columnspacing", "columnspan", "denomalign", "depth", "dir", "display", "displaystyle", "encoding", "fence", "frame", "height", "href", "id", "largeop", "length", "linethickness", "lquote", "lspace", "mathbackground", "mathcolor", "mathsize", "mathvariant", "maxsize", "minsize", "movablelimits", "notation", "numalign", "open", "rowalign", "rowlines", "rowspacing", "rowspan", "rspace", "rquote", "scriptlevel", "scriptminsize", "scriptsizemultiplier", "selection", "separator", "separators", "stretchy", "subscriptshift", "supscriptshift", "symmetric", "voffset", "width", "xmlns"]);
-    xml = freeze(["xlink:href", "xml:id", "xlink:title", "xml:space", "xmlns:xlink"]);
+    html = freeze([
+      "accept",
+      "action",
+      "align",
+      "alt",
+      "autocapitalize",
+      "autocomplete",
+      "autopictureinpicture",
+      "autoplay",
+      "background",
+      "bgcolor",
+      "border",
+      "capture",
+      "cellpadding",
+      "cellspacing",
+      "checked",
+      "cite",
+      "class",
+      "clear",
+      "color",
+      "cols",
+      "colspan",
+      "command",
+      "commandfor",
+      "controls",
+      "controlslist",
+      "coords",
+      "crossorigin",
+      "datetime",
+      "decoding",
+      "default",
+      "dir",
+      "disabled",
+      "disablepictureinpicture",
+      "disableremoteplayback",
+      "download",
+      "draggable",
+      "enctype",
+      "enterkeyhint",
+      "exportparts",
+      "face",
+      "for",
+      "headers",
+      "height",
+      "hidden",
+      "high",
+      "href",
+      "hreflang",
+      "id",
+      "inert",
+      "inputmode",
+      "integrity",
+      "ismap",
+      "kind",
+      "label",
+      "lang",
+      "list",
+      "loading",
+      "loop",
+      "low",
+      "max",
+      "maxlength",
+      "media",
+      "method",
+      "min",
+      "minlength",
+      "multiple",
+      "muted",
+      "name",
+      "nonce",
+      "noshade",
+      "novalidate",
+      "nowrap",
+      "open",
+      "optimum",
+      "part",
+      "pattern",
+      "placeholder",
+      "playsinline",
+      "popover",
+      "popovertarget",
+      "popovertargetaction",
+      "poster",
+      "preload",
+      "pubdate",
+      "radiogroup",
+      "readonly",
+      "rel",
+      "required",
+      "rev",
+      "reversed",
+      "role",
+      "rows",
+      "rowspan",
+      "spellcheck",
+      "scope",
+      "selected",
+      "shape",
+      "size",
+      "sizes",
+      "slot",
+      "span",
+      "srclang",
+      "start",
+      "src",
+      "srcset",
+      "step",
+      "style",
+      "summary",
+      "tabindex",
+      "title",
+      "translate",
+      "type",
+      "usemap",
+      "valign",
+      "value",
+      "width",
+      "wrap",
+      "xmlns"
+    ]);
+    svg = freeze([
+      "accent-height",
+      "accumulate",
+      "additive",
+      "alignment-baseline",
+      "amplitude",
+      "ascent",
+      "attributename",
+      "attributetype",
+      "azimuth",
+      "basefrequency",
+      "baseline-shift",
+      "begin",
+      "bias",
+      "by",
+      "class",
+      "clip",
+      "clippathunits",
+      "clip-path",
+      "clip-rule",
+      "color",
+      "color-interpolation",
+      "color-interpolation-filters",
+      "color-profile",
+      "color-rendering",
+      "cx",
+      "cy",
+      "d",
+      "dx",
+      "dy",
+      "diffuseconstant",
+      "direction",
+      "display",
+      "divisor",
+      "dominant-baseline",
+      "dur",
+      "edgemode",
+      "elevation",
+      "end",
+      "exponent",
+      "fill",
+      "fill-opacity",
+      "fill-rule",
+      "filter",
+      "filterunits",
+      "flood-color",
+      "flood-opacity",
+      "font-family",
+      "font-size",
+      "font-size-adjust",
+      "font-stretch",
+      "font-style",
+      "font-variant",
+      "font-weight",
+      "fx",
+      "fy",
+      "g1",
+      "g2",
+      "glyph-name",
+      "glyphref",
+      "gradientunits",
+      "gradienttransform",
+      "height",
+      "href",
+      "id",
+      "image-rendering",
+      "in",
+      "in2",
+      "intercept",
+      "k",
+      "k1",
+      "k2",
+      "k3",
+      "k4",
+      "kerning",
+      "keypoints",
+      "keysplines",
+      "keytimes",
+      "lang",
+      "lengthadjust",
+      "letter-spacing",
+      "kernelmatrix",
+      "kernelunitlength",
+      "lighting-color",
+      "local",
+      "marker-end",
+      "marker-mid",
+      "marker-start",
+      "markerheight",
+      "markerunits",
+      "markerwidth",
+      "maskcontentunits",
+      "maskunits",
+      "max",
+      "mask",
+      "mask-type",
+      "media",
+      "method",
+      "mode",
+      "min",
+      "name",
+      "numoctaves",
+      "offset",
+      "operator",
+      "opacity",
+      "order",
+      "orient",
+      "orientation",
+      "origin",
+      "overflow",
+      "paint-order",
+      "path",
+      "pathlength",
+      "patterncontentunits",
+      "patterntransform",
+      "patternunits",
+      "pointer-events",
+      "points",
+      "preservealpha",
+      "preserveaspectratio",
+      "primitiveunits",
+      "r",
+      "rx",
+      "ry",
+      "radius",
+      "refx",
+      "refy",
+      "repeatcount",
+      "repeatdur",
+      "restart",
+      "result",
+      "rotate",
+      "scale",
+      "seed",
+      "shape-rendering",
+      "slope",
+      "specularconstant",
+      "specularexponent",
+      "spreadmethod",
+      "startoffset",
+      "stddeviation",
+      "stitchtiles",
+      "stop-color",
+      "stop-opacity",
+      "stroke-dasharray",
+      "stroke-dashoffset",
+      "stroke-linecap",
+      "stroke-linejoin",
+      "stroke-miterlimit",
+      "stroke-opacity",
+      "stroke",
+      "stroke-width",
+      "style",
+      "surfacescale",
+      "systemlanguage",
+      "tabindex",
+      "tablevalues",
+      "targetx",
+      "targety",
+      "transform",
+      "transform-origin",
+      "text-anchor",
+      "text-decoration",
+      "text-orientation",
+      "text-rendering",
+      "textlength",
+      "type",
+      "u1",
+      "u2",
+      "unicode",
+      "values",
+      "vector-effect",
+      "viewbox",
+      "visibility",
+      "version",
+      "vert-adv-y",
+      "vert-origin-x",
+      "vert-origin-y",
+      "width",
+      "word-spacing",
+      "wrap",
+      "writing-mode",
+      "xchannelselector",
+      "ychannelselector",
+      "x",
+      "x1",
+      "x2",
+      "xmlns",
+      "y",
+      "y1",
+      "y2",
+      "z",
+      "zoomandpan"
+    ]);
+    mathMl = freeze([
+      "accent",
+      "accentunder",
+      "align",
+      "bevelled",
+      "close",
+      "columnalign",
+      "columnlines",
+      "columnspacing",
+      "columnspan",
+      "denomalign",
+      "depth",
+      "dir",
+      "display",
+      "displaystyle",
+      "encoding",
+      "fence",
+      "frame",
+      "height",
+      "href",
+      "id",
+      "largeop",
+      "length",
+      "linethickness",
+      "lquote",
+      "lspace",
+      "mathbackground",
+      "mathcolor",
+      "mathsize",
+      "mathvariant",
+      "maxsize",
+      "minsize",
+      "movablelimits",
+      "notation",
+      "numalign",
+      "open",
+      "rowalign",
+      "rowlines",
+      "rowspacing",
+      "rowspan",
+      "rspace",
+      "rquote",
+      "scriptlevel",
+      "scriptminsize",
+      "scriptsizemultiplier",
+      "selection",
+      "separator",
+      "separators",
+      "stretchy",
+      "subscriptshift",
+      "supscriptshift",
+      "symmetric",
+      "voffset",
+      "width",
+      "xmlns"
+    ]);
+    xml = freeze([
+      "xlink:href",
+      "xml:id",
+      "xlink:title",
+      "xml:space",
+      "xmlns:xlink"
+    ]);
     MUSTACHE_EXPR = seal(/{{[\w\W]*|^[\w\W]*}}/g);
     ERB_EXPR = seal(/<%[\w\W]*|^[\w\W]*%>/g);
     TMPLIT_EXPR = seal(/\${[\w\W]*/g);
     DATA_ATTR = seal(/^data-[\-\w.\u00B7-\uFFFF]+$/);
     ARIA_ATTR = seal(/^aria-[\-\w]+$/);
-    IS_ALLOWED_URI = seal(
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-      // eslint-disable-line no-useless-escape
-    );
+    IS_ALLOWED_URI = seal(/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i);
     IS_SCRIPT_OR_DATA = seal(/^(?:\w+script|data):/i);
-    ATTR_WHITESPACE = seal(
-      /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
-      // eslint-disable-line no-control-regex
-    );
+    ATTR_WHITESPACE = seal(/[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g);
     DOCTYPE_NAME = seal(/^html$/i);
     CUSTOM_ELEMENT = seal(/^[a-z][.\w]*(-[.\w]+)+$/i);
     ELEMENT_MARKUP_PROBE = seal(/<[/\w!]/g);
@@ -142425,18 +143864,24 @@ var init_purify_es = __esm({
       text: 3,
       cdataSection: 4,
       entityReference: 5,
-      // Deprecated
       entityNode: 6,
-      // Deprecated
       processingInstruction: 7,
       comment: 8,
       document: 9,
       documentType: 10,
       documentFragment: 11,
       notation: 12
-      // Deprecated
     };
-    LITERAL_TEXT_ELEMENT_NAMES = ["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"];
+    LITERAL_TEXT_ELEMENT_NAMES = [
+      "style",
+      "script",
+      "xmp",
+      "iframe",
+      "noembed",
+      "noframes",
+      "plaintext",
+      "noscript"
+    ];
     LITERAL_TEXT_ELEMENTS = freeze(addToSet({}, LITERAL_TEXT_ELEMENT_NAMES));
     LITERAL_TEXT_CLOSE = (function() {
       const map2 = {};
@@ -142449,14 +143894,10 @@ var init_purify_es = __esm({
       return typeof window === "undefined" ? null : window;
     };
     _createTrustedTypesPolicy = function _createTrustedTypesPolicy2(trustedTypes, purifyHostElement) {
-      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") {
-        return null;
-      }
+      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") return null;
       let suffix = null;
       const ATTR_NAME = "data-tt-policy-suffix";
-      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) {
-        suffix = purifyHostElement.getAttribute(ATTR_NAME);
-      }
+      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) suffix = purifyHostElement.getAttribute(ATTR_NAME);
       const policyName = "dompurify" + (suffix ? "#" + suffix : "");
       try {
         return trustedTypes.createPolicy(policyName, {
@@ -142492,11 +143933,11 @@ var init_purify_es = __esm({
       const value = objectHasOwnProperty(cfg, key) ? cfg[key] : void 0;
       return value && typeof value === "object" ? clone2(value) : makeFallback();
     };
-    purify = createDOMPurify();
+    purify_default = createDOMPurify();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -142505,7 +143946,7 @@ function installHook() {
   if (hookInstalled)
     return;
   hookInstalled = true;
-  purify.addHook("uponSanitizeElement", (node2, data) => {
+  purify_default.addHook("uponSanitizeElement", (node2, data) => {
     activeOnElement?.(node2, data.tagName);
   });
 }
@@ -142520,12 +143961,12 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
       sanitize(html2, config2) {
-        return withGate(config2, () => purify.sanitize(html2, {
+        return withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr]
         }));
@@ -142536,7 +143977,7 @@ var init_sanitize_dompurify = __esm({
       // DOMPurify parses in body context, so content must be body-context-safe
       // (see the sanitizeInto contract in sanitize.ts).
       sanitizeInto(target, html2, config2) {
-        const fragment = withGate(config2, () => purify.sanitize(html2, {
+        const fragment = withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr],
           RETURN_DOM_FRAGMENT: true
@@ -149318,7 +150759,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -149329,7 +150770,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -150001,5 +151442,6 @@ export default require_main();
    *)
 
 dompurify/dist/purify.es.mjs:
-  (*! @license DOMPurify 3.4.15 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.15/LICENSE *)
+  (*! @license DOMPurify 3.4.16 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.16/LICENSE *)
+  (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)
 */
