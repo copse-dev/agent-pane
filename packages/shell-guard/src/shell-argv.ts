@@ -598,6 +598,59 @@ const WRITE_REDIRECTS = new Set(['>', '>>'])
 const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
 
 /**
+ * `command` with the inside of every span the shell cannot expand replaced by
+ * `x`, keeping each character in place so indexes still line up. That is a
+ * single-quoted span, or a double-quoted one with no `$` or backtick in it.
+ * Returns null when quoting is ambiguous (an unterminated quote, or `$'…'`
+ * whose escapes differ), leaving the caller to over-segment.
+ */
+function maskInertQuotedText(command: string): string | null {
+  let out = ''
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index)
+    if (char === '\\') {
+      out += command.slice(index, index + 2)
+      index++
+      continue
+    }
+    if (char !== "'" && char !== '"') {
+      out += char
+      continue
+    }
+    if (char === "'" && command.charAt(index - 1) === '$') return null
+    let end = index + 1
+    while (end < command.length && command.charAt(end) !== char) {
+      if (char === '"' && command.charAt(end) === '\\') end++
+      end++
+    }
+    if (end >= command.length) return null
+    const inner = command.slice(index + 1, end)
+    out += char + (char === '"' && /[$`]/.test(inner) ? inner : 'x'.repeat(inner.length)) + char
+    index = end
+  }
+  return out.length === command.length ? out : null
+}
+
+/**
+ * The stricter split behind {@link shellSegmentsQuoteAware}. On top of the
+ * single-quote masking {@link splitRawSegments} does, it also ignores separators
+ * inside a double-quoted span that holds no `$` or backtick (`jq ".a | length"`),
+ * and falls back to that split when quoting is ambiguous.
+ */
+function splitRawSegmentsQuoteAware(command: string): string[] {
+  const masked = maskInertQuotedText(command)
+  if (masked === null) return splitRawSegments(command)
+  const segments: string[] = []
+  let start = 0
+  for (const match of masked.matchAll(RAW_SEPARATORS)) {
+    segments.push(command.slice(start, match.index))
+    start = match.index + match[0].length
+  }
+  segments.push(command.slice(start))
+  return segments
+}
+
+/**
  * shell-quote treats newlines as argument whitespace and comments as extending
  * to the end of its input. Give it one command line at a time, preserving quoted
  * newlines and backslash continuations as part of the original input.
@@ -641,6 +694,27 @@ function splitShellCommandLines(command: string): string[] {
 }
 
 export function shellSegments(command: string, includeRawFallback = true): string[][] {
+  return collectSegments(command, includeRawFallback, false)
+}
+
+/**
+ * {@link shellSegments} for the classifiers that decide whether a command is
+ * *opaque or a plain read*, where an invented segment head is a false alarm
+ * (a sed character class split at its `;`). The fallback pass still runs, but
+ * does not split inside quoted text the shell cannot expand.
+ *
+ * The harm gate, host-reach, and the other hard checks keep {@link shellSegments}:
+ * they read code out of quoted `-c` bodies and rely on the blunt split to do it.
+ */
+export function shellSegmentsQuoteAware(command: string): string[][] {
+  return collectSegments(command, true, true)
+}
+
+function collectSegments(
+  command: string,
+  includeRawFallback: boolean,
+  quoteAware: boolean,
+): string[][] {
   const segments: string[][] = []
 
   let tokens: ReturnType<typeof parseShellCommand> | null
@@ -695,7 +769,9 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // The `&` of a redirect (`2>&1`, `<&3`, `&>log`) separates nothing. Splitting on it
   // made `1` a command head, and that phantom head's "not a plain read" blocker
   // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
-  for (const segment of splitRawSegments(command)) {
+  for (const segment of quoteAware
+    ? splitRawSegmentsQuoteAware(command)
+    : splitRawSegments(command)) {
     const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
@@ -833,4 +909,62 @@ export function shellRedirects(command: string): ShellRedirect[] {
     pending = 'op' in token && WRITE_REDIRECTS.has(token.op) ? token.op === '>' : null
   }
   return redirects
+}
+
+/**
+ * Files a command line reads through `<` (a plain input redirect). Heredocs and
+ * here-strings carry text, not a path, and `<&` names a descriptor.
+ */
+export function shellInputRedirects(command: string): string[] {
+  let tokens: ReturnType<typeof parseShellCommand>
+  try {
+    tokens = parseShellCommand(command)
+  } catch {
+    return []
+  }
+  const targets: string[] = []
+  let pending = false
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      if (pending) targets.push(token)
+      pending = false
+      continue
+    }
+    pending = 'op' in token && token.op === '<'
+  }
+  return targets
+}
+
+/** Characters a literal value may hold and still expand to exactly itself unquoted. */
+const LITERAL_VALUE = String.raw`[A-Za-z0-9_.\/+:@%,=-]+`
+const LEADING_LITERAL_ASSIGNMENT = new RegExp(
+  String.raw`^\s*([A-Za-z_][A-Za-z0-9_]*)=(?:'(${LITERAL_VALUE})'|"(${LITERAL_VALUE})"|(${LITERAL_VALUE}))[ \t]*(?:;|&&|\n)\s*`,
+)
+/** Variables the shell or dynamic linker reads, so an assignment is more than a name. */
+const BEHAVIOUR_VARIABLE =
+  /^(?:PATH|IFS|HOME|SHELL|ENV|CDPATH|GLOBIGNORE|TMPDIR|PS4|PROMPT_COMMAND|LD_\w*|DYLD_\w*|BASH\w*)$/
+
+/**
+ * Replace `NAME=/literal/path; cmd "$NAME"` with `cmd "/literal/path"`.
+ *
+ * A path held in a variable is invisible to every path check here, so the
+ * commonest way agents name a log (`L=/tmp/x.log; tail "$L"`) was unclassifiable.
+ * Only leading statements whose value is a plain word are folded in, and only
+ * when nothing later reassigns the name, so the result is what the shell would
+ * have run. Anything else returns the command unchanged.
+ */
+export function inlineLeadingLiteralAssignments(command: string): string {
+  let rest = command
+  for (;;) {
+    const match = LEADING_LITERAL_ASSIGNMENT.exec(rest)
+    const name = match?.[1]
+    if (match === null || name === undefined || BEHAVIOUR_VARIABLE.test(name)) return rest
+    const value = match[2] ?? match[3] ?? match[4] ?? ''
+    const tail = rest.slice(match[0].length)
+    if (new RegExp(String.raw`\b${name}=`).test(tail)) return rest
+    rest = tail.replace(
+      new RegExp(String.raw`\$\{${name}\}|\$${name}(?![A-Za-z0-9_])`, 'g'),
+      () => value,
+    )
+  }
 }

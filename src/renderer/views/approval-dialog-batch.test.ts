@@ -309,7 +309,7 @@ describe('approval dialog coalescing', () => {
   it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
     emit({
       id: 'read-access',
-      title: 'Allow read access outside of the project?',
+      title: 'Read outside the project?',
       collapseDetails: true,
       approveOnceLabel: 'Approve this command',
     })
