@@ -71230,7 +71230,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   }
   function sendAnswer(row2) {
     const requestId = row2.requestId;
-    if (!requestId || !hasAnswer(requestId)) return;
+    if (!requestId || settling || !hasAnswer(requestId)) return;
     const asked = sources3.questions.pending().find((request) => request.id === requestId);
     if (!asked) return;
     const typed = drafts.get(requestId) ?? [];
@@ -71238,6 +71238,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       ".activity-answer, .activity-option, .activity-answer-input"
     )) {
       control.disabled = true;
+      control.dataset["answered"] = "true";
     }
     const sent = sources3.questions.answer(
       requestId,
@@ -71406,7 +71407,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
         },
         `Send answer: ${row2.want} (${row2.threadTitle})`
       );
-      answer.disabled = !hasAnswer(requestId);
+      answer.dataset["requestId"] = requestId;
+      answer.disabled = settling || !hasAnswer(requestId);
       actions.push(answer);
     }
     return el("div", { class: "activity-detail-actions" }, ...actions);
@@ -71737,14 +71739,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function armSettle() {
     cancelSettle?.();
     settling = true;
-    for (const approve of detail.querySelectorAll(".activity-approve")) {
-      approve.disabled = true;
+    for (const control of detail.querySelectorAll(
+      ".activity-approve, .activity-answer"
+    )) {
+      control.disabled = true;
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const approve of detail.querySelectorAll(".activity-approve")) {
-        if (!approve.dataset["answered"]) approve.disabled = false;
+      for (const control of detail.querySelectorAll(
+        ".activity-approve, .activity-answer"
+      )) {
+        if (control.dataset["answered"]) continue;
+        const requestId = control.dataset["requestId"];
+        control.disabled = requestId !== void 0 && !hasAnswer(requestId);
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -71805,7 +71813,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       selectedKey = selected?.key ?? null;
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0;
-    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+    const releases = selected?.state === "needs-approval" || selected?.state === "needs-answer";
+    if (listChanged || selectedKey !== shownKey && releases) {
       armSettle();
     }
     shownKey = selectedKey;
