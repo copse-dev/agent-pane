@@ -543,6 +543,23 @@ dialog.activity-panel-overlay {
    scroll above the detail, and the action bar sticks to the card's bottom edge so
    Reject and Approve stay reachable however long the request is. */
 @container chat-pane (max-width: 640px) {
+  /* Squeezed for room: the project tiles shrink to one-line pills so the card
+     below keeps the height. */
+  .activity-home {
+    padding-top: 16px;
+  }
+  .activity-home .activity-strip {
+    margin-bottom: 10px;
+  }
+  .activity-home .activity-strip-card,
+  .activity-home .activity-strip-card:first-child {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+  }
   .activity-home .activity-panel-body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
@@ -552,7 +569,7 @@ dialog.activity-panel-overlay {
   .activity-home .activity-list {
     /* The list scrolls itself, so its minimum track size is 0 and the detail's
        content would take the whole card; the floor keeps a few rows visible. */
-    min-height: 120px;
+    min-height: 150px;
     max-height: 200px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
