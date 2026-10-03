@@ -308,14 +308,11 @@ describe('footer branch status for a detached thread worktree', () => {
     await expect(button).toHaveAttribute('title', expect.stringContaining(picked.slice(0, 7)))
     await expectOnBranchLine(button)
 
-    // The Changes chip above the composer comes from an async diff-stat
-    // refresh, so a capture can land before or after it and the shot changes
-    // height. Wait for the +1 the picked commit adds before capturing.
-    await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1', {
-      wait: 20_000,
-    })
-
-    await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
+    // Suggested follow-ups above the composer refresh independently and may
+    // have no Changes chip on this host. Capture the recovery footer itself
+    // so that optional row cannot change this shot's framing or block it.
+    await expect($('.toast')).not.toExist({ wait: 10_000 })
+    await saveElementScreenshot('.input-footer', 'footer-branch-uncommitted-pick.png')
 
     const signingKey = join(worktreeRoot, 'copse-e2e-signing-key')
     execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', signingKey], {
