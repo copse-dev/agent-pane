@@ -6,7 +6,12 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { buildSkillsCatalogBlock, buildInvokedSkillsBlock } from './skills/skill-prompt.ts'
-import { estimateMessageTokens, ESTIMATED_IMAGE_TOKENS } from '@copse/agent/trim-history.ts'
+import {
+  estimateMessageTokens,
+  replayWindow,
+  ESTIMATED_IMAGE_TOKENS,
+} from '@copse/agent/trim-history.ts'
+import { modelCapabilities } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
 import { PARENT_DELEGATED_TOOLS } from './agent-service.ts'
@@ -84,7 +89,12 @@ export async function estimateContextBreakdown(
     else toolsTokens += tokens
   }
 
-  const historyTokens = estimateMessageTokens(input.priorMessages)
+  // A first-party Responses model replays a compaction item in place of the turns
+  // before it, so those turns are not part of the next prompt.
+  const compaction = modelCapabilities(model).supportsServerCompaction
+    ? { model, endpoint: '' }
+    : undefined
+  const historyTokens = estimateMessageTokens(replayWindow(input.priorMessages, compaction))
   const messageTokens =
     input.draftText.length / CHARS_PER_TOKEN + input.imageCount * ESTIMATED_IMAGE_TOKENS
 

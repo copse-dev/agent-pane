@@ -374,6 +374,23 @@ export interface SpineModelSelectedLine {
   to: string
 }
 
+/**
+ * A provider compacted the model context server-side. Marks the boundary only:
+ * the opaque item itself lives in the provider-history projection
+ * (`agent-history.json`), never here, so this line is safe to export and read.
+ * `projectionVersion` names the projection contract the item was written under.
+ */
+export interface SpineContextCompactionLine {
+  v: number
+  type: 'context_compaction'
+  id: string
+  recordedAt: number
+  provider: 'openai-responses'
+  model: string
+  projectionVersion: number
+  itemId: string
+}
+
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
   | SpineMessageLine
@@ -383,6 +400,7 @@ export type SpineLine =
   | SpineDecisionLine
   | SpineMachineContinuationLine
   | SpineModelSelectedLine
+  | SpineContextCompactionLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -755,6 +773,21 @@ const MODEL_SELECTED_OPTIONAL: OptionalFieldChecks<SpineModelSelectedLine> = {
 const isSpineModelSelectedLine: (value: unknown) => value is SpineModelSelectedLine = (value) =>
   matchesLine(value, MODEL_SELECTED_FIELDS, MODEL_SELECTED_OPTIONAL)
 
+const CONTEXT_COMPACTION_FIELDS: RequiredFieldChecks<SpineContextCompactionLine> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'context_compaction',
+  id: (value) => typeof value === 'string',
+  recordedAt: (value) => typeof value === 'number',
+  provider: (value) => value === 'openai-responses',
+  model: (value) => typeof value === 'string',
+  projectionVersion: (value) => typeof value === 'number',
+  itemId: (value) => typeof value === 'string',
+}
+
+const isSpineContextCompactionLine: (value: unknown) => value is SpineContextCompactionLine = (
+  value,
+) => matchesLine(value, CONTEXT_COMPACTION_FIELDS, {})
+
 const isPlanSpineAction: (value: unknown) => value is PlanSpineAction = (value) =>
   value === 'create' ||
   value === 'revise' ||
@@ -804,6 +837,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
   if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
   if (type === 'model_selected' && isSpineModelSelectedLine(parsed)) return parsed
+  if (type === 'context_compaction' && isSpineContextCompactionLine(parsed)) return parsed
 
   return null
 }

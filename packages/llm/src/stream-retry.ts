@@ -153,6 +153,25 @@ export function isOutputCeilingRejectedMessage(message: string, param?: string |
 }
 
 /**
+ * Server-side context management refused: either the `context_management`
+ * request field or a replayed compaction item. Matched narrowly, by the request
+ * naming the feature, so an unrelated 400 still fails loudly.
+ */
+export function isCompactionRejectedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = errorStatus(err)
+  if (status !== 400 && status !== 422) return false
+  return COMPACTION_FIELD.test(err.message)
+}
+
+const COMPACTION_FIELD = /context_management|compact_threshold|compaction/i
+
+/** The same rejection delivered inside a stream (see {@link isOutputCeilingRejectedMessage}). */
+export function isCompactionRejectedMessage(message: string, param?: string | null): boolean {
+  return param === 'context_management' || COMPACTION_FIELD.test(message)
+}
+
+/**
  * A stream that stopped because something aborted it, rather than because
  * anything went wrong.
  *

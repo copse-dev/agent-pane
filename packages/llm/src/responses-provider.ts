@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import type {
   FunctionTool,
   Response,
+  ResponseCompactionItem,
   ResponseInput,
   ResponseStreamEvent,
   ResponseCreateParamsStreaming,
@@ -13,6 +14,8 @@ import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import {
+  isCompactionRejectedError,
+  isCompactionRejectedMessage,
   isOutputCeilingRejectedError,
   isStrictSchemaRejectedError,
   isOutputCeilingRejectedMessage,
@@ -22,9 +25,11 @@ import { reasoningReplayFor, type ReplayableReasoning } from './reasoning-replay
 import { prepareStrictTools } from './strict-tool-schema.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
+import { compactionReplayStart, type CompactionIdentity } from './provider-state.ts'
 import type {
   LLMMessage,
   LLMProvider,
+  LLMStreamOptions,
   LLMTool,
   ModelUsage,
   ProviderStreamChunk,
@@ -41,6 +46,7 @@ import { responsesParameterFields, type ModelParameters } from './model-paramete
 export class ResponsesProvider implements LLMProvider {
   private readonly client: OpenAI
   private readonly model: string
+  private readonly endpoint: string
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly serviceTier: ServiceTier | undefined
@@ -51,6 +57,13 @@ export class ResponsesProvider implements LLMProvider {
   private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly reasoningSummaries: boolean
   private readonly encryptedReasoning: boolean
+  private readonly serverCompaction: boolean
+  /**
+   * Set once the endpoint refuses server-side compaction (the request field or a
+   * replayed item). From then on this provider sends and replays neither, and the
+   * client-side trim owns the context budget again.
+   */
+  private compactionRefused = false
   /**
    * Send `strict: true` on every tool whose schema qualifies. Off unless the
    * endpoint is known to implement OpenAI's strict subset — a third-party
@@ -60,6 +73,12 @@ export class ResponsesProvider implements LLMProvider {
   private strictTools: boolean
   private readonly chatGptPlan: boolean
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
+
+  /** Where a compaction item may be replayed; absent when compaction is off or refused. */
+  get compactionIdentity(): CompactionIdentity | undefined {
+    if (!this.serverCompaction || this.compactionRefused) return undefined
+    return { model: this.model, endpoint: this.endpoint }
+  }
 
   get requestedServiceTier(): ServiceTier | undefined {
     return this.serviceTier
@@ -97,6 +116,12 @@ export class ResponsesProvider implements LLMProvider {
       reasoningSummaries?: boolean
       /** Ask for encrypted reasoning and replay it on later turns of the run. */
       encryptedReasoning?: boolean
+      /**
+       * Use OpenAI's server-side compaction (`context_management`) when the caller
+       * supplies a threshold, and replay the returned item. First-party only:
+       * compatible endpoints are not assumed to implement it.
+       */
+      serverCompaction?: boolean
       /** First-party OpenAI only; see {@link ResponsesProvider.strictTools}. */
       strictTools?: boolean
       /** Restricted OAuth plan route: fixed endpoint and request contract. */
@@ -108,6 +133,8 @@ export class ResponsesProvider implements LLMProvider {
     }
     this.chatGptPlan = opts.chatGptPlan ?? false
     this.model = model
+    this.endpoint = opts.baseURL ?? ''
+    this.serverCompaction = opts.serverCompaction ?? false
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
     this.serviceTier = opts.serviceTier
@@ -151,6 +178,7 @@ export class ResponsesProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     const self = this
     return yieldStreamWithRetry(
@@ -184,7 +212,13 @@ export class ResponsesProvider implements LLMProvider {
           return { requestTools, restoreArgs: prepared.restoreArgs }
         }
         let { requestTools, restoreArgs } = buildTools()
-        const input = toResponsesInput(messages, self.reasoningByToolCall, self.chatGptPlan)
+        let input = toResponsesInput(
+          messages,
+          self.reasoningByToolCall,
+          self.compactionIdentity,
+          self.chatGptPlan,
+        )
+        let inputReplaysCompaction = self.compactionIdentity !== undefined
         const reportCache = self.cacheDiagnostics.begin(
           input.find((item) => 'role' in item && item.role !== 'user') ?? null,
           requestTools,
@@ -194,12 +228,32 @@ export class ResponsesProvider implements LLMProvider {
         let droppedCeiling = false
         for (;;) {
           let response
+          const identity = self.compactionIdentity
+          if (inputReplaysCompaction && identity === undefined) {
+            // The endpoint refused compaction: resend without the replayed item, with
+            // the turns it summarised, and let client-side trimming own the budget.
+            input = toResponsesInput(
+              messages,
+              self.reasoningByToolCall,
+              undefined,
+              self.chatGptPlan,
+            )
+            inputReplaysCompaction = false
+          }
+          const compactAt = identity && !self.chatGptPlan ? options?.compactAtTokens : undefined
           try {
             const request: ResponseCreateParamsStreaming = {
               model: self.model,
               input,
               stream: true,
               tools: requestTools,
+              ...(compactAt === undefined
+                ? {}
+                : {
+                    context_management: [
+                      { type: 'compaction', compact_threshold: Math.floor(compactAt) },
+                    ],
+                  }),
               ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
               // Without this, `store: false` leaves nothing to replay: OpenAI
               // holds no server-side copy, so the encrypted blob has to come back
@@ -227,6 +281,10 @@ export class ResponsesProvider implements LLMProvider {
             }
             response = await self.client.responses.create(request, { signal })
           } catch (err) {
+            if (identity && isCompactionRejectedError(err)) {
+              self.compactionRefused = true
+              continue
+            }
             if (self.strictTools && isStrictSchemaRejectedError(err)) {
               self.strictTools = false
               ;({ requestTools, restoreArgs } = buildTools())
@@ -245,9 +303,16 @@ export class ResponsesProvider implements LLMProvider {
           const turnReasoning: ReasoningItem[] = []
           let yielded = false
           let ceilingRejected = false
+          let compactionRefused = false
+          const emittedCompactions = new Set<string>()
           let usage: ModelUsage | null = null
           let completed = false
           for await (const event of response) {
+            if (!yielded && identity && compactionRejectedInStream(event)) {
+              self.compactionRefused = true
+              compactionRefused = true
+              break
+            }
             if (event.type === 'response.completed') completed = true
             if (self.chatGptPlan && event.type === 'response.incomplete')
               throw new Error('ChatGPT plan response was incomplete.')
@@ -264,6 +329,7 @@ export class ResponsesProvider implements LLMProvider {
               self.model,
               self,
               turnReasoning,
+              emittedCompactions,
               restoreArgs,
             )) {
               yielded = true
@@ -279,6 +345,7 @@ export class ResponsesProvider implements LLMProvider {
               yield chunk
             }
           }
+          if (compactionRefused) continue
           if (!ceilingRejected) {
             if (self.chatGptPlan && !completed)
               throw new Error('ChatGPT plan stream ended before response.completed.')
@@ -315,6 +382,15 @@ function toReasoningItem(item: { type: string; id?: string }): ReasoningItem | n
   return { type: 'reasoning', id: item.id, summary: [], encrypted_content: encrypted }
 }
 
+/** A stream `error` / `response.failed` event that rejects server-side compaction. */
+function compactionRejectedInStream(event: ResponseStreamEvent): boolean {
+  if (event.type === 'error') return isCompactionRejectedMessage(event.message, event.param)
+  if (event.type === 'response.failed') {
+    return isCompactionRejectedMessage(event.response.error?.message ?? '')
+  }
+  return false
+}
+
 /** A stream `error` / `response.failed` event that rejects the output ceiling. */
 function ceilingRejectedInStream(event: ResponseStreamEvent): boolean {
   if (event.type === 'error') return isOutputCeilingRejectedMessage(event.message, event.param)
@@ -329,8 +405,13 @@ function* streamEventChunks(
   model: string,
   provider: ResponsesProvider,
   turnReasoning: ReasoningItem[],
+  emittedCompactions: Set<string>,
   restoreArgs: (toolName: string, args: unknown) => unknown,
 ): Generator<ProviderStreamChunk> {
+  if (event.type === 'response.output_item.done' && event.item.type === 'compaction') {
+    yield* compactionChunks([event.item], model, provider, emittedCompactions)
+    return
+  }
   if (event.type === 'response.output_text.delta') {
     yield { type: 'text', text: event.delta }
     return
@@ -372,6 +453,14 @@ function* streamEventChunks(
     return
   }
   if (event.type === 'response.completed') {
+    // Normally already seen as an `output_item.done`; the final payload is the
+    // backstop for an endpoint that only reports it here.
+    yield* compactionChunks(
+      event.response.output.filter((item) => item.type === 'compaction'),
+      model,
+      provider,
+      emittedCompactions,
+    )
     yield* usageChunks(event.response, model, provider)
     const calledTool = event.response.output.some((item) => item.type === 'function_call')
     yield { type: 'done', stopReason: calledTool ? 'tool_calls' : 'stop' }
@@ -390,6 +479,31 @@ function* streamEventChunks(
     throw new Error(event.response.error?.message ?? 'Responses API request failed')
   }
   if (event.type === 'error') throw new Error(event.message)
+}
+
+function* compactionChunks(
+  items: readonly ResponseCompactionItem[],
+  model: string,
+  provider: ResponsesProvider,
+  emitted: Set<string>,
+): Generator<ProviderStreamChunk> {
+  const identity = provider.compactionIdentity
+  if (!identity) return
+  for (const item of items) {
+    if (emitted.has(item.id) || item.encrypted_content === '') continue
+    emitted.add(item.id)
+    yield {
+      type: 'provider_state',
+      state: {
+        kind: 'openai-responses-compaction',
+        v: 1,
+        model,
+        endpoint: identity.endpoint,
+        itemId: item.id,
+        encryptedContent: item.encrypted_content,
+      },
+    }
+  }
 }
 
 function* usageChunks(
@@ -423,9 +537,33 @@ function* usageChunks(
 export function toResponsesInput(
   messages: LLMMessage[],
   reasoningByToolCall: ReadonlyMap<string, ReasoningItem[]> = new Map(),
+  compaction?: CompactionIdentity,
   chatGptPlan = false,
 ): ResponseInput {
-  return messages.flatMap((message): ResponseInput => {
+  // The compaction item stands in for everything before it, so those turns are
+  // not sent. Instructions are not turns and stay, ahead of the item.
+  const start = compactionReplayStart(messages, compaction)
+  const stateFree = (list: readonly LLMMessage[]): LLMMessage[] =>
+    list.filter((m) => m.role !== 'provider_state')
+  const replayed = messages[start]
+  const window =
+    start === -1 || replayed === undefined
+      ? stateFree(messages)
+      : [
+          ...messages.slice(0, start).filter((m) => m.role === 'system' || m.role === 'developer'),
+          replayed,
+          ...stateFree(messages.slice(start + 1)),
+        ]
+  return window.flatMap((message): ResponseInput => {
+    if (message.role === 'provider_state') {
+      return [
+        {
+          type: 'compaction',
+          id: message.state.itemId,
+          encrypted_content: message.state.encryptedContent,
+        },
+      ]
+    }
     if (message.role === 'system') {
       return [{ role: chatGptPlan ? 'developer' : 'system', content: message.content }]
     }

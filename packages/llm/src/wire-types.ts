@@ -8,6 +8,7 @@
 // the app barrel is now a thin consumer of the module (app → package, the
 // direction extraction needs). See ./README-less note in packages/llm/README.md.
 
+import type { CompactionIdentity } from './provider-state.ts'
 import type { ServiceTier, UsageServiceTier } from './service-tier.ts'
 
 // ── Messages sent to a provider ──────────────────────────────────────────────
@@ -39,6 +40,26 @@ export type LLMMessage =
   | { role: 'user'; content: UserContent }
   | { role: 'assistant'; content: string | ToolCallContent[] }
   | { role: 'tool'; toolResults: ToolResult[] }
+  /**
+   * An opaque provider artefact positioned in the history where the provider
+   * produced it. Not a conversational turn: adapters that do not own it drop it
+   * (see `provider-state.ts`).
+   */
+  | { role: 'provider_state'; state: ProviderCompactionState }
+
+/**
+ * OpenAI's server-side compaction item, kept verbatim. `encryptedContent` is
+ * opaque and must be replayed unchanged, only to the same `model` on the same
+ * `endpoint`. `v` is the projection version, bumped if the replay contract changes.
+ */
+export interface ProviderCompactionState {
+  kind: 'openai-responses-compaction'
+  v: 1
+  model: string
+  endpoint: string
+  itemId: string
+  encryptedContent: string
+}
 
 export interface ToolCallContent {
   id: string
@@ -223,6 +244,11 @@ export type ProviderStreamChunk =
    * token. `fraction` is a provider-reported value from 0 to 1.
    */
   | { type: 'prompt_progress'; fraction: number }
+  /**
+   * The provider compacted the context server-side mid-stream. Sits in the
+   * stream where the item was emitted; the loop records it in history.
+   */
+  | { type: 'provider_state'; state: ProviderCompactionState }
   | { type: 'done'; stopReason?: string; malformedToolCall?: MalformedToolCallInfo }
 
 /**
@@ -244,6 +270,12 @@ export interface LLMStreamOptions {
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
   /**
+   * Prompt size, in tokens, at which a provider with server-side context
+   * management should compact. The agent loop owns this number so there is a
+   * single owner of "when to compact"; providers without the capability ignore it.
+   */
+  readonly compactAtTokens?: number | undefined
+  /**
    * Ask the provider to minimise or skip hidden reasoning for this one call. A
    * best-effort hint: providers with no wire control for it (Anthropic budgets,
    * LM Studio's native SDK) ignore it, so callers must still bound the stream
@@ -254,6 +286,12 @@ export interface LLMStreamOptions {
 }
 
 export interface LLMProvider {
+  /**
+   * Set when this provider replays a server-side compaction item. Lets the
+   * client-side trimmer treat the messages the item summarises as already
+   * reduced instead of trimming them again.
+   */
+  readonly compactionIdentity?: CompactionIdentity | undefined
   stream(
     messages: LLMMessage[],
     tools: LLMTool[],

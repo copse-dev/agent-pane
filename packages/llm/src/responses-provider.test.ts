@@ -283,6 +283,7 @@ describe('ChatGPT plan Responses contract', () => {
         { role: 'tool', toolResults: [{ toolCallId: 'call-1', result: 'contents' }] },
       ],
       new Map(),
+      undefined,
       true,
     )
     assert.deepEqual(input, [

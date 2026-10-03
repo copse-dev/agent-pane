@@ -64,7 +64,8 @@ import {
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
-import { updateMeta } from './thread-store.ts'
+import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
+import { appendContextCompaction, updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -117,7 +118,7 @@ import {
 import { runApprovedEvidenceExploration, runSpecialistCheck } from './specialist-check-runner.ts'
 import { runExploreSubagent } from './subagent-service.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
-import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
+import { estimateConversationTokens, replayWindow } from '@copse/agent/trim-history.ts'
 import {
   prepareAgentHistory,
   contextTrimmedChunk,
@@ -1859,7 +1860,12 @@ async function runAgentWithInlineCanvas(
       }
     }
 
-    const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
+    const prepared = prepareAgentHistory(
+      messages,
+      contextWindow,
+      toolSchemaReserve,
+      provider.compactionIdentity,
+    )
     trimmed = prepared.trimmed
     // The turn's history is committed by the host once this function returns, so
     // a run that never returns — the app quits, the process is killed, the turn
@@ -1871,7 +1877,14 @@ async function runAgentWithInlineCanvas(
     const { wasTrimmed, conversationBudget } = prepared
     const { notifyTrimmed } = createTrimNotifier(wasTrimmed)
     const sendTrimNotice = (): void => {
-      sendChunk(contextTrimmedChunk(trimmed, contextWindow, prepared.historyBudget))
+      sendChunk(
+        contextTrimmedChunk(
+          trimmed,
+          contextWindow,
+          prepared.historyBudget,
+          provider.compactionIdentity,
+        ),
+      )
     }
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
@@ -2013,7 +2026,9 @@ async function runAgentWithInlineCanvas(
           // Measured at the boundary, not from the turn's opening snapshot: the run
           // has been appending to `trimmed` ever since, and it is the size right now
           // that decides whether there is any headroom to buy.
-          const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+          const fillRatio =
+            estimateConversationTokens(replayWindow(trimmed, provider.compactionIdentity)) /
+            conversationBudget
           if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
             notifyTrimmed(sendTrimNotice)
           }
@@ -2281,6 +2296,21 @@ async function runAgentWithInlineCanvas(
                     return
                   }
                   sendChunk(chunk)
+                  if (chunk.type === 'context_compacted' && runContext) {
+                    // The boundary is canonical; the opaque item stays in the
+                    // provider-history projection. Best effort like the other
+                    // observational spine lines: a failed append must not fail the turn.
+                    void appendContextCompaction(runContext.projectId, threadId, {
+                      v: SPINE_SCHEMA_VERSION,
+                      type: 'context_compaction',
+                      id: randomUUID(),
+                      recordedAt: Date.now(),
+                      provider: chunk.provider,
+                      model: chunk.model,
+                      projectionVersion: 1,
+                      itemId: chunk.itemId,
+                    }).catch(() => undefined)
+                  }
                   if (chunk.type === 'usage') {
                     inputTokens += chunk.inputTokens
                     outputTokens += chunk.outputTokens

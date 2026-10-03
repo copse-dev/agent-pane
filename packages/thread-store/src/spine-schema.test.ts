@@ -16,6 +16,7 @@ import {
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
+  type SpineContextCompactionLine,
   type SpineMessageLine,
   type SpinePermissionDecisionLine,
 } from './spine-schema.ts'
@@ -197,6 +198,22 @@ describe('spine-schema hook_run union (decision 6)', () => {
     const line = modelSelectedLine('model-1')
     assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
     assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
+  })
+
+  it('round-trips a context compaction boundary that carries no opaque payload', () => {
+    const line: SpineContextCompactionLine = {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'context_compaction',
+      id: 'cmp-line-1',
+      recordedAt: 160,
+      provider: 'openai-responses',
+      model: 'gpt-5.6-sol',
+      projectionVersion: 1,
+      itemId: 'cmp_1',
+    }
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
+    assert.equal(parseSpineLine(JSON.stringify({ ...line, provider: 'anthropic' })), null)
   })
 
   it('parseSpineEntries preserves unknown line types verbatim', () => {
