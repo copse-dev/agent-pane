@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
+import { patchChildren } from '../dom/patch-children.ts'
 import {
   checkIcon,
   messageQuestionIcon,
@@ -159,6 +160,15 @@ export function createActivityView(
     'aria-live': 'polite',
   })
 
+  // Rows and groups are kept by key and reused while what they show is
+  // unchanged, so a redraw leaves hover, focus and an in-flight click on an
+  // untouched row alone (a rebuild every 250 ms is how a click lands on nothing).
+  const rowCache = new Map<string, { signature: string; node: HTMLLIElement }>()
+  const groupCache = new Map<
+    ActivityGroup['id'],
+    { section: HTMLElement; count: HTMLElement; rows: HTMLElement }
+  >()
+  const quiet = el('p', { class: 'activity-quiet' }, 'Nothing needs you right now.')
   let renderScheduled = false
   let cancelRender: (() => void) | null = null
   let lastRenderAt = Number.NEGATIVE_INFINITY
@@ -432,26 +442,65 @@ export function createActivityView(
     )
   }
 
+  /** Everything rowElement draws, so an equal signature means the same pixels. */
+  function rowSignature(row: ActivityRow, at: number): string {
+    const elapsed = row.since === null ? null : Math.max(0, at - row.since)
+    return JSON.stringify([
+      row.state,
+      row.threadId,
+      row.requestId,
+      row.requestType,
+      row.threadTitle,
+      row.projectName,
+      row.want,
+      row.detail,
+      row.since,
+      row.key === selectedKey,
+      elapsed === null ? null : formatAge(elapsed),
+      rowLabel(row, at),
+    ])
+  }
+
+  function cachedRow(row: ActivityRow, at: number): HTMLLIElement {
+    const signature = rowSignature(row, at)
+    const hit = rowCache.get(row.key)
+    if (hit?.signature === signature) return hit.node
+    const node = rowElement(row, at)
+    rowCache.set(row.key, { signature, node })
+    return node
+  }
+
   function groupElement(group: ActivityGroup, at: number): HTMLElement {
-    const titleId = `activity-group-${group.id}`
     const hidden = group.total - group.rows.length
     const count =
       hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total)
-    return el(
-      'section',
-      { class: 'activity-group', 'data-group': group.id },
-      el(
-        'h4',
-        { id: titleId, class: 'activity-group-title' },
-        group.label,
-        el('span', { class: 'activity-group-count' }, count),
-      ),
-      el(
-        'ul',
-        { class: 'activity-rows', role: 'list', 'aria-labelledby': titleId },
-        ...group.rows.map((row) => rowElement(row, at)),
-      ),
+    let entry = groupCache.get(group.id)
+    if (!entry) {
+      const titleId = `activity-group-${group.id}`
+      const countNode = el('span', { class: 'activity-group-count' }, count)
+      const rowsNode = el('ul', {
+        class: 'activity-rows',
+        role: 'list',
+        'aria-labelledby': titleId,
+      })
+      entry = {
+        section: el(
+          'section',
+          { class: 'activity-group', 'data-group': group.id },
+          el('h4', { id: titleId, class: 'activity-group-title' }, group.label, countNode),
+          rowsNode,
+        ),
+        count: countNode,
+        rows: rowsNode,
+      }
+      groupCache.set(group.id, entry)
+    }
+    if (entry.count.textContent !== count) entry.count.textContent = count
+    patchChildren(
+      entry.rows,
+      group.rows.map((row) => cachedRow(row, at)),
     )
+    return entry.section
   }
 
   function emptyState(): HTMLElement {
@@ -606,6 +655,7 @@ export function createActivityView(
     if (populated.length === 0) {
       list.hidden = true
       list.replaceChildren()
+      rowCache.clear()
       body.dataset['empty'] = 'true'
       detail.hidden = false
       detail.replaceChildren(emptyState())
@@ -615,11 +665,13 @@ export function createActivityView(
       list.hidden = false
       delete body.dataset['empty']
       const children: HTMLElement[] = []
-      if (!needsYou || needsYou.rows.length === 0) {
-        children.push(el('p', { class: 'activity-quiet' }, 'Nothing needs you right now.'))
-      }
+      if (!needsYou || needsYou.rows.length === 0) children.push(quiet)
       children.push(...populated.map((group) => groupElement(group, at)))
-      list.replaceChildren(...children)
+      patchChildren(list, children)
+      const live = new Set(rows.map((row) => row.key))
+      for (const rowKey of rowCache.keys()) {
+        if (!live.has(rowKey)) rowCache.delete(rowKey)
+      }
       restoreListScrollAnchor(listScrollAnchor, previousListScrollTop)
       renderDetail(selected, at)
     }
@@ -713,6 +765,7 @@ export function createActivityView(
     selectedIndex = 0
     shownKey = null
     status.textContent = ''
+    rowCache.clear()
   }
 
   function show(): void {
