@@ -130,7 +130,7 @@ function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean
   return parsed !== null && parsed.server.length > 0 && parsed.tool.length > 0
 }
 
-function isAutomationProblem(value: unknown): value is AutomationProblem {
+function isAutomationProblem(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value['at'] === 'number' &&
