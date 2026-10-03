@@ -30,6 +30,38 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('runs package exec inside an active sandbox unless another hard signal is present', () => {
+    const formatter =
+      'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts src/renderer/views/footer-branch-status.ts tests/e2e/footer-branch-status.e2e.ts'
+    for (const command of [formatter, 'npm exec tsc --noEmit', 'yarn exec eslint .']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.deepEqual(result.reasons, [
+        'package command runner (exec may install missing dependencies)',
+      ])
+    }
+    for (const command of [
+      'pnpm exec oxfmt --check . && pnpm install',
+      'pnpm exec oxfmt --check /Users/me/other/file.ts',
+      'pnpm exec node ./script.js',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+  })
+
+  it('keeps other exec forms hard-external', () => {
+    for (const command of [
+      'exec ./script',
+      'echo ok && exec ./script',
+      "find . -name '*.tmp' -type f -exec cat {} +",
+      'podman exec app pwd',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(result.reasons.includes('dynamic execution / encoding'), command)
+    }
+  })
+
   it('flags git push', () => {
     const r = analyzeShellCommand('git push origin main', root)
     assert.equal(r.verdict, 'external')

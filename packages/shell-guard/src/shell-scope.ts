@@ -112,8 +112,16 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     // `dlx` is intentionally absent: it's an ephemeral runner, handled by the
     // ambiguous ephemeral-runner matcher below so it gets the same in-sandbox
     // treatment as npx/bunx rather than a hard prompt. (#500)
-    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|exec|create)\b/i,
+    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|create)\b/i,
     reason: 'package install/update (may fetch + run code from network)',
+  },
+  {
+    // `exec` runs a project command. npm may fetch a missing binary and pnpm may
+    // install stale dependencies when verifyDepsBeforeRun=install, so let the OS
+    // sandbox contain it and offer escalation only after a verified block.
+    re: /\b(?:npm|yarn|pnpm|bun)\s+exec\b/i,
+    reason: 'package command runner (exec may install missing dependencies)',
+    ambiguous: true,
   },
   // Ephemeral package runners auto-fetch and execute the *latest* (typo-squattable)
   // package with no pinning or integrity check — a supply-chain RCE surface (#174).
@@ -250,7 +258,14 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     reason: 'heredoc script fed to an interpreter',
     ambiguous: true,
   },
-  { re: /\beval\b|\bexec\b|\bbase64\b/i, reason: 'dynamic execution / encoding' },
+  { re: /\beval\b|\bbase64\b/i, reason: 'dynamic execution / encoding' },
+  {
+    // Keep the existing hard-external treatment of other exec forms, including
+    // `find -exec` and container exec. Package-manager subcommands alone are
+    // tried inside the OS sandbox.
+    re: /(?<!\b(?:npm|yarn|pnpm|bun)\s+)\bexec\b/i,
+    reason: 'dynamic execution / encoding',
+  },
   { re: /\bpkill\b|\bkillall\b|\bkill\s+-9\b/i, reason: 'process kill (system-wide)' },
   { re: /\bsudo\b|\bsu\s+-/i, reason: 'privilege escalation' },
   {
@@ -1090,6 +1105,8 @@ const SCOPE_REASON_TEXT = {
   // Fetching and running someone else's code
   'package install/update (may fetch + run code from network)':
     'Installs or updates packages, which downloads and runs code from the internet',
+  'package command runner (exec may install missing dependencies)':
+    'Runs a package command that may install missing dependencies',
   'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)':
     'Runs a package straight from the registry (npx/dlx/bunx/uvx/pipx), which can fetch unpinned code',
   'corepack (downloads package-manager binaries)': 'Downloads package-manager binaries (corepack)',
