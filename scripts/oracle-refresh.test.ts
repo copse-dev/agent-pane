@@ -572,6 +572,15 @@ describe('bounded oracle base refresh', () => {
       })
       assert.equal(rejected.status, 1)
       assert.match(rejected.stderr, /--run\/--files\/--list-ci-specs are not supported/)
+      for (const mode of [
+        ['--ci-shard', '1/8'],
+        ['--specs', 'tests/e2e/smoke.e2e.ts'],
+      ]) {
+        const mixed = spawnSync(process.execPath, [...args, ...mode], { cwd, encoding: 'utf8' })
+        assert.equal(mixed.status, 1)
+        assert.equal(mixed.stdout, '')
+        assert.match(mixed.stderr, /--ci-shard\/--specs are not supported/)
+      }
     })
   })
 })
