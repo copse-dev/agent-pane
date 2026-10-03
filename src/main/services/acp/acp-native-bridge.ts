@@ -377,7 +377,7 @@ function buildMcpServer(
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
   const server = new McpBridgeServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, logging: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: bridgedTools(registry, ctx.projectId),
@@ -433,12 +433,45 @@ function buildMcpServer(
       ctx.abandonCall('the MCP client cancelled the tool call')
     }
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
+    let stopKeepalive = (): void => {}
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
         ctx.getTurnSignal(),
         ctx.getCallSignal(),
       )
+      // The client's idle timeout can be shorter than run_shell's foreground
+      // deadline, and a quiet command (or a pending approval) produces no MCP
+      // traffic until it finishes. Keep this request's SSE stream active. Use
+      // the client's progress token when supplied; otherwise send a logging
+      // notification rather than inventing an unsolicited progress token.
+      let progress = 0
+      const progressToken = request.params._meta?.progressToken
+      const keepalive = setInterval(() => {
+        const message = `Tool call "${name}" is still pending.`
+        const notification =
+          progressToken !== undefined
+            ? extra.sendNotification({
+                method: 'notifications/progress',
+                params: { progressToken, progress: ++progress, message },
+              })
+            : extra.sendNotification({
+                method: 'notifications/message',
+                params: { level: 'info', logger: BRIDGE_MCP_SERVER_NAME, data: message },
+              })
+        // A closed transport must not leave an interval or an unhandled
+        // rejection behind, nor turn a successful tool result into an error.
+        void notification.catch(() => {
+          stopKeepalive()
+        })
+      }, 30_000)
+      keepalive.unref()
+      stopKeepalive = (): void => {
+        clearInterval(keepalive)
+        executeSignal.removeEventListener('abort', stopKeepalive)
+      }
+      executeSignal.addEventListener('abort', stopKeepalive, { once: true })
+      if (executeSignal.aborted) stopKeepalive()
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         registry.executeNormalized(name, request.params.arguments, executeSignal)
       const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
@@ -476,6 +509,7 @@ function buildMcpServer(
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
+      stopKeepalive()
       extra.signal.removeEventListener('abort', onExtraAbort)
       if (ctx.inflightCalls.get(requestKey) === ctx.abandonCall) {
         ctx.inflightCalls.delete(requestKey)
