@@ -161,6 +161,22 @@ function convertUnion(
   depth: number,
   walk: Walk,
 ): JsonObject {
+  // Restoration must identify an object branch before dropping optional nulls.
+  // A shape match alone cannot distinguish discriminators or preserve a null
+  // that another branch requires. Leave unsupported/ambiguous unions non-strict.
+  const objects = branches.filter(isRecord).filter((branch) => typeList(branch).includes('object'))
+  if (branches.some((branch) => isRecord(branch) && unionBranches(branch).length > 0)) {
+    return fail(walk, path, 'nested union branches cannot be safely restored')
+  }
+  for (let index = 0; index < objects.length; index++) {
+    const left = objects[index]
+    if (!left) continue
+    for (const right of objects.slice(index + 1)) {
+      if (!distinguishableObjects(left, right)) {
+        return fail(walk, path, 'object union branches cannot be safely distinguished')
+      }
+    }
+  }
   if (node['oneOf'] !== undefined) walk.changes.push(`${at(path)}: oneOf → anyOf`)
   const out: JsonObject = {}
   for (const key of ['title', 'description']) {
@@ -293,11 +309,50 @@ function stringSet(value: unknown): ReadonlySet<string> {
   return new Set(Array.isArray(value) ? value.filter((v) => typeof v === 'string') : [])
 }
 
+/** Finite discriminator values; null is included conservatively for nullable schemas. */
+function discriminatorValues(schema: unknown): unknown[] | null {
+  if (!isRecord(schema)) return null
+  const values: unknown[] | null = Object.hasOwn(schema, 'const')
+    ? [schema['const']]
+    : Array.isArray(schema['enum'])
+      ? schema['enum']
+      : null
+  if (!values) return null
+  return admitsNull(schema) ? [...values, null] : values
+}
+
+function distinguishableObjects(left: JsonObject, right: JsonObject): boolean {
+  const leftProps = isRecord(left['properties']) ? left['properties'] : {}
+  const rightProps = isRecord(right['properties']) ? right['properties'] : {}
+  const leftRequired = stringSet(left['required'])
+  const rightRequired = stringSet(right['required'])
+  // Closed strict objects cannot match a sibling's exclusive required key.
+  if ([...leftRequired].some((key) => !Object.hasOwn(rightProps, key))) return true
+  if ([...rightRequired].some((key) => !Object.hasOwn(leftProps, key))) return true
+  for (const key of leftRequired) {
+    if (!rightRequired.has(key)) continue
+    const leftValues = discriminatorValues(leftProps[key])
+    const rightValues = discriminatorValues(rightProps[key])
+    if (
+      leftValues &&
+      rightValues &&
+      !leftValues.some((value) => rightValues.some((other) => isDeepStrictEqual(value, other)))
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 function fitsObjectBranch(value: JsonObject, branch: unknown): boolean {
   if (!isRecord(branch) || !isRecord(branch['properties'])) return false
   const props = branch['properties']
   if (!Object.keys(value).every((key) => Object.hasOwn(props, key))) return false
-  return [...stringSet(branch['required'])].every((key) => Object.hasOwn(value, key))
+  return [...stringSet(branch['required'])].every((key) => {
+    if (!Object.hasOwn(value, key)) return false
+    const values = discriminatorValues(props[key])
+    return values === null || values.some((candidate) => isDeepStrictEqual(value[key], candidate))
+  })
 }
 
 /**
@@ -306,8 +361,9 @@ function fitsObjectBranch(value: JsonObject, branch: unknown): boolean {
  * Walks `value` alongside the ORIGINAL schema and drops each `null` the model
  * sent for a property that was optional there and did not itself admit `null`.
  * Everything else — including a `null` for a required field — is left for the
- * registry to reject with its usual error. For a union the first object branch
- * the restored value fits (only known keys, all required present) decides.
+ * registry to reject with its usual error. Strict conversion admits object
+ * unions only when required keys or finite discriminators distinguish their
+ * branches; restoration checks those discriminators before selecting a branch.
  */
 export function restoreAbsentOptionals(value: unknown, schema: unknown): unknown {
   if (!isRecord(schema)) return value

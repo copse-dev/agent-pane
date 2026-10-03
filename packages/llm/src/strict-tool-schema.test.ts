@@ -361,6 +361,134 @@ describe('toStrictSchema', () => {
 })
 
 describe('restoreAbsentOptionals', () => {
+  it('preserves a required nullable value in the matching discriminator branch', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        check: {
+          oneOf: [
+            {
+              type: 'object',
+              properties: { kind: { type: 'string', enum: ['a'] }, note: { type: 'string' } },
+              required: ['kind'],
+              additionalProperties: false,
+            },
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['b'] },
+                note: { type: ['string', 'null'] },
+              },
+              required: ['kind', 'note'],
+              additionalProperties: false,
+            },
+          ],
+        },
+      },
+      required: ['check'],
+      additionalProperties: false,
+    }
+    const tools = prepareStrictTools([{ name: 'check', description: '', parameters: schema }], true)
+    assert.equal(tools.tools[0]?.strict, true)
+    assert.deepEqual(tools.restoreArgs('check', { check: { kind: 'b', note: null } }), {
+      check: { kind: 'b', note: null },
+    })
+    assert.deepEqual(tools.restoreArgs('check', { check: { kind: 'a', note: null } }), {
+      check: { kind: 'a' },
+    })
+  })
+
+  it('keeps an ambiguous object union non-strict instead of guessing its nullable fields', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        check: {
+          anyOf: [
+            { type: 'object', properties: { note: { type: 'string' } }, required: [] },
+            {
+              type: 'object',
+              properties: { note: { type: ['string', 'null'] } },
+              required: ['note'],
+            },
+          ],
+        },
+      },
+      required: ['check'],
+    }
+    const tools = prepareStrictTools([{ name: 'check', description: '', parameters: schema }], true)
+    assert.equal(tools.tools[0]?.strict, false)
+    assert.deepEqual(tools.tools[0].parameters, schema)
+    assert.deepEqual(tools.restoreArgs('check', { check: { note: null } }), {
+      check: { note: null },
+    })
+  })
+
+  it('uses required const discriminators and rejects overlapping or optional discriminators', () => {
+    const branch = (
+      kind: Record<string, unknown>,
+      nullable: boolean,
+      required: string[],
+    ): Record<string, unknown> => ({
+      type: 'object',
+      properties: { kind, note: { type: nullable ? ['string', 'null'] : 'string' } },
+      required,
+      additionalProperties: false,
+    })
+    const schema = (branches: unknown[]): Record<string, unknown> => ({
+      type: 'object',
+      properties: { check: { anyOf: branches } },
+      required: ['check'],
+      additionalProperties: false,
+    })
+    const supported = schema([
+      branch({ type: 'string', const: 'a' }, false, ['kind']),
+      branch({ type: 'string', const: 'b' }, true, ['kind', 'note']),
+    ])
+    const tools = prepareStrictTools(
+      [{ name: 'check', description: '', parameters: supported }],
+      true,
+    )
+    assert.equal(tools.tools[0]?.strict, true)
+    assert.deepEqual(tools.restoreArgs('check', { check: { kind: 'b', note: null } }), {
+      check: { kind: 'b', note: null },
+    })
+    for (const ambiguous of [
+      schema([
+        branch({ type: 'string', enum: ['a', 'b'] }, false, ['kind']),
+        branch({ type: 'string', enum: ['b', 'c'] }, true, ['kind', 'note']),
+      ]),
+      schema([
+        branch({ type: 'string', enum: ['a'] }, false, []),
+        branch({ type: 'string', enum: ['b'] }, true, ['note']),
+      ]),
+      schema([
+        branch({ type: ['string', 'null'], enum: ['a'] }, false, ['kind']),
+        branch({ type: ['string', 'null'], enum: ['b'] }, true, ['kind', 'note']),
+      ]),
+    ]) {
+      assert.equal(toStrictSchema(ambiguous).ok, false)
+    }
+  })
+
+  it('leaves nested object unions non-strict when their restoration cannot be established', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        check: {
+          anyOf: [
+            { anyOf: [{ type: 'object', properties: { note: { type: 'string' } } }] },
+            {
+              type: 'object',
+              properties: { note: { type: ['string', 'null'] } },
+              required: ['note'],
+            },
+          ],
+        },
+      },
+    }
+    assert.equal(toStrictSchema(schema).ok, false)
+  })
+
   const original = {
     type: 'object',
     properties: {
