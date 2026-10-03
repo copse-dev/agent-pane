@@ -34,7 +34,7 @@ export function formatReadOutsideProjectPromptParts(
       `The agent wants to read outside the project: ${describeReadOutsideTargets(analysis.targets)}\n\n` +
       `⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
     bodyFooter:
-      'Approving allows reads outside the project for the rest of this thread. ' +
+      'Approving once runs only this command. “Allow reads for this chat” allows eligible reads of other paths outside the project too, for the rest of this chat. ' +
       'It does not allow writing, installing, or network access, and credential ' +
       'files (.env, ~/.ssh, ~/.aws) always ask again.',
   }

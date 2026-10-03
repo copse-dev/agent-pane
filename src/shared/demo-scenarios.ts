@@ -7,6 +7,11 @@ import type { McpServerStatus } from './types/mcp.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import {
+  browserApprovalDetails,
+  providerApprovalDetails,
+  webApprovalDetails,
+} from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -92,6 +97,10 @@ export interface DemoScenario {
     bodyFooter?: string
     type: string
     allowRemember?: boolean
+    rememberLabel?: string
+    approveLabel?: string
+    collapseDetails?: boolean
+    approveOnceLabel?: string
   }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
@@ -619,7 +628,65 @@ function conciseThreadScenario(
   }
 }
 
+function approvalRiskScenario(
+  id: string,
+  request: NonNullable<DemoScenario['approvalRequests']>[number],
+): DemoScenario {
+  return {
+    id,
+    label: request.title,
+    project: project(`demo-${id}-project`),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: 'Review requested access',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequests: [request],
+  }
+}
+
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
+  approvalRiskScenario('approval-web-url', {
+    id: 'web-url',
+    title: 'Allow web origin?',
+    type: 'web',
+    ...webApprovalDetails(
+      'https://example.com:443',
+      'https://example.com/docs?topic=approvals',
+      true,
+    ),
+    allowRemember: true,
+    rememberLabel: 'Always allow https://example.com:443',
+    approveLabel: 'Allow request',
+  }),
+  approvalRiskScenario('approval-browser-url', {
+    id: 'browser-url',
+    title: 'Allow browser navigation?',
+    type: 'mcp',
+    ...browserApprovalDetails(
+      'https://example.com:443',
+      'https://example.com/docs?topic=approvals',
+      true,
+    ),
+    allowRemember: true,
+    rememberLabel: 'Always allow https://example.com:443',
+    approveLabel: 'Allow navigation',
+  }),
+  approvalRiskScenario('approval-provider-url', {
+    id: 'provider-url',
+    title: 'Allow model provider host?',
+    type: 'web',
+    ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
+    allowRemember: false,
+    approveLabel: 'Always allow host',
+  }),
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
     // visual-test fixture. It is also what the marketing hero iframe embeds.

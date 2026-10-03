@@ -336,6 +336,7 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -356,6 +357,7 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
           allowTurnTreeLease?: boolean

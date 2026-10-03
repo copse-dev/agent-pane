@@ -298,6 +298,30 @@ processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact 
 
 ## What an approval prompt says
 
+Prompt prose explains the effect, execution boundary, and duration of the grant outside the
+detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,
+browser-navigation, and provider-host prompts put only the requested URL there; the surrounding
+copy names the origin/host and whether approval covers one request, the chat's browser session,
+or a persistent Settings grant. Provider-host approval always persists, so its action is labeled
+“Always allow host”. Browser origin grants cover the chat's browser session even without remembering.
+
+Static sandbox escapes, agent-expected escapes, and retries after a sandbox failure all warn
+that execution uses the user's access to files and the network beyond the project sandbox.
+Commands with no available sandbox say so even when the immediate reason is that auto-run is off.
+Contained prompts still warn that project files can change. The execution policy is unchanged.
+
+GitHub write tools explain their specific remote effect. PR creation exposes the repository,
+title, head, base, draft status, and body. A single literal `gh pr create` invocation with known
+flags and explicit title/body gets the same publication explanation alongside the full command.
+Unknown flags, shell expansions, scripts, and compound commands retain the general reasons.
+These explanations are presentation only and never authorize or reroute a command.
+
+Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
+future runs of the named schedule. The outside-project read grant still covers all eligible
+outside-project reads for the chat, not only the paths currently displayed. Its primary action
+is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
+Batch and Activity views use the same advice, complete details, and footer as individual prompts.
+
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the
 decision spine, so they must stay stable — which is why they read like rules

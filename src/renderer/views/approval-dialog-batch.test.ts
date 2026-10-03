@@ -26,6 +26,7 @@ interface EmitReq {
   rememberLabel?: string
   collapseDetails?: boolean
   approveOnceLabel?: string
+  approveLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
   turnTreeLeaseDefault?: boolean
@@ -86,6 +87,7 @@ function makeApi(): {
         rememberLabel: req.rememberLabel,
         collapseDetails: req.collapseDetails,
         approveOnceLabel: req.approveOnceLabel,
+        approveLabel: req.approveLabel,
         allowTurnTreeLease: req.allowTurnTreeLease,
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
@@ -312,6 +314,7 @@ describe('approval dialog coalescing', () => {
       title: 'Allow read access outside of the project?',
       collapseDetails: true,
       approveOnceLabel: 'Approve this command',
+      approveLabel: 'Allow reads for this chat',
     })
     emit({ id: 'sibling' })
     fireWindow()
@@ -323,7 +326,7 @@ describe('approval dialog coalescing', () => {
     // The same primary-button position now grants the remaining request's
     // broader read-access scope. A click committed against "Approve all" must
     // not land on the changed action until the user has had time to see it.
-    assert.equal(approve().textContent, 'Approve')
+    assert.equal(approve().textContent, 'Allow reads for this chat')
     assert.equal(approve().disabled, true)
     approve().click()
     assert.deepEqual(responses, [])
