@@ -129,6 +129,11 @@ export async function saveAppScreenshot(
   size: { width: number; height: number } = E2E_VIEWPORT,
 ): Promise<void> {
   await prepareE2eScreenshot(size)
+  await savePreparedAppScreenshot(filename)
+}
+
+/** Capture an app shell that the spec has already sized and framed. */
+export async function savePreparedAppScreenshot(filename: string): Promise<void> {
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
   await waitForSettledLayout('#app')
@@ -367,19 +372,23 @@ export async function pinTextForCapture(
       const apply = (): number => {
         const host = document.querySelector(sel)
         if (!host) return 0
-        let applied = 0
+        let matched = 0
         const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
           const text = node as Text
+          // `search` ignores lastIndex, so a /g pattern cannot skip a node.
+          if (text.data.search(re) === -1) continue
+          // A live value that already reads as the stand-in (a 40 ms dry-run
+          // pinned to "40 ms") is pinned all the same; counting only rewrites
+          // made such a run look like the value was missing.
+          matched += 1
           const replaced = text.data.replace(re, next)
-          // Already pinned (or nothing to pin): leave it, or the observer
-          // would chase its own writes.
+          // Already pinned: leave it, or the observer would chase its own writes.
           if (replaced === text.data) continue
           if (!pinned.has(text)) pinned.set(text, text.data)
           text.data = replaced
-          applied += 1
         }
-        return applied
+        return matched
       }
       const first = apply()
       const observer = new MutationObserver(() => {
