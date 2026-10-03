@@ -2,7 +2,7 @@
 
 Self-hosted runners must never execute untrusted code from external
 contributors. Trusted push and same-repository PR jobs may use the configured
-check or e2e fleets; a fork uses only the hosted, read-only `precheck` tier in
+check or e2e fleets; a fork PR uses only the hosted, read-only `precheck` tier in
 [`ci.yml`](../.github/workflows/ci.yml).
 
 **Since this repository went public, GitHub-hosted is the default for every
@@ -25,8 +25,8 @@ unread.
 Two layers keep fork code off the self-hosted box — keep **both**:
 
 1. **Fork guards (`if`)** — coverage, build, benchmarks, e2e, and every
-   write-capable side effect are skipped unless the event is a push or a
-   same-repository (non-fork) PR.
+   write-capable side effect are skipped for fork PRs. Queue candidate checks
+   run on hosted; secret-bearing and write-capable side effects stay excluded.
 2. **Trust-based `runs-on`** — fork `precheck` and `CI Passed` resolve to
    `ubuntu-latest`; e2e's runner expression also fails closed for a fork. So
    even if a job-level fork guard is removed accidentally, untrusted code cannot
@@ -34,6 +34,31 @@ Two layers keep fork code off the self-hosted box — keep **both**:
 
 A same-repo (non-fork) PR is trusted because only collaborators can push
 branches to this repo.
+
+## Merge queue trust boundary
+
+A `merge_group` event has no pull-request origin field. Its synthetic commit
+can contain a fork contribution even though the queue ref belongs to this
+repository. Queue membership does not grant access to the self-hosted fleet.
+All queue candidate-code jobs, including precheck, full units, build, reviewer
+cell, e2e and release benchmarks, run on GitHub-hosted runners regardless of
+`SELF_HOSTED_CHECKS`, `SELF_HOSTED_E2E` or `LM_EVAL_RUNNER`. The default token is
+restricted to `contents: read`, queue checkouts do not persist it, and queue
+runs receive no model credentials. Real-model evaluation jobs, autoformat and
+screenshot publication are explicitly ineligible for queue events.
+
+The separate queue decision bridge has `statuses: write` but never executes
+candidate code: it loads only the script at the event's trusted base SHA,
+without persisted checkout credentials. It verifies live source PR membership,
+head, base, same-repository origin, ancestry and trusted source decisions before
+reporting required statuses on the synthetic SHA. Fork candidates fail that
+bridge even though their CI can safely run on hosted runners. Keep source
+verification separate from candidate-controlled scripts and outputs.
+
+Regression tests evaluate the actual runner expressions with both fleet
+variables opted in and a queue event, checking that every route still resolves
+to hosted. They also pin read-only candidate permissions, credential handling
+and the explicit queue exclusion on every secret-bearing model job.
 
 ## Fork pull-request regression case
 
