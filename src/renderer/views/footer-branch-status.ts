@@ -165,11 +165,27 @@ export function mountFooterBranchStatus(
     return getThreadById(store, store.getState().activeThreadId)
   }
 
-  /** The picked base branch for the active thread, while it is still blank. */
+  /**
+   * Where a blank thread starts: the user's pick, else the repository's default
+   * branch. Falling back to the live checkout instead would make a new thread
+   * inherit whatever branch the previously viewed thread left it on. The default
+   * only counts once it is a listed branch, because the send fails outright on a
+   * base the repository does not hold.
+   */
+  function startBranch(thread: Thread): string | undefined {
+    if (!isBlankThread(thread)) return undefined
+    const picked = baseBranchByThread.get(thread.id)
+    if (picked) return picked
+    if (thread.id !== store.getState().activeThreadId) return undefined
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch)
+      ? defaultBranch
+      : undefined
+  }
+
+  /** The base branch for the active thread, while it is still blank. */
   function activeBaseBranch(): string | undefined {
     const thread = getActiveThread()
-    if (!thread || !isBlankThread(thread)) return undefined
-    return baseBranchByThread.get(thread.id)
+    return thread ? startBranch(thread) : undefined
   }
 
   function getActiveThreadBranch(): string | undefined {
@@ -788,7 +804,10 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId: string): string | undefined => baseBranchByThread.get(threadId),
+    pendingBaseBranch: (threadId: string): string | undefined => {
+      const thread = getThreadById(store, threadId)
+      return thread ? startBranch(thread) : undefined
+    },
     destroy: (): void => {
       refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)
