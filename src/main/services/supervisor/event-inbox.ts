@@ -27,16 +27,26 @@ export interface EventInboxHost {
   resolve(
     automationId: string,
   ): Promise<{ enabled: boolean; binding: EventAutomationBinding } | null>
-  /** Recheck project/resource availability, permissions and run/worktree limits without side effects. */
+  /**
+   * Recheck project/resource availability, permissions and run/worktree limits without side effects.
+   * A denial marked `retryable` is a capacity limit that clears on its own: reconciliation leaves
+   * the delivery pending to be checked again instead of fencing it for good.
+   */
   authorize(
     record: EventInboxRecord,
-  ): Promise<{ allowed: true } | { allowed: false; reason: string }>
+  ): Promise<{ allowed: true } | { allowed: false; reason: string; retryable?: boolean }>
   /**
    * Create/recover a draft using runId as thread ID. Must be idempotent, observe signal,
    * and compare the saved binding under the definition writer lock at the commit boundary.
    * This boundary must not start a model turn or perform external writes: recovery may call it again.
    */
   prepareRun(record: EventInboxRecord & { runId: string }, signal: AbortSignal): Promise<void>
+}
+
+interface CheckFailure {
+  reason: string
+  /** True when waiting could make the same delivery eligible. */
+  retryable: boolean
 }
 
 function pending(record: EventInboxRecord): boolean {
@@ -94,10 +104,18 @@ export class AutomationEventInbox {
         if (record.state === 'prepared') return this.result(task.threadId)
         if (!pending(record))
           return { blockedReason: record.reason ?? 'Event delivery is not pending' }
-        const reason = await this.check(record)
-        if (reason) {
-          await this.hold(record, reason)
-          return { blockedReason: reason }
+        const failure = await this.check(record)
+        if (failure) {
+          if (failure.retryable) {
+            return {
+              reschedule: {
+                trigger: { kind: 'wake_at', wakeAt: this.now() + 30_000 },
+                reason: failure.reason,
+              },
+            }
+          }
+          await this.hold(record, failure.reason)
+          return { blockedReason: failure.reason }
         }
         // Fencing may have happened during an asynchronous permission/resource check.
         const current = await this.store.get(task.projectId, record.key)
@@ -191,9 +209,10 @@ export class AutomationEventInbox {
       await runSerialized(`event-admission:${projectId}:${record.key}`, async () => {
         const current = await this.store.get(projectId, record.key)
         if (!current || !pending(current)) return
-        const reason = await this.check(current)
-        if (reason) {
-          await this.hold(current, reason)
+        const failure = await this.check(current)
+        if (failure) {
+          // A capacity limit stays pending so a later reconcile can start it.
+          if (!failure.retryable) await this.hold(current, failure.reason)
           return
         }
         const claimed = await this.store.update(projectId, current.key, (latest) => {
@@ -268,25 +287,28 @@ export class AutomationEventInbox {
     return null
   }
 
-  private async check(record: EventInboxRecord): Promise<string | null> {
+  private async check(record: EventInboxRecord): Promise<CheckFailure | null> {
+    const final = (reason: string): CheckFailure => ({ reason, retryable: false })
     const resolved = await this.host.resolve(record.binding.automationId)
-    if (!resolved?.enabled) return 'Automation is deleted, paused or unavailable'
+    if (!resolved?.enabled) return final('Automation is deleted, paused or unavailable')
     const current = eventAutomationBindingSchema.parse(resolved.binding)
     if (JSON.stringify(current) !== JSON.stringify(record.binding))
-      return 'Saved automation changed; pending delivery needs review'
+      return final('Saved automation changed; pending delivery needs review')
     const mismatch = this.bindingMismatch(current, record.delivery)
-    if (mismatch) return mismatch
-    if (record.delivery.originAutomationId) return 'Automation-originated events are not eligible'
+    if (mismatch) return final(mismatch)
+    if (record.delivery.originAutomationId)
+      return final('Automation-originated events are not eligible')
     const match = await this.adapter.evaluate(current, record.delivery)
-    if (match.kind === 'filtered') return match.reason
+    if (match.kind === 'filtered') return final(match.reason)
     const authorized = await this.host.authorize(record)
-    if (!authorized.allowed) return authorized.reason
+    if (!authorized.allowed)
+      return { reason: authorized.reason, retryable: authorized.retryable === true }
     const latest = await this.host.resolve(record.binding.automationId)
     if (
       !latest?.enabled ||
       JSON.stringify(eventAutomationBindingSchema.parse(latest.binding)) !== JSON.stringify(current)
     )
-      return 'Automation changed during dispatch checks'
+      return final('Automation changed during dispatch checks')
     return null
   }
 

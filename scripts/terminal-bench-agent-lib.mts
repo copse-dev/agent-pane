@@ -3,6 +3,13 @@ import { copyFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
+import {
+  DEFAULT_REASONING_SOFT_BUDGET_CARRY_CHARS,
+  DEFAULT_REASONING_SOFT_BUDGET_MAX_CONSECUTIVE_CUTS,
+  DEFAULT_REASONING_SOFT_BUDGET_MAX_CUTS_PER_RUN,
+  DEFAULT_REASONING_SOFT_BUDGET_TOKENS,
+  type ReasoningSoftBudget,
+} from '@copse/agent/reasoning-budget.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { LOCAL_REASONING_SUPPRESSION_BODY } from '@copse/llm/create-provider.ts'
 import { REASONING_RUNAWAY_SUPPRESSED_NUDGE } from '@copse/llm/provider-stop-reason.ts'
@@ -109,7 +116,9 @@ export function terminalBenchRuntimeConfiguration(
         : recoveryStrategy,
     ),
     suppressedOutputTokens: profile.loop.suppressedOutputTokens,
-    softReasoningBudget: null,
+    softReasoningBudget: profile.loop.reasoningCheckpointPolicy
+      ? (terminalReasoningSoftBudgetFromEnv(env) ?? null)
+      : null,
     maxLlmCalls: envPositiveInt(env, 'COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3),
     maxContextTokens: envPositiveInt(env, 'COPSE_TERMINAL_CONTEXT_TOKENS', 32_768),
     maxStreamOutputTokens: envPositiveInt(
@@ -157,7 +166,15 @@ export function terminalBenchLoopOptions(
   | 'allowForcedTextEscalation'
   | 'stuckToolRecoveryNudge'
 > {
-  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  const baseCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
+  const reasoningCheckpointPolicy = baseCheckpointPolicy
+    ? {
+        ...baseCheckpointPolicy,
+        ...(runtime.softReasoningBudget
+          ? { softReasoningBudget: runtime.softReasoningBudget }
+          : {}),
+      }
+    : undefined
   return {
     maxSteps: runtime.maxSteps,
     reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
@@ -181,6 +198,47 @@ export function terminalBenchLoopOptions(
     stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
       ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, instruction)
       : profile.stuckToolRecoveryNudge,
+  }
+}
+
+/** Optional reported soft-budget override; old profile identities stay unchanged. */
+export function terminalReasoningSoftBudgetFromEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ReasoningSoftBudget | undefined {
+  const read = (name: string, fallback: number, allowZero: boolean): number => {
+    const raw = env[name]?.trim()
+    if (!raw) return fallback
+    const parsed = Number(raw)
+    if (!Number.isInteger(parsed) || parsed < 0 || (parsed === 0 && !allowZero)) {
+      throw new Error(
+        `${name} must be a${allowZero ? ' non-negative' : ' positive'} integer, received '${raw}'.`,
+      )
+    }
+    return parsed
+  }
+  const tokens = read(
+    'COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS',
+    DEFAULT_REASONING_SOFT_BUDGET_TOKENS,
+    true,
+  )
+  if (tokens === 0) return undefined
+  return {
+    tokens,
+    carryChars: read(
+      'COPSE_TERMINAL_REASONING_SOFT_CARRY_CHARS',
+      DEFAULT_REASONING_SOFT_BUDGET_CARRY_CHARS,
+      false,
+    ),
+    maxCutsPerRun: read(
+      'COPSE_TERMINAL_REASONING_SOFT_MAX_CUTS',
+      DEFAULT_REASONING_SOFT_BUDGET_MAX_CUTS_PER_RUN,
+      false,
+    ),
+    maxConsecutiveCuts: read(
+      'COPSE_TERMINAL_REASONING_SOFT_MAX_CONSECUTIVE',
+      DEFAULT_REASONING_SOFT_BUDGET_MAX_CONSECUTIVE_CUTS,
+      false,
+    ),
   }
 }
 
