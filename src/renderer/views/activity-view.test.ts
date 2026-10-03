@@ -394,6 +394,12 @@ describe('activity view answering a question in place', () => {
       ['Postgres', 'SQLite'],
     )
     assert.equal(body.querySelectorAll('.activity-answer-input').length, 2)
+    assert.equal(
+      body.querySelector('.activity-answer-input')?.getAttribute('placeholder'),
+      'Or type an answer…',
+    )
+    // The decision sits in one group, so a wrapping action bar never parts it.
+    assert.equal(sendButton(harness).closest('.activity-decide')?.children.length, 1)
     assert.equal(sendButton(harness).textContent, 'Send answer')
     assert.equal(sendButton(harness).disabled, true)
   })
