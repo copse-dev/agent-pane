@@ -10,7 +10,7 @@ describe('native dialog text selection', () => {
     await $('#activity-panel').waitForDisplayed()
     const approve = $('#activity-panel .activity-approve')
     await approve.waitForEnabled()
-    await expect(approve).toHaveText('Approve once')
+    await expect(approve).toHaveText('Approve')
 
     const drag = await browser.execute(() => {
       const button = document.querySelector('#activity-panel .activity-approve')

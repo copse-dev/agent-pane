@@ -85,6 +85,7 @@ export interface DemoScenario {
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
+    /** The thread the request belongs to, as on a real approval event. */
     threadId?: string
     title: string
     body: string
@@ -1844,6 +1845,104 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       ],
       setupMessage: null,
     },
+  },
+  {
+    id: 'activity-home',
+    label: 'Activity home on a new thread',
+    project: project('demo-activity-home-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the active one and is empty, so the chat pane is the
+    // Activity home. The others give it something to list: one waiting on an
+    // approval, two running, one that finished while the user was elsewhere.
+    threads: [
+      {
+        id: 'demo-activity-home-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-home-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-activity-home-audit',
+        title: 'Dependency audit',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      {
+        id: 'demo-activity-home-flaky',
+        title: 'Fix the flaky sandbox test',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 3,
+        updatedAt: FIXED_TIME - 3,
+      },
+      {
+        id: 'demo-activity-home-copy',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 4,
+        updatedAt: FIXED_TIME - 4,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-home-approval',
+        threadId: 'demo-activity-home-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        bodyAdvice: 'Auto-run for sandbox commands is disabled in Settings',
+        bodyFooter: 'Allow running it once?',
+        type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'activity-home-empty',
+    label: 'Activity home with nothing to list',
+    project: project('demo-activity-home-empty-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first-run case: one empty thread and nothing running or waiting.
+    threads: [
+      {
+        id: 'demo-activity-home-empty-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
   },
   {
     id: 'chat-layout-styling',

@@ -34,27 +34,31 @@ describe('titlebar workspace name', () => {
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
-    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
-    const centeredBorder = await browser.execute(() => {
+    // An empty thread with nothing running or waiting anywhere is the bare
+    // composer, centred; the Activity home steps aside until there is something
+    // to list.
+    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 })
+    await expect($('#activity-home')).not.toBeDisplayed()
+    const idle = await browser.execute(() => {
       const input = document.getElementById('input-bar')
-      if (!input) return null
-      const style = getComputedStyle(input)
+      const pane = document.getElementById('pane-chat')
+      const conversation = document.getElementById('conversation')
+      if (!input || !pane || !conversation) return null
+      const bar = input.getBoundingClientRect()
+      const frame = pane.getBoundingClientRect()
       return {
-        top: style.borderTopWidth,
-        right: style.borderRightWidth,
-        bottom: style.borderBottomWidth,
-        left: style.borderLeftWidth,
-        boxShadow: style.boxShadow,
+        barMid: (bar.top + bar.bottom) / 2,
+        paneMid: (frame.top + frame.bottom) / 2,
+        conversationDisplay: getComputedStyle(conversation).display,
+        composerBorder: getComputedStyle(input).borderTopWidth,
       }
     })
-    await expect(centeredBorder).not.toBeNull()
-    if (!centeredBorder) throw new Error('Missing #input-bar')
-    await expect(centeredBorder.top).toBe('0px')
-    await expect(centeredBorder.right).toBe('0px')
-    await expect(centeredBorder.bottom).toBe('0px')
-    await expect(centeredBorder.left).toBe('0px')
-    await expect(centeredBorder.boxShadow).toMatch(/0px 0px 0px 1px/)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
+    await expect(idle).not.toBeNull()
+    if (!idle) throw new Error('Missing composer elements')
+    await expect(Math.abs(idle.barMid - idle.paneMid)).toBeLessThanOrEqual(2)
+    await expect(idle.conversationDisplay).toBe('none')
+    await expect(idle.composerBorder).toBe('0px')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()
     const blankRows = await $$('.chats-list .chat-row .chat-title')
