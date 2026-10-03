@@ -37,7 +37,7 @@ export interface QueueGateGitHub {
         base: string
         head: string
       }): Promise<{ data: unknown }>
-      listCommitStatuses(input: {
+      listCommitStatusesForRef(input: {
         owner: string
         repo: string
         ref: string
@@ -179,7 +179,7 @@ async function verifyCommit(github: QueueGateGitHub, input: Input, entry: Entry)
 async function verifyStatuses(github: QueueGateGitHub, input: Input, entry: Entry): Promise<void> {
   const latest = new Map<string, { id: number; state: unknown; author: unknown }>()
   for (let page = 1; page <= PAGE_LIMIT; page += 1) {
-    const { data } = await github.rest.repos.listCommitStatuses({
+    const { data } = await github.rest.repos.listCommitStatusesForRef({
       owner: input.owner,
       repo: input.repo,
       ref: entry.prHead,

@@ -158,6 +158,21 @@ jobs:
       # Whether the real Docker reviewer cell needs its focused conformance job.
       review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
     steps:
+      - name: Verify merge-queue GitHub client methods
+        uses: actions/github-script@v9
+        with:
+          script: |
+            if (typeof github.graphql !== 'function') throw new Error('Missing GraphQL client');
+            for (const [namespace, method] of [
+              ['pulls', 'get'],
+              ['repos', 'compareCommits'],
+              ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'createCommitStatus'],
+            ]) {
+              if (typeof github.rest[namespace]?.[method] !== 'function') {
+                throw new Error(`Missing queue API method: ${namespace}.${method}`);
+              }
+            }
       - uses: actions/checkout@v7.0.1
         with:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.

@@ -77,7 +77,7 @@ function fixture(
             },
           }
         },
-        listCommitStatuses: async ({ ref }) => {
+        listCommitStatusesForRef: async ({ ref }) => {
           assert.equal(ref, prHead)
           return { data: statuses[Math.min(statusRead++, statuses.length - 1)] }
         },
