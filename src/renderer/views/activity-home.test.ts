@@ -1,14 +1,15 @@
 // The new-thread screen host: placement before the composer, unique ids beside
-// the overlay, drawing only while shown, and leaving focus with the composer.
+// the overlay, drawing only while shown, leaving focus with the composer, folding
+// groups, and filtering by project from the strip.
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore, type AppStore } from '@shared/store/store.ts'
-import type { Thread } from '@shared/types'
+import type { BackgroundThread, Thread } from '@shared/types'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { mountActivityHome } from './activity-home.ts'
 import { mountActivityPanel } from './activity-panel.ts'
-import type { ApprovalRequests } from './approval-dialog.ts'
+import type { ApprovalRequests, PendingApprovalSummary } from './approval-dialog.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 
 const noApprovals: ApprovalRequests = {
@@ -31,15 +32,35 @@ function thread(id: string, patch: Partial<Thread> = {}): Thread {
   }
 }
 
+function approval(id: string, threadId: string): PendingApprovalSummary {
+  return {
+    id,
+    threadId,
+    title: 'Run shell command?',
+    body: 'pnpm test',
+    bodyAdvice: undefined,
+    bodyFooter: undefined,
+    type: 'shell',
+    receivedAt: 1_000_000,
+  }
+}
+
+interface MountOptions {
+  background?: BackgroundThread[]
+  approvals?: PendingApprovalSummary[]
+}
+
 interface Mounted {
   store: AppStore
   pane: HTMLElement
   composer: HTMLElement
   home: ReturnType<typeof mountActivityHome>
   flush: () => void
+  /** Replace the pending approvals and tell the view, as the approval dialog does. */
+  setApprovals: (next: PendingApprovalSummary[]) => void
 }
 
-function mount(threads: Thread[]): Mounted {
+function mount(threads: Thread[], options: MountOptions = {}): Mounted {
   const pane = document.createElement('main')
   pane.id = 'pane-chat'
   const input = document.createElement('div')
@@ -51,11 +72,15 @@ function mount(threads: Thread[]): Mounted {
   document.body.append(pane)
 
   const store = createStore({
-    projects: [{ id: 'p1', path: '/work', name: 'workspace' }],
+    projects: [
+      { id: 'p1', path: '/work', name: 'workspace' },
+      { id: 'p2', path: '/docs', name: 'docs-site' },
+    ],
     activeProjectId: 'p1',
     expandedProjectId: 'p1',
     workspaceRoot: '/work',
     threads,
+    backgroundThreads: options.background ?? [],
     activeThreadId: threads[0]?.id ?? null,
   })
   // Queued, never self-running: a view that re-arms its age tick would loop.
@@ -67,16 +92,36 @@ function mount(threads: Thread[]): Mounted {
       return (): void => {}
     },
   }
-  const sources = { approvals: noApprovals, questions: noQuestions }
-  const api = createPendingApi({})
-  const home = mountActivityHome(pane, api, store, sources, deps)
+  let pending = options.approvals ?? []
+  const listeners: Array<() => void> = []
+  const approvals: ApprovalRequests = {
+    pending: () => pending,
+    answerOnce: () => false,
+    onChange: (listener) => {
+      listeners.push(listener)
+      return (): void => {}
+    },
+  }
+  const home = mountActivityHome(
+    pane,
+    createPendingApi({}),
+    store,
+    { approvals, questions: noQuestions },
+    deps,
+  )
+  const flush = (): void => {
+    for (const fn of queued.splice(0)) fn()
+  }
   return {
     store,
     pane,
     composer,
     home,
-    flush: (): void => {
-      for (const fn of queued.splice(0)) fn()
+    flush,
+    setApprovals: (next): void => {
+      pending = next
+      for (const listener of listeners) listener()
+      flush()
     },
   }
 }
@@ -84,6 +129,28 @@ function mount(threads: Thread[]): Mounted {
 afterEach(() => {
   document.body.replaceChildren()
 })
+
+function rows(pane: HTMLElement): string[] {
+  return [...pane.querySelectorAll('#activity-home .activity-row .activity-thread')].map(
+    (node) => node.textContent,
+  )
+}
+
+function toggle(pane: HTMLElement, group: string): HTMLButtonElement {
+  const found = pane.querySelector<HTMLButtonElement>(
+    `#activity-home [data-group-toggle="${group}"]`,
+  )
+  assert.ok(found, `expected the ${group} header`)
+  return found
+}
+
+function card(pane: HTMLElement, project: string): HTMLButtonElement {
+  const found = pane.querySelector<HTMLButtonElement>(
+    `#activity-home .activity-strip-card[data-project="${project}"]`,
+  )
+  assert.ok(found, `expected the ${project} tile`)
+  return found
+}
 
 describe('activity home', () => {
   it('mounts hidden, before the composer', () => {
@@ -101,13 +168,14 @@ describe('activity home', () => {
     home.setShown(true)
 
     assert.equal(pane.querySelector<HTMLElement>('#activity-home')?.hidden, false)
-    assert.equal(pane.querySelectorAll('#activity-home .activity-row').length, 1)
+    assert.ok(toggle(pane, 'working'), 'the Working header is drawn')
     assert.ok(document.activeElement === composer, 'the composer keeps focus')
   })
 
   it('stops drawing once hidden', () => {
     const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
     home.setShown(true)
+    assert.equal(toggle(pane, 'working').querySelector('.activity-group-count')?.textContent, '1')
     home.setShown(false)
     assert.equal(pane.querySelector<HTMLElement>('#activity-home')?.hidden, true)
 
@@ -115,8 +183,9 @@ describe('activity home', () => {
     store.emit('thread_status_changed', 't2', 'running')
     flush()
     assert.equal(
-      pane.querySelectorAll('#activity-home .activity-row').length,
-      1,
+      pane.querySelector('#activity-home [data-group-toggle="working"] .activity-group-count')
+        ?.textContent,
+      '1',
       'a hidden home must not redraw',
     )
   })
@@ -140,11 +209,173 @@ describe('activity home', () => {
     home.setShown(true)
     panel.open()
 
-    // Rows, a group title and the detail title exist in both hosts now.
+    // A group title exists in both hosts now.
     assert.ok(document.querySelector('#activity-home .activity-group-title'))
     assert.ok(document.querySelector('#activity-panel .activity-group-title'))
     const ids = [...document.querySelectorAll('[id]')].map((node) => node.id)
     const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index)
     assert.deepEqual(duplicates, [])
+  })
+})
+
+describe('activity home groups', () => {
+  it('starts with Working folded, naming how many it holds, and unfolds on a click', () => {
+    const { pane, home } = mount([
+      thread('t1', { status: 'running' }),
+      thread('t2', { status: 'running' }),
+    ])
+    home.setShown(true)
+
+    const header = toggle(pane, 'working')
+    assert.equal(header.getAttribute('aria-expanded'), 'false')
+    assert.equal(header.querySelector<HTMLElement>('.activity-group-count')?.hidden, false)
+    assert.equal(header.querySelector('.activity-group-count')?.textContent, '2')
+    assert.deepEqual(rows(pane), [], 'a folded group draws no rows')
+
+    header.click()
+    assert.equal(toggle(pane, 'working').getAttribute('aria-expanded'), 'true')
+    assert.deepEqual(rows(pane).sort(), ['t1', 't2'])
+    assert.equal(
+      toggle(pane, 'working').querySelector<HTMLElement>('.activity-group-count')?.hidden,
+      true,
+      'an open group shows its rows instead of a count',
+    )
+
+    toggle(pane, 'working').click()
+    assert.deepEqual(rows(pane), [])
+  })
+
+  it('keeps focus on the header it was used from', () => {
+    const { pane, home } = mount([thread('t1', { status: 'running' })])
+    home.setShown(true)
+    const header = toggle(pane, 'working')
+    header.focus()
+    header.click()
+    assert.ok(
+      document.activeElement === toggle(pane, 'working'),
+      'a redraw must not pull focus off the header',
+    )
+  })
+
+  it('unfolds Needs you when a new request arrives, but leaves a request already seen folded', () => {
+    const { pane, home, setApprovals } = mount([thread('t1'), thread('t2')], {
+      approvals: [approval('a1', 't1')],
+    })
+    home.setShown(true)
+    assert.deepEqual(rows(pane), ['t1'], 'a waiting request is drawn')
+
+    toggle(pane, 'needs-you').click()
+    assert.deepEqual(rows(pane), [], 'the user folded it')
+
+    // The same request again: it was already seen, so the group stays folded.
+    setApprovals([approval('a1', 't1')])
+    assert.deepEqual(rows(pane), [])
+
+    // A new request unfolds it, so it cannot hide behind a header.
+    setApprovals([approval('a1', 't1'), approval('a2', 't2')])
+    assert.deepEqual(rows(pane).sort(), ['t1', 't2'])
+  })
+
+  it('moves the selection off a row whose group is folded', () => {
+    const { pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
+      approvals: [approval('a1', 't2')],
+    })
+    home.setShown(true)
+    toggle(pane, 'working').click()
+    pane
+      .querySelector<HTMLButtonElement>('#activity-home .activity-row[data-state="working"] button')
+      ?.click()
+    assert.equal(
+      pane.querySelector('#activity-home .activity-row[data-selected]')?.getAttribute('data-state'),
+      'working',
+    )
+
+    toggle(pane, 'working').click()
+    assert.equal(
+      pane.querySelector('#activity-home .activity-row[data-selected]')?.getAttribute('data-state'),
+      'needs-approval',
+      'selection falls to the nearest visible row',
+    )
+  })
+})
+
+describe('activity home selection', () => {
+  const selectedTitle = (pane: HTMLElement): string | null | undefined =>
+    pane.querySelector('#activity-home .activity-row[data-selected] .activity-thread')?.textContent
+
+  it('follows the most urgent row until the user chooses one', () => {
+    // t2 finished while the user was elsewhere; t1 and t3 are idle until a request lands.
+    const { pane, home, setApprovals } = mount([
+      thread('t1'),
+      thread('t2', { unreadAt: 900_000 }),
+      thread('t3'),
+    ])
+    home.setShown(true)
+    assert.equal(selectedTitle(pane), 't2', 'only the finished row exists')
+
+    setApprovals([approval('a1', 't1')])
+    assert.equal(selectedTitle(pane), 't1', 'a request that arrives is shown without a click')
+
+    pane
+      .querySelector<HTMLButtonElement>('#activity-home .activity-row[data-thread-id="t2"] button')
+      ?.click()
+    assert.equal(selectedTitle(pane), 't2')
+
+    setApprovals([approval('a1', 't1'), approval('a2', 't3')])
+    assert.equal(selectedTitle(pane), 't2', 'a row the user chose never moves under them')
+  })
+
+  it('starts the next visit on the most urgent row again', () => {
+    const { pane, home } = mount([thread('t1'), thread('t2', { unreadAt: 900_000 })], {
+      approvals: [approval('a1', 't1')],
+    })
+    home.setShown(true)
+    pane
+      .querySelector<HTMLButtonElement>('#activity-home .activity-row[data-thread-id="t2"] button')
+      ?.click()
+    assert.equal(selectedTitle(pane), 't2')
+
+    home.setShown(false)
+    home.setShown(true)
+    assert.equal(selectedTitle(pane), 't1')
+  })
+})
+
+describe('activity home project strip', () => {
+  const background: BackgroundThread[] = [
+    { projectId: 'p2', thread: thread('d1', { status: 'running' }) },
+  ]
+
+  it('lists All projects first, then the projects that need you', () => {
+    const { pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
+      background,
+      approvals: [approval('a1', 't2')],
+    })
+    home.setShown(true)
+
+    const names = [...pane.querySelectorAll('#activity-home .activity-strip-name')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(names, ['All projects', 'workspace'], 'docs-site has nothing waiting')
+    assert.match(card(pane, 'all').textContent, /1 need you/)
+    assert.match(card(pane, 'all').textContent, /2 working/)
+    assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
+  })
+
+  it('narrows the list to a project and back', () => {
+    const { pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
+      background,
+      approvals: [approval('a1', 't2')],
+    })
+    home.setShown(true)
+    toggle(pane, 'working').click()
+    assert.deepEqual(rows(pane).sort(), ['d1', 't1', 't2'])
+
+    card(pane, 'p1').click()
+    assert.deepEqual(rows(pane).sort(), ['t1', 't2'], 'docs-site is filtered out')
+    assert.equal(card(pane, 'p1').getAttribute('aria-pressed'), 'true')
+
+    card(pane, 'all').click()
+    assert.deepEqual(rows(pane).sort(), ['d1', 't1', 't2'])
   })
 })
