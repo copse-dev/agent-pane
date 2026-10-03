@@ -96,6 +96,7 @@ import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
+import { attachAutomationAppearance } from './controller/automation-appearance.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import {
   loadProjects,
@@ -362,6 +363,7 @@ async function boot(): Promise<void> {
     attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
     // Changes panel on to it. Only the main window: a pop-out is pinned to the
     // one pane it was opened for.

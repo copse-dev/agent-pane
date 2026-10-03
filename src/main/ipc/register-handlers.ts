@@ -399,7 +399,7 @@ import {
   mockScenarioStatus,
   parseMockScenario,
 } from '@copse/llm/mock-script.ts'
-import { applyAppIcon } from '../app-icon.ts'
+import { applyAppIcon, setAutomationAppIconMode } from '../app-icon.ts'
 import {
   createMainWindow,
   freezeMainWindowStateForQuit,
@@ -1660,6 +1660,12 @@ export function registerAllHandlers(
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
+  })
+  ipcMain.handle('app-icon:set-automation-mode', (event, active: unknown) => {
+    assertMainFrameSender(event, win)
+    const enabled = parseIpcArgs(z.boolean(), [active])
+    const mainWin = getMainWindow()
+    setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
   ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
