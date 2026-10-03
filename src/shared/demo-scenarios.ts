@@ -604,7 +604,12 @@ function conciseThreadScenario(
         title: 'Concise thread view',
         status: live ? 'running' : 'idle',
         model,
-        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        messages: multiTurn
+          ? [
+              ...conciseMultiTurnMessages(model),
+              ...(live ? conciseThreadMessages(model, true) : []),
+            ]
+          : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -1764,6 +1769,12 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'Concise thread view across several turns',
     'claude-opus-5-5',
     { multiTurn: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-multi-working',
+    'Concise thread view with finished turns and a live one',
+    'claude-opus-5-5',
+    { multiTurn: true, live: true },
   ),
   conciseThreadScenario(
     'concise-thread-full',
