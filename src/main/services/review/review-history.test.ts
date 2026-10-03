@@ -72,6 +72,11 @@ describe('recordUserReview', () => {
         content: `${REVIEW_REPORT_FRAMING}\n\n${wrapExternalContent('copse_reviewer', SUMMARY)}`,
       },
     ])
+    // The common IPC path does not know which UI entry point started the review.
+    const gesture = history.at(-2)
+    assert.equal(gesture?.role, 'user')
+    assert.ok(typeof gesture.content === 'string')
+    assert.doesNotMatch(gesture.content, /button|bubble|Changes pane|retry/i)
     assert.deepEqual(d.saved, [history])
     assert.deepEqual(d.forgotten, [THREAD])
   })
