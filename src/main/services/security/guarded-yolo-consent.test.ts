@@ -9,6 +9,49 @@ import { activateGuardedYoloForRun, armGuardedYolo, disableGuardedYolo } from '.
 import { ensureShellCommandPermitted } from './permission-gate.ts'
 
 describe('Guarded YOLO uncertain host power consent', () => {
+  it('times out a flagged rm and returns a rewrite hint so the run can continue', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const threadId = 'guarded-yolo-rm-timeout'
+    armGuardedYolo(threadId)
+    activateGuardedYoloForRun(threadId)
+    let announce: () => void = () => {}
+    const shown = new Promise<void>((resolve) => {
+      announce = resolve
+    })
+    let promptSignal: AbortSignal | undefined
+    setApprovalHandler((request, signal) => {
+      assert.equal(request.timeoutMs, 120_000)
+      announce()
+      promptSignal = signal
+      return new Promise(() => {})
+    })
+    try {
+      const pending = runWithActiveRunIdentity(threadId, () =>
+        ensureShellCommandPermitted('rm -rf build', {
+          executionRoot: '/work/project',
+          sandboxEnabled: true,
+        }),
+      )
+      const denied = assert.rejects(pending, /timed out after two minutes.*Rewrite the command/)
+      await shown
+      t.mock.timers.tick(120_000)
+      await denied
+      assert.equal(promptSignal?.aborted, true)
+      assert.equal(
+        await runWithActiveRunIdentity(threadId, () =>
+          ensureShellCommandPermitted('echo continuing', {
+            executionRoot: '/work/project',
+            sandboxEnabled: true,
+          }),
+        ),
+        true,
+      )
+    } finally {
+      setApprovalHandler(null)
+      disableGuardedYolo(threadId)
+    }
+  })
+
   it('asks for every invocation, honors rejection, and never offers a hard-deny override', async () => {
     const root = mkdtempSync(join(tmpdir(), 'guarded-yolo-consent-'))
     const threadId = 'guarded-yolo-consent'

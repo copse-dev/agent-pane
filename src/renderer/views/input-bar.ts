@@ -32,6 +32,7 @@ import {
 import {
   dispatchAgentRun,
   enqueueUserMessage,
+  sendQueuedMessageNow,
   startHumanTurnTree,
 } from '../controller/message-queue.ts'
 import { sendCodeBlockRunResult } from '../controller/code-block-runs.ts'
@@ -1771,8 +1772,24 @@ export function mountInputBar(
     true,
   )
 
+  let sendNowChordAt = 0
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
+    const control = e.ctrlKey || e.metaKey
+    const chord =
+      control &&
+      !e.altKey &&
+      !e.shiftKey &&
+      e.key.toLowerCase() === 's' &&
+      sendNowChordAt > 0 &&
+      Date.now() - sendNowChordAt < 1_500
+    sendNowChordAt =
+      control && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'x' ? Date.now() : 0
+    if (chord || (control && e.key === 'Enter' && !e.altKey && !e.shiftKey)) {
+      e.preventDefault()
+      void submit(true)
+      return
+    }
     // Tab accepts the offered next step into an empty composer. Plain Tab only
     // — modified Tabs keep their meanings (Ctrl+Tab switches threads) — and a
     // visible mention/skill picker keeps its own Tab-to-accept.
@@ -1796,12 +1813,12 @@ export function mountInputBar(
     void submit()
   })
 
-  async function submit(): Promise<void> {
+  async function submit(sendNow = false): Promise<void> {
     const id = getActiveThreadId()
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
     updateState()
     try {
-      await performSubmit(id)
+      await performSubmit(id, sendNow)
     } catch (error) {
       console.error('Could not send prompt', { threadId: id, error })
       checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
@@ -1812,7 +1829,7 @@ export function mountInputBar(
     }
   }
 
-  async function performSubmit(id: string): Promise<void> {
+  async function performSubmit(id: string, sendNow: boolean): Promise<void> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -1854,8 +1871,15 @@ export function mountInputBar(
       attachedArchives.length === 0 &&
       attachedThreads.length === 0 &&
       attachedShells.length === 0
-    )
+    ) {
+      if (sendNow) {
+        const target = getThreadById(store, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false,
+        )
+        if (target) sendQueuedMessageNow(store, api, id, target.messageId)
+      }
       return
+    }
     const projectId = store.getState().activeProjectId
     const thread = getThreadById(store, id)
     if (!projectId || !thread) return
@@ -2174,6 +2198,7 @@ export function mountInputBar(
     const queued = { messageId, payload, createdAt: Date.now() }
     if (getThreadById(store, id)?.status === 'running') {
       enqueueUserMessage(store, id, queued)
+      if (sendNow) sendQueuedMessageNow(store, api, id, messageId)
     } else {
       // A typed prompt at idle starts a fresh turn tree (decision 16): late async
       // hooks from an earlier turn now carry a stale epoch and are held, not

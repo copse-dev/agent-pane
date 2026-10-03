@@ -1,13 +1,11 @@
-import { errorMessage } from '@shared/errors.ts'
+import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-shell-process.ts'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import {
-  afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
-  spawnShellInProjectSandbox,
 } from '../project-sandbox/index.ts'
 import {
   shellReadGrantTargets,
@@ -58,11 +56,7 @@ import {
   installSocketFirewall,
   isSocketFirewallAvailable,
 } from '../services/security/socket-firewall.ts'
-import {
-  CappedOutputAccumulator,
-  stripTerminalControlSequences,
-} from '../services/exec/subprocess-output-cap.ts'
-import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
+import { stripTerminalControlSequences } from '../services/exec/subprocess-output-cap.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
@@ -91,126 +85,6 @@ const RUN_SHELL_TIMEOUT_TOO_LARGE =
   `timeout_ms may not exceed ${String(RUN_SHELL_MAX_TIMEOUT_MS)}ms (` +
   `${String(RUN_SHELL_MAX_TIMEOUT_MS / 60_000)} minutes). For dev servers, watchers, or ` +
   `intentionally unbounded work, use run_background instead of a longer foreground timeout.`
-
-interface ShellRunResult {
-  output: string
-  exitCode: number
-  sandboxViolationCount?: number
-  /** The sandbox wrapper process itself failed to start (child 'error' event). */
-  spawnFailed?: boolean
-}
-
-async function runShellOnce(
-  command: string,
-  cwd: string,
-  timeout_ms: number,
-  signal: AbortSignal,
-  unsandboxed: boolean,
-  env: NodeJS.ProcessEnv,
-  readGrantTargets: readonly string[] = [],
-): Promise<ShellRunResult> {
-  return new Promise<ShellRunResult>((resolve, reject) => {
-    void (async (): Promise<void> => {
-      let proc
-      try {
-        proc = await spawnShellInProjectSandbox(command, {
-          cwd,
-          env,
-          stdio: 'pipe',
-          signal,
-          unsandboxed,
-          readGrantTargets,
-        })
-      } catch (err) {
-        // Wrapping the command in the sandbox failed (runner-side, not command
-        // output). For a sandboxed run, surface it as spawnFailed so an unsandboxed
-        // retry can be offered (issue #104); for an unsandboxed run it's a real error.
-        if (!unsandboxed) {
-          const message = errorMessage(err)
-          resolve({ output: message, exitCode: -1, spawnFailed: true })
-        } else {
-          reject(err instanceof Error ? err : new Error(String(err)))
-        }
-        return
-      }
-
-      const outputAcc = new CappedOutputAccumulator()
-      let settled = false
-      let cancelKill: (() => void) | undefined
-      const stream = (data: Buffer): void => {
-        const toStream = outputAcc.append(data.toString())
-        if (toStream) emitShellOutput(toStream)
-      }
-      proc.stdout?.on('data', stream)
-      proc.stderr?.on('data', stream)
-
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        cancelKill = terminateProcessTree(proc)
-      }
-
-      const cleanup = (): void => {
-        clearTimeout(timer)
-        cancelKill?.()
-        signal.removeEventListener('abort', onAbort)
-      }
-
-      const timer = setTimeout(() => {
-        cancelKill = terminateProcessTree(proc)
-        if (!settled) {
-          settled = true
-          signal.removeEventListener('abort', onAbort)
-          reject(new Error(`Command timed out after ${String(timeout_ms)}ms`))
-        }
-      }, timeout_ms)
-
-      const sandboxViolationCount = (): number =>
-        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
-
-      const finish = (): void => {
-        if (!unsandboxed) afterSandboxedCommand()
-      }
-
-      proc.on('error', (err) => {
-        cleanup()
-        const violationCount = sandboxViolationCount()
-        finish()
-        if (settled) return
-        settled = true
-        // A child 'error' (e.g. the sandbox wrapper binary failed to launch) is a
-        // runner-side failure, not command-controlled output. Surface it as a result
-        // with spawnFailed so an unsandboxed retry can be offered (issue #104), but
-        // only when this was a sandboxed run.
-        if (!unsandboxed) {
-          const message = errorMessage(err)
-          resolve({
-            output: message,
-            exitCode: -1,
-            sandboxViolationCount: violationCount,
-            spawnFailed: true,
-          })
-          return
-        }
-        reject(err instanceof Error ? err : new Error(String(err)))
-      })
-
-      proc.on('close', (code) => {
-        cleanup()
-        const violationCount = sandboxViolationCount()
-        finish()
-        if (settled) return
-        settled = true
-        resolve({
-          output: outputAcc.toString(),
-          exitCode: code ?? 0,
-          sandboxViolationCount: violationCount,
-        })
-      })
-
-      signal.addEventListener('abort', onAbort)
-    })()
-  })
-}
 
 /**
  * Record which predicate withheld an unsandboxed retry from a failure that named
@@ -255,6 +129,7 @@ async function maybeRetryUnsandboxed(
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
   options: UnsandboxedRetryOptions,
+  onDetach: () => () => Promise<void>,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd, options.ranOutsideSandbox)) {
@@ -311,7 +186,7 @@ async function maybeRetryUnsandboxed(
     )
   }
   if (!approved) return 'declined'
-  const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env)
+  const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env, [], onDetach)
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
 }
 
@@ -564,6 +439,22 @@ export const runShellTool = defineTool({
     // finally because a command can change files even when it exits non-zero or
     // the runner throws. Scoped to the command's real effects by the baseline diff.
     const baseline = await captureWorktreeBaseline()
+    const lifecycle = { detached: false }
+    const releaseResources = async (): Promise<void> => {
+      gitSsh.release()
+      await adoptWorktreeChangesSince(baseline)
+    }
+    const onDetach = (): (() => Promise<void>) => {
+      lifecycle.detached = true
+      // Background work can overlap the user's next edits. A later whole-tree
+      // diff cannot safely attribute those edits to this command.
+      return () => {
+        gitSsh.release()
+        return Promise.resolve()
+      }
+    }
+    const backgroundResult = (id: string): string =>
+      `Command continues as background task ${id}. Inspect its output with run_background logs; do not rerun it.`
     try {
       const result = await runShellOnce(
         executedCommand,
@@ -573,7 +464,10 @@ export const runShellTool = defineTool({
         outsideSandbox,
         childEnv,
         readGrantTargets ?? [],
+        onDetach,
       )
+
+      if (result.backgroundId) return backgroundResult(result.backgroundId)
 
       // A pipeline whose only non-zero status is a SIGPIPE'd producer succeeded:
       // the downstream `head`/`grep -m` closed the pipe because it already had
@@ -605,9 +499,11 @@ export const runShellTool = defineTool({
             ranOutsideSandbox: outsideSandbox,
             threadId,
           },
+          onDetach,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
+          if (retry.result.backgroundId) return backgroundResult(retry.result.backgroundId)
           if (succeeded(retry.result)) {
             recordCreatedPullRequest(command, retry.result.output)
             const retryBanner = unattendedContainer
@@ -637,8 +533,7 @@ export const runShellTool = defineTool({
         }),
       )
     } finally {
-      gitSsh.release()
-      await adoptWorktreeChangesSince(baseline)
+      if (!lifecycle.detached) await releaseResources()
     }
   },
 })

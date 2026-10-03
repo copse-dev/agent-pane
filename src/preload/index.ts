@@ -292,7 +292,8 @@ const api: ApiClient = {
     resetDefaultBranchCache: () => ipcRenderer.invoke('agent:reset-default-branch-cache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
-    abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    abort: (threadId: string, reason?: 'send_now') =>
+      ipcRenderer.invoke('agent:abort', threadId, reason),
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
