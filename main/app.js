@@ -52604,6 +52604,10 @@ function unwrapUncached(id, search) {
     const stripped = unwrap2(id.slice(sep + 1), search);
     if (stripped !== null) return stripped;
   }
+  if (id.startsWith("openai/gpt-") || id.startsWith("anthropic/claude-")) {
+    const stripped = unwrap2(id.slice(id.indexOf("/") + 1), search);
+    if (stripped !== null) return stripped;
+  }
   const lastColon = id.lastIndexOf(":");
   if (lastColon > 0 && id.slice(0, lastColon).includes("/")) {
     return unwrap2(id.slice(0, lastColon), search);
@@ -60010,7 +60014,18 @@ var init_plan_inclusion = __esm({
 });
 
 // src/shared/plan-frontier-candidates.ts
-function planAcpFrontierCandidates(agents) {
+function planAcpFrontierCandidates(agents, pricedRoutes = []) {
+  const livePrices = /* @__PURE__ */ new Map();
+  for (const route of pricedRoutes) {
+    if (route.local || route.plan !== void 0 || route.planAccess !== void 0) continue;
+    if (!Number.isFinite(route.costPerMTok) || route.costPerMTok < 0) continue;
+    const identity = resolveIntellectModelId(route.id);
+    if (!identity) continue;
+    const previous = livePrices.get(identity);
+    if (previous === void 0 || route.costPerMTok < previous) {
+      livePrices.set(identity, route.costPerMTok);
+    }
+  }
   const candidates = [];
   for (const agent of agents) {
     if (!agent.enabled) continue;
@@ -60031,12 +60046,14 @@ function planAcpFrontierCandidates(agents) {
       );
       if (!resolved3) continue;
       const score = getIntellectScore(resolved3);
-      const info = getModelInfo(resolved3);
-      if (!score || !info) continue;
+      const info = getModelInfo(resolved3) ?? Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved3)?.[1];
+      const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved3);
+      if (!score || price === void 0) continue;
       candidates.push({
         id: acpModelValue(agent.id, choice.value),
         intellect: score.value,
-        costPerMTok: blendedPricePerMTok(info),
+        intellectEstimated: score.estimated === true,
+        costPerMTok: price,
         planAccess: { provider, modelId: resolved3 }
       });
     }
@@ -61620,11 +61637,14 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     } else if (liveFetch.error) {
       liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`);
     }
+    const pricedRoutes = [
+      ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models)
+    ];
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
-      ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models),
-      ...planAcpFrontierCandidates(acpAgents)
+      ...pricedRoutes,
+      ...planAcpFrontierCandidates(acpAgents, pricedRoutes)
     ];
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
     const delegatedModelIds = /* @__PURE__ */ new Set();
