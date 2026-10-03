@@ -1,9 +1,12 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  e2eWorkspaceDir,
   readSeededSettings,
   resetUserData,
   seedEmptyProject,
+  seedStableWorkspace,
   writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -34,9 +37,19 @@ describe('tool activity icon', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     server = await startConversationServer({ title: 'Shell command status' })
-    server.configureEnvironment()
+    server.configureEnvironment({ COPSE_PANEL_MOCK_BRANCH: '' })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-tool-activity-icon-project', {
+    // These suites create real thread-store entries. Remove only their owned
+    // projects so the next fixture does not render unrelated recoverable chats.
+    for (const projectId of [
+      'e2e-tool-activity-icon-project',
+      'e2e-tool-activity-icon-nested-project',
+    ]) {
+      rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
+    }
+    // A shallow source checkout need not have local main. Use real fixture
+    // refs for both footer discovery and first-send checkout, never fake names.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-tool-activity-icon-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -174,9 +187,19 @@ describe('tool activity icon — nested rollup row', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     server = await startConversationServer({ title: 'Wait for the preview server' })
-    server.configureEnvironment()
+    server.configureEnvironment({ COPSE_PANEL_MOCK_BRANCH: '' })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-tool-activity-icon-nested-project', {
+    // These suites create real thread-store entries. Remove only their owned
+    // projects so the next fixture does not render unrelated recoverable chats.
+    for (const projectId of [
+      'e2e-tool-activity-icon-project',
+      'e2e-tool-activity-icon-nested-project',
+    ]) {
+      rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
+    }
+    // A shallow source checkout need not have local main. Use real fixture
+    // refs for both footer discovery and first-send checkout, never fake names.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-tool-activity-icon-nested-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
