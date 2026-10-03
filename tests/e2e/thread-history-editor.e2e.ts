@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -82,7 +83,10 @@ describe('edit thread history', function () {
       timeoutMsg: 'expected the seeded transcript',
     })
 
-    const row = await $('.chat-row.selected')
+    // The three-dot thread button lives on the project manager's rows; the
+    // default sidebar's right-click menu shares the same Fork choices.
+    await openProjectManager()
+    const row = await $('.thread-project-manager .chat-row.selected')
     await row.$('.chat-menu-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Fork').click()
@@ -122,7 +126,9 @@ describe('edit thread history', function () {
       expect.stringContaining('Actually, keep it self-contained'),
     )
 
-    const threadIdAfterEdit = await $('.chat-row.selected').getAttribute('data-thread-id')
+    const threadIdAfterEdit = await $('.thread-project-manager .chat-row.selected').getAttribute(
+      'data-thread-id',
+    )
     expect(threadIdAfterEdit).toBe(THREAD_ID)
 
     await browser.reloadSession()
