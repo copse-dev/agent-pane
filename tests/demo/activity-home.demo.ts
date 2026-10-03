@@ -119,6 +119,39 @@ describe('browser-hosted Activity home', () => {
     await expect($('#activity-home .activity-detail-title')).toHaveText('Refactor auth')
     await expect($('#activity-home .activity-approve')).toHaveText('Approve')
     await expect($('#activity-home .activity-reject')).toBeExisting()
+    const look = await browser.execute(() => {
+      const approve = document.querySelector('#activity-home .activity-approve')
+      const reject = document.querySelector('#activity-home .activity-reject')
+      const open = document.querySelector('#activity-home .activity-open-thread')
+      const bell = document.querySelector('.projects-activity-btn')
+      const glyph = document.querySelector(
+        '#activity-home .activity-row[data-state="needs-approval"] .activity-glyph',
+      )
+      // What --text-primary resolves to, to compare colours without parsing them.
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--text-primary)'
+      document.body.append(probe)
+      const neutral = getComputedStyle(probe).color
+      probe.remove()
+      return {
+        approveHeight: approve?.getBoundingClientRect().height ?? 0,
+        rejectHeight: reject?.getBoundingClientRect().height ?? 0,
+        arrow: open?.querySelector('svg.activity-open-arrow') !== null,
+        bellColor: bell ? getComputedStyle(bell).color : null,
+        glyphColor: glyph ? getComputedStyle(glyph).color : null,
+        neutral,
+      }
+    })
+    // The prototype's pills are about 29px tall; the kit's cap-trimmed default is 22px.
+    expect(look.approveHeight).toBeGreaterThanOrEqual(27)
+    expect(look.approveHeight).toBeLessThanOrEqual(31)
+    expect(look.rejectHeight).toBeGreaterThanOrEqual(27)
+    expect(look.rejectHeight).toBeLessThanOrEqual(31)
+    // "Open thread" ends in an arrow icon, not a text glyph.
+    expect(look.arrow).toBe(true)
+    // Attention is neutral: the bell and the waiting row's glyph are not yellow.
+    expect(look.bellColor).toBe(look.neutral)
+    expect(look.glyphColor).toBe(look.neutral)
     await saveAppScreenshot('activity-home-dark.png')
   })
 

@@ -141,7 +141,7 @@
   background: var(--bg-hover);
 }
 .projects-activity-btn.has-attention {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .projects-activity-count {
   font-size: var(--font-size-xs);
@@ -634,7 +634,7 @@
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
-  color: var(--warning, #d29922);
+  color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
 }
 .project-row .chat-attention-bell {
