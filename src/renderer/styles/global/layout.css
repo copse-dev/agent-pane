@@ -842,6 +842,11 @@
 .messages-list {
   background: transparent;
 }
+.pane-chat.is-activity-home {
+  /* Narrower than the Activity card above it, as in the prototype; the caption
+     over the composer uses the same width so the two line up. */
+  --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
+}
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
      takes the pane above the docked composer. */

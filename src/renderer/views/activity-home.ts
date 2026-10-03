@@ -48,17 +48,21 @@ export function mountActivityHome(
     onNeedsYou: (count) => {
       root.dataset['needsYou'] = String(count)
     },
+    collapsibleGroups: true,
+    projectStrip: true,
+    followUrgent: true,
   })
 
+  // The prototype carries no visible heading, summary or status line: the strip
+  // already counts what needs you, and a row moves when it is answered. They stay
+  // in the page for screen readers (a landmark name and the live region).
+  view.status.classList.add('activity-home-sr')
   root.append(
-    el(
-      'header',
-      { class: 'activity-home-header' },
-      el('h2', { id: 'activity-home-title', class: 'activity-home-title' }, 'Activity'),
-      view.summary,
-      view.status,
-    ),
+    el('h2', { id: 'activity-home-title', class: 'activity-home-sr' }, 'Activity'),
+    view.strip,
     view.body,
+    view.status,
+    el('p', { class: 'activity-home-caption' }, 'Start a new thread'),
   )
   // Before the composer, which is positioned over the pane's bottom edge.
   pane.insertBefore(root, pane.querySelector('#input-bar'))

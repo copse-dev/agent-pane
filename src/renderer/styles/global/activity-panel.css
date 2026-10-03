@@ -320,7 +320,8 @@ dialog.activity-panel-overlay {
 }
 
 /* ── The new-thread screen (views/activity-home.ts) ───────────────────────
-   The same list and detail as the overlay, in the chat pane above the docked
+   Laid out after the prototype (prototypes/new-thread-activity.html): a strip of
+   project tiles, the list-and-detail card, then a caption over the docked
    composer. The composer is positioned over the pane's bottom edge, so the home
    reserves its height the way .conversation does. */
 .activity-home {
@@ -328,44 +329,235 @@ dialog.activity-panel-overlay {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
   box-sizing: border-box;
-  width: var(--chat-composer-width);
+  /* A column of up to 1050px whose side margins grow with the pane; the pane is
+     the chat-pane container, so cqw is the pane's own width. */
+  width: min(1050px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
   margin-inline: auto;
-  /* The composer sits one step above the pane's bottom edge; a second step
-     leaves a gap between it and the card instead of touching. */
-  padding: var(--spacing-lg) 0 calc(var(--chat-composer-height) + 2 * var(--spacing-md));
+  padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
 }
 /* display above would otherwise beat the UA's [hidden] rule. */
 .activity-home[hidden] {
   display: none;
 }
-.activity-home-header {
+/* Kept for screen readers (the landmark name, the answer confirmation); the
+   prototype shows neither. */
+.activity-home-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.activity-home-caption {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--chat-composer-width);
+  margin: 14px auto 7px;
+  padding-left: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* The project strip: All projects, then the ones that need you. */
+.activity-strip {
   display: flex;
-  align-items: baseline;
-  gap: var(--spacing-md);
+  flex: none;
+  gap: 10px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.activity-home-title {
-  margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: 400;
-}
-.activity-home .activity-panel-body {
-  grid-template-rows: minmax(0, 1fr);
-  flex: 1 1 auto;
+.activity-strip-card {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  width: 190px;
+  padding: 11px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.activity-strip-card:first-child {
+  width: 170px;
+}
+.activity-strip-card:hover {
+  background: var(--bg-hover);
+}
+.activity-strip-card[aria-pressed='true'] {
+  background: var(--bg-selected);
+}
+.activity-strip-card:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.activity-strip-name {
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-strip-stats {
+  display: flex;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.activity-strip-need {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The card: list and detail. */
+.activity-home .activity-panel-body {
+  grid-template-columns: minmax(285px, 0.43fr) minmax(0, 0.57fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-/* Narrow pane: the list above the detail, each scrolling on its own. */
+.activity-home .activity-list {
+  padding-block: 11px;
+}
+
+/* Group headers fold their rows. */
+.activity-home .activity-group + .activity-group {
+  margin-top: 9px;
+}
+.activity-home .activity-group-title {
+  display: block;
+  padding: 11px 18px 7px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.activity-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.activity-group-toggle:hover {
+  color: var(--text-primary);
+}
+.activity-group-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.activity-group-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.activity-group-toggle[aria-expanded='false'] .activity-group-chevron {
+  transform: rotate(-90deg);
+}
+/* The glyph says what a row is; the word is kept where nothing else follows it
+   (Done, Failed) and in the row's accessible name. */
+.activity-home .activity-row[data-state='needs-approval'] .activity-state,
+.activity-home .activity-row[data-state='needs-answer'] .activity-state,
+.activity-home .activity-row[data-state='working'] .activity-state {
+  display: none;
+}
+
+/* The detail pane. */
+.activity-home .activity-detail-header {
+  padding: 26px 30px 0;
+}
+.activity-home .activity-detail-meta {
+  gap: 9px;
+}
+.activity-home .activity-detail-state {
+  padding: 1px 6px;
+  font-weight: 500;
+}
+/* One neutral chip for every state, as in the prototype. The attribute selector
+   matches the specificity of the overlay's tinted chips, which it must beat. */
+.activity-home .activity-detail[data-state] .activity-detail-state {
+  background: var(--bg-hover);
+}
+.activity-home .activity-detail-title {
+  margin: 18px 0 26px;
+  font-size: calc(24px * var(--ui-scale));
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.activity-home .activity-detail-body {
+  padding: 0 30px 26px;
+}
+.activity-home .activity-detail-label {
+  margin-bottom: 11px;
+  letter-spacing: 0.07em;
+}
+.activity-home .activity-detail-text {
+  font-size: var(--font-size-md);
+}
+.activity-home .activity-detail-actions {
+  padding: 14px 30px;
+  background: none;
+}
+.activity-home .activity-detail-actions .ui-btn {
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-size: calc(13px * var(--ui-scale));
+  font-weight: 600;
+}
+.activity-home .activity-detail-actions .activity-open-thread {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+}
+.activity-home .activity-detail-actions .activity-open-thread::after {
+  content: '↗' / '';
+  margin-left: 8px;
+}
+
+/* Narrow pane: one column that scrolls as a whole. The list keeps its own short
+   scroll above the detail, and the action bar sticks to the card's bottom edge so
+   Reject and Approve stay reachable however long the request is. */
 @container chat-pane (max-width: 640px) {
   .activity-home .activity-panel-body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: none;
+    align-content: start;
+    overflow-y: auto;
   }
   .activity-home .activity-list {
+    max-height: 200px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+  .activity-home .activity-detail,
+  .activity-home .activity-detail-body {
+    min-height: auto;
+    overflow: visible;
+  }
+  .activity-home .activity-detail-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elevated);
   }
 }
