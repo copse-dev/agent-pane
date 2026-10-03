@@ -743,8 +743,8 @@ describe('footer branch status', () => {
     // worktrees, so nothing is checked out until `prepareCheckout` runs.
     assert.deepEqual(checkouts, [])
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
-    assert.equal(control.pendingBaseBranch('thread-2'), undefined)
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-2'), undefined)
     assert.match(
       qsRequired(host, '.branch-picker-trigger').title,
       /Start this thread from: feature\/new/,
@@ -780,7 +780,7 @@ describe('footer branch status', () => {
     assert.ok(option)
     option.click()
     await settle()
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
 
     store.setState({ threads: [thread(undefined, true)] })
     store.emit('threads_changed')
@@ -788,7 +788,7 @@ describe('footer branch status', () => {
 
     // The selection was consumed by the first send; the thread now speaks for a
     // real checkout, and a stale preference must not outlive it.
-    assert.equal(control.pendingBaseBranch('thread-1'), undefined)
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
   })
 
   it('keeps the trunk PR out of the branch picker menu too', async () => {
@@ -950,7 +950,7 @@ describe('footer branch status', () => {
     )
 
     assert.equal(host.querySelector('.branch-picker-menu')?.hasAttribute('hidden'), true)
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
     assert.ok(
       document.activeElement === host.querySelector('.branch-picker-trigger'),
@@ -1032,7 +1032,7 @@ describe('footer branch status', () => {
     await settle()
 
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
-    assert.equal(control.pendingBaseBranch('thread-1'), 'main')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
   })
 
   for (const defaultBranch of [null, 'unlisted/default']) {
@@ -1056,7 +1056,7 @@ describe('footer branch status', () => {
       )
       await settle()
       assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/left-behind')
-      assert.equal(control.pendingBaseBranch('thread-1'), undefined)
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
     })
   }
 

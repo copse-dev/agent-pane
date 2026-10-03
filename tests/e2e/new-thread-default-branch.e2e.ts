@@ -74,12 +74,6 @@ describe('new thread default branch checkout', () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     await browser.reloadSession()
     await $('.prompt-input').waitForDisplayed({ timeout: 30_000 })
-    await expect($('.branch-picker-label')).toHaveText('main', { wait: 15_000 })
-    await expect($('.branch-picker-trigger')).toHaveAttribute(
-      'title',
-      'Start this thread from: main',
-    )
-    await expect($('.branch-picker-trigger')).not.toHaveElementClass('is-link')
     assert.equal(
       git(root, ['rev-parse', 'HEAD']),
       featureCommit,
@@ -95,35 +89,44 @@ describe('new thread default branch checkout', () => {
       rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
-  for (const mode of ['shared', 'worktree', 'explicit'] as const) {
+  for (const mode of ['startup', 'shared', 'worktree', 'explicit'] as const) {
     it(`uses the ${mode} first-send base in the actual Git checkout`, async function () {
       this.timeout(120_000)
-      await $('.footer-checkout-btn').click()
-      await $(`[data-checkout-choice="${mode === 'worktree' ? 'worktree' : 'shared'}"]`).click()
-      await $('.branch-picker-trigger').click()
-      const menu = $('.branch-picker-menu')
-      await expect(menu).toBeDisplayed()
-      await expect(
-        menu.$('.branch-picker-option.is-selected .branch-picker-option-label'),
-      ).toHaveText('main')
-      assert.equal((await menu.$$('.branch-picker-option.is-selected')).length, 1)
-      await expect(
-        menu.$('.branch-picker-option:first-child .branch-picker-default-badge'),
-      ).toBeDisplayed()
-      if (mode === 'explicit') {
-        const options = await menu.$$('.branch-picker-option')
-        let selected = false
-        for (const option of options) {
-          if ((await option.$('.branch-picker-option-label').getText()) !== FEATURE) continue
-          await option.click()
-          selected = true
-          break
+      // Startup sends deliberately do not await supplementary footer discovery.
+      if (mode !== 'startup') {
+        await expect($('.branch-picker-label')).toHaveText('main', { wait: 15_000 })
+        await expect($('.branch-picker-trigger')).toHaveAttribute(
+          'title',
+          'Start this thread from: main',
+        )
+        await expect($('.branch-picker-trigger')).not.toHaveElementClass('is-link')
+        await $('.footer-checkout-btn').click()
+        await $(`[data-checkout-choice="${mode === 'worktree' ? 'worktree' : 'shared'}"]`).click()
+        await $('.branch-picker-trigger').click()
+        const menu = $('.branch-picker-menu')
+        await expect(menu).toBeDisplayed()
+        await expect(
+          menu.$('.branch-picker-option.is-selected .branch-picker-option-label'),
+        ).toHaveText('main')
+        assert.equal((await menu.$$('.branch-picker-option.is-selected')).length, 1)
+        await expect(
+          menu.$('.branch-picker-option:first-child .branch-picker-default-badge'),
+        ).toBeDisplayed()
+        if (mode === 'explicit') {
+          const options = await menu.$$('.branch-picker-option')
+          let selected = false
+          for (const option of options) {
+            if ((await option.$('.branch-picker-option-label').getText()) !== FEATURE) continue
+            await option.click()
+            selected = true
+            break
+          }
+          assert.ok(selected, 'fixture feature branch must be selectable')
+          await expect($('.branch-picker-label')).toHaveText(FEATURE)
+        } else {
+          await saveAppScreenshot(`new-thread-default-branch-${mode}-picker.png`)
+          await browser.keys('Escape')
         }
-        assert.ok(selected, 'fixture feature branch must be selectable')
-        await expect($('.branch-picker-label')).toHaveText(FEATURE)
-      } else {
-        await saveAppScreenshot(`new-thread-default-branch-${mode}-picker.png`)
-        await browser.keys('Escape')
       }
       const prompt = `Verify the ${mode} starting branch.`
       const reply = `The ${mode} checkout is ready.`

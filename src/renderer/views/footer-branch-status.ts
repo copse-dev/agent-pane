@@ -94,8 +94,8 @@ export function mountFooterBranchStatus(
 ): {
   destroy: () => void
   refresh: () => void
-  /** The selected or listed default branch a blank thread will start from. */
-  pendingBaseBranch: (threadId: string) => string | undefined
+  /** Resolve first-send intent independently of the supplementary footer refresh. */
+  resolveBaseBranch: (projectId: string, threadId: string) => Promise<string | undefined>
 } {
   const listId = `branch-picker-list-${String(++nextPickerId)}`
   const wrap = el('div', { class: 'branch-picker', hidden: '' })
@@ -804,9 +804,20 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId: string): string | undefined => {
+    resolveBaseBranch: async (projectId: string, threadId: string): Promise<string | undefined> => {
       const thread = getThreadById(store, threadId)
-      return thread ? startBranch(thread) : undefined
+      if (!thread || !isBlankThread(thread)) return undefined
+      // Capture the explicit pick before any await. Default discovery uses the
+      // submission's owner, never whichever thread becomes active while waiting.
+      const picked = baseBranchByThread.get(threadId)
+      if (picked) return picked
+      const [listed, defaultName] = await Promise.all([
+        api.git.listBranches(projectId, threadId),
+        api.git.getDefaultBranch(projectId, threadId),
+      ])
+      return defaultName && listed.some((branch) => branch.name === defaultName)
+        ? defaultName
+        : undefined
     },
     destroy: (): void => {
       refreshToken += 1
