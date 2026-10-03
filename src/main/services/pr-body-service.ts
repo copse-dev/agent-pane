@@ -21,9 +21,8 @@ export function mockPrBody(): string {
  *
  * This is the *first* of the two halves the "Create PR" chip splits the old
  * agent turn into, and the only one that wants a model at all. It runs while
- * the dialog is open — a description the user is about to read and edit is
- * worth waiting on; one produced after they have already pressed Create is
- * just latency in front of a `gh` call whose every argument is settled.
+ * the dialog is open. If the user confirms before it finishes, the dialog
+ * waits for this same proposal before publishing, unless they wrote their own.
  *
  * Null when no small-tasks provider is configured, or the model returns
  * nothing: the dialog then leaves the field empty and the user writes their own
