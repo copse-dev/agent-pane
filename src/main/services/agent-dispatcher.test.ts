@@ -59,6 +59,17 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('uses the dispatch slot as an exclusive history-edit fence', async () => {
+    const dispatcher = new AgentDispatcher(host, registry, dependencies())
+
+    assert.equal(dispatcher.beginThreadHistoryEdit('project-1', 'thread-1'), true)
+    assert.equal(dispatcher.beginThreadHistoryEdit('project-1', 'thread-1'), false)
+    await assert.rejects(dispatcher.dispatch(request()), /already running/)
+
+    dispatcher.endThreadHistoryEdit('project-1', 'thread-1')
+    await dispatcher.dispatch(request())
+  })
+
   it('loads history once and commits each completed turn', async () => {
     const loaded: LLMMessage[] = [{ role: 'assistant', content: 'prior' }]
     const saved: LLMMessage[][] = []

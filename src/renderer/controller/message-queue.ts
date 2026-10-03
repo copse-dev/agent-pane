@@ -236,6 +236,11 @@ export function dispatchAgentRun(
   const projectId =
     backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId
   if (!projectId) throw new Error('Cannot run thread without an owning project')
+  patchThreadAnywhere(store, threadId, (thread) => {
+    if (thread.interruptedTurnAt === undefined) return thread
+    const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread
+    return rest
+  })
   clearContextSnapshot(store, threadId)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
@@ -388,11 +393,11 @@ export function movePendingUserMessagesToEnd(
   return alreadyInOrder ? messages : nextMessages
 }
 
-async function runningThreadIdsOrNone(api: ApiClient): Promise<string[]> {
+async function runningThreadIdsOrNone(api: ApiClient): Promise<string[] | null> {
   try {
     return await api.agent.runningThreadIds()
   } catch {
-    return []
+    return null
   }
 }
 
@@ -408,16 +413,21 @@ export async function resumePendingQueues(store: AppStore, api: ApiClient): Prom
   // Asking is best-effort: this runs behind `void` at both call sites, so an IPC
   // rejection here would otherwise strand the whole resume — no queue drained and
   // no stale `queuePaused` cleared — on an unhandled rejection nothing observes.
-  // Treating an unavailable answer as "nothing is running" degrades to the
-  // pre-#1406 behaviour (trust the persisted flag), which is the safe direction:
-  // a thread wrongly reset to idle still shows its queue, where one wrongly left
-  // running would be stuck with no way back.
-  const reallyRunning = new Set(await runningThreadIdsOrNone(api))
+  // If the query fails, keep the existing idle/queue recovery, but do not
+  // offer a retry: we cannot prove the old run stopped.
+  const runningThreadIds = await runningThreadIdsOrNone(api)
+  const reallyRunning = new Set(runningThreadIds ?? [])
   for (const thread of store.getState().threads) {
     // A fresh session has no open inline editors, so a persisted pause is stale.
     if (thread.queuePaused) setQueuePaused(store, thread.id, false)
     let status = thread.status
     if (status === 'running' && !reallyRunning.has(thread.id)) {
+      if (runningThreadIds !== null) {
+        patchThreadAnywhere(store, thread.id, (current) => ({
+          ...current,
+          interruptedTurnAt: Date.now(),
+        }))
+      }
       setThreadStatus(store, thread.id, 'idle')
       status = 'idle'
     }

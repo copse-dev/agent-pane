@@ -5,6 +5,7 @@ import {
   engineCommand,
   reachableThreadContainerEngines,
   resolveThreadContainerEngine,
+  runContainerImageBuild,
   type ThreadContainerEngine,
 } from './container-engine.ts'
 /**
@@ -1038,7 +1039,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
         WORKER_UID: String(WORKER_UID),
       },
     })
-    await runEngine(engine, build.args)
+    await runContainerImageBuild(engine, () => runEngine(engine, build.args))
     return image
   } finally {
     if (ownedContext) rmSync(contextDir, { recursive: true, force: true })

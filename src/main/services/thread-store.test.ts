@@ -52,6 +52,7 @@ import {
   type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { TOOL_RESULT_UNAVAILABLE } from '@shared/threads/fold.ts'
 import { createHash } from 'node:crypto'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
@@ -196,7 +197,7 @@ describe('thread-store', () => {
     assert.ok(existsSync(join(dir, 'events.jsonl')))
     assert.ok(existsSync(join(dir, 'meta.json')))
     assert.match(readFileSync(join(dir, 'messages', 'a1.md'), 'utf8'), /prose/)
-    assert.equal(readFileSync(join(dir, 'blobs', 'a1-tc.result.txt'), 'utf8'), 'RESULT')
+    assert.equal(readFileSync(join(dir, 'blobs', 'a1.tool-0.result.txt'), 'utf8'), 'RESULT')
     // meta.json holds no message bodies.
     assert.doesNotMatch(readFileSync(join(dir, 'meta.json'), 'utf8'), /prose/)
   })
@@ -245,7 +246,7 @@ describe('thread-store', () => {
       thread('broken', { messages: [assistantMsg('a1', 'x', 'R')] }),
     ])
     // Corrupt "broken" by deleting a referenced blob (crash-mid-write shape).
-    rmSync(join(root, 'proj-1', 'broken', 'blobs', 'a1-tc.result.txt'))
+    rmSync(join(root, 'proj-1', 'broken', 'blobs', 'a1.tool-0.result.txt'))
     const loaded = await loadProjectThreads('proj-1')
     assert.deepEqual(
       loaded.map((t) => t.id),
@@ -262,6 +263,99 @@ describe('thread-store', () => {
       loaded.map((t) => t.id),
       [],
     ) // hash mismatch => thread skipped
+  })
+
+  it('keeps a thread loadable when two messages reuse one tool-call id', async () => {
+    const reused = (id: string, result: string): Message => ({
+      ...assistantMsg(id, 'x', result),
+      toolCalls: [{ id: 'lmstudio-0', name: 'read_file', args: {}, status: 'done', result }],
+    })
+    const t = thread('t1', { messages: [reused('a1', 'first'), reused('a2', 'second')] })
+    await saveProjectThread('proj-1', t)
+    assert.deepEqual(await loadProjectThreads('proj-1'), [t])
+  })
+
+  it('keeps a thread loadable when the incremental append path reuses a tool-call id', async () => {
+    const reused = (id: string, result: string): Message => ({
+      ...assistantMsg(id, 'x', result),
+      toolCalls: [{ id: 'call_0', name: 'read_file', args: {}, status: 'done', result }],
+    })
+    await createThread('proj-1', thread('t1'))
+    await appendMessage('proj-1', 't1', reused('a1', 'first'))
+    await appendMessage('proj-1', 't1', reused('a2', 'second'))
+    const [loaded] = await loadProjectThreads('proj-1')
+    assert.deepEqual(
+      loaded?.messages.map((m) => m.toolCalls[0]?.result),
+      ['first', 'second'],
+    )
+  })
+
+  it('writes nothing outside the thread directory for a path-like tool-call id', async () => {
+    const hostile: Message = {
+      ...assistantMsg('a1', 'x', 'R'),
+      toolCalls: [{ id: '../../escape', name: 'read_file', args: {}, status: 'done', result: 'R' }],
+    }
+    const t = thread('t1', { messages: [hostile] })
+    await saveProjectThread('proj-1', t)
+    assert.ok(!existsSync(join(root, 'escape.result.txt')))
+    assert.ok(!existsSync(join(root, 'proj-1', 'escape.result.txt')))
+    assert.deepEqual(await loadProjectThreads('proj-1'), [t])
+  })
+
+  it('recovers a thread already damaged by a reused tool-call id, degrading only that card', async () => {
+    const reused = (id: string, result: string): Message => ({
+      ...assistantMsg(id, 'x', result),
+      toolCalls: [{ id: 'lmstudio-0', name: 'read_file', args: {}, status: 'done', result }],
+    })
+    await saveProjectThread(
+      'proj-1',
+      thread('t1', { messages: [reused('a1', 'first'), reused('a2', 'second')] }),
+    )
+    // Recreate what the id-named writer left on disk: both spine lines point at
+    // one `blobs/<toolCallId>.result.txt`, which holds the later result.
+    const dir = join(root, 'proj-1', 't1')
+    const events = join(dir, 'events.jsonl')
+    writeFileSync(
+      events,
+      readFileSync(events, 'utf8').replace(
+        /blobs\/a[12]\.tool-0\.result\.txt/g,
+        'blobs/lmstudio-0.result.txt',
+      ),
+    )
+    rmSync(join(dir, 'blobs'), { recursive: true })
+    mkdirSync(join(dir, 'blobs'))
+    writeFileSync(join(dir, 'blobs', 'lmstudio-0.result.txt'), 'second')
+
+    const warn = mock.method(console, 'warn', () => undefined)
+    try {
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.deepEqual(
+        loaded?.messages.map((m) => m.toolCalls[0]?.result),
+        [TOOL_RESULT_UNAVAILABLE, 'second'],
+      )
+      assert.equal(warn.mock.callCount(), 1)
+      assert.match(String(warn.mock.calls[0]?.arguments[0]), /lmstudio-0\.result\.txt/)
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it('skips a thread whose spine points outside its directory instead of reading there', async () => {
+    await saveProjectThread('proj-1', thread('t1', { messages: [assistantMsg('a1', 'x', 'R')] }))
+    // A legacy tool blob named from a hostile id: `blobs/../../<file>`.
+    writeFileSync(join(root, 'proj-1', 'outside.txt'), 'R')
+    const events = join(root, 'proj-1', 't1', 'events.jsonl')
+    writeFileSync(
+      events,
+      readFileSync(events, 'utf8').replace('blobs/a1.tool-0.result.txt', 'blobs/../../outside.txt'),
+    )
+    const warn = mock.method(console, 'warn', () => undefined)
+    try {
+      assert.deepEqual(await loadProjectThreads('proj-1'), [])
+      assert.match(String(warn.mock.calls[0]?.arguments[1]), /Missing thread file/)
+    } finally {
+      warn.mock.restore()
+    }
   })
 
   it('builds a searchable catalog and filters by query', async () => {
@@ -834,7 +928,7 @@ describe('thread-store', () => {
       const [loaded] = await loadProjectThreads('proj-1')
       assert.deepEqual(loaded?.messages, [updated])
       assert.equal(
-        readFileSync(join(root, 'proj-1', 't1', 'blobs', 'acp1.result.txt'), 'utf8'),
+        readFileSync(join(root, 'proj-1', 't1', 'blobs', 'a1.tool-0.result.txt'), 'utf8'),
         'Type check passed.\n',
       )
     })

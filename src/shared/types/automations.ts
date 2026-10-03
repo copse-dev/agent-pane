@@ -43,6 +43,19 @@ export interface AutomationSchedule {
   lastCreatedThreadId?: string
   /** Most recent trigger skipped because retained worktrees filled the limit. */
   lastWorktreeLimitAt?: number
+  /** Most recent trigger that failed or was skipped for a reason the user should see. */
+  lastProblem?: AutomationProblem
+}
+
+/**
+ * Why a scheduled trigger did not start a run. Cleared by the next run that
+ * starts, so it always describes the schedule's latest unresolved attempt.
+ */
+export interface AutomationProblem {
+  at: number
+  /** `failed`: the trigger threw. `pending-start`: an earlier run was never started. */
+  kind: 'failed' | 'pending-start'
+  message: string
 }
 
 /** Editable fields accepted by create/update IPC. Project ownership is separate. */

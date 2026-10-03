@@ -475,6 +475,11 @@ guarantee, and the record must say so.
   the secret canary exists to catch precisely that. Decision 3 stays "narrowed": exactly
   one credential, by value, for the run — now held by a third-party process, which is the
   material change and the reason for A3.
+  The pinned Codex ACP adapter also receives its supported
+  `DEFAULT_AUTH_REQUEST={"methodId":"api-key"}` when a key is supplied: its login
+  method reads that same environment key, whereas the variable alone does not
+  authenticate a fresh guest. The request carries no secret and is absent from
+  sign-in runs, which continue to use the explicitly carried login files.
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed
@@ -846,6 +851,12 @@ guarantee, and the record must say so.
   container against the argv before starting it, and the guest checks what it can see of
   itself before declaring. The engine is chosen once per run (Docker first). The shared
   pnpm store stays Docker-only, because an Apple volume attaches to one container at a time.
+  On Apple container 1.5.0, overlapping image builds intermittently fail context transfer
+  with `archive/tar: invalid tar header`, even with separate immutable contexts; the same
+  builds pass serially. Copse queues Apple image builds within its process, releasing the
+  queue on failure. The opt-in Apple integration runner also uses one test-file process
+  at a time. Independent CLI or app processes still share Apple's builder and must avoid
+  overlapping builds. Every integration test owns and cleans its worker bundle directory.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

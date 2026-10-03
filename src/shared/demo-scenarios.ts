@@ -1,3 +1,4 @@
+import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
@@ -23,6 +24,7 @@ const DEMO_CODEX_ACP_AGENT = {
 export interface DemoScenario {
   id: string
   label: string
+  chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
@@ -1931,6 +1933,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Roadmap layout bounds',
         status: 'idle',
         messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'chatgpt-plan-settings',
+    label: 'ChatGPT plan onboarding and account options',
+    project: project('demo-chatgpt-plan-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    threads: [
+      {
+        id: 'demo-chatgpt-plan-thread',
+        title: 'ChatGPT plan',
+        model: 'chatgpt-plan:demo-plan-account#gpt-5.6-luna',
+        status: 'idle',
+        messages: [
+          {
+            id: 'plan-limit',
+            role: 'assistant',
+            toolCalls: [],
+            content:
+              '> [!CAUTION]\n> ChatGPT plan usage limit reached. Review your plan or Copse’s allowance.\n>\n> [Manage usage](https://chatgpt.com/settings/usage)',
+            createdAt: FIXED_TIME,
+          },
+        ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,

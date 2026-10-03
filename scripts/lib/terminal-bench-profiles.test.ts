@@ -37,6 +37,7 @@ const PINNED_PROFILE_HASHES: Record<TerminalBenchProfileVersionedId, string> = {
   'product-aligned@3': '69c56451ed7d3abb564ac6edf731294cbf70d8c496249336f9282dbd64181a1f',
   'product-aligned@4': '516606b6377201d949ad1d712056f68d6841f41a506499b0abbdfaf55dc8119c',
   'product-aligned@5': '23c941b6ed4fdda18a1643a59ec9f113cf773253aa3e08bf8e3912d8a8c47597',
+  'product-aligned@6': 'df180e4ef1674c4418cb707658e219677d94ad033571afca7f87525aa1e2fbef',
 }
 
 const DRIFT_HINT =
