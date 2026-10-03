@@ -57412,18 +57412,19 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
+  const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    // Send the per-thread model so the run uses the picker's selection rather
-    // than the global default. Read at dispatch time so a change made while the
-    // message was queued still takes effect. Absent → main uses the global default.
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
+    // A queued human prompt carries its own model snapshot; hook-authored
+    // prompts without one follow the live thread selection. Absent → main uses
+    // the global default.
+    ...selectedModel !== void 0 ? { model: selectedModel } : {},
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
@@ -57466,7 +57467,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
   );
   if (!queued) {
     void run2;
@@ -57494,12 +57495,28 @@ function requeueBusyMessage(store2, api2, threadId, item) {
   if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
+  const queued = item.model !== void 0 || isMachineContinuation(item) ? item : {
+    ...item,
+    model: getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+  };
   patchThreadAnywhere(store2, threadId, (t2) => ({
     ...t2,
-    pendingMessages: [...t2.pendingMessages ?? [], item],
+    pendingMessages: [...t2.pendingMessages ?? [], queued],
     updatedAt: Date.now()
   }));
-  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("message_queued", threadId, queued.messageId);
+  store2.emit("threads_changed");
+}
+function updateQueuedMessageModel(store2, threadId, messageId, model) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: (t2.pendingMessages ?? []).map(
+      (item) => item.messageId === messageId ? { ...item, model } : item
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
@@ -57729,6 +57746,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
 var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
+    init_lm_studio_defaults();
     init_thread_helpers();
     init_review_reports();
     init_agent_activity();
@@ -86682,6 +86700,46 @@ function mountConversation(root, store2, api2) {
     const threadId = store2.getState().activeThreadId;
     if (threadId) releaseHeldMessage(store2, api2, threadId, messageId);
   }
+  function queuedModelValue(threadId, messageId) {
+    const thread = getThreadById(store2, threadId);
+    const raw = thread?.pendingMessages?.find((item) => item.messageId === messageId)?.model ?? thread?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+    return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+  }
+  function queuedRecentModels() {
+    const { threads, settings } = store2.getState();
+    return threads.slice().sort((a3, b4) => b4.updatedAt - a3.updatedAt).map((thread) => {
+      const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+      return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+    });
+  }
+  function queuedWorkspaceIsSsh() {
+    const { activeProjectId, projects } = store2.getState();
+    return Boolean(projects.find((project2) => project2.id === activeProjectId)?.sshHost);
+  }
+  function buildQueuedModelPicker(messageId) {
+    const threadId = store2.getState().activeThreadId;
+    const host = el("div", { class: "message-queued-model" });
+    const pickerHost = el("div", { class: "message-queued-model-picker" });
+    if (!threadId) return host;
+    mountModelPicker(
+      pickerHost,
+      () => queuedModelValue(threadId, messageId),
+      (model) => {
+        updateQueuedMessageModel(store2, threadId, messageId, model);
+      },
+      (current) => fetchModelOptions(api2, current, {
+        sshWorkspace: queuedWorkspaceIsSsh()
+      }),
+      {
+        variant: "compact",
+        enableShortcut: false,
+        ariaLabel: "Model for queued prompt",
+        getRecentValues: queuedRecentModels
+      }
+    );
+    host.append(el("span", { class: "message-queued-model-label" }, "Run with"), pickerHost);
+    return host;
+  }
   function buildHeldActions(messageId) {
     const releaseBtn = el(
       "button",
@@ -86706,7 +86764,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, releaseBtn, editBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        releaseBtn,
+        editBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedActions(messageId) {
@@ -86734,7 +86799,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, editBtn, sendNowBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        editBtn,
+        sendNowBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedEditor(messageId) {
@@ -88218,6 +88290,9 @@ var init_conversation = __esm({
     init_inline_visualization();
     init_message_model();
     init_model_display();
+    init_lm_studio_defaults();
+    init_model_picker();
+    init_model_options();
     init_attachment_icons();
     init_image_expand();
     init_acp_resource_previews();
@@ -104676,7 +104751,14 @@ ${description}
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
     recordThreadVideos(store2, id, attachedVideos2);
     recordThreadArchives(store2, id, attachedArchives2);
-    const queued = { messageId, payload, createdAt: Date.now() };
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      // Snapshot the selection with the prompt. A later model change while this
+      // item waits in the pinned queue should affect the next prompt, not this one.
+      model: model ?? DEFAULT_APP_CHAT_MODEL
+    };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
     } else {
