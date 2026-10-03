@@ -190,6 +190,40 @@ describe('EgressBroker', () => {
   })
 })
 
+describe('EgressBroker run key', () => {
+  function linked(runKey?: string): { broker: EgressBroker; guest: EgressLink } {
+    const broker = new EgressBroker({ rules: [], ...(runKey !== undefined ? { runKey } : {}) })
+    const guestToHost = new PassThrough()
+    const hostToGuest = new PassThrough()
+    broker.attach(guestToHost, hostToGuest)
+    return { broker, guest: new EgressLink(hostToGuest, guestToHost) }
+  }
+
+  it('hands the key over once, then answers every later request with nothing', async () => {
+    const { broker, guest } = linked('sk-synthetic-run-key')
+    try {
+      assert.equal(await guest.requestKey(500), 'sk-synthetic-run-key')
+      assert.equal(await guest.requestKey(500), '')
+      // Asking for the key opens no connection and is not an egress event.
+      assert.deepEqual(broker.log(), [])
+    } finally {
+      broker.stop()
+    }
+  })
+
+  it('answers with nothing when the run has no key or the broker has stopped', async () => {
+    const keyless = linked()
+    try {
+      assert.equal(await keyless.guest.requestKey(500), '')
+    } finally {
+      keyless.broker.stop()
+    }
+    const stopped = linked('sk-synthetic-run-key')
+    stopped.broker.stop()
+    await assert.rejects(stopped.guest.requestKey(100))
+  })
+})
+
 describe('EgressBroker and the host-local alias (A16)', () => {
   // The guest sends a key over plain http to the alias, so the broker must
   // only ever dial it on the host's loopback, whoever built the run.

@@ -170,9 +170,10 @@ describe('ContainerRunService', () => {
     assert.equal(service.get(THREAD), null)
   })
 
-  it('resolves the provider, hides the key behind an env var, and publishes progress to the record', async () => {
+  it('resolves the provider, keeps the key out of the host environment, and publishes progress to the record', async () => {
     const seen: ThreadContainerRequest[] = []
-    const keyValues: string[] = []
+    const envBefore = new Set(Object.keys(process.env))
+    const envDuringRun: string[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
       adopt: adoptSpy().adopt,
@@ -184,11 +185,14 @@ describe('ContainerRunService', () => {
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
-        keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
+        // Whatever the runner or a terminal spawns meanwhile inherits this.
+        envDuringRun.push(
+          ...Object.entries(process.env)
+            .filter(([name, value]) => !envBefore.has(name) || value === 'sk-ant-test')
+            .map(([name]) => name),
+        )
         options?.onLog?.('Starting with arbitrary diagnostic wording')
         options?.onPhase?.('running')
-        options?.onStarted?.()
-        keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
         options?.onPhase?.('collecting')
         return Promise.resolve(fakeRecord(request.prompt))
       },
@@ -215,9 +219,11 @@ describe('ContainerRunService', () => {
     assert.equal(request.provider?.kind, 'anthropic')
     assert.equal(request.provider.model, 'claude-sonnet-4-6')
     assert.equal(request.contextWindow, 1_000_000)
-    // The key was present for `docker run` and blanked once the guest held it.
-    assert.deepEqual(keyValues, ['sk-ant-test', ''])
-    assert.ok(request.apiKeyEnv && !request.apiKeyEnv.includes('sk-ant'))
+    // The key travels in memory to the runner, which hands it to the guest
+    // over the stdio link; the host environment never held it (A17).
+    assert.equal(request.apiKey, 'sk-ant-test')
+    assert.deepEqual(envDuringRun, [])
+    assert.ok(!Object.values(process.env).includes('sk-ant-test'))
     assert.ok(finished.record)
     assert.equal(finished.record.carryOut.ref, 'refs/copse/runs/run-fake')
     // Repeats are ordinary — the checkout lands while the run is still
@@ -239,6 +245,7 @@ describe('ContainerRunService', () => {
     const swept = new ContainerRunService({
       sweep: (): Promise<OrphanSweep> =>
         Promise.resolve({ removed: ['run-old'], skipped: ['run-live'], failed: [] }),
+      sweepWanted: (): boolean => true,
       adopt: adoptSpy().adopt,
       loadCarryOut: noRecordOnDisk,
       loadContinuation: noContinuationOnDisk,
@@ -255,6 +262,7 @@ describe('ContainerRunService', () => {
     })
     const noDocker = new ContainerRunService({
       sweep: (): Promise<OrphanSweep> => Promise.reject(new Error('docker: command not found')),
+      sweepWanted: (): boolean => true,
       adopt: adoptSpy().adopt,
       loadCarryOut: noRecordOnDisk,
       loadContinuation: noContinuationOnDisk,
@@ -265,6 +273,36 @@ describe('ContainerRunService', () => {
       run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
     })
     assert.equal(await noDocker.sweepOrphans(), null)
+  })
+
+  it('sweeps once per app session, and not at all for a profile that never ran a container', async () => {
+    let sweeps = 0
+    const deps = {
+      sweep: (): Promise<OrphanSweep> => {
+        sweeps += 1
+        return Promise.resolve({ removed: [], skipped: [], failed: [] })
+      },
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): void => undefined,
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request: ThreadContainerRequest): Promise<ThreadContainerRecord> =>
+        Promise.resolve(fakeRecord(request.prompt)),
+    }
+    const unused = new ContainerRunService({ ...deps, sweepWanted: (): boolean => false })
+    assert.equal(await unused.sweepOrphans(), null)
+    assert.equal(sweeps, 0, 'the feature is off and nothing was ever run: Docker is not started')
+
+    const used = new ContainerRunService({ ...deps, sweepWanted: (): boolean => true })
+    // A second window must not sweep again: it could take a run this session
+    // has created, and not yet started, for an orphan.
+    const [first, second] = await Promise.all([used.sweepOrphans(), used.sweepOrphans()])
+    await used.sweepOrphans()
+    assert.equal(sweeps, 1)
+    assert.deepEqual(first, second)
   })
 
   it('admits the package registry, and asks the runner to install, only when the run opts in', async () => {
@@ -324,10 +362,9 @@ describe('ContainerRunService', () => {
       ensureImage: (): Promise<void> => Promise.resolve(),
       assertEngine: (): void => undefined,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
-      run: (request, options): Promise<ThreadContainerRecord> => {
+      run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
-        assert.equal(request.apiKeyEnv && process.env[request.apiKeyEnv], 'sk-ant-test')
-        options?.onStarted?.()
+        assert.equal(request.apiKey, 'sk-ant-test')
         return Promise.resolve(fakeRecord(request.prompt))
       },
     })
@@ -364,9 +401,8 @@ describe('ContainerRunService', () => {
       ensureImage: (): Promise<void> => Promise.resolve(),
       assertEngine: (): void => undefined,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
-      run: (request, options): Promise<ThreadContainerRecord> => {
+      run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
-        options?.onStarted?.()
         return Promise.resolve({ ...fakeRecord(request.prompt), credential: { login: ['.codex'] } })
       },
     })
@@ -384,7 +420,7 @@ describe('ContainerRunService', () => {
     await waitFor(service, THREAD, (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)
-    assert.equal(request.apiKeyEnv, undefined)
+    assert.equal(request.apiKey, undefined)
     assert.deepEqual(request.acp?.login, { files: ['.codex/auth.json'] })
     await setSetting('registeredAcpAgents', [])
   })
@@ -410,7 +446,6 @@ describe('ContainerRunService', () => {
         new Promise((resolve) => {
           options?.onLog?.('Starting with arbitrary diagnostic wording')
           options?.onPhase?.('running')
-          options?.onStarted?.()
           pending.release = (): void => {
             resolve({ ...fakeRecord(request.prompt), result: null, teardown: 'already-gone' })
           }
