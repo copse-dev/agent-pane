@@ -3,6 +3,7 @@ import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
+  arrowUpDownIcon,
   bellIcon,
   chevronRightIcon,
   gitMergeIcon,
@@ -61,6 +62,8 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { orderSidebarThreads } from '../controller/thread-order.ts'
+import { THREAD_SORT_MODES, type ThreadSortMode } from '@shared/types/state.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
@@ -268,6 +271,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     searchIcon('ui-icon ui-icon-sm'),
   )
+  // How each project's threads are ordered. Persisted per profile; the store
+  // keeps its own newest-first order and this only re-sorts what is drawn.
+  const sortBtn = el(
+    'button',
+    {
+      class: 'projects-sort-btn',
+      'aria-label': 'Sort threads',
+      'aria-haspopup': 'menu',
+      'data-tooltip': 'Sort threads',
+    },
+    arrowUpDownIcon('ui-icon ui-icon-sm'),
+  )
   // One "+" entry point for every way to add a project. The remote action is
   // included only while SSH workspaces are enabled.
   const addBtn = el(
@@ -313,6 +328,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'pane-projects-header' },
     title,
     searchToggle,
+    sortBtn,
     activityBtn,
     addBtn,
   )
@@ -393,6 +409,37 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   )
 
   let sshWorkspaceEnabled = false
+
+  const SORT_LABELS: Readonly<Record<ThreadSortMode, string>> = {
+    activity: 'Activity order',
+    created: 'Created',
+    title: 'Thread name',
+  }
+  sortBtn.addEventListener('click', () => {
+    const rect = sortBtn.getBoundingClientRect()
+    const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: 'Sort by' },
+      ...THREAD_SORT_MODES.map((mode): ContextMenuEntry => ({
+        label: SORT_LABELS[mode],
+        checked: mode === sidebarThreadSort,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSort: mode })
+          void api.settings.set('sidebarThreadSort', mode)
+          render()
+        },
+      })),
+      {
+        label: 'Reverse order',
+        checked: sidebarThreadSortReverse,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
+          void api.settings.set('sidebarThreadSortReverse', !sidebarThreadSortReverse)
+          render()
+        },
+      },
+    ])
+  })
 
   addBtn.addEventListener('click', () => {
     const rect = addBtn.getBoundingClientRect()
@@ -1720,8 +1767,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         : sidebarThreads
       // Automation runs are collated in the workspace-level Automations section
       // (#2511) instead of rendering inside their project by default.
-      const conversationThreads = matchingThreads.filter(
-        (thread) => thread.automation === undefined,
+      const conversationThreads = orderSidebarThreads(
+        matchingThreads.filter((thread) => thread.automation === undefined),
+        // A filter's matches stay newest first; the chosen order is for the browse list.
+        isFiltering ? 'activity' : store.getState().sidebarThreadSort,
+        !isFiltering && store.getState().sidebarThreadSortReverse,
       )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null

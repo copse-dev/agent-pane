@@ -19,6 +19,11 @@ export type RightPanelMode =
 export type RightPanelPosition = 'auto' | 'side' | 'bottom'
 export const RIGHT_PANEL_POSITIONS: readonly RightPanelPosition[] = ['auto', 'side', 'bottom']
 export const isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS)
+// How the sidebar orders the threads inside each project. `activity` is the store's
+// own order (last prompted, then created); the others re-sort it at render time.
+export type ThreadSortMode = 'activity' | 'created' | 'title'
+export const THREAD_SORT_MODES: readonly ThreadSortMode[] = ['activity', 'created', 'title']
+export const isThreadSortMode = memberOf(THREAD_SORT_MODES)
 export type Theme = 'light' | 'dark'
 // What the user picked in Settings. `system` follows the OS colour scheme and
 // resolves to a concrete `Theme` at runtime; `light`/`dark` pin it. The store
@@ -130,6 +135,8 @@ export interface AppState {
   uiScale: number // 0.75–1.5 interface scale; drives CSS --ui-scale tokens
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
+  sidebarThreadSort: ThreadSortMode // How the sidebar orders each project's threads.
+  sidebarThreadSortReverse: boolean // Flip that order (oldest or Z–A first).
   openLinksInBuiltInBrowser: boolean // Clicked http(s) links open in the in-app browser vs the system browser.
   developerMode: boolean // Reveals advanced diagnostics and the native Developer Tools menu item.
   settings?: { model: string }
