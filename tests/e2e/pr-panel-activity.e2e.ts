@@ -55,6 +55,38 @@ describe('PR comments and checks', () => {
       )
     })
     expect(commentLayout).toBe(true)
+    await expect(await $('.pr-section-count')).not.toBeDisplayed()
+    await $('[aria-label="Expand pull requests over chat"]').click()
+    await $('.pr-section-count').waitForDisplayed({ timeout: 5_000 })
+    const countsAreRound = await browser.execute(() => {
+      const badges = [...document.querySelectorAll<HTMLElement>('.pr-section-count')]
+      return (
+        badges.length === 3 &&
+        badges.every((badge) => {
+          const bounds = badge.getBoundingClientRect()
+          return (
+            bounds.width > 0 &&
+            Math.abs(bounds.width - bounds.height) < 0.5 &&
+            getComputedStyle(badge).borderRadius === '50%'
+          )
+        })
+      )
+    })
+    expect(countsAreRound).toBe(true)
+    await saveElementScreenshot('#pane-files', 'pr-activity-comments-expanded.png')
+    const multiDigitCountIsRound = await browser.execute(() => {
+      const badge = document.querySelector<HTMLElement>('.pr-section-count')
+      if (!badge) return false
+      const original = badge.textContent
+      badge.textContent = '100+'
+      const bounds = badge.getBoundingClientRect()
+      const fits = badge.scrollWidth <= badge.clientWidth + 1
+      badge.textContent = original
+      return fits && Math.abs(bounds.width - bounds.height) < 0.5
+    })
+    expect(multiDigitCountIsRound).toBe(true)
+    await $('[aria-label="Restore pull requests"]').click()
+    await browser.waitUntil(async () => !(await $('.pr-section-count').isDisplayed()))
     await expect(await $('.pr-viewer-description')).not.toBeDisplayed()
     await expect(await $('.pr-viewer-files')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-activity-comments.png')

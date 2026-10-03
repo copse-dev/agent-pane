@@ -1510,10 +1510,17 @@
   font-weight: 600;
 }
 .pr-section-count {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: max-content;
+  min-width: calc(20px * var(--ui-scale));
+  aspect-ratio: 1;
+  line-height: 1;
   font-size: var(--font-size-2xs);
   font-weight: 400;
   padding: 0 var(--spacing-xs);
-  border-radius: var(--radius);
+  border-radius: 50%;
   background: var(--bg-muted);
 }
 .pr-activity {
@@ -1604,6 +1611,9 @@
   min-width: 0;
 }
 @container (max-width: 380px) {
+  .pr-section-count {
+    display: none;
+  }
   .pr-comment-meta time {
     grid-column: 2 / -1;
   }
