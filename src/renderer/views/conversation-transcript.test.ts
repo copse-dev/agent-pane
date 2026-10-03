@@ -436,3 +436,18 @@ describe('assistant response image gallery', () => {
     dialog.close()
   })
 })
+
+it('shows the explainer title while preserving its revision key for opening', () => {
+  const identity = 'Explainer Three Searches One Answer Ab12cd34'
+  const threadId = mountWithAssistantMessage('Here is the explanation.', identity)
+  const opened: { threadId: string; title: string }[] = []
+  setArtefactShowHandler((thread, title) => {
+    opened.push({ threadId: thread, title })
+  })
+  assert.equal(
+    document.querySelector('.canvas-inline-artefact .canvas-preview-title')?.textContent,
+    'Three Searches One Answer',
+  )
+  document.querySelector<HTMLButtonElement>('.canvas-inline-artefact .canvas-preview-open')?.click()
+  assert.deepEqual(opened, [{ threadId, title: identity }])
+})

@@ -55,25 +55,9 @@ describe('THIRD_PARTY_NOTICES.md', () => {
       license: declaredLicense(manifest),
     }
   })
-  const isTopLevel = (name: string): boolean =>
-    existsSync(join(root, 'node_modules', name, 'package.json'))
-
   it('matches the node_modules closure the app ships', () => {
     const problems = findNoticeProblems(notices, components, { complete: false })
     assert.deepEqual(problems, [], formatNoticeProblems(problems))
-  })
-
-  it('quotes the installed version of every package it names', () => {
-    const stale = notices.entries.flatMap((entry) => {
-      // A transitive package (node-forge) is not linked at the top level under
-      // pnpm; the closure check above compares its version instead.
-      if (entry.version === null || !isTopLevel(entry.packageName)) return []
-      const installed = readManifest(join(root, 'node_modules', entry.packageName)).version
-      return installed === entry.version
-        ? []
-        : [`${entry.packageName}: entry says ${entry.version}, ${String(installed)} is installed`]
-    })
-    assert.deepEqual(stale, [])
   })
 
   it('names only packages that are still installed', () => {

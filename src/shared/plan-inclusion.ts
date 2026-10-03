@@ -113,8 +113,17 @@ export function resolvePlanInclusion(
 ): PlanInclusion | null {
   const windows = providerWindows(snapshot, provider)
   if (!windows || windows.length === 0) return null
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : undefined
   const govern = new Set(governingWindowIds(provider, modelId))
-  const applicable = windows.filter((w) => govern.has(w.id))
+  let applicable = windows.filter((w) => govern.has(w.id))
+  if (availability === true) {
+    // The provider says this model is still covered; shared windows that are
+    // spent must not contradict it, so a separate pool (Codex ChatPass) governs.
+    const pool = windows.filter((w) => w.id.startsWith('chatpass_'))
+    if (pool.length > 0) applicable = pool
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1)
+  }
   if (applicable.length === 0) return null
   // The tightest window (highest used-percent) is the real constraint.
   const binding = applicable.reduce((tightest, w) =>
@@ -126,8 +135,18 @@ export function resolvePlanInclusion(
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100,
+    exhausted: availability === false || (availability !== true && binding.usedPercent >= 100),
   }
+}
+
+function providerModelAvailability(
+  snapshot: PlanUsageSnapshot,
+  provider: PlanProviderId,
+  modelId: string,
+): boolean | undefined {
+  const result = snapshot.providers.find((r) => r.provider === provider)
+  if (!result || result.status !== 'ok') return undefined
+  return result.usage.modelAvailability?.[modelId.toLowerCase()]
 }
 
 /**
