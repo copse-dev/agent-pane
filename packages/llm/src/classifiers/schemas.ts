@@ -14,21 +14,31 @@ const identifier = z
 
 // Preflight precedes Zod's recursive JSON parser: cycles/deep nesting must fail
 // without overflowing the stack. This budget also bounds renderer IPC input.
+// Only a true cycle (an object inside itself) is rejected: an object reached
+// twice by different keys, such as one options object shared by several
+// questions, is ordinary in-process input and serializes fine. Every visit
+// counts towards the node and character budgets, so sharing cannot hide size.
 function boundedJson(value: unknown): boolean {
-  const pending = [{ value, depth: 0 }]
-  const visited = new WeakSet<object>()
+  const pending: ({ value: unknown; depth: number } | { leave: object })[] = [{ value, depth: 0 }]
+  const ancestors = new WeakSet<object>()
   let nodes = 0
   let characters = 0
   while (pending.length) {
     const item = pending.pop()
-    if (!item || ++nodes > 20_000 || item.depth > 32) return false
+    if (!item) return false
+    if ('leave' in item) {
+      ancestors.delete(item.leave)
+      continue
+    }
+    if (++nodes > 20_000 || item.depth > 32) return false
     const current = item.value
     if (typeof current === 'string') characters += current.length
     else if (typeof current === 'number') {
       if (!Number.isFinite(current)) return false
     } else if (current !== null && typeof current === 'object') {
-      if (visited.has(current)) return false
-      visited.add(current)
+      if (ancestors.has(current)) return false
+      ancestors.add(current)
+      pending.push({ leave: current })
       const prototype: unknown = Object.getPrototypeOf(current)
       if (!Array.isArray(current) && prototype !== Object.prototype && prototype !== null)
         return false
