@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline'
-import { copyFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import {
@@ -33,6 +33,11 @@ import {
   terminalModelParametersMode,
   writeTerminalModelParametersRecord,
 } from './lib/terminal-bench-model-parameters.mts'
+import {
+  injectTerminalPreflight,
+  runTerminalPreflight,
+  TERMINAL_PREFLIGHT_TOOL_ID,
+} from './lib/terminal-bench-preflight.mts'
 import { BenchTranscript } from './lib/bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
@@ -408,6 +413,30 @@ export async function runTerminalBenchAgent(): Promise<void> {
     : `lmstudio:${parsed.model}`
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
+  let userContent = parsed.instruction
+  if (profile.preflightProbe) {
+    // Exactly one bridge round trip; every failure degrades to a short "unavailable" block.
+    const preflight = await runTerminalPreflight(async (command, timeoutSec) => {
+      writeProtocol({ type: 'tool_request', id: TERMINAL_PREFLIGHT_TOOL_ID, command, timeoutSec })
+      const next = await input.next()
+      if (next.done) throw new Error('Terminal bridge closed during pre-flight.')
+      const response: unknown = JSON.parse(next.value)
+      if (
+        !isInputMessage(response) ||
+        response.type !== 'tool_result' ||
+        response.id !== TERMINAL_PREFLIGHT_TOOL_ID
+      ) {
+        throw new Error('Terminal bridge returned an invalid pre-flight result.')
+      }
+      return response
+    })
+    userContent = injectTerminalPreflight(parsed.instruction, preflight.block)
+    try {
+      writeFileSync(join(dirname(parsed.threadDir), 'preflight.txt'), `${preflight.block}\n`)
+    } catch {
+      // Evidence capture is best-effort.
+    }
+  }
   const messages = [
     {
       role: 'system' as const,
@@ -421,7 +450,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           },
         ]
       : []),
-    { role: 'user' as const, content: parsed.instruction },
+    { role: 'user' as const, content: userContent },
   ]
   const usage = {
     inputTokens: 0,

@@ -78,7 +78,7 @@ export const renameFileTool = defineTool({
 export const makeDirectoryTool = defineTool({
   name: 'make_directory',
   description:
-    'Create a directory (including any missing parents). Applies directly when this thread runs in its own isolated worktree; otherwise stages the creation for user approval and the directory is not created until accepted.',
+    'Create a directory (including any missing parents). Applies directly unless other diffs are awaiting user approval, in which case the creation is staged behind them.',
   parameters: z.object({
     path: z.string().describe('Directory path relative to workspace root'),
   }),
