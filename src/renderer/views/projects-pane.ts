@@ -456,16 +456,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         },
       },
-      ...store.getState().projects.map(
-        (project): ContextMenuEntry => ({
-          label: projectDisplayName(project),
-          checked: project.id === projectFilterId,
-          onSelect: (): void => {
-            projectFilterId = project.id
-            render()
-          },
-        }),
-      ),
+      ...store.getState().projects.map((project): ContextMenuEntry => ({
+        label: projectDisplayName(project),
+        checked: project.id === projectFilterId,
+        onSelect: (): void => {
+          projectFilterId = project.id
+          render()
+        },
+      })),
     ])
   })
   sortBtn.addEventListener('click', () => {
@@ -2062,7 +2060,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     } else {
       for (const node of buildProjectTree(visibleProjects, projectGroups)) {
         // A group with nothing of the chosen project in it has nothing to show.
-        if (node.kind === 'group' && projectFilterId !== null && node.projects.length === 0) continue
+        if (node.kind === 'group' && projectFilterId !== null && node.projects.length === 0)
+          continue
         if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
         else list.append(renderProjectEntry(node.project))
       }
