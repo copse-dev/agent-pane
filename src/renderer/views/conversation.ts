@@ -4336,6 +4336,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
+      ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
@@ -4844,7 +4845,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           setReasoningDisclosureTitle(details, false)
         })
         const last = getThreadById(store, tid)?.messages.at(-1)
-        if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
+        if (last) renderMessageTurnRecovery(tid, last.id)
       }
       syncAvatarMotion()
     }),
