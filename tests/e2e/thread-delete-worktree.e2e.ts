@@ -138,11 +138,13 @@ describe('thread deletion → worktree retirement', function () {
   async function deleteFromSidebar(threadId: string): Promise<void> {
     const row = $(`.thread-project-manager .chat-row[data-thread-id="${threadId}"]`)
     await row.waitForDisplayed({ timeout: 30_000 })
-    // The delete control only appears on hover, as it does for a person.
+    // Open the row menu through the same hover control a person uses.
     await row.moveTo()
-    const del = row.$('.chat-delete')
-    await del.waitForDisplayed({ timeout: 5_000 })
-    await del.click()
+    const menuButton = row.$('.chat-menu-btn')
+    await menuButton.waitForDisplayed({ timeout: 5_000 })
+    await menuButton.click()
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    await $('.context-menu-item=Delete').click()
     await row.waitForExist({ reverse: true, timeout: 10_000 })
   }
 

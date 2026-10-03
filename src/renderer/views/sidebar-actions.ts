@@ -101,7 +101,7 @@ export function archiveProjectThread(store: AppStore, projectId: string, threadI
 }
 
 /** Delete a thread of the active project, keeping at least one thread listed. */
-export function deleteProjectThread(
+function deleteProjectThread(
   store: AppStore,
   api: ApiClient,
   projectId: string,
@@ -115,9 +115,10 @@ export function deleteProjectThread(
 }
 
 /**
- * A thread row's right-click actions. Mutations apply only to the active
- * project, whose threads are in memory; another project's row offers to open
- * the thread first. Automation runs always reach their schedule.
+ * A thread row's menu, opened by right-click or its three-dot button.
+ * Mutations apply only to the active project, whose threads are in memory;
+ * another project's row offers to open the thread first. Automation runs
+ * always reach their schedule, and Delete comes last (#3379).
  */
 export function threadMenuEntries(
   store: AppStore,
@@ -151,17 +152,6 @@ export function threadMenuEntries(
               archiveProjectThread(store, project.id, thread.id)
             },
           },
-          ...(options.allowDelete
-            ? [
-                {
-                  label: 'Delete',
-                  disabled: getSidebarThreads(store, project.id).length <= 1,
-                  onSelect: (): void => {
-                    deleteProjectThread(store, api, project.id, thread.id)
-                  },
-                },
-              ]
-            : []),
         ]
       : []),
     // A schedule with a single run has no heading of its own, and a
@@ -185,6 +175,17 @@ export function threadMenuEntries(
             label: 'Automation setup…',
             onSelect: (): void => {
               openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            },
+          },
+        ]
+      : []),
+    ...(canMutate && options.allowDelete
+      ? [
+          {
+            label: 'Delete',
+            disabled: getSidebarThreads(store, project.id).length <= 1,
+            onSelect: (): void => {
+              deleteProjectThread(store, api, project.id, thread.id)
             },
           },
         ]

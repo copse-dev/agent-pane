@@ -38,14 +38,16 @@ describe('SSH remote project entry point', () => {
     await threadRow.moveTo()
 
     const actionCenters = await browser.execute(() =>
-      ['.thread-project-manager .projects-add-btn', '.project-new-thread-btn', '.chat-delete'].map(
-        (selector) => {
-          const action = document.querySelector<HTMLElement>(selector)
-          if (!action) throw new Error(`Missing sidebar action: ${selector}`)
-          const rect = action.getBoundingClientRect()
-          return rect.left + rect.width / 2
-        },
-      ),
+      [
+        '.thread-project-manager .projects-add-btn',
+        '.thread-project-manager .project-new-thread-btn',
+        '.thread-project-manager .chat-menu-btn',
+      ].map((selector) => {
+        const action = document.querySelector<HTMLElement>(selector)
+        if (!action) throw new Error(`Missing sidebar action: ${selector}`)
+        const rect = action.getBoundingClientRect()
+        return rect.left + rect.width / 2
+      }),
     )
     assert.ok(
       Math.max(...actionCenters) - Math.min(...actionCenters) <= 1,

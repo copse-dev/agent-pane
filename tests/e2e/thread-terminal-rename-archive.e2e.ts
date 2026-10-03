@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { openProjectManager } from './helpers/project-manager.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -10,6 +11,10 @@ import {
   seedStableWorkspace,
   seedThreadRenameArchiveFixture,
 } from './helpers/seed-config.ts'
+
+// The three-dot thread button lives on the project manager's rows; the default
+// thread sidebar's own menu is covered by thread-sidebar.e2e.ts.
+const MANAGER = '.thread-project-manager'
 
 describe('thread + terminal rename / archive', () => {
   let keepTitle: string
@@ -26,21 +31,42 @@ describe('thread + terminal rename / archive', () => {
     resetUserData()
   })
 
-  it('double-click renames a thread; right-click offers Rename, Fork, Archive and Delete', async function () {
+  it('thread dots and right-click share actions; double-click renames and Archive hides the row', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openProjectManager()
 
-    const archiveRow = await $(`.chat-row*=${archiveTitle}`)
+    const archiveRow = await $(MANAGER).$(`.chat-row*=${archiveTitle}`)
     await archiveRow.waitForExist({ timeout: 10_000 })
 
-    // Context menu on the thread that will be archived.
-    await archiveRow.click({ button: 'right' })
+    // The dots open the menu without selecting or deleting this thread.
+    const selectedThreadId = await $(`${MANAGER} .chat-row.selected`).getAttribute('data-thread-id')
+    await archiveRow.moveTo()
+    const menuButton = archiveRow.$('.chat-menu-btn')
+    await expect(menuButton).toHaveAttribute('aria-haspopup', 'menu')
+    await expect(menuButton.$('[data-icon="more-vertical"]')).toBeExisting()
+    await menuButton.click()
     const menu = await $('.context-menu')
     await menu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
     )
     expect(labels).toEqual(['Rename', 'Fork', 'Archive', 'Delete'])
+    await expect($(`${MANAGER} .chat-row.selected`)).toHaveAttribute(
+      'data-thread-id',
+      selectedThreadId,
+    )
+    await expect(archiveRow).toBeExisting()
+    await saveAppScreenshot('thread-actions-menu.png')
+
+    await browser.keys('Escape')
+    await expect($('.context-menu')).not.toBeExisting()
+    await archiveRow.click({ button: 'right' })
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    const rightClickLabels = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
+    )
+    expect(rightClickLabels).toEqual(labels)
     await saveAppScreenshot('thread-context-menu-rename-archive.png')
 
     // Dismiss and exercise double-click rename on the keep thread.
@@ -49,34 +75,42 @@ describe('thread + terminal rename / archive', () => {
 
     // Nested lookup — WDIO `*=` text match cannot be chained with a descendant
     // class in one selector (that would look for the literal text "... .chat-title").
-    const keepRow = await $(`.chat-row*=${keepTitle}`)
+    const keepRow = await $(MANAGER).$(`.chat-row*=${keepTitle}`)
     await keepRow.waitForExist({ timeout: 10_000 })
     // Electron/WDIO `doubleClick()` often does not synthesize a DOM `dblclick`
     // on the title; dispatch the event the component listens for.
-    await browser.execute((title) => {
-      const row = Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find((r) =>
-        (r.querySelector('.chat-title')?.textContent ?? '').includes(title),
-      )
-      const el = row?.querySelector('.chat-title')
-      if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
-      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
-    }, keepTitle)
-    const renameInput = await $('.chat-title-rename')
+    await browser.execute(
+      (title, manager) => {
+        const row = Array.from(document.querySelectorAll<HTMLElement>(`${manager} .chat-row`)).find(
+          (r) => (r.querySelector('.chat-title')?.textContent ?? '').includes(title),
+        )
+        const el = row?.querySelector('.chat-title')
+        if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
+        el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+      },
+      keepTitle,
+      MANAGER,
+    )
+    const renameInput = await $(`${MANAGER} .chat-title-rename`)
     await renameInput.waitForExist({ timeout: 5_000 })
     // Reclaim focus explicitly — WDIO can steal it between mount and setValue.
-    await browser.execute(() => {
-      const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+    await browser.execute((manager) => {
+      const input = document.querySelector<HTMLInputElement>(`${manager} .chat-title-rename`)
       if (!input) throw new Error('rename input missing before focus')
       input.focus()
       input.select()
-    })
+    }, MANAGER)
     await renameInput.setValue('Renamed keep thread')
     await browser.keys('Enter')
 
     await browser.waitUntil(
       async () => {
-        const titles = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent ?? ''),
+        const titles = await browser.execute(
+          (manager) =>
+            Array.from(document.querySelectorAll(`${manager} .chat-title`)).map(
+              (n) => n.textContent ?? '',
+            ),
+          MANAGER,
         )
         return titles.includes('Renamed keep thread')
       },
@@ -85,15 +119,19 @@ describe('thread + terminal rename / archive', () => {
     await saveElementScreenshot('#pane-projects', 'thread-renamed-sidebar.png')
 
     // Archive the other thread via context menu.
-    const toArchive = await $(`.chat-row*=${archiveTitle}`)
+    const toArchive = await $(MANAGER).$(`.chat-row*=${archiveTitle}`)
     await toArchive.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Archive').click()
 
     await browser.waitUntil(
       async () => {
-        const titles = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent ?? ''),
+        const titles = await browser.execute(
+          (manager) =>
+            Array.from(document.querySelectorAll(`${manager} .chat-title`)).map(
+              (n) => n.textContent ?? '',
+            ),
+          MANAGER,
         )
         return titles.includes('Renamed keep thread') && !titles.includes(archiveTitle)
       },
