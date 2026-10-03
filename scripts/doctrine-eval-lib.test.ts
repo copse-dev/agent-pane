@@ -15,6 +15,7 @@ function attempt(
   doctrinePass: boolean,
   inputTokens: number,
   outputTokens: number,
+  toolCallCount = 0,
 ): DoctrineEvalAttempt {
   return {
     taskId: 'task',
@@ -39,7 +40,10 @@ function attempt(
         { id: 'noNarratingComments', pass: true, detail: 'pass' },
       ],
     },
-    toolCalls: [],
+    toolCalls: Array.from({ length: toolCallCount }, () => ({
+      name: 'read_file',
+      status: 'done' as const,
+    })),
     finalMessage: 'The fixture completed successfully.',
     inputTokens,
     outputTokens,
@@ -84,17 +88,20 @@ describe('doctrine eval reporting', () => {
   it('reports rates, per-rule rates, and deltas against full', () => {
     const arms = buildDoctrineEvalArms(['tools'])
     const summaries = summarizeDoctrineEval(arms, [
-      attempt('full', true, true, 100, 20),
-      attempt('full', true, true, 120, 20),
-      attempt('omit-tools', true, false, 80, 20),
-      attempt('omit-tools', false, false, 80, 20),
+      attempt('full', true, true, 100, 20, 2),
+      attempt('full', true, true, 120, 40, 3),
+      attempt('omit-tools', true, false, 80, 20, 5),
+      attempt('omit-tools', false, false, 80, 20, 6),
     ])
     const full = summaries[0]
     const omitted = summaries[1]
     assert.ok(full)
     assert.ok(omitted)
     assert.equal(full.solveRate, 1)
-    assert.equal(full.tokensPerSolve, 130)
+    assert.equal(full.tokensPerSolve, 140)
+    assert.equal(full.meanToolCalls, 2.5)
+    assert.equal(full.meanOutputTokens, 30)
+    assert.equal(omitted.meanToolCalls, 5.5)
     assert.equal(omitted.solveRate, 0.5)
     assert.equal(omitted.doctrinePassRate, 0)
     assert.equal(omitted.solveRateDeltaVsFull, -0.5)
