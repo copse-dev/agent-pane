@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
 import { ResponsesProvider, toResponsesInput } from './responses-provider.ts'
-import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
+import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 interface CapturedRequest {
   model: string
@@ -728,5 +728,164 @@ describe('ResponsesProvider reasoning', () => {
     assert.deepEqual(request.input, [
       { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{}' },
     ])
+  })
+})
+
+describe('ResponsesProvider strict tools', () => {
+  const tools: LLMTool[] = [
+    {
+      name: 'read_file',
+      description: 'Read a file',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, start_line: { type: 'integer' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'device_hub',
+      description: 'A root-level union cannot be strict',
+      parameters: {
+        oneOf: [{ type: 'object', properties: {}, required: [], additionalProperties: false }],
+      },
+    },
+  ]
+
+  async function run(provider: ResponsesProvider): Promise<ProviderStreamChunk[]> {
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], tools)) {
+      chunks.push(chunk)
+    }
+    return chunks
+  }
+
+  function strictFlags(request: CapturedRequest | undefined): Array<[unknown, unknown]> {
+    assert.ok(request)
+    return request.tools.map((tool) => [tool['name'], tool['strict']])
+  }
+
+  it('sends strict only on tools whose schema qualifies when the provider opts in', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    let request: CapturedRequest | undefined
+    withFakeStream(provider, (captured) => (request = captured), [])
+    await run(provider)
+
+    assert.deepEqual(strictFlags(request), [
+      ['read_file', true],
+      ['device_hub', false],
+    ])
+    const read = at(request?.tools ?? [], 0)
+    assert.deepEqual(read['parameters'], {
+      type: 'object',
+      properties: { path: { type: 'string' }, start_line: { type: ['integer', 'null'] } },
+      required: ['path', 'start_line'],
+      additionalProperties: false,
+    })
+    assert.deepEqual(at(request?.tools ?? [], 1)['parameters'], tools[1]?.parameters)
+  })
+
+  it('never sends strict for a provider that did not opt in', async () => {
+    const provider = new ResponsesProvider('gpt-test', {
+      apiKey: 'k',
+      baseURL: 'https://third-party.example/v1',
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(provider, (captured) => (request = captured), [])
+    await run(provider)
+
+    assert.deepEqual(strictFlags(request), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(at(request?.tools ?? [], 0)['parameters'], tools[0]?.parameters)
+  })
+
+  it('maps a null for an optional argument back to absent before the caller sees it', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'read_file',
+          arguments: '{"path":"a.ts","start_line":null}',
+        },
+      },
+    ])
+    const chunks = await run(provider)
+    assert.deepEqual(chunks, [
+      { type: 'tool_call', toolCall: { id: 'call_1', name: 'read_file', args: { path: 'a.ts' } } },
+    ])
+  })
+
+  it('leaves malformed arguments to the existing parse-error path', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    withFakeStream(provider, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'read_file',
+          arguments: '{"path":',
+        },
+      },
+    ])
+    const chunk = at(await run(provider), 0)
+    assert.equal(chunk.type, 'tool_call')
+    assert.match(JSON.stringify(chunk), /"args":\{\}/)
+    assert.match(JSON.stringify(chunk), /Could not parse tool arguments/)
+  })
+
+  it('falls back to non-strict once OpenAI rejects a strict schema, and stays there', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (
+      request,
+    ): Promise<AsyncIterable<TestEvent>> => {
+      requests.push(request)
+      if (requests.length === 1) {
+        throw Object.assign(
+          new Error("400 Invalid schema for function 'read_file': 'required' is required"),
+          { status: 400 },
+        )
+      }
+      return streamEvents([{ type: 'response.output_text.delta', delta: 'ok' }])
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+
+    assert.deepEqual(await run(provider), [{ type: 'text', text: 'ok' }])
+    assert.deepEqual(strictFlags(at(requests, 0)), [
+      ['read_file', true],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(strictFlags(at(requests, 1)), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+    assert.deepEqual(at(at(requests, 1).tools, 0)['parameters'], tools[0]?.parameters)
+
+    await run(provider)
+    assert.deepEqual(strictFlags(at(requests, 2)), [
+      ['read_file', false],
+      ['device_hub', false],
+    ])
+  })
+
+  it('does not swallow an unrelated 400', async () => {
+    const provider = new ResponsesProvider('gpt-test', { apiKey: 'k', strictTools: true })
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async () => {
+      throw Object.assign(new Error('400 Unsupported parameter: nope'), { status: 400 })
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+    await assert.rejects(run(provider), /Unsupported parameter/)
   })
 })
