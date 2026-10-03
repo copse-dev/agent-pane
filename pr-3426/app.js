@@ -26144,14 +26144,11 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
-function handIcon(className = DEFAULT) {
+function shieldIcon(className = DEFAULT) {
   return outlineIcon(
-    "hand",
+    "shield",
     [
-      "M18 11V6a2 2 0 0 0-4 0v5",
-      "M14 10V4a2 2 0 0 0-4 0v7",
-      "M10 10.5V6a2 2 0 0 0-4 0v8",
-      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
     ],
     className
   );
@@ -64600,7 +64597,7 @@ var init_tool_permissions_panel = __esm({
     };
     POLICY_ICON = {
       allow: checkIcon,
-      ask: handIcon,
+      ask: shieldIcon,
       block: banIcon
     };
   }
@@ -66454,10 +66451,12 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts, reaching only its model's
-                origin, and brings its commits back for you to apply. Needs Docker; the first run
-                builds the worker image. A run carries one credential: the model's API key, or,
-                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout with no prompts and brings its commits back for
+                you to apply. Its network reaches only its model's origin, plus, when the run
+                installs dependencies (on by default, per run), the npm registry, GitHub and
+                Electron's download hosts. Needs Docker; the first run builds the worker image. A
+                run carries one credential: the model's API key, or, if you opt in per run, your
+                Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -69960,6 +69959,20 @@ var init_activity_model = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function githubMarkIcon() {
+  const svg2 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg2.setAttribute("class", "approval-github-icon");
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  );
+  svg2.append(path);
+  return svg2;
+}
 function approvalCopyElement(className, text2) {
   const root = el("div", { class: className });
   let list = null;
@@ -70037,6 +70050,12 @@ function mountApprovalDialog(api2, store2, options = {}) {
     el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
     "Allow retries for this task (up to 10, for 15 minutes)"
   );
+  const githubBrand = el(
+    "div",
+    { class: "approval-github-brand", hidden: "", "aria-hidden": "true" },
+    el("span", { class: "approval-github-mark" }, githubMarkIcon()),
+    el("span", {}, "GitHub")
+  );
   const heading = el("h3", { class: "approval-heading" });
   const items = el("div", { class: "approval-items" });
   const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
@@ -70057,6 +70076,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   );
   const dialog2 = el("dialog", { id: "approval-dialog" });
   dialog2.append(
+    githubBrand,
     heading,
     items,
     rememberLabel,
@@ -70167,6 +70187,9 @@ function mountApprovalDialog(api2, store2, options = {}) {
       }
     }
     heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
+    githubBrand.hidden = !isGithubApproval;
+    dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
       const body = el("div", { class: bodyClass }, req.body);
@@ -70471,7 +70494,7 @@ function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
   switch (state) {
     case "needs-approval":
-      return handIcon(className);
+      return shieldIcon(className);
     case "needs-answer":
       return messageQuestionIcon(className);
     case "working":
