@@ -198,6 +198,7 @@ describe('ci.yml workflow invariants', () => {
       'the fleet must be the opted-in branch and hosted the fallthrough, not the reverse',
     )
     assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
+    assert.match(e2eJob, /github\.event_name == 'merge_group'/, 'queue e2e needs a valid runner')
     assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
     // Fails closed for forks: no branch of the expression yields a runner for
     // an untrusted event, not even a free hosted one.
@@ -259,11 +260,13 @@ describe('ci.yml workflow invariants', () => {
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
     const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
     assert.ok(planStep, 'expected the e2e planning step in ci.yml')
-    assert.match(planStep, /BASE_REF: \$\{\{ github\.base_ref \}\}/)
-
-    const promotionGate = planStep.indexOf(
-      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then',
+    assert.match(
+      planStep,
+      /BASE_REF: \$\{\{ github\.base_ref \|\| github\.event\.merge_group\.base_ref \}\}/,
     )
+    assert.match(planStep, /BASE_REF="\$\{BASE_REF#refs\/heads\/\}"/)
+
+    const promotionGate = planStep.indexOf('[ "$BASE_REF" = "release" ]; then')
     const oracle = planStep.indexOf('node scripts/test-oracle.mts --plan')
     assert.ok(promotionGate >= 0, 'promotion PRs must explicitly select mode=full')
     assert.ok(oracle >= 0, 'expected the e2e oracle invocation')
@@ -309,7 +312,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /E2E_REQUIRED: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      /E2E_REQUIRED: \$\{\{ github\.event_name == 'merge_group' \|\| \(github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
       'the aggregate must identify same-repository PRs whose e2e job dispatched',
     )
     assert.match(
@@ -519,11 +522,95 @@ describe('ci.yml workflow invariants', () => {
     }
   })
 
-  it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
-    // Re-adding the trigger would look harmless but can never fire, and its
-    // presence previously justified `github.event_name != 'merge_group'` guards
-    // that are now dead weight in every heavy-tier `if:`.
-    assert.doesNotMatch(workflow, /^ {2}merge_group:/m)
+  it('requests checks on synthetic merge groups', () => {
+    assert.match(workflow, /^ {2}merge_group:\n {4}types: \[checks_requested\]/m)
+    const aggregate = jobBlock('ci-passed')
+    assert.match(aggregate, /MERGE_GROUP: \$\{\{ github\.event_name == 'merge_group' \}\}/)
+    assert.match(aggregate, /BUILD_RESULT: \$\{\{ needs\.build\.result \}\}/)
+  })
+
+  it('uses the queue base SHA for every precheck comparison', () => {
+    const precheck = jobBlock('precheck')
+    const binding =
+      'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+    assert.equal(precheck.split(binding).length - 1, 3)
+    const plan = precheck.slice(precheck.indexOf('- id: plan'))
+    assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
+    assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
+    assert.match(plan, /node scripts\/test-oracle\.mts --plan --base "\$BASE_SHA"/)
+  })
+
+  it('keeps main queue oracle selection and forces full release queue plans', () => {
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    assert.ok(planStep)
+    const script = planStep.slice(planStep.indexOf('        run: |\n') + '        run: |\n'.length)
+    for (const base of ['main', 'release']) {
+      const root = mkdtempSync(join(tmpdir(), 'queue-plan-'))
+      try {
+        const output = join(root, 'output')
+        const trace = join(root, 'oracle-trace')
+        const result = spawnSync(
+          'bash',
+          [
+            '-eu',
+            '-c',
+            `git() { return 0; }\nnode() { printf '%s\\n' "$*" > "$TRACE"; printf 'mode=subset\\nspecs=tests/e2e/example.e2e.ts\\nunit_mode=full\\n'; }\n${script}`,
+          ],
+          {
+            encoding: 'utf8',
+            cwd: root,
+            env: {
+              ...process.env,
+              EVENT: 'merge_group',
+              BASE_REF: `refs/heads/${base}`,
+              BASE_SHA: 'queue-base-sha',
+              HEAD_SHA: '',
+              UPDATE_SCREENSHOTS_LABEL: 'false',
+              CI_FULL_LABEL: 'false',
+              GITHUB_OUTPUT: output,
+              GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              TRACE: trace,
+            },
+          },
+        )
+        assert.equal(result.status, 0, result.stderr)
+        const plan = readFileSync(output, 'utf8')
+        assert.match(plan, /unit_mode=full/)
+        if (base === 'main') {
+          assert.match(plan, /mode=subset/)
+          assert.equal(
+            readFileSync(trace, 'utf8').trim(),
+            'scripts/test-oracle.mts --plan --base queue-base-sha',
+          )
+        } else {
+          assert.match(plan, /mode=full/)
+          assert.equal(existsSync(trace), false, 'release queue must bypass oracle thinning')
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('compares the synthetic checked-out protocol against the supplied queue base', () => {
+    const precheck = jobBlock('precheck')
+    const step = precheck.slice(precheck.indexOf('- name: API protocol compatibility'))
+    const run = step.match(/run: \|\n([\s\S]*?)(?=\n {6}#|\n {6}-)/)?.[1]
+    assert.ok(run)
+    const result = spawnSync(
+      'bash',
+      [
+        '-eu',
+        '-c',
+        `git() { return 0; }\nnode() { printf 'PROTOCOL:%s:%s:%s\\n' "$1" "$2" "$3"; }\n${run}`,
+      ],
+      { encoding: 'utf8', env: { BASE_SHA: 'queue-base-sha', GITHUB_EVENT_NAME: 'merge_group' } },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(
+      result.stdout,
+      /PROTOCOL:scripts\/gen-api-protocol\.mts:--compare-ref:queue-base-sha/,
+    )
   })
 
   it('runs CI on pushes to both integration branches', () => {
@@ -1249,20 +1336,15 @@ describe('install-free scheduled repository script invariants', () => {
 describe('gitleaks workflow invariants', () => {
   const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
   const gitleaksWorkflow = readFileSync(resolve('.github/workflows/gitleaks.yml'), 'utf8')
-  const sameRepositoryPr =
-    "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
+  const trustedCheckEvent =
+    "github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)"
 
-  it('scans same-repository PRs in precheck and leaves fork scans on hosted runners', () => {
+  it('scans trusted PRs and queue groups in precheck and leaves fork scans on hosted runners', () => {
     const precheckJob = ciWorkflow.match(/^ {2}precheck:\n[\s\S]*?(?=^ {2}[a-zA-Z0-9_-]+:\n)/m)?.[0]
     assert.ok(precheckJob, 'expected a `precheck:` job in ci.yml')
-    assert.match(
-      precheckJob,
-      new RegExp(`- name: Install pinned gitleaks CLI\\n {8}if: ${sameRepositoryPr}`),
-    )
-    assert.match(
-      precheckJob,
-      new RegExp(`- name: Scan repository history for secrets\\n {8}if: ${sameRepositoryPr}`),
-    )
+    for (const name of ['Install pinned gitleaks CLI', 'Scan repository history for secrets']) {
+      assert.ok(precheckJob.includes(`- name: ${name}\n        if: ${trustedCheckEvent}`))
+    }
     assert.match(
       gitleaksWorkflow,
       /^ {4}if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name != github\.repository$/m,

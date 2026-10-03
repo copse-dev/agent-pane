@@ -23,9 +23,11 @@ directly: "base advancement ... cannot authorize an untested candidate".
 
 Two structural constraints shape the fix:
 
-- **No merge queue.** GitHub's merge queue requires Enterprise Cloud for a
-  private repository and this org is on Team (see ci.yml's `merge_group` note),
-  so the `main` → `release` promotion flow stands in for one.
+- **Merge queue available after the public-repository transition.** The earlier
+  private-repository/Team limitation no longer applies. Queue CI now tests the
+  synthetic candidate against the event's exact base; the initial main rollout
+  preserves required CI, CLA and screenshot review with one entry at a time.
+  The `main` → `release` promotion flow still runs the full release tier.
 - **Re-running is unaffordable.** Re-dispatching CI for every open pull request
   on each push to `main` would multiply the day's load across an ephemeral
   self-hosted fleet that already serves both tiers.

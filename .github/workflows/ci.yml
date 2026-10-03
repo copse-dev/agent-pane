@@ -37,14 +37,10 @@ on:
   # environment drift. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
-  # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
-  # requires Enterprise Cloud for private repositories and this org is on Team,
-  # so the trigger could never fire. The `main` -> `release` promotion flow is
-  # the stand-in: `main` absorbs the day's merges under the light tier, and
-  # the promotion PR runs the full tier once for the whole batch. What we give
-  # up versus a real queue is automatic bisection — a red promotion names a
-  # batch, not a commit — which is why promotions should be frequent enough to
-  # stay small.
+  # Queue commits combine candidates with the latest base. They must earn
+  # the same required CI Passed gate before GitHub can merge them.
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -182,7 +178,7 @@ jobs:
         id: review-cell-plan
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "schedule" ] ||
@@ -210,7 +206,7 @@ jobs:
       # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
       # remain on the standalone hosted workflow in gitleaks.yml.
       - name: Install pinned gitleaks CLI
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
@@ -226,7 +222,7 @@ jobs:
           tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
           "${RUNNER_TEMP}/gitleaks" version
       - name: Scan repository history for secrets
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
             --log-opts="--full-history --diff-filter=tuxdb HEAD" .
@@ -276,8 +272,8 @@ jobs:
       # so it is skipped on schedule / branch-create runs.
       - name: API protocol compatibility
         env:
-          # PR base on pull_request; previous tip on push. Empty for schedule.
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # PR/queue base; previous tip on push. Empty for schedule.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           # No usable base (schedule, first push, branch create) -> nothing to
@@ -340,9 +336,9 @@ jobs:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          # PR base on pull_request; previous-tip on push. Empty for schedule.
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           # Real PR head commit (not the merge ref this job checks out), used to
           # avoid rerunning e2e after a human commits only reviewed screenshots.
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -356,6 +352,7 @@ jobs:
           # blast radius the selector-vocabulary map cannot see).
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
         run: |
+          BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
@@ -379,7 +376,7 @@ jobs:
           # to thin or skip it. Keep this after the screenshot-only escape above:
           # a reference-only follow-up already has immutable evidence from its
           # parent and does not need another full render.
-          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
+          if { [ "$EVENT" = "pull_request" ] || [ "$EVENT" = "merge_group" ]; } && [ "$BASE_REF" = "release" ]; then
             echo "PR targets release -> full e2e suite (promotion gate)"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
@@ -809,6 +806,7 @@ jobs:
     needs: precheck
     if: >-
       (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
+      (github.event_name != 'merge_group' || github.event.merge_group.base_ref == 'refs/heads/release') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
@@ -1250,7 +1248,7 @@ jobs:
     #     anywhere — including onto a free hosted runner.
     runs-on: >-
       ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
-          ((github.event_name == 'push' ||
+          ((github.event_name == 'push' || github.event_name == 'merge_group' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
            && (vars.SELF_HOSTED_E2E == 'copse-e2e'
@@ -2031,7 +2029,13 @@ jobs:
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
-          E2E_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
+          QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
+          BENCH_RESULT: ${{ needs.bench.result }}
+          REVIEW_CELL_REQUIRED: ${{ needs.precheck.outputs.review_cell_required }}
+          REVIEW_CELL_RESULT: ${{ needs.review-cell.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          E2E_REQUIRED: ${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full'))) }}
           E2E_SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
           E2E_RESULT: ${{ needs.e2e.result }}
           NEEDS_JSON: ${{ toJSON(needs) }}
@@ -2063,6 +2067,43 @@ jobs:
             full|subset|skip) ;;
             *) echo "Missing or invalid CI plan: $MODE"; exit 1 ;;
           esac
+          # A queue group is a new combined candidate, even when the oracle
+          # finds no visual change. It always needs a completed native build.
+          if [ "$MERGE_GROUP" = "true" ]; then
+            case "$REVIEW_CELL_REQUIRED" in
+              true|false) ;;
+              *) echo "Missing or invalid queue reviewer-cell plan"; exit 1 ;;
+            esac
+            case "$QUEUE_BASE_REF" in
+              refs/heads/main|refs/heads/release) ;;
+              *) echo "Unsupported merge queue base: $QUEUE_BASE_REF"; exit 1 ;;
+            esac
+            if [ "$REVIEW_CELL_REQUIRED" = "true" ] && [ "$REVIEW_CELL_RESULT" != "success" ]; then
+              echo "Required merge-queue reviewer-cell check did not complete successfully."
+              exit 1
+            fi
+            if [ "$QUEUE_BASE_REF" = "refs/heads/release" ] && [ "$BENCH_RESULT" != "success" ]; then
+              echo "Required release-queue benchmark did not complete successfully."
+              exit 1
+            fi
+            if [ "$BUILD_RESULT" != "success" ]; then
+              echo "Required merge-queue build did not complete successfully."
+              exit 1
+            fi
+            if [ "$MODE" != "skip" ]; then
+              case "$E2E_SHARD_TOTAL" in
+                ''|0|*[!0-9]*) echo "Invalid queue e2e shard count: $E2E_SHARD_TOTAL"; exit 1 ;;
+              esac
+              if [ "$E2E_SHARD_TOTAL" -le 0 ]; then
+                echo "Queue e2e shard count must be positive."
+                exit 1
+              fi
+              if [ "$E2E_RESULT" != "success" ]; then
+                echo "Required merge-queue e2e did not complete successfully."
+                exit 1
+              fi
+            fi
+          fi
           # Zero-shard / screenshot-only plans intentionally SKIP heavy jobs
           # (#1233). They may not disguise failures or cancellations above.
           if [ "$MODE" = "skip" ]; then
