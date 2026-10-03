@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { copseWorkspaceDir } from '@copse/store-kit/copse-paths.ts'
 
@@ -64,12 +64,34 @@ export function resolveStrictlyInside(root: string, child: string): string | nul
 }
 
 /**
+ * Reject existing symlink components below the configured root, including the
+ * leaf. Missing descendants may be created. The configured root itself is a
+ * trusted host location and may be an alias (for example /tmp on macOS).
+ */
+export function resolveInsideWithoutSymlinks(root: string, child: string): string | null {
+  const candidate = resolveStrictlyInside(root, child)
+  if (candidate === null) return null
+  let current = resolve(root)
+  for (const segment of relative(current, candidate).split(sep)) {
+    current = resolve(current, segment)
+    try {
+      if (lstatSync(current).isSymbolicLink()) return null
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT')
+        return candidate
+      return null
+    }
+  }
+  return candidate
+}
+
+/**
  * Per-project directory under the store (`<root>/<projectId>`). The durable
  * decision log writes per-project files, so a project id that escapes the root is
  * rejected rather than resolved.
  */
 export function resolveProjectDir(root: string, projectId: string): string {
-  const candidate = resolveStrictlyInside(root, projectId)
+  const candidate = resolveInsideWithoutSymlinks(root, projectId)
   if (candidate === null) throw new Error('Project id resolves outside the workspace store')
   return candidate
 }

@@ -100,21 +100,38 @@ function fnv1a32(bytes: Uint8Array, seed: number): string {
   return (h >>> 0).toString(16).padStart(8, '0')
 }
 
+/** UTF-8 for well-formed strings; preserve lone UTF-16 units as WTF-8 bytes. */
+function idBytes(id: string): Uint8Array {
+  const encoder = new TextEncoder()
+  if (!/[\uD800-\uDFFF]/u.test(id)) return encoder.encode(id)
+  const bytes: number[] = []
+  for (const character of id) {
+    const unit = character.charCodeAt(0)
+    if (character.length === 1 && unit >= 0xd800 && unit <= 0xdfff) {
+      bytes.push(0xe0 | (unit >> 12), 0x80 | ((unit >> 6) & 0x3f), 0x80 | (unit & 0x3f))
+    } else {
+      bytes.push(...encoder.encode(character))
+    }
+  }
+  return new Uint8Array(bytes)
+}
+
 /**
  * The file-name form of a message, tool-call, or subagent id. Those ids arrive
  * from model endpoints and ACP agents, so they are untrusted input to a path.
  *
  * A plain id (`[A-Za-z0-9_-]`, at most 128 characters — every id Copse and the
  * mainstream providers mint) is used unchanged, so existing threads keep their
- * exact file names. Anything else is marked with a leading `~` and each UTF-8
+ * exact file names. Anything else is marked with a leading `~` and each UTF-8/WTF-8
  * byte outside that set becomes `~XX` (upper-case hex); the result can hold no
- * separator, NUL, or `.`/`..` segment, and is injective because a plain id never
+ * separator, NUL, or `.`/`..` segment. Lone UTF-16 surrogates are retained rather
+ * than replaced with U+FFFD. The short form is injective because a plain id never
  * contains `~`. An escaped form that would still be too long for a file name is
  * replaced by `~h` plus a 64-bit digest.
  */
 export function idPathSegment(id: string): string {
   if (PLAIN_ID_SEGMENT.test(id)) return id
-  const bytes = new TextEncoder().encode(id)
+  const bytes = idBytes(id)
   let escaped = '~'
   for (const byte of bytes) {
     const char = String.fromCharCode(byte)

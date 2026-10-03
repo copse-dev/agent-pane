@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  symlinkSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -28,6 +29,8 @@ import {
   createThread,
   loadProjectCatalog,
   loadProjectThreads,
+  readHookRun,
+  readThreadDirectory,
   saveProjectThread,
 } from './thread-store.ts'
 
@@ -45,6 +48,11 @@ const HOSTILE_IDS = [
   '..',
   'x'.repeat(5000),
   '~41',
+  '\ud800',
+  '\ud801',
+  '\ufffd',
+  'x'.repeat(5000) + '\ud800',
+  'x'.repeat(5000) + '\ud801',
 ]
 
 const PLAIN_IDS = [
@@ -123,6 +131,15 @@ describe('idPathSegment', () => {
     }
     assert.equal(new Set(segments).size, segments.length)
     assert.equal(new Set([...segments, ...PLAIN_IDS]).size, segments.length + PLAIN_IDS.length)
+  })
+})
+
+describe('well-formed Unicode path compatibility', () => {
+  it('preserves existing UTF-8 names while separating lone UTF-16 units', () => {
+    assert.equal(idPathSegment('é'), '~' + '~C3~A9')
+    assert.equal(idPathSegment('😀'), '~' + '~F0~9F~98~80')
+    assert.equal(idPathSegment('\ud800'), '~' + '~ED~A0~80')
+    assert.equal(idPathSegment('\ud801'), '~' + '~ED~A0~81')
   })
 })
 
@@ -335,5 +352,77 @@ describe('thread-store paths', () => {
       appendHookRun('proj', 't1', line, [{ ref: 'blobs/../../../outside/h.txt', contents: 'x' }]),
     )
     assert.deepEqual(strayFiles(), [])
+  })
+  for (const contentDir of ['messages', 'blobs', 'subagents']) {
+    it(`rejects a symlink ${contentDir} during saves and appends without external writes`, async () => {
+      await createThread('proj', thread('t1', []))
+      const dir = join(workspace, 'proj', 't1', contentDir)
+      rmSync(dir, { recursive: true, force: true })
+      symlinkSync(outside, dir, 'dir')
+      await assert.rejects(
+        saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')])),
+      )
+      await assert.rejects(appendMessage('proj', 't1', messageWithIds('a1', 'tc', 'sub')))
+      // Empty saves must reject too, rather than pruning files through the link.
+      writeFileSync(join(outside, 'sentinel'), 'untouched')
+      await assert.rejects(saveProjectThread('proj', thread('t1', [])))
+      assert.deepEqual(filesUnder(outside), ['sentinel'])
+      assert.equal(readFileSync(join(outside, 'sentinel'), 'utf8'), 'untouched')
+    })
+
+    it(`does not load external content through a symlink ${contentDir}`, async () => {
+      await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')]))
+      const dir = join(workspace, 'proj', 't1', contentDir)
+      const moved = join(outside, 'moved')
+      renameSync(dir, moved)
+      symlinkSync(moved, dir, 'dir')
+      assert.deepEqual(await loadProjectThreads('proj'), [])
+      const exported = await readThreadDirectory('proj', 't1')
+      assert.ok(exported.every((file) => !file.path.startsWith(contentDir + '/')))
+    })
+  }
+
+  it('rejects symlink file leaves and project/thread directories', async () => {
+    await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')]))
+    const leaf = join(workspace, 'proj', 't1', 'messages', 'a1.md')
+    renameSync(leaf, join(outside, 'a1.md'))
+    symlinkSync(join(outside, 'a1.md'), leaf)
+    const original = readFileSync(join(outside, 'a1.md'), 'utf8')
+    await assert.rejects(
+      saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub')])),
+    )
+    assert.deepEqual(await loadProjectThreads('proj'), [])
+    assert.equal(readFileSync(join(outside, 'a1.md'), 'utf8'), original)
+    symlinkSync(outside, join(workspace, 'linked-project'), 'dir')
+    await assert.rejects(saveProjectThread('linked-project', thread('t2', [])))
+    symlinkSync(outside, join(workspace, 'proj', 'linked-thread'), 'dir')
+    await assert.rejects(saveProjectThread('proj', thread('linked-thread', [])))
+  })
+
+  it('rejects hook blob symlinks on append and returns unavailable text on read', async () => {
+    const line: SpineHookRunLine = {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'hook_run',
+      id: 'h1',
+      event: 'stop',
+      hookId: 'hook',
+      executor: 'command',
+      startedAt: 0,
+      durationMs: 1,
+      exitCode: 0,
+      parseOk: true,
+      decision: { permission: 'deny' },
+      stdout: { ref: 'blobs/h.txt', sha256: sha256('secret') },
+    }
+    await createThread('proj', thread('t1', []))
+    await appendHookRun('proj', 't1', line, [{ ref: 'blobs/h.txt', contents: 'secret' }])
+    const dir = join(workspace, 'proj', 't1', 'blobs')
+    renameSync(dir, join(outside, 'hook-blobs'))
+    symlinkSync(join(outside, 'hook-blobs'), dir, 'dir')
+    assert.equal((await readHookRun('proj', 't1', 'h1'))?.stdout?.text, null)
+    await assert.rejects(
+      appendHookRun('proj', 't1', line, [{ ref: 'blobs/new.txt', contents: 'escaped' }]),
+    )
+    assert.deepEqual(filesUnder(join(outside, 'hook-blobs')), ['h.txt'])
   })
 })
