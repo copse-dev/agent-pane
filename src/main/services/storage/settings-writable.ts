@@ -10,6 +10,7 @@ import {
   validateWebOriginPattern,
 } from '../security/web-origin-policy.ts'
 import { keyOf } from '@shared/member-of.ts'
+import { RELEASE_CHANNELS } from '@shared/release-channel.mts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
 
@@ -187,6 +188,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Acknowledgement of the one-time ChatGPT plan onboarding notice.
   chatGptPlanWelcomeSeen: z.boolean(),
   theme: z.enum(['system', 'light', 'dark']),
+  // Which releases the packaged app updates to (Settings → About). Remembered
+  // from the installed build on first launch; see getUpdateCheckPlan.
+  updateChannel: z.enum(RELEASE_CHANNELS),
   fontSize: z.number().int().min(8).max(32),
   // Whole-UI multiplier for design tokens (--ui-scale). Independent of
   // fontSize (editor/terminal); see src/shared/ui-scale.ts.
