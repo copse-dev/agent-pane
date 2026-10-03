@@ -52607,6 +52607,10 @@ function unwrapUncached(id, search) {
     const stripped = unwrap2(id.slice(sep + 1), search);
     if (stripped !== null) return stripped;
   }
+  if (id.startsWith("openai/gpt-") || id.startsWith("anthropic/claude-")) {
+    const stripped = unwrap2(id.slice(id.indexOf("/") + 1), search);
+    if (stripped !== null) return stripped;
+  }
   const lastColon = id.lastIndexOf(":");
   if (lastColon > 0 && id.slice(0, lastColon).includes("/")) {
     return unwrap2(id.slice(0, lastColon), search);
@@ -60013,7 +60017,18 @@ var init_plan_inclusion = __esm({
 });
 
 // src/shared/plan-frontier-candidates.ts
-function planAcpFrontierCandidates(agents) {
+function planAcpFrontierCandidates(agents, pricedRoutes = []) {
+  const livePrices = /* @__PURE__ */ new Map();
+  for (const route of pricedRoutes) {
+    if (route.local || route.plan !== void 0 || route.planAccess !== void 0) continue;
+    if (!Number.isFinite(route.costPerMTok) || route.costPerMTok < 0) continue;
+    const identity = resolveIntellectModelId(route.id);
+    if (!identity) continue;
+    const previous = livePrices.get(identity);
+    if (previous === void 0 || route.costPerMTok < previous) {
+      livePrices.set(identity, route.costPerMTok);
+    }
+  }
   const candidates = [];
   for (const agent of agents) {
     if (!agent.enabled) continue;
@@ -60034,12 +60049,14 @@ function planAcpFrontierCandidates(agents) {
       );
       if (!resolved3) continue;
       const score = getIntellectScore(resolved3);
-      const info = getModelInfo(resolved3);
-      if (!score || !info) continue;
+      const info = getModelInfo(resolved3) ?? Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved3)?.[1];
+      const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved3);
+      if (!score || price === void 0) continue;
       candidates.push({
         id: acpModelValue(agent.id, choice.value),
         intellect: score.value,
-        costPerMTok: blendedPricePerMTok(info),
+        intellectEstimated: score.estimated === true,
+        costPerMTok: price,
         planAccess: { provider, modelId: resolved3 }
       });
     }
@@ -61623,11 +61640,14 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     } else if (liveFetch.error) {
       liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`);
     }
+    const pricedRoutes = [
+      ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models)
+    ];
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
-      ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models),
-      ...planAcpFrontierCandidates(acpAgents)
+      ...pricedRoutes,
+      ...planAcpFrontierCandidates(acpAgents, pricedRoutes)
     ];
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
     const delegatedModelIds = /* @__PURE__ */ new Set();
@@ -66392,10 +66412,12 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts, reaching only its model's
-                origin, and brings its commits back for you to apply. Needs Docker; the first run
-                builds the worker image. A run carries one credential: the model's API key, or,
-                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout with no prompts and brings its commits back for
+                you to apply. Its network reaches only its model's origin, plus, when the run
+                installs dependencies (on by default, per run), the npm registry, GitHub and
+                Electron's download hosts. Needs Docker; the first run builds the worker image. A
+                run carries one credential: the model's API key, or, if you opt in per run, your
+                Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -72311,7 +72333,7 @@ function mountProjectsPane(root, store2, api2) {
       dismissBtn.addEventListener("click", () => {
         void dismissOrphanProject(api2, orphan.id).then(() => {
           orphans = orphans.filter((entry) => entry.id !== orphan.id);
-          render();
+          render(true);
           showToast("Recoverable threads hidden. They remain on disk.");
         }).catch((err2) => {
           showErrorToast("Could not dismiss recoverable threads", err2);
@@ -72587,7 +72609,8 @@ function mountProjectsPane(root, store2, api2) {
     }
     return entries2;
   }
-  function render() {
+  function render(preserveScroll = false) {
+    const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
     clear(list);
@@ -72596,6 +72619,7 @@ function mountProjectsPane(root, store2, api2) {
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
+      if (preserveScroll) list.scrollTop = scrollTop;
       return;
     }
     function renderThreadRow(project2, thread, options = {}) {
@@ -73273,6 +73297,7 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    if (preserveScroll) list.scrollTop = scrollTop;
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -73281,7 +73306,9 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store2.on("thread_status_changed", render),
+    store2.on("thread_status_changed", () => {
+      render();
+    }),
     store2.on("workspace_changed", () => {
       if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
       else if (threadFilter) contentFilter.search(threadFilter);
