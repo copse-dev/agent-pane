@@ -12666,6 +12666,7 @@ dialog.activity-panel-overlay {
   width: min(1050px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
   margin-inline: auto;
   padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
+  overflow-y: auto;
 }
 .activity-home[data-idle=true],
 .activity-home[hidden] {
@@ -12850,6 +12851,26 @@ dialog.activity-panel-overlay {
 }
 .activity-home .activity-open-arrow {
   margin-left: var(--spacing-xs);
+}
+@media (max-height: 640px) {
+  .activity-home {
+    padding-top: 16px;
+  }
+  .activity-home .activity-strip {
+    margin-bottom: 10px;
+  }
+  .activity-home .activity-strip-card,
+  .activity-home .activity-strip-card:first-child {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .activity-home .activity-panel-body {
+    min-height: 200px;
+  }
 }
 @container chat-pane (max-width: 640px) {
   .activity-home {
