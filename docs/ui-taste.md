@@ -783,7 +783,7 @@ wherever the trick is copied. Spec: `modern-css.test.ts`.
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
-Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+Two remotes ending in the same leaf (e.g. `/srv/app` and `/home/ubuntu/app`) must stay
 visually distinct. Display re-derives from `project.path` so older basename-only stored
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
@@ -791,11 +791,15 @@ names still render correctly (`projectDisplayName` in
 ## Thread GitHub PR status icon
 
 Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
-show a single git-pull-request icon after lifecycle resolves — not text, not a pill:
+show a single icon after lifecycle resolves — not text, not a pill:
 
-- open → accent
-- merged → success
-- closed → muted
+- open → git-pull-request glyph, accent
+- merged → git-merge glyph, `--pr-merged` (GitHub purple; fixed, so a purple custom accent
+  cannot collapse it into open)
+- closed → git-pull-request glyph, `--pr-closed` (red)
+
+An open PR whose checks are failing fills the glyph's top node with `--pr-closed`
+(`.has-ci-failure`). Pending and passing checks add nothing; merged and closed never show it.
 
 The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …).
 Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
