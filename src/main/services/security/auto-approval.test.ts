@@ -64,11 +64,6 @@ describe('assessAutoApproval — the commands from a real session', () => {
       `cd ${root} && git diff origin/main --stat`,
       `cd ${root} && git show --stat copse/browser-panel-url-bar-cmd-l-select`,
       'git ls-remote origin',
-      'gh run download',
-      'gh run download 36573253027',
-      'gh run download 36573253027 --pattern screenshots --dir .tmp/artifacts --repo other/repo --clobber',
-      "gh run download 36573253027 --pattern 'reference-screenshot-candidates-*' --dir .tmp/pr3296-screenshot-candidates",
-      "gh run download 36573253027 -p 'screenshots-shard-[16]' --dir ./.tmp/pr3296-e2e-final",
     ]) {
       assert.equal(approved(command, 'read'), 'read', command)
     }
@@ -215,6 +210,19 @@ describe('assessAutoApproval — gh', () => {
     assert.equal(approved('gh pr view', 'read'), 'read')
     assert.equal(approved('gh pr list --state open --limit 20', 'read'), 'read')
     assert.equal(approved('gh run list', 'read'), 'read')
+  })
+
+  it('never grants artifact download an outside-sandbox auto-approval', () => {
+    for (const level of ['read', 'local-write', 'remote-write'] as const) {
+      for (const command of [
+        'gh run download',
+        'gh run download 123 --repo other/repo --dir .tmp/artifacts',
+        'gh run download 123 --dir /tmp/outside-artifacts',
+        'gh run download 123 --dir ../outside-artifacts',
+      ]) {
+        prompts(command, level)
+      }
+    }
   })
 
   it('approves additive write subcommands at remote-write', () => {
