@@ -22,6 +22,7 @@ const TEXT_FILE = /\.(?:[cm]?[jt]sx?|json|css|html|md|ya?ml)$/
 export type RefreshRefs = {
   testedBase: string
   testedCandidate: string
+  testedPrHead: string
   base: string
   prHead: string
   candidate: string
@@ -201,15 +202,22 @@ export function planRefresh(input: RefreshRefs): RefreshPlan {
     const refs: RefreshRefs = {
       testedBase: commit(input.testedBase),
       testedCandidate: commit(input.testedCandidate),
+      testedPrHead: commit(input.testedPrHead),
       base: commit(input.base),
       prHead: commit(input.prHead),
       candidate: commit(input.candidate),
     }
     plan.refs = refs
+    if (refs.testedPrHead !== refs.prHead) {
+      plan.reasons.push(
+        'Source head differs from the previously tested source; new PR validation required',
+      )
+      return plan
+    }
     for (const [ancestor, descendant] of [
       [refs.testedBase, refs.base],
       [refs.testedBase, refs.testedCandidate],
-      [refs.prHead, refs.testedCandidate],
+      [refs.testedPrHead, refs.testedCandidate],
       [refs.base, refs.candidate],
       [refs.prHead, refs.candidate],
     ]) {

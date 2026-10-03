@@ -16,6 +16,7 @@ const refreshSchema = z.object({
     .object({
       testedBase: z.string(),
       testedCandidate: z.string(),
+      testedPrHead: z.string(),
       base: z.string(),
       prHead: z.string(),
       candidate: z.string(),
@@ -96,6 +97,7 @@ function candidates(
 ): {
   testedBase: string
   testedCandidate: string
+  testedPrHead: string
   prHead: string
   base: string
   candidate: string
@@ -111,7 +113,14 @@ function candidates(
   const currentBase = commit(cwd, 'base changes')
   git(cwd, 'checkout', '-qb', 'candidate')
   git(cwd, 'merge', '--no-ff', '-qm', 'fresh candidate', prHead)
-  return { testedBase: base, testedCandidate, prHead, base: currentBase, candidate: 'HEAD' }
+  return {
+    testedBase: base,
+    testedCandidate,
+    testedPrHead: prHead,
+    prHead,
+    base: currentBase,
+    candidate: 'HEAD',
+  }
 }
 
 function refresh(cwd: string, refs: ReturnType<typeof candidates>): z.infer<typeof refreshSchema> {
@@ -125,6 +134,8 @@ function refresh(cwd: string, refs: ReturnType<typeof candidates>): z.infer<type
       refs.testedBase,
       '--tested-candidate',
       refs.testedCandidate,
+      '--tested-pr-head',
+      refs.testedPrHead,
       '--base',
       refs.base,
       '--pr-head',
@@ -478,6 +489,34 @@ describe('bounded oracle base refresh', () => {
     })
   })
 
+  it('rejects a rewound source even when both candidates contain its ancestor', () => {
+    fixture((cwd, base) => {
+      git(cwd, 'checkout', '-qb', 'source')
+      write(cwd, 'src/client.ts', 'export const client = () => window.api.read(2)\n')
+      const rewoundHead = commit(cwd, 'earlier PR source')
+      const refs = candidates(
+        cwd,
+        base,
+        () => {
+          write(cwd, 'src/client.ts', 'export const client = () => window.api.read(3)\n')
+        },
+        () => {
+          write(cwd, 'src/preload/index.ts', 'export const contract = 2\n')
+        },
+      )
+      assert.equal(refresh(cwd, refs).mode, 'subset')
+      // Ancestry succeeds for the rewind on both combined commits, but the
+      // validation belongs to the later source and cannot be reused.
+      git(cwd, 'merge-base', '--is-ancestor', rewoundHead, refs.testedCandidate)
+      git(cwd, 'merge-base', '--is-ancestor', rewoundHead, 'HEAD')
+      const plan = refresh(cwd, { ...refs, prHead: rewoundHead })
+      assert.equal(plan.mode, 'review')
+      assert.ok(plan.reasons.some((reason) => reason.includes('Source head differs')))
+      assert.deepEqual(plan.unitSpecs, [])
+      assert.deepEqual(plan.e2eSpecs, [])
+    })
+  })
+
   it('reports unmapped runtime inputs instead of declaring independence', () => {
     fixture((cwd, base) => {
       const refs = candidates(
@@ -517,6 +556,8 @@ describe('bounded oracle base refresh', () => {
         refs.testedBase,
         '--tested-candidate',
         refs.testedCandidate,
+        '--tested-pr-head',
+        refs.testedPrHead,
         '--pr-head',
         refs.prHead,
         '--base',

@@ -112,6 +112,7 @@ Options:
   --refresh        plan bounded base-change revalidation; never runs a full suite
   --tested-base <ref>  target SHA used by the previous successful PR validation
   --tested-candidate <ref>  combined commit used by that previous validation
+  --tested-pr-head <ref>  source SHA recorded by that previous validation
   --pr-head <ref>  source PR head for --refresh (required)
   --candidate <ref>  fresh combined candidate for --refresh (default: HEAD)
   --list-ci-specs   list the full CI e2e suite, retaining configured exclusions
@@ -134,6 +135,7 @@ type Args = {
   refresh: boolean
   testedBase: string | null
   testedCandidate: string | null
+  testedPrHead: string | null
   prHead: string | null
   candidate: string
 }
@@ -151,6 +153,7 @@ function parseArgs(argv: string[]): Args {
     refresh: false,
     testedBase: null,
     testedCandidate: null,
+    testedPrHead: null,
     prHead: null,
     candidate: 'HEAD',
   }
@@ -165,6 +168,7 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--refresh') a.refresh = true
     else if (arg === '--tested-base') a.testedBase = argv[++i] ?? null
     else if (arg === '--tested-candidate') a.testedCandidate = argv[++i] ?? null
+    else if (arg === '--tested-pr-head') a.testedPrHead = argv[++i] ?? null
     else if (arg === '--pr-head') a.prHead = argv[++i] ?? null
     else if (arg === '--candidate') a.candidate = argv[++i] ?? 'HEAD'
     else if (arg === '--explain') a.explain = true
@@ -816,19 +820,21 @@ async function main(): Promise<void> {
     if (
       !args.testedBase ||
       !args.testedCandidate ||
+      !args.testedPrHead ||
       !args.prHead ||
       args.run ||
       args.files ||
       args.listCiSpecs
     ) {
       throw new Error(
-        '--refresh requires --tested-base, --tested-candidate and --pr-head; --run/--files/--list-ci-specs are not supported',
+        '--refresh requires --tested-base, --tested-candidate, --tested-pr-head and --pr-head; --run/--files/--list-ci-specs are not supported',
       )
     }
     const { planRefresh, emitRefreshPlan } = await import('./lib/oracle-refresh.mts')
     const refresh = planRefresh({
       testedBase: args.testedBase,
       testedCandidate: args.testedCandidate,
+      testedPrHead: args.testedPrHead,
       base: args.base,
       prHead: args.prHead,
       candidate: args.candidate,

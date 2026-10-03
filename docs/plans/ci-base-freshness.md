@@ -20,13 +20,16 @@ separates affected areas from execution cost:
 pnpm run oracle -- --refresh \
   --tested-base <previous-target-sha> \
   --tested-candidate <previous-validated-merge-sha> \
+  --tested-pr-head <previous-validated-source-sha> \
   --base <current-target-sha> \
   --pr-head <unchanged-source-head-sha> \
   --candidate <fresh-combined-merge-sha> --json
 ```
 
 The caller retains the previous successful run's target and combined candidate
-SHAs and constructs the fresh candidate. Both candidates must contain the source
+SHAs plus its exact source SHA and constructs the fresh candidate. The resolved
+previous source SHA must equal the current source SHA; ancestry alone cannot
+validate a rewound PR that removed a tested fix. Both candidates must contain the source
 head and their respective target as ancestors; a changed source head, missing
 history, rewritten target, or stale candidate returns `review`. This initial
 interface accepts ancestry-preserving merge candidates, not squash-only queue

@@ -226,7 +226,7 @@ new tests should keep that trend:
   selector/DOM coupling honest so the oracle can confidently subset — and keep
   the oracle liveness gate (`npm run check:oracle`) passing.
 - **Base-change refresh planning** is a separate opt-in oracle mode:
-  `pnpm run oracle -- --refresh --tested-base <sha> --tested-candidate <sha>
+  `pnpm run oracle -- --refresh --tested-base <sha> --tested-candidate <sha> --tested-pr-head <sha>
 --base <sha> --pr-head <sha> --candidate <sha> --json`. It compares affected
   areas on both sides and emits `skip`, explicit bounded test lists, or `review`.
   It never requests a full-suite rerun or executes tests, and it does not replace
