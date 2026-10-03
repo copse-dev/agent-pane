@@ -98,10 +98,13 @@ describe('PR panel (mock gh)', () => {
     })
     await expect(filterInput).toBeFocused()
 
-    // CI rollup dots ride along with the workspace listing: #88 fails, the
-    // chat-linked #42 passes — both shown without a per-row query.
-    await expect(await $('.pr-list-ci-failure')).toBeDisplayed()
-    await expect(await $('.pr-list-ci-success')).toBeDisplayed()
+    // Use the thread panel's glyph and failure marker in PR rows too.
+    await expect(await $('.pr-list-status.is-open.has-ci-failure')).toBeDisplayed()
+    await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-status')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/#42 open; CI passing/i),
+    )
+    await expect(await $('.pr-list-status svg[data-icon="git-pull-request"]')).toBeDisplayed()
 
     // The cross-repo section is a collapsed, countless toggle by default; its
     // PR (#17) hasn't been loaded.
@@ -113,7 +116,7 @@ describe('PR panel (mock gh)', () => {
     // Expanding loads the cross-repo list and its lazily-fetched CI state.
     await otherToggle.click()
     await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
-    await expect(await $('.pr-list-ci-pending')).toBeDisplayed()
+    await expect(await $('.pr-list-status[aria-label="PR #17 open; CI running"]')).toBeDisplayed()
 
     // The expanded group uses the same single, readable filter-aware empty
     // state even when every loaded cross-repo PR is filtered out. The component
