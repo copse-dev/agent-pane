@@ -205,6 +205,14 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel(bare), 'Terminal')
   })
 
+  it('caps a long ACP shell title when rawInput has not arrived', () => {
+    const long = `cd /work && ${'echo hello; '.repeat(40)}`
+    const label = getToolCallLabel({ ...tc('1', 'Bash'), kind: 'execute', title: long })
+    assert.ok(label.length <= 96)
+    assert.ok(label.startsWith('echo hello;'))
+    assert.ok(label.endsWith('…'))
+  })
+
   it('maps known tools to past-tense names by default', () => {
     assert.equal(getToolDisplayName('explore'), 'Explored files')
     assert.equal(getToolDisplayName('read_file'), 'Read file')

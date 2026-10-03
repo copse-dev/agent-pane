@@ -343,6 +343,85 @@ describe('completeReviewPrompt', () => {
     assert.ok((asks[1]?.length ?? 0) < (asks[0]?.length ?? 0), 'second attempt was smaller')
   })
 
+  it('sends image attachments with the prompt and names every attachment', async () => {
+    const parts: unknown[] = []
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const first = messages[0]
+        if (first && 'content' in first) parts.push(first.content)
+        yield { type: 'text', text: 'open\n- nothing yet' }
+      },
+    }
+    const png = 'data:image/png;base64,AAAA'
+    await completeReviewPrompt(
+      provider,
+      {
+        ...REVIEW_INPUT,
+        attachments: [
+          { id: 'a', name: 'shot.png', mimeType: 'image/png', size: 3 },
+          { id: 'b', name: 'spec.pdf', mimeType: 'application/pdf', size: 9 },
+        ],
+        images: [png],
+      },
+      'm',
+      32_768,
+      1000,
+    )
+    const content = parts[0]
+    assert.ok(Array.isArray(content))
+    assert.deepEqual(content[1], { type: 'image', dataUrl: png })
+    assert.match(JSON.stringify(content[0]), /shot\.png[\s\S]*spec\.pdf/)
+  })
+
+  it('retries without images when the model rejects them', async () => {
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        calls++
+        const first = messages[0]
+        if (first && 'content' in first && Array.isArray(first.content)) {
+          throw new Error('model does not support image input')
+        }
+        yield { type: 'text', text: 'open\n- no evidence' }
+      },
+    }
+    const { text } = await completeReviewPrompt(
+      provider,
+      { ...REVIEW_INPUT, images: ['data:image/png;base64,AAAA'] },
+      'm',
+      32_768,
+      1000,
+    )
+    assert.match(text, /^open/)
+    assert.equal(calls, 2)
+  })
+
+  for (const contextWindow of [4096, 32_768]) {
+    it(`retries image context overflow without images at ${String(contextWindow)} tokens`, async () => {
+      const calls: unknown[] = []
+      const provider: LLMProvider = {
+        async *stream(messages) {
+          const first = messages[0]
+          assert.ok(first && 'content' in first)
+          calls.push(first.content)
+          if (Array.isArray(first.content)) throw new Error(LM_STUDIO_CONTEXT_ERROR)
+          yield { type: 'text', text: 'open\n- text fits' }
+        },
+      }
+      const { text } = await completeReviewPrompt(
+        provider,
+        { ...REVIEW_INPUT, images: ['data:image/png;base64,AAAA'] },
+        'm',
+        contextWindow,
+        1000,
+      )
+      assert.match(text, /^open/)
+      assert.equal(calls.length, 2)
+      assert.ok(Array.isArray(calls[0]))
+      assert.equal(typeof calls[1], 'string')
+    })
+  }
+
   it('reports advice, not the engine blob, when the retry also fails', async () => {
     const { provider, asks } = fakeProvider({ failures: 2, error: LM_STUDIO_CONTEXT_ERROR })
     await assert.rejects(
