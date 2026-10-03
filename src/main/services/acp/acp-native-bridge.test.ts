@@ -3,6 +3,10 @@ import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { LoggingMessageNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
   clearAbandonedVerdictsForTest,
@@ -122,6 +126,44 @@ function worktreeContext(threadId: string, root: string): ThreadExecutionContext
     checkoutMode: 'worktree',
     branch: `copse/${threadId}`,
   }
+}
+
+// SDK HTTP transports declare sessionId as string | undefined, which conflicts
+// with Transport's optional string under exactOptionalPropertyTypes. Forward
+// the stateless connection without that property, retaining live callbacks.
+function testHttpTransport(bridge: AcpNativeBridge): Transport {
+  const http = new StreamableHTTPClientTransport(new URL(bridge.url), {
+    requestInit: { headers: { authorization: `Bearer ${bridge.token}` } },
+  })
+  const transport: Transport = {
+    start: () => http.start(),
+    send: (message, options) => http.send(message, options),
+    close: () => http.close(),
+    setProtocolVersion: (version) => {
+      http.setProtocolVersion(version)
+    },
+  }
+  Object.defineProperties(transport, {
+    onclose: {
+      get: () => http.onclose,
+      set: (callback: () => void) => {
+        http.onclose = callback
+      },
+    },
+    onerror: {
+      get: () => http.onerror,
+      set: (callback: (error: Error) => void) => {
+        http.onerror = callback
+      },
+    },
+    onmessage: {
+      get: () => http.onmessage,
+      set: (callback: NonNullable<Transport['onmessage']>) => {
+        http.onmessage = callback
+      },
+    },
+  })
+  return transport
 }
 
 async function rpc(
@@ -302,6 +344,135 @@ describe('startAcpNativeBridge', () => {
     assert.match(granted ?? '', /End your turn now/)
     const ordinary = contentText(await call('run_shell', { command: 'pwd' }, 4))
     assert.doesNotMatch(ordinary ?? '', /End your turn now/)
+  })
+
+  for (const useProgress of [true, false]) {
+    it(`keeps a silent call alive with ${useProgress ? 'progress' : 'logging'} notifications and stops after completion`, async (t) => {
+      setPermissionGateForTests(() => Promise.resolve(true))
+      let started = (): void => {}
+      const ready = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      let finish = (_result: string): void => {}
+      const result = new Promise<string>((resolve) => {
+        finish = resolve
+      })
+      const registry = testRegistry([])
+      registry.register({
+        name: 'run_shell',
+        description: 'A silent command',
+        parameters: z.object({ command: z.string() }),
+        execute: () => {
+          started()
+          return result
+        },
+      })
+      bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+        threadId: 'bridge-keepalive',
+      })
+      assert.ok(bridge)
+      bridge.setExecutionContext(worktreeContext('bridge-keepalive', '/worktrees/bridge-keepalive'))
+      const client = new Client({ name: 'keepalive-test', version: '0' })
+      await client.connect(testHttpTransport(bridge))
+      const notifications: unknown[] = []
+      let received = (): void => {}
+      const onNotification = (notification: unknown): void => {
+        notifications.push(notification)
+        received()
+      }
+      client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
+        onNotification(notification.params)
+      })
+      t.mock.timers.enable({ apis: ['setInterval'] })
+      const intervals = t.mock.method(globalThis, 'setInterval')
+      const cleared = t.mock.method(globalThis, 'clearInterval')
+      try {
+        const call = client.callTool(
+          { name: 'run_shell', arguments: { command: 'silent-command' } },
+          undefined,
+          useProgress ? { onprogress: onNotification } : {},
+        )
+        await ready
+        assert.deepEqual(notifications, [], 'short calls must not generate keepalive noise')
+        for (let index = 1; index <= 2; index++) {
+          const next = new Promise<void>((resolve) => {
+            received = resolve
+          })
+          t.mock.timers.tick(30_000)
+          await next
+          assert.deepEqual(
+            notifications[index - 1],
+            useProgress
+              ? { progress: index, message: 'Tool call "run_shell" is still pending.' }
+              : {
+                  level: 'info',
+                  logger: BRIDGE_MCP_SERVER_NAME,
+                  data: 'Tool call "run_shell" is still pending.',
+                },
+          )
+        }
+        finish('command completed')
+        assert.deepEqual(await call, { content: [{ type: 'text', text: 'command completed' }] })
+        const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+        assert.ok(timer)
+        assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+        t.mock.timers.tick(300_000)
+        assert.equal(notifications.length, 2)
+      } finally {
+        finish('cleanup')
+        t.mock.timers.reset()
+        await client.close()
+      }
+    })
+  }
+
+  it('stops keepalives immediately when the owning turn is cancelled', async (t) => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    let started = (): void => {}
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let finish = (): void => {}
+    const result = new Promise<string>((resolve) => {
+      finish = (): void => {
+        resolve('finished')
+      }
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'run_shell',
+      description: 'A tool slow to settle after cancellation',
+      parameters: z.object({ command: z.string() }),
+      execute: () => {
+        started()
+        return result
+      },
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-cancel-keepalive',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-cancel-keepalive', '/worktrees/cancel'))
+    const turn = new AbortController()
+    bridge.setTurnSignal(turn.signal)
+    for (const init of initialized()) await rpc(bridge, init)
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const intervals = t.mock.method(globalThis, 'setInterval')
+    const cleared = t.mock.method(globalThis, 'clearInterval')
+    try {
+      const call = rpc(bridge, SHELL_CALL)
+      await ready
+      turn.abort()
+      const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+      assert.ok(timer)
+      assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+      t.mock.timers.tick(300_000)
+      finish()
+      assert.equal(contentText(await call), 'finished')
+    } finally {
+      finish()
+      t.mock.timers.reset()
+    }
   })
 
   it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {
