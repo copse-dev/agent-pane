@@ -3,11 +3,14 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { PlanUsageSnapshot } from '@copse/plan-usage'
+import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
+  confirmedPlanUsageProviders,
   discoverPlanUsageCredentials,
   invalidatePlanUsageCache,
   loadPlanUsageSnapshot,
+  markUnconfirmedPlanProviders,
   PLAN_USAGE_CACHE_TTL_MS,
   setPlanUsageSnapshotFetcherForTest,
 } from './plan-usage-bridge.ts'
@@ -211,6 +214,166 @@ describe('discoverPlanUsageCredentials', () => {
     assert.deepEqual(creds.claudeOAuthTokens, [])
     assert.equal(creds.codex, undefined)
     assert.equal(creds.huggingfaceToken, 'hf_after_bad_files')
+  })
+})
+
+describe('discoverPlanUsageCredentials limited to confirmed providers', () => {
+  function homeWithEverySignIn(): string {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-scoped-'))
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    mkdirSync(join(home, '.codex'), { recursive: true })
+    mkdirSync(join(home, '.cache', 'huggingface'), { recursive: true })
+    writeFileSync(
+      join(home, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-file' } }),
+    )
+    writeFileSync(
+      join(home, '.codex', 'auth.json'),
+      JSON.stringify({ tokens: { access_token: 'codex-tok', account_id: 'acct' } }),
+    )
+    writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_from_file\n')
+    return home
+  }
+
+  const everyEnvToken = {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-env',
+    HF_TOKEN: 'hf_from_env',
+    CURSOR_SESSION_TOKEN: 'user_01%3A%3Ajwt.from.env',
+  }
+
+  function recordingReaders(): {
+    reads: string[]
+    keychain: () => Promise<string | null>
+    storedHf: () => string | null
+    cursorKeychain: () => Promise<string | null>
+    cursorDb: (dbPath: string) => Promise<string | null>
+  } {
+    const reads: string[] = []
+    return {
+      reads,
+      keychain: async (): Promise<string | null> => {
+        reads.push('claude-keychain')
+        return null
+      },
+      storedHf: (): string | null => {
+        reads.push('hf-stored')
+        return null
+      },
+      cursorKeychain: async (): Promise<string | null> => {
+        reads.push('cursor-keychain')
+        return null
+      },
+      cursorDb: async (): Promise<string | null> => {
+        reads.push('cursor-db')
+        return null
+      },
+    }
+  }
+
+  it('reads no sign-in at all when nothing is confirmed', async () => {
+    const readers = recordingReaders()
+    const creds = await discoverPlanUsageCredentials(
+      homeWithEverySignIn(),
+      everyEnvToken,
+      readers.keychain,
+      readers.storedHf,
+      readers.cursorKeychain,
+      readers.cursorDb,
+      new Set(),
+    )
+    assert.deepEqual(readers.reads, [])
+    assert.deepEqual(creds.claudeOAuthTokens, [])
+    assert.equal(creds.codex, undefined)
+    assert.equal(creds.huggingfaceToken, undefined)
+    assert.equal(creds.cursorSessionToken, undefined)
+  })
+
+  it('reads only the confirmed provider’s sign-in', async () => {
+    const readers = recordingReaders()
+    const creds = await discoverPlanUsageCredentials(
+      homeWithEverySignIn(),
+      everyEnvToken,
+      readers.keychain,
+      readers.storedHf,
+      readers.cursorKeychain,
+      readers.cursorDb,
+      new Set(['codex']),
+    )
+    assert.deepEqual(readers.reads, [])
+    assert.equal(creds.codex?.accessToken, 'codex-tok')
+    assert.deepEqual(creds.claudeOAuthTokens, [])
+    assert.equal(creds.huggingfaceToken, undefined)
+    assert.equal(creds.cursorSessionToken, undefined)
+  })
+
+  it('reads the Claude Code Keychain item only once Claude is confirmed', async () => {
+    const readers = recordingReaders()
+    const creds = await discoverPlanUsageCredentials(
+      homeWithEverySignIn(),
+      everyEnvToken,
+      readers.keychain,
+      readers.storedHf,
+      readers.cursorKeychain,
+      readers.cursorDb,
+      new Set(['claude']),
+    )
+    assert.deepEqual(readers.reads, ['claude-keychain'])
+    assert.deepEqual(creds.claudeOAuthTokens, ['sk-ant-oat01-file', 'sk-ant-oat01-env'])
+  })
+})
+
+describe('confirmedPlanUsageProviders', () => {
+  const agent = (id: string): AcpAgentConfig => ({ id, title: id, command: id, enabled: true })
+  const noStoredKeys = (): boolean => false
+
+  it('confirms nothing for a fresh install, even with sign-ins on disk or in env', () => {
+    assert.deepEqual([...confirmedPlanUsageProviders([], noStoredKeys)], [])
+  })
+
+  it('confirms Claude and Codex from their enabled agents', () => {
+    const confirmed = confirmedPlanUsageProviders(
+      [agent('claude-acp'), agent('codex-acp')],
+      noStoredKeys,
+    )
+    assert.deepEqual([...confirmed].sort(), ['claude', 'codex'])
+  })
+
+  it('confirms Cursor from its agent or a saved key, and Hugging Face from a saved key', () => {
+    assert.deepEqual([...confirmedPlanUsageProviders([agent('cursor')], noStoredKeys)], ['cursor'])
+    const fromKeys = confirmedPlanUsageProviders([], (provider) =>
+      ['cursor', 'huggingface'].includes(provider),
+    )
+    assert.deepEqual([...fromKeys].sort(), ['cursor', 'huggingface'])
+  })
+
+  it('ignores agents with no plan of their own', () => {
+    assert.deepEqual([...confirmedPlanUsageProviders([agent('gemini')], noStoredKeys)], [])
+  })
+})
+
+describe('markUnconfirmedPlanProviders', () => {
+  it('points each unconfirmed provider at Settings → General and keeps confirmed rows', () => {
+    const okCodex: ProviderPlanResult = {
+      status: 'ok',
+      provider: 'codex',
+      usage: { provider: 'codex', plan: 'plus', windows: [], checkedAt: 'now' },
+    }
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: 'now',
+      providers: [
+        { status: 'unavailable', provider: 'claude', reason: 'No Claude Code sign-in found.' },
+        okCodex,
+        { status: 'unavailable', provider: 'huggingface', reason: 'No token.' },
+        { status: 'unavailable', provider: 'cursor', reason: 'No session.' },
+      ],
+    }
+    const marked = markUnconfirmedPlanProviders(snapshot, new Set(['codex']))
+    assert.deepEqual(marked.providers[1], okCodex)
+    for (const index of [0, 2, 3]) {
+      const row = marked.providers[index]
+      assert.ok(row?.status === 'unavailable', `row ${String(index)} should be unavailable`)
+      assert.match(row.reason, /in Settings → General/)
+    }
   })
 })
 
