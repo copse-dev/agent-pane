@@ -2,7 +2,11 @@ import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
+import type { FollowUpSuggestion } from './follow-ups/types.ts'
+import type { McpServerStatus } from './types/mcp.ts'
+import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
+import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -81,6 +85,7 @@ export interface DemoScenario {
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
+    threadId?: string
     title: string
     body: string
     bodyAdvice?: string
@@ -101,6 +106,22 @@ export interface DemoScenario {
     defaultIndex?: number
     cancelIndex?: number
   }[]
+  /**
+   * MCP servers the demo reports as configured, with the per-tool permission
+   * catalog Settings → Permissions lists for them. Scenarios without one show
+   * the default mail-server fixture.
+   */
+  mcpServers?: readonly McpServerStatus[]
+  toolPermissions?: ToolPermissionCatalog
+  /**
+   * What the follow-up model offers once the active thread's last turn ends.
+   * The demo has no model to ask, so without this no bubbles appear.
+   */
+  followUps?: readonly FollowUpSuggestion[]
+  /** The description the demo proposes when a visitor opens Create PR. */
+  prBody?: string
+  /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
+  changeStats?: { readonly additions: number; readonly deletions: number }
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -584,7 +605,12 @@ function conciseThreadScenario(
         title: 'Concise thread view',
         status: live ? 'running' : 'idle',
         model,
-        messages: multiTurn ? conciseMultiTurnMessages(model) : conciseThreadMessages(model, live),
+        messages: multiTurn
+          ? [
+              ...conciseMultiTurnMessages(model),
+              ...(live ? conciseThreadMessages(model, true) : []),
+            ]
+          : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -1163,6 +1189,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'approval-thread-switch-scroll',
+    label: 'Switch between threads awaiting permission',
+    project: project('demo-approval-scroll-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: ['a', 'b'].map((suffix): Thread => ({
+      id: `demo-approval-scroll-${suffix}`,
+      title: `Permission wait ${suffix.toUpperCase()}`,
+      status: 'running',
+      messages: Array.from({ length: 20 }, (_, index) => ({
+        id: `approval-scroll-${suffix}-${String(index)}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content:
+          index === 19
+            ? `The checks are ready. I need permission to run command ${suffix.toUpperCase()}.`
+            : index % 2 === 0
+              ? `Review step ${String(index / 2 + 1)} for thread ${suffix.toUpperCase()}.`
+              : 'I checked the relevant code and recorded the result. The next check will confirm the remaining behavior.',
+        toolCalls:
+          index === 19
+            ? [
+                {
+                  id: `approval-scroll-tool-${suffix}`,
+                  name: 'run_shell',
+                  args: { command: `node scripts/check-${suffix}.mjs` },
+                  status: 'running',
+                  result: '',
+                },
+              ]
+            : [],
+        createdAt: FIXED_TIME + index,
+      })),
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: FIXED_TIME,
+      updatedAt: FIXED_TIME,
+    })),
+    approvalRequests: ['a', 'b'].map((suffix) => ({
+      id: `approval-scroll-request-${suffix}`,
+      threadId: `demo-approval-scroll-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: `node scripts/check-${suffix}.mjs`,
+      bodyFooter: 'Allow running it once outside the sandbox?',
+      type: 'shell',
+    })),
+  },
+  {
     id: 'approval-light-accent',
     label: 'Light-theme approval with a bright accent',
     project: project('demo-approval-light-accent-project'),
@@ -1279,6 +1350,82 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-fresh',
+    label: 'Product announcements — fresh',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: false, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-existing',
+    label: 'Product announcements — existing',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-update',
+    label: 'Product announcements — update',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-seen',
+    label: 'Product announcements — seen',
+    project: project('demo-announcements-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      acknowledgedProductAnnouncements: ['demo-compact-released', 'demo-announcements-ready'],
+    },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
       },
     ],
   },
@@ -1746,6 +1893,12 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     { multiTurn: true },
   ),
   conciseThreadScenario(
+    'concise-thread-multi-working',
+    'Concise thread view with finished turns and a live one',
+    'claude-opus-5-5',
+    { multiTurn: true, live: true },
+  ),
+  conciseThreadScenario(
     'concise-thread-full',
     'Full thread view for a model below the concise gate',
     'gpt-4o',
@@ -1784,4 +1937,6 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+  ...SITE_TOUR_SCENARIOS,
 ]

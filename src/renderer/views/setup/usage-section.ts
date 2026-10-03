@@ -247,7 +247,7 @@ function renderPlanSection(
   const intro = document.createElement('p')
   intro.className = 'settings-fieldset-desc'
   intro.textContent =
-    'Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app’s usage.'
+    'Live plan windows for the plans you have set up in Settings → General. If a plan cannot be read, the local ledger below still tracks this app’s usage.'
   host.append(intro)
 
   if (error) {

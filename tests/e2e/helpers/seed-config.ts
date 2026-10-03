@@ -815,7 +815,9 @@ export function seedRoadmapNotes(
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
-  const iso = new Date().toISOString()
+  // Fixed, not `new Date()`: the pane prints "Updated <date>", so a live clock
+  // changed the reference shot every day.
+  const iso = '2026-01-15T09:00:00.000Z'
   for (const note of notes) {
     const contents = [
       '---',
@@ -924,11 +926,17 @@ export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
   const projectId = 'e2e-memory-recall-truncation-project'
   const threadId = 'e2e-memory-recall-truncation-thread'
   const createdAt = Date.UTC(2026, 8, 29, 12)
+  // A size-capped unfiltered page: its one long memory is clipped to the
+  // character cap, and the cursor resumes at the memory the cap left out.
+  const body = Array.from(
+    { length: 40 },
+    (_, i) => `- Step ${String(i + 1)}: run the release checklist item and record the result.`,
+  ).join('\n')
   const result = [
-    'Found 55 memories:',
-    '## Build commands [setup] — 2026-09-01T09:00:00.000Z\n\nUse pnpm run check before committing.',
-    '## Release channel [release] — 2026-09-02T10:30:00.000Z\n\nBeta releases use the beta update channel.',
-    '(Output truncated: showing 50 of 55 memories; 5 not shown. Call recall with a query to find a specific memory.)',
+    'Found 3 memories (showing 1–1):',
+    `## Release checklist [release] — 2026-09-01T09:00:00.000Z\n_id: release-checklist, revision: 1 · sources: unknown_\n\n${body}`,
+    '(Memory truncated at 20,000 characters; call recall with a query naming it to read it in full.)',
+    'More memories available. Next cursor: m:1',
   ].join('\n\n')
 
   writeSeedConfig({

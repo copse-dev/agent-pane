@@ -17,6 +17,25 @@ const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
 const HISTORY_THREAD_ID = 'e2e-canvas-history-thread'
 const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
 let projectRoot = ''
+let tempParent = ''
+
+/**
+ * Capture without the parts of the shell that vary run to run: the title bar
+ * names the project folder, the Hooks chips count recorded hook runs, and the
+ * focused address field blinks a caret. None is what these shots show.
+ */
+async function saveStableCanvasScreenshot(filename: string): Promise<void> {
+  await browser.execute(() => {
+    const id = 'e2e-canvas-capture-stabilizer'
+    if (document.getElementById(id)) return
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent =
+      '*{caret-color:transparent!important}.hook-card-host{visibility:hidden!important}'
+    document.head.append(style)
+  })
+  await saveAppScreenshot(filename)
+}
 
 /** Render a dashboard through the real bundled canvas server and Browser pane. */
 async function renderVersion(heading: string): Promise<void> {
@@ -113,7 +132,10 @@ describe('canvas artefact refresh', () => {
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    projectRoot = mkdtempSync(join(tmpdir(), 'copse-canvas-artefact-'))
+    // A fixed folder name inside the random parent: the title bar shows it.
+    tempParent = mkdtempSync(join(tmpdir(), 'copse-canvas-artefact-'))
+    projectRoot = join(tempParent, 'canvas-project')
+    mkdirSync(projectRoot)
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
@@ -125,7 +147,7 @@ describe('canvas artefact refresh', () => {
 
   after(() => {
     resetUserData()
-    if (projectRoot) rmSync(projectRoot, { recursive: true })
+    if (tempParent) rmSync(tempParent, { recursive: true })
   })
 
   it('renders a prototype from the bundled canvas server into the Browser pane', async () => {
@@ -159,7 +181,7 @@ describe('canvas artefact refresh', () => {
       return { exists: Boolean(item), disabled: item?.disabled ?? true }
     })
     expect(downloadState).toEqual({ exists: true, disabled: false })
-    await saveAppScreenshot('canvas-artefact-download-menu.png')
+    await saveStableCanvasScreenshot('canvas-artefact-download-menu.png')
     await $('.browser-tab-panel.is-active .browser-menu-btn').click()
   })
 
@@ -172,7 +194,7 @@ describe('canvas artefact refresh', () => {
     // Same tabs as before: the prototype the user is looking at became v2 rather
     // than a second "Sales Dashboard" appearing beside it.
     expect(await tabLabels()).toEqual(labelsAfterFirstRender)
-    await saveAppScreenshot('canvas-artefact-refresh.png')
+    await saveStableCanvasScreenshot('canvas-artefact-refresh.png')
   })
 
   it('leaves a re-render in the background and promotes it only when asked', async () => {
@@ -199,7 +221,7 @@ describe('canvas artefact refresh', () => {
       timeoutMsg: 'expected browser_show to bring the artefact tab to the front',
     })
     expect(await activeArtefactHeading()).toEqual('v3')
-    await saveAppScreenshot('canvas-artefact-promoted.png')
+    await saveStableCanvasScreenshot('canvas-artefact-promoted.png')
   })
 
   it('does not focus a canvas created by a background thread until it is selected', async () => {
@@ -252,7 +274,7 @@ describe('canvas artefact refresh', () => {
       timeout: 20_000,
       timeoutMsg: 'expected the selected thread canvas to render its queued artefact',
     })
-    await saveAppScreenshot('canvas-background-thread-focus.png')
+    await saveStableCanvasScreenshot('canvas-background-thread-focus.png')
   })
 
   it('shows a preview thumbnail of the render in the transcript', async () => {

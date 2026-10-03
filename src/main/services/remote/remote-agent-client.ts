@@ -165,7 +165,14 @@ const cursorUsageResponseSchema = z
           id: optionalString,
           usage: z.preprocess(
             (value) => (value === null ? undefined : value),
-            z.object({ inputTokens: optionalNumber, outputTokens: optionalNumber }).optional(),
+            z
+              .object({
+                inputTokens: optionalNumber,
+                outputTokens: optionalNumber,
+                cacheReadTokens: optionalNumber,
+                cacheWriteTokens: optionalNumber,
+              })
+              .optional(),
           ),
         }),
       )
@@ -510,13 +517,20 @@ async function cancelRemoteRun(input: {
   }
 }
 
+interface RemoteRunUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+}
+
 async function fetchRunUsage(input: {
   fetchImpl: typeof fetch
   baseUrl: string
   apiKey: string
   agentId: string
   runId: string
-}): Promise<{ inputTokens: number; outputTokens: number }> {
+}): Promise<RemoteRunUsage> {
   const params = new URLSearchParams({ runId: input.runId })
   const response = await input.fetchImpl(
     joinUrl(input.baseUrl, `/v1/agents/${encodeURIComponent(input.agentId)}/usage?${params}`),
@@ -528,9 +542,15 @@ async function fetchRunUsage(input: {
     await readJsonResponse(response, 'Remote agent usage'),
   )
   const usage = json.runs?.find((run) => run.id === input.runId)?.usage
+  // Cursor reports `inputTokens` as uncached input, with cache reads and writes
+  // as sibling counters; Copse usage records count both inside inputTokens.
+  const cacheReadTokens = usage?.cacheReadTokens
+  const cacheCreationTokens = usage?.cacheWriteTokens
   return {
-    inputTokens: usage?.inputTokens ?? 0,
+    inputTokens: (usage?.inputTokens ?? 0) + (cacheReadTokens ?? 0) + (cacheCreationTokens ?? 0),
     outputTokens: usage?.outputTokens ?? 0,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
   }
 }
 
@@ -551,8 +571,8 @@ async function reportRunUsage(input: {
   provider: RemoteAgentProvider
   model: string | undefined
   onChunk: (chunk: StreamChunk) => void
-}): Promise<{ inputTokens: number; outputTokens: number }> {
-  let usage = { inputTokens: 0, outputTokens: 0 }
+}): Promise<RemoteRunUsage> {
+  let usage: RemoteRunUsage = { inputTokens: 0, outputTokens: 0 }
   try {
     usage = await fetchRunUsage({
       fetchImpl: input.fetchImpl,
@@ -567,6 +587,10 @@ async function reportRunUsage(input: {
         model: remoteAgentModelValue(input.provider, input.model),
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
+        ...(usage.cacheCreationTokens !== undefined
+          ? { cacheCreationTokens: usage.cacheCreationTokens }
+          : {}),
       })
     }
   } catch (err) {

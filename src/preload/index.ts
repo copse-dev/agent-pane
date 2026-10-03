@@ -72,6 +72,7 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
       ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
@@ -1013,6 +1014,15 @@ const api: ApiClient = {
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
     screening: () => ipcRenderer.invoke('classifiers:screening'),
     setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
+    background: () => ipcRenderer.invoke('classifiers:background'),
+    setBackground: (id: string | null) => ipcRenderer.invoke('classifiers:set-background', id),
+  },
+  localClassifiers: {
+    status: () => ipcRenderer.invoke('local-classifiers:status'),
+    install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
+    start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
+    stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -1618,11 +1628,10 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
-    },
-    requestAcpPackageUpgradeApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    requestAcpPackageInstallApproval(
+      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
+    ) {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

@@ -24,6 +24,7 @@ _DEFAULT_WORKSPACE_CAP_MB = 500
 # asyncio's subprocess StreamReader otherwise inherits the 64 KiB default.
 # Tool calls can legitimately exceed that when write_file carries a complete file.
 _BRIDGE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
+_EXIT_GRACE_SECONDS = 5
 
 
 def _bounded_output(value: str | None) -> str:
@@ -201,9 +202,11 @@ class CopseTerminalAgent(BaseAgent):
             "stop_reason": None,
             "trace": trace_path.name,
             "provider_requests": "provider-requests.jsonl",
+            "model_parameters": "model-parameters.json",
             "applied_nudges": "applied-nudges.jsonl",
             "hook_runs": "hook-runs.jsonl",
             "stream_stats": "stream-stats.jsonl",
+            "step_timing": "step-timing.jsonl",
             "reasoning_checkpoints": "reasoning-checkpoints.jsonl",
             "thread": "thread/events.jsonl",
             "thread_export": "thread/thread.jsonl",
@@ -354,15 +357,32 @@ class CopseTerminalAgent(BaseAgent):
                     if message_type == "result":
                         flush_trace()
                         result_message = message
-                        continue
+                        # The agent is done once it reports a result; do not wait for EOF,
+                        # which a lingering provider handle can delay until the agent timeout.
+                        break
                     raise RuntimeError(
                         f"Terminal agent sent an unknown protocol message: {message_type!r}"
                     )
                 flush_trace()
 
+            forced_stop = False
+            if result_message is not None:
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=_EXIT_GRACE_SECONDS)
+                except TimeoutError:
+                    forced_stop = True
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
             return_code = await process.wait()
-            await stderr_task
-            if return_code != 0:
+            if forced_stop:
+                # The result was delivered; stopping a lingering process is not a failure.
+                stderr_task.cancel()
+            await asyncio.gather(stderr_task, return_exceptions=True)
+            if return_code != 0 and not forced_stop:
                 detail = "\n".join(stderr_tail) or "no stderr"
                 raise RuntimeError(
                     f"Terminal agent exited with code {return_code}:\n{detail}"

@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -31,39 +32,8 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('does not let a cosmetic pull request edit cancel an in-flight run', () => {
-    // Subscribing to `edited` for retargets also subscribes to title and body
-    // edits, which arrive in the PR's own concurrency group mid-run. Cancelling
-    // there is not a wasted run but a red one: since #2722 `ci-passed` turns a
-    // cancelled run into an explicit failure rather than a skip, so a
-    // description edit left a red `CI Passed` on a SHA that had been green.
-    //
-    // Truth table the expression has to hold, under GitHub's documented casting
-    // (Null -> 0, Object -> NaN, and NaN equals nothing):
-    //
-    //   schedule                      -> false, the nightly never cancels
-    //   push / synchronize / opened   -> true,  `action` is null or not 'edited'
-    //   edited WITH    changes.base   -> true,  a retarget invalidates the run
-    //   edited WITHOUT changes.base   -> false, cosmetic, leave the run alone
-    const concurrency = workflow.slice(
-      workflow.indexOf('\nconcurrency:'),
-      workflow.indexOf('\njobs:'),
-    )
-    assert.ok(concurrency, 'expected a top-level `concurrency:` block in ci.yml')
-    const clause = concurrency.match(/cancel-in-progress: (>-\n(?: {4}.+\n)+|.+\n)/)?.[1]
-    assert.ok(clause, 'expected `cancel-in-progress` on the concurrency block')
-    const expression = clause.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
-    assert.match(
-      expression,
-      /github\.event_name != 'schedule'/,
-      'a late nightly must still not cancel an in-flight tip push or PR',
-    )
-    assert.match(
-      expression,
-      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
-      'a title or body edit must not cancel a run; only a base retarget may',
-    )
-  })
+  // Cosmetic event admission, check names, and concurrency are evaluated from
+  // the parsed workflow in ci-cosmetic-events.test.ts.
 
   /**
    * A whole job block, header through to the next top-level job. The
@@ -78,6 +48,63 @@ describe('ci.yml workflow invariants', () => {
     const next = rest.search(/^ {2}[a-z][a-z0-9-]*:$/m)
     return next >= 0 ? rest.slice(0, next) : rest
   }
+
+  function shardSpecs(mode: 'full' | 'subset', shard: number, total: number, specs = ''): string[] {
+    const job = jobBlock('e2e')
+    const start = job.indexOf('          if [ "$PLAN_MODE" = "full" ]; then')
+    const end = job.indexOf('          # `timeout`', start)
+    assert.ok(start >= 0 && end > start, 'expected the real shard-selection shell')
+    const script = job.slice(start, end).replaceAll('${{ matrix.shard }}', String(shard))
+    const result = spawnSync(
+      'bash',
+      ['-eu', '-c', `${script}\nprintf '\nSELECTED:%s\n' "$SPEC_ARGS"`],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, PLAN_MODE: mode, PLAN_SPECS: specs, SHARD_TOTAL: String(total) },
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const selected = result.stdout.match(/^SELECTED:(.*)$/m)?.[1]?.trim()
+    if (!selected) return []
+    const args = selected.split(/\s+/)
+    assert.ok(args.every((arg, index) => index % 2 === 1 || arg === '--spec'))
+    return args.filter((_arg, index) => index % 2 === 1)
+  }
+
+  it('spreads the full eligible suite without losing coverage or clustering explainer specs', () => {
+    const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
+      encoding: 'utf8',
+    })
+    assert.equal(listed.status, 0, listed.stderr)
+    const expected = listed.stdout.trim().split('\n')
+    assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
+    const sizes = buckets.map((bucket) => bucket.length)
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1)
+    const family = ['thread-explainer-drawing', 'thread-explainer-scenes', 'thread-explainer']
+    const owners = family.map((name) =>
+      buckets.findIndex((bucket) => bucket.includes(`tests/e2e/${name}.e2e.ts`)),
+    )
+    assert.equal(
+      new Set(owners).size,
+      family.length,
+      'long animation cases must not share a worker',
+    )
+    assert.ok(owners.every((owner) => owner >= 0))
+  })
+
+  it('keeps subset plans scoped and safely handles an empty slice', () => {
+    const specs = 'tests/e2e/a.e2e.ts tests/e2e/b.e2e.ts tests/e2e/c.e2e.ts'
+    assert.deepEqual(shardSpecs('subset', 1, 2, specs), [
+      'tests/e2e/a.e2e.ts',
+      'tests/e2e/c.e2e.ts',
+    ])
+    assert.deepEqual(shardSpecs('subset', 2, 2, specs), ['tests/e2e/b.e2e.ts'])
+    assert.deepEqual(shardSpecs('subset', 1, 1), [])
+  })
 
   it('fetches one commit history instead of every branch and tag', () => {
     // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
@@ -141,6 +168,7 @@ describe('ci.yml workflow invariants', () => {
       'the fleet must be the opted-in branch and hosted the fallthrough, not the reverse',
     )
     assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
+    assert.match(e2eJob, /github\.event_name == 'merge_group'/, 'queue e2e needs a valid runner')
     assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
     // Fails closed for forks: no branch of the expression yields a runner for
     // an untrusted event, not even a free hosted one.
@@ -149,6 +177,105 @@ describe('ci.yml workflow invariants', () => {
       /head\.repo\.full_name != github\.repository/,
       'e2e must have no fork branch at all — the `if` guard skips forks and the runner expression fails closed',
     )
+  })
+
+  it('pins every queue candidate runner to hosted even when both fleets are opted in', () => {
+    // Run the actual routing expressions with opt-in values, rather than just
+    // checking that a merge_group clause appears somewhere in the job.
+    const optedIn = {
+      SELF_HOSTED_CHECKS: 'copse-checks',
+      SELF_HOSTED_E2E: 'copse-e2e',
+      LM_EVAL_RUNNER: 'private-model-fleet',
+    }
+    const route = (name: string, event: string, sameRepo: boolean): unknown => {
+      const job = jobBlock(name)
+      const binding = job.match(/^ {4}runs-on: (.+)$/m)?.[1]
+      assert.ok(binding, `${name} needs a runner`)
+      if (binding === 'ubuntu-latest') return binding
+      const folded = job.match(/^ {4}runs-on: >-\n((?: {6}.+\n)+)/m)?.[1]
+      const expression = (folded ?? binding).trim()
+      assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
+      // These routing expressions use only equality, boolean short-circuiting,
+      // context member reads and fromJSON. Unsupported constructs fail here.
+      const source = expression.slice(4, -3)
+      assert.match(source, /^[a-zA-Z0-9_.'"[\], ()&|=!\s-]+$/)
+      const result: unknown = runInNewContext(
+        source,
+        {
+          github: {
+            event_name: event,
+            repository: 'copse-dev/agent-pane',
+            event: {
+              pull_request: {
+                head: {
+                  repo: { full_name: sameRepo ? 'copse-dev/agent-pane' : 'fork/agent-pane' },
+                },
+              },
+            },
+          },
+          vars: optedIn,
+          fromJSON: (value: string): unknown => JSON.parse(value),
+        },
+        { timeout: 100 },
+      )
+      // Normalize arrays across VM realms without trusting their element type.
+      return Array.isArray(result) ? Array.from(result) : result
+    }
+    const checkRoutes = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)]
+      .flatMap((match) => (match[1] ? [match[1]] : []))
+      .filter((name) => jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'))
+    assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
+    for (const name of checkRoutes) {
+      for (const sameRepo of [false, true]) {
+        assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-latest', name)
+      }
+      assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
+    }
+    assert.equal(route('precheck', 'pull_request', false), 'ubuntu-latest')
+    assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
+    for (const sameRepo of [false, true]) {
+      assert.deepEqual(route('e2e', 'merge_group', sameRepo), ['ubuntu-latest'])
+    }
+    assert.deepEqual(route('e2e', 'schedule', true), ['ubuntu-latest'])
+    assert.deepEqual(route('e2e', 'push', true), ['self-hosted', 'copse-e2e'])
+    assert.equal(route('e2e', 'pull_request', false), false)
+  })
+
+  it('keeps queue candidate jobs read-only and excludes privileged model and write jobs', () => {
+    assert.match(workflow, /^permissions:\n {2}contents: read$/m)
+    for (const name of ['precheck', 'check', 'bench', 'build', 'e2e', 'review-cell']) {
+      const job = jobBlock(name)
+      assert.doesNotMatch(job, /secrets\.|contents: write|statuses: write|pull-requests: write/)
+      const credentials = job.match(/persist-credentials: ([^\n]+)/)?.[1]
+      assert.ok(credentials, `${name} must explicitly prevent persisting queue credentials`)
+      assert.ok(
+        credentials === 'false' || credentials.includes("github.event_name != 'merge_group'"),
+      )
+    }
+    for (const name of [
+      'bench-agent-model',
+      'doctrine-eval-model',
+      'eval-tool-preference',
+      'scratch-path-eval-model',
+    ]) {
+      const job = jobBlock(name)
+      assert.match(job, /if: >-\n {6}github\.event_name != 'merge_group' &&\n/)
+      assert.match(job, /secrets\.LM_STUDIO_API_KEY/)
+    }
+    const jobs = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].flatMap((match) =>
+      match[1] ? [match[1]] : [],
+    )
+    for (const name of jobs) {
+      const job = jobBlock(name)
+      if (!job.includes('secrets.')) continue
+      assert.ok(
+        /^ {4}if: github\.event_name == 'pull_request' &&/m.test(job) ||
+          /if: >-\n {6}github\.event_name != 'merge_group' &&\n/.test(job),
+        `${name} must reject queue events before any secret-bearing steps`,
+      )
+    }
+    assert.match(jobBlock('autoformat'), /if: github\.event_name == 'pull_request' &&/)
+    assert.match(jobBlock('screenshot-artifacts'), /github\.event_name == 'pull_request'/)
   })
 
   it('retains runner diagnostics when an e2e attempt loses its browser session', () => {
@@ -202,11 +329,13 @@ describe('ci.yml workflow invariants', () => {
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
     const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
     assert.ok(planStep, 'expected the e2e planning step in ci.yml')
-    assert.match(planStep, /BASE_REF: \$\{\{ github\.base_ref \}\}/)
-
-    const promotionGate = planStep.indexOf(
-      'if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then',
+    assert.match(
+      planStep,
+      /BASE_REF: \$\{\{ github\.base_ref \|\| github\.event\.merge_group\.base_ref \}\}/,
     )
+    assert.match(planStep, /BASE_REF="\$\{BASE_REF#refs\/heads\/\}"/)
+
+    const promotionGate = planStep.indexOf('[ "$BASE_REF" = "release" ]; then')
     const oracle = planStep.indexOf('node scripts/test-oracle.mts --plan')
     assert.ok(promotionGate >= 0, 'promotion PRs must explicitly select mode=full')
     assert.ok(oracle >= 0, 'expected the e2e oracle invocation')
@@ -252,7 +381,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /E2E_REQUIRED: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      /E2E_REQUIRED: \$\{\{ github\.event_name == 'merge_group' \|\| \(github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
       'the aggregate must identify same-repository PRs whose e2e job dispatched',
     )
     assert.match(
@@ -342,6 +471,20 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('runs the strict streaming motion eval once after the parallel browser suite', () => {
+    const build = jobBlock('build')
+    const commands = [...build.matchAll(/^ {6}- run: (npm run test:demo.*)$/gm)].map(
+      (match) => match[1],
+    )
+    assert.deepEqual(commands, [
+      'npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts',
+      'npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1',
+    ])
+    const motion = readFileSync(resolve('tests/demo/streamed-reply-motion.demo.ts'), 'utf8')
+    assert.match(motion, /expect\(motion\.maxScrollStepPx\)\.toBeLessThanOrEqual\(24\)/)
+    assert.match(build, /needs: precheck/, 'keep static and build jobs parallel')
+  })
+
   it('publishes screenshot candidates without mutating the PR branch', () => {
     const job = jobBlock('screenshot-artifacts')
     assert.match(job, /permissions:\n {6}contents: read/)
@@ -389,7 +532,7 @@ describe('ci.yml workflow invariants', () => {
 
   it('never pushes a format commit to a promotion into release', () => {
     // The promotion head, promote/main, must hold only commits already on main.
-    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release'$/m)
+    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release' && /m)
   })
 
   it('decides autofix has work to do before paying for the dependency install', () => {
@@ -462,11 +605,95 @@ describe('ci.yml workflow invariants', () => {
     }
   })
 
-  it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
-    // Re-adding the trigger would look harmless but can never fire, and its
-    // presence previously justified `github.event_name != 'merge_group'` guards
-    // that are now dead weight in every heavy-tier `if:`.
-    assert.doesNotMatch(workflow, /^ {2}merge_group:/m)
+  it('requests checks on synthetic merge groups', () => {
+    assert.match(workflow, /^ {2}merge_group:\n {4}types: \[checks_requested\]/m)
+    const aggregate = jobBlock('ci-passed')
+    assert.match(aggregate, /MERGE_GROUP: \$\{\{ github\.event_name == 'merge_group' \}\}/)
+    assert.match(aggregate, /BUILD_RESULT: \$\{\{ needs\.build\.result \}\}/)
+  })
+
+  it('uses the queue base SHA for every precheck comparison', () => {
+    const precheck = jobBlock('precheck')
+    const binding =
+      'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+    assert.equal(precheck.split(binding).length - 1, 3)
+    const plan = precheck.slice(precheck.indexOf('- id: plan'))
+    assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
+    assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
+    assert.match(plan, /node scripts\/test-oracle\.mts --plan --base "\$BASE_SHA"/)
+  })
+
+  it('keeps main queue oracle selection and forces full release queue plans', () => {
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    assert.ok(planStep)
+    const script = planStep.slice(planStep.indexOf('        run: |\n') + '        run: |\n'.length)
+    for (const base of ['main', 'release']) {
+      const root = mkdtempSync(join(tmpdir(), 'queue-plan-'))
+      try {
+        const output = join(root, 'output')
+        const trace = join(root, 'oracle-trace')
+        const result = spawnSync(
+          'bash',
+          [
+            '-eu',
+            '-c',
+            `git() { return 0; }\nnode() { printf '%s\\n' "$*" > "$TRACE"; printf 'mode=subset\\nspecs=tests/e2e/example.e2e.ts\\nunit_mode=full\\n'; }\n${script}`,
+          ],
+          {
+            encoding: 'utf8',
+            cwd: root,
+            env: {
+              ...process.env,
+              EVENT: 'merge_group',
+              BASE_REF: `refs/heads/${base}`,
+              BASE_SHA: 'queue-base-sha',
+              HEAD_SHA: '',
+              UPDATE_SCREENSHOTS_LABEL: 'false',
+              CI_FULL_LABEL: 'false',
+              GITHUB_OUTPUT: output,
+              GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              TRACE: trace,
+            },
+          },
+        )
+        assert.equal(result.status, 0, result.stderr)
+        const plan = readFileSync(output, 'utf8')
+        assert.match(plan, /unit_mode=full/)
+        if (base === 'main') {
+          assert.match(plan, /mode=subset/)
+          assert.equal(
+            readFileSync(trace, 'utf8').trim(),
+            'scripts/test-oracle.mts --plan --base queue-base-sha',
+          )
+        } else {
+          assert.match(plan, /mode=full/)
+          assert.equal(existsSync(trace), false, 'release queue must bypass oracle thinning')
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('compares the synthetic checked-out protocol against the supplied queue base', () => {
+    const precheck = jobBlock('precheck')
+    const step = precheck.slice(precheck.indexOf('- name: API protocol compatibility'))
+    const run = step.match(/run: \|\n([\s\S]*?)(?=\n {6}#|\n {6}-)/)?.[1]
+    assert.ok(run)
+    const result = spawnSync(
+      'bash',
+      [
+        '-eu',
+        '-c',
+        `git() { return 0; }\nnode() { printf 'PROTOCOL:%s:%s:%s\\n' "$1" "$2" "$3"; }\n${run}`,
+      ],
+      { encoding: 'utf8', env: { BASE_SHA: 'queue-base-sha', GITHUB_EVENT_NAME: 'merge_group' } },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(
+      result.stdout,
+      /PROTOCOL:scripts\/gen-api-protocol\.mts:--compare-ref:queue-base-sha/,
+    )
   })
 
   it('runs CI on pushes to both integration branches', () => {
@@ -867,12 +1094,38 @@ describe('release-bump.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
   })
 
+  const publicationCheck = 'gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current"'
+
   it('keeps one release in flight and skips an empty week', () => {
-    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
-    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const published = workflow.indexOf(publicationCheck)
     const bump = workflow.indexOf('node scripts/release-bump.mts')
     assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
     assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('cuts past an unpublished version only on an explicit dispatch, carrying its notes', () => {
+    // A version whose release run failed can never be published, so a gate
+    // with no way past it would stop the weekly train for good. The schedule
+    // still skips; only a person naming the next version cuts past it, and the
+    // abandoned version's notes move into the new section rather than vanish.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('node scripts/release-bump.mts'),
+    )
+    assert.match(gate, /if \[ -z "\$REQUESTED_VERSION" \]; then[\s\S]*?exit 0\n/)
+    assert.match(gate, /args\+=\(--carry-forward\)/)
+  })
+
+  it('treats only a confirmed 404 as unpublished', () => {
+    // A rate limit or outage read as "unpublished" would let a dispatch carry a
+    // published version's notes into the next release a second time.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('if [ -z "$REQUESTED_VERSION" ]'),
+    )
+    assert.match(gate, /\*"HTTP 404"\*\) ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(gate, /gh api "repos\/\$RELEASE_REPOSITORY" --silent[\s\S]*?exit 1\n/)
+    assert.doesNotMatch(workflow, /gh release view "v\$current"/)
   })
 
   it('passes the dispatch version through the environment, not the script text', () => {
@@ -932,6 +1185,52 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
 
+  it('opens an issue when any release job fails', () => {
+    // Without it a failed build is silent: nothing publishes and the weekly bump
+    // skips while the version stays unpublished.
+    const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
+    assert.match(
+      report,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+    )
+    assert.match(report, /^ {6}issues: write$/m)
+    assert.doesNotMatch(report, /contents: write/)
+    assert.match(report, /gh issue create --repo "\$GITHUB_REPOSITORY"/)
+    // The dispatch tag reaches the script through the environment only.
+    assert.match(report, /TAG: \$\{\{ inputs\.tag \|\| github\.ref_name \}\}/)
+    assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('signs, notarizes, and staples the DMG itself, then rebuilds its blockmap', () => {
+    // electron-builder notarizes only the app inside the image. Stapling the
+    // DMG rewrites it after electron-builder wrote its blockmap, so the map is
+    // rebuilt from the final bytes before anything verifies or uploads it.
+    assert.match(workflow, /electron-builder --mac .*-c\.dmg\.sign=true/)
+    const start = workflow.indexOf('- name: Notarize and staple the DMG')
+    const verify = workflow.indexOf('- name: Verify signatures, notarization, metadata')
+    const upload = workflow.indexOf('uses: actions/upload-artifact@', verify)
+    assert.ok(start > workflow.indexOf('-c.dmg.sign=true'), 'notarize after the signed build')
+    assert.ok(verify > start && upload > verify, 'verify and upload the stapled DMG')
+    const step = workflow.slice(start, verify)
+    assert.match(step, /xcrun notarytool submit "\$dmg" .*\n.*--wait/)
+    assert.match(step, /if \[ "\$status" != 'Accepted' \]; then[\s\S]*?exit 1\n/)
+    const staple = step.indexOf('xcrun stapler staple "$dmg"')
+    const rebuild = step.indexOf('node scripts/rebuild-dmg-blockmap.mts "$dmg"')
+    assert.ok(staple > step.indexOf("!= 'Accepted'") && rebuild > staple)
+    // Apple credentials reach the script through `env`, never the script text.
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('verifies the downloadable DMG, not only the app inside it', () => {
+    const verify = workflow.slice(
+      workflow.indexOf('- name: Verify signatures, notarization, metadata'),
+      workflow.indexOf('- name: Enforce the per-client size budget'),
+    )
+    assert.match(verify, /codesign --verify --strict --verbose=2 "\$dmg"/)
+    assert.match(verify, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/)
+    assert.match(verify, /xcrun stapler validate "\$dmg"/)
+  })
+
   it('bounds the signed package verification step', () => {
     assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
     assert.match(
@@ -978,8 +1277,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
-    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('tags each release on its own commit, so releases sort by publication', () => {
+    // GitHub dates and orders releases by the tagged commit. Tagging the binary
+    // repository's unchanging `main` dated every release to one commit, and a
+    // new beta sorted below the old ones.
+    assert.doesNotMatch(workflow, /--target main/)
+    const record = workflow.indexOf('- name: Record the release in the release repository')
+    const publish = workflow.indexOf('gh release create')
+    assert.ok(record >= 0 && publish > record, 'the release commit must precede the release')
+    const recordStep = workflow.slice(record, workflow.indexOf('- name: Publish the exact'))
+    assert.match(recordStep, /--method PUT "repos\/\$RELEASE_REPOSITORY\/contents\/\$path"/)
+    assert.match(recordStep, /-f branch=main/)
+    assert.match(recordStep, /\*"HTTP 404"\*\) current='' ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(recordStep, /echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/)
+    assert.match(workflow, /RELEASE_COMMIT: \$\{\{ steps\.record\.outputs\.commit \}\}/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target "\$RELEASE_COMMIT"/)
   })
 
   it('skips unavailable provenance only while the source repository is private', () => {
@@ -1104,20 +1419,15 @@ describe('install-free scheduled repository script invariants', () => {
 describe('gitleaks workflow invariants', () => {
   const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
   const gitleaksWorkflow = readFileSync(resolve('.github/workflows/gitleaks.yml'), 'utf8')
-  const sameRepositoryPr =
-    "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
+  const trustedCheckEvent =
+    "github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)"
 
-  it('scans same-repository PRs in precheck and leaves fork scans on hosted runners', () => {
+  it('scans trusted PRs and queue groups in precheck and leaves fork scans on hosted runners', () => {
     const precheckJob = ciWorkflow.match(/^ {2}precheck:\n[\s\S]*?(?=^ {2}[a-zA-Z0-9_-]+:\n)/m)?.[0]
     assert.ok(precheckJob, 'expected a `precheck:` job in ci.yml')
-    assert.match(
-      precheckJob,
-      new RegExp(`- name: Install pinned gitleaks CLI\\n {8}if: ${sameRepositoryPr}`),
-    )
-    assert.match(
-      precheckJob,
-      new RegExp(`- name: Scan repository history for secrets\\n {8}if: ${sameRepositoryPr}`),
-    )
+    for (const name of ['Install pinned gitleaks CLI', 'Scan repository history for secrets']) {
+      assert.ok(precheckJob.includes(`- name: ${name}\n        if: ${trustedCheckEvent}`))
+    }
     assert.match(
       gitleaksWorkflow,
       /^ {4}if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name != github\.repository$/m,

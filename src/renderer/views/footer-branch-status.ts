@@ -293,15 +293,13 @@ export function mountFooterBranchStatus(
     renderReattach()
   }
 
-  /**
-   * A detached thread checkout blocks every agent turn, so the footer offers the
-   * repair next to the branch it names. The trigger keeps its copy action.
-   */
+  /** Offer Git recovery beside the branch once the agent has stopped working. */
   function renderReattach(): void {
     const current = activeDetached()
-    const shown = current !== null && !isPickerMode() && !wrap.hidden
+    const shown =
+      current !== null && !isPickerMode() && !wrap.hidden && getActiveThread()?.status !== 'running'
     reattachButton.hidden = !shown
-    trigger.classList.toggle('is-detached', shown)
+    trigger.classList.toggle('is-detached', current !== null && !isPickerMode() && !wrap.hidden)
     if (!shown) return
     const title = detachedTitle(current)
     trigger.title = title
@@ -365,7 +363,14 @@ export function mountFooterBranchStatus(
   async function reattach(): Promise<void> {
     const owner = getActiveThreadOwner(store)
     const current = activeDetached()
-    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return
+    if (
+      !owner ||
+      !current ||
+      getActiveThread()?.status === 'running' ||
+      reattaching ||
+      activeRecoveryRunId() !== null
+    )
+      return
     if (current.recovery) {
       // A reattach would strand the half-applied state, so finish the
       // operation in the thread's scoped background shell. A successful
@@ -599,11 +604,15 @@ export function mountFooterBranchStatus(
       const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
       if (token !== refreshToken) return
       status = nextStatus
+      if (nextStatus.currentBranch === null) {
+        const attachment = await readDetachedAttachment(owner)
+        if (token !== refreshToken) return
+        nextDetached = attachment ? { ...attachment, threadId: owner.threadId } : null
+      }
     } catch (error) {
       if (token !== refreshToken) return
-      // Branch status is supplementary UI. A detached or externally modified
-      // worktree makes the main process reject (validateThreadWorktree), and
-      // the thread must stay selectable so the user can inspect and recover it.
+      // Branch status is supplementary UI. An invalid or externally modified
+      // checkout can still reject, but the thread stays selectable for recovery.
       reportBranchFailure('read branch status', error)
       status = null
       const attachment = await readDetachedAttachment(owner)
@@ -753,9 +762,7 @@ export function mountFooterBranchStatus(
       }
       scheduleStoreRefresh()
     }),
-    store.on('thread_status_changed', () => {
-      scheduleRefresh()
-    }),
+    store.on('thread_status_changed', scheduleStoreRefresh),
     store.on('message_added', () => {
       scheduleStoreRefresh()
     }),

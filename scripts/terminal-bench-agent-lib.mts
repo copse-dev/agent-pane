@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline'
-import { copyFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import {
@@ -9,8 +9,6 @@ import {
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
-import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
-import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
@@ -26,7 +24,26 @@ import {
   loadTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
+import {
+  TERMINAL_MAX_OUTPUT_TOKENS_ENV,
+  TERMINAL_MODEL_PARAMETERS_ENV,
+  buildTerminalProviders,
+  resolveTerminalModelParameters,
+  terminalMaxOutputTokens,
+  terminalModelParametersMode,
+  writeTerminalModelParametersRecord,
+} from './lib/terminal-bench-model-parameters.mts'
+import {
+  injectTerminalPreflight,
+  runTerminalPreflight,
+  TERMINAL_PREFLIGHT_TOOL_ID,
+} from './lib/terminal-bench-preflight.mts'
 import { BenchTranscript } from './lib/bench-transcript.mts'
+import {
+  appendStepTimingSink,
+  STEP_TIMING_FILE,
+  StepTimingRecorder,
+} from './lib/terminal-bench-step-timing.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
 export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
@@ -370,17 +387,19 @@ export async function runTerminalBenchAgent(): Promise<void> {
   )
   const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
   const agentDirectory = dirname(parsed.threadDir)
-  const baseProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, { baseURL: baseUrl, apiKey, includeUsage: true })
-    : createLMStudioProvider(baseUrl, parsed.model, apiKey)
-  const forcedWriteProvider = profile.forcesRequestedOutputRecovery
-    ? new OpenAIProvider(parsed.model, {
-        baseURL: baseUrl,
-        apiKey,
-        includeUsage: true,
-        extraBody: { tool_choice: { type: 'function', function: { name: 'write_file' } } },
-      })
-    : undefined
+  const modelParameters = resolveTerminalModelParameters(
+    terminalModelParametersMode(process.env[TERMINAL_MODEL_PARAMETERS_ENV]),
+    parsed.model,
+    terminalMaxOutputTokens(process.env[TERMINAL_MAX_OUTPUT_TOKENS_ENV]),
+  )
+  writeTerminalModelParametersRecord(agentDirectory, modelParameters)
+  const { base: baseProvider, forcedWrite: forcedWriteProvider } = buildTerminalProviders({
+    baseUrl,
+    model: parsed.model,
+    apiKey,
+    forcesRequestedOutputRecovery: profile.forcesRequestedOutputRecovery,
+    record: modelParameters,
+  })
   let recoveryOutputPaths: string[] = []
   const adaptiveProvider: LLMProvider = {
     stream(messages, tools, signal) {
@@ -392,12 +411,37 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const provider = recordTerminalBenchProviderRequests(
     adaptiveProvider,
     join(agentDirectory, 'provider-requests.jsonl'),
+    { mode: modelParameters.mode, params: modelParameters.params },
   )
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model
     : `lmstudio:${parsed.model}`
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
+  let userContent = parsed.instruction
+  if (profile.preflightProbe) {
+    // Exactly one bridge round trip; every failure degrades to a short "unavailable" block.
+    const preflight = await runTerminalPreflight(async (command, timeoutSec) => {
+      writeProtocol({ type: 'tool_request', id: TERMINAL_PREFLIGHT_TOOL_ID, command, timeoutSec })
+      const next = await input.next()
+      if (next.done) throw new Error('Terminal bridge closed during pre-flight.')
+      const response: unknown = JSON.parse(next.value)
+      if (
+        !isInputMessage(response) ||
+        response.type !== 'tool_result' ||
+        response.id !== TERMINAL_PREFLIGHT_TOOL_ID
+      ) {
+        throw new Error('Terminal bridge returned an invalid pre-flight result.')
+      }
+      return response
+    })
+    userContent = injectTerminalPreflight(parsed.instruction, preflight.block)
+    try {
+      writeFileSync(join(dirname(parsed.threadDir), 'preflight.txt'), `${preflight.block}\n`)
+    } catch {
+      // Evidence capture is best-effort.
+    }
+  }
   const messages = [
     {
       role: 'system' as const,
@@ -411,7 +455,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           },
         ]
       : []),
-    { role: 'user' as const, content: parsed.instruction },
+    { role: 'user' as const, content: userContent },
   ]
   const usage = {
     inputTokens: 0,
@@ -425,6 +469,9 @@ export async function runTerminalBenchAgent(): Promise<void> {
     copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
   const transcript = new BenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
+  const stepTiming = new StepTimingRecorder({
+    sink: appendStepTimingSink(join(agentDirectory, STEP_TIMING_FILE)),
+  })
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>
@@ -460,6 +507,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
       usageModel,
       onLlmCall: (count) => {
         usage.llmCalls = count
+        stepTiming.stepStarted(count)
       },
       recordAppliedNudge: (record) => {
         if (
@@ -478,6 +526,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
         transcript.recordHookRun(record)
       },
       recordStreamCut: (record) => {
+        stepTiming.streamCut(record.cutReason)
         transcript.recordStreamCut(record)
       },
       recordReasoningCheckpoint: (record) => {
@@ -490,6 +539,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           usage.outputTokens += chunk.outputTokens
         }
         if (chunk.type === 'done') stopReason = chunk.stopReason
+        stepTiming.chunk(chunk)
         transcript.record(chunk)
         traceEvents.push(chunk)
         if (traceEvents.length >= TRACE_EVENT_BATCH_SIZE) flushTraceEvents()
@@ -550,17 +600,25 @@ export async function runTerminalBenchAgent(): Promise<void> {
           )
         }
         flushTraceEvents()
-        writeProtocol({
-          type: 'tool_request',
-          id,
-          command,
-          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-        })
-        const next = await input.next()
-        if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
-        const response: unknown = JSON.parse(next.value)
-        if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
-          throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+        stepTiming.toolStarted(id, name)
+        let toolFailed = true
+        let response: unknown
+        try {
+          writeProtocol({
+            type: 'tool_request',
+            id,
+            command,
+            ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+          })
+          const next = await input.next()
+          if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
+          response = JSON.parse(next.value)
+          if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
+            throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+          }
+          toolFailed = response.exitCode !== 0
+        } finally {
+          stepTiming.toolFinished(id, toolFailed)
         }
         if (response.exitCode === 124) {
           usage.commandTimeouts += 1
@@ -579,12 +637,14 @@ export async function runTerminalBenchAgent(): Promise<void> {
       },
     })
   } catch (error) {
+    stepTiming.finish()
     transcript.fail(error)
     transcript.write()
     flushTraceEvents()
     throw error
   }
 
+  stepTiming.finish()
   flushTraceEvents()
   transcript.write()
   writeProtocol({
