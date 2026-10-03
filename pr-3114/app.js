@@ -46,6 +46,72 @@ var init_demo = __esm({
   }
 });
 
+// packages/agent/src/plugins/plugin-manifest.ts
+function definePlugin(manifest, contributions = {}) {
+  return {
+    id: manifest.name,
+    trust: manifest.trust,
+    manifest,
+    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
+  };
+}
+var EMPTY_PLUGIN_CONTRIBUTIONS;
+var init_plugin_manifest = __esm({
+  "packages/agent/src/plugins/plugin-manifest.ts"() {
+    EMPTY_PLUGIN_CONTRIBUTIONS = {
+      toolNames: [],
+      modelRoutes: [],
+      browserOrigins: [],
+      blockingHooks: [],
+      asyncHooks: [],
+      promptBlocks: [],
+      uiContributions: [],
+      followUps: [],
+      capabilities: [],
+      instructionSources: [],
+      permissions: []
+    };
+  }
+});
+
+// packages/agent/src/plugins/automations-plugin.ts
+var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
+var init_automations_plugin = __esm({
+  "packages/agent/src/plugins/automations-plugin.ts"() {
+    init_plugin_manifest();
+    AUTOMATIONS_PLUGIN_ID = "copse.automations";
+    automationsPlugin = definePlugin(
+      {
+        name: AUTOMATIONS_PLUGIN_ID,
+        description: "Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.",
+        trust: "first-party",
+        stability: "experimental",
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ],
+        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
+      },
+      {
+        uiContributions: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ]
+      }
+    );
+  }
+});
+
 // packages/llm/src/model-catalog.generated.ts
 var MODEL_CATALOG;
 var init_model_catalog_generated = __esm({
@@ -91,6 +157,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-opus-5-5": {
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-sonnet-4-6": {
         inputPricePerMTok: 3,
         outputPricePerMTok: 15,
@@ -100,6 +174,14 @@ var init_model_catalog_generated = __esm({
         maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 2.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
+      "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.2,
@@ -257,6 +339,28 @@ var init_model_catalog_generated = __esm({
         },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
+      },
+      "gpt-6.1-sol": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.1,
+        cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 5,
+            cacheReadPricePerMTok: 0.05,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 20,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 5
+          }
+        },
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
       }
     };
   }
@@ -345,8 +449,8 @@ function humanizeModelName(labelOrId) {
   }, "");
 }
 function modelDisplayName(labelOrId) {
-  const canonical = canonicalModelLabel(labelOrId);
-  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical;
+  const canonical2 = canonicalModelLabel(labelOrId);
+  return canonical2 === labelOrId ? humanizeModelName(labelOrId) : canonical2;
 }
 function claudeName(family, version2, rest) {
   if (rest !== "" && !/^\s/.test(rest)) return null;
@@ -525,13 +629,211 @@ var init_model_selection = __esm({
   }
 });
 
+// packages/llm/src/model-families.ts
+function hasModelIdPrefix(id, prefix) {
+  return id === prefix || id.startsWith(prefix) && BOUNDARY.test(id.slice(prefix.length));
+}
+function findFamily(modelId) {
+  let best;
+  for (const entry of FAMILIES) {
+    if (!hasModelIdPrefix(modelId, entry.match)) continue;
+    if (best === void 0 || entry.match.length > best.match.length) best = entry;
+  }
+  return best;
+}
+function withFeatures(features) {
+  return { ...NO_FEATURES, ...features };
+}
+function nonFirstPartyTransport(namespace) {
+  switch (namespace) {
+    case "openrouter":
+    case "extra-provider":
+      return "openai-compatible";
+    case "lmstudio":
+      return "local";
+    case "acp":
+    case "remote-agent":
+    case "plugin-model":
+    case "auto":
+      return "host-routed";
+    case "cloud":
+      return "unknown";
+  }
+}
+function routeGated(features, firstParty) {
+  if (firstParty) return features;
+  return {
+    ...features,
+    supportsStrictTools: false,
+    supportsVerbosity: false,
+    supportsParallelToolCallsControl: false,
+    supportsServerCompaction: false
+  };
+}
+function resolveModelFamily(model) {
+  const selection2 = typeof model === "string" ? parseModelSelection(model) : model;
+  const { namespace } = selection2;
+  if (!CLOUD_ROUTED.has(namespace)) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: nonFirstPartyTransport(namespace),
+      provider: null,
+      family: null,
+      known: false
+    };
+  }
+  const direct = namespace === "cloud";
+  const entry = findFamily(selection2.modelId);
+  if (entry !== void 0) {
+    return {
+      ...routeGated(withFeatures(entry.features), direct),
+      namespace,
+      transport: direct ? entry.transport : "openai-compatible",
+      provider: direct ? entry.provider : null,
+      family: entry.match,
+      known: true
+    };
+  }
+  const fallback = FIRST_PARTY_FALLBACKS.find(
+    (candidate) => selection2.modelId.startsWith(candidate.prefix)
+  );
+  if (direct && fallback !== void 0) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: fallback.transport,
+      provider: fallback.provider,
+      family: null,
+      known: false
+    };
+  }
+  return {
+    ...NO_FEATURES,
+    namespace,
+    transport: direct ? "unknown" : "openai-compatible",
+    provider: null,
+    family: null,
+    known: false
+  };
+}
+function firstPartyProviderOf(model) {
+  return resolveModelFamily(model).provider;
+}
+var NO_FEATURES, GPT_REASONING_FEATURES, O_SERIES_FEATURES, CLAUDE_MID_SYSTEM, FAMILIES, FIRST_PARTY_FALLBACKS, BOUNDARY, CLOUD_ROUTED;
+var init_model_families = __esm({
+  "packages/llm/src/model-families.ts"() {
+    init_model_selection();
+    NO_FEATURES = {
+      supportsStrictTools: false,
+      supportsVerbosity: false,
+      supportsParallelToolCallsControl: false,
+      supportsServerCompaction: false,
+      prefersApplyPatch: false,
+      acceptsDeveloperRole: false,
+      acceptsMidConversationSystem: false
+    };
+    GPT_REASONING_FEATURES = {
+      supportsStrictTools: true,
+      supportsVerbosity: true,
+      supportsParallelToolCallsControl: true,
+      prefersApplyPatch: true,
+      acceptsDeveloperRole: true
+    };
+    O_SERIES_FEATURES = {
+      supportsStrictTools: true,
+      acceptsDeveloperRole: true
+    };
+    CLAUDE_MID_SYSTEM = { acceptsMidConversationSystem: true };
+    FAMILIES = [
+      // Anthropic. Mid-conversation `system` messages: Opus 5 / 4.8, Fable 5, Mythos 5.
+      // `claude-sonnet-5-5` — the default model — does not take one, so leading-system
+      // placement is the common path, not an edge case.
+      {
+        match: "claude-opus-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-opus-4-8",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-opus-4-7", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-haiku-4-5", provider: "anthropic", transport: "anthropic" },
+      {
+        match: "claude-fable-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-mythos-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-mythos-preview", provider: "anthropic", transport: "anthropic" },
+      // OpenAI, Responses API.
+      {
+        match: "gpt-5",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6-astra",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6.1-sol",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      { match: "o1", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o3", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o4", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      // OpenAI, Chat Completions: non-reasoning models gain nothing from Responses.
+      {
+        match: "gpt-4o",
+        provider: "openai",
+        transport: "openai-chat",
+        features: {
+          supportsStrictTools: true,
+          supportsParallelToolCallsControl: true,
+          acceptsDeveloperRole: true
+        }
+      },
+      // Open-weights models OpenAI publishes. Not a first-party API model — it is
+      // reached through aggregators or local servers, never `developer`-role aware —
+      // and the entry exists to stop the broad `gpt-` fallback claiming its features.
+      { match: "gpt-oss", provider: "openai", transport: "openai-chat" }
+    ];
+    FIRST_PARTY_FALLBACKS = [
+      { prefix: "claude-", provider: "anthropic", transport: "anthropic" },
+      { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
+    ];
+    BOUNDARY = /^[-.:@]/;
+    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+  }
+});
+
 // packages/llm/src/model-catalog.ts
 function getModelInfo(model) {
   return MODEL_CATALOG[model] ?? null;
 }
 function inferCloudModelProvider(model) {
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
+  const { provider } = resolveModelFamily(model);
+  if (provider !== null) return provider;
   throw new Error(`Unknown cloud model provider for '${model}'`);
 }
 function cloudModelDisplayLabel(model) {
@@ -543,19 +845,22 @@ var init_model_catalog = __esm({
   "packages/llm/src/model-catalog.ts"() {
     init_model_catalog_generated();
     init_model_label();
-    init_model_selection();
-    DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6";
+    init_model_families();
+    DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-sonnet-5",
+      "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
@@ -569,12 +874,15 @@ var init_model_catalog = __esm({
       "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
+      "claude-sonnet-5-5": "Claude Sonnet 5.5",
+      "claude-opus-5-5": "Claude Opus 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
@@ -603,6 +911,9 @@ function isEmptyModelParameters(params) {
 }
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
+}
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
 }
 function claudeSupport(modelId) {
   const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
@@ -633,16 +944,16 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
       temperatureMax: 2
     };
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: "openai-effort",
@@ -674,8 +985,9 @@ function modelParameterSupport(model) {
     };
   }
   if (selection2.namespace === "cloud") {
-    if (selection2.modelId.startsWith("claude")) return claudeSupport(selection2.modelId);
-    if (selection2.modelId.startsWith("gpt")) return openAiSupport(selection2.modelId);
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
     return {
       reasoning: [],
       reasoningWire: "none",
@@ -765,10 +1077,11 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
+    init_model_families();
     init_model_selection();
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -812,12 +1125,14 @@ var init_model_parameters = __esm({
       "claude-opus-4-5"
     ];
     CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-fable-5",
       "claude-mythos-5",
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -829,7 +1144,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -853,6 +1168,16 @@ var init_model_parameters = __esm({
     };
     RECOMMENDATIONS = [
       {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
         match: "glm-5.3-flash",
         label: "Copse\u2019s experimental balanced agent profile",
         source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
@@ -870,7 +1195,8 @@ var init_model_parameters = __esm({
         // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
         // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
         // for the model in general; we keep `medium` for this scenario on our own
-        // evidence, and the row stays opt-in and experimental because that evidence is
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
         // one benchmark on one host.
         params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
       },
@@ -3386,7 +3712,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -3407,11 +3733,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
@@ -21373,6 +21699,11 @@ var init_unknown_value = __esm({
 });
 
 // packages/agent/src/parse-agent-run-payload.ts
+function parseReviewContext(value) {
+  if (typeof value !== "string" || value.trim() === "") return void 0;
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
+[review summary truncated]`;
+}
 function parseAgentRunPayload(rawPrompt) {
   try {
     const parsed2 = JSON.parse(rawPrompt);
@@ -21383,6 +21714,7 @@ function parseAgentRunPayload(rawPrompt) {
       }
       const invokedSkills = external_exports.array(external_exports.string()).safeParse(parsed2["invokedSkills"]);
       const priorTodos = external_exports.array(todoSchema).safeParse(parsed2["priorTodos"]);
+      const reviewContext = parseReviewContext(parsed2["reviewContext"]);
       const normalizedTodos = priorTodos.success ? priorTodos.data.map((todo) => ({
         id: todo.id,
         content: todo.content,
@@ -21399,7 +21731,8 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed2["model"] === "string" && parsed2["model"] ? { model: parsed2["model"] } : {},
         ...isReasoningLevel(parsed2["reasoning"]) ? { reasoning: parsed2["reasoning"] } : {},
         ...typeof parsed2["turnTreeId"] === "string" && parsed2["turnTreeId"] ? { turnTreeId: parsed2["turnTreeId"] } : {},
-        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {}
+        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {},
+        ...reviewContext !== void 0 ? { reviewContext } : {}
       };
     }
     const content = userContentSchema.safeParse(parsed2);
@@ -21412,7 +21745,7 @@ function parseAgentRunPayload(rawPrompt) {
     return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] };
   }
 }
-var userContentSchema, todoSchema;
+var userContentSchema, todoSchema, REVIEW_CONTEXT_CHAR_CAP;
 var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
@@ -21443,6 +21776,260 @@ var init_parse_agent_run_payload = __esm({
       ]).optional(),
       assignedModel: external_exports.enum(["cloud", "local"]).optional()
     });
+    REVIEW_CONTEXT_CHAR_CAP = 2e4;
+  }
+});
+
+// packages/llm/src/agent-roles.ts
+function getAgentRole(id) {
+  return AGENT_ROLES.find((role) => role.id === id) ?? null;
+}
+var AGENT_ROLES, AGENT_ROLE_IDS;
+var init_agent_roles = __esm({
+  "packages/llm/src/agent-roles.ts"() {
+    AGENT_ROLES = [
+      {
+        id: "coder",
+        label: "Coder",
+        description: "Writing new code \u2014 the chat default when coding",
+        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
+      },
+      {
+        id: "debugger",
+        label: "Debugger",
+        description: "Fixing bugs through careful, iterative analysis",
+        wants: ["swe-bench", "livecodebench", "gpqa"]
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Post-turn diff review and maintainability",
+        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "security-auditor",
+        label: "Security auditor",
+        description: "Finding vulnerabilities with low false negatives",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "judge",
+        label: "Judge",
+        description: "Accept/reject a patch or answer against a rubric",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "test-gen",
+        label: "Test generator",
+        description: "Unit, integration, and property tests",
+        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
+      },
+      {
+        id: "refactor",
+        label: "Refactorer",
+        description: "Behaviour-preserving changes",
+        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
+      },
+      {
+        id: "planner",
+        label: "Planner",
+        description: "Breaking work into prioritised tasks",
+        wants: ["gpqa", "mmlu-pro", "arena"]
+      },
+      {
+        id: "advisor",
+        label: "Advisor",
+        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
+        wants: ["gpqa", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        description: "READMEs, comments, and API docs",
+        wants: ["mmlu-pro", "arena"]
+      },
+      {
+        id: "research",
+        label: "Research assistant",
+        description: "API/framework lookup and synthesis (exploration subagent)",
+        wants: ["mmlu-pro", "gpqa", "arena"]
+      },
+      {
+        id: "tool-use",
+        label: "Tool-use agent",
+        description: "Calling tools correctly with structured output",
+        wants: ["tau-bench", "multipl-e"]
+      },
+      {
+        id: "small-tasks",
+        label: "Small tasks",
+        description: "Thread titles and other lightweight prompts",
+        wants: ["arena"]
+      },
+      {
+        id: "safety",
+        label: "Instruct / safety",
+        description: "Classifies shell commands when the OS sandbox is off",
+        wants: ["arena"]
+      }
+    ];
+    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
+  }
+});
+
+// packages/llm/src/dynamic-model.ts
+function minIntellectSelector(threshold) {
+  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
+}
+function roleModelSelector(role) {
+  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
+}
+function isDynamicModel(value) {
+  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
+}
+function parseDynamicModel(value) {
+  if (typeof value !== "string") return null;
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "auto") return null;
+  const body = selection2.id;
+  if (body === "best-value") return { kind: "best-value" };
+  if (body === "best-intellect") return { kind: "best-intellect" };
+  if (body === "best-local") return { kind: "best-local" };
+  if (body === "cheapest") return { kind: "cheapest" };
+  if (body === "balanced") return { kind: "balanced" };
+  if (body.startsWith(MIN_INTELLECT_INFIX)) {
+    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
+    if (!Number.isFinite(threshold) || threshold <= 0) return null;
+    return { kind: "min-intellect", threshold };
+  }
+  if (body.startsWith(ROLE_INFIX)) {
+    const role = getAgentRole(body.slice(ROLE_INFIX.length));
+    return role ? { kind: "role", role: role.id } : null;
+  }
+  return null;
+}
+function dynamicModelLabel(value) {
+  const selector = parseDynamicModel(value);
+  if (!selector) return null;
+  switch (selector.kind) {
+    case "best-value":
+      return "Best value";
+    case "best-intellect":
+      return "Most capable";
+    case "best-local":
+      return "Best on-device";
+    case "cheapest":
+      return "Cheapest";
+    case "balanced":
+      return "Balanced";
+    case "min-intellect":
+      return `At least ${String(selector.threshold)} intelligence`;
+    case "role":
+      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
+  }
+}
+function dynamicModelChoices() {
+  const choices = [
+    {
+      value: BEST_VALUE_MODEL_SELECTOR,
+      label: "Best value",
+      description: "Best intelligence per pound across your plans, providers, and local server",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_INTELLECT_MODEL_SELECTOR,
+      label: "Most capable",
+      description: "Highest intelligence available, ignoring price",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_LOCAL_MODEL_SELECTOR,
+      label: "Best on-device",
+      description: "Strongest model loaded on your machine",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: CHEAPEST_MODEL_SELECTOR,
+      label: "Cheapest",
+      description: "Lowest token price; plans and local count as free",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: "Balanced",
+      description: "Strong capability at a fair price; favors plans",
+      group: AUTOMATIC_GROUP
+    }
+  ];
+  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
+    choices.push({
+      value: minIntellectSelector(threshold),
+      label: `At least ${String(threshold)} intelligence`,
+      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
+      group: INTELLIGENCE_GROUP
+    });
+  }
+  for (const role of AGENT_ROLES) {
+    choices.push({
+      value: roleModelSelector(role.id),
+      label: role.label,
+      description: role.description,
+      group: ROLE_GROUP
+    });
+  }
+  return choices;
+}
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var init_dynamic_model = __esm({
+  "packages/llm/src/dynamic-model.ts"() {
+    init_agent_roles();
+    init_model_selection();
+    init_reserved_prefixes();
+    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
+    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
+    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
+    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    MIN_INTELLECT_INFIX = "min-intellect:";
+    ROLE_INFIX = "role:";
+    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
+    AUTOMATIC_GROUP = "Automatic";
+    INTELLIGENCE_GROUP = "Minimum intelligence";
+    ROLE_GROUP = "By role";
+  }
+});
+
+// packages/agent/src/plugins/advisor-strategy-plugin.ts
+var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
+var init_advisor_strategy_plugin = __esm({
+  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
+    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
+    ADVISOR_MODEL_SETTING_ID = "advisorModel";
+    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    advisorStrategyPlugin = definePlugin(
+      {
+        name: ADVISOR_STRATEGY_PLUGIN_ID,
+        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
+        settings: {
+          [ADVISOR_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID
+          }
+        },
+        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
+      },
+      {
+        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
+      }
+    );
   }
 });
 
@@ -21521,6 +22108,16 @@ var init_trace_player = __esm({
     DEFAULT_CHARS_PER_SECOND = 240;
     DEFAULT_SLICE_CHARS = 12;
     DEFAULT_STEP_PAUSE_MS = 260;
+  }
+});
+
+// packages/llm/src/model-capabilities.ts
+var init_model_capabilities = __esm({
+  "packages/llm/src/model-capabilities.ts"() {
+    init_model_catalog();
+    init_model_families();
+    init_model_parameters();
+    init_model_selection();
   }
 });
 
@@ -21848,6 +22445,76 @@ var init_thread_proposal2 = __esm({
   }
 });
 
+// src/shared/unknown-value.mts
+var init_unknown_value2 = __esm({
+  "src/shared/unknown-value.mts"() {
+    init_unknown_value();
+  }
+});
+
+// src/shared/unknown-value.ts
+var init_unknown_value3 = __esm({
+  "src/shared/unknown-value.ts"() {
+    init_unknown_value2();
+  }
+});
+
+// src/shared/threads/reviewer-input.ts
+function isReviewerInputCall(call) {
+  return [call.name, call.programmaticName].some(
+    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
+  );
+}
+function parseReviewerInputCall(call, messageId) {
+  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
+  const { question, context, recommendation, options } = call.args;
+  if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
+    return null;
+  }
+  const validOptions = Array.isArray(options) ? options.flatMap(
+    (value) => typeof value === "string" && value.trim() !== "" ? [value] : []
+  ) : [];
+  return {
+    id: call.id,
+    messageId,
+    question: question.trim().slice(0, 300),
+    context: context.trim().slice(0, 1200),
+    ...typeof recommendation === "string" && recommendation.trim() !== "" ? { recommendation: recommendation.trim().slice(0, 600) } : {},
+    options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
+  };
+}
+function reviewerInputRequests(thread) {
+  return thread.messages.flatMap(
+    (message2) => message2.toolCalls.map((call) => parseReviewerInputCall(call, message2.id)).filter((request) => request !== null)
+  );
+}
+function reviewerInputAnswer(answers, id) {
+  return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
+}
+function parseReviewerInputAnswers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["text"] !== "string" || typeof entry["answeredAt"] !== "number" || !Number.isFinite(entry["answeredAt"]) || typeof entry["messageId"] !== "string") {
+      return [];
+    }
+    return [
+      {
+        id: entry["id"],
+        text: entry["text"],
+        answeredAt: entry["answeredAt"],
+        messageId: entry["messageId"]
+      }
+    ];
+  });
+}
+var REVIEWER_INPUT_TOOL;
+var init_reviewer_input = __esm({
+  "src/shared/threads/reviewer-input.ts"() {
+    init_unknown_value3();
+    REVIEWER_INPUT_TOOL = "request_review_input";
+  }
+});
+
 // packages/thread-store/src/thread-sort.ts
 function isHumanUserPrompt(message2) {
   return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
@@ -21870,6 +22537,251 @@ function sortThreadsNewestFirst(threads) {
 }
 var init_thread_sort = __esm({
   "packages/thread-store/src/thread-sort.ts"() {
+  }
+});
+
+// packages/llm/src/estimate-cost.ts
+function isLocalModel(model) {
+  return model === "lm-studio" || model.startsWith("lmstudio:");
+}
+function pricingForModel(model, pricing) {
+  if (isLocalModel(model)) return null;
+  const info = getModelInfo(model) ?? pricing?.[model];
+  if (!info) return null;
+  return info;
+}
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
+function hasModelPricing(model, pricing) {
+  return pricingForModel(model, pricing) !== null;
+}
+function hasZeroModelPricing(model, pricing) {
+  const info = pricingForModel(model, pricing);
+  if (!info) return false;
+  return info.inputPricePerMTok === 0 && info.outputPricePerMTok === 0 && (info.cacheReadPricePerMTok ?? 0) === 0 && (info.cacheCreationPricePerMTok ?? 0) === 0;
+}
+function costForUsage(usage, info) {
+  if (!info) return 0;
+  const cacheRead = usage.cacheReadTokens ?? 0;
+  const cacheCreation = usage.cacheCreationTokens ?? 0;
+  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
+  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
+  const inputRate = info.inputPricePerMTok;
+  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
+  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
+  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
+}
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
+function estimateUsageCost(byModel, pricing, options = {}) {
+  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
+  if (entries2.length === 0) return "";
+  let totalCost = 0;
+  let hasLocal = false;
+  let hasPricedCloud = false;
+  let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
+  for (const [model, usage] of entries2) {
+    if (isLocalModel(model)) {
+      hasLocal = true;
+      continue;
+    }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
+    else hasUnpricedCloud = true;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
+  }
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return "";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
+    if (hasLocal) return "free (local)";
+    return "";
+  }
+  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal && !options.localFreeExplained ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
+}
+function formatThreadUsageCost(usage, fallbackChatModel, pricing, options = {}) {
+  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
+    return estimateUsageCost(usage.byModel, pricing, options);
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return "";
+  return estimateUsageCost(
+    {
+      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+    },
+    pricing,
+    options
+  );
+}
+var init_estimate_cost = __esm({
+  "packages/llm/src/estimate-cost.ts"() {
+    init_model_catalog();
+    init_model_usage();
+    init_service_tier();
+  }
+});
+
+// src/shared/usage/format-usage-summary.ts
+function formatUsd(amount) {
+  if (amount <= 0) return "$0.00";
+  if (amount < 0.01) return "<$0.01";
+  return `~$${amount.toFixed(2)}`;
+}
+function formatTokenCount(n2) {
+  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
+  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
+  return String(n2);
+}
+function formatPeriodHeadline(summary) {
+  const localCount = summary.localModels.length;
+  const cloudCount = summary.cloudModels.length;
+  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
+  const parts = [cost];
+  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
+  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
+  return parts.join(" \xB7 ");
+}
+var init_format_usage_summary = __esm({
+  "src/shared/usage/format-usage-summary.ts"() {
+  }
+});
+
+// src/shared/usage/footer-usage-summary.ts
+function collectSubagentUsage(toolCalls, totals) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session) continue;
+    if (session.kind === "container") continue;
+    if (session.usage) {
+      totals.runs += 1;
+      totals.inputTokens += session.usage.inputTokens;
+      totals.outputTokens += session.usage.outputTokens;
+    }
+    for (const message2 of session.messages) {
+      collectSubagentUsage(message2.toolCalls, totals);
+    }
+  }
+}
+function sumSubagentUsage(messages) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  for (const message2 of messages) {
+    collectSubagentUsage(message2.toolCalls, totals);
+  }
+  return totals;
+}
+function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  let turnStart = 0;
+  const collectTurn = (turnEnd, isTrailingTurn) => {
+    if (trailingTurnRunning && isTrailingTurn) return;
+    let outcome;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const candidate = messages[i2]?.turnOutcome;
+      if (candidate !== void 0) outcome = candidate;
+    }
+    if (outcome !== void 0 && outcome.status !== "completed") return;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const message2 = messages[i2];
+      if (message2) collectSubagentUsage(message2.toolCalls, totals);
+    }
+  };
+  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
+    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
+    collectTurn(i2, i2 === messages.length);
+    turnStart = i2;
+  }
+  return totals;
+}
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function foldedSubagentShare(measured, legacyFoldedSessions) {
+  if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: measured.subagentInputTokens ?? 0,
+      outputTokens: measured.subagentOutputTokens ?? 0
+    };
+  }
+  return legacyFoldedSessions;
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    const folded = foldedSubagentShare(
+      input2.measured,
+      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
+    );
+    return {
+      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
+      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total2 = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total2 && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
   }
 });
 
@@ -22256,9 +23168,9 @@ function setMessageToolSummary(store2, messageId, toolSummary) {
   });
   store2.emit("tool_call_updated", messageId, "");
 }
-function setMessageRunSummary(store2, messageId, runSummary) {
+function setMessageRunSummary(store2, messageId, runSummary2) {
   updateMessage(store2, messageId, (m2) => {
-    m2.runSummary = runSummary;
+    m2.runSummary = runSummary2;
   });
   store2.emit("tool_call_updated", messageId, "");
 }
@@ -22319,6 +23231,7 @@ function addUsageDelta(store2, threadId, delta) {
     usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
   byModel[delta.model] = mergeModelUsage(prev, usage);
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : void 0);
   updateUsage(
     store2,
     threadId,
@@ -22326,13 +23239,32 @@ function addUsageDelta(store2, threadId, delta) {
       {
         inputTokens: thread.usage.inputTokens + delta.inputTokens,
         outputTokens: thread.usage.outputTokens + delta.outputTokens,
-        byModel
+        byModel,
+        subagentInputTokens: subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens: subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0)
       },
       thread.usage.cacheReadTokens,
       thread.usage.cacheCreationTokens,
       delta
     )
   );
+}
+function foldedSubagentUsage(thread, incoming) {
+  const { usage } = thread;
+  if (usage.subagentInputTokens !== void 0 || usage.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0
+    };
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
+  return {
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens)
+  };
 }
 function updateContextSnapshot(store2, threadId, snapshot) {
   patchThreadAnywhere(store2, threadId, (t2) => ({
@@ -22520,6 +23452,19 @@ function setThreadProposalDecision(store2, threadId, decision) {
   }));
   store2.emit("threads_changed");
 }
+function setReviewerInputAnswer(store2, threadId, answer) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id
+      ),
+      answer
+    ],
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
 function clearThreadProposalDecisionFor(store2, threadId, proposalId) {
   patchThreadAnywhere(store2, threadId, (t2) => {
     const remaining = clearThreadProposalDecision(t2.threadProposals, proposalId);
@@ -22558,7 +23503,9 @@ var init_thread_helpers = __esm({
     init_pending_submissions();
     init_array_utils2();
     init_thread_proposal2();
+    init_reviewer_input();
     init_thread_sort();
+    init_footer_usage_summary();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
@@ -22616,20 +23563,6 @@ function dropProjectBackgroundThreads(store2, projectId) {
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
     init_pending_submissions();
-  }
-});
-
-// src/shared/unknown-value.mts
-var init_unknown_value2 = __esm({
-  "src/shared/unknown-value.mts"() {
-    init_unknown_value();
-  }
-});
-
-// src/shared/unknown-value.ts
-var init_unknown_value3 = __esm({
-  "src/shared/unknown-value.ts"() {
-    init_unknown_value2();
   }
 });
 
@@ -22990,10 +23923,158 @@ var init_persistence = __esm({
   }
 });
 
+// src/shared/store/review-reports.ts
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function userRunDone(report) {
+  return report?.initiator === "user" && report.status === "done" ? report : null;
+}
+function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
+  const awaiting = [];
+  const legacy = userRunDone(thread.reviewReport);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
+  }
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
+}
+function clip(text2, max) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function reviewedLine(report) {
+  const parts = ["Copse Reviewer"];
+  if (report.baseRef !== "") {
+    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
+    parts.push(`reviewed ${head} against ${report.baseRef}`);
+  }
+  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
+  return `${parts.join(" ")}.`;
+}
+function groundLine(report) {
+  if (!report.execution.executed) {
+    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
+  }
+  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
+  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
+  const all = [...checks, ...notChecked];
+  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
+}
+function findingLine(finding, index) {
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+}
+function reportContextText(report) {
+  const lines = [reviewedLine(report)];
+  const ground = groundLine(report);
+  if (ground !== null) lines.push(ground);
+  if (report.note !== void 0) lines.push(report.note);
+  const live = report.findings.filter((finding) => finding.dismissed !== true);
+  const dismissed = report.findings.length - live.length;
+  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
+  if (live.length === 0) {
+    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
+  } else {
+    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
+    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
+      lines.push(findingLine(finding, index));
+    });
+    if (live.length > MAX_CONTEXT_FINDINGS) {
+      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
+    }
+  }
+  if (report.appendix > 0) {
+    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
+  }
+  return lines.join("\n");
+}
+function reviewReportModelContext(reports) {
+  if (reports.length === 0) return void 0;
+  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
+  const omitted = reports.length - shown.length;
+  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
+  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
+  return `<${REVIEW_CONTEXT_TAG}>
+${body}
+</${REVIEW_CONTEXT_TAG}>`;
+}
+var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
+var init_review_reports = __esm({
+  "src/shared/store/review-reports.ts"() {
+    MAX_CONTEXT_REPORTS = 3;
+    MAX_CONTEXT_FINDINGS = 12;
+    MAX_CONTEXT_CLAIM_CHARS = 400;
+    REVIEW_CONTEXT_TAG = "copse_review_report";
+  }
+});
+
+// src/shared/patch/apply-patch.ts
+function normalizePatchPath(raw) {
+  return raw.trim().replace(/^(?:\.\/)+/, "");
+}
+function summarizePatch(patchText) {
+  const summaries = [];
+  let current = null;
+  for (const raw of patchText.split(/\r?\n/)) {
+    const trimmed2 = raw.trim();
+    if (trimmed2.startsWith(ADD)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(ADD.length)),
+        op: "add",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(DELETE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(DELETE.length)),
+        op: "delete",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (trimmed2.startsWith(UPDATE)) {
+      current = {
+        path: normalizePatchPath(trimmed2.slice(UPDATE.length)),
+        op: "update",
+        additions: 0,
+        deletions: 0
+      };
+      summaries.push(current);
+    } else if (current !== null && raw.trimEnd().startsWith(MOVE)) {
+      current.op = "move";
+      current.movePath = normalizePatchPath(raw.trimEnd().slice(MOVE.length));
+    } else if (current !== null && raw.startsWith("+")) {
+      current.additions += 1;
+    } else if (current !== null && raw.startsWith("-") && current.op !== "add") {
+      current.deletions += 1;
+    }
+  }
+  return summaries.filter((summary) => summary.path !== "");
+}
+var ADD, DELETE, UPDATE, MOVE;
+var init_apply_patch = __esm({
+  "src/shared/patch/apply-patch.ts"() {
+    ADD = "*** Add File: ";
+    DELETE = "*** Delete File: ";
+    UPDATE = "*** Update File: ";
+    MOVE = "*** Move to: ";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
-  const canonical = CANONICAL_WORDS.get(word);
-  if (canonical !== void 0) return canonical;
+  const canonical2 = CANONICAL_WORDS.get(word);
+  if (canonical2 !== void 0) return canonical2;
   const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
   if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
   for (const separator of ["-", ":"]) {
@@ -23074,14 +24155,17 @@ function tenseFromStatus(status) {
   return status === "running" ? "running" : "done";
 }
 function parseMcp(name) {
-  if (!name.startsWith(MCP_PREFIX)) return null;
-  const rest = name.slice(MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return null;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
 }
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[name];
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
@@ -23098,8 +24182,14 @@ function stringArg(args, key) {
 function fileEditPath(args) {
   return stringArg(args, "path");
 }
+function getApplyPatchFiles(tc2) {
+  const input2 = stringArg(tc2.args, "input");
+  return input2 === null ? [] : summarizePatch(input2);
+}
 function getToolEditPath(tc2) {
-  const key = FILE_EDIT_PATH_ARG[tc2.name];
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
   return stringArg(tc2.args, key);
 }
@@ -23127,40 +24217,53 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  if (tc2.name === "write_file" || tc2.name === "str_replace") {
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
   }
-  if (tc2.name === "delete_file") {
+  if (name === "apply_patch") {
+    const files = getApplyPatchFiles(tc2);
+    if (files.length === 1) {
+      const only = files[0]?.path ?? "";
+      return tense === "running" ? `Patching ${only}` : `Patched ${only}`;
+    }
+    if (files.length > 1) {
+      return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
+    }
+  }
+  if (name === "delete_file") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
-  if (tc2.name === "rename_file") {
+  if (name === "rename_file") {
     const from = stringArg(tc2.args, "from");
     const to = stringArg(tc2.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
   }
-  if (tc2.name === "make_directory") {
+  if (name === "make_directory") {
     const path = fileEditPath(tc2.args);
     if (path) {
       return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
     }
   }
-  if (tc2.name === "task") {
+  if (name === "task") {
     const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
   }
-  if (tc2.name === "run_shell" || tc2.kind === "execute") {
+  if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (tc2.title) return tc2.title;
+    if (title) return title;
   }
-  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
-  return getToolDisplayName(tc2.name, tense);
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
   const builtIn = TOOL_TO_GROUP.get(name);
@@ -23249,31 +24352,39 @@ function summarizeToolTurn(toolCalls, items) {
   } else {
     base = `Used ${String(n2)} tools`;
   }
-  if (failed > 0 && status !== "running") {
+  if (failed > 0) {
     return `${base} \xB7 ${String(failed)} failed`;
   }
   return base;
 }
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
   const subagents = [];
   const proposals = [];
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL) proposals.push(tc2);
+    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
       toolCalls: regular
     });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
   } else {
     result.push(...grouped);
   }
@@ -23297,31 +24408,26 @@ function summarizeToolRun(run2) {
     parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
   }
   parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
   return parts.join(" \xB7 ");
 }
 function summarizeToolRunStep(step, children) {
   const polished = step.summary?.trim();
   if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
   const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== "running") {
-    return `${polished} \xB7 ${String(failed)} failed`;
-  }
-  return polished;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
 }
 function buildToolRunDisplayItems(run2, opts) {
   if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const children = run2.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls);
-    return {
-      type: "step",
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls
-    };
-  });
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
   return [
     {
       type: "rollup",
@@ -23329,15 +24435,18 @@ function buildToolRunDisplayItems(run2, opts) {
       label: summarizeToolRun(run2),
       children,
       toolCalls: run2.toolCalls
-    }
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
   ];
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
     init_thread_proposal2();
+    init_reviewer_input();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -23377,6 +24486,7 @@ var init_tool_display = __esm({
       get_ci_failure_logs: { running: "Fetching CI failure logs", done: "Fetched CI failure logs" },
       write_file: { running: "Writing file", done: "Wrote file" },
       str_replace: { running: "Replacing in file", done: "Replaced in file" },
+      apply_patch: { running: "Applying patch", done: "Applied patch" },
       delete_file: { running: "Deleting file", done: "Deleted file" },
       rename_file: { running: "Renaming file", done: "Renamed file" },
       make_directory: { running: "Creating directory", done: "Created directory" },
@@ -23385,6 +24495,7 @@ var init_tool_display = __esm({
       read_terminal: { running: "Reading shell", done: "Read shell" },
       video_frames: { running: "Reading video", done: "Read video" },
       ask_user: { running: "Asking user", done: "Asked user" },
+      request_review_input: { running: "Saving question", done: "Saved question" },
       propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
       run_checkup: { running: "Running checkup", done: "Ran checkup" },
@@ -23393,7 +24504,10 @@ var init_tool_display = __esm({
         done: "Ran unattended in a container"
       },
       preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
-      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" }
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
+      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
+      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -23438,7 +24552,14 @@ var init_tool_display = __esm({
         label: { running: "Checking git", done: "Checked git" }
       },
       writing: {
-        tools: ["write_file", "str_replace", "delete_file", "rename_file", "make_directory"],
+        tools: [
+          "write_file",
+          "str_replace",
+          "apply_patch",
+          "delete_file",
+          "rename_file",
+          "make_directory"
+        ],
         label: { running: "Editing files", done: "Edited files" }
       },
       shell: {
@@ -23458,7 +24579,6 @@ var init_tool_display = __esm({
       search: "searching",
       fetch: "web"
     };
-    MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
     RUN_ROLLUP_KEY = "run";
@@ -23540,7 +24660,7 @@ function runningToolName(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
     const m2 = thread.messages[i2];
     if (!m2) continue;
-    const toolCalls = m2.toolCalls ?? [];
+    const toolCalls = m2.toolCalls;
     for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
       const tc2 = toolCalls[j3];
       if (!tc2) continue;
@@ -23816,7 +24936,11 @@ function attachThreadHydration(store2, api2) {
   hydrateActive();
   const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
     const state = store2.getState();
-    if (state.activeProjectId !== projectId || refs.length === 0) return;
+    if (refs.length === 0) return;
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
+      return;
+    }
     const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
     if (!state.threads.some((t2) => byThread.has(t2.id))) return;
     store2.setState({
@@ -23843,6 +24967,7 @@ var init_thread_hydration = __esm({
     init_perf();
     init_thread_helpers();
     init_artefact_previews();
+    init_projects();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
@@ -23875,6 +25000,20 @@ var init_agent_turn_busy = __esm({
   "src/shared/agent-turn-busy.ts"() {
     init_errors4();
     AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
+  }
+});
+
+// src/renderer/controller/send-now-aborts.ts
+function markSendNowAbort(threadId) {
+  sendNowThreads.add(threadId);
+}
+function takeSendNowAbort(threadId) {
+  return sendNowThreads.delete(threadId);
+}
+var sendNowThreads;
+var init_send_now_aborts = __esm({
+  "src/renderer/controller/send-now-aborts.ts"() {
+    sendNowThreads = /* @__PURE__ */ new Set();
   }
 });
 
@@ -23925,10 +25064,12 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, payload) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
+  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
     ...payload,
+    ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
     // Send the per-thread model so the run uses the picker's selection rather
@@ -23972,7 +25113,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
   );
   if (!queued) {
     void run2;
@@ -24105,13 +25246,11 @@ function queuedPayloadText(payload) {
 }
 function withPayloadText(content, text2) {
   if (typeof content === "string") return text2;
-  let replaced = false;
-  const next = content.map((block) => {
-    if (block.type !== "text" || replaced) return block;
-    replaced = true;
-    return { ...block, text: text2 };
-  });
-  return replaced ? next : [...next, { type: "text", text: text2 }];
+  const firstText = content.findIndex((block) => block.type === "text");
+  if (firstText === -1) return [...content, { type: "text", text: text2 }];
+  return content.map(
+    (block, index) => index === firstText && block.type === "text" ? { ...block, text: text2 } : block
+  );
 }
 function updateQueuedMessageText(store2, threadId, messageId, text2) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -24176,6 +25315,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.setState({ threads });
   store2.emit("threads_changed");
   if (thread.status === "running") {
+    markSendNowAbort(threadId);
     void api2.agent.abort(threadId);
   } else {
     drainMessageQueue(store2, api2, threadId);
@@ -24230,11 +25370,13 @@ var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
+    init_review_reports();
     init_agent_activity();
     init_continuation_budget();
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_send_now_aborts();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -24434,6 +25576,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -24490,19 +25641,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
@@ -24989,15 +26144,29 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
-function handIcon(className = DEFAULT) {
+function shieldIcon(className = DEFAULT) {
   return outlineIcon(
-    "hand",
+    "shield",
     [
-      "M18 11V6a2 2 0 0 0-4 0v5",
-      "M14 10V4a2 2 0 0 0-4 0v7",
-      "M10 10.5V6a2 2 0 0 0-4 0v8",
-      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
     ],
+    className
+  );
+}
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
     className
   );
 }
@@ -25062,6 +26231,15 @@ function imageIcon(className = DEFAULT) {
     className
   );
 }
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
+    ],
+    className
+  );
+}
 function zapIcon(className = DEFAULT) {
   return outlineIcon(
     "zap",
@@ -25091,6 +26269,17 @@ function gitPullRequestIcon(className = DEFAULT) {
       "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
       "M13 6h3a2 2 0 0 1 2 2v7",
       "M6 9v12"
+    ],
+    className
+  );
+}
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
     ],
     className
   );
@@ -25155,7 +26344,7 @@ var init_icons = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -25179,14 +26368,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -25226,7 +26415,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -25517,7 +26706,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -25598,12 +26787,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -25679,7 +26868,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -25700,7 +26889,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -25978,7 +27167,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -25987,7 +27176,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -26137,7 +27326,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -26148,17 +27337,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -26254,7 +27443,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -26290,7 +27479,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -26385,7 +27574,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -26399,7 +27588,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -26535,7 +27724,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -26546,17 +27735,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -27323,7 +28512,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -27340,7 +28529,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -27361,7 +28550,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -27374,7 +28563,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -27400,7 +28589,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -27452,7 +28641,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -27484,7 +28673,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -27523,7 +28712,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -27545,13 +28734,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -27584,7 +28773,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -27594,17 +28783,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -27657,13 +28846,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -27866,7 +29055,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -27895,7 +29084,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -27914,7 +29103,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -27933,7 +29122,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -28131,7 +29320,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -28142,7 +29331,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -28237,12 +29426,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -28539,7 +29728,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -28556,7 +29745,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -28606,7 +29795,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -28616,7 +29805,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -28835,7 +30024,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -28855,7 +30044,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -28951,7 +30140,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -28961,7 +30150,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -29410,7 +30599,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -29428,7 +30617,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -29460,14 +30649,14 @@ function canonicalize(value, base) {
 function canonicalizePrefixes(prefixes) {
   const out = [];
   for (const prefix of prefixes) {
-    const canonical = canonicalize(prefix);
-    if (canonical !== null)
-      out.push(canonical);
+    const canonical2 = canonicalize(prefix);
+    if (canonical2 !== null)
+      out.push(canonical2);
   }
   return out;
 }
-function isUnderAllowedPrefix(canonical, prefixes) {
-  return prefixes.some((prefix) => canonical.startsWith(prefix));
+function isUnderAllowedPrefix(canonical2, prefixes) {
+  return prefixes.some((prefix) => canonical2.startsWith(prefix));
 }
 function resolveHref(raw, defaultOrigin) {
   const absolute = canonicalize(raw);
@@ -29514,8 +30703,8 @@ function enforceImage(node2, policy) {
   node2.removeAttribute("src");
   addBlockedClass(node2, policy.blockedImageClass);
 }
-function isDataUrl(canonical) {
-  return canonical.slice(0, 5).toLowerCase() === "data:";
+function isDataUrl(canonical2) {
+  return canonical2.slice(0, 5).toLowerCase() === "data:";
 }
 function applyLinkImagePolicy(node2, tagName) {
   const policy = resolvedPolicy();
@@ -29528,7 +30717,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -29536,16 +30725,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -29592,7 +30781,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -29616,7 +30805,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -29685,7 +30874,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -29767,7 +30956,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -29805,7 +30994,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -29815,7 +31004,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -29989,7 +31178,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -30003,7 +31192,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -30118,14 +31307,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -30177,7 +31366,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -30362,7 +31551,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -30391,11 +31580,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -30444,13 +31633,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -30494,13 +31683,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -30541,11 +31730,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -30595,14 +31784,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -30708,7 +31897,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -30721,7 +31910,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -30766,7 +31955,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -30775,18 +31964,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -30888,7 +32077,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -30896,7 +32085,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -31083,7 +32272,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -32319,7 +33508,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -32761,7 +33950,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -33029,9 +34218,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -33165,30 +34354,35 @@ function openRemoteFolderDialog(api2) {
   );
   const draft = emptySshHostDraft();
   const idInput = el("input", {
+    type: "text",
     name: "remoteFolderHostId",
     class: "remote-folder-host-id",
     placeholder: "my-server",
     "aria-label": "Host id"
   });
   const labelInput = el("input", {
+    type: "text",
     name: "remoteFolderHostLabel",
     class: "remote-folder-host-label",
     placeholder: "Production",
     "aria-label": "Host label"
   });
   const hostInput = el("input", {
+    type: "text",
     name: "remoteFolderHostHost",
     class: "remote-folder-host-host",
     placeholder: "example.com or ~/.ssh/config alias",
     "aria-label": "Hostname"
   });
   const userInput = el("input", {
+    type: "text",
     name: "remoteFolderHostUser",
     class: "remote-folder-host-user",
     placeholder: "ubuntu",
     "aria-label": "SSH user"
   });
   const portInput = el("input", {
+    type: "text",
     name: "remoteFolderHostPort",
     class: "remote-folder-host-port",
     placeholder: "22",
@@ -33196,6 +34390,7 @@ function openRemoteFolderDialog(api2) {
     "aria-label": "SSH port"
   });
   const identityInput = el("input", {
+    type: "text",
     name: "remoteFolderHostIdentity",
     class: "remote-folder-host-identity",
     placeholder: "~/.ssh/id_ed25519",
@@ -33566,6 +34761,20 @@ function getSidebarThreads(store2, projectId) {
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
 }
+function applyCachedSidebarPrRefs(projectId, refs) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return false;
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
+  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    })
+  );
+  return true;
+}
 function isProjectSwitchInFlight(store2, projectId) {
   const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
   if (expandedProjectId === projectId && activeProjectId !== projectId) return true;
@@ -33841,6 +35050,15 @@ function switchProject(store2, api2, id, pendingThreadId = null) {
   if (!proj) return;
   activate(store2, api2, id, proj.path, proj.sshHost, pendingThreadId);
 }
+async function activateMobileProject(store2, api2, id) {
+  const project2 = store2.getState().projects.find((item) => item.id === id);
+  if (!project2 || project2.missing) throw new Error("Project unavailable on the desktop.");
+  if (store2.getState().activeProjectId === id) {
+    cancelPendingSwitch(store2, api2);
+    return;
+  }
+  await activateAndWait(store2, api2, id, project2.path, project2.sshHost);
+}
 function switchProjectThread(store2, api2, projectId, threadId) {
   const { activeProjectId, expandedProjectId } = store2.getState();
   if (projectId === activeProjectId) {
@@ -33869,8 +35087,8 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
   if (enabled !== true) {
     throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
   }
-  const canonical = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical);
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
   let id;
   if (existing) {
     id = existing.id;
@@ -33882,11 +35100,11 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
     store2.setState({
       projects: [
         ...store2.getState().projects,
-        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId }
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
       ]
     });
   }
-  return activateAndWait(store2, api2, id, canonical, hostId);
+  return activateAndWait(store2, api2, id, canonical2, hostId);
 }
 function activateAndWait(store2, api2, id, path, sshHost) {
   activate(store2, api2, id, path, sshHost, null);
@@ -34027,11 +35245,46 @@ async function relocateProject(store2, api2, id) {
   await activateAndWait(store2, api2, id, path);
   return true;
 }
-function listOrphanProjects(api2) {
-  return api2.threads.listOrphans();
+function parseDismissedOrphanStores(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
+    seen.add(item);
+    ids.push(item);
+  }
+  return ids;
 }
-async function recoverOrphanProject(store2, api2, storeId) {
+function updateDismissedOrphanStores(api2, update) {
+  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
+    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
+    const updated = update(current);
+    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
+      return;
+    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
+  });
+  dismissedOrphanStoresChain = next;
+  return next;
+}
+async function listOrphanProjects(api2) {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api2.threads.listOrphans(),
+    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
+  ]);
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
+  if (dismissed.size === 0) return orphans;
+  return orphans.filter((orphan) => !dismissed.has(orphan.id));
+}
+async function dismissOrphanProject(api2, storeId) {
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current : [...current, storeId]
+  );
+}
+async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  if (confirm2 && !await confirm2()) return false;
   const path = await api2.workspace.open();
   if (!path) return false;
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
@@ -34039,10 +35292,14 @@ async function recoverOrphanProject(store2, api2, storeId) {
     projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
   });
   store2.emit("projects_changed");
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
+  );
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_thread_helpers();
@@ -34064,6 +35321,8 @@ var init_projects = __esm({
     activationWaiters = /* @__PURE__ */ new Map();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
+    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
+    dismissedOrphanStoresChain = Promise.resolve();
   }
 });
 
@@ -34370,7 +35629,10 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     dismiss();
   };
   const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
+    if (e3.key !== "Escape") return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    dismiss();
   };
   const dialog2 = withinDialog?.closest("dialog");
   (dialog2 ?? document.body).append(menu);
@@ -34450,15 +35712,167 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
-  if (!src) return;
+function expandableImageSource(image) {
+  const authoredSrc = image.getAttribute("src");
+  const authoredSrcset = image.getAttribute("srcset");
+  if (!authoredSrc?.trim() && !authoredSrcset?.trim()) return "";
+  return image.currentSrc || image.src;
+}
+function imageTitle(item) {
+  return item.alt.trim() || "Expanded attachment";
+}
+function openImageGalleryViewer(items, initialIndex, returnFocus2) {
+  let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  const viewer = el("div", {
+    class: "image-expand-viewer",
+    role: "group",
+    "aria-roledescription": "carousel",
+    tabindex: "-1"
+  });
+  const stage = el("div", { class: "image-expand-stage" });
+  const imageEl = el("img", { class: "image-expand-image", alt: "" });
+  attachImageCopyMenu(imageEl);
+  const previousButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-prev",
+      "aria-label": "Previous image"
+    },
+    arrowLeftIcon("ui-icon ui-icon-sm")
+  );
+  const nextButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-nav image-expand-nav-next",
+      "aria-label": "Next image"
+    },
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  const previousZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-prev" },
+    previousButton
+  );
+  const nextZone = el(
+    "div",
+    { class: "image-expand-nav-zone image-expand-nav-zone-next" },
+    nextButton
+  );
+  stage.append(imageEl, previousZone, nextZone);
+  const thumbnailButtons = items.map((item, index) => {
+    const thumbnail2 = el("img", {
+      class: "image-expand-thumbnail-image",
+      src: item.src,
+      alt: "",
+      loading: "lazy"
+    });
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "image-expand-thumbnail",
+        "aria-label": "Show image " + String(index + 1) + " of " + String(items.length),
+        "aria-selected": "false",
+        role: "tab"
+      },
+      thumbnail2
+    );
+    button.addEventListener("click", () => {
+      currentIndex = index;
+      render();
+    });
+    return button;
+  });
+  const thumbnailStrip = el(
+    "div",
+    { class: "image-expand-thumbnails", role: "tablist", "aria-label": "Attached images" },
+    ...thumbnailButtons
+  );
+  const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  viewer.append(counter, stage, footer);
+  const render = () => {
+    const item = items[currentIndex];
+    if (!item) return;
+    const label = imageTitle(item);
+    imageEl.src = item.src;
+    imageEl.alt = label;
+    imageEl.dataset["imageIndex"] = String(currentIndex);
+    imageEl.setAttribute(
+      "aria-label",
+      label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    viewer.setAttribute(
+      "aria-label",
+      "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
+    );
+    counter.textContent = String(currentIndex + 1) + " / " + String(items.length);
+    previousButton.disabled = currentIndex === 0;
+    nextButton.disabled = currentIndex === items.length - 1;
+    previousButton.setAttribute("aria-disabled", String(previousButton.disabled));
+    nextButton.setAttribute("aria-disabled", String(nextButton.disabled));
+    for (const [index, button] of thumbnailButtons.entries()) {
+      const selected = index === currentIndex;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    }
+    thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  const move = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+    currentIndex = nextIndex;
+    render();
+  };
+  previousButton.addEventListener("click", () => {
+    move(currentIndex - 1);
+  });
+  nextButton.addEventListener("click", () => {
+    move(currentIndex + 1);
+  });
+  viewer.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex - 1);
+      viewer.focus({ preventScroll: true });
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      event.stopPropagation();
+      move(currentIndex + 1);
+      viewer.focus({ preventScroll: true });
+    }
+  });
+  render();
+  const initialItem = items[currentIndex];
+  if (!initialItem) return;
+  const session = openAttachmentPreview({
+    kind: "image-gallery",
+    title: "Attached images \xB7 " + String(items.length),
+    ariaLabel: "Image preview: " + imageTitle(initialItem),
+    content: viewer,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
+    onClose: () => {
+      imageEl.removeAttribute("src");
+      for (const button of thumbnailButtons) {
+        button.querySelector("img")?.removeAttribute("src");
+      }
+    }
+  });
+  queueMicrotask(() => {
+    if (session.isActive()) viewer.focus({ preventScroll: true });
+  });
+}
+function openSingleImage(src, alt, returnFocus2) {
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
   attachImageCopyMenu(imageEl);
   openAttachmentPreview({
     kind: "image",
     title: alt,
-    ariaLabel: `Image preview: ${alt}`,
+    ariaLabel: "Image preview: " + alt,
     content: imageEl,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
@@ -34467,26 +35881,52 @@ function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
     }
   });
 }
-function attachImageExpand(img, alt) {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
+  if (!src) return;
+  openSingleImage(src, alt, returnFocus2);
+}
+function openImageGallery(items, initialIndex = 0, returnFocus2) {
+  const usableItems = [];
+  let usableIndex = 0;
+  for (const [index, item] of items.entries()) {
+    if (item.src.length === 0) continue;
+    if (index < initialIndex) usableIndex += 1;
+    usableItems.push(item);
+  }
+  if (usableItems.length === 0) return;
+  if (usableItems.length === 1) {
+    const item = usableItems[0];
+    if (item) openSingleImage(item.src, item.alt, returnFocus2);
+    return;
+  }
+  openImageGalleryViewer(usableItems, usableIndex, returnFocus2);
+}
+function attachImageExpand(img, alt, gallery, galleryIndex) {
   if (img.dataset["imageExpand"] === "true") return;
   img.dataset["imageExpand"] = "true";
   attachImageCopyMenu(img);
   img.classList.add("image-expandable");
   img.setAttribute("role", "button");
   img.setAttribute("tabindex", "0");
-  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
+  img.setAttribute("aria-label", alt ? "Expand " + alt : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    const src = img.currentSrc || img.src;
-    openImageExpand(src, label, () => {
+    const src = expandableImageSource(img);
+    if (!src) return;
+    const focusTarget = () => {
       if (img.isConnected) return img;
       for (const candidate of document.querySelectorAll("img.image-expandable")) {
-        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+        if (candidate.getAttribute("aria-label") === "Expand " + label && expandableImageSource(candidate) === src) {
           return candidate;
         }
       }
       return null;
-    });
+    };
+    if (gallery && gallery.length > 1) {
+      openImageGallery(gallery, galleryIndex ?? 0, focusTarget);
+      return;
+    }
+    openImageExpand(src, label, focusTarget);
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -34504,6 +35944,7 @@ var init_image_expand = __esm({
   "src/renderer/attachments/image-expand.ts"() {
     init_context_menu();
     init_helpers();
+    init_icons();
     init_toast();
     init_attachment_preview();
   }
@@ -35201,14 +36642,647 @@ url: http://localhost:61025/index.html
   }
 });
 
+// src/shared/demo-site-tour.ts
+function earlierThreads(minutesAgo) {
+  return [
+    {
+      id: "demo-site-tour-coming-soon",
+      title: "Crumb & Bloom coming soon",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-coming-soon-user",
+          role: "user",
+          content: "Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4
+        },
+        {
+          id: "demo-site-tour-coming-soon-assistant",
+          role: "assistant",
+          content: "Built the coming-soon page in `index.html`, `styles.css`, and `script.js`.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 240) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 236) * 6e4
+    },
+    {
+      id: "demo-site-tour-menu-photos",
+      title: "Compress the menu photos",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-menu-photos-user",
+          role: "user",
+          content: "The menu photos are slow on mobile. Can you compress them?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4
+        },
+        {
+          id: "demo-site-tour-menu-photos-assistant",
+          role: "assistant",
+          content: 'Converted the six menu photos to WebP and added `loading="lazy"`.',
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - (minutesAgo + 90) * 6e4,
+      updatedAt: SITE_TOUR_TIME - (minutesAgo + 86) * 6e4
+    }
+  ];
+}
+function siteTourScenario(id, label, thread, extra = {}) {
+  return {
+    id,
+    label,
+    project: CRUMB_AND_BLOOM,
+    settings: SITE_TOUR_SETTINGS,
+    threads: [thread, ...earlierThreads(30)],
+    ...extra
+  };
+}
+var SITE_TOUR_TIME, SITE_TOUR_MODEL, CRUMB_AND_BLOOM, SITE_TOUR_SETTINGS, SITE_TOUR_GITHUB_MCP, SITE_TOUR_TOOL_PERMISSIONS, SEASONAL_PR_BODY, SIGNUP_THREAD, SITE_TOUR_SCENARIOS;
+var init_demo_site_tour = __esm({
+  "src/shared/demo-site-tour.ts"() {
+    SITE_TOUR_TIME = Date.UTC(2026, 8, 14, 10, 30, 0);
+    SITE_TOUR_MODEL = "claude-opus-5-5";
+    CRUMB_AND_BLOOM = {
+      id: "demo-crumb-and-bloom",
+      name: "Crumb & Bloom",
+      path: "/demo/crumb-and-bloom"
+    };
+    SITE_TOUR_SETTINGS = {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model: SITE_TOUR_MODEL
+    };
+    SITE_TOUR_GITHUB_MCP = {
+      name: "github",
+      transport: "http",
+      state: "connected",
+      toolCount: 5,
+      tools: [
+        "search_issues",
+        "get_pull_request",
+        "create_issue",
+        "add_issue_comment",
+        "merge_pull_request"
+      ],
+      source: "/demo/crumb-and-bloom/.mcp.json",
+      origin: "project",
+      originDetail: ".mcp.json",
+      userEnabled: true,
+      configDisabled: false
+    };
+    SITE_TOUR_TOOL_PERMISSIONS = {
+      groups: [
+        {
+          id: "copse",
+          name: "Copse tools",
+          kind: "copse",
+          tools: [
+            {
+              id: "copse:read-file",
+              executionName: "read_file",
+              name: "Read file",
+              description: "Read a file in the active project.",
+              policy: "allow",
+              defaultPolicy: "allow",
+              overridden: false
+            },
+            {
+              id: "copse:run-shell",
+              executionName: "run_shell",
+              name: "Run shell command",
+              description: "Run a command in the project sandbox.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            }
+          ]
+        },
+        {
+          id: "mcp:project:github",
+          name: "github",
+          kind: "mcp",
+          origin: "project",
+          originDetail: "/demo/crumb-and-bloom/.mcp.json",
+          status: "connected",
+          tools: [
+            {
+              id: "mcp:project:github:search-issues",
+              executionName: "mcp__github__search_issues",
+              name: "Search issues",
+              description: "Search issues and pull requests in a repository.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:get-pull-request",
+              executionName: "mcp__github__get_pull_request",
+              name: "Get pull request",
+              description: "Read a pull request, its diff, and its review comments.",
+              policy: "allow",
+              defaultPolicy: "ask",
+              overridden: true
+            },
+            {
+              id: "mcp:project:github:create-issue",
+              executionName: "mcp__github__create_issue",
+              name: "Create issue",
+              description: "Open a new issue in a repository.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:add-issue-comment",
+              executionName: "mcp__github__add_issue_comment",
+              name: "Add issue comment",
+              description: "Comment on an issue or pull request.",
+              policy: "ask",
+              defaultPolicy: "ask",
+              overridden: false
+            },
+            {
+              id: "mcp:project:github:merge-pull-request",
+              executionName: "mcp__github__merge_pull_request",
+              name: "Merge pull request",
+              description: "Merge a pull request into its base branch.",
+              policy: "block",
+              defaultPolicy: "ask",
+              overridden: true
+            }
+          ]
+        }
+      ]
+    };
+    SEASONAL_PR_BODY = [
+      "Adds a seasonal flavours section below the hero.",
+      "",
+      "- Reads the current menu from `flavours.json`, so the bakery can swap flavours without touching markup",
+      "- Pauses the flavour ticker for visitors who prefer reduced motion",
+      "- Keeps the section to a single column on narrow screens"
+    ].join("\n");
+    SIGNUP_THREAD = {
+      id: "demo-site-tour-signup",
+      title: "Send signups to the newsletter",
+      status: "idle",
+      gitBranch: "main",
+      model: SITE_TOUR_MODEL,
+      messages: [
+        {
+          id: "demo-site-tour-signup-user-1",
+          role: "user",
+          content: "Where does the email signup get handled?",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 4 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-1",
+          role: "assistant",
+          content: "In `script.js`: the form\u2019s submit handler checks the address, then shows the confirmation note under the form. Nothing is sent anywhere yet, so the address only lives in the page.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 3 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-user-2",
+          role: "user",
+          content: "Send new signups to the newsletter list instead of only showing the note.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 2 * 6e4
+        },
+        {
+          id: "demo-site-tour-signup-assistant-2",
+          role: "assistant",
+          content: "The submit handler now posts the address to the newsletter endpoint and only shows the confirmation note once the request succeeds. A failed request keeps what the visitor typed and offers to try again.",
+          toolCalls: [],
+          createdAt: SITE_TOUR_TIME - 6e4
+        }
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: SITE_TOUR_TIME - 4 * 6e4,
+      updatedAt: SITE_TOUR_TIME - 6e4
+    };
+    SITE_TOUR_SCENARIOS = [
+      siteTourScenario("site-fork-resend", "Copse.dev tour: fork and resend a prompt", SIGNUP_THREAD, {
+        // The site the thread is about, open in the Browser pane beside it.
+        staticSite: "sites/cupcakes",
+        settings: {
+          ...SITE_TOUR_SETTINGS,
+          layout: { projectsPaneWidth: 240, filesPaneWidth: 560 }
+        }
+      }),
+      siteTourScenario("site-subagent", "Copse.dev tour: an expanded subagent", {
+        id: "demo-site-tour-accessibility",
+        title: "Accessibility audit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [
+          {
+            id: "demo-site-tour-accessibility-user",
+            role: "user",
+            content: "Check the coming-soon page for accessibility problems before we launch.",
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 3 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-assistant",
+            role: "assistant",
+            content: "I asked an explore agent to audit the markup and styles.",
+            toolCalls: [
+              {
+                id: "demo-site-tour-accessibility-explore",
+                name: "explore",
+                args: { query: "Audit index.html and styles.css for accessibility gaps" },
+                status: "done",
+                result: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                subagent: {
+                  id: "demo-site-tour-accessibility-session",
+                  kind: "explore",
+                  status: "done",
+                  prompt: "Audit index.html and styles.css for accessibility gaps",
+                  summary: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                  model: SITE_TOUR_MODEL,
+                  messages: [
+                    {
+                      id: "demo-site-tour-accessibility-explore-1",
+                      role: "assistant",
+                      content: "Reading the page structure and the stylesheet.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-read-html",
+                          name: "read_file",
+                          args: { path: "index.html" },
+                          status: "done",
+                          result: "<!doctype html>\n"
+                        },
+                        {
+                          id: "demo-site-tour-accessibility-read-css",
+                          name: "read_file",
+                          args: { path: "styles.css" },
+                          status: "done",
+                          result: ":root {\n"
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-2",
+                      role: "assistant",
+                      content: "Checking whether the ticker animation respects **reduced motion**.",
+                      toolCalls: [
+                        {
+                          id: "demo-site-tour-accessibility-grep",
+                          name: "grep_search",
+                          args: { pattern: "prefers-reduced-motion" },
+                          status: "done",
+                          result: "No matches."
+                        }
+                      ]
+                    },
+                    {
+                      id: "demo-site-tour-accessibility-explore-3",
+                      role: "assistant",
+                      content: "Two gaps: the flavour ticker ignores reduced motion, and the signup field has no visible label.",
+                      toolCalls: []
+                    }
+                  ]
+                }
+              }
+            ],
+            createdAt: SITE_TOUR_TIME - 2 * 6e4
+          },
+          {
+            id: "demo-site-tour-accessibility-findings",
+            role: "assistant",
+            content: [
+              "Two things to fix before launch:",
+              "",
+              "- The flavour ticker keeps scrolling for visitors who prefer reduced motion.",
+              "- The signup field relies on its placeholder, so it has no visible label.",
+              "",
+              "Want me to fix both?"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: SITE_TOUR_TIME - 6e4
+          }
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME - 3 * 6e4,
+        updatedAt: SITE_TOUR_TIME - 6e4
+      }),
+      siteTourScenario("site-archive-attachment", "Copse.dev tour: attach a zip archive", {
+        // Empty: the spec drops the archive into this thread's composer.
+        id: "demo-site-tour-brand-kit",
+        title: "Swap in the new brand kit",
+        status: "idle",
+        gitBranch: "main",
+        model: SITE_TOUR_MODEL,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: SITE_TOUR_TIME,
+        updatedAt: SITE_TOUR_TIME
+      }),
+      // Settings opens over the same conversation the fork shot uses.
+      siteTourScenario("site-providers", "Copse.dev tour: provider settings", SIGNUP_THREAD),
+      siteTourScenario(
+        "site-create-pr",
+        "Copse.dev tour: create a pull request",
+        {
+          id: "demo-site-tour-seasonal",
+          title: "Add seasonal flavours",
+          status: "idle",
+          gitBranch: "seasonal-flavours",
+          model: SITE_TOUR_MODEL,
+          messages: [
+            {
+              id: "demo-site-tour-seasonal-user",
+              role: "user",
+              content: "Add a seasonal flavours section under the hero that reads from flavours.json, and make sure the ticker respects reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 3 * 6e4
+            },
+            {
+              id: "demo-site-tour-seasonal-assistant",
+              role: "assistant",
+              content: "Added the seasonal flavours section and committed it on `seasonal-flavours`. The ticker now pauses for visitors who prefer reduced motion.",
+              toolCalls: [],
+              createdAt: SITE_TOUR_TIME - 6e4
+            }
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME - 3 * 6e4,
+          updatedAt: SITE_TOUR_TIME - 6e4
+        },
+        {
+          changeStats: { additions: 86, deletions: 12 },
+          followUps: [
+            { id: "create-pr", label: "Create PR", action: "create-pr" },
+            { id: "review", label: "Review changes", action: "review" }
+          ],
+          prBody: SEASONAL_PR_BODY
+        }
+      ),
+      siteTourScenario(
+        "site-mcp-permissions",
+        "Copse.dev tour: per-tool MCP permissions",
+        {
+          id: "demo-site-tour-triage",
+          title: "Triage launch issues",
+          status: "idle",
+          gitBranch: "main",
+          model: SITE_TOUR_MODEL,
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: SITE_TOUR_TIME,
+          updatedAt: SITE_TOUR_TIME
+        },
+        {
+          mcpServers: [SITE_TOUR_GITHUB_MCP],
+          toolPermissions: SITE_TOUR_TOOL_PERMISSIONS
+        }
+      )
+    ];
+  }
+});
+
 // src/shared/demo-scenarios.ts
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+function conciseThreadMessages(model, live) {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: "user",
+      content: "Fix the settings form so Save stays aligned on narrow windows.",
+      toolCalls: [],
+      createdAt: FIXED_TIME
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: "assistant",
+      model,
+      reasoning: "The Save button is absolutely positioned; check the form layout first.",
+      content: "Let me look at how the settings form lays out its footer.",
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: "read_file",
+          args: { path: "src/renderer/views/settings-dialog.ts" },
+          status: "done",
+          result: "export function mountSettings() { \u2026 }"
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: "str_replace",
+          args: { path: "src/renderer/styles/settings.css" },
+          status: "done",
+          result: "Replaced 1 occurrence.",
+          editStats: { additions: 4, deletions: 2 }
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: "error",
+          result: "Error: settings-forms.test.ts expected footer to use grid"
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: live ? "running" : "done",
+          result: live ? null : "\u2139 pass 12"
+        }
+      ],
+      createdAt: FIXED_TIME + 1e3
+    },
+    ...live ? [] : [
+      {
+        id: `concise-step-2-${model}`,
+        role: "assistant",
+        model,
+        content: "Capturing the narrow layout to confirm.",
+        toolCalls: [
+          {
+            id: `concise-shot-${model}`,
+            name: "browser_screenshot",
+            args: { width: 480 },
+            status: "done",
+            result: "Captured the settings dialog at 480px.",
+            images: [
+              {
+                dataUrl: CONCISE_SCREENSHOT,
+                name: "settings-480px.png",
+                kind: "screenshot"
+              }
+            ]
+          }
+        ],
+        createdAt: FIXED_TIME + 2e3
+      },
+      {
+        id: `concise-summary-${model}`,
+        role: "assistant",
+        model,
+        content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
+        toolCalls: [
+          {
+            id: `concise-audit-${model}`,
+            name: "workspace_edit_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
+        createdAt: FIXED_TIME + 3e3
+      }
+    ]
+  ];
+}
+function conciseMultiTurnMessages(model) {
+  const turn = (n2, prompt, replies, { tools = false, screenshot = false } = {}) => {
+    const at3 = FIXED_TIME + n2 * 1e4;
+    return [
+      {
+        id: `concise-multi-user-${String(n2)}`,
+        role: "user",
+        content: prompt,
+        toolCalls: [],
+        createdAt: at3
+      },
+      ...tools ? [
+        {
+          id: `concise-multi-steps-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Checking the code.",
+          toolCalls: [
+            {
+              id: `concise-multi-read-${String(n2)}`,
+              name: "read_file",
+              args: { path: "src/renderer/views/settings-dialog.ts" },
+              status: "done",
+              result: "export function mountSettings() { \u2026 }"
+            },
+            {
+              id: `concise-multi-edit-${String(n2)}`,
+              name: "str_replace",
+              args: { path: "src/renderer/styles/settings.css" },
+              status: "done",
+              result: "Replaced 1 occurrence.",
+              editStats: { additions: 3, deletions: 1 }
+            }
+          ],
+          createdAt: at3 + 1
+        }
+      ] : [],
+      ...screenshot ? [
+        {
+          id: `concise-multi-shot-${String(n2)}`,
+          role: "assistant",
+          model,
+          content: "Capturing the narrow layout.",
+          toolCalls: [
+            {
+              id: `concise-multi-capture-${String(n2)}`,
+              name: "browser_screenshot",
+              args: { width: 480 },
+              status: "done",
+              result: "Captured the settings dialog at 480px.",
+              images: [
+                {
+                  dataUrl: CONCISE_SCREENSHOT,
+                  name: "settings-480px.png",
+                  kind: "screenshot"
+                }
+              ]
+            }
+          ],
+          createdAt: at3 + 2
+        }
+      ] : [],
+      ...replies.map((content, i2) => ({
+        id: `concise-multi-reply-${String(n2)}-${String(i2)}`,
+        role: "assistant",
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at3 + 3 + i2
+      }))
+    ];
+  };
+  return [
+    ...turn(
+      1,
+      "Fix the settings form so Save stays aligned on narrow windows.",
+      ["Save now stays pinned to the footer at every width. The settings form tests pass."],
+      { tools: true, screenshot: true }
+    ),
+    ...turn(2, "Why was it misaligned?", [
+      "The footer was absolutely positioned, so it ignored the form width.",
+      "I switched it to a grid so it follows the content box."
+    ]),
+    ...turn(3, "Rename the helper too.", ["Renamed `pinFooter` to `layoutFooter` in 3 files."], {
+      tools: true
+    }),
+    ...turn(4, "Anything else?", ["No. Nothing else needs changing."]),
+    ...turn(5, "Show me the narrow layout again.", ["Here is the 480px layout after the rename."], {
+      tools: true,
+      screenshot: true
+    })
+  ];
+}
+function conciseThreadScenario(id, label, model, {
+  live = false,
+  enabled = true,
+  multiTurn = false
+} = {}) {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model,
+      conciseThreadsEnabled: enabled
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Concise thread view",
+        status: live ? "running" : "idle",
+        model,
+        messages: multiTurn ? [
+          ...conciseMultiTurnMessages(model),
+          ...live ? conciseThreadMessages(model, true) : []
+        ] : conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ]
+  };
+}
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
+    init_demo_site_tour();
     FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0);
     FOOTER_INPUT_TOKENS = 5e4;
     FOOTER_OUTPUT_TOKENS = 1800;
@@ -35421,6 +37495,20 @@ var init_demo_scenarios = __esm({
         { chunk: { type: "done", stopReason: "end_turn" }, delayMs: 300 }
       ]
     };
+    CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+        '<rect width="480" height="270" fill="#f4f1ea"/>',
+        '<rect width="480" height="36" fill="#2f3a2f"/>',
+        '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+        '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+        '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+        '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+        "</svg>"
+      ].join("")
+    )}`;
     DEMO_SCENARIOS = [
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -35699,6 +37787,37 @@ var init_demo_scenarios = __esm({
           error: null,
           continuedFrom: null
         }
+      },
+      {
+        id: "balanced-model-label",
+        label: "Balanced model rule label",
+        project: project("demo-balanced-model-label-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:balanced"
+        },
+        threads: [
+          {
+            id: "demo-balanced-model-label-thread",
+            title: "Balanced model label",
+            status: "idle",
+            model: "auto:balanced",
+            messages: [
+              {
+                id: "demo-balanced-model-label-user",
+                role: "user",
+                content: "Keep this conversation on the balanced model rule.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       },
       {
         id: "footer-compact",
@@ -36231,6 +38350,27 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "automation-permissions",
+        label: "Automation permission preferences",
+        project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-automation-permissions-thread",
+            title: "Automation permissions",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // Per-model generation parameters. The scenario only has to seed the chat
         // model and its saved parameters — open Settings → General → Models in the
         // preview and the section renders itself against that selection. Uses an
@@ -36501,7 +38641,65 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
-      }
+      },
+      conciseThreadScenario(
+        "concise-thread",
+        "Concise thread view for a capable model",
+        "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi",
+        "Concise thread view across several turns",
+        "claude-opus-5-5",
+        { multiTurn: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-multi-working",
+        "Concise thread view with finished turns and a live one",
+        "claude-opus-5-5",
+        { multiTurn: true, live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-full",
+        "Full thread view for a model below the concise gate",
+        "gpt-4o"
+      ),
+      conciseThreadScenario(
+        "concise-thread-working",
+        "Concise thread view while a capable model works",
+        "claude-opus-5-5",
+        { live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-disabled",
+        "Full thread view for a capable model while the experiment is off",
+        "claude-opus-5-5",
+        { enabled: false }
+      ),
+      {
+        id: "roadmap-chat-min-width",
+        label: "Roadmap side panel minimum chat width",
+        project: project("demo-roadmap-chat-min-width-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: { filesPaneWidth: 4e3 }
+        },
+        threads: [
+          {
+            id: "demo-roadmap-chat-min-width-thread",
+            title: "Roadmap layout bounds",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+      ...SITE_TOUR_SCENARIOS
     ];
   }
 });
@@ -36522,9 +38720,7 @@ function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
   if (colon > 0) return model.slice(0, colon);
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
-  return void 0;
+  return firstPartyProviderOf(model) ?? void 0;
 }
 function stringArg2(args, key) {
   if (!isRecord(args)) return void 0;
@@ -36561,13 +38757,33 @@ function unsupported() {
 }
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS);
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const showAutomationPermissions = scenario.id === "automation-permissions";
+  const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
+  const automationSchedules = showAutomationPermissions ? [
+    {
+      id: "demo-weekday-review",
+      projectId: scenario.project.id,
+      name: "Weekday project review",
+      cron: "0 9 * * 1-5",
+      prompt: "Review open work and prepare a concise project status update.",
+      model: "claude-sonnet-4-6",
+      enabled: false,
+      permissions: [
+        { kind: "copse-action", toolName: "gh_pr_approve" },
+        { kind: "mcp-tool", toolName: "mcp__reports__publish_weekly" }
+      ],
+      createdAt: Date.parse(DEMO_TIME),
+      updatedAt: Date.parse(DEMO_TIME)
+    }
+  ] : [];
   let navigation = {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null
@@ -36631,6 +38847,10 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
+    mobile: { manage: async () => {
+    }, onChat: () => () => {
+    }, reply: async () => {
+    } },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -36667,6 +38887,7 @@ function createDemoApi(scenario, options = {}) {
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -36761,6 +38982,7 @@ function createDemoApi(scenario, options = {}) {
         emitChunk(threadId, { type: "done", stopReason: "end_turn" });
         return resolvedVoid();
       },
+      runMachine: () => resolved("completed"),
       describeImages: () => resolved({ text: "Demo image description." }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -36796,8 +39018,8 @@ function createDemoApi(scenario, options = {}) {
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...scenario.followUps ?? []])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -36888,7 +39110,7 @@ function createDemoApi(scenario, options = {}) {
       onConnectionChanged: subscribe
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -36927,8 +39149,16 @@ function createDemoApi(scenario, options = {}) {
         return resolvedVoid();
       }
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) => resolved({
+        path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+        name: archive.name,
+        sizeBytes: archive.bytes?.byteLength ?? 0
+      })
+    },
     threads: {
       loadProject: (projectId) => resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -36938,6 +39168,7 @@ function createDemoApi(scenario, options = {}) {
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => void 0,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
@@ -37077,7 +39308,16 @@ function createDemoApi(scenario, options = {}) {
       remove: unsupported,
       test: unsupported,
       screening: () => resolved(null),
-      setScreening: unsupported
+      setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -37106,6 +39346,10 @@ function createDemoApi(scenario, options = {}) {
       refreshHuggingFaceModels: () => resolved({ ok: false, count: 0, error: "Unavailable in demo" })
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: "demo", report: null }),
+      openLicenseFile: resolvedVoid
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -37266,6 +39510,7 @@ function createDemoApi(scenario, options = {}) {
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
@@ -37273,7 +39518,7 @@ function createDemoApi(scenario, options = {}) {
     },
     plugins: {
       list: () => resolved({
-        plugins: DEMO_PLUGINS.map(
+        plugins: demoPlugins.map(
           (plugin) => plugin.id === "copse.apple-development" ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled } : plugin
         )
       }),
@@ -37286,10 +39531,16 @@ function createDemoApi(scenario, options = {}) {
       export: () => resolved({ path: "", count: 0 })
     },
     automations: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(automationSchedules)),
+      permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe
     },
     appRun: {
@@ -37314,6 +39565,12 @@ function createDemoApi(scenario, options = {}) {
           supportedHost: state.supportedHost
         });
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) => resolved({
+        offer: "none",
+        pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled
+      }),
+      answerSuggestion: () => resolved(void 0),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId);
         const state = {
@@ -37350,7 +39607,7 @@ function createDemoApi(scenario, options = {}) {
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -37365,6 +39622,9 @@ function createDemoApi(scenario, options = {}) {
         currentBranch: forBranch ?? currentBranch,
         pr: null
       }),
+      // The demo has no linked worktrees, so there is never a detached one.
+      worktreeAttachment: () => resolved({ state: "attached" }),
+      reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -37464,12 +39724,15 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_automations_plugin();
     init_parse_agent_run_payload();
+    init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
+    init_model_capabilities();
     init_token_estimate();
     init_files();
     init_unknown_value3();
@@ -37598,28 +39861,28 @@ var init_demo_api = __esm({
         stability: "stable",
         name: "Todos",
         version: "1.0.0",
-        description: "Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
+        description: "Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
         enabled: true,
         contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["todo_write", "todo_read"] },
         settings: []
       },
       {
-        id: "copse.advisor-strategy",
+        id: ADVISOR_STRATEGY_PLUGIN_ID,
         trust: "first-party",
         stability: "experimental",
         name: "Advisor strategy",
         version: "0.3.1",
-        description: "Pairs a second model with the executor to review strategy before long or risky work starts.",
+        description: "Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.",
         enabled: true,
-        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["consult_advisor"] },
+        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
         settings: [
           {
-            id: "maxReviewCycles",
-            kind: "number",
-            title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn.",
-            default: 2,
-            value: 2
+            id: ADVISOR_MODEL_SETTING_ID,
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID,
+            value: DEFAULT_ADVISOR_MODEL_ID
           }
         ]
       },
@@ -37661,6 +39924,79 @@ var init_demo_api = __esm({
         enabled: false,
         contributions: DEMO_PLUGIN_CONTRIBUTIONS,
         settings: []
+      }
+    ];
+    DEMO_AUTOMATIONS_PLUGIN = {
+      id: AUTOMATIONS_PLUGIN_ID,
+      trust: "first-party",
+      stability: "experimental",
+      name: AUTOMATIONS_PLUGIN_ID,
+      description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+      enabled: true,
+      contributions: {
+        ...DEMO_PLUGIN_CONTRIBUTIONS,
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          }
+        ],
+        storageNamespace: AUTOMATIONS_PLUGIN_ID
+      },
+      settings: []
+    };
+    DEMO_AUTOMATION_PERMISSIONS = [
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_create" },
+        label: "Create pull requests",
+        detail: "Pushes the current thread branch and opens a pull request in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_rerun_failed_ci" },
+        label: "Re-run failed CI",
+        detail: "Re-runs failed checks for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_approve" },
+        label: "Approve pull requests",
+        detail: "Submits a GitHub approval for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_mark_ready" },
+        label: "Mark pull requests ready",
+        detail: "Moves draft pull requests in this project repository into review."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_enable_auto_merge" },
+        label: "Enable pull request auto-merge",
+        detail: "Enables the repository-preferred auto-merge strategy for a pull request."
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__create_issue" },
+        label: "Create issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__update_issue" },
+        label: "Update issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__notion__create_page" },
+        label: "Create page",
+        detail: "Notion MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__slack__send_message" },
+        label: "Send message",
+        detail: "Slack MCP \xB7 may access external systems"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__figma__add_comment" },
+        label: "Add comment",
+        detail: "Figma MCP \xB7 changes external data"
       }
     ];
     emptyArray = () => Promise.resolve([]);
@@ -37835,15 +40171,88 @@ var init_autoplay = __esm({
   }
 });
 
+// src/renderer/controller/mobile-chat.ts
+async function acceptMobileChat(store2, api2, command) {
+  let ownedThread = null;
+  const checkCurrent = () => {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    if (store2.getState().activeProjectId !== command.projectId)
+      throw new Error("The desktop changed projects during this send. Try again.");
+  };
+  try {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    await activateMobileProject(store2, api2, command.projectId);
+    checkCurrent();
+    const threadId = command.threadId ?? createThread(store2);
+    const initial = getThreadById(store2, threadId);
+    if (!initial || initial.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    if (!beginThreadSubmission(store2, threadId))
+      throw new Error("Another message is being submitted to this thread. Try again shortly.");
+    ownedThread = threadId;
+    switchThread(store2, threadId);
+    await awaitPendingThreadPersistence();
+    await ensureThreadMessages(command.projectId, threadId);
+    checkCurrent();
+    if (hydrationFailed(threadId) || getThreadById(store2, threadId)?.messagesLoaded === false)
+      throw new Error("The desktop could not load the conversation. Try again.");
+    if (!initial.worktreeChoice && initial.messages.length === 0) {
+      const prepared = await api2.agent.prepareCheckout(
+        command.projectId,
+        threadId,
+        command.text,
+        "automatic",
+        initial.model
+      );
+      checkCurrent();
+      applyPreparedThreadCheckout(store2, threadId, prepared);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    checkCurrent();
+    const payload = { content: command.text };
+    const messageId = addMessage(store2, threadId, "user", command.text);
+    const queued = { messageId, payload, createdAt: Date.now() };
+    const running = current.status === "running";
+    if (running) enqueueUserMessage(store2, threadId, queued);
+    else {
+      startHumanTurnTree(store2, threadId);
+      dispatchAgentRun(store2, api2, threadId, payload, queued);
+    }
+    return { ok: true, threadId, queued: running };
+  } catch (error62) {
+    return {
+      ok: false,
+      error: error62 instanceof Error ? error62.message : "The desktop could not send this message."
+    };
+  } finally {
+    if (ownedThread) endThreadSubmission(store2, ownedThread);
+  }
+}
+function attachMobileChat(store2, api2, ready3) {
+  return api2.mobile.onChat((command) => {
+    void ready3.then(() => acceptMobileChat(store2, api2, command)).then((result) => api2.mobile.reply(command.id, result));
+  });
+}
+var init_mobile_chat = __esm({
+  "src/renderer/controller/mobile-chat.ts"() {
+    init_thread_helpers();
+    init_pending_submissions();
+    init_projects();
+    init_persistence();
+    init_thread_hydration();
+    init_message_queue();
+  }
+});
+
 // src/renderer/styles/tokens.css
 var init_tokens = __esm({
   "src/renderer/styles/tokens.css"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -38030,6 +40439,9 @@ var init_guarded_yolo = __esm({
 });
 
 // src/shared/types/automations.ts
+function automationPermissionKey(permission) {
+  return JSON.stringify([permission.kind, permission.toolName]);
+}
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
   }
@@ -38135,6 +40547,12 @@ var init_apple_development = __esm({
   }
 });
 
+// src/shared/types/machine-dispatch.ts
+var init_machine_dispatch = __esm({
+  "src/shared/types/machine-dispatch.ts"() {
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -38156,6 +40574,7 @@ var init_types = __esm({
     init_guarded_yolo();
     init_automations();
     init_apple_development();
+    init_machine_dispatch();
   }
 });
 
@@ -38183,6 +40602,7 @@ function createStore(initial) {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -38203,6 +40623,8 @@ function createStore(initial) {
     thread_status_changed: /* @__PURE__ */ new Set(),
     agent_activity: /* @__PURE__ */ new Set(),
     threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
     thread_draft_changed: /* @__PURE__ */ new Set(),
     new_thread_opened: /* @__PURE__ */ new Set(),
     panel_changed: /* @__PURE__ */ new Set(),
@@ -38767,7 +41189,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       maxlength: "80"
     });
     const explanation = el("p", { class: "app-run-notice" });
-    const apply2 = el("button", {
+    const apply3 = el("button", {
       type: "button",
       class: "ui-btn ui-btn-primary app-run-setup-apply"
     });
@@ -38780,17 +41202,17 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     const sync = () => {
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       const download2 = selected && !selected.installed;
-      apply2.textContent = download2 ? "Download selected image" : "Create device";
+      apply3.textContent = download2 ? "Download selected image" : "Create device";
       explanation.textContent = download2 ? "Downloads this system image into your Android SDK. Review any license agreement in Android Studio before continuing." : "Uses an installed runtime. Your existing devices are kept.";
-      apply2.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
+      apply3.disabled = !selected || !download2 && (!name.value.trim() || !deviceType.value);
     };
     runtime.addEventListener("change", sync);
     name.addEventListener("input", sync);
     dismiss.addEventListener("click", () => {
       setupHost.hidden = true;
     });
-    apply2.addEventListener("click", () => {
-      apply2.disabled = true;
+    apply3.addEventListener("click", () => {
+      apply3.disabled = true;
       const selected = options.runtimes.find((r2) => r2.id === runtime.value);
       void api2.appRun.setup(owner, {
         platform,
@@ -38827,7 +41249,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
       el("label", {}, "Device type", deviceType),
       el("label", {}, "Name", name),
       explanation,
-      el("div", { class: "app-run-actions" }, apply2, installApple, dismiss)
+      el("div", { class: "app-run-actions" }, apply3, installApple, dismiss)
     );
     sync();
   }
@@ -39338,34 +41760,6 @@ function countPortraitPanelOverflow(widths, gap, containerWidth, overflowTrigger
 }
 var init_portrait_panel_bar_overflow = __esm({
   "src/renderer/views/portrait-panel-bar-overflow.ts"() {
-  }
-});
-
-// packages/agent/src/plugins/plugin-manifest.ts
-function definePlugin(manifest, contributions = {}) {
-  return {
-    id: manifest.name,
-    trust: manifest.trust,
-    manifest,
-    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
-  };
-}
-var EMPTY_PLUGIN_CONTRIBUTIONS;
-var init_plugin_manifest = __esm({
-  "packages/agent/src/plugins/plugin-manifest.ts"() {
-    EMPTY_PLUGIN_CONTRIBUTIONS = {
-      toolNames: [],
-      modelRoutes: [],
-      browserOrigins: [],
-      blockingHooks: [],
-      asyncHooks: [],
-      promptBlocks: [],
-      uiContributions: [],
-      followUps: [],
-      capabilities: [],
-      instructionSources: [],
-      permissions: []
-    };
   }
 });
 
@@ -40221,225 +42615,6 @@ var init_app_icon_variants = __esm({
   }
 });
 
-// packages/llm/src/agent-roles.ts
-function getAgentRole(id) {
-  return AGENT_ROLES.find((role) => role.id === id) ?? null;
-}
-var AGENT_ROLES, AGENT_ROLE_IDS;
-var init_agent_roles = __esm({
-  "packages/llm/src/agent-roles.ts"() {
-    AGENT_ROLES = [
-      {
-        id: "coder",
-        label: "Coder",
-        description: "Writing new code \u2014 the chat default when coding",
-        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
-      },
-      {
-        id: "debugger",
-        label: "Debugger",
-        description: "Fixing bugs through careful, iterative analysis",
-        wants: ["swe-bench", "livecodebench", "gpqa"]
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Post-turn diff review and maintainability",
-        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "security-auditor",
-        label: "Security auditor",
-        description: "Finding vulnerabilities with low false negatives",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "judge",
-        label: "Judge",
-        description: "Accept/reject a patch or answer against a rubric",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "test-gen",
-        label: "Test generator",
-        description: "Unit, integration, and property tests",
-        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
-      },
-      {
-        id: "refactor",
-        label: "Refactorer",
-        description: "Behaviour-preserving changes",
-        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
-      },
-      {
-        id: "planner",
-        label: "Planner",
-        description: "Breaking work into prioritised tasks",
-        wants: ["gpqa", "mmlu-pro", "arena"]
-      },
-      {
-        id: "advisor",
-        label: "Advisor",
-        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
-        wants: ["gpqa", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        description: "READMEs, comments, and API docs",
-        wants: ["mmlu-pro", "arena"]
-      },
-      {
-        id: "research",
-        label: "Research assistant",
-        description: "API/framework lookup and synthesis (exploration subagent)",
-        wants: ["mmlu-pro", "gpqa", "arena"]
-      },
-      {
-        id: "tool-use",
-        label: "Tool-use agent",
-        description: "Calling tools correctly with structured output",
-        wants: ["tau-bench", "multipl-e"]
-      },
-      {
-        id: "small-tasks",
-        label: "Small tasks",
-        description: "Thread titles and other lightweight prompts",
-        wants: ["arena"]
-      },
-      {
-        id: "safety",
-        label: "Instruct / safety",
-        description: "Classifies shell commands when the OS sandbox is off",
-        wants: ["arena"]
-      }
-    ];
-    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
-  }
-});
-
-// packages/llm/src/dynamic-model.ts
-function minIntellectSelector(threshold) {
-  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
-}
-function roleModelSelector(role) {
-  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
-}
-function isDynamicModel(value) {
-  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
-}
-function parseDynamicModel(value) {
-  if (typeof value !== "string") return null;
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "auto") return null;
-  const body = selection2.id;
-  if (body === "best-value") return { kind: "best-value" };
-  if (body === "best-intellect") return { kind: "best-intellect" };
-  if (body === "best-local") return { kind: "best-local" };
-  if (body === "cheapest") return { kind: "cheapest" };
-  if (body === "balanced") return { kind: "balanced" };
-  if (body.startsWith(MIN_INTELLECT_INFIX)) {
-    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
-    if (!Number.isFinite(threshold) || threshold <= 0) return null;
-    return { kind: "min-intellect", threshold };
-  }
-  if (body.startsWith(ROLE_INFIX)) {
-    const role = getAgentRole(body.slice(ROLE_INFIX.length));
-    return role ? { kind: "role", role: role.id } : null;
-  }
-  return null;
-}
-function dynamicModelLabel(value) {
-  const selector = parseDynamicModel(value);
-  if (!selector) return null;
-  switch (selector.kind) {
-    case "best-value":
-      return "Best value";
-    case "best-intellect":
-      return "Most capable";
-    case "best-local":
-      return "Best on-device";
-    case "cheapest":
-      return "Cheapest";
-    case "balanced":
-      return "Balanced";
-    case "min-intellect":
-      return `At least ${String(selector.threshold)} intelligence`;
-    case "role":
-      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
-  }
-}
-function dynamicModelChoices() {
-  const choices = [
-    {
-      value: BEST_VALUE_MODEL_SELECTOR,
-      label: "Best value",
-      description: "Best intelligence per pound across your plans, providers, and local server",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_INTELLECT_MODEL_SELECTOR,
-      label: "Most capable",
-      description: "Highest intelligence available, ignoring price",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_LOCAL_MODEL_SELECTOR,
-      label: "Best on-device",
-      description: "Strongest model loaded on your machine",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: CHEAPEST_MODEL_SELECTOR,
-      label: "Cheapest",
-      description: "Lowest token price; plans and local count as free",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BALANCED_MODEL_SELECTOR,
-      label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
-      group: AUTOMATIC_GROUP
-    }
-  ];
-  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
-    choices.push({
-      value: minIntellectSelector(threshold),
-      label: `At least ${String(threshold)} intelligence`,
-      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
-      group: INTELLIGENCE_GROUP
-    });
-  }
-  for (const role of AGENT_ROLES) {
-    choices.push({
-      value: roleModelSelector(role.id),
-      label: role.label,
-      description: role.description,
-      group: ROLE_GROUP
-    });
-  }
-  return choices;
-}
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
-var init_dynamic_model = __esm({
-  "packages/llm/src/dynamic-model.ts"() {
-    init_agent_roles();
-    init_model_selection();
-    init_reserved_prefixes();
-    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
-    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
-    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
-    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
-    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
-    MIN_INTELLECT_INFIX = "min-intellect:";
-    ROLE_INFIX = "role:";
-    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
-    AUTOMATIC_GROUP = "Automatic";
-    INTELLIGENCE_GROUP = "Minimum intelligence";
-    ROLE_GROUP = "By role";
-  }
-});
-
 // src/shared/lm-studio-defaults.ts
 function isBestValueChatModel(model) {
   return model === BEST_VALUE_CHAT_MODEL;
@@ -40464,6 +42639,90 @@ var init_lm_studio_defaults = __esm({
     SAFETY_MODEL_MIN_INTELLECT = 20;
     DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
+  }
+});
+
+// packages/llm/src/model-maker-block.ts
+function parseBlockedModelMakers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => isModelMaker(entry));
+}
+function makerFromName(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
+  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
+    return "openai";
+  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
+    return "google";
+  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
+    return "mistral";
+  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
+    return "xai";
+  return null;
+}
+function makerFromAgent(agent) {
+  const normalized = agent.toLowerCase();
+  if (normalized.startsWith("claude")) return "anthropic";
+  if (normalized.startsWith("codex")) return "openai";
+  if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
+  if (normalized.startsWith("grok")) return "xai";
+  return null;
+}
+function modelMakerForSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
+  if (selection2.namespace === "remote-agent" && !selection2.id) {
+    return selection2.agent === "anthropic" ? "anthropic" : null;
+  }
+  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
+  const id = selection2.id.toLowerCase();
+  const parts = id.split("/");
+  const first = parts[0] ?? "";
+  const last = parts.at(-1) ?? "";
+  const fromModel = makerFromName(first) ?? makerFromName(last);
+  if (fromModel) return fromModel;
+  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
+  return makerFromName(selection2.slug);
+}
+function blockedModelMaker(selection2, blocked) {
+  const maker = modelMakerForSelection(selection2);
+  return maker && blocked.includes(maker) ? maker : null;
+}
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
+var init_model_maker_block = __esm({
+  "packages/llm/src/model-maker-block.ts"() {
+    init_model_selection();
+    init_member_of();
+    MODEL_MAKER_IDS = [
+      "anthropic",
+      "openai",
+      "google",
+      "deepseek",
+      "mistral",
+      "xai"
+    ];
+    MODEL_MAKERS = [
+      { id: "anthropic", label: "Anthropic" },
+      { id: "openai", label: "OpenAI" },
+      { id: "google", label: "Google" },
+      { id: "deepseek", label: "DeepSeek" },
+      { id: "mistral", label: "Mistral" },
+      { id: "xai", label: "xAI" }
+    ];
+    isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
   }
 });
 
@@ -40557,8 +42816,8 @@ function canonicalAcpAgentId(id) {
   return LEGACY_ACP_AGENT_IDS[id] ?? id;
 }
 function findAcpCatalogEntry(id) {
-  const canonical = canonicalAcpAgentId(id);
-  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+  const canonical2 = canonicalAcpAgentId(id);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical2);
 }
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
@@ -41011,103 +43270,6 @@ var init_acp = __esm({
       ["pnpm", ["dlx", "exec"]],
       ["yarn", ["dlx"]]
     ]);
-  }
-});
-
-// packages/llm/src/estimate-cost.ts
-function isLocalModel(model) {
-  return model === "lm-studio" || model.startsWith("lmstudio:");
-}
-function pricingForModel(model, pricing) {
-  if (isLocalModel(model)) return null;
-  const info = getModelInfo(model) ?? pricing?.[model];
-  if (!info) return null;
-  return info;
-}
-function pricingForTier(model, tier, pricing) {
-  const standard = pricingForModel(model, pricing);
-  if (!standard) return { pricing: null, fallback: false };
-  const tierPricing = standard.serviceTierPricing?.[tier];
-  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
-}
-function hasModelPricing(model, pricing) {
-  return pricingForModel(model, pricing) !== null;
-}
-function costForUsage(usage, info) {
-  if (!info) return 0;
-  const cacheRead = usage.cacheReadTokens ?? 0;
-  const cacheCreation = usage.cacheCreationTokens ?? 0;
-  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
-  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
-  const inputRate = info.inputPricePerMTok;
-  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
-  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
-  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
-}
-function costForModelUsageWithDetails(model, usage, pricing) {
-  const standard = pricingForModel(model, pricing);
-  const split = splitServiceTierUsage(usage);
-  let costUsd = costForUsage(split.standard, standard);
-  let tierPricingFallback = false;
-  for (const tier of USAGE_SERVICE_TIERS) {
-    const tierUsage = split.tiers[tier];
-    if (!tierUsage) continue;
-    const resolved3 = pricingForTier(model, tier, pricing);
-    costUsd += costForUsage(tierUsage, resolved3.pricing);
-    tierPricingFallback ||= resolved3.fallback;
-  }
-  return { costUsd, tierPricingFallback };
-}
-function costForModelUsage(model, usage, pricing) {
-  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
-}
-function estimateUsageCost(byModel, pricing) {
-  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
-  if (entries2.length === 0) return "";
-  let totalCost = 0;
-  let hasLocal = false;
-  let hasPricedCloud = false;
-  let hasUnpricedCloud = false;
-  let hasTierPricingFallback = false;
-  for (const [model, usage] of entries2) {
-    if (isLocalModel(model)) {
-      hasLocal = true;
-      continue;
-    }
-    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
-    else hasUnpricedCloud = true;
-    const cost = costForModelUsageWithDetails(model, usage, pricing);
-    totalCost += cost.costUsd;
-    hasTierPricingFallback ||= cost.tierPricingFallback;
-  }
-  if (totalCost === 0) {
-    if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
-    if (hasLocal) return "free (local)";
-    return "";
-  }
-  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
-  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
-  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
-}
-function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
-  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel, pricing);
-  }
-  if (!usage.inputTokens && !usage.outputTokens) return "";
-  return estimateUsageCost(
-    {
-      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
-    },
-    pricing
-  );
-}
-var init_estimate_cost = __esm({
-  "packages/llm/src/estimate-cost.ts"() {
-    init_model_catalog();
-    init_model_usage();
-    init_service_tier();
   }
 });
 
@@ -44993,6 +47155,46 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
           asOf: "2026-07-18"
+        }
+      ],
+      "gpt-6-1-sol": [
+        {
+          value: 51.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-high": [
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-low": [
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-medium": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-xhigh": [
+        {
+          value: 51,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+          asOf: "2026-09-30"
         }
       ],
       "gpt-6-astra": [
@@ -50267,6 +52469,7 @@ var init_model_intellect_generated = __esm({
       "anthropic/claude-haiku-4-5": "claude-haiku-4-5",
       "anthropic/claude-opus-4-8": "claude-opus-4-8",
       "anthropic/claude-opus-5": "claude-opus-5",
+      "anthropic/claude-opus-5-5": "claude-opus-5-5",
       "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
       "anthropic/claude-sonnet-5": "claude-sonnet-5",
       "Claude Fable 5": "claude-fable-5",
@@ -50274,6 +52477,7 @@ var init_model_intellect_generated = __esm({
       "claude-fable-5-latest": "claude-fable-5",
       "claude-haiku-4-5-latest": "claude-haiku-4-5",
       "claude-opus-4-8-latest": "claude-opus-4-8",
+      "claude-opus-5-5-latest": "claude-opus-5-5",
       "claude-opus-5-latest": "claude-opus-5",
       "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
       "claude-sonnet-5-latest": "claude-sonnet-5",
@@ -50300,6 +52504,8 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Sol": "gpt-5.6-sol",
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
+      "GPT-6.1 Sol": "gpt-6-1-sol",
+      "gpt-6.1-sol": "gpt-6-1-sol",
       "Grok 4.5": "grok-4.5",
       "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
@@ -50328,8 +52534,10 @@ var init_model_intellect_generated = __esm({
       "openai/gpt-5.6-luna": "gpt-5.6-luna",
       "openai/gpt-5.6-sol": "gpt-5.6-sol",
       "openai/gpt-5.6-terra": "gpt-5.6-terra",
+      "openai/gpt-6.1-sol": "gpt-6-1-sol",
       "Opus 4.8": "claude-opus-4-8",
       "Opus 5": "claude-opus-5",
+      "Opus 5.5": "claude-opus-5-5",
       "phi-4": "microsoft/phi-4",
       "Phi-4": "microsoft/phi-4",
       "qwen2-5-coder-32b-instruct": "qwen/qwen2.5-coder-32b",
@@ -50795,7 +53003,7 @@ function isPrivateOrLinkLocalHost(hostname3) {
   const first = hextets[0] ?? 0;
   return (first & 65024) === 64512 || (first & 65472) === 65152;
 }
-function validateCredentialBaseUrl(value, label = "Base URL") {
+function validateCredentialBaseUrl(value, label = "Base URL", options = {}) {
   const raw = value.trim();
   if (!raw) throw new Error(`${label} cannot be blank`);
   let url2;
@@ -50807,7 +53015,8 @@ function validateCredentialBaseUrl(value, label = "Base URL") {
   if (url2.username || url2.password) {
     throw new Error(`${label} must not include embedded credentials`);
   }
-  const loopback = isLoopbackHostname(url2.hostname);
+  const host = normalizeHostname(url2.hostname);
+  const loopback = isLoopbackHostname(host) || (options.loopbackAliases ?? []).some((alias) => normalizeHostname(alias) === host);
   if (url2.protocol === "http:") {
     if (loopback) return url2.toString();
     throw new Error(`${label} may only use http: for loopback hosts`);
@@ -51399,6 +53608,7 @@ function toExtraProviderModel(slug2, modelId) {
 var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
 var init_extra_providers = __esm({
   "packages/llm/src/extra-providers.ts"() {
+    init_unknown_value();
     init_credential_url();
     init_provider_metadata2();
     init_model_selection();
@@ -51671,40 +53881,6 @@ var init_orchestration_strategy = __esm({
     init_model_catalog();
     init_dynamic_model();
     DEFAULT_ORCHESTRATION_WORKER_MODEL = BEST_VALUE_MODEL_SELECTOR;
-  }
-});
-
-// packages/agent/src/plugins/advisor-strategy-plugin.ts
-var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
-var init_advisor_strategy_plugin = __esm({
-  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
-    init_dynamic_model();
-    init_plugin_manifest();
-    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
-    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
-    ADVISOR_MODEL_SETTING_ID = "advisorModel";
-    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
-    advisorStrategyPlugin = definePlugin(
-      {
-        name: ADVISOR_STRATEGY_PLUGIN_ID,
-        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
-        settings: {
-          [ADVISOR_MODEL_SETTING_ID]: {
-            kind: "model",
-            title: "Advisor model",
-            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
-            default: DEFAULT_ADVISOR_MODEL_ID
-          }
-        },
-        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
-      },
-      {
-        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
-      }
-    );
   }
 });
 
@@ -52205,11 +54381,9 @@ function dataPolicyForModelPath(modelId, providers = [], opts = {}) {
     const bySlug = dataPolicyForProvider({ id: slug2 });
     if (bySlug) return { policy: bySlug, local: false };
   }
-  if (id.startsWith("claude")) {
-    return { policy: dataPolicyForProvider({ id: "anthropic" }), local: false };
-  }
-  if (id.startsWith("gpt")) {
-    return { policy: dataPolicyForProvider({ id: "openai" }), local: false };
+  const firstParty = firstPartyProviderOf(id);
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false };
   }
   if (id.toLowerCase().includes("grok")) {
     return {
@@ -52233,6 +54407,7 @@ function isNoTrainingModelPath(modelId, opts = {}) {
 var POLICIES_BY_SLUG, POLICIES_BY_HOST;
 var init_data_policies = __esm({
   "packages/llm/src/data-policies.ts"() {
+    init_model_families();
     init_provider_metadata2();
     POLICIES_BY_SLUG = /* @__PURE__ */ new Map();
     POLICIES_BY_HOST = /* @__PURE__ */ new Map();
@@ -52587,20 +54762,35 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
     }
   }
-  const concreteCount = options.filter(
+  let blockedMakers = parseBlockedModelMakers(null);
+  try {
+    blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+  } catch {
+  }
+  const visibleOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers);
+    if (!maker) return [option];
+    if (option.value !== current) return [];
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
   ).length;
   if (concreteCount === 0) {
-    options.push({
+    visibleOptions.push({
       value: "",
       label: "No models available \u2014 add a provider or API key in Settings",
       disabled: true
     });
   }
-  return options;
+  return visibleOptions;
 }
 function autoModelOption(label) {
   return { value: "", label };
@@ -52679,6 +54869,7 @@ var init_model_options = __esm({
     init_agent_model_identity();
     init_model_display();
     init_nullish2();
+    init_model_maker_block();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -52692,6 +54883,13 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e3) {
+  if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
+  if (e3.key.length !== 1) return false;
+  if (e3.key === " ") return false;
+  const code = e3.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
 function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
   if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
   return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
@@ -53109,20 +55307,35 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   filter.addEventListener("input", () => {
     renderMenu(cachedOptions);
   });
-  menu.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e3) {
+    if (!open2 || e3.isComposing) return false;
     if (e3.key === "ArrowDown") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(1);
-    } else if (e3.key === "ArrowUp") {
+      return true;
+    }
+    if (e3.key === "ArrowUp") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(-1);
-    } else if (e3.key === "Enter" && (e3.target === filter || e3.target instanceof HTMLElement && e3.target.matches(".model-picker-option"))) {
+      return true;
+    }
+    if (e3.key === "Enter" && enterAppliesHighlight(e3.target)) {
       e3.preventDefault();
+      e3.stopPropagation();
       if (view === "group") {
         if (activeValue !== null) selectGroupValue(activeValue);
       } else selectOption(activeValue);
-    } else if (e3.key === "Escape") {
+      return true;
+    }
+    if (e3.key === "Escape") {
       e3.preventDefault();
       e3.stopPropagation();
       if (view === "group") {
@@ -53133,35 +55346,68 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         setOpen(false);
         if (!recentMode) trigger.focus();
       }
-    } else if (e3.key === "ArrowLeft" && view === "group") {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "group") {
       e3.preventDefault();
       e3.stopPropagation();
       activeValue = null;
       setView(homeView);
-    } else if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("all");
-    } else if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("recent");
+      return true;
     }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value = e3.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value += e3.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e3) => {
+    handleOpenMenuKeydown(e3);
   });
   cleanups.push(
     on(document, "click", (e3) => {
       if (!open2) return;
       if (!(e3.target instanceof Node) || !wrap.contains(e3.target)) setOpen(false);
     }),
-    on(document, "keydown", (e3) => {
-      const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
-      if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-        e3.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (e3.key === "Escape" && open2) setOpen(false);
-    })
+    on(
+      document,
+      "keydown",
+      (e3) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e3.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e3.target instanceof Node && menu.contains(e3.target)) return;
+        handleOpenMenuKeydown(e3);
+      },
+      { capture: true }
+    )
   );
   const removalObserver = new MutationObserver(() => {
     if (document.contains(wrap)) return;
@@ -53548,6 +55794,18 @@ var init_disclosure_summary = __esm({
 });
 
 // src/renderer/views/setup/custom-providers-section.ts
+function apiStyleSelect(current = "chat-completions") {
+  const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
+  select.append(
+    el("option", { value: "chat-completions" }, "Chat Completions"),
+    el("option", { value: "responses" }, "Responses")
+  );
+  select.value = current;
+  return select;
+}
+function selectedApiStyle(select) {
+  return select.value === "responses" ? "responses" : "chat-completions";
+}
 function privacyBadgeEl(badge) {
   return el("span", { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label);
 }
@@ -53750,6 +56008,7 @@ function createCustomProvidersSection(api2, opts = {}) {
         },
         chipLabel(key)
       );
+      chip2.dataset["provider"] = key;
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
@@ -53986,10 +56245,24 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: '{ "provider": { "require_parameters": true } }'
     });
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : "";
+    const apiStyle = apiStyleSelect(provider.apiStyle);
     const advanced = el(
       "details",
       { class: "provider-advanced" },
       disclosureSummary("Advanced"),
+      ...provider.builtin ? [] : [
+        el(
+          "label",
+          {},
+          "API format",
+          apiStyle,
+          el(
+            "span",
+            { class: "field-hint" },
+            "Choose Responses only when this endpoint implements the OpenAI Responses API."
+          )
+        )
+      ],
       el(
         "label",
         { class: "checkbox-label" },
@@ -54040,6 +56313,7 @@ function createCustomProvidersSection(api2, opts = {}) {
           await api2.settings.saveExtraProvider({
             slug: provider.id,
             ...provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() },
+            ...provider.builtin ? {} : { apiStyle: selectedApiStyle(apiStyle) },
             models: editor.read(),
             includeUsage: usageBox.checked,
             ...Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {},
@@ -54106,6 +56380,7 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: "API key (optional)",
       autocomplete: "off"
     });
+    const apiStyle = apiStyleSelect();
     const addBtn = el("button", { type: "button", class: "provider-save" }, "Add provider");
     const status = el("span", { class: "key-status" });
     let slugEdited = false;
@@ -54146,7 +56421,8 @@ function createCustomProvidersSection(api2, opts = {}) {
           const next = await api2.settings.saveExtraProvider({
             ...slug2 ? { slug: slug2 } : {},
             ...label ? { label } : {},
-            baseUrl
+            baseUrl,
+            apiStyle: selectedApiStyle(apiStyle)
           });
           const savedRecord = next.find((p2) => p2.id === slug2);
           let keyFailure = null;
@@ -54203,6 +56479,17 @@ function createCustomProvidersSection(api2, opts = {}) {
         )
       ),
       el("label", {}, "API key", keyInput),
+      el(
+        "label",
+        {},
+        "API format",
+        apiStyle,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Most compatible endpoints use Chat Completions. Choose Responses only when documented."
+        )
+      ),
       el("div", { class: "provider-actions provider-form-footer" }, addBtn, status)
     );
   }
@@ -55333,6 +57620,19 @@ var init_presets = __esm({
         }
       },
       {
+        id: "liquid",
+        label: "Liquid / d1",
+        model: "d1:free",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.liquid.ai/decisions/v1",
+          auth: "bearer",
+          apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
         id: "kev",
         label: "Kev (local)",
         model: "kev-latest",
@@ -55341,6 +57641,18 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8009/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "winnow",
+        label: "Winnow-12B (local)",
+        model: "jev-latest",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "http://127.0.0.1:8091/v1",
           auth: "none"
         }
       },
@@ -55400,11 +57712,32 @@ function describeResult(result) {
   });
   return `${answers.join(" \xB7 ")} \xB7 ${String(Math.round(result.elapsedMs))} ms \xB7 ${result.model}`;
 }
+function describeLocal(server) {
+  switch (server.phase) {
+    case "not-installed":
+      return server.missing.length > 0 ? `Not installed \xB7 needs ${server.missing.join(" and ")} on your PATH` : `Not installed \xB7 about ${String(server.downloadGb)} GB download`;
+    case "installing":
+      return `Installing\u2026 ${server.progress ?? ""}`.trim();
+    case "installed":
+      return "Installed \xB7 not running";
+    case "starting":
+      return `Loading the model\u2026 ${server.progress ?? ""}`.trim();
+    case "running":
+      return `Running \xB7 started by Copse on ${server.baseUrl}`;
+    case "external":
+      return `Detected running on ${server.baseUrl}`;
+  }
+}
 function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
+  const background = el("select", { name: "classifierBackground" });
+  const localHost = el("div", {
+    class: "classifier-local",
+    "aria-label": "Local classifier servers"
+  });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -55412,7 +57745,7 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, background questions and evals. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
     ),
     el(
       "label",
@@ -55425,12 +57758,25 @@ function createClassifiersSection(api2) {
         "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
       )
     ),
+    el(
+      "label",
+      { class: "classifier-background" },
+      "Background questions",
+      background,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
+      )
+    ),
+    localHost,
     chips,
     formHost,
     status
   );
   let profiles = [];
   let screeningId = null;
+  let backgroundId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -55475,6 +57821,187 @@ function createClassifiersSection(api2) {
     });
     chips.append(add2);
   }
+  function startDraft(preset) {
+    const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
+    const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
+      id,
+      label: "Custom classifier",
+      model: "",
+      timeoutMs: 3e4,
+      connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
+    };
+    drafts.set(id, draft);
+    selectedId = id;
+    render();
+  }
+  let overview = { servers: [], hosted: [] };
+  let poll;
+  let localBusy = false;
+  function stopPolling() {
+    if (poll !== void 0) clearInterval(poll);
+    poll = void 0;
+  }
+  function syncPolling() {
+    const active2 = overview.servers.some(
+      (server) => server.phase === "installing" || server.phase === "starting"
+    );
+    if (active2 && poll === void 0) {
+      poll = setInterval(() => {
+        if (root.closest("dialog")?.open === false) {
+          stopPolling();
+          return;
+        }
+        void refreshLocal();
+      }, 1500);
+    } else if (!active2) stopPolling();
+  }
+  async function reloadProfiles() {
+    profiles = await api2.classifiers.list();
+    renderScreening();
+    renderBackground();
+    renderChips();
+  }
+  async function applyLocal(next) {
+    const savedBefore = overview.servers.filter((server) => server.saved).length;
+    overview = next;
+    renderLocal();
+    syncPolling();
+    if (next.servers.filter((server) => server.saved).length !== savedBefore) {
+      await reloadProfiles();
+      if (selectedId === null && profiles.length > 0) {
+        captureDraft?.();
+        selectedId = profiles[0]?.profile.id ?? null;
+        render();
+      }
+    }
+  }
+  async function refreshLocal() {
+    if (localBusy) return;
+    try {
+      await applyLocal(await api2.localClassifiers.status());
+    } catch (error62) {
+      stopPolling();
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    }
+  }
+  async function localAction(action) {
+    if (localBusy) return;
+    localBusy = true;
+    try {
+      await applyLocal(await action());
+    } catch (error62) {
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    } finally {
+      localBusy = false;
+    }
+  }
+  async function confirmInstall(server) {
+    const approved = await showConfirmDialog({
+      message: `Download and run ${server.label}?`,
+      detail: `Copse will download about ${String(server.downloadGb)} GB, run its setup code from ${server.source} at a pinned version (${server.needs.join(", ")} must be installed), and start it on ${server.baseUrl}. Nothing is sent anywhere until you test it or choose it for screening or background questions. Files go under ~/.copse/cache/classifiers; set COPSE_CLASSIFIER_CACHE to use another disk.`,
+      confirmLabel: "Download and run"
+    });
+    if (approved) await localAction(() => api2.localClassifiers.install(server.id));
+  }
+  function localButton(label, className, onClick) {
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-secondary ${className}` },
+      label
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function localRow(server) {
+    const actions = el("div", { class: "provider-actions" });
+    switch (server.phase) {
+      case "not-installed": {
+        const install = localButton("Download and run", "classifier-local-install", () => {
+          void confirmInstall(server);
+        });
+        install.disabled = server.missing.length > 0;
+        actions.append(install);
+        break;
+      }
+      case "installing":
+      case "starting":
+        actions.append(
+          localButton("Cancel", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "installed":
+        actions.append(
+          localButton("Start", "classifier-local-start", () => {
+            void localAction(() => api2.localClassifiers.start(server.id));
+          })
+        );
+        break;
+      case "running":
+        actions.append(
+          localButton("Stop", "classifier-local-stop", () => {
+            void localAction(() => api2.localClassifiers.stop(server.id));
+          })
+        );
+        break;
+      case "external":
+        break;
+    }
+    if ((server.phase === "running" || server.phase === "external") && !server.saved) {
+      actions.append(
+        localButton("Add connection", "classifier-local-connect", () => {
+          void localAction(() => api2.localClassifiers.connect(server.id));
+        })
+      );
+    }
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-local-id": server.id, "data-phase": server.phase },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, server.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          describeLocal(server),
+          server.saved ? " \xB7 connection saved" : ""
+        ),
+        server.error ? el("span", { class: "field-hint classifier-local-error" }, server.error) : ""
+      ),
+      actions
+    );
+  }
+  function hostedRow(hint) {
+    const setUp = localButton("Set up", "classifier-hosted-setup", () => {
+      if (busy) return;
+      captureDraft?.();
+      startDraft(CLASSIFIER_PRESETS.find((preset) => preset.id === hint.presetId));
+    });
+    return el(
+      "div",
+      { class: "classifier-local-row", "data-hosted-id": hint.presetId },
+      el(
+        "div",
+        { class: "classifier-local-info" },
+        el("strong", {}, hint.label),
+        el(
+          "span",
+          { class: "field-hint" },
+          el("code", {}, hint.envVar),
+          " is set in your environment"
+        )
+      ),
+      el("div", { class: "provider-actions" }, setUp)
+    );
+  }
+  function renderLocal() {
+    clear(localHost);
+    for (const server of overview.servers) localHost.append(localRow(server));
+    for (const hint of overview.hosted) localHost.append(hostedRow(hint));
+    localHost.hidden = localHost.childElementCount === 0;
+  }
   function renderScreening() {
     clear(screening);
     screening.append(el("option", { value: "" }, "Instruct / safety model"));
@@ -55484,34 +58011,59 @@ function createClassifiersSection(api2) {
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
   }
-  screening.addEventListener("change", () => {
-    const id = screening.value || null;
-    if (busy) {
-      renderScreening();
-      return;
+  function renderBackground() {
+    clear(background);
+    background.append(el("option", { value: "" }, "Small-tasks model"));
+    for (const { profile } of profiles) {
+      background.append(el("option", { value: profile.id }, profile.label));
     }
-    busy = true;
-    root.disabled = true;
-    void (async () => {
-      try {
-        screeningId = await api2.classifiers.setScreening(id);
-        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
-        setInlineStatus(
-          status,
-          "ok",
-          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
-        );
-      } catch (error62) {
-        setInlineStatus(status, "error", classifierErrorMessage(error62));
-      } finally {
-        busy = false;
-        root.disabled = false;
-        renderScreening();
+    background.value = profiles.some((item) => item.profile.id === backgroundId) ? backgroundId ?? "" : "";
+  }
+  function onRouteChange(select, renderRoute, save, describeChoice) {
+    select.addEventListener("change", () => {
+      const id = select.value || null;
+      if (busy) {
+        renderRoute();
+        return;
       }
-    })();
-  });
+      busy = true;
+      root.disabled = true;
+      void (async () => {
+        try {
+          const saved = await save(id);
+          const chosen = profiles.find((item) => item.profile.id === saved)?.profile.label;
+          setInlineStatus(status, "ok", describeChoice(chosen));
+        } catch (error62) {
+          setInlineStatus(status, "error", classifierErrorMessage(error62));
+        } finally {
+          busy = false;
+          root.disabled = false;
+          renderRoute();
+        }
+      })();
+    });
+  }
+  onRouteChange(
+    screening,
+    renderScreening,
+    async (id) => {
+      screeningId = await api2.classifiers.setScreening(id);
+      return screeningId;
+    },
+    (chosen) => chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+  );
+  onRouteChange(
+    background,
+    renderBackground,
+    async (id) => {
+      backgroundId = await api2.classifiers.setBackground(id);
+      return backgroundId;
+    },
+    (chosen) => chosen ? `Background questions now use ${chosen}. No test call has been made.` : "Background questions now use the small-tasks model."
+  );
   function render() {
     renderScreening();
+    renderBackground();
     renderChips();
     clear(formHost);
     clear(status);
@@ -55530,18 +58082,7 @@ function createClassifiersSection(api2) {
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
-        const preset = CLASSIFIER_PRESETS.find((item) => item.id === presets.value);
-        const id = `${preset?.id ?? "custom"}-${crypto.randomUUID().slice(0, 8)}`;
-        const draft = preset ? { ...preset, id, connection: { ...preset.connection } } : {
-          id,
-          label: "Custom classifier",
-          model: "",
-          timeoutMs: 3e4,
-          connection: { type: "http", protocol: "systemone", baseUrl: "", auth: "bearer" }
-        };
-        drafts.set(id, draft);
-        selectedId = id;
-        render();
+        startDraft(CLASSIFIER_PRESETS.find((item) => item.id === presets.value));
       });
       formHost.append(
         el(
@@ -55656,6 +58197,8 @@ function createClassifiersSection(api2) {
           "Custom connections use ",
           el("code", {}, "COPSE_CLASSIFIER_*"),
           " variables. ",
+          el("code", {}, "LIQUID_API_KEY"),
+          ", ",
           el("code", {}, "TYPESAFE_API_KEY"),
           " and ",
           el("code", {}, "FEATHERLESS_API_KEY"),
@@ -55847,7 +58390,10 @@ function createClassifiersSection(api2) {
       void run2(async () => {
         if (saved) {
           profiles = await api2.classifiers.remove(profile.id);
-          screeningId = await api2.classifiers.screening();
+          [screeningId, backgroundId] = await Promise.all([
+            api2.classifiers.screening(),
+            api2.classifiers.background()
+          ]);
         }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
@@ -55866,11 +58412,13 @@ function createClassifiersSection(api2) {
     captureDraft?.();
     try {
       ;
-      [profiles, screeningId] = await Promise.all([
+      [profiles, screeningId, backgroundId] = await Promise.all([
         api2.classifiers.list(),
-        api2.classifiers.screening()
+        api2.classifiers.screening(),
+        api2.classifiers.background()
       ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
+      void refreshLocal();
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render();
@@ -55879,6 +58427,7 @@ function createClassifiersSection(api2) {
     }
   }
   render();
+  renderLocal();
   return { root, refresh };
 }
 var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
@@ -56762,13 +59311,14 @@ function createModelRoutingSection(api2, options = {}) {
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
   if (!trimmed2) return "";
-  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+  if (trimmed2.includes(":") || firstPartyProviderOf(trimmed2) !== null) {
     return trimmed2;
   }
   return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
+    init_model_capabilities();
     init_preferred_models();
     init_array_utils2();
     init_lm_studio_defaults();
@@ -56791,29 +59341,59 @@ function readNumberInput(input2) {
 function formatNumber(value) {
   return value === void 0 ? "" : String(value);
 }
-function createModelParametersSection(api2) {
+function samplingPlaceholder(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : String(recipeValue);
+}
+function blankHint(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : `Blank sends the recommended ${String(recipeValue)}.`;
+}
+function createModelParametersSection(api2, options = {}) {
   const fields = el("div", { class: "model-parameter-fields" });
-  const recommendBtn = el(
-    "button",
-    { type: "button", class: "provider-secondary", "data-testid": "model-parameter-recommend" },
-    "Use recommended"
+  const modelSelect = el("select", {
+    id: "settings-model-parameters-model",
+    "data-testid": "model-parameter-model"
+  });
+  const modelField = uiField({
+    label: "Model to tune",
+    control: modelSelect,
+    hint: "Any model you can pick. Changing this does not change your chat model."
+  });
+  const customisedList = el("div", { class: "provider-chips model-parameter-customised" });
+  const customisedRow = el(
+    "div",
+    { class: "model-parameter-customised-row", "data-testid": "model-parameter-customised" },
+    el("span", { class: "field-hint" }, "Customised:"),
+    customisedList
   );
   const recommendNote = el("p", { class: "field-hint model-parameter-recommend-note" });
   const recommendRow = el(
     "div",
-    { class: "model-parameter-recommend", hidden: "" },
-    recommendBtn,
+    { class: "model-parameter-recommend", "data-testid": "model-parameter-recommend" },
     recommendNote
   );
+  const resetBtn = el("button", {
+    type: "button",
+    class: "provider-secondary",
+    "data-testid": "model-parameter-reset"
+  });
   const note = el("p", { class: "settings-fieldset-desc model-parameter-note" });
   const root = el(
     "div",
     { class: "model-parameter-section", "data-testid": "model-parameters" },
-    el("h4", { class: "model-role-heading" }, "Model parameters"),
-    note,
-    recommendRow,
-    fields
+    // Which model, and what it runs on before any field is touched.
+    el(
+      "div",
+      { class: "model-parameter-header", "data-testid": "model-parameter-header" },
+      el("h4", { class: "model-role-heading" }, "Model parameters"),
+      modelField,
+      customisedRow,
+      note,
+      recommendRow
+    ),
+    fields,
+    resetBtn
   );
+  const picker = options.mountModelPicker?.(modelSelect);
   const reasoningSelect = el("select", {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
@@ -56861,15 +59441,47 @@ function createModelParametersSection(api2) {
   function selected() {
     return stored[current] ?? {};
   }
+  function recipe() {
+    return recommendedModelParameters(current)?.params ?? {};
+  }
   function commit(next) {
     dirty = true;
     const sanitized = sanitizeModelParameters(next, current);
     if (isEmptyModelParameters(sanitized)) {
       const { [current]: _cleared, ...rest } = stored;
       stored = rest;
-      return;
+    } else {
+      stored = { ...stored, [current]: sanitized };
     }
-    stored = { ...stored, [current]: sanitized };
+    renderCustomised();
+    renderReset();
+  }
+  function renderCustomised() {
+    const models = Object.keys(stored);
+    customisedRow.hidden = models.length === 0;
+    customisedList.replaceChildren(
+      ...models.map((model) => {
+        const chip2 = el(
+          "button",
+          {
+            type: "button",
+            class: model === current ? "provider-chip active" : "provider-chip",
+            "aria-pressed": String(model === current),
+            "data-model": model
+          },
+          modelDisplayLabel(model)
+        );
+        chip2.addEventListener("click", () => {
+          selectModel(model);
+          void picker?.refresh(model);
+        });
+        return chip2;
+      })
+    );
+  }
+  function renderReset() {
+    resetBtn.hidden = stored[current] === void 0;
+    resetBtn.textContent = recommendedModelParameters(current) === null ? "Clear custom values" : "Reset to recommended";
   }
   function renderRecommendation() {
     const recommendation = recommendedModelParameters(current);
@@ -56885,9 +59497,11 @@ function createModelParametersSection(api2) {
       recommendation.sourceLabel ?? "model card"
     );
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} \u2014 fills the fields below from its `),
+      document.createTextNode(`Applied by default: ${recommendation.label}, from its `),
       link,
-      document.createTextNode(". Change or clear them afterwards like any other value.")
+      document.createTextNode(
+        ". Blank fields use it; a value you enter replaces the recommended one."
+      )
     );
   }
   function ceilingHint(gated) {
@@ -56899,14 +59513,17 @@ function createModelParametersSection(api2) {
   function render() {
     const support = modelParameterSupport(current);
     const params = selected();
+    const defaults = recipe();
     fields.replaceChildren();
     renderRecommendation();
-    if (support.unavailableReason) {
-      note.textContent = support.unavailableReason;
+    renderCustomised();
+    renderReset();
+    if (!current) {
+      note.textContent = "Choose a model to tune how it runs, wherever it is used.";
       return;
     }
-    if (!current) {
-      note.textContent = "Choose a chat model above to tune how it runs.";
+    if (support.unavailableReason) {
+      note.textContent = support.unavailableReason;
       return;
     }
     const parts = [
@@ -56919,7 +59536,11 @@ function createModelParametersSection(api2) {
     note.textContent = parts.join(" ");
     if (support.reasoning.length > 0) {
       reasoningSelect.replaceChildren(
-        el("option", { value: "" }, DEFAULT_OPTION_LABEL),
+        el(
+          "option",
+          { value: "" },
+          defaults.reasoning === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${REASONING_LABELS[defaults.reasoning]})`
+        ),
         ...support.reasoning.map(
           (level) => el("option", { value: level }, REASONING_LABELS[level])
         )
@@ -56940,11 +59561,15 @@ function createModelParametersSection(api2) {
     }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
+      maxOutputTokensInput.placeholder = samplingPlaceholder(
+        defaults.maxOutputTokens,
+        "Provider default"
+      );
       fields.append(
         uiField({
           label: "Maximum output tokens",
           control: maxOutputTokensInput,
-          hint: "Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call."
+          hint: `Per response, including hidden reasoning. ${blankHint(defaults.maxOutputTokens, "Blank uses the provider default.")} A low cap can truncate a tool call.`
         })
       );
     }
@@ -56955,11 +59580,13 @@ function createModelParametersSection(api2) {
       const max = field === "temperature" ? support.temperatureMax : SAMPLING_BOUNDS[field].max;
       input2.max = String(max);
       input2.value = formatNumber(params[field]);
+      input2.placeholder = samplingPlaceholder(defaults[field], "Model default");
+      const blank = blankHint(defaults[field], "Blank uses the model\u2019s own default.");
       fields.append(
         uiField({
           label: spec.label,
           control: input2,
-          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} Blank uses the model\u2019s own default.`
+          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} ${blank}`
         })
       );
     }
@@ -56969,24 +59596,39 @@ function createModelParametersSection(api2) {
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
   });
-  recommendBtn.addEventListener("click", () => {
-    const recommendation = recommendedModelParameters(current);
-    if (!recommendation) return;
-    commit({ ...selected(), ...recommendation.params });
+  resetBtn.addEventListener("click", () => {
+    commit({});
     render();
   });
-  function setModel(model) {
+  modelSelect.addEventListener("change", () => {
+    selectModel(modelSelect.value);
+  });
+  function selectModel(model) {
     current = model.trim();
+    if (current && ![...modelSelect.options].some((option) => option.value === current)) {
+      modelSelect.append(el("option", { value: current }, modelDisplayLabel(current)));
+    }
+    modelSelect.value = current;
     render();
   }
-  async function refresh(model) {
+  function setModel(chatModel) {
+    const model = chatModel.trim();
+    if (!model || modelParameterSupport(model).unavailableReason) {
+      render();
+      return;
+    }
+    selectModel(model);
+    void picker?.refresh(current);
+  }
+  async function refresh(chatModel) {
     try {
       stored = decodeModelParametersMap(await api2.get("modelParameters"));
     } catch {
       stored = {};
     }
     dirty = false;
-    setModel(model);
+    setModel(chatModel);
+    await picker?.refresh(current);
   }
   async function save() {
     if (!dirty) return;
@@ -57050,31 +59692,6 @@ var init_model_parameters_section = __esm({
         hint: "Divides the likelihood of tokens already seen. 1 is off \u2014 below 1 encourages repetition."
       }
     };
-  }
-});
-
-// src/shared/usage/format-usage-summary.ts
-function formatUsd(amount) {
-  if (amount <= 0) return "$0.00";
-  if (amount < 0.01) return "<$0.01";
-  return `~$${amount.toFixed(2)}`;
-}
-function formatTokenCount(n2) {
-  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
-  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
-  return String(n2);
-}
-function formatPeriodHeadline(summary) {
-  const localCount = summary.localModels.length;
-  const cloudCount = summary.cloudModels.length;
-  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
-  const parts = [cost];
-  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
-  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
-  return parts.join(" \xB7 ");
-}
-var init_format_usage_summary = __esm({
-  "src/shared/usage/format-usage-summary.ts"() {
   }
 });
 
@@ -57191,8 +59808,8 @@ var init_model_card_cache = __esm({
 function canonicalAnchors() {
   const out = /* @__PURE__ */ new Map();
   for (const [modelId, entries2] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
+    const canonical2 = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical2) out.set(modelId, canonical2.value);
   }
   return out;
 }
@@ -57210,12 +59827,12 @@ function verifyLiveCohort(liveModels, reportedVersion) {
   for (const live of liveModels) {
     const modelId = resolveIntellectModelId(live.id);
     if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
+    const canonical2 = anchors.get(modelId);
+    if (canonical2 === void 0) continue;
     anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
+    const drift = Math.abs(live.intellect - canonical2);
     maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical: canonical2, live: live.intellect });
   }
   const version2 = normalizeIndexVersion(reportedVersion);
   const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
@@ -57326,8 +59943,15 @@ function providerWindows(snapshot, provider) {
 function resolvePlanInclusion(provider, modelId, snapshot) {
   const windows = providerWindows(snapshot, provider);
   if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
   const govern = new Set(governingWindowIds(provider, modelId));
-  const applicable = windows.filter((w2) => govern.has(w2.id));
+  let applicable = windows.filter((w2) => govern.has(w2.id));
+  if (availability === true) {
+    const pool = windows.filter((w2) => w2.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
   if (applicable.length === 0) return null;
   const binding = applicable.reduce(
     (tightest, w2) => w2.usedPercent > tightest.usedPercent ? w2 : tightest
@@ -57338,8 +59962,13 @@ function resolvePlanInclusion(provider, modelId, snapshot) {
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
-    exhausted: binding.usedPercent >= 100
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
   };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
 }
 function applyPlanCoverage(candidate, snapshot, options = {}) {
   const mode = options.mode ?? "plan";
@@ -59476,7 +62105,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.append(heading);
   const intro = document.createElement("p");
   intro.className = "settings-fieldset-desc";
-  intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
+  intro.textContent = "Live plan windows for the plans you have set up in Settings \u2192 General. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
   if (error62) {
     const err2 = document.createElement("p");
@@ -59907,6 +62536,170 @@ var init_usage_section = __esm({
   }
 });
 
+// src/renderer/views/setup/about-section.ts
+function describeInclusion(component) {
+  if (component.partOf) return `Compiled into ${component.partOf}`;
+  const labels = component.shippedAs.map((as2) => SHIPPED_AS_LABEL[as2]);
+  const text2 = labels.join(", ");
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+function licenseBody(component, texts) {
+  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
+  if (component.source) {
+    meta3.append(
+      " \xB7 ",
+      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
+    );
+  }
+  const body = el("div", { class: "about-license-body" }, meta3);
+  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
+  for (const file2 of component.files) {
+    body.append(
+      el("div", { class: "about-license-file-name" }, file2.name),
+      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
+    );
+  }
+  return body;
+}
+function componentRow(component, texts) {
+  const summary = el(
+    "summary",
+    { class: "about-license-summary" },
+    el("span", { class: "about-license-name" }, component.name),
+    el("span", { class: "about-license-version" }, component.version),
+    el("span", { class: "about-license-id" }, component.license)
+  );
+  const details = el("details", { class: "about-license" }, summary);
+  details.addEventListener(
+    "toggle",
+    () => {
+      if (details.open && !details.querySelector(".about-license-body")) {
+        details.append(licenseBody(component, texts));
+      }
+    },
+    { passive: true }
+  );
+  return el(
+    "li",
+    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
+    details
+  );
+}
+function createAboutSection(api2) {
+  const versionEl = el("span", { class: "about-version" }, "\u2026");
+  const openButton = (label, kind) => {
+    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    button.dataset["licenseFile"] = kind;
+    button.addEventListener("click", () => {
+      void api2.about.openLicenseFile(kind).catch((err2) => {
+        statusEl.textContent = errorMessage(err2);
+      });
+    });
+    return button;
+  };
+  const copse = el(
+    "fieldset",
+    { class: "about-copse" },
+    el("legend", {}, "Copse"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Version ",
+      versionEl,
+      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
+    ),
+    uiActions(openButton("View licence", "copse"), { align: "start" })
+  );
+  const countEl = el("span", {}, "the open-source components");
+  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
+  const thirdParty = el(
+    "fieldset",
+    { class: "about-third-party" },
+    el("legend", {}, "Open-source licences"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Copse is built with ",
+      countEl,
+      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
+    ),
+    uiActions(
+      openButton("Open all licences", "third-party"),
+      openButton("Chromium and Node.js notices", "chromium"),
+      { align: "start" }
+    )
+  );
+  const filter = el("input", {
+    type: "search",
+    class: "about-licenses-filter",
+    placeholder: "Filter by name or licence",
+    "aria-label": "Filter open-source components",
+    autocomplete: "off",
+    spellcheck: "false"
+  });
+  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
+  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
+  let total2 = 0;
+  const applyFilter = () => {
+    const query = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row2 of Array.from(list.children)) {
+      if (!(row2 instanceof HTMLElement)) continue;
+      const match = query === "" || (row2.dataset["search"] ?? "").includes(query);
+      row2.hidden = !match;
+      if (match) shown++;
+    }
+    statusEl.textContent = query === "" ? `${String(total2)} components` : `${String(shown)} of ${String(total2)} components`;
+  };
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  const render = (report) => {
+    total2 = report.components.length;
+    countEl.textContent = `the ${String(total2)} open-source components`;
+    list.replaceChildren(...report.components.map((c3) => componentRow(c3, report.texts)));
+    listHost.hidden = false;
+    applyFilter();
+  };
+  let loaded = null;
+  const refresh = () => {
+    loaded ??= api2.about.getInfo().then(
+      (info) => {
+        versionEl.textContent = info.version;
+        if (info.report) {
+          render(info.report);
+        } else {
+          statusEl.textContent = "This build has no licence report. Only a full build (pnpm build) generates one.";
+          listHost.hidden = false;
+        }
+      },
+      (err2) => {
+        loaded = null;
+        statusEl.textContent = errorMessage(err2);
+        listHost.hidden = false;
+      }
+    );
+    return loaded;
+  };
+  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  return { root, refresh };
+}
+var SHIPPED_AS_LABEL;
+var init_about_section = __esm({
+  "src/renderer/views/setup/about-section.ts"() {
+    init_errors4();
+    init_helpers();
+    init_ui();
+    SHIPPED_AS_LABEL = {
+      bundled: "compiled into Copse",
+      copied: "files copied into Copse",
+      node_modules: "packaged as a module",
+      vendored: "included with Copse"
+    };
+  }
+});
+
 // src/renderer/views/setup/ssh-workspace-section.ts
 function createSshWorkspaceSection(api2, opts = {}) {
   const hostList = el("div", { class: "ssh-host-list" });
@@ -60187,41 +62980,300 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
-// packages/agent/src/plugins/automations-plugin.ts
-var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
-var init_automations_plugin = __esm({
-  "packages/agent/src/plugins/automations-plugin.ts"() {
-    init_plugin_manifest();
-    AUTOMATIONS_PLUGIN_ID = "copse.automations";
-    automationsPlugin = definePlugin(
-      {
-        name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
-        trust: "first-party",
-        stability: "experimental",
-        ui: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ],
-        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
+// packages/agent/src/canvas-settings.ts
+var MCP_UI_CANVAS_PLUGIN_ID;
+var init_canvas_settings = __esm({
+  "packages/agent/src/canvas-settings.ts"() {
+    MCP_UI_CANVAS_PLUGIN_ID = "copse.mcp-ui-canvas";
+  }
+});
+
+// src/renderer/views/branch-ci-editor.ts
+function mountBranchCiEditor(options) {
+  const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
+  let pluginEnabled = options.pluginEnabled;
+  let definitions = [];
+  let editingId = null;
+  const section = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const rows = el("div", { class: "automation-list" });
+  section.append(sectionHeading, rows);
+  const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
+  const name = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-name",
+    required: true,
+    maxlength: "160",
+    placeholder: "Investigate failing CI"
+  });
+  const branch = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-branch",
+    required: true,
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const model = el("select", { class: "automation-input automation-ci-model", required: true });
+  const prompt = el("textarea", {
+    class: "automation-input automation-ci-prompt",
+    required: true,
+    maxlength: "100000",
+    placeholder: "Investigate the failed CI run and report the cause\u2026"
+  });
+  const worktrees = el(
+    "select",
+    { class: "automation-input automation-ci-worktrees" },
+    el("option", { value: "1" }, "1 \u2014 wait for prior work"),
+    el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+  );
+  const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const summary = el("p", { class: "automation-hint automation-ci-summary" });
+  const preview = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-preview"
+    },
+    "Test match"
+  );
+  const save = el(
+    "button",
+    {
+      type: "submit",
+      class: "ui-btn ui-btn-primary automation-ci-save"
+    },
+    "Save automation"
+  );
+  const cancel = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-cancel"
+    },
+    "Cancel"
+  );
+  form.append(
+    title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
+    el("label", { class: "automation-label" }, "Name", name),
+    el("label", { class: "automation-label" }, "Branch", branch),
+    el("label", { class: "automation-label" }, "Model", model),
+    el("label", { class: "automation-label" }, "Task", prompt),
+    el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
+    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    summary,
+    el("div", { class: "automation-form-actions" }, preview, cancel, save)
+  );
+  root.append(section, form);
+  const modelPicker = mountModelSelectPicker(model, {
+    loadOptions: (current) => fetchDynamicModelOptions(current),
+    ariaLabel: "CI automation model",
+    loadOnMount: false
+  });
+  function updateSummary() {
+    const selected = branch.value.trim() || "this branch";
+    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  }
+  branch.addEventListener("input", updateSummary);
+  function close() {
+    editingId = null;
+    form.hidden = true;
+    heading.hidden = false;
+    scheduleList.hidden = false;
+    section.hidden = false;
+  }
+  async function open2(definition, draft) {
+    hideStatus();
+    editingId = definition?.id ?? null;
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
+    branch.value = definition?.trigger.branch ?? "";
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    updateSummary();
+    heading.hidden = true;
+    scheduleList.hidden = true;
+    scheduleForm.hidden = true;
+    section.hidden = true;
+    form.hidden = false;
+    name.focus();
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
+    const available = await fetchDynamicModelOptions(defaultModel);
+    const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
+    await modelPicker.refresh(selected);
+  }
+  function render() {
+    clear(rows);
+    if (definitions.length === 0) {
+      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      return;
+    }
+    for (const definition of definitions) {
+      const row2 = el("article", {
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
+        "data-ci-automation-id": definition.id
+      });
+      const copy = el(
+        "div",
+        { class: "automation-row-copy" },
+        el("div", { class: "automation-row-title" }, definition.name),
+        el(
+          "div",
+          { class: "automation-row-meta" },
+          el(
+            "span",
+            {},
+            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
+          ),
+          el("span", {}, modelDisplayLabel(definition.model)),
+          el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
+        ),
+        el(
+          "div",
+          { class: "automation-row-last-run" },
+          definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
+        )
+      );
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn"
+        },
+        "Edit"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn"
+        },
+        "Delete"
+      );
+      remove.addEventListener("click", () => {
+        if (!projectId) return;
+        void showConfirmDialog({
+          message: `Delete \u201C${definition.name}\u201D?`,
+          detail: "Already-created tasks are kept.",
+          confirmLabel: "Delete CI event",
+          danger: true
+        }).then(async (confirmed) => {
+          if (!confirmed) return;
+          await api2.automations.removeBranchCi(projectId, definition.id);
+          await refresh();
+        }).catch((error62) => {
+          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+        });
+      });
+      row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
+      rows.append(row2);
+    }
+  }
+  async function refresh() {
+    if (!projectId) return;
+    definitions = await api2.automations.listBranchCi(projectId);
+    render();
+  }
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
+  cancel.addEventListener("click", close);
+  preview.addEventListener("click", () => {
+    if (!projectId || !branch.value.trim()) return;
+    preview.disabled = true;
+    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+      (result) => {
+        showStatus(
+          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+        );
       },
-      {
-        uiContributions: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ]
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
       }
-    );
+    ).finally(() => {
+      preview.disabled = false;
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!projectId) return;
+    hideStatus();
+    save.disabled = true;
+    const input2 = {
+      ...editingId ? { id: editingId } : {},
+      name: name.value,
+      branch: branch.value,
+      prompt: prompt.value,
+      model: model.value,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    };
+    void api2.automations.upsertBranchCi(projectId, input2).then(
+      async () => {
+        close();
+        await refresh();
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+      }
+    ).finally(() => {
+      save.disabled = false;
+    });
+  });
+  return {
+    refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
+    reveal(id) {
+      const definition = definitions.find((candidate) => candidate.id === id);
+      if (!definition) return false;
+      void open2(definition);
+      return true;
+    },
+    hideForSchedule() {
+      form.hidden = true;
+      section.hidden = true;
+    },
+    showList() {
+      form.hidden = true;
+      section.hidden = false;
+    },
+    setPluginEnabled(value) {
+      pluginEnabled = value;
+      render();
+    }
+  };
+}
+var init_branch_ci_editor = __esm({
+  "src/renderer/views/branch-ci-editor.ts"() {
+    init_lm_studio_defaults();
+    init_helpers();
+    init_ipc_error_message();
+    init_model_options();
+    init_model_picker();
+    init_confirm_dialog();
   }
 });
 
@@ -60309,7 +63361,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
-    el("div", { class: "plugin-settings-heading" }, "Schedules"),
+    el("div", { class: "plugin-settings-heading" }, "Automations"),
     el(
       "button",
       {
@@ -60317,7 +63369,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -60325,14 +63377,25 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const scope = el(
     "p",
     { class: "automation-scope" },
-    project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
+    project2 ? `Project: ${project2.name} \xB7 Copse must be running` : "Open a project to configure automations."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const attention = el("div", {
+    class: "automation-attention",
+    role: "status",
+    hidden: true
+  });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
-  const form = el("form", { class: "automation-form", hidden: true });
+  const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -60416,10 +63479,34 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
+  const permissionsFieldset = el("fieldset", { class: "automation-permissions" });
+  const permissionFilterInput = el("input", {
+    type: "search",
+    class: "automation-input automation-permission-filter",
+    placeholder: "Filter actions and MCP tools\u2026",
+    "aria-label": "Filter automation permissions",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const permissionCount = el("span", {
+    class: "automation-permission-count",
+    "aria-live": "polite"
+  });
+  const permissionsList = el("div", { class: "automation-permission-list" });
+  permissionsFieldset.append(
+    el("legend", {}, "Allowed without asking"),
+    el(
+      "p",
+      { class: "automation-hint automation-permissions-hint" },
+      "Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask."
+    ),
+    el("div", { class: "automation-permission-toolbar" }, permissionFilterInput, permissionCount),
+    permissionsList
+  );
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -60428,6 +63515,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -60443,16 +63531,32 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         "Higher limits let fresh runs start while older changes wait for review."
       )
     ),
+    permissionsFieldset,
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, status, list, form);
+  root.append(heading, scope, notice, attention, status, list, form);
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api: api2,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
+  });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "Automation model",
     loadOnMount: false
   });
   let schedules = [];
+  let availablePermissions = [];
+  let permissionValuesByKey = /* @__PURE__ */ new Map();
+  let selectedPermissionKeys = /* @__PURE__ */ new Set();
   let editingId = null;
   let customCron = null;
   let pendingReveal = revealScheduleId;
@@ -60469,6 +63573,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function closeForm() {
     editingId = null;
+    ciEditor.showList();
     form.hidden = true;
     list.hidden = false;
     heading.hidden = false;
@@ -60535,19 +63640,137 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
     updateScheduleControls();
   }
-  async function openForm(schedule) {
+  function unavailablePermissionOption(permission) {
+    const parts = permission.toolName.split("__");
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    return {
+      permission,
+      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      detail: "Not currently available. Kept so the approval works if this tool returns."
+    };
+  }
+  function permissionRow(option, unavailable = false) {
+    const key = automationPermissionKey(option.permission);
+    const checkbox = el("input", {
+      type: "checkbox",
+      role: "switch",
+      class: "automation-permission-input",
+      "data-permission-key": key
+    });
+    checkbox.checked = selectedPermissionKeys.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedPermissionKeys.add(key);
+      else selectedPermissionKeys.delete(key);
+    });
+    const switchControl = el(
+      "span",
+      { class: "toggle-switch automation-permission-switch" },
+      checkbox,
+      el("span", { class: "toggle-switch-track", "aria-hidden": "true" })
+    );
+    return el(
+      "label",
+      {
+        class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
+        title: option.permission.toolName
+      },
+      el(
+        "span",
+        { class: "automation-permission-copy" },
+        el(
+          "span",
+          { class: "automation-permission-heading" },
+          el("span", { class: "automation-permission-label" }, option.label),
+          el(
+            "span",
+            {
+              class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`
+            },
+            unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+          )
+        ),
+        el("span", { class: "automation-permission-detail" }, option.detail),
+        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+      ),
+      switchControl
+    );
+  }
+  function renderPermissionChoices() {
+    clear(permissionsList);
+    const availableKeys = new Set(
+      availablePermissions.map((option) => automationPermissionKey(option.permission))
+    );
+    const unavailable = [...permissionValuesByKey.values()].filter((permission) => !availableKeys.has(automationPermissionKey(permission))).map(unavailablePermissionOption);
+    const allOptions = [
+      ...availablePermissions.map((option) => ({ option, unavailable: false })),
+      ...unavailable.map((option) => ({ option, unavailable: true }))
+    ];
+    const query = permissionFilterInput.value.trim().toLowerCase();
+    const terms = query ? query.split(/\s+/) : [];
+    const matches2 = allOptions.filter(({ option }) => {
+      const haystack = [
+        option.label,
+        option.detail,
+        option.permission.toolName,
+        option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+      ].join(" ").toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+    permissionCount.textContent = query ? `${String(matches2.length)} of ${String(allOptions.length)} permissions` : `${String(allOptions.length)} permission${allOptions.length === 1 ? "" : "s"}`;
+    if (matches2.length === 0) {
+      permissionsList.append(
+        el(
+          "p",
+          { class: "automation-permission-empty" },
+          query ? `No permissions match \u201C${permissionFilterInput.value.trim()}\u201D.` : "No permissions are available."
+        )
+      );
+      return;
+    }
+    permissionsList.append(
+      ...matches2.map(
+        ({ option, unavailable: isUnavailable }) => permissionRow(option, isUnavailable)
+      )
+    );
+  }
+  function setPermissionChoices(permissions) {
+    permissionValuesByKey = new Map(
+      availablePermissions.map((option) => [
+        automationPermissionKey(option.permission),
+        option.permission
+      ])
+    );
+    for (const permission of permissions) {
+      permissionValuesByKey.set(automationPermissionKey(permission), permission);
+    }
+    selectedPermissionKeys = new Set(permissions.map(automationPermissionKey));
+    renderPermissionChoices();
+  }
+  function selectedPermissions() {
+    return [...selectedPermissionKeys].flatMap((key) => {
+      const permission = permissionValuesByKey.get(key);
+      return permission ? [{ ...permission }] : [];
+    });
+  }
+  permissionFilterInput.addEventListener("input", renderPermissionChoices);
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
-    const configuredModel = schedule?.model.trim() ?? "";
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    permissionFilterInput.value = "";
+    setPermissionChoices(schedule?.permissions ?? []);
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    ciEditor.hideForSchedule();
     form.hidden = false;
     nameInput.focus();
     const options = await fetchDynamicModelOptions(defaultModel);
@@ -60556,6 +63779,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function renderList() {
     clear(list);
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
+    attention.hidden = blocked.length === 0;
+    attention.textContent = blocked.length === 0 ? "" : `${String(blocked.length)} automation${blocked.length === 1 ? "" : "s"} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`;
     if (!projectId) return;
     if (schedules.length === 0) {
       list.append(el("div", { class: "automation-empty" }, "No schedules for this project yet."));
@@ -60563,7 +63789,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -60579,10 +63805,24 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             "span",
             {},
             `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
+          ),
+          el(
+            "span",
+            {},
+            (schedule.permissions?.length ?? 0) === 0 ? "No unattended approvals" : `${String(schedule.permissions?.length ?? 0)} unattended approval${(schedule.permissions?.length ?? 0) === 1 ? "" : "s"}`
           )
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
+      if (schedule.lastWorktreeLimitAt !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message" },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
       const actions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
@@ -60649,7 +63889,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pendingReveal = void 0;
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
     if (!schedule) {
-      showStatus("That automation is no longer scheduled. Its finished runs stay in the sidebar.");
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          "That automation is no longer scheduled or configured. Its finished runs stay in the sidebar."
+        );
       return;
     }
     void openForm(schedule).then(() => {
@@ -60659,7 +63902,13 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   async function refresh() {
     if (!projectId) return;
     try {
-      schedules = await api2.automations.list(projectId);
+      const [loadedSchedules, loadedPermissions] = await Promise.all([
+        api2.automations.list(projectId),
+        api2.automations.permissionOptions(projectId),
+        ciEditor.refresh()
+      ]);
+      schedules = loadedSchedules;
+      availablePermissions = loadedPermissions;
       renderList();
       revealLinkedSchedule();
       if (pendingCreate) {
@@ -60671,6 +63920,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
@@ -60686,6 +63945,21 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    if (!nameInput.value.trim()) {
+      showStatus("Enter a name before saving.", true);
+      nameInput.focus();
+      return;
+    }
+    if (!promptInput.value.trim()) {
+      showStatus("Enter a prompt before saving.", true);
+      promptInput.focus();
+      return;
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus("Choose a model before saving.", true);
+      modelPicker.openMenu();
+      return;
+    }
     const cron = cronFromScheduleControls();
     if (cron === null) {
       showStatus("Choose a valid schedule before saving.", true);
@@ -60701,7 +63975,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
-      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
+      permissions: selectedPermissions()
     };
     void api2.automations.upsert(projectId, input2).then(
       async () => {
@@ -60715,12 +63990,27 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       saveButton.removeAttribute("disabled");
     });
   });
+  const unsubscribeTriggered = api2.automations.onTriggered(
+    (event) => {
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
+      void refresh();
+    }
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return;
+    removalObserver.disconnect();
+    unsubscribeTriggered();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
   void refresh();
   return Object.assign(root, {
     setPluginEnabled(enabled) {
       pluginEnabled = enabled;
       notice.textContent = pluginNotice();
       renderList();
+      ciEditor.setPluginEnabled(enabled);
     }
   });
 }
@@ -60728,11 +64018,13 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
+    init_types();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_branch_ci_editor();
     init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
@@ -61243,20 +64535,21 @@ var init_tool_permissions_panel = __esm({
     };
     POLICY_ICON = {
       allow: checkIcon,
-      ask: handIcon,
+      ask: shieldIcon,
       block: banIcon
     };
   }
 });
 
 // packages/agent/src/plugins/apple-development-plugin.ts
-var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
+var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
   "packages/agent/src/plugins/apple-development-plugin.ts"() {
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
-    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
+    APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = "suggest-projects";
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -61281,6 +64574,14 @@ var init_apple_development_plugin = __esm({
             title: "Apple Development setup"
           }
         ],
+        settings: {
+          [APPLE_DEVELOPMENT_SUGGEST_SETTING_ID]: {
+            kind: "boolean",
+            title: "Suggest for Apple projects",
+            description: "When you open a project with an Xcode project or workspace, offer to turn on Apple development for it. This works while the plugin is off.",
+            default: true
+          }
+        },
         storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID }
       },
       {
@@ -61452,7 +64753,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     );
     const headingActions = el("div", { class: "apple-development-heading-actions" });
     panel.append(el("div", { class: "apple-development-heading" }, title, status, headingActions));
-    if (options.allowEnrollment && options.pluginEnabled !== false) {
+    if (options.allowEnrollment && options.pluginEnabled !== false && (state.supportedHost || state.enrolled)) {
       const enrollment = el(
         "button",
         { type: "button", class: "btn btn-secondary" },
@@ -61832,6 +65133,43 @@ var init_command_routing = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-ssh-hosts.ts
+function normalizeSshHost(host) {
+  return host.trim().toLowerCase().replace(/\.$/, "");
+}
+function collect(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const host = normalizeSshHost(entry);
+    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
+    out.push(host);
+  }
+  return out;
+}
+function parseTrustedSshHosts(text2) {
+  return collect(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedSshHosts(value) {
+  return Array.isArray(value) ? collect(value) : [];
+}
+var TRUSTED_SSH_HOSTS_SETTING, VALID_HOST;
+var init_trusted_ssh_hosts = __esm({
+  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
+    TRUSTED_SSH_HOSTS_SETTING = "trustedSshHosts";
+    VALID_HOST = /^[a-z0-9._:-]+$/;
+  }
+});
+
+// src/shared/trusted-ssh-hosts.ts
+var init_trusted_ssh_hosts2 = __esm({
+  "src/shared/trusted-ssh-hosts.ts"() {
+    init_trusted_ssh_hosts();
+  }
+});
+
 // src/shared/developer-mode.ts
 var DEVELOPER_MODE_SETTING;
 var init_developer_mode = __esm({
@@ -61896,6 +65234,7 @@ var init_commit_attribution = __esm({
 function pluginDisplayName(plugin) {
   const raw = plugin.name || plugin.id;
   if (plugin.trust !== "first-party") return raw;
+  if (plugin.id === "copse.mcp-ui-canvas") return "Canvas and explainers";
   const stripped = raw.startsWith("copse.") ? raw.slice("copse.".length) : raw;
   return stripped ? humanizeIdentifier(stripped) : raw;
 }
@@ -62090,6 +65429,7 @@ function mountSettingsDialog(store2, api2) {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -62134,6 +65474,7 @@ function mountSettingsDialog(store2, api2) {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -62195,7 +65536,7 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Your subscription plan windows for the accounts you are signed in to, plus estimated
+              Your subscription plan windows for the plans you have set up in General, plus estimated
               spend and free on-device token usage across every project. Costs are approximate and
               based on published prices.
             </p>
@@ -62398,6 +65739,21 @@ function mountSettingsDialog(store2, api2) {
                   project folder (for example <code>xcodebuild</code>). These run with no prompt.
                   A line that also does something destructive or reaches the network still asks.
                   Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
                 </span>
               </label>
             </fieldset>
@@ -62709,7 +66065,7 @@ function mountSettingsDialog(store2, api2) {
                 <button type="button" class="ui-btn ui-btn-secondary" id="plugins-reload-btn">
                   Reload
                 </button>
-                <span class="lmstudio-test-status" id="plugins-reload-status"></span>
+                <span class="lmstudio-test-status plugins-load-status" id="plugins-reload-status"></span>
               </div>
               <div id="plugins-list" class="plugins-group">
                 <span class="plugins-empty">Loading\u2026</span>
@@ -62940,8 +66296,8 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 When a project is on a remote machine, start the agent there, next to the code,
-                instead of leaving it unavailable. The agent has to be installed and signed in on
-                that machine already.
+                instead of leaving it unavailable. If the agent is not installed there, Copse asks
+                before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
           </section>
@@ -62953,15 +66309,48 @@ function mountSettingsDialog(store2, api2) {
               and are off by default.
             </p>
 
+            <fieldset id="animated-explainers-settings">
+              <legend>Animated explainers</legend>
+              <p class="field-hint">
+                Ask \u201Cexplain X\u201D in a chat to get a captioned animation. Copse chooses a style,
+                writes the captions and checks the result before sharing it. Playback is silent;
+                creation can take a few minutes.
+              </p>
+              <p class="field-hint">
+                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
+                  Open explainer settings\u2026
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Mobile Companion</legend>
+              <p class="field-hint">
+                Open your Copse threads from a phone on the same local network. Choose the network
+                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
+                and this computer must stay awake.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
+                  Set up or manage\u2026
+                </button>
+              </div>
+            </fieldset>
+
             <fieldset>
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
-                Show the read-only Desktop pane
+                Show the Desktop pane
               </label>
               <p class="field-hint">
-                View a VNC server on this machine or through the active SSH workspace's encrypted
-                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+                View a VNC desktop on this machine, on a saved SSH machine, or found nearby on your
+                network, plus booted iOS Simulators and Android emulators. Connections start
+                view-only; turn on control to send keyboard and pointer input. Clipboard is not
+                shared.
               </p>
             </fieldset>
 
@@ -62975,6 +66364,20 @@ function mountSettingsDialog(store2, api2) {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box \u2014 press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
               </p>
             </fieldset>
 
@@ -63036,10 +66439,31 @@ function mountSettingsDialog(store2, api2) {
                 Enable developer mode
               </label>
               <p class="field-hint">
-                Shows Hooks in Sources and the conversation diagnostics menu. The optional
-                <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
+                Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
+                Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+
+            <fieldset id="experimental-plugins-fieldset" hidden>
+              <legend>Experimental plugins</legend>
+              <p class="settings-fieldset-desc">
+                Plugins whose behavior and compatibility may change. These are also available
+                under Customise. Changes here apply immediately.
+              </p>
+              <span class="lmstudio-test-status plugins-load-status" role="status"></span>
+              <div id="experimental-plugins-list" class="plugins-group">
+                <span class="plugins-empty">Loading\u2026</span>
+              </div>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -63117,13 +66541,39 @@ function mountSettingsDialog(store2, api2) {
     cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options")
   });
   qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
+  const makerBlockList = el("div", { class: "model-maker-block-list" });
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        "label",
+        { class: "checkbox-label" },
+        el("input", { type: "checkbox", name: "blockedModelMakers", value: maker.id }),
+        maker.label
+      )
+    );
+  }
+  qsRequired(overlay, "#settings-model-maker-block-host").append(
+    el("h4", { class: "model-role-heading" }, "Blocked model makers"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run."
+    ),
+    makerBlockList
+  );
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelRoutingSection = createModelRoutingSection(api2, { modelScope: "all" });
   qsRequired(overlay, "#settings-model-routing-host").append(modelRoutingSection.root);
-  const modelParametersSection = createModelParametersSection(api2.settings);
+  const modelParametersSection = createModelParametersSection(api2.settings, {
+    mountModelPicker: (select) => mountModelSelectPicker(select, {
+      loadOptions: (current) => fetchModelOptions(api2, current),
+      ariaLabel: "Model to tune",
+      loadOnMount: false
+    })
+  });
   qsRequired(overlay, "#settings-model-parameters-host").append(modelParametersSection.root);
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired(overlay, 'select[name="model"]'), {
@@ -63152,6 +66602,15 @@ function mountSettingsDialog(store2, api2) {
   };
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
+  const aboutSection = createAboutSection(api2);
+  qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
+  qsRequired(overlay, "#mobile-companion-manage").addEventListener(
+    "click",
+    () => {
+      closeSettingsDialog();
+      void api2.mobile.manage();
+    }
+  );
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
@@ -63264,6 +66723,7 @@ function mountSettingsDialog(store2, api2) {
   syncDeveloperOnlySettings();
   function showSection(id) {
     activeSection = id;
+    renderPluginLists();
     navBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset["section"] === id));
     sections.forEach((sec) => sec.classList.toggle("active", sec.dataset["section"] === id));
     renderNavSubheadings(id);
@@ -63369,11 +66829,12 @@ function mountSettingsDialog(store2, api2) {
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
+        if (id === "about") void aboutSection.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
-          void refreshPlugins();
         }
+        if (id === "customise" || id === "experimental") void refreshPlugins();
         if (id === "storage") void refreshWorktrees();
         if (id === "mcp") {
           void refreshMcpServers();
@@ -64307,6 +67768,17 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   let advisorPairHintEl = null;
   const modelFieldPopulated = /* @__PURE__ */ new WeakMap();
   let pluginDetail = null;
+  qsRequired(overlay, "#animated-explainers-manage").addEventListener(
+    "click",
+    () => {
+      searchInput.value = "";
+      applySearch("");
+      showSection("customise");
+      pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
+      void refreshSources();
+      void revealPluginDetail();
+    }
+  );
   function makePluginRow(plugin) {
     const row2 = document.createElement("div");
     row2.className = "plugin-row";
@@ -64342,9 +67814,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     track.setAttribute("aria-hidden", "true");
     let credentialLocked = false;
     toggle.addEventListener("change", () => {
+      const settingsOpen = row2.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
       void api2.plugins.setEnabled(plugin.id, toggle.checked).then(async () => {
-        await refreshPlugins();
+        if (settingsOpen) await revealPluginDetail({ pluginId: plugin.id });
+        else await refreshPlugins();
         void refreshDeclaredMcpServers();
         store2.emit("settings_changed");
       }).catch(() => {
@@ -64682,7 +68156,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (field.description) {
       const hint = document.createElement("span");
       hint.className = "plugin-setting-desc";
-      hint.textContent = field.description;
+      hint.innerHTML = renderMarkdown(field.description);
       label.append(hint);
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput));
@@ -64712,49 +68186,81 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     update();
     return hint;
   }
-  async function refreshPlugins() {
-    const listEl = qsRequired(overlay, "#plugins-list");
-    const statusEl = qsRequired(overlay, "#plugins-reload-status");
-    statusEl.textContent = "Loading\u2026";
-    try {
-      const [result, cursorPlugins] = await Promise.all([
-        api2.plugins.list(),
-        api2.cursorPlugins.list().catch(() => [])
-      ]);
-      listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
+  let pluginEntries = null;
+  function renderPluginLists() {
+    qsRequired(overlay, "#experimental-plugins-fieldset").hidden = activeSection !== "experimental";
+    if (!pluginEntries) return;
+    for (const experimental of [false, true]) {
+      const listEl = qsRequired(
+        overlay,
+        experimental ? "#experimental-plugins-list" : "#plugins-list"
+      );
+      const entries2 = pluginEntries.filter(
+        (entry) => (activeSection === "experimental" && entry.experimental) === experimental
+      );
+      listEl.replaceChildren();
+      let lastEnabled = null;
+      for (const entry of entries2) {
+        if (entry.enabled !== lastEnabled) {
+          const heading = document.createElement("h4");
+          heading.className = "plugins-group-heading";
+          heading.textContent = entry.enabled ? "Active" : "Inactive";
+          listEl.append(heading);
+          lastEnabled = entry.enabled;
+        }
+        listEl.append(entry.row);
+      }
+      if (entries2.length === 0) {
         const empty = document.createElement("span");
         empty.className = "plugins-empty";
-        empty.textContent = "No plugins installed.";
+        empty.textContent = experimental ? "No experimental plugins installed." : "No plugins installed.";
         listEl.append(empty);
-      } else {
-        const entries2 = [
-          ...result.plugins.map((plugin) => ({
-            id: plugin.id,
-            enabled: plugin.enabled,
-            render: () => makePluginRow(plugin)
-          })),
-          ...cursorPlugins.map((plugin) => ({
-            id: plugin.name,
-            enabled: true,
-            render: () => makeCursorPluginRow(plugin)
-          }))
-        ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
-        let lastEnabled = null;
-        for (const entry of entries2) {
-          if (entry.enabled !== lastEnabled) {
-            const heading = document.createElement("h4");
-            heading.className = "plugins-group-heading";
-            heading.textContent = entry.enabled ? "Active" : "Inactive";
-            listEl.append(heading);
-            lastEnabled = entry.enabled;
-          }
-          listEl.append(entry.render());
-        }
       }
-      statusEl.textContent = "";
+    }
+  }
+  async function refreshPlugins() {
+    const statusEls = overlay.querySelectorAll(".plugins-load-status");
+    const setStatus = (text2) => {
+      statusEls.forEach((el3) => {
+        el3.textContent = text2;
+      });
+    };
+    setStatus("Loading\u2026");
+    try {
+      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
+        api2.plugins.list(),
+        api2.cursorPlugins.list().catch(() => []),
+        api2.bundledSkillPlugins.list().catch(() => [])
+      ]);
+      const entries2 = [
+        ...result.plugins.map((plugin) => ({
+          id: plugin.id,
+          enabled: plugin.enabled,
+          experimental: plugin.stability === "experimental",
+          render: () => makePluginRow(plugin)
+        })),
+        ...cursorPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: true,
+          experimental: false,
+          render: () => makeCursorPluginRow(plugin)
+        })),
+        ...bundledPlugins.map((plugin) => ({
+          id: plugin.name,
+          enabled: plugin.enabled && !plugin.suppressed,
+          experimental: false,
+          render: () => makeBundledSkillPluginRow(plugin)
+        }))
+      ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
+      pluginEntries = entries2.map((entry) => ({
+        enabled: entry.enabled,
+        experimental: entry.experimental,
+        row: entry.render()
+      }));
+      renderPluginLists();
+      setStatus("");
     } catch {
-      statusEl.textContent = "Failed to load plugins.";
+      setStatus("Failed to load plugins.");
     }
   }
   function makeCursorPluginRow(plugin) {
@@ -64822,7 +68328,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (plugin.description) {
       const desc = document.createElement("div");
       desc.className = "plugin-row-desc";
-      desc.textContent = plugin.description;
+      desc.innerHTML = renderMarkdown(plugin.description);
       row2.append(desc);
     }
     const chips = document.createElement("div");
@@ -64850,6 +68356,105 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     row2.append(path);
     return row2;
   }
+  function makeBundledSkillPluginRow(plugin) {
+    const row2 = document.createElement("div");
+    row2.className = "plugin-row";
+    row2.dataset["pluginId"] = plugin.name;
+    row2.dataset["pluginOrigin"] = "bundled";
+    row2.dataset["enabled"] = String(plugin.enabled && !plugin.suppressed);
+    const header = document.createElement("div");
+    header.className = "plugin-row-header";
+    const icon = document.createElement("span");
+    icon.className = "plugin-icon plugin-icon-cursor";
+    icon.setAttribute("aria-hidden", "true");
+    const mark2 = document.createElement("img");
+    mark2.src = "./cursor-mark.svg";
+    mark2.alt = "";
+    icon.append(mark2);
+    header.append(icon);
+    const title = document.createElement("div");
+    title.className = "plugin-row-title";
+    const originBadge = document.createElement("span");
+    originBadge.className = "plugin-badge plugin-badge-cursor";
+    originBadge.textContent = "Cursor \xB7 Bundled";
+    originBadge.title = "Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.";
+    title.append(originBadge);
+    const nameLine = document.createElement("div");
+    nameLine.className = "plugin-row-name-line";
+    const nameEl = document.createElement("span");
+    nameEl.className = "plugin-name";
+    nameEl.textContent = plugin.name;
+    nameLine.append(nameEl);
+    if (plugin.version) {
+      const versionEl = document.createElement("span");
+      versionEl.className = "plugin-version";
+      versionEl.textContent = plugin.version;
+      nameLine.append(versionEl);
+    }
+    title.append(nameLine);
+    const toggleControl = document.createElement("div");
+    toggleControl.className = "plugin-toggle-control";
+    const makeStateLabel = (side) => {
+      const stateEl = document.createElement("span");
+      stateEl.className = "plugin-toggle-state";
+      stateEl.dataset["side"] = side;
+      stateEl.textContent = side === "on" ? "On" : "Off";
+      stateEl.setAttribute("aria-hidden", "true");
+      return stateEl;
+    };
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "toggle-switch plugin-toggle";
+    toggleLabel.title = plugin.suppressed ? "All bundled skills are off \u2014 turn them on under Agent \u2192 Skills." : plugin.enabled ? "Turn off this plugin" : "Turn on this plugin";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = plugin.enabled;
+    toggle.disabled = plugin.suppressed;
+    toggle.className = "plugin-toggle-input";
+    toggle.setAttribute("aria-label", `${plugin.name} plugin enabled`);
+    const track = document.createElement("span");
+    track.className = "toggle-switch-track";
+    track.setAttribute("aria-hidden", "true");
+    toggle.addEventListener("change", () => {
+      toggle.disabled = true;
+      void (async () => {
+        const stored = await api2.settings.get("bundledSkillPluginOverrides");
+        await api2.settings.set("bundledSkillPluginOverrides", {
+          ...isRecord(stored) ? stored : {},
+          [plugin.name]: toggle.checked
+        });
+        await refreshPlugins();
+        store2.emit("settings_changed");
+      })().catch(() => {
+        toggle.checked = !toggle.checked;
+      }).finally(() => {
+        toggle.disabled = plugin.suppressed;
+      });
+    });
+    toggleLabel.append(toggle, track);
+    toggleControl.append(makeStateLabel("off"), toggleLabel, makeStateLabel("on"));
+    header.append(title, toggleControl);
+    row2.append(header);
+    if (plugin.description) {
+      const desc = document.createElement("div");
+      desc.className = "plugin-row-desc";
+      desc.textContent = plugin.description;
+      row2.append(desc);
+    }
+    if (plugin.offByDefaultReason) {
+      const note = document.createElement("p");
+      note.className = "field-hint plugin-default-off-note";
+      note.textContent = `Off by default. ${plugin.offByDefaultReason}`;
+      row2.append(note);
+    }
+    const chips = document.createElement("div");
+    chips.className = "plugin-chips";
+    const chip2 = document.createElement("span");
+    chip2.className = "plugin-chip";
+    chip2.textContent = `${String(plugin.skillCount)} ${plugin.skillCount === 1 ? "skill" : "skills"}`;
+    chips.append(chip2);
+    row2.append(chips);
+    return row2;
+  }
   function mcpOriginChip(s16) {
     const labels = {
       user: "Your config",
@@ -64866,8 +68471,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
-  async function revealPluginDetail() {
-    const target = pluginDetail;
+  async function revealPluginDetail(target = pluginDetail) {
     await refreshPlugins();
     pluginDetail = null;
     if (!target) return;
@@ -65209,6 +68813,8 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
+    if (openedSection === "about") void aboutSection.refresh();
+    if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -65247,6 +68853,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       });
       await refreshStage("form-fields", async () => {
         await loadSimpleFields(form, api2);
+        const blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+        for (const input2 of makerBlockList.querySelectorAll("input")) {
+          input2.checked = blockedMakers.some((maker) => maker === input2.value);
+        }
         syncDeveloperOnlySettings();
         wireSafetySliders(form);
         const savedWebOrigins = storedStringArray(
@@ -65260,6 +68870,9 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         textareaControl(form, "trustedShellCommands").value = formatTrustedCommands(
           sanitizeTrustedCommands(await api2.settings.get(TRUSTED_COMMANDS_SETTING))
         );
+        textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
+          await api2.settings.get(TRUSTED_SSH_HOSTS_SETTING)
+        ).join("\n");
         selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
           await api2.settings.get(AUTO_APPROVAL_LEVEL_SETTING)
         );
@@ -65384,6 +68997,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         if (dirtyFieldNames.has(name)) writes.push(api2.settings.set(name, value));
       };
       saveIfDirty("model", model);
+      saveIfDirty("blockedModelMakers", parseBlockedModelMakers(data.getAll("blockedModelMakers")));
       saveIfDirty("smallTasksModel", formDataString(data, "smallTasksModel").trim());
       saveIfDirty(
         "orchestrationWorkerModel",
@@ -65462,6 +69076,14 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           })
         );
       }
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api2.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING))
+          )
+        );
+      }
       await Promise.all(writes);
       store2.setState({
         theme,
@@ -65472,6 +69094,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
         animateAgentAvatars: data.get("animateAgentAvatars") === "on",
+        conciseThreadsEnabled: data.get("conciseThreadsEnabled") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -65507,6 +69130,7 @@ var init_settings_dialog = __esm({
     init_ui_scale();
     init_app_icon_variants();
     init_lm_studio_defaults();
+    init_model_maker_block();
     init_remote_agent();
     init_advisor_strategy();
     init_orchestration_strategy();
@@ -65528,9 +69152,11 @@ var init_settings_dialog = __esm({
     init_model_routing_section();
     init_model_parameters_section();
     init_usage_section();
+    init_about_section();
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
+    init_canvas_settings();
     init_automation_plugin_settings();
     init_parallel_search_plugin();
     init_parallel_search_plugin_settings();
@@ -65540,6 +69166,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
+    init_trusted_ssh_hosts2();
     init_unknown_value3();
     init_developer_mode();
     init_terminal_history();
@@ -65548,7 +69175,7 @@ var init_settings_dialog = __esm({
     init_commit_attribution();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
       off: "0%",
@@ -65622,6 +69249,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -65824,8 +69452,7 @@ function copyMessage(message2) {
   return {
     ...rest,
     id: randomUUID2(),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
+    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
     ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
     ...visualEvidence !== void 0 ? {
@@ -65901,43 +69528,106 @@ var init_fork_thread3 = __esm({
 });
 
 // src/renderer/controller/thread-filter.ts
+function filterText(value) {
+  return value.normalize("NFC").toLowerCase();
+}
+function filterableContent(message2) {
+  const cached2 = filterableContentCache.get(message2);
+  if (cached2?.content === message2.content) return cached2.text;
+  const text2 = filterText(message2.content);
+  filterableContentCache.set(message2, { content: message2.content, text: text2 });
+  return text2;
+}
+function residentRequestMatches(messages, query) {
+  if (query.length < MIN_REQUEST_QUERY_LENGTH) return false;
+  return messages.some(
+    (message2) => isHumanUserPrompt(message2) && filterableContent(message2).includes(query)
+  );
+}
 function createThreadFilter(store2, api2, changed) {
   const matches2 = /* @__PURE__ */ new Set();
+  const promptIndex = /* @__PURE__ */ new Map();
+  let promptIndexSize = 0;
   let generation = 0;
   let timer;
   let scan = Promise.resolve();
   let pending = false;
+  let waiting = false;
   let failed = false;
+  const forget = (key) => {
+    const entry = promptIndex.get(key);
+    if (!entry) return;
+    promptIndex.delete(key);
+    promptIndexSize -= entry.size;
+  };
+  const remember = (key, entry) => {
+    forget(key);
+    promptIndex.set(key, entry);
+    promptIndexSize += entry.size;
+    for (const oldest of promptIndex.keys()) {
+      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
+      forget(oldest);
+    }
+  };
+  const savedPrompts = async (projectId, thread) => {
+    const key = `${projectId}/${thread.id}`;
+    const cached2 = promptIndex.get(key);
+    if (cached2 && cached2.updatedAt === thread.updatedAt && cached2.lastPromptAt === thread.lastPromptAt) {
+      return cached2.prompts;
+    }
+    const messages = await api2.threads.loadMessages(projectId, thread.id);
+    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
+    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
+    remember(key, {
+      updatedAt: thread.updatedAt,
+      lastPromptAt: thread.lastPromptAt,
+      prompts,
+      size
+    });
+    return prompts;
+  };
+  const notify = () => {
+    try {
+      changed();
+    } catch (error62) {
+      console.error("[thread-filter] sidebar update failed", error62);
+    }
+  };
   const cancel = () => {
     generation += 1;
     clearTimeout(timer);
     matches2.clear();
     pending = false;
+    waiting = false;
     failed = false;
   };
-  const search = (query) => {
+  const search = (rawQuery) => {
     cancel();
+    const query = filterText(rawQuery);
     const { activeProjectId, threads } = store2.getState();
-    if (!query || !activeProjectId) return;
+    if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
     const candidates = sortThreadsNewestFirst(threads).filter(
-      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+      (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
-    const containsRequest = (messages) => messages.some(
-      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
-    );
-    pending = candidates.length > 0;
+    if (candidates.length === 0) return;
+    waiting = true;
     timer = setTimeout(() => {
+      waiting = false;
+      pending = true;
+      notify();
       scan = scan.then(async () => {
         for (const thread of candidates) {
           if (!isCurrent()) return;
           try {
-            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
+              (prompt) => prompt.includes(query)
+            );
             if (!isCurrent()) return;
             if (matched) {
               matches2.add(thread.id);
-              changed();
+              notify();
             }
           } catch {
             if (!isCurrent()) return;
@@ -65946,9 +69636,15 @@ function createThreadFilter(store2, api2, changed) {
         }
         if (!isCurrent()) return;
         pending = false;
-        changed();
+        notify();
+      }).catch((error62) => {
+        console.error("[thread-filter] request scan failed", error62);
+        if (!isCurrent()) return;
+        pending = false;
+        failed = true;
+        notify();
       });
-    }, 200);
+    }, SCAN_DELAY_MS);
   };
   return {
     search,
@@ -65957,14 +69653,22 @@ function createThreadFilter(store2, api2, changed) {
     get pending() {
       return pending;
     },
+    get waiting() {
+      return waiting;
+    },
     get failed() {
       return failed;
     }
   };
 }
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
+    MIN_REQUEST_QUERY_LENGTH = 2;
+    SCAN_DELAY_MS = 200;
+    PROMPT_INDEX_MAX_CHARS = 8e6;
+    filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -65985,11 +69689,1337 @@ function setAttentionThreads(store2, source, threadIds) {
 function isThreadAwaitingAttention(threadId) {
   return union2.has(threadId);
 }
+function getAttentionThreadIds() {
+  return [...union2];
+}
 var bySource, union2;
 var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/controller/activity-model.ts
+function truncateText(text2, max = WANT_MAX_CHARS) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
+}
+function threadName(thread) {
+  const title = thread?.title.trim();
+  return title && title.length > 0 ? title : UNTITLED_THREAD;
+}
+function requestThreadFields(threadId, byId) {
+  if (threadId === void 0) {
+    return { threadId: null, threadTitle: "No thread", projectId: null, projectName: null };
+  }
+  const thread = byId.get(threadId);
+  return {
+    threadId,
+    threadTitle: threadName(thread),
+    projectId: thread?.projectId ?? null,
+    projectName: thread?.projectName ?? null
+  };
+}
+function questionWant(questions) {
+  const first = questions[0] ?? "";
+  const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
+  return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
+}
+function deriveActivity(input2) {
+  const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
+  const needsYou = [
+    ...input2.approvals.map((req) => ({
+      key: `approval:${req.id}`,
+      state: "needs-approval",
+      ...requestThreadFields(req.threadId, byId),
+      want: truncateText(req.title),
+      detail: req.body.trim() === "" ? null : truncateText(req.body),
+      requestId: req.id,
+      requestType: req.type,
+      approval: req,
+      since: req.receivedAt
+    })),
+    ...input2.questions.map((req) => ({
+      key: `question:${req.id}`,
+      state: "needs-answer",
+      ...requestThreadFields(req.threadId, byId),
+      want: questionWant(req.questions),
+      detail: null,
+      requestId: req.id,
+      requestType: null,
+      approval: null,
+      since: req.receivedAt
+    }))
+  ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
+  const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const threadRow = (thread, state, want, since) => ({
+    key: `thread:${thread.id}`,
+    state,
+    threadId: thread.id,
+    threadTitle: threadName(thread),
+    projectId: thread.projectId,
+    projectName: thread.projectName,
+    want,
+    detail: null,
+    requestId: null,
+    requestType: null,
+    approval: null,
+    since
+  });
+  const working = [];
+  const recent = [];
+  for (const thread of input2.threads) {
+    if (waitingThreads.has(thread.id)) continue;
+    const run2 = input2.runs.get(thread.id);
+    if (thread.status === "running") {
+      working.push(
+        threadRow(
+          thread,
+          "working",
+          truncateText(run2?.activity ?? "Working\u2026"),
+          run2?.startedAt ?? null
+        )
+      );
+    } else {
+      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      if (endedAt === void 0) continue;
+      recent.push(
+        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
+      );
+    }
+  }
+  const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
+  working.sort(newestFirst);
+  recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const groups = [
+    { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
+    { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
+    {
+      id: "recent",
+      label: GROUP_LABELS.recent,
+      rows: recent.slice(0, RECENT_ROW_LIMIT),
+      total: recent.length
+    }
+  ];
+  return groups;
+}
+function collectActivityThreads(store2) {
+  const { projects, backgroundThreads } = store2.getState();
+  const out = /* @__PURE__ */ new Map();
+  for (const project2 of projects) {
+    const projectName = projectDisplayName(project2);
+    for (const thread of getSidebarThreads(store2, project2.id)) {
+      out.set(thread.id, {
+        id: thread.id,
+        title: thread.title,
+        status: thread.status,
+        ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        projectId: project2.id,
+        projectName
+      });
+    }
+  }
+  for (const carried of backgroundThreads) {
+    const project2 = projects.find((p2) => p2.id === carried.projectId);
+    if (!project2 || carried.thread.archivedAt != null) continue;
+    out.set(carried.thread.id, {
+      id: carried.thread.id,
+      title: carried.thread.title,
+      status: carried.thread.status,
+      ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      projectId: project2.id,
+      projectName: projectDisplayName(project2)
+    });
+  }
+  return [...out.values()];
+}
+function trackRunTimings(store2, now) {
+  const runs = /* @__PURE__ */ new Map();
+  const unsubs = [
+    store2.on("thread_status_changed", (threadId, status) => {
+      const previous = runs.get(threadId);
+      if (status === "running") {
+        if (previous?.startedAt !== void 0 && previous.endedAt === void 0) return;
+        runs.set(threadId, { startedAt: now() });
+        return;
+      }
+      if (status === "error" || previous?.startedAt !== void 0 && previous.endedAt === void 0) {
+        runs.set(threadId, { ...previous, endedAt: now(), activity: null });
+      }
+    }),
+    store2.on("agent_activity", (threadId, label) => {
+      const previous = runs.get(threadId);
+      if (!previous || previous.endedAt !== void 0) return;
+      runs.set(threadId, { ...previous, activity: label });
+    })
+  ];
+  return {
+    runs,
+    dispose: () => {
+      unsubs.forEach((unsub) => {
+        unsub();
+      });
+    }
+  };
+}
+function formatAge(elapsedMs) {
+  if (elapsedMs < MINUTE) return "now";
+  if (elapsedMs < HOUR) return `${String(Math.floor(elapsedMs / MINUTE))}m`;
+  if (elapsedMs < DAY) return `${String(Math.floor(elapsedMs / HOUR))}h`;
+  return `${String(Math.floor(elapsedMs / DAY))}d`;
+}
+function formatAgeLong(elapsedMs) {
+  const unit = (count, name) => `${String(count)} ${name}${count === 1 ? "" : "s"}`;
+  if (elapsedMs < MINUTE) return "just now";
+  if (elapsedMs < HOUR) return unit(Math.floor(elapsedMs / MINUTE), "minute");
+  if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
+  return unit(Math.floor(elapsedMs / DAY), "day");
+}
+var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var init_activity_model = __esm({
+  "src/renderer/controller/activity-model.ts"() {
+    init_projects();
+    RECENT_ROW_LIMIT = 10;
+    WANT_MAX_CHARS = 140;
+    UNTITLED_THREAD = "New thread";
+    GROUP_LABELS = {
+      "needs-you": "Needs you",
+      working: "Working",
+      recent: "Recently finished"
+    };
+    MINUTE = 6e4;
+    HOUR = 60 * MINUTE;
+    DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/views/approval-dialog.ts
+function githubMarkIcon() {
+  const svg2 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg2.setAttribute("class", "approval-github-icon");
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  );
+  svg2.append(path);
+  return svg2;
+}
+function approvalCopyElement(className, text2) {
+  const root = el("div", { class: className });
+  let list = null;
+  let lines = [];
+  const flushLines = () => {
+    if (lines.length > 0) root.append(lines.join("\n"));
+    lines = [];
+  };
+  for (const line of text2.split("\n")) {
+    if (line.startsWith(REASON_BULLET)) {
+      flushLines();
+      if (!list) {
+        list = el("ul", { class: "approval-reasons" });
+        root.append(list);
+      }
+      list.append(el("li", {}, line.slice(REASON_BULLET.length)));
+    } else {
+      list = null;
+      lines.push(line);
+    }
+  }
+  flushLines();
+  return root;
+}
+function approvalRequestDetails(req) {
+  const parts = [];
+  if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
+  parts.push(
+    el(
+      "div",
+      { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
+      req.body
+    )
+  );
+  if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
+  return parts;
+}
+function mergeApprovalAdvice(values) {
+  const unique = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  if (unique.length <= 1) return unique[0];
+  const lines = unique.map((value) => value.split("\n"));
+  const sharedLead = lines[0]?.[0];
+  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join("\n\n");
+  }
+  const merged = [sharedLead];
+  const seenDetails = /* @__PURE__ */ new Set();
+  for (const parts of lines) {
+    const details = parts.slice(1).join("\n");
+    if (!details || seenDetails.has(details)) continue;
+    seenDetails.add(details);
+    merged.push(details);
+  }
+  return merged.join("\n");
+}
+function mountApprovalDialog(api2, store2, options = {}) {
+  const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
+  const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
+  const setTimer = options.setTimer ?? defaultTimer;
+  const rememberLabel = el(
+    "label",
+    { class: "approval-remember" },
+    el("input", { type: "checkbox", class: "approval-remember-input" }),
+    "Always allow this tool"
+  );
+  const turnTreeLeaseLabel = el(
+    "label",
+    { class: "approval-remember approval-turn-tree" },
+    el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
+    "Allow retries for this task (up to 10, for 15 minutes)"
+  );
+  const githubBrand = el(
+    "div",
+    { class: "approval-github-brand", hidden: "", "aria-hidden": "true" },
+    el("span", { class: "approval-github-mark" }, githubMarkIcon()),
+    el("span", {}, "GitHub")
+  );
+  const heading = el("h3", { class: "approval-heading" });
+  const items = el("div", { class: "approval-items" });
+  const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
+  const approveOnceButton = el("button", {
+    type: "button",
+    class: "ui-btn ui-btn-secondary approval-approve-once",
+    hidden: ""
+  });
+  const approveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary approval-approve" },
+    "Approve"
+  );
+  const rejectButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-reject" },
+    "Reject"
+  );
+  const dialog2 = el("dialog", { id: "approval-dialog" });
+  dialog2.append(
+    githubBrand,
+    heading,
+    items,
+    rememberLabel,
+    turnTreeLeaseLabel,
+    uiActions(approveOnceButton, approveButton, rejectButton, {
+      className: "approval-buttons",
+      align: "end"
+    })
+  );
+  const chatPane = document.getElementById("pane-chat") ?? document.body;
+  chatPane.append(chatScrim, dialog2);
+  const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
+  const turnTreeLeaseInput = qsRequired(
+    turnTreeLeaseLabel,
+    ".approval-turn-tree-input"
+  );
+  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1];
+  if (!turnTreeLeaseTextNode) throw new Error("approval dialog missing lease label text node");
+  const turnTreeLeaseText = turnTreeLeaseTextNode;
+  const rememberLabelTextNode = rememberLabel.childNodes[1];
+  if (!rememberLabelTextNode) throw new Error("approval dialog missing remember label text node");
+  const rememberLabelText = rememberLabelTextNode;
+  const changeListeners = /* @__PURE__ */ new Set();
+  let arrivals = 0;
+  const queue = [];
+  let batch = [];
+  let active2 = false;
+  let coalesceScheduled = false;
+  let cancelCoalesce = null;
+  let cancelSettle = null;
+  let detailsExpanded = false;
+  function closeDialog() {
+    dialog2.close();
+    chatScrim.hidden = true;
+  }
+  function isWindowHidden() {
+    return typeof document !== "undefined" && document.visibilityState === "hidden";
+  }
+  function isShowable(req) {
+    if (isWindowHidden()) return false;
+    if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
+    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+  }
+  function syncAttention() {
+    const activeThreadId = store2.getState().activeThreadId;
+    const hidden = isWindowHidden();
+    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
+    setAttentionThreads(store2, "approval", waiting);
+    for (const listener of [...changeListeners]) listener();
+  }
+  function drainShowableIntoBatch() {
+    let moved = 0;
+    for (let i2 = 0; i2 < queue.length; ) {
+      const req = queue[i2];
+      if (req && isShowable(req)) {
+        queue.splice(i2, 1);
+        batch.push(req);
+        moved++;
+      } else {
+        i2++;
+      }
+    }
+    return moved;
+  }
+  function rememberGrant() {
+    if (batch.length === 0) return null;
+    if (!batch.every((req) => req.allowRemember)) return null;
+    const label = batch[0]?.rememberLabel;
+    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
+    return label;
+  }
+  function soloRequest() {
+    return batch.length === 1 ? batch[0] ?? null : null;
+  }
+  function approveOnceGrant() {
+    return soloRequest()?.approveOnceLabel ?? "";
+  }
+  function detailsToggle() {
+    const toggle = el(
+      "button",
+      {
+        class: "approval-details-toggle",
+        type: "button",
+        "aria-expanded": detailsExpanded ? "true" : "false"
+      },
+      detailsExpanded ? "Hide details" : "Show details"
+    );
+    toggle.addEventListener("click", () => {
+      detailsExpanded = !detailsExpanded;
+      renderBatch();
+    });
+    return toggle;
+  }
+  function renderBatch() {
+    const count = batch.length;
+    const collapseDetails = soloRequest()?.collapseDetails === true;
+    const uniqueTitles = new Set(batch.map((req) => req.title));
+    const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
+    const showRowTitles = count > 1 && sharedTitle === null;
+    const presentationGroups = [];
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1);
+      const previous = previousGroup?.[0];
+      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
+        previousGroup.push(req);
+      } else {
+        presentationGroups.push([req]);
+      }
+    }
+    heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const isGithubApproval = batch.some((request) => request.title.includes("GitHub"));
+    githubBrand.hidden = !isGithubApproval;
+    dialog2.classList.toggle("approval-dialog-github", isGithubApproval);
+    const requestBody = (req) => {
+      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
+      const body = el("div", { class: bodyClass }, req.body);
+      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      return body;
+    };
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0];
+        if (!firstRequest) throw new Error("approval presentation group must not be empty");
+        const rowChildren = [];
+        if (showRowTitles) {
+          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
+        if (advice) {
+          rowChildren.push(approvalCopyElement("approval-advice", advice));
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle());
+        if (group.length > 1) {
+          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+          rowChildren.push(
+            el(
+              "div",
+              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req);
+                body.setAttribute("role", "listitem");
+                return body;
+              })
+            )
+          );
+        } else {
+          rowChildren.push(requestBody(firstRequest));
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(approvalCopyElement("approval-footer", firstRequest.bodyFooter));
+        }
+        return el("div", { class: "approval-item" }, ...rowChildren);
+      })
+    );
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
+    const onceLabel = approveOnceGrant();
+    const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
+    approveOnceButton.hidden = !showOnce;
+    if (showOnce) approveOnceButton.textContent = onceLabel;
+    const grant = onceLabel !== "" ? null : rememberGrant();
+    rememberLabel.hidden = grant === null;
+    if (grant === null) rememberInput.checked = false;
+    else rememberLabelText.textContent = grant;
+    const leaseLabel = batch[0]?.turnTreeLeaseLabel;
+    const leaseSubject = batch[0]?.turnTreeLeaseSubject;
+    const offersTurnTreeLease = batch.length > 0 && leaseLabel !== void 0 && leaseSubject !== void 0 && batch.every(
+      (request) => request.allowTurnTreeLease === true && request.turnTreeLeaseLabel === leaseLabel && request.turnTreeLeaseSubject === leaseSubject
+    );
+    turnTreeLeaseLabel.hidden = !offersTurnTreeLease;
+    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false;
+    else {
+      turnTreeLeaseText.textContent = leaseLabel;
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
+    }
+  }
+  function clearSettle() {
+    if (cancelSettle) {
+      cancelSettle();
+      cancelSettle = null;
+    }
+    approveButton.disabled = false;
+    approveOnceButton.disabled = false;
+  }
+  function startSettle() {
+    clearSettle();
+    approveButton.disabled = true;
+    approveOnceButton.disabled = true;
+    cancelSettle = setTimer(() => {
+      cancelSettle = null;
+      approveButton.disabled = false;
+      approveOnceButton.disabled = false;
+    }, settleMs);
+  }
+  function show2() {
+    if (active2) return;
+    if (cancelCoalesce) {
+      cancelCoalesce();
+      cancelCoalesce = null;
+    }
+    coalesceScheduled = false;
+    if (drainShowableIntoBatch() === 0) {
+      syncAttention();
+      return;
+    }
+    clearSettle();
+    rememberInput.checked = false;
+    detailsExpanded = false;
+    renderBatch();
+    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
+    if (shouldShowModal) {
+      dialog2.showModal();
+    } else {
+      chatScrim.hidden = false;
+      dialog2.show();
+    }
+    active2 = true;
+    syncAttention();
+  }
+  function scheduleShow2() {
+    if (active2 || coalesceScheduled) return;
+    if (!queue.some(isShowable)) {
+      syncAttention();
+      return;
+    }
+    coalesceScheduled = true;
+    cancelCoalesce = setTimer(() => {
+      coalesceScheduled = false;
+      cancelCoalesce = null;
+      show2();
+    }, coalesceMs);
+  }
+  function withdrawUnshowable() {
+    if (!active2) return;
+    const withdrawn = batch.filter((req) => !isShowable(req));
+    if (withdrawn.length === 0) return;
+    batch = batch.filter((req) => isShowable(req));
+    queue.unshift(...withdrawn);
+    if (batch.length === 0) {
+      closeDialog();
+      active2 = false;
+      clearSettle();
+      return;
+    }
+    detailsExpanded = false;
+    renderBatch();
+    startSettle();
+  }
+  function appendToOpen() {
+    if (!active2) return;
+    if (drainShowableIntoBatch() > 0) {
+      renderBatch();
+      startSettle();
+    }
+    syncAttention();
+  }
+  function removeCancelled(id) {
+    const queueIdx = queue.findIndex((req) => req.id === id);
+    if (queueIdx >= 0) queue.splice(queueIdx, 1);
+    const wasInBatch = batch.some((req) => req.id === id);
+    batch = batch.filter((req) => req.id !== id);
+    if (wasInBatch && active2) {
+      if (batch.length === 0) {
+        closeDialog();
+        active2 = false;
+        clearSettle();
+        show2();
+      } else {
+        renderBatch();
+        startSettle();
+      }
+    }
+    syncAttention();
+  }
+  function resolve(approved, remember) {
+    if (!active2 || batch.length === 0) return;
+    const answered = batch;
+    const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
+    closeDialog();
+    batch = [];
+    active2 = false;
+    turnTreeLeaseInput.checked = false;
+    clearSettle();
+    for (const req of answered) {
+      void api2.approval.respond(req.id, approved, remember, grantScope);
+    }
+    show2();
+  }
+  api2.agent.onApprovalRequest(
+    ({
+      id,
+      threadId,
+      title,
+      body,
+      bodyAdvice,
+      bodyFooter,
+      type,
+      allowRemember,
+      rememberLabel: rememberLabel2,
+      collapseDetails,
+      approveOnceLabel,
+      showWhileSettingsOpen,
+      allowTurnTreeLease,
+      turnTreeLeaseLabel: turnTreeLeaseLabel2,
+      turnTreeLeaseDefault,
+      turnTreeLeaseSubject
+    }) => {
+      const pending = {
+        id,
+        threadId,
+        title,
+        body,
+        bodyAdvice,
+        bodyFooter,
+        type,
+        allowRemember,
+        rememberLabel: rememberLabel2,
+        collapseDetails,
+        approveOnceLabel,
+        showWhileSettingsOpen,
+        allowTurnTreeLease,
+        turnTreeLeaseLabel: turnTreeLeaseLabel2,
+        turnTreeLeaseDefault,
+        turnTreeLeaseSubject,
+        receivedAt: Date.now(),
+        arrival: arrivals++
+      };
+      queue.push(pending);
+      if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+        queue.unshift(...batch);
+        batch = [];
+        closeDialog();
+        active2 = false;
+        clearSettle();
+        show2();
+      } else if (active2) appendToOpen();
+      else scheduleShow2();
+      syncAttention();
+    }
+  );
+  api2.agent.onApprovalCancelled(({ id }) => {
+    removeCancelled(id);
+  });
+  store2.on("threads_changed", () => {
+    withdrawUnshowable();
+    if (active2) appendToOpen();
+    else show2();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      withdrawUnshowable();
+      syncAttention();
+    } else show2();
+  });
+  onSettingsDialogClose(() => {
+    show2();
+  });
+  approveButton.addEventListener("click", () => {
+    if (approveButton.disabled) return;
+    resolve(true, approveOnceGrant() !== "" ? true : rememberInput.checked);
+  });
+  approveOnceButton.addEventListener("click", () => {
+    if (approveOnceButton.disabled) return;
+    resolve(true, false);
+  });
+  rejectButton.addEventListener("click", () => {
+    resolve(false, false);
+  });
+  return {
+    pending: () => [...batch, ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
+      id: req.id,
+      threadId: req.threadId,
+      title: req.title,
+      body: req.body,
+      bodyAdvice: req.bodyAdvice,
+      bodyFooter: req.bodyFooter,
+      type: req.type,
+      receivedAt: req.receivedAt
+    })),
+    answerOnce: (id, approved) => {
+      if (!batch.some((req) => req.id === id) && !queue.some((req) => req.id === id)) return false;
+      removeCancelled(id);
+      void api2.approval.respond(id, approved, false, "once");
+      return true;
+    },
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    }
+  };
+}
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
+var init_approval_dialog = __esm({
+  "src/renderer/views/approval-dialog.ts"() {
+    init_helpers();
+    init_settings_dialog();
+    init_attention();
+    init_actions();
+    APPROVAL_COALESCE_MS = 120;
+    APPROVAL_SETTLE_MS = 500;
+    REASON_BULLET = "\u2022 ";
+    defaultTimer = (fn2, ms2) => {
+      const handle = setTimeout(fn2, ms2);
+      return () => {
+        clearTimeout(handle);
+      };
+    };
+  }
+});
+
+// src/renderer/views/activity-panel.ts
+function stateGlyph(state) {
+  const className = "ui-icon ui-icon-sm activity-glyph";
+  switch (state) {
+    case "needs-approval":
+      return shieldIcon(className);
+    case "needs-answer":
+      return messageQuestionIcon(className);
+    case "working":
+      return runningStatusIcon(`${className} activity-glyph-running`);
+    case "failed":
+      return warningIcon(className);
+    case "finished":
+      return checkIcon(className);
+  }
+}
+function openActivityPanel() {
+  openActive?.();
+}
+function mountActivityPanel(api2, store2, sources3, deps = {}) {
+  const now = deps.now ?? Date.now;
+  const setTimer = deps.setTimer ?? defaultTimer2;
+  const timings = trackRunTimings(store2, now);
+  const { dialog: dialog2, open: open2, close, isOpen } = createOverlayDialog({
+    id: "activity-panel",
+    className: "activity-panel-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "activity-panel-title");
+  dialog2.setAttribute("aria-describedby", "activity-panel-summary");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost activity-panel-close",
+      "aria-label": "Close activity"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
+  const detail = el("section", {
+    class: "activity-detail",
+    "aria-labelledby": "activity-detail-title"
+  });
+  const body = el("div", { class: "activity-panel-body" }, list, detail);
+  const status = el("p", {
+    class: "activity-panel-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  dialog2.append(
+    el(
+      "div",
+      { class: "activity-panel-shell" },
+      el(
+        "header",
+        { class: "activity-panel-header" },
+        el("h2", { id: "activity-panel-title" }, "Activity"),
+        summary,
+        closeButton
+      ),
+      body,
+      el(
+        "footer",
+        { class: "activity-panel-footer" },
+        el("span", {}, "\u2191 \u2193 choose \xB7 Tab to act \xB7 Esc closes"),
+        status
+      )
+    )
+  );
+  let renderScheduled = false;
+  let cancelRender = null;
+  let lastRenderAt = Number.NEGATIVE_INFINITY;
+  let cancelAgeTick = null;
+  let needsYouSignature = null;
+  let cancelSettle = null;
+  let settling = false;
+  let selectedKey = null;
+  let selectedIndex = 0;
+  let shownKey = null;
+  function canOpen(row2) {
+    if (!row2.threadId || !row2.projectId) return false;
+    const { projectId } = row2;
+    return store2.getState().projects.some((project2) => project2.id === projectId);
+  }
+  function openThread(row2) {
+    if (!row2.threadId || !row2.projectId || !canOpen(row2)) return;
+    close();
+    switchProjectThread(store2, api2, row2.projectId, row2.threadId);
+  }
+  function ageText(row2, at3) {
+    if (row2.since === null) return null;
+    const long = formatAgeLong(Math.max(0, at3 - row2.since));
+    const verb = AGE_VERB[row2.state];
+    return long === "just now" ? `${verb} just now` : `${verb} ${long} ago`;
+  }
+  function rowLabel(row2, at3) {
+    const want = row2.detail ? `${row2.want} \u2014 ${row2.detail}` : row2.want;
+    const parts = [
+      `${STATE_LONG[row2.state]}: ${want}`,
+      row2.projectName ? `${row2.threadTitle}, ${row2.projectName}` : row2.threadTitle
+    ];
+    const age = ageText(row2, at3);
+    if (age) parts.push(age);
+    return parts.join(". ");
+  }
+  function answerApproval(row2, approved) {
+    if (!row2.requestId) return;
+    for (const button2 of detail.querySelectorAll(
+      ".activity-approve, .activity-reject"
+    )) {
+      button2.disabled = true;
+      button2.dataset["answered"] = "true";
+    }
+    const sent = sources3.approvals.answerOnce(row2.requestId, approved);
+    status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
+    scheduleRender();
+  }
+  function button(className, control, label, onClick, ariaLabel) {
+    const node2 = el(
+      "button",
+      {
+        type: "button",
+        class: `ui-btn ${className}`,
+        "data-control": control,
+        ...ariaLabel ? { "aria-label": ariaLabel } : {}
+      },
+      label
+    );
+    node2.addEventListener("click", () => {
+      if (!node2.disabled) onClick();
+    });
+    return node2;
+  }
+  function openThreadButton(row2) {
+    const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
+      openThread(row2);
+    });
+    node2.disabled = !canOpen(row2);
+    return node2;
+  }
+  function detailContent(row2) {
+    if (row2.state === "needs-approval" && row2.approval) {
+      const request = row2.approval;
+      return [
+        el(
+          "div",
+          {
+            class: "activity-review",
+            role: "region",
+            "aria-label": `Approval request: ${request.title}`
+          },
+          el("p", { class: "activity-review-title" }, request.title),
+          ...approvalRequestDetails(request)
+        )
+      ];
+    }
+    if (row2.state === "needs-answer") {
+      const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
+      const questions = asked?.questions ?? [row2.want];
+      return [
+        el(
+          "ol",
+          { class: "activity-questions" },
+          ...questions.map((question) => el("li", {}, question))
+        ),
+        el(
+          "p",
+          { class: "activity-detail-note" },
+          "Answer in the thread, where the question is waiting for you."
+        )
+      ];
+    }
+    if (row2.state === "working") {
+      return [
+        el("p", { class: "activity-detail-label" }, "Latest activity"),
+        el("p", { class: "activity-detail-text" }, row2.want)
+      ];
+    }
+    return [el("p", { class: "activity-detail-text" }, row2.want)];
+  }
+  function detailActions(row2) {
+    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    if (row2.state === "needs-approval" && row2.approval) {
+      const title = row2.approval.title;
+      actions.push(
+        button(
+          "ui-btn-secondary activity-reject",
+          "reject",
+          "Reject",
+          () => {
+            answerApproval(row2, false);
+          },
+          `Reject: ${title} (${row2.threadTitle})`
+        )
+      );
+      const approve = button(
+        "ui-btn-primary activity-approve",
+        "approve",
+        "Approve once",
+        () => {
+          answerApproval(row2, true);
+        },
+        `Approve once: ${title} (${row2.threadTitle})`
+      );
+      approve.disabled = settling;
+      actions.push(approve);
+    } else if (row2.state === "needs-answer") {
+      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
+        if (row2.threadId === null) close();
+        else openThread(row2);
+      });
+      answer.disabled = row2.threadId !== null && !canOpen(row2);
+      actions.push(answer);
+    }
+    return el("div", { class: "activity-detail-actions" }, ...actions);
+  }
+  function renderDetail(row2, at3) {
+    if (!row2) {
+      detail.replaceChildren();
+      detail.hidden = true;
+      return;
+    }
+    detail.hidden = false;
+    detail.dataset["rowKey"] = row2.key;
+    detail.dataset["state"] = row2.state;
+    const meta3 = [row2.projectName, ageText(row2, at3)].filter((part) => part !== null).join(" \xB7 ");
+    detail.replaceChildren(
+      el(
+        "header",
+        { class: "activity-detail-header" },
+        el(
+          "p",
+          { class: "activity-detail-meta" },
+          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+          meta3
+        ),
+        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+      ),
+      el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
+      detailActions(row2)
+    );
+  }
+  function rowElement(row2, at3) {
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    const selected = row2.key === selectedKey;
+    const second = el(
+      "span",
+      { class: "activity-row-second" },
+      el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
+    );
+    if (row2.state !== "failed" && row2.state !== "finished") {
+      second.append(
+        el(
+          "span",
+          {
+            class: row2.requestType === "shell" && row2.detail ? "activity-want-text activity-want-code" : "activity-want-text"
+          },
+          row2.requestType === "shell" && row2.detail ? row2.detail : row2.want
+        )
+      );
+    }
+    const opener = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-row-open",
+        "data-control": "open",
+        tabindex: selected ? "0" : "-1",
+        "aria-label": rowLabel(row2, at3),
+        ...selected ? { "aria-current": "true" } : {}
+      },
+      stateGlyph(row2.state),
+      el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
+      elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
+        "time",
+        { class: "activity-age", datetime: new Date(row2.since).toISOString() },
+        formatAge(elapsed)
+      ),
+      second,
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
+    );
+    opener.addEventListener("click", () => {
+      select(row2.key);
+    });
+    return el(
+      "li",
+      {
+        class: "activity-row",
+        "data-row-key": row2.key,
+        "data-state": row2.state,
+        ...selected ? { "data-selected": "true" } : {},
+        ...row2.threadId ? { "data-thread-id": row2.threadId } : {},
+        ...row2.requestId ? { "data-request-id": row2.requestId } : {}
+      },
+      opener
+    );
+  }
+  function groupElement(group, at3) {
+    const titleId = `activity-group-${group.id}`;
+    const hidden = group.total - group.rows.length;
+    const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
+    return el(
+      "section",
+      { class: "activity-group", "data-group": group.id },
+      el(
+        "h4",
+        { id: titleId, class: "activity-group-title" },
+        group.label,
+        el("span", { class: "activity-group-count" }, count)
+      ),
+      el(
+        "ul",
+        { class: "activity-rows", role: "list", "aria-labelledby": titleId },
+        ...group.rows.map((row2) => rowElement(row2, at3))
+      )
+    );
+  }
+  function emptyState() {
+    return el(
+      "div",
+      { class: "activity-empty" },
+      el("p", { class: "activity-empty-title" }, "Nothing is running or waiting on you."),
+      el(
+        "p",
+        { class: "activity-empty-body" },
+        "When an agent stops for your approval or asks a question, it is listed here first, and you can answer an approval without leaving the thread you are in. Agents that are working come next, then runs that recently finished or failed."
+      )
+    );
+  }
+  function rowOpeners() {
+    return [...list.querySelectorAll(".activity-row-open")];
+  }
+  function selectedOpener() {
+    return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
+  }
+  function captureListScrollAnchor() {
+    const listRect = list.getBoundingClientRect();
+    for (const row2 of list.querySelectorAll(".activity-row")) {
+      const rowKey2 = row2.dataset["rowKey"];
+      if (!rowKey2) continue;
+      const rowRect = row2.getBoundingClientRect();
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey: rowKey2, viewportTop: rowRect.top };
+      }
+    }
+    return null;
+  }
+  function restoreListScrollAnchor(anchor2, fallbackScrollTop) {
+    if (anchor2) {
+      const row2 = [...list.querySelectorAll(".activity-row")].find(
+        (candidate) => candidate.dataset["rowKey"] === anchor2.rowKey
+      );
+      if (row2) {
+        const delta = row2.getBoundingClientRect().top - anchor2.viewportTop;
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta;
+        return;
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop;
+  }
+  function captureFocus() {
+    const active2 = document.activeElement;
+    if (!(active2 instanceof HTMLElement)) return null;
+    if (list.contains(active2)) return { area: "list" };
+    if (detail.contains(active2)) {
+      return {
+        area: "detail",
+        key: detail.dataset["rowKey"] ?? "",
+        control: active2.dataset["control"] ?? ""
+      };
+    }
+    return null;
+  }
+  function restoreFocus(spot) {
+    if (!spot) return;
+    if (spot.area === "detail" && spot.key === selectedKey) {
+      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      if (control && !control.disabled) {
+        control.focus();
+        return;
+      }
+    }
+    const opener = selectedOpener();
+    if (opener) opener.focus({ preventScroll: true });
+    else closeButton.focus();
+  }
+  function armSettle() {
+    cancelSettle?.();
+    settling = true;
+    for (const approve of detail.querySelectorAll(".activity-approve")) {
+      approve.disabled = true;
+    }
+    cancelSettle = setTimer(() => {
+      cancelSettle = null;
+      settling = false;
+      for (const approve of detail.querySelectorAll(".activity-approve")) {
+        if (!approve.dataset["answered"]) approve.disabled = false;
+      }
+    }, APPROVAL_SETTLE_MS);
+  }
+  function render() {
+    renderScheduled = false;
+    cancelRender = null;
+    const at3 = now();
+    lastRenderAt = at3;
+    const focus = captureFocus();
+    const previousListScrollTop = list.scrollTop;
+    const listScrollAnchor = captureListScrollAnchor();
+    const groups = deriveActivity({
+      threads: collectActivityThreads(store2),
+      approvals: sources3.approvals.pending(),
+      questions: sources3.questions.pending(),
+      runs: timings.runs
+    });
+    const needsYou = groups.find((group) => group.id === "needs-you");
+    const working = groups.find((group) => group.id === "working");
+    const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
+    const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
+    needsYouSignature = signature;
+    const rows = groups.flatMap((group) => group.rows);
+    let selected = rows.find((row2) => row2.key === selectedKey);
+    if (!selected) {
+      selected = rows[Math.min(selectedIndex, rows.length - 1)];
+      selectedKey = selected?.key ?? null;
+    }
+    selectedIndex = selected ? rows.indexOf(selected) : 0;
+    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+      armSettle();
+    }
+    shownKey = selectedKey;
+    const needCount = needsYou?.total ?? 0;
+    const workCount = working?.total ?? 0;
+    summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
+    const populated = groups.filter((group) => group.rows.length > 0);
+    if (populated.length === 0) {
+      list.hidden = true;
+      list.replaceChildren();
+      body.dataset["empty"] = "true";
+      detail.hidden = false;
+      detail.replaceChildren(emptyState());
+      delete detail.dataset["rowKey"];
+      delete detail.dataset["state"];
+    } else {
+      list.hidden = false;
+      delete body.dataset["empty"];
+      const children = [];
+      if (!needsYou || needsYou.rows.length === 0) {
+        children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
+      }
+      children.push(...populated.map((group) => groupElement(group, at3)));
+      list.replaceChildren(...children);
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
+      renderDetail(selected, at3);
+    }
+    dialog2.dataset["needsYou"] = String(needCount);
+    restoreFocus(focus);
+  }
+  function select(rowKey2) {
+    if (rowKey2 !== selectedKey) {
+      selectedKey = rowKey2;
+      renderNow();
+    }
+    selectedOpener()?.focus();
+  }
+  function renderNow() {
+    cancelRender?.();
+    render();
+  }
+  function scheduleRender() {
+    if (!isOpen() || renderScheduled) return;
+    renderScheduled = true;
+    const wait = Math.max(0, lastRenderAt + ACTIVITY_RENDER_INTERVAL_MS - now());
+    cancelRender = setTimer(render, wait);
+  }
+  function tickAges() {
+    cancelAgeTick = setTimer(() => {
+      cancelAgeTick = null;
+      if (!isOpen()) return;
+      scheduleRender();
+      tickAges();
+    }, ACTIVITY_AGE_REFRESH_MS);
+  }
+  function moveSelection(event) {
+    const openers = rowOpeners();
+    if (openers.length === 0) return;
+    const current = event.target instanceof Element ? event.target.closest(".activity-row") : null;
+    const opener = current?.querySelector(".activity-row-open");
+    const index = opener ? openers.indexOf(opener) : -1;
+    let next;
+    switch (event.key) {
+      case "ArrowDown":
+        next = index < 0 ? 0 : Math.min(openers.length - 1, index + 1);
+        break;
+      case "ArrowUp":
+        next = index < 0 ? 0 : Math.max(0, index - 1);
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = openers.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const target = openers[next]?.closest(".activity-row")?.dataset["rowKey"];
+    if (target) select(target);
+  }
+  list.addEventListener("keydown", moveSelection);
+  const onChange = () => {
+    scheduleRender();
+  };
+  sources3.approvals.onChange(onChange);
+  sources3.questions.onChange(onChange);
+  store2.on("threads_changed", onChange);
+  store2.on("thread_status_changed", onChange);
+  store2.on("projects_changed", onChange);
+  store2.on("agent_activity", onChange);
+  dialog2.addEventListener("close", () => {
+    cancelRender?.();
+    cancelRender = null;
+    renderScheduled = false;
+    cancelAgeTick?.();
+    cancelAgeTick = null;
+    cancelSettle?.();
+    cancelSettle = null;
+    settling = false;
+    needsYouSignature = null;
+    selectedKey = null;
+    selectedIndex = 0;
+    shownKey = null;
+    status.textContent = "";
+  });
+  const panel = {
+    open: () => {
+      if (isOpen()) return;
+      open2();
+      needsYouSignature = null;
+      selectedKey = null;
+      selectedIndex = 0;
+      shownKey = null;
+      render();
+      const first = selectedOpener();
+      if (first) first.focus();
+      else closeButton.focus();
+      tickAges();
+    },
+    close,
+    isOpen
+  };
+  openActive = panel.open;
+  return panel;
+}
+var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, openActive, defaultTimer2;
+var init_activity_panel = __esm({
+  "src/renderer/views/activity-panel.ts"() {
+    init_helpers();
+    init_icons();
+    init_projects();
+    init_activity_model();
+    init_dialog_shell();
+    init_approval_dialog();
+    ACTIVITY_RENDER_INTERVAL_MS = 250;
+    ACTIVITY_AGE_REFRESH_MS = 3e4;
+    STATE_SHORT = {
+      "needs-approval": "Approval",
+      "needs-answer": "Question",
+      working: "Running",
+      failed: "Failed",
+      finished: "Done"
+    };
+    STATE_LONG = {
+      "needs-approval": "Needs approval",
+      "needs-answer": "Needs an answer",
+      working: "Running",
+      failed: "Failed",
+      finished: "Finished"
+    };
+    AGE_VERB = {
+      "needs-approval": "waiting",
+      "needs-answer": "waiting",
+      working: "started",
+      failed: "ended",
+      finished: "ended"
+    };
+    openActive = null;
+    defaultTimer2 = (fn2, ms2) => {
+      const handle = setTimeout(fn2, ms2);
+      return () => {
+        clearTimeout(handle);
+      };
+    };
   }
 });
 
@@ -66039,15 +71069,92 @@ var init_worktree_policy = __esm({
   }
 });
 
+// src/shared/thread-title.ts
+function stripDecoration(value) {
+  return value.replace(/^\s*\x60{1,3}/, "").replace(/\x60{1,3}\s*$/, "").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/(?:\*{1,2}|_{1,2})\s*$/, "").replace(/^(?:here(?:'s| is)(?: the)?\s+)?(?:thread\s+)?title\s*:\s*/i, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/^[“”"'‘’]+|[“”"'‘’]+$/g, "").trim();
+}
+function stripConversationalLead(value) {
+  let result = value.trim();
+  let changed = true;
+  while (changed && result) {
+    changed = false;
+    for (const pattern of CONVERSATIONAL_LEADS) {
+      const next = result.replace(pattern, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
+    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+    ""
+  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
+}
+function vagueClause(value) {
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
+    value.trim()
+  );
+}
+function compactTitle(value, capitalize) {
+  const words = value.replace(BIDI_FORMAT_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").replace(/[.!?,:;\s]+$/g, "").trim().split(" ").filter(Boolean).slice(0, MAX_THREAD_TITLE_WORDS);
+  let title = words.join(" ");
+  const chars = Array.from(title);
+  if (chars.length > MAX_THREAD_TITLE_CHARS) {
+    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join("");
+    const boundary = clipped.lastIndexOf(" ");
+    title = (boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join("")).trim();
+  }
+  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title;
+}
+function fallbackThreadTitle(input2) {
+  const plain = input2.replace(/\x60{3}(?:[a-z0-9_-]+)?/gi, " ").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/gm, "").replace(/\s+/g, " ").trim();
+  const clauses = plain.split(/(?<=[.!?])\s+/);
+  for (const rawClause of clauses) {
+    const clause = stripConversationalLead(stripDecoration(rawClause));
+    if (!clause || vagueClause(clause)) continue;
+    const title = compactTitle(clause, true);
+    if (title && !vagueClause(title)) return title;
+  }
+  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
+  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
+}
+var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
+var init_thread_title = __esm({
+  "src/shared/thread-title.ts"() {
+    MAX_THREAD_TITLE_CHARS = 60;
+    MAX_THREAD_TITLE_WORDS = 6;
+    CONVERSATIONAL_LEADS = [
+      /^(?:got it|sure|okay|ok)\b[\s,:;—-]*/i,
+      /^(?:a\s+)?proposed thread\b[\s,:;—-]*/i,
+      /^(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?/i,
+      /^(?:i(?:'d| would)\s+like|i\s+want|we\s+need)\s+(?:you\s+)?(?:to\s+)?/i,
+      /^(?:how|what|why)\s+(?:can|could|might|do|does|would|should)\s+(?:you|we|i)\s+/i,
+      /^(?:sometimes\s+)?when(?:ever)?\s+(?:i|we)\s+/i,
+      /^please\s+/i,
+      /^help\s+(?:me|us)\s+(?:to\s+)?/i
+    ];
+    CONTROL_CHARS = /\p{Cc}/gu;
+    BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+    MODEL_PREAMBLE = new RegExp(
+      [
+        // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
+        String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
+        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
+        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
+      ].join("|"),
+      "i"
+    );
+  }
+});
+
 // src/renderer/controller/thread-naming.ts
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
     (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
-}
-function firstWords(text2, n2 = 6) {
-  return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
 function promptWords(message2) {
   return stripPastePlaceholders(message2.content);
@@ -66106,7 +71213,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
+    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -66122,6 +71229,7 @@ var init_thread_naming = __esm({
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
+    init_thread_title();
     inFlight2 = /* @__PURE__ */ new Set();
     PASS_THRESHOLDS = [1, 3, 8];
     branchRenameInFlight = /* @__PURE__ */ new Set();
@@ -66463,14 +71571,14 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup) {
-  const label = describeThreadPrStatus(rollup);
-  const icon = gitPullRequestIcon("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing) {
+  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}`,
+      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -66507,6 +71615,33 @@ function automationSetupBtn(label, open2, icon = settingsIcon) {
   });
   return btn;
 }
+function startRunNow(api2, target) {
+  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
+    showToast(
+      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
+    );
+  }).catch((error62) => {
+    showErrorToast(
+      `Could not run \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The run could not start")
+    );
+  });
+}
+function automationMenuEntries(api2, target, openSetup) {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: "Run now",
+      onSelect: () => {
+        startRunNow(api2, target);
+      }
+    },
+    {
+      label: "Automation setup\u2026",
+      onSelect: openSetup
+    }
+  ];
+}
 function mountProjectsPane(root, store2, api2) {
   const title = el("span", {}, "Projects");
   const searchToggle = el(
@@ -66527,10 +71662,49 @@ function mountProjectsPane(root, store2, api2) {
     },
     plusIcon("ui-icon ui-icon-sm")
   );
-  const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
+  const activityCount = el("span", { class: "projects-activity-count", hidden: true });
+  const activityBtn = el(
+    "button",
+    {
+      class: "projects-activity-btn",
+      "aria-label": "Activity",
+      "data-tooltip": "Activity: what needs you and what is running"
+    },
+    bellIcon("ui-icon ui-icon-sm"),
+    activityCount
+  );
+  activityBtn.addEventListener("click", () => {
+    openActivityPanel();
+  });
+  const syncActivityButton = () => {
+    const waiting = getAttentionThreadIds().length;
+    activityBtn.classList.toggle("has-attention", waiting > 0);
+    activityCount.hidden = waiting === 0;
+    activityCount.textContent = waiting > 0 ? String(waiting) : "";
+    activityBtn.setAttribute(
+      "aria-label",
+      waiting === 0 ? "Activity" : `Activity: ${String(waiting)} ${waiting === 1 ? "thread needs" : "threads need"} you`
+    );
+  };
+  syncActivityButton();
+  const header = el(
+    "div",
+    { class: "pane-projects-header" },
+    title,
+    searchToggle,
+    activityBtn,
+    addBtn
+  );
   let threadFilter = "";
+  let filteredProjectId = store2.getState().activeProjectId;
+  let renderFrameQueued = false;
   const contentFilter = createThreadFilter(store2, api2, () => {
-    render();
+    if (renderFrameQueued) return;
+    renderFrameQueued = true;
+    requestAnimationFrame(() => {
+      renderFrameQueued = false;
+      render();
+    });
   });
   const searchInput = el("input", {
     type: "text",
@@ -66559,7 +71733,8 @@ function mountProjectsPane(root, store2, api2) {
     }
   });
   searchInput.addEventListener("input", () => {
-    threadFilter = searchInput.value.trim().toLowerCase();
+    threadFilter = filterText(searchInput.value.trim());
+    filteredProjectId = store2.getState().activeProjectId;
     contentFilter.search(threadFilter);
     render();
   });
@@ -66633,9 +71808,16 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
+  const prBackfillRequested = /* @__PURE__ */ new Map();
+  const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
+  const prBackfillRetryTimers = /* @__PURE__ */ new Set();
+  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
+  let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
+  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
+  let orphanScanGeneration = 0;
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
@@ -66698,8 +71880,21 @@ function mountProjectsPane(root, store2, api2) {
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
-        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
-        prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
+        const previous = prLifecycleCache.get(key);
+        lifecycleChanged = previous?.state !== state;
+        prLifecycleCache.set(key, {
+          state,
+          ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
+          fetchedAt: Date.now()
+        });
+        if (state !== "open") return void 0;
+        return api2.gh.prChecks(ref.owner, ref.repo, ref.number).then((checks) => {
+          if (generation !== prStatusGeneration) return;
+          const entry = prLifecycleCache.get(key);
+          if (!entry) return;
+          if (entry.checks !== checks) lifecycleChanged = true;
+          prLifecycleCache.set(key, { ...entry, checks });
+        });
       }).catch(() => {
         if (generation !== prStatusGeneration) return;
         const cached2 = prLifecycleCache.get(key);
@@ -66713,6 +71908,12 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function ciFailingForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.checks === "failure";
+    });
   }
   function rollupForThread(thread) {
     const refs = sidebarPrRefs(thread);
@@ -66743,6 +71944,44 @@ function mountProjectsPane(root, store2, api2) {
     wrap.append(action);
     return wrap;
   }
+  function orphanPrimaryLabel(orphan) {
+    const lead = orphan.sampleTitles[0]?.trim();
+    if (lead) return lead;
+    const count = orphan.threadCount;
+    return `${String(count)} thread${count === 1 ? "" : "s"}`;
+  }
+  function orphanSubtitle(orphan) {
+    const count = orphan.threadCount;
+    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    if (extra.length === 0) return countLabel;
+    const shown = extra.slice(0, 2).join(" \xB7 ");
+    const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
+    return `${countLabel} \xB7 ${shown}${more}`;
+  }
+  function orphanRecoverDetail(orphan) {
+    const lines = [
+      "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
+    ];
+    if (orphan.sampleTitles.length > 0) {
+      lines.push("");
+      lines.push("Threads in this store:");
+      for (const title2 of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title2}`);
+      }
+      if (orphan.threadCount > orphan.sampleTitles.length) {
+        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
+      }
+    } else {
+      lines.push("");
+      lines.push(
+        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
+      );
+    }
+    lines.push("");
+    lines.push(`Store id: ${orphan.id}`);
+    return lines.join("\n");
+  }
   function renderOrphansSection() {
     const section = el("div", { class: "orphans-section" });
     section.append(
@@ -66751,35 +71990,93 @@ function mountProjectsPane(root, store2, api2) {
         { class: "orphans-heading" },
         warningIcon("ui-icon ui-icon-sm"),
         el("span", {}, "Recoverable threads")
+      ),
+      el(
+        "p",
+        { class: "orphans-hint" },
+        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
       )
     );
     for (const orphan of orphans) {
-      const count = orphan.threadCount;
+      const primary = orphanPrimaryLabel(orphan);
+      const subtitle = orphanSubtitle(orphan);
       const row2 = el(
         "div",
-        { class: "orphan-row", title: `Store ${orphan.id}` },
-        el("span", { class: "orphan-name" }, `${String(count)} thread${count === 1 ? "" : "s"}`)
+        {
+          class: "orphan-row",
+          title: `Store ${orphan.id}`,
+          "data-orphan-id": orphan.id
+        },
+        el(
+          "div",
+          { class: "orphan-copy" },
+          el("span", { class: "orphan-name" }, primary),
+          el("span", { class: "orphan-meta" }, subtitle)
+        )
       );
+      const actions = el("div", { class: "orphan-actions" });
+      const dismissBtn = el(
+        "button",
+        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
+        "Dismiss"
+      );
+      dismissBtn.addEventListener("click", () => {
+        void dismissOrphanProject(api2, orphan.id).then(() => {
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+          showToast("Recoverable threads hidden. They remain on disk.");
+        }).catch((err2) => {
+          showErrorToast("Could not dismiss recoverable threads", err2);
+        });
+      });
       const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
       recoverBtn.addEventListener("click", () => {
-        void recoverOrphanProject(store2, api2, orphan.id).catch((err2) => {
+        void recoverOrphanProject(
+          store2,
+          api2,
+          orphan.id,
+          () => showConfirmDialog({
+            message: `Recover \u201C${primary}\u201D?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: "Choose folder\u2026",
+            cancelLabel: "Cancel"
+          })
+        ).then((recovered) => {
+          if (!recovered) return;
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+        }).catch((err2) => {
           showErrorToast("Could not recover threads", err2);
         });
       });
-      row2.append(recoverBtn);
+      actions.append(dismissBtn, recoverBtn);
+      row2.append(actions);
       section.append(row2);
     }
     return section;
   }
+  function refreshOrphansIfProjectSetChanged() {
+    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
+    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
+      return;
+    }
+    knownProjectIds = nextIds;
+    refreshOrphans();
+  }
   function refreshOrphans() {
-    void listOrphanProjects(api2).then((next) => {
+    const generation = ++orphanScanGeneration;
+    void listOrphanProjects(api2).then((scanned) => {
+      if (generation !== orphanScanGeneration) return;
+      const known = new Set(store2.getState().projects.map((project2) => project2.id));
+      const next = scanned.filter((orphan) => !known.has(orphan.id));
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
-        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount;
+        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
       });
       orphans = next;
       if (changed) render();
     }).catch((err2) => {
+      if (generation !== orphanScanGeneration) return;
       showErrorToast("Could not scan recoverable threads", err2);
     });
   }
@@ -67003,7 +72300,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
     clear(list);
+    const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
@@ -67103,6 +72403,16 @@ function mountProjectsPane(root, store2, api2) {
           // just to reach the editor.
           ...scheduleId ? [
             {
+              label: "Run now",
+              onSelect: () => {
+                startRunNow(api2, {
+                  project: project2,
+                  scheduleName: thread.automation?.scheduleName ?? thread.title,
+                  scheduleId
+                });
+              }
+            },
+            {
               label: "Automation setup\u2026",
               onSelect: () => {
                 openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
@@ -67132,7 +72442,12 @@ function mountProjectsPane(root, store2, api2) {
       const prRollup = rollupForThread(thread);
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
-        chatRow.append(chatPrStatus(prRollup));
+        chatRow.append(
+          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+        );
+      }
+      if (thread.prRefs === void 0) {
+        prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
       }
       if (canMutate) {
         const del = el(
@@ -67194,6 +72509,18 @@ function mountProjectsPane(root, store2, api2) {
       toggle.addEventListener("click", () => {
         automationsSectionExpanded = !automationsSectionExpanded;
         render();
+      });
+      toggle.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          {
+            label: "New automation\u2026",
+            onSelect: () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            }
+          }
+        ]);
       });
       section.append(
         el(
@@ -67288,6 +72615,25 @@ function mountProjectsPane(root, store2, api2) {
               })
             )
           );
+          scheduleToggle.addEventListener("contextmenu", (e3) => {
+            e3.preventDefault();
+            e3.stopPropagation();
+            showContextMenu(
+              e3.clientX,
+              e3.clientY,
+              automationMenuEntries(
+                api2,
+                {
+                  project: project2,
+                  scheduleName,
+                  scheduleId
+                },
+                () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                }
+              )
+            );
+          });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
@@ -67473,9 +72819,7 @@ function mountProjectsPane(root, store2, api2) {
         (thread) => thread.archivedAt == null
       ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
-          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
-        )
+        (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -67522,7 +72866,7 @@ function mountProjectsPane(root, store2, api2) {
             "Some threads could not be searched"
           )
         );
-      } else if (isFiltering && matchingThreads.length === 0) {
+      } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
       for (const thread of visibleThreads) {
@@ -67562,6 +72906,66 @@ function mountProjectsPane(root, store2, api2) {
       else list.append(renderProjectEntry(node2.project));
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
+      const rowThreads = new Map(
+        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+      );
+      const observer = new IntersectionObserver((entries2) => {
+        if (prBackfillObserver !== observer) return;
+        const pending = /* @__PURE__ */ new Map();
+        for (const entry of entries2) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          const thread = rowThreads.get(entry.target);
+          if (!thread) continue;
+          const requested = prBackfillRequested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
+          prBackfillRequested.set(thread.projectId, requested);
+          if (requested.has(thread.threadId)) continue;
+          requested.add(thread.threadId);
+          const rows = pending.get(thread.projectId) ?? [];
+          rows.push({ threadId: thread.threadId, row: entry.target });
+          pending.set(thread.projectId, rows);
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId);
+          for (let i2 = 0; i2 < rows.length; i2 += 10) {
+            const batch = rows.slice(i2, i2 + 10);
+            const threadIds = batch.map(({ threadId }) => threadId);
+            void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
+              for (const threadId of threadIds) {
+                prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`);
+              }
+            }).catch((err2) => {
+              let attempt = 1;
+              for (const threadId of threadIds) {
+                const key = `${projectId}\0${threadId}`;
+                const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
+                prBackfillRetryAttempts.set(key, nextAttempt);
+                attempt = Math.max(attempt, nextAttempt);
+              }
+              const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
+              const timer = setTimeout(() => {
+                prBackfillRetryTimers.delete(timer);
+                for (const { threadId } of batch) requested?.delete(threadId);
+                const currentObserver = prBackfillObserver;
+                if (!currentObserver) return;
+                for (const { threadId } of batch) {
+                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
+                  if (row2?.isConnected) currentObserver.observe(row2);
+                }
+              }, delay);
+              prBackfillRetryTimers.add(timer);
+              console.warn("[threads] visible PR-ref backfill failed:", err2);
+            });
+          }
+        }
+      });
+      prBackfillObserver = observer;
+      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -67572,22 +72976,30 @@ function mountProjectsPane(root, store2, api2) {
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
-      closeThreadFilter();
+      if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
+      else if (threadFilter) contentFilter.search(threadFilter);
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
       render();
     }),
     store2.on("attention_changed", render),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store2.on("projects_changed", refreshOrphans)
+    store2.on("attention_changed", syncActivityButton),
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store2.on("projects_changed", refreshOrphansIfProjectSetChanged)
   ];
   render();
   refreshOrphans();
   return () => {
     contentFilter.cancel();
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
+    prBackfillRetryTimers.clear();
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
+    prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
     renamingGroup = null;
@@ -67611,12 +73023,15 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_ipc_error_message();
+    init_confirm_dialog();
     init_toast();
     init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
     init_sidebar_thread();
     init_attention();
+    init_activity_panel();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_project_tree();
@@ -67931,12 +73346,14 @@ function customAgentId(model) {
 }
 function namedAgentTitles(value) {
   const titles2 = /* @__PURE__ */ new Map();
-  const entries2 = Array.isArray(value) ? value : [];
-  for (const entry of entries2) {
-    if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
-      titles2.set(entry.id, entry.title.trim());
+  for (const agent of parseAcpAgentConfigs(value)) {
+    const title = agent.title.trim();
+    if (title) titles2.set(agent.id, title);
   }
   return titles2;
+}
+function agentRouteModel(model) {
+  return parseAcpModelSelection(model)?.model ?? parseRemoteAgentModelSelection(model)?.model;
 }
 function chatAgentIdentity(threadId, message2, names) {
   const model = message2.model ?? message2.requestedModel;
@@ -68283,7 +73700,9 @@ var init_preview_csp = __esm({
       "media-src 'self' data: blob:",
       "connect-src 'self'",
       "frame-src 'none'",
-      "worker-src 'none'",
+      // Self-contained drawing workers inherit this policy and the data: document's
+      // opaque origin. No remote worker script, eval, or network origin is allowed.
+      "worker-src blob:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'"
@@ -68431,7 +73850,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
             code === 43)) {
               const raw = url2.charCodeAt(i2);
               if (raw === 9 || raw === 10 || raw === 13) {
-                return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+                return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
               }
               return null;
             }
@@ -68447,7 +73866,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
         for (let i2 = start; i2 < end; i2 += 1) {
           const code = url2.charCodeAt(i2);
           if (code === 9 || code === 10 || code === 13) {
-            return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+            return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
           }
           if (code === 58) {
             indexOfColon = i2;
@@ -68584,7 +74003,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
       }
     }
     if (hasControl) {
-      return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+      return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
     }
     if (indexOfIdentifier !== -1 && indexOfIdentifier >= start && indexOfIdentifier < end) {
       start = indexOfIdentifier + 1;
@@ -68618,10 +74037,10 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
   }
   return hostname3;
 }
-var CONTROL_CHARS, extractedHostnameValidated;
+var CONTROL_CHARS2, extractedHostnameValidated;
 var init_extract_hostname = __esm({
   "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
-    CONTROL_CHARS = /[\t\n\r]/g;
+    CONTROL_CHARS2 = /[\t\n\r]/g;
     extractedHostnameValidated = false;
   }
 });
@@ -70839,6 +76258,7 @@ function canvasStage(title, preview) {
   return el("div", { class: "canvas-inline-stage" }, ...children);
 }
 function createInlineArtefact(api2, projectId, threadId, title) {
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, "$1");
   const preview = getArtefactPreview(threadId, title);
   const stage = canvasStage(title, preview);
   const status = el(
@@ -70851,7 +76271,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-open",
-      "aria-label": `Open ${title} in canvas`
+      "aria-label": `Open ${displayTitle} in canvas`
     },
     maximizeIcon("ui-icon ui-icon-sm"),
     "Open canvas"
@@ -70864,7 +76284,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     {
       type: "button",
       class: "ui-btn ui-btn-ghost canvas-preview-annotate",
-      "aria-label": `Annotate ${title}`,
+      "aria-label": `Annotate ${displayTitle}`,
       "aria-pressed": "false"
     },
     penLineIcon("ui-icon ui-icon-sm"),
@@ -70875,6 +76295,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
+  let mountTimer = null;
   const captureBase = async () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
     if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
@@ -70911,7 +76332,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       el(
         "span",
         { class: "canvas-preview-heading" },
-        el("span", { class: "canvas-preview-title" }, title),
+        el("span", { class: "canvas-preview-title" }, displayTitle),
         status
       ),
       el("span", { class: "canvas-preview-actions" }, open2, annotate)
@@ -70921,6 +76342,7 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
   });
@@ -70963,7 +76385,10 @@ function createInlineArtefact(api2, projectId, threadId, title) {
       if (disposed || !card.isConnected) return;
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null;
-        mount(artefact);
+        mountTimer = setTimeout(() => {
+          mountTimer = null;
+          mount(artefact);
+        }, 250);
       });
     });
   };
@@ -71196,6 +76621,27 @@ var init_container_run_card = __esm({
 });
 
 // src/renderer/markdown/code-block-copy.ts
+function runKey(pre, command) {
+  const message2 = pre.closest("[data-message-id]");
+  const messageId = message2?.dataset["messageId"];
+  if (!message2 || !messageId) return null;
+  let occurrence = 0;
+  for (const other of message2.querySelectorAll("pre")) {
+    if (other === pre) break;
+    if (other.closest("[data-message-id]") !== message2) continue;
+    const otherCode = other.querySelector("code");
+    if (otherCode && runnableCommand(otherCode) === command) occurrence++;
+  }
+  return `${messageId}\0${String(occurrence)}\0${command}`;
+}
+function rememberRun(key, run2) {
+  runsByBlock.delete(key);
+  runsByBlock.set(key, run2);
+  for (const oldest of runsByBlock.keys()) {
+    if (runsByBlock.size <= REMEMBERED_RUN_LIMIT) break;
+    runsByBlock.delete(oldest);
+  }
+}
 function copyButtonText(code) {
   return code.textContent.trimStart();
 }
@@ -71219,6 +76665,10 @@ function looksLikeUnlabelledCommand(source) {
   const basename3 = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase();
   return COMMON_SHELL_COMMANDS.has(basename3);
 }
+function runnableCommand(code) {
+  const command = copyButtonText(code).trim();
+  return command.includes("\n") ? command : command.replace(/^\$\s+/, "");
+}
 function isRunnableCodeBlock(code) {
   const language = explicitCodeLanguage(code);
   if (language !== null) return SHELL_LANGUAGES.has(language);
@@ -71234,15 +76684,15 @@ function setRunButtonState(button, state) {
     button.replaceChildren(spinnerIcon("ui-icon ui-icon-sm"));
   } else if (state === "succeeded") {
     button.setAttribute("aria-label", "Run command again");
-    button.setAttribute("data-tooltip", "Result attached \xB7 Run again");
+    button.setAttribute("data-tooltip", "Run again");
     button.replaceChildren(checkIcon("ui-icon ui-icon-sm"));
   } else if (state === "failed") {
     button.setAttribute("aria-label", "Run command again");
-    button.setAttribute("data-tooltip", "Command failed \xB7 Result attached \xB7 Run again");
+    button.setAttribute("data-tooltip", "Command failed \xB7 Run again");
     button.replaceChildren(warningIcon("ui-icon ui-icon-sm"));
   } else {
     button.setAttribute("aria-label", "Run command");
-    button.setAttribute("data-tooltip", "Run in background and attach result");
+    button.setAttribute("data-tooltip", "Run and send the result to the agent");
     button.replaceChildren(playIcon("ui-icon ui-icon-sm"));
   }
 }
@@ -71259,12 +76709,49 @@ function bindCodeBlockRunRequests(root, handler) {
     root.removeEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
   };
 }
-function setCodeBlockRunOutcome(root, requestId, exitCode) {
+function runSummary(run2) {
+  if (!run2.outcome) return "Running\u2026";
+  const { exitCode } = run2.outcome;
+  return exitCode === null ? "Could not run" : `Output \xB7 exit ${String(exitCode)}`;
+}
+function renderRunOutput(shell3, run2) {
+  let panel = shell3.querySelector(":scope > .code-block-output");
+  if (!panel) {
+    panel = el("details", { class: "code-block-output", open: true });
+    shell3.append(panel);
+  }
+  panel.dataset["runState"] = run2.state;
+  const summary = el("summary", { class: "code-block-output-summary" }, runSummary(run2));
+  if (!run2.outcome) {
+    panel.replaceChildren(summary);
+    return;
+  }
+  const output2 = run2.outcome.output.trimEnd();
+  panel.replaceChildren(
+    summary,
+    output2 ? el("div", { class: "code-block-output-text" }, output2) : el("div", { class: "code-block-output-empty" }, "No output")
+  );
+}
+function showRun(shell3, button, run2) {
+  button.dataset["runId"] = run2.id;
+  setRunButtonState(button, run2.state);
+  renderRunOutput(shell3, run2);
+}
+function setCodeBlockRunOutcome(root, requestId, outcome) {
+  const state = outcome.exitCode === 0 ? "succeeded" : "failed";
+  let run2;
+  for (const remembered of runsByBlock.values()) {
+    if (remembered.id !== requestId) continue;
+    remembered.state = state;
+    remembered.outcome = outcome;
+    run2 = remembered;
+  }
+  run2 ??= { id: requestId, state, outcome };
   const buttons = root.querySelectorAll(".code-block-run");
   for (const button of buttons) {
     if (button.dataset["runId"] !== requestId) continue;
-    setRunButtonState(button, exitCode === 0 ? "succeeded" : "failed");
-    return;
+    const shell3 = button.closest(".code-block-shell");
+    if (shell3) showRun(shell3, button, run2);
   }
 }
 function attachCodeBlockCopyButtons(root, options = {}) {
@@ -71310,27 +76797,37 @@ function attachCodeBlockCopyButtons(root, options = {}) {
     if (!actions || actions.querySelector(".code-block-run")) continue;
     const runBtn = el("button", { class: "code-block-run", type: "button" });
     setRunButtonState(runBtn, "idle");
+    const runShell = shell3;
     runBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const currentCode = pre.querySelector("code");
       if (!currentCode) return;
-      const command = copyButtonText(currentCode).trim();
+      const command = runnableCommand(currentCode);
       if (!command) return;
-      const id = crypto.randomUUID();
-      runBtn.dataset["runId"] = id;
-      setRunButtonState(runBtn, "running");
+      const run2 = { id: crypto.randomUUID(), state: "running", outcome: null };
+      const key = runKey(pre, command);
+      if (key) rememberRun(key, run2);
+      showRun(runShell, runBtn, run2);
       runBtn.dispatchEvent(
         new CustomEvent(CODE_BLOCK_RUN_REQUEST_EVENT, {
           bubbles: true,
-          detail: { id, command }
+          detail: { id: run2.id, command }
         })
       );
     });
+    if (runsByBlock.size > 0) {
+      queueMicrotask(() => {
+        const command = runnableCommand(code);
+        const key = runKey(pre, command);
+        const run2 = key ? runsByBlock.get(key) : void 0;
+        if (run2 && !runBtn.dataset["runId"]) showRun(runShell, runBtn, run2);
+      });
+    }
     actions.prepend(runBtn);
   }
 }
-var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS;
+var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS, REMEMBERED_RUN_LIMIT, runsByBlock;
 var init_code_block_copy = __esm({
   "src/renderer/markdown/code-block-copy.ts"() {
     init_unknown_value3();
@@ -71400,6 +76897,8 @@ var init_code_block_copy = __esm({
       "yarn",
       "zsh"
     ]);
+    REMEMBERED_RUN_LIMIT = 100;
+    runsByBlock = /* @__PURE__ */ new Map();
   }
 });
 
@@ -71807,7 +77306,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -71991,7 +77490,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -72518,9 +78017,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -73072,12 +78571,12 @@ function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
 function forgetImageRead(read) {
   if (imageReads.get(read.key) === read) imageReads.delete(read.key);
 }
-function whenImageRead(read, apply2) {
+function whenImageRead(read, apply3) {
   if (read.src !== void 0) {
-    apply2(read.src);
+    apply3(read.src);
     return;
   }
-  read.promise.then(apply2, () => {
+  read.promise.then(apply3, () => {
   });
 }
 function messageIdOf(node2) {
@@ -74311,6 +79810,43 @@ var init_github_link_steering = __esm({
 });
 
 // packages/llm/src/intellect-lookup.ts
+function localCapabilityFor(idOrLabel) {
+  const direct = getLocalModelCapability(idOrLabel);
+  if (direct) return direct;
+  if (idOrLabel.startsWith(LMSTUDIO_MODEL_PREFIX)) {
+    return getLocalModelCapability(idOrLabel.slice(LMSTUDIO_MODEL_PREFIX.length));
+  }
+  return null;
+}
+function canonical(score) {
+  return {
+    value: score.value,
+    scale: "canonical",
+    estimated: score.estimated === true,
+    basis: score.basis ?? score.source
+  };
+}
+function resolveModelIntellect(idOrLabel) {
+  const local = localCapabilityFor(idOrLabel);
+  if (local) {
+    const quantAdjusted = localBenchmarkScore(local, "aa-intelligence");
+    if (quantAdjusted) return canonical(quantAdjusted);
+  }
+  const measured = getIntellectScore(idOrLabel);
+  if (measured) return canonical(measured);
+  if (local) {
+    const composite = compositeIntellect(local);
+    if (composite) {
+      return {
+        value: composite.value,
+        scale: "composite",
+        estimated: true,
+        basis: composite.basis
+      };
+    }
+  }
+  return null;
+}
 var init_intellect_lookup = __esm({
   "packages/llm/src/intellect-lookup.ts"() {
     init_composite_intellect();
@@ -74469,6 +80005,261 @@ var init_todos_plugin = __esm({
   }
 });
 
+// src/renderer/views/apple-project-suggestion.ts
+function pluginCard() {
+  const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
+  const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
+  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
+  const nameLine = el(
+    "div",
+    { class: "plugin-row-name-line" },
+    el("span", { class: "plugin-name" }, PLUGIN_NAME),
+    stability
+  );
+  const title = el(
+    "div",
+    { class: "plugin-row-title" },
+    el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
+    nameLine
+  );
+  return el(
+    "div",
+    { class: "plugin-row apple-suggestion-card" },
+    el("div", { class: "plugin-row-header" }, icon, title),
+    el("div", { class: "plugin-row-desc" }, PLUGIN_DESCRIPTION)
+  );
+}
+function showAppleSuggestionDialog(options) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({ id: "apple-suggestion-dialog" });
+  dialog2.setAttribute("aria-labelledby", "apple-suggestion-title");
+  const { projectName, pluginEnabled } = options;
+  const heading = el(
+    "h2",
+    { id: "apple-suggestion-title" },
+    pluginEnabled ? `Use ${PLUGIN_NAME} in ${projectName}?` : `Turn on ${PLUGIN_NAME}?`
+  );
+  const lede = el(
+    "p",
+    { class: "apple-suggestion-lede" },
+    pluginEnabled ? `${projectName} looks like an Apple project. ${PLUGIN_NAME} is already on \u2014 allow the agent to build, run, and debug this project too.` : `${projectName} looks like an Apple project. Copse has a plugin that lets the agent build, run, and debug it. Turning it on allows it for ${projectName}.`
+  );
+  const dontAsk = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost apple-suggestion-dont-ask" },
+    "Don't ask for this project"
+  );
+  const notNow = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary apple-suggestion-not-now" },
+    "Not now"
+  );
+  const accept = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary apple-suggestion-accept" },
+    pluginEnabled ? "Allow" : "Turn on"
+  );
+  const actions = el(
+    "div",
+    { class: "ui-actions apple-suggestion-actions" },
+    dontAsk,
+    el("span", { class: "apple-suggestion-spacer" }),
+    notNow,
+    accept
+  );
+  dialog2.append(heading, lede, pluginCard(), actions);
+  if (options.signal?.aborted) {
+    dialog2.remove();
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    let choice = "not-now";
+    let deferred = false;
+    let chosen = false;
+    const choose = (next) => {
+      choice = next;
+      chosen = true;
+      close();
+    };
+    const defer = () => {
+      if (chosen) return;
+      deferred = true;
+      close();
+    };
+    dontAsk.addEventListener("click", () => {
+      choose("dont-ask");
+    });
+    notNow.addEventListener("click", () => {
+      choose("not-now");
+    });
+    accept.addEventListener("click", () => {
+      choose("turn-on");
+    });
+    dialog2.addEventListener(
+      "close",
+      () => {
+        options.signal?.removeEventListener("abort", defer);
+        dialog2.remove();
+        resolve(deferred ? null : choice);
+      },
+      { once: true }
+    );
+    options.signal?.addEventListener("abort", defer, { once: true });
+    open2();
+    accept.focus();
+  });
+}
+function mountAppleProjectSuggestions(store2, api2, onAllowed) {
+  const text2 = el("span", { class: "apple-suggestion-notice-text" });
+  const acceptLink = el("button", { type: "button", class: "apple-suggestion-notice-accept" });
+  const dismissLink = el(
+    "button",
+    { type: "button", class: "apple-suggestion-notice-dismiss" },
+    "Dismiss"
+  );
+  const host = el(
+    "div",
+    { class: "apple-suggestion-notice", role: "status", hidden: true },
+    sparkleIcon("ui-icon"),
+    text2,
+    acceptLink,
+    dismissLink
+  );
+  const asked = /* @__PURE__ */ new Set();
+  const reminders = /* @__PURE__ */ new Map();
+  let pendingDialog = null;
+  const lifetime = new AbortController();
+  const projectName = (projectId) => {
+    const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
+    return project2 ? projectDisplayName(project2) : "This project";
+  };
+  const renderReminder = () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) {
+      host.hidden = true;
+      return;
+    }
+    const name = projectName(reminder.projectId);
+    text2.textContent = reminder.pluginEnabled ? `${PLUGIN_NAME} isn't allowed in ${name}.` : `${PLUGIN_NAME} is off for ${name}.`;
+    acceptLink.textContent = reminder.pluginEnabled ? "Allow" : "Turn on";
+    host.hidden = false;
+  };
+  const accept = async (projectId, pluginEnabled) => {
+    reminders.delete(projectId);
+    renderReminder();
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId || store2.getState().activeProjectId !== projectId) return;
+    try {
+      if (!pluginEnabled) {
+        await api2.plugins.setEnabled(APPLE_DEVELOPMENT_PLUGIN_ID, true);
+        store2.emit("settings_changed");
+      }
+      await api2.appleDevelopment.setEnrolled(projectId, threadId, true);
+      onAllowed();
+      const name = projectName(projectId);
+      showToast(
+        pluginEnabled ? `${PLUGIN_NAME} is allowed in ${name}.` : `${PLUGIN_NAME} is on and allowed in ${name}. Change this in Settings \u2192 Plugins.`
+      );
+    } catch (error62) {
+      showErrorToast(`Could not turn on ${PLUGIN_NAME}`, error62);
+    }
+  };
+  const answer = (projectId, choice) => {
+    void api2.appleDevelopment.answerSuggestion(projectId, choice).catch((error62) => {
+      showErrorToast("Could not save your answer", error62);
+    });
+  };
+  const offer = async (projectId, suggestion) => {
+    if (suggestion.offer === "reminder") {
+      reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled });
+      renderReminder();
+      return;
+    }
+    if (suggestion.offer !== "dialog") return;
+    const controller = new AbortController();
+    pendingDialog = { projectId, controller };
+    const choice = await showAppleSuggestionDialog({
+      projectName: projectName(projectId),
+      pluginEnabled: suggestion.pluginEnabled,
+      signal: controller.signal
+    });
+    if (lifetime.signal.aborted) return;
+    if (pendingDialog.controller === controller) pendingDialog = null;
+    if (choice === null) {
+      asked.delete(projectId);
+      void evaluate();
+      return;
+    }
+    if (choice === "turn-on") await accept(projectId, suggestion.pluginEnabled);
+    else answer(projectId, choice === "dont-ask" ? "dismissed" : "snoozed");
+  };
+  const evaluate = async () => {
+    renderReminder();
+    if (pendingDialog) return;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId || asked.has(activeProjectId)) return;
+    asked.add(activeProjectId);
+    let suggestion;
+    try {
+      suggestion = await api2.appleDevelopment.suggestion(activeProjectId);
+    } catch {
+      asked.delete(activeProjectId);
+      return;
+    }
+    if (lifetime.signal.aborted) return;
+    if (store2.getState().activeProjectId !== activeProjectId) {
+      asked.delete(activeProjectId);
+      return;
+    }
+    await offer(activeProjectId, suggestion);
+  };
+  acceptLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
+  });
+  dismissLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) return;
+    answer(reminder.projectId, "dismissed");
+    reminders.delete(reminder.projectId);
+    renderReminder();
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    const activeProjectId = store2.getState().activeProjectId;
+    if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
+      pendingDialog.controller.abort();
+    }
+    void evaluate();
+  });
+  void evaluate();
+  return {
+    element: host,
+    destroy: () => {
+      lifetime.abort();
+      unsubscribeWorkspace();
+      pendingDialog?.controller.abort();
+      pendingDialog = null;
+      reminders.clear();
+      host.remove();
+    }
+  };
+}
+var PLUGIN_NAME, PLUGIN_DESCRIPTION;
+var init_apple_project_suggestion = __esm({
+  "src/renderer/views/apple-project-suggestion.ts"() {
+    init_apple_development_plugin();
+    init_projects();
+    init_helpers();
+    init_icons();
+    init_dialog_shell();
+    init_toast();
+    PLUGIN_NAME = "Apple development";
+    PLUGIN_DESCRIPTION = "Build, test, and run local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.";
+  }
+});
+
 // src/renderer/views/retry-button.ts
 function createRetryButton(onRetry) {
   const button = el(
@@ -74507,6 +80298,11 @@ function statusLabel(status) {
       return "Review";
   }
 }
+function skippedReviewReason(summary) {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, "");
+  if (!reason) return "No review ran.";
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+}
 function shouldCollapseCleanReview(review) {
   return review.status === "done" && review.issuesFound === false;
 }
@@ -74525,6 +80321,11 @@ function appendReviewHeader(panel, review, onRetry) {
   if (review.status === "error" && onRetry) {
     header.append(createRetryButton(onRetry));
   }
+  if (review.status === "skipped") {
+    header.append(
+      el("span", { class: "review-panel-skipped-summary" }, skippedReviewReason(review.summary))
+    );
+  }
   panel.append(header);
 }
 function createReviewCardEl(review, api2, onRetry) {
@@ -74535,7 +80336,7 @@ function createReviewCardEl(review, api2, onRetry) {
     ...review.issuesFound !== void 0 ? { "data-issues-found": review.issuesFound ? "true" : "false" } : {}
   });
   appendReviewHeader(panel, review, onRetry);
-  if (review.status === "running") return panel;
+  if (review.status === "running" || review.status === "skipped") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
   const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
 
@@ -74786,6 +80587,91 @@ var init_visual_evidence_card = __esm({
   }
 });
 
+// src/renderer/views/concise-thread.ts
+function isConciseThreadModel(model) {
+  if (!model) return false;
+  const cached2 = conciseByModel.get(model);
+  if (cached2 !== void 0) return cached2;
+  const intellect = resolveModelIntellect(model);
+  const concise = intellect?.scale === "canonical" && intellect.value > CONCISE_THREAD_MIN_INTELLECT;
+  conciseByModel.set(model, concise);
+  return concise;
+}
+function messageModel(msg) {
+  return msg.model ?? msg.requestedModel;
+}
+function isConciseMessage(msg) {
+  return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
+}
+function isConciseStepsMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
+}
+function turnStartId(messages, messageId) {
+  const at3 = messages.findIndex((msg) => msg.id === messageId);
+  for (let i2 = at3; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
+function liveTurnStartId(messages) {
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const msg = messages[i2];
+    if (msg?.role === "user") return msg.id;
+  }
+  return null;
+}
+function syncConciseMessageClasses(msgEl, msg, enabled) {
+  msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
+  msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+  msgEl.classList.toggle("msg-concise-steps", enabled && isConciseStepsMessage(msg));
+}
+function isConciseThread(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const msg = thread.messages[i2];
+    if (msg?.role === "assistant") return isConciseMessage(msg);
+  }
+  return isConciseThreadModel(thread.model);
+}
+function runningToolCall(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const toolCalls = thread.messages[i2]?.toolCalls ?? [];
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (tc2?.status === "running" || tc2?.subagent?.status === "running") return tc2;
+    }
+  }
+  return null;
+}
+function shellCommand(tc2) {
+  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
+  return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
+}
+function conciseActivityLabel(thread) {
+  if (thread.status !== "running") return null;
+  const tc2 = runningToolCall(thread);
+  if (!tc2) return null;
+  const command = shellCommand(tc2);
+  const base = `${command ? `Running ${command}` : getToolCallLabel({ ...tc2, status: "running" })}\u2026`;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  return todoLabel ? `${base} (${todoLabel})` : base;
+}
+var CONCISE_THREAD_MIN_INTELLECT, conciseByModel;
+var init_concise_thread = __esm({
+  "src/renderer/views/concise-thread.ts"() {
+    init_intellect_lookup();
+    init_todo_logic();
+    init_tool_display();
+    init_unknown_value3();
+    CONCISE_THREAD_MIN_INTELLECT = 50;
+    conciseByModel = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/renderer/views/review-findings-card.ts
 function statusLabel3(report) {
   switch (report.status) {
@@ -74797,7 +80683,7 @@ function statusLabel3(report) {
       return "Review";
   }
 }
-function findingLocation(finding) {
+function findingLocation2(finding) {
   if (finding.startLine === void 0) return finding.path;
   const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
   return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
@@ -74867,7 +80753,7 @@ function findingEl(finding, actions) {
   summary.append(
     el("span", { class: "review-finding-severity" }, finding.severity),
     el("span", { class: "review-finding-class" }, finding.class),
-    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("code", { class: "review-finding-location" }, findingLocation2(finding)),
     el("span", { class: "review-finding-claim" }, finding.claim),
     el(
       "span",
@@ -75180,6 +81066,7 @@ function startReview(store2, api2, threadId, messageId) {
   const runningReport = {
     status: "running",
     startedAt: Date.now(),
+    initiator: "user",
     models: { reviewer: thread?.model ?? "", challenger: null },
     lenses: [],
     baseRef: "",
@@ -75724,6 +81611,254 @@ var init_thread_proposal_tool_card = __esm({
     init_confirm_dialog();
     init_toast();
     init_thread_proposal_card();
+  }
+});
+
+// src/renderer/controller/reviewer-input.ts
+function answerReviewerInput(store2, api2, threadId, requestId, answer) {
+  const text2 = answer.trim();
+  const thread = getThreadById(store2, threadId);
+  if (!thread || text2 === "" || text2.length > 8192) return false;
+  const request = reviewerInputRequests(thread).find((item) => item.id === requestId);
+  if (!request || reviewerInputAnswer(thread.reviewerInputAnswers, requestId)) return false;
+  const content = `Answer to your review question \u201C${request.question}\u201D: ${text2}`;
+  if (thread.status === "idle") startHumanTurnTree(store2, threadId);
+  const messageId = addMessage(store2, threadId, "user", content);
+  setReviewerInputAnswer(store2, threadId, {
+    id: requestId,
+    text: text2,
+    answeredAt: Date.now(),
+    messageId
+  });
+  enqueueUserMessage(store2, threadId, {
+    messageId,
+    payload: { content },
+    createdAt: Date.now()
+  });
+  drainMessageQueue(store2, api2, threadId);
+  return true;
+}
+var init_reviewer_input2 = __esm({
+  "src/renderer/controller/reviewer-input.ts"() {
+    init_thread_helpers();
+    init_reviewer_input();
+    init_message_queue();
+  }
+});
+
+// src/renderer/views/reviewer-input.ts
+function answerText(choice, detail) {
+  return [choice, detail.trim()].filter(Boolean).join(" \u2014 ");
+}
+function mountReviewerInput(store2, api2) {
+  const toggle = el("button", { type: "button", class: "reviewer-input-toggle", hidden: "" });
+  const panel = el("aside", {
+    class: "reviewer-input-panel",
+    "aria-label": "Needs your input",
+    hidden: ""
+  });
+  const heading = el("div", { class: "reviewer-input-heading" }, "Needs your input");
+  const close = el(
+    "button",
+    { type: "button", class: "reviewer-input-close", "aria-label": "Close" },
+    "\xD7"
+  );
+  const header = el("div", { class: "reviewer-input-header" }, heading, close);
+  const items = el("div", { class: "reviewer-input-items" });
+  panel.append(header, items);
+  let expandedId = null;
+  let selectedOption = "";
+  let draft = "";
+  let threadId = null;
+  let signature = "";
+  const closedThreads = /* @__PURE__ */ new Set();
+  function open2(requestId) {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    closedThreads.delete(thread.id);
+    expandedId = requestId;
+    selectedOption = "";
+    draft = "";
+    signature = "";
+    sync();
+  }
+  function renderRow2(request, activeThreadId) {
+    const row2 = el("div", { class: "reviewer-input-item", "data-reviewer-input-id": request.id });
+    const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, request.id);
+    const question = el(
+      "button",
+      {
+        type: "button",
+        class: "reviewer-input-question",
+        "aria-expanded": String(expandedId === request.id)
+      },
+      request.question
+    );
+    question.addEventListener("click", () => {
+      expandedId = expandedId === request.id ? null : request.id;
+      selectedOption = "";
+      draft = "";
+      signature = "";
+      sync();
+    });
+    row2.append(question);
+    if (expandedId === request.id) {
+      row2.append(el("p", { class: "reviewer-input-context" }, request.context));
+      if (request.recommendation) {
+        row2.append(
+          el(
+            "p",
+            { class: "reviewer-input-recommendation" },
+            `Agent suggests: ${request.recommendation}`
+          )
+        );
+      }
+      if (answer) {
+        row2.append(el("div", { class: "reviewer-input-answer" }, `Answered: ${answer.text}`));
+      } else {
+        const options = el("div", { class: "reviewer-input-options" });
+        const send = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Send answer");
+        const input2 = el("textarea", {
+          class: "reviewer-input-text",
+          rows: "2",
+          "aria-label": "Your answer or extra context",
+          placeholder: "Your answer or extra context\u2026"
+        });
+        input2.value = draft;
+        const updateSend = () => {
+          send.disabled = answerText(selectedOption, input2.value) === "";
+        };
+        for (const option of request.options) {
+          const button = el(
+            "button",
+            {
+              type: "button",
+              class: "reviewer-input-option",
+              "aria-pressed": String(selectedOption === option)
+            },
+            option
+          );
+          button.addEventListener("click", () => {
+            selectedOption = selectedOption === option ? "" : option;
+            for (const peer of options.querySelectorAll("button")) {
+              peer.setAttribute("aria-pressed", String(peer === button && selectedOption !== ""));
+            }
+            updateSend();
+          });
+          options.append(button);
+        }
+        input2.addEventListener("input", () => {
+          draft = input2.value;
+          updateSend();
+        });
+        send.addEventListener("click", () => {
+          const text2 = answerText(selectedOption, input2.value);
+          if (!answerReviewerInput(store2, api2, activeThreadId, request.id, text2)) return;
+          expandedId = null;
+          selectedOption = "";
+          draft = "";
+          signature = "";
+          sync();
+        });
+        updateSend();
+        if (request.options.length) row2.append(options);
+        row2.append(input2, send);
+      }
+    }
+    const origin = el(
+      "button",
+      { type: "button", class: "reviewer-input-origin" },
+      "Show in conversation"
+    );
+    origin.addEventListener("click", () => {
+      store2.emit("reviewer_input_jump", request.messageId, request.id);
+    });
+    row2.append(origin);
+    return row2;
+  }
+  function sync() {
+    const thread = getActiveThread(store2);
+    if (thread?.id !== threadId) {
+      threadId = thread?.id ?? null;
+      expandedId = null;
+      selectedOption = "";
+      draft = "";
+      signature = "";
+    }
+    const requests = thread ? reviewerInputRequests(thread) : [];
+    const answers = thread?.reviewerInputAnswers;
+    const pending = requests.filter((request) => !reviewerInputAnswer(answers, request.id));
+    const nextSignature = JSON.stringify({
+      threadId,
+      requests,
+      answers,
+      expandedId,
+      closed: thread ? closedThreads.has(thread.id) : false
+    });
+    if (nextSignature === signature) return;
+    signature = nextSignature;
+    toggle.hidden = requests.length === 0;
+    toggle.textContent = `${String(pending.length)} ${pending.length === 1 ? "question" : "questions"}`;
+    toggle.setAttribute("aria-expanded", String(requests.length > 0 && !panel.hidden));
+    panel.hidden = !thread || requests.length === 0 || closedThreads.has(thread.id);
+    toggle.setAttribute("aria-expanded", String(!panel.hidden));
+    items.replaceChildren(
+      ...thread ? requests.map((request) => renderRow2(request, thread.id)) : []
+    );
+  }
+  toggle.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    if (closedThreads.has(thread.id)) closedThreads.delete(thread.id);
+    else closedThreads.add(thread.id);
+    signature = "";
+    sync();
+  });
+  close.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    closedThreads.add(thread.id);
+    signature = "";
+    sync();
+  });
+  return { toggle, panel, sync, open: open2 };
+}
+function createReviewerInputToolCard(call, store2) {
+  const request = parseReviewerInputCall(call, "");
+  if (!request) return null;
+  const card = el("details", {
+    class: "tool-card reviewer-input-card",
+    "data-tool-id": call.id,
+    "data-status": "done"
+  });
+  const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, call.id);
+  card.append(
+    el(
+      "summary",
+      { class: "tool-card-header" },
+      answer ? "Answered" : "Needs your input",
+      " \xB7 ",
+      request.question
+    ),
+    el("p", { class: "reviewer-input-card-context" }, request.context)
+  );
+  if (answer)
+    card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
+  else {
+    const open2 = el("button", { type: "button", class: "reviewer-input-origin" }, "Answer question");
+    open2.addEventListener("click", () => {
+      store2.emit("reviewer_input_open", request.id);
+    });
+    card.append(open2);
+  }
+  return card;
+}
+var init_reviewer_input3 = __esm({
+  "src/renderer/views/reviewer-input.ts"() {
+    init_helpers();
+    init_thread_helpers();
+    init_reviewer_input();
+    init_reviewer_input2();
   }
 });
 
@@ -76287,39 +82422,45 @@ var init_markdown_quote = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function interruptionCause(outcome, next) {
+  if (next?.role !== "user" || next.origin !== void 0) return "user";
+  if (outcome.userAbort !== void 0) return outcome.userAbort === "send_now" ? "message" : "user";
+  return next.createdAt <= outcome.endedAt ? "message" : "user";
+}
 function markUserInterruptedCalls(thread) {
-  if (!thread) return;
+  if (!thread || markedTranscripts.has(thread.messages)) return;
+  markedTranscripts.add(thread.messages);
   let turnCalls = [];
   for (const [index, message2] of thread.messages.entries()) {
     if (message2.role !== "assistant") turnCalls = [];
     else turnCalls.push(...message2.toolCalls);
     if (!message2.turnOutcome) continue;
     const next = thread.messages[index + 1];
-    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    const userCancelled = message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0);
+    const cause = userCancelled ? interruptionCause(message2.turnOutcome, next) : null;
     for (const call of turnCalls) {
-      if (!isHostInterruptedToolCall(call)) continue;
-      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
-        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
-      } else {
-        userInterruptedCalls.delete(call);
-      }
+      if (cause) userInterruptedCalls.set(call, cause);
+      else userInterruptedCalls.delete(call);
     }
     turnCalls = [];
   }
 }
+function userInterruption(call) {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : void 0;
+}
 function cardStatus2(toolCalls) {
   if (toolCalls.some((call) => call.status === "running")) return "running";
-  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+  if (toolCalls.some((call) => call.status === "error" && userInterruption(call) === void 0)) {
     return "error";
   }
-  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
   return "done";
 }
 function interruptionLabel(call) {
-  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+  return userInterruption(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
 }
 function syncRollupInterruptionNote(body, calls) {
-  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const interrupted = calls.find((call) => userInterruption(call) !== void 0);
   const current = body.querySelector(":scope > .tool-interruption-note");
   if (!interrupted) {
     current?.remove();
@@ -76332,7 +82473,44 @@ function syncRollupInterruptionNote(body, calls) {
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
+  if (status === "interrupted") return minusIcon("ui-icon ui-icon-sm");
   return moreHorizontalIcon("ui-icon ui-icon-sm");
+}
+function createPatchFilesSection(tc2) {
+  if (tc2.name !== "apply_patch") return null;
+  const files = getApplyPatchFiles(tc2);
+  if (files.length === 0) return null;
+  return el(
+    "ul",
+    { class: "tool-patch-files", "aria-label": "Files in patch" },
+    ...files.map((file2) => {
+      const target = file2.movePath ?? file2.path;
+      return el(
+        "li",
+        {},
+        el(
+          "button",
+          {
+            type: "button",
+            class: "tool-patch-file",
+            "data-op": file2.op,
+            "data-edit-path": target,
+            "data-tooltip": "View changes"
+          },
+          el("span", { class: "tool-patch-op" }, PATCH_OP_LABEL[file2.op]),
+          el(
+            "span",
+            { class: "tool-patch-path" },
+            file2.movePath === void 0 ? file2.path : `${file2.path} \u2192 ${file2.movePath}`
+          ),
+          ...file2.op === "delete" ? [] : [
+            el("span", { class: "tool-stat tool-stat-add" }, `+${String(file2.additions)}`),
+            el("span", { class: "tool-stat tool-stat-del" }, `-${String(file2.deletions)}`)
+          ]
+        )
+      );
+    })
+  );
 }
 function createToolArgsSection(args) {
   const rendered = renderToolArgs(args);
@@ -76455,8 +82633,9 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const buildBody2 = () => {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc2)),
       ...appendIfPresent(argsSection),
-      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
+      ...userInterruption(tc2) !== void 0 ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.status,
@@ -76599,6 +82778,10 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   if (store2 && isThreadProposalCall(tc2)) {
     const proposalCard = createThreadProposalToolCard(tc2, store2, api2, threadId);
     if (proposalCard) return proposalCard;
+  }
+  if (store2 && isReviewerInputCall(tc2)) {
+    const inputCard = createReviewerInputToolCard(tc2, store2);
+    if (inputCard) return inputCard;
   }
   const card = el("details", {
     class: "tool-card",
@@ -76777,7 +82960,14 @@ function subagentCardStatus(tc2, session) {
 function subagentHeaderMarker() {
   return el(
     "span",
-    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: "tool-subagent-marker",
+      role: "img",
+      "aria-label": "Subagent",
+      "data-tooltip": "Subagent"
+    },
     gitBranchIcon("ui-icon ui-icon-sm")
   );
 }
@@ -76820,7 +83010,7 @@ function syncSubagentTimeline(timeline, session, status, api2) {
       }
       desired.push(node2);
     }
-    const innerToolCalls = msg.toolCalls ?? [];
+    const innerToolCalls = msg.toolCalls;
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`;
       const sig = renderSignature(innerToolCalls);
@@ -76967,6 +83157,10 @@ function createGroupToolCard(item) {
   }
   return card;
 }
+function rollupHeaderCount(item) {
+  const only = item.children.length === 1 ? item.children[0] : void 0;
+  return only?.type === "group" && only.toolCalls.length === item.toolCalls.length ? item.toolCalls.length : void 0;
+}
 function createRollupToolCard(item, api2, threadId, store2) {
   const status = cardStatus2(item.toolCalls);
   const card = el("details", {
@@ -76975,7 +83169,7 @@ function createRollupToolCard(item, api2, threadId, store2) {
     "data-status": status,
     "data-tool-count": String(item.toolCalls.length)
   });
-  const count = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+  const count = rollupHeaderCount(item);
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
     const childCard = createToolCard(child, api2, threadId, store2);
@@ -77013,19 +83207,19 @@ function createToolCard(item, api2, threadId, store2) {
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
 }
 function toolCardKey(item) {
-  if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "rollup") return "r:activity";
   if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
 function toolCallSignature(call) {
-  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+  return renderSignature({ call, interruption: userInterruption(call) ?? null });
 }
 function toolCardSignature(item, extra) {
   const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
   const base = renderSignature({
     item,
-    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+    interruptions: calls.map((call) => userInterruption(call) ?? null)
   });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
@@ -77137,8 +83331,10 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
       card.dataset["stepMessageId"] = item.messageId;
+    } else {
+      card.dataset["rollupKey"] = item.key;
     }
-    const count = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
     replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
     let body = Array.from(card.children).find(
       (node2) => node2 instanceof HTMLElement && node2.classList.contains("tool-rollup-body")
@@ -77160,16 +83356,17 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
 }
 function createMessageImages(images) {
   const wrap = el("div", { class: "message-images" });
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: "Attached image" }));
+  images.forEach((dataUrl, index) => {
     const img = el("img", {
       class: "message-image",
       src: dataUrl,
       alt: "Attached image",
       loading: "lazy"
     });
-    attachImageExpand(img, "Attached image");
+    attachImageExpand(img, "Attached image", gallery, index);
     wrap.append(img);
-  }
+  });
   return wrap;
 }
 function acpResourceLabel(uri, title) {
@@ -77182,7 +83379,7 @@ function acpResourceLabel(uri, title) {
     return tail;
   }
 }
-function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls) {
+function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls, imageGallery) {
   if (block.type === "text") return null;
   if (block.type === "image") {
     const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
@@ -77207,7 +83404,7 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
       alt: label2,
       loading: "lazy"
     });
-    attachImageExpand(img, label2);
+    attachImageExpand(img, label2, imageGallery?.items, imageGallery?.index);
     return img;
   }
   if (block.type === "audio") {
@@ -77266,8 +83463,13 @@ function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUr
   );
 }
 function createAcpContentBlocks(blocks, context, workspaceRoot) {
+  const images = context === "message" ? blocks.flatMap(
+    (block) => block.type === "image" ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : "Agent image" }] : []
+  ) : [];
+  let imageIndex = 0;
   const nodes = blocks.flatMap((block) => {
-    const node2 = createAcpContentBlock(block, context, workspaceRoot);
+    const gallery = context === "message" && block.type === "image" ? { items: images, index: imageIndex++ } : void 0;
+    const node2 = createAcpContentBlock(block, context, workspaceRoot, void 0, gallery);
     return node2 ? [node2] : [];
   });
   if (nodes.length === 0) return null;
@@ -77279,7 +83481,8 @@ function createAcpToolDiff(item, workspaceRoot) {
   const additions = lines.filter((line) => line.kind === "add").length;
   const deletions = lines.filter((line) => line.kind === "del").length;
   const hasChanges = additions > 0 || deletions > 0;
-  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, "No changes");
+  const unchangedLabel = (item.oldText ?? "") === item.newText ? "No changes" : "Only line endings changed";
+  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, unchangedLabel);
   const details = el(
     "details",
     { class: "acp-tool-diff" },
@@ -77318,11 +83521,11 @@ function createAcpToolDiff(item, workspaceRoot) {
           )
         ];
       }
-      const accessibility = line.kind === "add" ? { "aria-label": `Added line: ${line.text}` } : line.kind === "del" ? { "aria-label": `Deleted line: ${line.text}` } : {};
       const row2 = el(
         "div",
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el("span", { class: "acp-diff-sign", "aria-hidden": "true" }, acpDiffLineSigns[line.kind]),
+        ...line.kind === "context" ? [] : [el("span", { class: "acp-diff-sr" }, acpDiffLineNames[line.kind])],
         el("span", { class: "acp-diff-text" }, line.text)
       );
       return line.noNewlineAtEnd ? [row2, el("div", { class: "acp-diff-line acp-diff-eof" }, "\\ No newline at end of file")] : [row2];
@@ -77580,16 +83783,8 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? "",
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot
-      )
-    );
+  if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
+    body.append(buildReasoningEl(msg.reasoning ?? "", false, msg.reasoningBlocks, workspaceRoot));
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -77618,6 +83813,9 @@ function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   }
   if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
+}
+function hasReasoningContent(reasoning, blocks) {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -77718,10 +83916,9 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
+function buildReasoningEl(reasoning, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
-    class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
-    open: open2
+    class: `message-reasoning${live ? " message-reasoning-live" : ""}`
   });
   const summary = el(
     "summary",
@@ -77772,12 +83969,12 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove();
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
@@ -77786,7 +83983,6 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
       renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
-  if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
 function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
@@ -77798,7 +83994,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(reasoning ?? "", live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
     if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
@@ -77810,25 +84006,27 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
   });
 }
 function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
+  let anchorTrail = card.querySelector(
+    ":scope > .tool-rollup-body > .message-reasoning"
+  );
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
+    if (!details && anchorTrail && step.messageId === run2.anchorId) {
+      details = anchorTrail;
+      anchorTrail = null;
+      body.prepend(details);
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? "",
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot
-      );
+      details = buildReasoningEl(step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
       body.prepend(details);
       continue;
     }
@@ -77837,6 +84035,7 @@ function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
       renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
+  anchorTrail?.remove();
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -77885,12 +84084,43 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn);
+  const appleSuggestions = mountAppleProjectSuggestions(
+    store2,
+    api2,
+    () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
+  );
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn
+  );
+  let expandedConciseTurnId = null;
+  function conciseEnabledFor(thread, messageId) {
+    const enabled = store2.getState().conciseThreadsEnabled;
+    if (!enabled || expandedConciseTurnId === null || !thread) return enabled;
+    return turnStartId(thread.messages, messageId) !== expandedConciseTurnId;
+  }
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
+  function toggleConciseTurnExpansion() {
+    const thread = getActiveThread(store2);
+    if (!thread || !isConciseTurnExpandable(thread)) return false;
+    const turn = liveTurnStartId(thread.messages);
+    if (turn === null) return false;
+    expandedConciseTurnId = expandedConciseTurnId === null ? turn : null;
+    syncConciseThreadClasses();
+    scrollToBottom();
+    return true;
+  }
+  function isConciseTurnExpandable(thread) {
+    return thread.status === "running" && store2.getState().conciseThreadsEnabled && isConciseThread(thread);
+  }
   activityBar.addEventListener("click", () => {
-    const trails = list.querySelectorAll(".msg-assistant .message-reasoning");
+    if (toggleConciseTurnExpansion()) return;
+    const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
     details.dataset["userToggled"] = "1";
@@ -77899,19 +84129,32 @@ function mountConversation(root, store2, api2) {
     if (key) disclosurePreferences.set(key, true);
     details.scrollIntoView({ block: "nearest" });
   });
+  activityBar.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (activityBar.getAttribute("role") !== "button") return;
+    event.preventDefault();
+    toggleConciseTurnExpansion();
+  });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
-  root.append(roadmapOrigin.element, scrollArea, queuedHost);
+  const reviewerInput = mountReviewerInput(store2, api2);
+  const transcriptAndInput = el(
+    "div",
+    { class: "conversation-reviewer-body" },
+    scrollArea,
+    reviewerInput.panel
+  );
+  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost);
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null);
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: "" });
       return;
     }
     store2.emit("code_block_run_requested", { id, command, projectId, threadId });
   });
   list.addEventListener("click", (e3) => {
-    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats") : null;
+    const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats, .tool-patch-file") : null;
     const path = statsBtn?.dataset["editPath"];
     if (!path) return;
     e3.preventDefault();
@@ -78312,7 +84555,10 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = scrollTop;
       return;
     }
-    if (scrollTop < lastScrollTop - 1) {
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    if (clamped) {
+    } else if (dropped) {
       userScrolledUpAt = Date.now();
       pinnedToBottom = false;
     } else if (isNearBottom()) {
@@ -78360,21 +84606,42 @@ function mountConversation(root, store2, api2) {
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
-  function setActivity(label) {
-    if (!label) {
+  function setActivity(requested) {
+    if (!requested) {
       activityBar.hidden = true;
       return;
     }
+    const thread = getActiveThread(store2);
+    const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
+    const label = conciseLabel ?? requested;
+    const expandable = thread !== void 0 && isConciseTurnExpandable(thread);
+    const expanded = expandable && expandedConciseTurnId !== null;
+    activityBar.setAttribute("role", expandable ? "button" : "status");
+    activityBar.classList.toggle("agent-activity-expandable", expandable);
+    activityBar.classList.toggle("agent-activity-expanded", expanded);
+    if (expandable) {
+      activityBar.tabIndex = 0;
+      activityBar.setAttribute("aria-expanded", String(expanded));
+      activityBar.title = expanded ? "Hide this turn\u2019s steps" : "Show this turn\u2019s steps";
+    } else {
+      activityBar.removeAttribute("tabindex");
+      activityBar.removeAttribute("aria-expanded");
+      activityBar.removeAttribute("title");
+    }
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && [
+      ...list.querySelectorAll(
+        ".msg:not(.msg-concise) .message-reasoning.message-reasoning-live"
+      )
+    ].some((details) => !details.parentElement?.closest("details:not([open]), [hidden]"))) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
     }
     activityBar.classList.toggle(
       "agent-activity-clickable",
-      !!list.querySelector(".msg-assistant .message-reasoning")
+      !!list.querySelector(REOPENABLE_REASONING)
     );
     activityBar.hidden = false;
     if (changed) scrollToBottom();
@@ -78448,9 +84715,9 @@ function mountConversation(root, store2, api2) {
   }
   function labelUserInterruptions(item) {
     const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
-    if (calls.some((call) => userInterruptedCalls.has(call))) {
+    if (calls.some((call) => userInterruption(call) !== void 0)) {
       const failed = calls.filter(
-        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+        (call) => call.status === "error" && userInterruption(call) === void 0
       ).length;
       const base = item.label.replace(/ · \d+ failed$/, "");
       item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
@@ -78481,6 +84748,8 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (item.type === "rollup" || item.type === "step") {
+      card.open = false;
     } else if (failed) {
       card.open = true;
       autoOpenedDisclosures.add(key);
@@ -78539,8 +84808,15 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run2, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
@@ -78560,7 +84836,7 @@ function mountConversation(root, store2, api2) {
       let card = existing.get(key) ?? null;
       if (card) existing.delete(key);
       if (card && toolCardSignatures.get(card) === sig) {
-      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall))) {
+      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall)) && !(item.type === "individual" && isReviewerInputCall(item.toolCall))) {
         reconcileToolCard(card, item, api2, threadId, store2);
       } else {
         card?.remove();
@@ -78620,7 +84896,7 @@ function mountConversation(root, store2, api2) {
     const anchor2 = thread?.messages.find((m2) => m2.id === run2.anchorId);
     const anchorEl = list.querySelector(`[data-message-id="${run2.anchorId}"]`);
     if (!anchor2 || !anchorEl) return;
-    renderToolCards(anchorEl, anchor2.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor2.toolCalls, {
       ...messageToolCardOpts(anchor2),
       run: run2,
       liveStepId: liveStepMessageId(thread)
@@ -78633,7 +84909,7 @@ function mountConversation(root, store2, api2) {
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run: run2,
         liveStepId: liveStepMessageId(thread)
@@ -78689,14 +84965,12 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
+    syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(getActiveThread(store2), msgId));
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
-    const nestReasoning = (
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
-    );
+    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== void 0;
     appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
@@ -78714,7 +84988,7 @@ function mountConversation(root, store2, api2) {
     if (!msg || !msgEl) return;
     hydrateRemoteArtifactImages(list, api2);
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
@@ -78841,6 +85115,7 @@ function mountConversation(root, store2, api2) {
         syncModelLabels();
       }).catch((error62) => {
         console.warn("[conversation] Could not load named agent identities", error62);
+        if (revision === agentNamesRevision) agentNamesRequested = false;
       });
     }
     const show2 = shouldShowPrimaryChatModelLabels(thread.messages);
@@ -78852,6 +85127,7 @@ function mountConversation(root, store2, api2) {
     let prevLabel;
     let prevAgentKey;
     for (const msg of thread.messages) {
+      if (msg.role === "user") prevAgentKey = void 0;
       if (msg.role !== "assistant") continue;
       const msgEl = rendered.get(msg.id);
       if (!msgEl) continue;
@@ -78878,9 +85154,10 @@ function mountConversation(root, store2, api2) {
         header?.remove();
         header = null;
       }
-      if (show2 && model && text2 && text2 !== prevLabel && (!identity || model.includes("#"))) {
+      const routeModel = identity && model ? agentRouteModel(model) : void 0;
+      if (show2 && model && text2 && text2 !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el("div", { class: "message-model" });
-        label.textContent = identity ? formatPrimaryChatModelLabel(model.slice(model.indexOf("#") + 1), msg.parameters) : text2;
+        label.textContent = routeModel ? formatPrimaryChatModelLabel(routeModel, msg.parameters) : text2;
         if (header) {
           if (label.parentElement !== header) header.append(label);
         } else if (label.parentElement !== msgEl) msgEl.prepend(label);
@@ -78892,6 +85169,17 @@ function mountConversation(root, store2, api2) {
       prevAgentKey = identity?.key;
     }
     syncAvatarMotion();
+  }
+  function syncConciseThreadClasses() {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
+    list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
+      const id = msgEl.dataset["messageId"] ?? "";
+      const msg = byId.get(id);
+      if (msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, id));
+    });
+    syncFromStore();
   }
   function syncAvatarMotion() {
     const thread = getActiveThread(store2);
@@ -78978,6 +85266,8 @@ function mountConversation(root, store2, api2) {
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -79149,7 +85439,7 @@ function mountConversation(root, store2, api2) {
     const wasPinned = pinnedToBottom;
     const readingAnchor = wasPinned ? null : captureReadingAnchor();
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
@@ -79160,14 +85450,49 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
+  function jumpToReviewerInput(messageId, requestId) {
+    const activeThreadId = store2.getState().activeThreadId;
+    let attempts = 0;
+    const tryJump = () => {
+      if (disposed || store2.getState().activeThreadId !== activeThreadId) return;
+      const message2 = Array.from(list.querySelectorAll("[data-message-id]")).find(
+        (item) => item.dataset["messageId"] === messageId
+      );
+      if (!message2) {
+        if (attempts++ < 300) requestAnimationFrame(tryJump);
+        return;
+      }
+      const card = Array.from(message2.querySelectorAll("[data-tool-id]")).find(
+        (item) => item.dataset["toolId"] === requestId
+      );
+      if (card instanceof HTMLDetailsElement) card.open = true;
+      const target = card ?? message2;
+      pinnedToBottom = false;
+      userScrolledUpAt = Date.now();
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("reviewer-input-highlight");
+      setTimeout(() => {
+        target.classList.remove("reviewer-input-highlight");
+      }, 3e3);
+    };
+    tryJump();
+  }
   const unsubs = [
+    store2.on("reviewer_input_open", (requestId) => {
+      reviewerInput.open(requestId);
+    }),
+    store2.on("reviewer_input_jump", jumpToReviewerInput),
     store2.on("code_block_run_finished", (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode);
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output
+      });
     }),
     store2.on("settings_changed", () => {
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
+      syncConciseThreadClasses();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -79285,13 +85610,16 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("tool_call_started", (mid) => {
       refreshToolCards(mid);
+      reviewerInput.sync();
     }),
     store2.on("tool_call_updated", (mid) => {
       refreshToolCards(mid);
+      reviewerInput.sync();
     }),
     store2.on("threads_changed", () => {
       rebuildForThread();
       syncFromStore();
+      reviewerInput.sync();
     }),
     store2.on("todos_changed", () => {
       syncTodoPanel();
@@ -79336,6 +85664,10 @@ function mountConversation(root, store2, api2) {
           card.remove();
         });
       } else {
+        if (expandedConciseTurnId !== null) {
+          expandedConciseTurnId = null;
+          syncConciseThreadClasses();
+        }
         setActivity(null);
         list.querySelectorAll(".message-reasoning-live").forEach((details) => {
           setReasoningDisclosureTitle(details, false);
@@ -79357,6 +85689,7 @@ function mountConversation(root, store2, api2) {
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store2, api2);
   rebuildForThread();
   syncFromStore();
+  reviewerInput.sync();
   return () => {
     disposed = true;
     avatarMotion.dispose();
@@ -79375,6 +85708,7 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
+    appleSuggestions.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
@@ -79411,7 +85745,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -79462,15 +85796,19 @@ var init_conversation = __esm({
     init_plugin_panel2();
     init_todos_plugin();
     init_apple_development_panel();
+    init_apple_project_suggestion();
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
+    init_concise_thread();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
     init_tool_error_format();
     init_tool_result_reminders();
     init_thread_proposal_tool_card();
+    init_reviewer_input3();
+    init_reviewer_input();
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
@@ -79485,6 +85823,8 @@ var init_conversation = __esm({
     init_markdown_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
+    markedTranscripts = /* @__PURE__ */ new WeakSet();
+    PATCH_OP_LABEL = { add: "Added", update: "Edited", delete: "Deleted", move: "Moved" };
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -79499,6 +85839,7 @@ var init_conversation = __esm({
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     acpDiffLineSigns = { context: " ", add: "+", del: "-" };
+    acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
@@ -79508,6 +85849,7 @@ var init_conversation = __esm({
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
+    REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
   }
 });
@@ -90443,6 +96785,19 @@ var init_wire_types2 = __esm({
   }
 });
 
+// src/shared/git/thread-branch.ts
+function threadGitBranchMismatch(threadBranch, currentBranch, options = {}) {
+  if (options.isolatedWorktree) return false;
+  return Boolean(threadBranch && currentBranch && threadBranch !== currentBranch);
+}
+function threadGitBranchMismatchMessage(threadBranch) {
+  return `This thread is for branch "${threadBranch}". Check it out, or continue on the current branch.`;
+}
+var init_thread_branch = __esm({
+  "src/shared/git/thread-branch.ts"() {
+  }
+});
+
 // src/shared/terminal/read-terminal.ts
 var READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT, READ_TERMINAL_DEFAULT_LINES;
 var init_read_terminal = __esm({
@@ -90450,6 +96805,110 @@ var init_read_terminal = __esm({
     READ_TERMINAL_ENABLED_SETTING = "readTerminalEnabled";
     READ_TERMINAL_ENABLED_DEFAULT = true;
     READ_TERMINAL_DEFAULT_LINES = 200;
+  }
+});
+
+// src/renderer/controller/code-block-runs.ts
+async function sendCodeBlockRunResult(store2, api2, result) {
+  const { projectId, threadId, shell: shell3 } = result;
+  const completion = result.completion;
+  if (completion && result.exitCode !== 0) return false;
+  const targetIsCurrent = () => getThreadProjectId(store2, threadId) === projectId && (completion !== void 0 || store2.getState().activeProjectId === projectId);
+  if (!targetIsCurrent()) return false;
+  await ensureThreadMessages(projectId, threadId);
+  if (!targetIsCurrent()) return false;
+  const thread = getThreadById(store2, threadId);
+  if (!thread || needsHydration(thread)) return false;
+  const readTerminalEnabled = await api2.settings.get(READ_TERMINAL_ENABLED_SETTING).catch(() => false);
+  if (readTerminalEnabled === false) return false;
+  const [branchResult, promptResult] = await Promise.allSettled([
+    api2.git.currentBranch(projectId, threadId),
+    api2.git.promptState(projectId, threadId)
+  ]);
+  if (branchResult.status === "rejected") return false;
+  if (!targetIsCurrent()) return false;
+  const currentBranch = branchResult.value;
+  const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
+  const current = getThreadById(store2, threadId);
+  if (!current) return false;
+  if (threadGitBranchMismatch(current.gitBranch, currentBranch, {
+    isolatedWorktree: current.worktree !== void 0
+  }))
+    return false;
+  const messageText = completion?.prompt ?? "";
+  const content = buildTextWithAttachments(
+    messageText,
+    [],
+    [{ label: `Shell: ${shell3.label}`, content: shell3.content }]
+  );
+  const workingBrief = nextWorkingBrief(current.workingBrief, content);
+  const workingBriefChanged = workingBrief !== void 0 && workingBrief !== current.workingBrief;
+  const payload = {
+    content,
+    invokedSkills: [],
+    priorTodos: current.todos ?? [],
+    ...workingBrief !== void 0 ? { workingBrief } : {}
+  };
+  const shellAttachment = { kind: "shell", label: shell3.label, content: shell3.content };
+  const messageMeta = {
+    ...promptState ? {
+      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+      dirty: promptState.dirty
+    } : {}
+  };
+  if (completion) {
+    const machineResult = await api2.agent.runMachine({
+      projectId,
+      threadId,
+      operationId: completion.operationId,
+      turnTreeId: completion.turnTreeId,
+      payload: JSON.stringify(refreshAgentRunPayload(store2, threadId, payload)),
+      display: {
+        content: messageText,
+        attachments: [shellAttachment],
+        ...messageMeta
+      }
+    });
+    if (machineResult === "completed" || machineResult === "duplicate") {
+      if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
+      return true;
+    }
+    addMessage(
+      store2,
+      threadId,
+      "error",
+      machineResult === "budget-exhausted" ? "Git recovery completed, but the automatic follow-up did not start because this turn reached its auto-continuation budget. Send a message to continue." : "Git recovery completed, but the thread advanced before the automatic follow-up could start. Send a message to continue."
+    );
+    return false;
+  }
+  if (workingBriefChanged) setThreadWorkingBrief(store2, threadId, workingBrief);
+  const messageId = addMessage(
+    store2,
+    threadId,
+    "user",
+    messageText,
+    void 0,
+    [shellAttachment],
+    messageMeta
+  );
+  const queued = { messageId, payload, createdAt: Date.now() };
+  if (getThreadById(store2, threadId)?.status === "running") {
+    enqueueUserMessage(store2, threadId, queued);
+  } else {
+    startHumanTurnTree(store2, threadId);
+    dispatchAgentRun(store2, api2, threadId, payload, queued);
+  }
+  return true;
+}
+var init_code_block_runs = __esm({
+  "src/renderer/controller/code-block-runs.ts"() {
+    init_thread_helpers();
+    init_thread_branch();
+    init_build_text_with_attachments();
+    init_working_brief();
+    init_message_queue();
+    init_thread_hydration();
+    init_read_terminal();
   }
 });
 
@@ -91211,20 +97670,23 @@ var init_footer_model_picker = __esm({
   }
 });
 
-// src/shared/git/thread-branch.ts
-function threadGitBranchMismatch(threadBranch, currentBranch, options = {}) {
-  if (options.isolatedWorktree) return false;
-  return Boolean(threadBranch && currentBranch && threadBranch !== currentBranch);
-}
-function threadGitBranchMismatchMessage(threadBranch) {
-  return `This thread is for branch "${threadBranch}". Check it out, or continue on the current branch.`;
-}
-var init_thread_branch = __esm({
-  "src/shared/git/thread-branch.ts"() {
-  }
-});
-
 // src/renderer/views/footer-branch-status.ts
+function detachedTitle(detached) {
+  if (detached.uncommittedPick) {
+    return `This checkout is detached from ${detached.branch} because the rebase applied ${detached.uncommittedPick.commit.slice(0, 7)} but could not commit it, usually because signing failed. This commits the staged changes with that commit's message in a terminal for this thread, then continues the rebase.`;
+  }
+  if (detached.recovery === "bisect") {
+    return `This checkout is detached from ${detached.branch} because Git bisect is in progress. Reset the bisect in a terminal for this thread to return to the branch.`;
+  }
+  return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
+}
+function recoveryCommand(detached, recovery) {
+  if (recovery === "bisect") return "git bisect reset";
+  const pick2 = detached.uncommittedPick;
+  if (!pick2) return `git ${recovery} --continue`;
+  const sign = pick2.signOption ? `${pick2.signOption} ` : "";
+  return `git commit ${sign}-C ${pick2.commit} && git rebase --continue`;
+}
 function reportBranchFailure(what, error62) {
   console.warn(`[footer-branch-status] failed to ${what}:`, error62);
 }
@@ -91257,6 +97719,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
+  const reattachButton = el(
+    "button",
+    { type: "button", class: "branch-reattach-button", hidden: "" },
+    "Reattach"
+  );
   const menu = el("div", { class: "branch-picker-menu", hidden: "" });
   const filterInput = el("input", {
     type: "search",
@@ -91276,9 +97743,12 @@ function mountFooterBranchStatus(host, store2, api2) {
     "aria-label": "Branches"
   });
   menu.append(filterInput, list);
-  wrap.append(trigger, menu);
+  wrap.append(trigger, reattachButton, menu);
   host.append(wrap);
   let status = null;
+  let detached = null;
+  let reattaching = false;
+  const recoveryRuns = /* @__PURE__ */ new Map();
   let refreshTimer = null;
   let branchToCopy = null;
   let branches = [];
@@ -91335,6 +97805,7 @@ function mountFooterBranchStatus(host, store2, api2) {
       wrap.hidden = true;
       branchToCopy = null;
       setOpen(false);
+      renderReattach();
       return;
     }
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
@@ -91382,6 +97853,101 @@ function mountFooterBranchStatus(host, store2, api2) {
           mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`
         );
       }
+    }
+    renderReattach();
+  }
+  function renderReattach() {
+    const current = activeDetached();
+    const shown = current !== null && !isPickerMode() && !wrap.hidden;
+    reattachButton.hidden = !shown;
+    trigger.classList.toggle("is-detached", shown);
+    if (!shown) return;
+    const title = detachedTitle(current);
+    trigger.title = title;
+    reattachButton.title = title;
+    const recoveryRunning = activeRecoveryRunId() !== null;
+    reattachButton.disabled = reattaching || recoveryRunning;
+    if (current.uncommittedPick) {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Commit and continue";
+      return;
+    }
+    if (current.recovery === "bisect") {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Reset the bisect and return to ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : "Reset bisect";
+      return;
+    }
+    if (current.recovery) {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Continue the ${current.recovery} on ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = recoveryRunning ? "Running\u2026" : `Continue ${current.recovery}`;
+      return;
+    }
+    reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
+    reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
+  }
+  function activeDetached() {
+    return detached?.threadId === store2.getState().activeThreadId ? detached : null;
+  }
+  function recoveryKey(projectId, threadId) {
+    return `${projectId}\0${threadId}`;
+  }
+  function activeRecoveryRunId() {
+    const owner = getActiveThreadOwner(store2);
+    return owner ? recoveryRuns.get(recoveryKey(owner.projectId, owner.threadId)) ?? null : null;
+  }
+  async function readDetachedAttachment(owner) {
+    try {
+      const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
+      return attachment.state === "detached" ? attachment : null;
+    } catch (error62) {
+      reportBranchFailure("inspect worktree attachment", error62);
+      return null;
+    }
+  }
+  async function reattach() {
+    const owner = getActiveThreadOwner(store2);
+    const current = activeDetached();
+    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return;
+    if (current.recovery) {
+      const runId = globalThis.crypto.randomUUID();
+      recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
+      renderReattach();
+      store2.emit("code_block_run_requested", {
+        id: runId,
+        command: recoveryCommand(current, current.recovery),
+        projectId: owner.projectId,
+        threadId: owner.threadId,
+        completion: {
+          type: "continue",
+          prompt: "Continue after the Git recovery command completed.",
+          operationId: `git-recovery:${runId}`,
+          turnTreeId: getThreadById(store2, owner.threadId)?.currentEpoch ?? owner.threadId
+        }
+      });
+      return;
+    }
+    reattaching = true;
+    renderReattach();
+    try {
+      const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
+      showToast(
+        result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
+      );
+      store2.emit("git_branch_changed");
+    } catch (error62) {
+      showErrorToast("Could not reattach the checkout", error62);
+    } finally {
+      reattaching = false;
+      refreshNow();
     }
   }
   function filteredRows() {
@@ -91542,6 +98108,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const threadBranch = getActiveThreadBranch();
     branches = [];
     defaultBranch = null;
+    let nextDetached = null;
     try {
       const nextStatus = await api2.git.branchStatus(owner.projectId, owner.threadId, threadBranch);
       if (token !== refreshToken) return;
@@ -91550,7 +98117,11 @@ function mountFooterBranchStatus(host, store2, api2) {
       if (token !== refreshToken) return;
       reportBranchFailure("read branch status", error62);
       status = null;
+      const attachment = await readDetachedAttachment(owner);
+      if (token !== refreshToken) return;
+      nextDetached = attachment ? { ...attachment, threadId: owner.threadId } : null;
     }
+    detached = nextDetached;
     if (isPickerMode()) {
       try {
         await loadBranches(token);
@@ -91599,6 +98170,9 @@ function mountFooterBranchStatus(host, store2, api2) {
       showErrorToast("Failed to copy branch name", error62);
     });
   }
+  reattachButton.addEventListener("click", () => {
+    void reattach();
+  });
   trigger.addEventListener("click", () => {
     if (!isPickerMode()) {
       const url2 = getVisiblePr()?.url;
@@ -91649,6 +98223,18 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   });
   const unsubs = [
+    store2.on("code_block_run_finished", (result) => {
+      const key = recoveryKey(result.projectId, result.threadId);
+      if (result.id !== recoveryRuns.get(key)) return;
+      recoveryRuns.delete(key);
+      if (result.exitCode !== 0) {
+        showErrorToast(
+          "Could not continue the Git operation",
+          new Error(result.output.trim() || "The recovery command failed")
+        );
+      }
+      refreshNow();
+    }),
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
@@ -91926,18 +98512,25 @@ var init_context_wheel = __esm({
 // src/renderer/views/footer-compact.ts
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
-  const previousShrink = [...items].map((el3) => el3.style.flexShrink);
+  const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
-    el3.style.flexShrink = "0";
+    el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.display = "inline";
+  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
-    el3.style.flexShrink = previousShrink[index] ?? "";
+    el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) usage.style.display = previousUsageDisplay ?? "";
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
+    } else {
+      usage.style.removeProperty("display");
+    }
+  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -91959,8 +98552,17 @@ function bindFooterCompactLayout(footer, onChange) {
   };
   const observer = new ResizeObserver(sync);
   observer.observe(footer);
+  for (const control of footer.children) observer.observe(control);
   const inputBar = footer.closest("#input-bar");
   if (inputBar) observer.observe(inputBar);
+  const mutations = new MutationObserver(sync);
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
   window.addEventListener("resize", sync, { passive: true });
   sync();
   return {
@@ -91968,6 +98570,7 @@ function bindFooterCompactLayout(footer, onChange) {
     destroy: () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", sync);
     }
   };
@@ -92062,9 +98665,7 @@ function threadHasExportableContent(thread) {
 function providerFromModelId(modelId) {
   const colon = modelId.indexOf(":");
   if (colon > 0) return modelId.slice(0, colon);
-  if (modelId.startsWith("claude")) return "anthropic";
-  if (modelId.startsWith("gpt")) return "openai";
-  return "unknown";
+  return firstPartyProviderOf(modelId) ?? "unknown";
 }
 function providersFromUsage(usage) {
   const models = usage.byModel ? Object.keys(usage.byModel) : [];
@@ -92128,6 +98729,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
+    init_model_families();
     THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
@@ -92288,87 +98890,6 @@ var init_debug_trace_prompt2 = __esm({
   }
 });
 
-// src/shared/usage/footer-usage-summary.ts
-function collectSubagentUsage(toolCalls, totals) {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent;
-    if (!session) continue;
-    if (session.kind === "container") continue;
-    if (session.usage) {
-      totals.runs += 1;
-      totals.inputTokens += session.usage.inputTokens;
-      totals.outputTokens += session.usage.outputTokens;
-    }
-    for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls ?? [], totals);
-    }
-  }
-}
-function sumSubagentUsage(messages) {
-  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
-  for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls ?? [], totals);
-  }
-  return totals;
-}
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    const subagents = sumSubagentUsage(input2.messages);
-    return {
-      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
-      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
-      estimated: false,
-      ...subagents.runs > 0 ? {
-        subagentInputTokens: subagents.inputTokens,
-        subagentOutputTokens: subagents.outputTokens
-      } : {}
-    };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total2 = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total2 && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
 // src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
@@ -92379,7 +98900,7 @@ function modelRowValue(model, usage, pricing) {
 }
 function freeReason(model, pricing) {
   if (isLocalModel(model)) return "local model";
-  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  if (hasZeroModelPricing(model, pricing)) return `${model} is listed at a zero rate`;
   return null;
 }
 function buildFreeNote(models, pricing) {
@@ -92407,7 +98928,14 @@ function buildFooterUsageTooltip(display, opts) {
   if (cacheCreation > 0) {
     threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
   }
-  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
+  const byModel = Object.entries(usage.byModel ?? {}).filter(
+    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
+  );
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing, {
+    localFreeExplained: pricedModels.some(isLocalModel)
+  });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
@@ -92419,20 +98947,15 @@ function buildFooterUsageTooltip(display, opts) {
   const conversationLabel = subagentRow ? "Excluding subagents" : null;
   const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
-  const byModel = Object.entries(usage.byModel ?? {}).filter(
-    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
-  );
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) });
     }
   }
-  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
   const hasUnpricedUsage = pricedModels.some(
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
-  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
-  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models with no listed price" : "No listed price for this model" : null;
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     conversationLabel,
@@ -92760,7 +99283,7 @@ function lastExchange(store2, threadId) {
   const lastUser = userMessages.at(-1);
   const lastAssistant = assistantMessages.at(-1);
   if (!lastUser?.content.trim() || !lastAssistant) return null;
-  const toolNames = (lastAssistant.toolCalls ?? []).map((tc2) => tc2.name);
+  const toolNames = lastAssistant.toolCalls.map((tc2) => tc2.name);
   const openTodos = normalizeFollowUpOpenTodos(
     (thread.todos ?? []).filter((t2) => t2.status === "pending" || t2.status === "in_progress").map((t2) => t2.content)
   );
@@ -93926,18 +100449,18 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       );
     }
     if (!isLive2(run2) && run2.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
-      const apply2 = el(
+      const apply3 = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
         `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
       );
-      apply2.addEventListener("click", () => {
-        apply2.disabled = true;
+      apply3.addEventListener("click", () => {
+        apply3.disabled = true;
         void adopt(run2.record?.runtimeId ?? "", null).finally(() => {
-          apply2.disabled = false;
+          apply3.disabled = false;
         });
       });
-      actions.push(apply2);
+      actions.push(apply3);
     }
     if (!isLive2(run2)) {
       const again = el(
@@ -96036,15 +102559,20 @@ ${description}
       refreshSkillsCache();
       scheduleContextEstimate(0);
     }),
+    // A Play run's result goes straight to its thread's agent. Only when the
+    // thread cannot take it now does it fall back to a chip on that thread's
+    // draft, so the output is never lost.
     store2.on("code_block_run_finished", (result) => {
-      const active2 = result.threadId === activeComposerThreadId;
-      placeStoredShell(result.threadId, result.shell);
-      if (!active2) return;
-      targetSelect.value = "thread";
-      showToast(
-        result.exitCode === 0 ? "Command finished \u2014 result attached." : `Command ${result.exitCode === null ? "could not start" : `exited with code ${String(result.exitCode)}`} \u2014 result attached.`,
-        result.exitCode === 0 ? void 0 : { variant: "error" }
-      );
+      void sendCodeBlockRunResult(store2, api2, result).catch((error62) => {
+        console.error("[code-block-run] Could not send the result:", error62);
+        return false;
+      }).then((sent) => {
+        if (sent) return;
+        placeStoredShell(result.threadId, result.shell);
+        if (result.threadId !== activeComposerThreadId) return;
+        targetSelect.value = "thread";
+        showToast("Command finished \u2014 result attached to your next message.");
+      });
     }),
     store2.on("new_thread_opened", () => {
       void api2.agent.refreshModelContext().finally(() => {
@@ -96190,6 +102718,7 @@ var init_input_bar = __esm({
     init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
+    init_code_block_runs();
     init_working_brief();
     init_build_text_with_attachments();
     init_composer_editor();
@@ -96522,12 +103051,12 @@ function watchEditorTheme(onChange, root = document.documentElement) {
   };
 }
 function installMonacoEditorTheme(monaco) {
-  const apply2 = (tokens) => {
+  const apply3 = (tokens) => {
     monaco.editor.defineTheme(COPSE_MONACO_THEME, monacoThemeFromTokens(tokens));
     monaco.editor.setTheme(COPSE_MONACO_THEME);
   };
-  apply2(readEditorThemeTokens());
-  return watchEditorTheme(apply2);
+  apply3(readEditorThemeTokens());
+  return watchEditorTheme(apply3);
 }
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
@@ -106532,12 +113061,12 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
+    tab.term.write("", () => {
+      finishCodeBlockRun(tab, code);
+    });
     tab.term.writeln(
       code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
-      () => {
-        finishCodeBlockRun(tab, code);
-      }
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`
     );
   });
   function createXterm() {
@@ -106575,13 +113104,16 @@ ${output2}` : "Terminal output: (none)"
     ].join("\n\n");
     store2.emit("code_block_run_finished", {
       id: request.id,
+      projectId: request.projectId,
       threadId: request.threadId,
       exitCode,
+      output: output2,
       shell: {
         tabId: tab.id,
         label: `${tab.label} \xB7 exit ${exitLabel}`,
         content
-      }
+      },
+      ...request.completion ? { completion: request.completion } : {}
     });
   }
   function publishMeta(tab) {
@@ -106600,9 +113132,10 @@ ${output2}` : "Terminal output: (none)"
     const text2 = readTerminalText(tab);
     if (text2.length < 8) return;
     tab.naming = true;
+    const renamedByUser = () => tab.renamed;
     try {
       const title = await api2.agent.suggestTerminalTitle(text2);
-      if (title && !tab.renamed) {
+      if (title && !renamedByUser()) {
         setTabLabel(tab, title);
         tab.autoNamed = true;
       }
@@ -107671,44 +114204,45 @@ var init_staged_diff_ui = __esm({
 function isImageDiff(diff) {
   return diff.beforeImage != null || diff.afterImage != null;
 }
+function imagePane(label, src, alt) {
+  const img = el("img", { class: "git-image-diff-img", src, alt, loading: "lazy" });
+  attachImageExpand(img, alt);
+  const pane = el("div", { class: "git-image-diff-pane" });
+  pane.append(el("div", { class: "git-image-diff-label" }, label), img);
+  return pane;
+}
 function renderImageDiff(container, diff) {
+  const beforeImage = diff.beforeImage ?? null;
+  const afterImage = diff.afterImage ?? null;
+  const current = renderedImageDiffs.get(container);
+  if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
+    return;
+  }
+  const active2 = document.activeElement;
+  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
-  if (diff.beforeImage) {
-    const alt = `${diff.path} (before)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.beforeImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
-    grid.append(pane);
-  }
-  if (diff.afterImage) {
-    const alt = `${diff.path} (after)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.afterImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
-    grid.append(pane);
-  }
-  if (!diff.beforeImage && !diff.afterImage) {
+  if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
+  if (afterImage) grid.append(imagePane("After", afterImage, `${diff.path} (after)`));
+  if (!beforeImage && !afterImage) {
     grid.append(el("div", { class: "panel-empty" }, "Could not load image"));
   }
   container.append(grid);
+  renderedImageDiffs.set(container, { grid, path: diff.path, beforeImage, afterImage });
+  if (focusedAlt === null) return;
+  for (const img of grid.querySelectorAll(".git-image-diff-img")) {
+    if (img.alt === focusedAlt) {
+      img.focus({ preventScroll: true });
+      return;
+    }
+  }
 }
+var renderedImageDiffs;
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
     init_image_expand();
     init_helpers();
+    renderedImageDiffs = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -108956,6 +115490,27 @@ function collectLinkedPrs(store2) {
   }
   return refs;
 }
+function indexThreadLinks(store2) {
+  const links = /* @__PURE__ */ new Map();
+  for (const thread of store2.getState().threads) {
+    for (const ref of thread.prRefs ?? []) {
+      const key = githubPrKey(ref);
+      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
+    }
+  }
+  const activeThread = getActiveThread(store2);
+  if (activeThread) {
+    for (const message2 of activeThread.messages) {
+      for (const ref of extractGithubPrUrls(message2.content)) {
+        const key = githubPrKey(ref);
+        if (!links.has(key)) {
+          links.set(key, { threadId: activeThread.id, title: activeThread.title });
+        }
+      }
+    }
+  }
+  return links;
+}
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
@@ -109012,6 +115567,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
+  let threadLinks = indexThreadLinks(store2);
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -109367,18 +115923,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       void api2.shell.openExternal(prUrl);
     });
     const agent = agentLinks.get(githubPrKey(selectedPr));
-    const openThreadBtn = agent ? el(
+    const producingThread = threadLinks.get(githubPrKey(selectedPr));
+    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
+    const openThreadBtn = producingThreadId ? el(
       "button",
       {
         type: "button",
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
+        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
       },
-      el("span", {}, `Open ${agentProviderLabel(agent.provider)} agent thread`)
+      el(
+        "span",
+        {},
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+      )
     ) : null;
-    if (openThreadBtn && agent) {
+    if (openThreadBtn && producingThreadId) {
       openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, agent.threadId);
+        switchThread(store2, producingThreadId);
       });
     }
     const newThreadBtn = el(
@@ -109769,6 +116331,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
     }
     const gen = ++agentLinksGen;
+    threadLinks = indexThreadLinks(store2);
     ghStatus = await api2.gh.status();
     const entries2 = await api2.gh.agentPrLinks().catch(() => []);
     if (gen !== agentLinksGen) return;
@@ -109876,6 +116439,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
+      threadLinks = indexThreadLinks(store2);
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -109888,9 +116452,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }),
     store2.on("threads_changed", () => {
       if (!prsModeActive(store2)) return;
+      threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
+      if (selectedPr && prDetails) renderMeta();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -113005,6 +119571,17 @@ function shareableWebContentsId(tab) {
     return null;
   }
 }
+function downloadableArtefact(tab) {
+  return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
+}
+function seededArtefact(value) {
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
+  if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { title, mimeType, body };
+}
 function isBrowserPopoutSeed(seed) {
   if (!seed || typeof seed !== "object") return false;
   return "tabs" in seed && Array.isArray(seed.tabs);
@@ -113221,6 +119798,46 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
   const pendingArtefactReopens = /* @__PURE__ */ new Map();
+  let pendingBackgroundArtefacts = [];
+  let lastThreadScope = activeThreadScope();
+  function activeThreadScope() {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return `${activeProjectId ?? ""}\0${activeThreadId ?? ""}`;
+  }
+  function artefactThreadId(artefact) {
+    return artefact.owner?.threadId ?? artefact.threadId;
+  }
+  function artefactBelongsToActiveThread(artefact) {
+    const threadId = artefactThreadId(artefact);
+    if (!threadId) return true;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return threadId === activeThreadId && (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId);
+  }
+  function pendingArtefactIdentity(artefact) {
+    return `${artefact.owner?.projectId ?? ""}\0${artefactThreadId(artefact) ?? ""}\0${artefact.title}`;
+  }
+  function queueBackgroundArtefact(artefact) {
+    const identity = pendingArtefactIdentity(artefact);
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity
+    );
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact;
+    else pendingBackgroundArtefacts.push(artefact);
+  }
+  function flushBackgroundArtefacts() {
+    const ready3 = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread);
+    if (ready3.length === 0) return;
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact)
+    );
+    for (const artefact of ready3) openArtefact(artefact);
+  }
+  function onThreadMaybeChanged() {
+    const nextScope = activeThreadScope();
+    if (nextScope === lastThreadScope) return;
+    lastThreadScope = nextScope;
+    flushBackgroundArtefacts();
+  }
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -113553,6 +120170,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function openArtefact(artefact) {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact);
+      return;
+    }
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(
       artefact.title,
@@ -113580,6 +120201,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
     tab.artefactContentReady = true;
+    tab.artefact = artefact;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -113684,6 +120306,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       downloadIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Export PDF")
     );
+    const downloadCanvasItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Download canvas")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -113702,6 +120330,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem
@@ -113762,6 +120391,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -113801,6 +120431,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        downloadCanvasItem.disabled = downloadableArtefact(tab) === null || !api2?.browser.exportArtefact;
         exportPdfItem.disabled = shareableId === null || !api2?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api2?.shell;
         inspectorItem.disabled = !tab.webview;
@@ -113843,6 +120474,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
       }).catch((error62) => {
         showErrorToast("Could not export PDF", error62);
+      });
+    });
+    downloadCanvasItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const artefact = downloadableArtefact(tab);
+      const exportArtefact = api2?.browser.exportArtefact;
+      if (!artefact || !exportArtefact) return;
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body
+      }).then((filePath) => {
+        if (filePath) showToast(`Downloaded canvas to ${filePath}`);
+      }).catch((error62) => {
+        showErrorToast("Could not download canvas", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -113980,7 +120626,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
-          artefactProjectId: tab.artefactProjectId
+          artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact ? {
+            title: tab.artefact.title,
+            mimeType: tab.artefact.mimeType,
+            body: tab.artefact.body
+          } : null
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -114012,6 +120663,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
+        tab.artefact = seededArtefact(entry.artefact);
       }
       if (entry.url && entry.url !== "about:blank") {
         tab.pendingUrl = entry.url;
@@ -114132,6 +120784,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
+    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
     store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
@@ -114187,6 +120841,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
@@ -128925,6 +135580,16 @@ var init_simulator_desktop_view = __esm({
   }
 });
 
+// src/shared/desktop-viewer.ts
+var DESKTOP_VIEWER_SETTING_LOCATION, DESKTOP_VIEWER_OFF_TITLE, DESKTOP_VIEWER_OFF_DETAIL;
+var init_desktop_viewer = __esm({
+  "src/shared/desktop-viewer.ts"() {
+    DESKTOP_VIEWER_SETTING_LOCATION = "Settings \u2192 Experimental \u2192 Remote desktop viewer";
+    DESKTOP_VIEWER_OFF_TITLE = "Desktop viewer is off";
+    DESKTOP_VIEWER_OFF_DETAIL = `Turn on ${DESKTOP_VIEWER_SETTING_LOCATION} to watch the Simulator here.`;
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -129283,11 +135948,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
-  const empty = el(
-    "div",
-    { class: "panel-empty vnc-empty" },
-    "Choose this machine, a nearby device, another address, or a saved SSH machine."
-  );
+  const empty = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty);
   let rfb = null;
   let channel = null;
@@ -129527,7 +136188,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hideAuthentication();
     resetControlState();
     screen.replaceChildren();
-    empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+    empty.textContent = CHOOSE_MACHINE_TEXT;
     setSessionUi(false);
     setStatus(title, kind, detail);
     void refreshSavedLogin();
@@ -129754,7 +136415,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
       note.hidden = true;
     } else if (!channel) {
-      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      empty.textContent = CHOOSE_MACHINE_TEXT;
       note.hidden = false;
     }
     const nearby = selectedNearbyServer();
@@ -129862,6 +136523,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function discoverSelectedMachine() {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -129885,6 +136547,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
   }
   async function discoverNearby() {
+    if (await stoppedByViewerOff()) return;
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
@@ -129916,6 +136579,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    if (!await desktopViewerEnabled()) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff();
+      return;
+    }
     let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
@@ -129930,6 +136597,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
     if (discoveryError && !simulatorSessionId && !channel)
       setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
+  }
+  async function desktopViewerEnabled() {
+    return await api2.settings.get("vncEnabled").catch(() => false) === true;
+  }
+  async function stoppedByViewerOff() {
+    if (await desktopViewerEnabled()) return false;
+    if (!simulatorSessionId && !channel) showDesktopViewerOff();
+    return true;
+  }
+  function showDesktopViewerOff() {
+    setStatus(DESKTOP_VIEWER_OFF_TITLE, "error", DESKTOP_VIEWER_OFF_DETAIL);
+    empty.textContent = `${DESKTOP_VIEWER_OFF_TITLE}. ${DESKTOP_VIEWER_OFF_DETAIL}`;
+    nearbyFeedback.hidden = true;
+  }
+  function desktopViewerOffShown() {
+    return !status.hidden && statusTitle.textContent === DESKTOP_VIEWER_OFF_TITLE;
+  }
+  async function recoverDesktopViewer() {
+    if (!desktopViewerOffShown() || !await desktopViewerEnabled()) return;
+    if (!desktopViewerOffShown()) return;
+    status.hidden = true;
+    empty.textContent = CHOOSE_MACHINE_TEXT;
+    await loadMachines();
   }
   async function connectSimulator(device, immediateControl = false) {
     if (device.unavailableReason) {
@@ -129999,6 +136689,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function showSimulatorFromAgent(udid, presentation) {
     openRightPanel(store2, "vnc");
+    if (!await desktopViewerEnabled()) {
+      showDesktopViewerOff();
+      return;
+    }
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
     if (simulatorSessionId && machineSelect.value === machine) {
       if (presentation?.control) setControlEnabled(true);
@@ -130025,6 +136719,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await connectSimulator(device, presentation?.control === true);
   }
   async function connect() {
+    if (await stoppedByViewerOff()) return;
     const simulator = selectedSimulator();
     if (simulator) {
       await connectSimulator(simulator);
@@ -130384,6 +137079,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   });
   const stopSettings = store2.on("settings_changed", () => {
     void refreshSshHosts();
+    void recoverDesktopViewer();
   });
   setSessionUi(false);
   portInput.value = "5901";
@@ -130616,7 +137312,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -130632,6 +137328,8 @@ var init_vnc_pane = __esm({
     init_toast();
     init_simulator_desktop_view();
     init_panels();
+    init_desktop_viewer();
+    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
     LOCAL_MACHINE = "local";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
@@ -131267,471 +137965,6 @@ var init_ssh_status_banner = __esm({
   }
 });
 
-// src/renderer/views/approval-dialog.ts
-function approvalCopyElement(className, text2) {
-  const root = el("div", { class: className });
-  let list = null;
-  let lines = [];
-  const flushLines = () => {
-    if (lines.length > 0) root.append(lines.join("\n"));
-    lines = [];
-  };
-  for (const line of text2.split("\n")) {
-    if (line.startsWith(REASON_BULLET)) {
-      flushLines();
-      if (!list) {
-        list = el("ul", { class: "approval-reasons" });
-        root.append(list);
-      }
-      list.append(el("li", {}, line.slice(REASON_BULLET.length)));
-    } else {
-      list = null;
-      lines.push(line);
-    }
-  }
-  flushLines();
-  return root;
-}
-function mergeApprovalAdvice(values) {
-  const unique = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of values) {
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    unique.push(value);
-  }
-  if (unique.length <= 1) return unique[0];
-  const lines = unique.map((value) => value.split("\n"));
-  const sharedLead = lines[0]?.[0];
-  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join("\n\n");
-  }
-  const merged = [sharedLead];
-  const seenDetails = /* @__PURE__ */ new Set();
-  for (const parts of lines) {
-    const details = parts.slice(1).join("\n");
-    if (!details || seenDetails.has(details)) continue;
-    seenDetails.add(details);
-    merged.push(details);
-  }
-  return merged.join("\n");
-}
-function mountApprovalDialog(api2, store2, options = {}) {
-  const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
-  const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
-  const setTimer = options.setTimer ?? defaultTimer;
-  const rememberLabel = el(
-    "label",
-    { class: "approval-remember" },
-    el("input", { type: "checkbox", class: "approval-remember-input" }),
-    "Always allow this tool"
-  );
-  const turnTreeLeaseLabel = el(
-    "label",
-    { class: "approval-remember approval-turn-tree" },
-    el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
-    "Allow retries for this task (up to 10, for 15 minutes)"
-  );
-  const heading = el("h3", { class: "approval-heading" });
-  const items = el("div", { class: "approval-items" });
-  const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
-  const approveOnceButton = el("button", {
-    type: "button",
-    class: "ui-btn ui-btn-secondary approval-approve-once",
-    hidden: ""
-  });
-  const approveButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary approval-approve" },
-    "Approve"
-  );
-  const rejectButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary approval-reject" },
-    "Reject"
-  );
-  const dialog2 = el("dialog", { id: "approval-dialog" });
-  dialog2.append(
-    heading,
-    items,
-    rememberLabel,
-    turnTreeLeaseLabel,
-    uiActions(approveOnceButton, approveButton, rejectButton, {
-      className: "approval-buttons",
-      align: "end"
-    })
-  );
-  const chatPane = document.getElementById("pane-chat") ?? document.body;
-  chatPane.append(chatScrim, dialog2);
-  const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
-  const turnTreeLeaseInput = qsRequired(
-    turnTreeLeaseLabel,
-    ".approval-turn-tree-input"
-  );
-  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1];
-  if (!turnTreeLeaseTextNode) throw new Error("approval dialog missing lease label text node");
-  const turnTreeLeaseText = turnTreeLeaseTextNode;
-  const rememberLabelTextNode = rememberLabel.childNodes[1];
-  if (!rememberLabelTextNode) throw new Error("approval dialog missing remember label text node");
-  const rememberLabelText = rememberLabelTextNode;
-  const queue = [];
-  let batch = [];
-  let active2 = false;
-  let coalesceScheduled = false;
-  let cancelCoalesce = null;
-  let cancelSettle = null;
-  let detailsExpanded = false;
-  function closeDialog() {
-    dialog2.close();
-    chatScrim.hidden = true;
-  }
-  function isWindowHidden() {
-    return typeof document !== "undefined" && document.visibilityState === "hidden";
-  }
-  function isShowable(req) {
-    if (isWindowHidden()) return false;
-    if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
-  }
-  function syncAttention() {
-    const activeThreadId = store2.getState().activeThreadId;
-    const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
-    setAttentionThreads(store2, "approval", waiting);
-  }
-  function drainShowableIntoBatch() {
-    let moved = 0;
-    for (let i2 = 0; i2 < queue.length; ) {
-      const req = queue[i2];
-      if (req && isShowable(req)) {
-        queue.splice(i2, 1);
-        batch.push(req);
-        moved++;
-      } else {
-        i2++;
-      }
-    }
-    return moved;
-  }
-  function rememberGrant() {
-    if (batch.length === 0) return null;
-    if (!batch.every((req) => req.allowRemember)) return null;
-    const label = batch[0]?.rememberLabel;
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
-    return label;
-  }
-  function soloRequest() {
-    return batch.length === 1 ? batch[0] ?? null : null;
-  }
-  function approveOnceGrant() {
-    return soloRequest()?.approveOnceLabel ?? "";
-  }
-  function detailsToggle() {
-    const toggle = el(
-      "button",
-      {
-        class: "approval-details-toggle",
-        type: "button",
-        "aria-expanded": detailsExpanded ? "true" : "false"
-      },
-      detailsExpanded ? "Hide details" : "Show details"
-    );
-    toggle.addEventListener("click", () => {
-      detailsExpanded = !detailsExpanded;
-      renderBatch();
-    });
-    return toggle;
-  }
-  function renderBatch() {
-    const count = batch.length;
-    const collapseDetails = soloRequest()?.collapseDetails === true;
-    const uniqueTitles = new Set(batch.map((req) => req.title));
-    const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
-    const showRowTitles = count > 1 && sharedTitle === null;
-    const presentationGroups = [];
-    for (const req of batch) {
-      const previousGroup = presentationGroups.at(-1);
-      const previous = previousGroup?.[0];
-      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
-        previousGroup.push(req);
-      } else {
-        presentationGroups.push([req]);
-      }
-    }
-    heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
-    const requestBody = (req) => {
-      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (collapseDetails && !detailsExpanded) body.hidden = true;
-      return body;
-    };
-    items.replaceChildren(
-      ...presentationGroups.map((group) => {
-        const firstRequest = group[0];
-        if (!firstRequest) throw new Error("approval presentation group must not be empty");
-        const rowChildren = [];
-        if (showRowTitles) {
-          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
-        }
-        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
-        if (advice) {
-          rowChildren.push(approvalCopyElement("approval-advice", advice));
-        }
-        if (collapseDetails) rowChildren.push(detailsToggle());
-        if (group.length > 1) {
-          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
-          rowChildren.push(
-            el(
-              "div",
-              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
-              ...group.map((req) => {
-                const body = requestBody(req);
-                body.setAttribute("role", "listitem");
-                return body;
-              })
-            )
-          );
-        } else {
-          rowChildren.push(requestBody(firstRequest));
-        }
-        if (firstRequest.bodyFooter) {
-          rowChildren.push(approvalCopyElement("approval-footer", firstRequest.bodyFooter));
-        }
-        return el("div", { class: "approval-item" }, ...rowChildren);
-      })
-    );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
-    rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
-    const onceLabel = approveOnceGrant();
-    const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
-    approveOnceButton.hidden = !showOnce;
-    if (showOnce) approveOnceButton.textContent = onceLabel;
-    const grant = onceLabel !== "" ? null : rememberGrant();
-    rememberLabel.hidden = grant === null;
-    if (grant === null) rememberInput.checked = false;
-    else rememberLabelText.textContent = grant;
-    const leaseLabel = batch[0]?.turnTreeLeaseLabel;
-    const leaseSubject = batch[0]?.turnTreeLeaseSubject;
-    const offersTurnTreeLease = batch.length > 0 && leaseLabel !== void 0 && leaseSubject !== void 0 && batch.every(
-      (request) => request.allowTurnTreeLease === true && request.turnTreeLeaseLabel === leaseLabel && request.turnTreeLeaseSubject === leaseSubject
-    );
-    turnTreeLeaseLabel.hidden = !offersTurnTreeLease;
-    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false;
-    else {
-      turnTreeLeaseText.textContent = leaseLabel;
-      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
-    }
-  }
-  function clearSettle() {
-    if (cancelSettle) {
-      cancelSettle();
-      cancelSettle = null;
-    }
-    approveButton.disabled = false;
-    approveOnceButton.disabled = false;
-  }
-  function startSettle() {
-    clearSettle();
-    approveButton.disabled = true;
-    approveOnceButton.disabled = true;
-    cancelSettle = setTimer(() => {
-      cancelSettle = null;
-      approveButton.disabled = false;
-      approveOnceButton.disabled = false;
-    }, settleMs);
-  }
-  function show2() {
-    if (active2) return;
-    if (cancelCoalesce) {
-      cancelCoalesce();
-      cancelCoalesce = null;
-    }
-    coalesceScheduled = false;
-    if (drainShowableIntoBatch() === 0) {
-      syncAttention();
-      return;
-    }
-    clearSettle();
-    rememberInput.checked = false;
-    detailsExpanded = false;
-    renderBatch();
-    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
-    if (shouldShowModal) {
-      dialog2.showModal();
-    } else {
-      chatScrim.hidden = false;
-      dialog2.show();
-    }
-    active2 = true;
-    syncAttention();
-  }
-  function scheduleShow2() {
-    if (active2 || coalesceScheduled) return;
-    if (!queue.some(isShowable)) {
-      syncAttention();
-      return;
-    }
-    coalesceScheduled = true;
-    cancelCoalesce = setTimer(() => {
-      coalesceScheduled = false;
-      cancelCoalesce = null;
-      show2();
-    }, coalesceMs);
-  }
-  function withdrawUnshowable() {
-    if (!active2) return;
-    const withdrawn = batch.filter((req) => !isShowable(req));
-    if (withdrawn.length === 0) return;
-    batch = batch.filter((req) => isShowable(req));
-    queue.unshift(...withdrawn);
-    if (batch.length === 0) {
-      closeDialog();
-      active2 = false;
-      clearSettle();
-      return;
-    }
-    detailsExpanded = false;
-    renderBatch();
-    startSettle();
-  }
-  function appendToOpen() {
-    if (!active2) return;
-    if (drainShowableIntoBatch() > 0) {
-      renderBatch();
-      startSettle();
-    }
-    syncAttention();
-  }
-  function removeCancelled(id) {
-    const queueIdx = queue.findIndex((req) => req.id === id);
-    if (queueIdx >= 0) queue.splice(queueIdx, 1);
-    const wasInBatch = batch.some((req) => req.id === id);
-    batch = batch.filter((req) => req.id !== id);
-    if (wasInBatch && active2) {
-      if (batch.length === 0) {
-        closeDialog();
-        active2 = false;
-        clearSettle();
-        show2();
-      } else {
-        renderBatch();
-        startSettle();
-      }
-    }
-    syncAttention();
-  }
-  function resolve(approved, remember) {
-    if (!active2 || batch.length === 0) return;
-    const answered = batch;
-    const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
-    closeDialog();
-    batch = [];
-    active2 = false;
-    turnTreeLeaseInput.checked = false;
-    clearSettle();
-    for (const req of answered) {
-      void api2.approval.respond(req.id, approved, remember, grantScope);
-    }
-    show2();
-  }
-  api2.agent.onApprovalRequest(
-    ({
-      id,
-      threadId,
-      title,
-      body,
-      bodyAdvice,
-      bodyFooter,
-      type,
-      allowRemember,
-      rememberLabel: rememberLabel2,
-      collapseDetails,
-      approveOnceLabel,
-      showWhileSettingsOpen,
-      allowTurnTreeLease,
-      turnTreeLeaseLabel: turnTreeLeaseLabel2,
-      turnTreeLeaseDefault,
-      turnTreeLeaseSubject
-    }) => {
-      const pending = {
-        id,
-        threadId,
-        title,
-        body,
-        bodyAdvice,
-        bodyFooter,
-        type,
-        allowRemember,
-        rememberLabel: rememberLabel2,
-        collapseDetails,
-        approveOnceLabel,
-        showWhileSettingsOpen,
-        allowTurnTreeLease,
-        turnTreeLeaseLabel: turnTreeLeaseLabel2,
-        turnTreeLeaseDefault,
-        turnTreeLeaseSubject
-      };
-      queue.push(pending);
-      if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
-        queue.unshift(...batch);
-        batch = [];
-        closeDialog();
-        active2 = false;
-        clearSettle();
-        show2();
-      } else if (active2) appendToOpen();
-      else scheduleShow2();
-      syncAttention();
-    }
-  );
-  api2.agent.onApprovalCancelled(({ id }) => {
-    removeCancelled(id);
-  });
-  store2.on("threads_changed", () => {
-    withdrawUnshowable();
-    if (active2) appendToOpen();
-    else show2();
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      withdrawUnshowable();
-      syncAttention();
-    } else show2();
-  });
-  onSettingsDialogClose(() => {
-    show2();
-  });
-  approveButton.addEventListener("click", () => {
-    if (approveButton.disabled) return;
-    resolve(true, approveOnceGrant() !== "" ? true : rememberInput.checked);
-  });
-  approveOnceButton.addEventListener("click", () => {
-    if (approveOnceButton.disabled) return;
-    resolve(true, false);
-  });
-  rejectButton.addEventListener("click", () => {
-    resolve(false, false);
-  });
-}
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
-var init_approval_dialog = __esm({
-  "src/renderer/views/approval-dialog.ts"() {
-    init_helpers();
-    init_settings_dialog();
-    init_attention();
-    init_actions();
-    APPROVAL_COALESCE_MS = 120;
-    APPROVAL_SETTLE_MS = 500;
-    REASON_BULLET = "\u2022 ";
-    defaultTimer = (fn2, ms2) => {
-      const handle = setTimeout(fn2, ms2);
-      return () => {
-        clearTimeout(handle);
-      };
-    };
-  }
-});
-
 // src/renderer/views/ask-user-dialog.ts
 function mountAskUserDialog(api2, store2) {
   const form = el("form", { id: "ask-user-form", method: "dialog" });
@@ -131739,6 +137972,8 @@ function mountAskUserDialog(api2, store2) {
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
+  const changeListeners = /* @__PURE__ */ new Set();
+  let arrivals = 0;
   let inputs = [];
   function isShowable(req) {
     return !req.threadId || req.threadId === store2.getState().activeThreadId;
@@ -131747,6 +137982,7 @@ function mountAskUserDialog(api2, store2) {
     const activeThreadId = store2.getState().activeThreadId;
     const waiting = queue.map((req) => req.threadId).filter((id) => !!id && id !== activeThreadId);
     setAttentionThreads(store2, "ask", waiting);
+    for (const listener of [...changeListeners]) listener();
   }
   function renderActive() {
     if (!active2) return;
@@ -131861,7 +138097,13 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
-    queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
+    queue.push({
+      id: req.id,
+      threadId: req.threadId,
+      questions: req.questions,
+      receivedAt: Date.now(),
+      arrival: arrivals++
+    });
     showNext();
     syncAttention();
   });
@@ -131882,6 +138124,20 @@ function mountAskUserDialog(api2, store2) {
     showNext();
     syncAttention();
   });
+  return {
+    pending: () => [...active2 ? [active2] : [], ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
+      id: req.id,
+      threadId: req.threadId,
+      questions: req.questions.map((q2) => q2.question),
+      receivedAt: req.receivedAt
+    })),
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    }
+  };
 }
 var init_ask_user_dialog = __esm({
   "src/renderer/views/ask-user-dialog.ts"() {
@@ -132479,6 +138735,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         shortcuts: [
           { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
           { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
           { label: "Find in conversation", keys: ["Mod", "F"] },
           { label: "Next thread", keys: ["Ctrl", "Tab"] },
           { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
@@ -132584,6 +138841,13 @@ function mountCommandPalette(store2, api2) {
         }
       });
     }
+    commands.push({
+      kind: "command",
+      label: "Activity",
+      run: () => {
+        openActivityPanel();
+      }
+    });
     commands.push({
       kind: "command",
       label: "Settings",
@@ -132775,6 +139039,7 @@ var init_command_palette = __esm({
     init_panels();
     init_settings_dialog();
     init_keyboard_shortcuts_dialog();
+    init_activity_panel();
     init_file_search_dialog();
     init_conversation_search();
     init_github_pr_url2();
@@ -132929,6 +139194,16 @@ function mountProcessManagerDialog(api2, store2) {
   let generation = 0;
   let refreshing = false;
   const collapsedGroups = /* @__PURE__ */ new Set();
+  const runGenerations = /* @__PURE__ */ new Map();
+  let sampledRuns = /* @__PURE__ */ new Set();
+  function trackRuns(snapshot) {
+    for (const threadId of snapshot.activeRunThreadIds) {
+      if (!sampledRuns.has(threadId)) {
+        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
+      }
+    }
+    sampledRuns = new Set(snapshot.activeRunThreadIds);
+  }
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -132972,7 +139247,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running) {
+  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -132986,6 +139261,10 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
+          if (stillSameRun && !stillSameRun()) {
+            showToast("That agent run has already finished.");
+            return;
+          }
           stopAgentRun(threadId);
         }
       });
@@ -133022,6 +139301,15 @@ function mountProcessManagerDialog(api2, store2) {
     });
     cell.append(button);
     return cell;
+  }
+  function activityMenuEntries(threadId, projectId) {
+    const run2 = runGenerations.get(threadId);
+    return threadMenuEntries(
+      threadId,
+      projectId,
+      true,
+      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
+    );
   }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
@@ -133085,7 +139373,7 @@ function mountProcessManagerDialog(api2, store2) {
         showContextMenu(
           event.clientX,
           event.clientY,
-          threadMenuEntries(threadId, projectId, true),
+          activityMenuEntries(threadId, projectId),
           dialog2
         );
       });
@@ -133093,12 +139381,7 @@ function mountProcessManagerDialog(api2, store2) {
         if (event.key !== "F10" || !event.shiftKey) return;
         event.preventDefault();
         const rect = item.getBoundingClientRect();
-        showContextMenu(
-          rect.left,
-          rect.bottom,
-          threadMenuEntries(threadId, projectId, true),
-          dialog2
-        );
+        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
       });
       activityList.append(item);
       if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
@@ -133199,6 +139482,7 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
+        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -133228,6 +139512,8 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
+    runGenerations.clear();
+    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
@@ -133236,6 +139522,7 @@ function mountProcessManagerDialog(api2, store2) {
     status.textContent = "Loading processes\u2026";
     updated.textContent = "";
     open2();
+    closeButton.focus({ preventScroll: true });
     void refresh();
     timer = setInterval(() => void refresh(), 1e3);
   };
@@ -133600,9 +139887,11 @@ function startAgentController(store2, api2) {
           "user",
           userContentToText(chunk.content),
           void 0,
-          void 0,
+          chunk.attachments,
           {
-            origin: chunk.origin
+            origin: chunk.origin,
+            ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
+            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {}
           }
         );
         break;
@@ -133811,6 +140100,7 @@ function startAgentController(store2, api2) {
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...chunk.subagentUsage ? { subagentUsage: true } : {},
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
           ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
           ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
@@ -133960,7 +140250,9 @@ function startAgentController(store2, api2) {
       }
       case "turn_outcome": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
-        setMessageTurnOutcome(store2, threadId, st2.msgId, chunk.outcome);
+        const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
+        const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
+        setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
         break;
       }
       case "done": {
@@ -133977,6 +140269,7 @@ function startAgentController(store2, api2) {
           );
           clearReviewReportTarget(store2, threadId);
         }
+        takeSendNowAbort(threadId);
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -134112,6 +140405,7 @@ var init_agent = __esm({
     init_thread_naming();
     init_quiet_runs();
     init_review_report_target();
+    init_send_now_aborts();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
@@ -134128,10 +140422,45 @@ function isPendingAutomation(thread) {
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
   async function startThread(threadId) {
     const initial = getThreadById(store2, threadId);
     const projectId = store2.getState().activeProjectId;
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
     const prompt = initial.draftPrompt?.trim();
     if (!prompt) return;
     starting.add(threadId);
@@ -134140,6 +140469,22 @@ function attachAutomationController(store2, api2) {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
       if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api2.agent.prepareCheckout(
           projectId,
@@ -134152,7 +140497,27 @@ function attachAutomationController(store2, api2) {
         applyPreparedThreadCheckout(store2, threadId, prepared);
       }
       const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) return;
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
@@ -134198,16 +140563,21 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
   startPendingForActiveProject();
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
     unsubscribeTrigger();
     unsubscribeWorkspace();
   };
 }
+var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -134856,6 +141226,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -134871,6 +141242,7 @@ async function loadStartupSettings(settings) {
     settings.get("theme"),
     settings.get("fontSize"),
     settings.get("animateAgentAvatars"),
+    settings.get("conciseThreadsEnabled"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -134887,6 +141259,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -135448,6 +141821,11 @@ function matchCommandPaletteShortcut(e3) {
   if (!meta3 || e3.altKey || !e3.shiftKey) return false;
   return e3.key === "k" || e3.key === "K";
 }
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
+}
 function matchPanelShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
   if (!meta3 || e3.altKey) return null;
@@ -135468,6 +141846,7 @@ function handlePanelShortcut(store2, api2, action) {
 }
 function registerPanelKeyboardShortcuts(store2, api2) {
   document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
@@ -135485,6 +141864,7 @@ var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
     init_thread_helpers();
     init_panels();
+    init_dialog_shell();
   }
 });
 
@@ -135577,7 +141957,10 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs
+// node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs
+function _OverloadYield(e3, d3) {
+  this.v = e3, this.k = d3;
+}
 function _arrayLikeToArray(r2, a3) {
   (null == a3 || a3 > r2.length) && (a3 = r2.length);
   for (var e3 = 0, n2 = Array(a3); e3 < a3; e3++) n2[e3] = r2[e3];
@@ -135591,8 +141974,10 @@ function _iterableToArrayLimit(r2, l2) {
   if (null != t2) {
     var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
-      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
+      if (i2 = (t2 = t2.call(r2)).next, 0 === l2) {
+        if (Object(t2) !== t2) return;
+        f4 = false;
+      } else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
@@ -135618,42 +142003,68 @@ function _unsupportedIterableToArray(r2, a3) {
     return "Object" === t2 && r2.constructor && (t2 = r2.constructor.name), "Map" === t2 || "Set" === t2 ? Array.from(r2) : "Arguments" === t2 || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t2) ? _arrayLikeToArray(r2, a3) : void 0;
   }
 }
+function AsyncGenerator(e3) {
+  var t2, n2;
+  function resume(t3, n3) {
+    try {
+      var r2 = e3[t3](n3), o3 = r2.value, u2 = o3 instanceof _OverloadYield;
+      Promise.resolve(u2 ? o3.v : o3).then(function(n4) {
+        if (u2) {
+          var i2 = "return" === t3 && o3.k ? t3 : "next";
+          if (!o3.k || n4.done) return resume(i2, n4);
+          n4 = e3[i2](n4).value;
+        }
+        settle2(!!r2.done, n4);
+      }, function(e4) {
+        resume("throw", e4);
+      });
+    } catch (e4) {
+      settle2(2, e4);
+    }
+  }
+  function settle2(e4, r2) {
+    2 === e4 ? t2.reject(r2) : t2.resolve({
+      value: r2,
+      done: e4
+    }), (t2 = t2.next) ? resume(t2.key, t2.arg) : n2 = null;
+  }
+  this._invoke = function(e4, r2) {
+    return new Promise(function(o3, u2) {
+      var i2 = {
+        key: e4,
+        arg: r2,
+        resolve: o3,
+        reject: u2,
+        next: null
+      };
+      n2 ? n2 = n2.next = i2 : (t2 = n2 = i2, resume(e4, r2));
+    });
+  }, "function" != typeof e3.return && (this.return = void 0);
+}
 function unapply(func) {
   return function(thisArg) {
-    if (thisArg instanceof RegExp) {
-      thisArg.lastIndex = 0;
-    }
-    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-      args[_key3 - 1] = arguments[_key3];
-    }
+    if (thisArg instanceof RegExp) thisArg.lastIndex = 0;
+    for (var _len3 = arguments.length, args = new Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) args[_key3 - 1] = arguments[_key3];
     return apply(func, thisArg, args);
   };
 }
 function unconstruct(Func) {
   return function() {
-    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
-      args[_key4] = arguments[_key4];
-    }
+    for (var _len4 = arguments.length, args = new Array(_len4), _key4 = 0; _key4 < _len4; _key4++) args[_key4] = arguments[_key4];
     return construct(Func, args);
   };
 }
 function addToSet(set2, array2) {
   let transformCaseFunc = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : stringToLowerCase;
-  if (setPrototypeOf) {
-    setPrototypeOf(set2, null);
-  }
-  if (!arrayIsArray(array2)) {
-    return set2;
-  }
+  if (setPrototypeOf) setPrototypeOf(set2, null);
+  if (!arrayIsArray(array2)) return set2;
   let l2 = array2.length;
   while (l2--) {
     let element = array2[l2];
     if (typeof element === "string") {
       const lcElement = transformCaseFunc(element);
       if (lcElement !== element) {
-        if (!isFrozen(array2)) {
-          array2[l2] = lcElement;
-        }
+        if (!isFrozen(array2)) array2[l2] = lcElement;
         element = lcElement;
       }
     }
@@ -135662,12 +142073,7 @@ function addToSet(set2, array2) {
   return set2;
 }
 function cleanArray(array2) {
-  for (let index = 0; index < array2.length; index++) {
-    const isPropertyExist = objectHasOwnProperty(array2, index);
-    if (!isPropertyExist) {
-      array2[index] = null;
-    }
-  }
+  for (let index = 0; index < array2.length; index++) if (!objectHasOwnProperty(array2, index)) array2[index] = null;
   return array2;
 }
 function clone2(object2) {
@@ -135676,44 +142082,31 @@ function clone2(object2) {
     var _ref3 = _slicedToArray(_ref2, 2);
     const property = _ref3[0];
     const value = _ref3[1];
-    const isPropertyExist = objectHasOwnProperty(object2, property);
-    if (isPropertyExist) {
-      if (arrayIsArray(value)) {
-        newObject[property] = cleanArray(value);
-      } else if (value && typeof value === "object" && value.constructor === Object) {
-        newObject[property] = clone2(value);
-      } else {
-        newObject[property] = value;
-      }
+    if (objectHasOwnProperty(object2, property)) {
+      if (arrayIsArray(value)) newObject[property] = cleanArray(value);
+      else if (value && typeof value === "object" && value.constructor === Object) newObject[property] = clone2(value);
+      else newObject[property] = value;
     }
   }
   return newObject;
 }
 function stringifyValue(value) {
   switch (typeof value) {
-    case "string": {
+    case "string":
       return value;
-    }
-    case "number": {
+    case "number":
       return numberToString(value);
-    }
-    case "boolean": {
+    case "boolean":
       return booleanToString(value);
-    }
-    case "bigint": {
+    case "bigint":
       return bigintToString ? bigintToString(value) : "0";
-    }
-    case "symbol": {
+    case "symbol":
       return symbolToString ? symbolToString(value) : "Symbol()";
-    }
-    case "undefined": {
+    case "undefined":
       return objectToString(value);
-    }
     case "function":
     case "object": {
-      if (value === null) {
-        return objectToString(value);
-      }
+      if (value === null) return objectToString(value);
       const valueAsRecord = value;
       const valueToString = lookupGetter(valueAsRecord, "toString");
       if (typeof valueToString === "function") {
@@ -135722,21 +142115,16 @@ function stringifyValue(value) {
       }
       return objectToString(value);
     }
-    default: {
+    default:
       return objectToString(value);
-    }
   }
 }
 function lookupGetter(object2, prop) {
   while (object2 !== null) {
     const desc = getOwnPropertyDescriptor(object2, prop);
     if (desc) {
-      if (desc.get) {
-        return unapply(desc.get);
-      }
-      if (typeof desc.value === "function") {
-        return unapply(desc.value);
-      }
+      if (desc.get) return unapply(desc.get);
+      if (typeof desc.value === "function") return unapply(desc.value);
     }
     object2 = getPrototypeOf(object2);
   }
@@ -135756,7 +142144,7 @@ function isRegex(value) {
 function createDOMPurify() {
   let window2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : getGlobal();
   const DOMPurify = (root) => createDOMPurify(root);
-  DOMPurify.version = "3.4.15";
+  DOMPurify.version = "3.4.16";
   DOMPurify.removed = [];
   if (!window2 || !window2.document || window2.document.nodeType !== NODE_TYPE.document || !window2.Element) {
     DOMPurify.isSupported = false;
@@ -135766,8 +142154,8 @@ function createDOMPurify() {
   const originalDocument = document2;
   const currentScript = originalDocument.currentScript;
   window2.DocumentFragment;
-  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter, _window$NamedNodeMap = window2.NamedNodeMap;
-  _window$NamedNodeMap === void 0 ? window2.NamedNodeMap || window2.MozNamedAttrMap : _window$NamedNodeMap;
+  const HTMLTemplateElement = window2.HTMLTemplateElement, Node2 = window2.Node, Element2 = window2.Element, NodeFilter2 = window2.NodeFilter;
+  window2.NamedNodeMap === void 0 && (window2.NamedNodeMap || window2.MozNamedAttrMap);
   window2.HTMLFormElement;
   const DOMParser2 = window2.DOMParser, trustedTypes = window2.trustedTypes;
   const ElementPrototype = Element2.prototype;
@@ -135790,9 +142178,7 @@ function createDOMPurify() {
   };
   if (typeof HTMLTemplateElement === "function") {
     const template = document2.createElement("template");
-    if (template.content && template.content.ownerDocument) {
-      document2 = template.content.ownerDocument;
-    }
+    if (template.content && template.content.ownerDocument) document2 = template.content.ownerDocument;
   }
   let trustedTypesPolicy;
   let emptyHTML = "";
@@ -135800,9 +142186,7 @@ function createDOMPurify() {
   let defaultTrustedTypesPolicyResolved = false;
   let IN_TRUSTED_TYPES_POLICY = 0;
   const _assertNotInTrustedTypesPolicy = function _assertNotInTrustedTypesPolicy2() {
-    if (IN_TRUSTED_TYPES_POLICY > 0) {
-      throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
-    }
+    if (IN_TRUSTED_TYPES_POLICY > 0) throw typeErrorCreate('A configured TRUSTED_TYPES_POLICY callback (createHTML or createScriptURL) must not call DOMPurify.sanitize, as that causes infinite recursion. Do not pass a policy whose callbacks wrap DOMPurify as TRUSTED_TYPES_POLICY; see the "DOMPurify and Trusted Types" section of the README.');
   };
   const _createTrustedHTML = function _createTrustedHTML2(html2) {
     _assertNotInTrustedTypesPolicy();
@@ -135836,9 +142220,20 @@ function createDOMPurify() {
   const MUSTACHE_EXPR$1 = MUSTACHE_EXPR, ERB_EXPR$1 = ERB_EXPR, TMPLIT_EXPR$1 = TMPLIT_EXPR, DATA_ATTR$1 = DATA_ATTR, ARIA_ATTR$1 = ARIA_ATTR, IS_SCRIPT_OR_DATA$1 = IS_SCRIPT_OR_DATA, ATTR_WHITESPACE$1 = ATTR_WHITESPACE, CUSTOM_ELEMENT$1 = CUSTOM_ELEMENT;
   let IS_ALLOWED_URI$1 = IS_ALLOWED_URI;
   let ALLOWED_TAGS2 = null;
-  const DEFAULT_ALLOWED_TAGS = addToSet({}, [...html$1, ...svg$1, ...svgFilters, ...mathMl$1, ...text]);
+  const DEFAULT_ALLOWED_TAGS = addToSet({}, [
+    ...html$1,
+    ...svg$1,
+    ...svgFilters,
+    ...mathMl$1,
+    ...text
+  ]);
   let ALLOWED_ATTR2 = null;
-  const DEFAULT_ALLOWED_ATTR = addToSet({}, [...html, ...svg, ...mathMl, ...xml]);
+  const DEFAULT_ALLOWED_ATTR = addToSet({}, [
+    ...html,
+    ...svg,
+    ...mathMl,
+    ...xml
+  ]);
   let CUSTOM_ELEMENT_HANDLING = Object.seal(create(null, {
     tagNameCheck: {
       writable: true,
@@ -135915,15 +142310,6 @@ function createDOMPurify() {
     "noscript",
     "plaintext",
     "script",
-    // <selectedcontent> mirrors the selected <option>'s subtree, cloned by
-    // the UA (customizable <select>) — including any on* handlers — and the
-    // engine re-mirrors synchronously whenever a removal changes which
-    // option/selectedcontent is current, even inside DOMPurify's inert
-    // DOMParser document. Hoisting its children on removal re-inserts a fresh
-    // mirror target ahead of the walk, which the engine refills, looping
-    // forever (DoS) and amplifying output. Dropping its content on removal
-    // (rather than hoisting) breaks that cascade; the content is a duplicate
-    // of the option, which is sanitized on its own. See campaign-3 F1/F6.
     "selectedcontent",
     "style",
     "svg",
@@ -135934,21 +142320,59 @@ function createDOMPurify() {
     "xmp"
   ]);
   let DATA_URI_TAGS = null;
-  const DEFAULT_DATA_URI_TAGS = addToSet({}, ["audio", "video", "img", "source", "image", "track"]);
+  const DEFAULT_DATA_URI_TAGS = addToSet({}, [
+    "audio",
+    "video",
+    "img",
+    "source",
+    "image",
+    "track"
+  ]);
   let URI_SAFE_ATTRIBUTES = null;
-  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, ["alt", "class", "for", "id", "label", "name", "pattern", "placeholder", "role", "summary", "title", "value", "style", "xmlns"]);
+  const DEFAULT_URI_SAFE_ATTRIBUTES = addToSet({}, [
+    "alt",
+    "class",
+    "for",
+    "id",
+    "label",
+    "name",
+    "pattern",
+    "placeholder",
+    "role",
+    "summary",
+    "title",
+    "value",
+    "style",
+    "xmlns"
+  ]);
   const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
   let NAMESPACE = HTML_NAMESPACE;
   let IS_EMPTY_INPUT = false;
   let ALLOWED_NAMESPACES = null;
-  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [MATHML_NAMESPACE, SVG_NAMESPACE, HTML_NAMESPACE], stringToString);
-  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze(["mi", "mo", "mn", "ms", "mtext"]);
+  const DEFAULT_ALLOWED_NAMESPACES = addToSet({}, [
+    MATHML_NAMESPACE,
+    SVG_NAMESPACE,
+    HTML_NAMESPACE
+  ], stringToString);
+  const DEFAULT_MATHML_TEXT_INTEGRATION_POINTS = freeze([
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext"
+  ]);
   let MATHML_TEXT_INTEGRATION_POINTS = addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS);
   const DEFAULT_HTML_INTEGRATION_POINTS = freeze(["annotation-xml"]);
   let HTML_INTEGRATION_POINTS = addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS);
-  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, ["title", "style", "font", "a", "script"]);
+  const COMMON_SVG_AND_HTML_ELEMENTS = addToSet({}, [
+    "title",
+    "style",
+    "font",
+    "a",
+    "script"
+  ]);
   let PARSER_MEDIA_TYPE = null;
   const SUPPORTED_PARSER_MEDIA_TYPES = ["application/xhtml+xml", "text/html"];
   const DEFAULT_PARSER_MEDIA_TYPE = "text/html";
@@ -135960,25 +142384,14 @@ function createDOMPurify() {
   };
   const _parseConfig = function _parseConfig2() {
     let cfg = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : {};
-    if (CONFIG && CONFIG === cfg) {
-      return;
-    }
-    if (!cfg || typeof cfg !== "object") {
-      cfg = {};
-    }
+    if (CONFIG && CONFIG === cfg) return;
+    if (!cfg || typeof cfg !== "object") cfg = {};
     cfg = clone2(cfg);
-    PARSER_MEDIA_TYPE = // eslint-disable-next-line unicorn/prefer-includes
-    SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
+    PARSER_MEDIA_TYPE = SUPPORTED_PARSER_MEDIA_TYPES.indexOf(cfg.PARSER_MEDIA_TYPE) === -1 ? DEFAULT_PARSER_MEDIA_TYPE : cfg.PARSER_MEDIA_TYPE;
     transformCaseFunc = PARSER_MEDIA_TYPE === "application/xhtml+xml" ? stringToString : stringToLowerCase;
-    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, {
-      transform: transformCaseFunc
-    });
-    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, {
-      transform: stringToString
-    });
+    ALLOWED_TAGS2 = _resolveSetOption(cfg, "ALLOWED_TAGS", DEFAULT_ALLOWED_TAGS, { transform: transformCaseFunc });
+    ALLOWED_ATTR2 = _resolveSetOption(cfg, "ALLOWED_ATTR", DEFAULT_ALLOWED_ATTR, { transform: transformCaseFunc });
+    ALLOWED_NAMESPACES = _resolveSetOption(cfg, "ALLOWED_NAMESPACES", DEFAULT_ALLOWED_NAMESPACES, { transform: stringToString });
     URI_SAFE_ATTRIBUTES = _resolveSetOption(cfg, "ADD_URI_SAFE_ATTR", DEFAULT_URI_SAFE_ATTRIBUTES, {
       transform: transformCaseFunc,
       base: DEFAULT_URI_SAFE_ATTRIBUTES
@@ -135987,15 +142400,9 @@ function createDOMPurify() {
       transform: transformCaseFunc,
       base: DEFAULT_DATA_URI_TAGS
     });
-    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, {
-      transform: transformCaseFunc
-    });
-    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), {
-      transform: transformCaseFunc
-    });
-    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), {
-      transform: transformCaseFunc
-    });
+    FORBID_CONTENTS = _resolveSetOption(cfg, "FORBID_CONTENTS", DEFAULT_FORBID_CONTENTS, { transform: transformCaseFunc });
+    FORBID_TAGS = _resolveSetOption(cfg, "FORBID_TAGS", clone2({}), { transform: transformCaseFunc });
+    FORBID_ATTR = _resolveSetOption(cfg, "FORBID_ATTR", clone2({}), { transform: transformCaseFunc });
     USE_PROFILES = objectHasOwnProperty(cfg, "USE_PROFILES") ? cfg.USE_PROFILES && typeof cfg.USE_PROFILES === "object" ? clone2(cfg.USE_PROFILES) : cfg.USE_PROFILES : false;
     ALLOW_ARIA_ATTR = cfg.ALLOW_ARIA_ATTR !== false;
     ALLOW_DATA_ATTR = cfg.ALLOW_DATA_ATTR !== false;
@@ -136014,36 +142421,16 @@ function createDOMPurify() {
     IN_PLACE = cfg.IN_PLACE || false;
     IS_ALLOWED_URI$1 = isRegex(cfg.ALLOWED_URI_REGEXP) ? cfg.ALLOWED_URI_REGEXP : IS_ALLOWED_URI;
     NAMESPACE = typeof cfg.NAMESPACE === "string" ? cfg.NAMESPACE : HTML_NAMESPACE;
-    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "MATHML_TEXT_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS)
-      // Default built-in map
-    );
-    HTML_INTEGRATION_POINTS = _resolveObjectOption(
-      cfg,
-      "HTML_INTEGRATION_POINTS",
-      () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS)
-      // Default built-in map
-    );
+    MATHML_TEXT_INTEGRATION_POINTS = _resolveObjectOption(cfg, "MATHML_TEXT_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_MATHML_TEXT_INTEGRATION_POINTS));
+    HTML_INTEGRATION_POINTS = _resolveObjectOption(cfg, "HTML_INTEGRATION_POINTS", () => addToSet({}, DEFAULT_HTML_INTEGRATION_POINTS));
     const customElementHandling = _resolveObjectOption(cfg, "CUSTOM_ELEMENT_HANDLING", () => create(null));
     CUSTOM_ELEMENT_HANDLING = create(null);
-    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) {
-      CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
-    }
-    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") {
-      CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
-    }
+    if (objectHasOwnProperty(customElementHandling, "tagNameCheck") && isRegexOrFunction(customElementHandling.tagNameCheck)) CUSTOM_ELEMENT_HANDLING.tagNameCheck = customElementHandling.tagNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "attributeNameCheck") && isRegexOrFunction(customElementHandling.attributeNameCheck)) CUSTOM_ELEMENT_HANDLING.attributeNameCheck = customElementHandling.attributeNameCheck;
+    if (objectHasOwnProperty(customElementHandling, "allowCustomizedBuiltInElements") && typeof customElementHandling.allowCustomizedBuiltInElements === "boolean") CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements = customElementHandling.allowCustomizedBuiltInElements;
     seal(CUSTOM_ELEMENT_HANDLING);
-    if (SAFE_FOR_TEMPLATES) {
-      ALLOW_DATA_ATTR = false;
-    }
-    if (RETURN_DOM_FRAGMENT) {
-      RETURN_DOM = true;
-    }
+    if (SAFE_FOR_TEMPLATES) ALLOW_DATA_ATTR = false;
+    if (RETURN_DOM_FRAGMENT) RETURN_DOM = true;
     if (USE_PROFILES) {
       ALLOWED_TAGS2 = addToSet({}, text);
       ALLOWED_ATTR2 = create(null);
@@ -136070,48 +142457,36 @@ function createDOMPurify() {
     EXTRA_ELEMENT_HANDLING.tagCheck = null;
     EXTRA_ELEMENT_HANDLING.attributeCheck = null;
     if (objectHasOwnProperty(cfg, "ADD_TAGS")) {
-      if (typeof cfg.ADD_TAGS === "function") {
-        EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
-      } else if (arrayIsArray(cfg.ADD_TAGS)) {
-        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) {
-          ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-        }
+      if (typeof cfg.ADD_TAGS === "function") EXTRA_ELEMENT_HANDLING.tagCheck = cfg.ADD_TAGS;
+      else if (arrayIsArray(cfg.ADD_TAGS)) {
+        if (ALLOWED_TAGS2 === DEFAULT_ALLOWED_TAGS) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
         addToSet(ALLOWED_TAGS2, cfg.ADD_TAGS, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_ATTR")) {
-      if (typeof cfg.ADD_ATTR === "function") {
-        EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
-      } else if (arrayIsArray(cfg.ADD_ATTR)) {
-        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) {
-          ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-        }
+      if (typeof cfg.ADD_ATTR === "function") EXTRA_ELEMENT_HANDLING.attributeCheck = cfg.ADD_ATTR;
+      else if (arrayIsArray(cfg.ADD_ATTR)) {
+        if (ALLOWED_ATTR2 === DEFAULT_ALLOWED_ATTR) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
         addToSet(ALLOWED_ATTR2, cfg.ADD_ATTR, transformCaseFunc);
       }
     }
     if (objectHasOwnProperty(cfg, "ADD_FORBID_CONTENTS") && arrayIsArray(cfg.ADD_FORBID_CONTENTS)) {
-      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) {
-        FORBID_CONTENTS = clone2(FORBID_CONTENTS);
-      }
+      if (FORBID_CONTENTS === DEFAULT_FORBID_CONTENTS) FORBID_CONTENTS = clone2(FORBID_CONTENTS);
       addToSet(FORBID_CONTENTS, cfg.ADD_FORBID_CONTENTS, transformCaseFunc);
     }
-    if (KEEP_CONTENT) {
-      ALLOWED_TAGS2["#text"] = true;
-    }
-    if (WHOLE_DOCUMENT) {
-      addToSet(ALLOWED_TAGS2, ["html", "head", "body"]);
-    }
+    if (KEEP_CONTENT) ALLOWED_TAGS2["#text"] = true;
+    if (WHOLE_DOCUMENT) addToSet(ALLOWED_TAGS2, [
+      "html",
+      "head",
+      "body"
+    ]);
     if (ALLOWED_TAGS2.table) {
       addToSet(ALLOWED_TAGS2, ["tbody"]);
       delete FORBID_TAGS.tbody;
     }
     if (cfg.TRUSTED_TYPES_POLICY) {
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
-      }
-      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") {
-        throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
-      }
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createHTML !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createHTML" hook.');
+      if (typeof cfg.TRUSTED_TYPES_POLICY.createScriptURL !== "function") throw typeErrorCreate('TRUSTED_TYPES_POLICY configuration option must provide a "createScriptURL" hook.');
       const previousTrustedTypesPolicy = trustedTypesPolicy;
       trustedTypesPolicy = cfg.TRUSTED_TYPES_POLICY;
       try {
@@ -136124,85 +142499,55 @@ function createDOMPurify() {
       trustedTypesPolicy = void 0;
       emptyHTML = "";
     } else {
-      if (trustedTypesPolicy === void 0) {
-        trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
-      }
-      if (trustedTypesPolicy && typeof emptyHTML === "string") {
-        emptyHTML = _createTrustedHTML("");
-      }
+      if (trustedTypesPolicy === void 0) trustedTypesPolicy = _getDefaultTrustedTypesPolicy();
+      if (trustedTypesPolicy && typeof emptyHTML === "string") emptyHTML = _createTrustedHTML("");
     }
-    if (freeze) {
-      freeze(cfg);
-    }
+    if (freeze) freeze(cfg);
     CONFIG = cfg;
   };
-  const ALL_SVG_TAGS = addToSet({}, [...svg$1, ...svgFilters, ...svgDisallowed]);
+  const ALL_SVG_TAGS = addToSet({}, [
+    ...svg$1,
+    ...svgFilters,
+    ...svgDisallowed
+  ]);
   const ALL_MATHML_TAGS = addToSet({}, [...mathMl$1, ...mathMlDisallowed]);
   const _checkSvgNamespace = function _checkSvgNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "svg";
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE) {
-      return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "svg";
+    if (parent.namespaceURI === MATHML_NAMESPACE) return tagName === "svg" && (parentTagName === "annotation-xml" || MATHML_TEXT_INTEGRATION_POINTS[parentTagName]);
     return Boolean(ALL_SVG_TAGS[tagName]);
   };
   const _checkMathMlNamespace = function _checkMathMlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === HTML_NAMESPACE) {
-      return tagName === "math";
-    }
-    if (parent.namespaceURI === SVG_NAMESPACE) {
-      return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
-    }
+    if (parent.namespaceURI === HTML_NAMESPACE) return tagName === "math";
+    if (parent.namespaceURI === SVG_NAMESPACE) return tagName === "math" && HTML_INTEGRATION_POINTS[parentTagName];
     return Boolean(ALL_MATHML_TAGS[tagName]);
   };
   const _checkHtmlNamespace = function _checkHtmlNamespace2(tagName, parent, parentTagName) {
-    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
-    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) {
-      return false;
-    }
+    if (parent.namespaceURI === SVG_NAMESPACE && !HTML_INTEGRATION_POINTS[parentTagName]) return false;
+    if (parent.namespaceURI === MATHML_NAMESPACE && !MATHML_TEXT_INTEGRATION_POINTS[parentTagName]) return false;
     return !ALL_MATHML_TAGS[tagName] && (COMMON_SVG_AND_HTML_ELEMENTS[tagName] || !ALL_SVG_TAGS[tagName]);
   };
   const _checkValidNamespace = function _checkValidNamespace2(element) {
     let parent = getParentNode(element);
-    if (!parent || !parent.tagName) {
-      parent = {
-        namespaceURI: NAMESPACE,
-        tagName: "template"
-      };
-    }
+    if (!parent || !parent.tagName) parent = {
+      namespaceURI: NAMESPACE,
+      tagName: "template"
+    };
     const tagName = stringToLowerCase(element.tagName);
     const parentTagName = stringToLowerCase(parent.tagName);
-    if (!ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return false;
-    }
-    if (element.namespaceURI === SVG_NAMESPACE) {
-      return _checkSvgNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === MATHML_NAMESPACE) {
-      return _checkMathMlNamespace(tagName, parent, parentTagName);
-    }
-    if (element.namespaceURI === HTML_NAMESPACE) {
-      return _checkHtmlNamespace(tagName, parent, parentTagName);
-    }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) {
-      return true;
-    }
+    if (!ALLOWED_NAMESPACES[element.namespaceURI]) return false;
+    if (element.namespaceURI === SVG_NAMESPACE) return _checkSvgNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === MATHML_NAMESPACE) return _checkMathMlNamespace(tagName, parent, parentTagName);
+    if (element.namespaceURI === HTML_NAMESPACE) return _checkHtmlNamespace(tagName, parent, parentTagName);
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && ALLOWED_NAMESPACES[element.namespaceURI]) return true;
     return false;
   };
   const _forceRemove = function _forceRemove2(node2) {
-    arrayPush(DOMPurify.removed, {
-      element: node2
-    });
+    arrayPush(DOMPurify.removed, { element: node2 });
     try {
       getParentNode(node2).removeChild(node2);
     } catch (_3) {
       remove(node2);
-      if (!getParentNode(node2)) {
-        throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
-      }
+      if (!getParentNode(node2)) throw typeErrorCreate("a node selected for removal could not be detached from its tree and cannot be safely returned; refusing to sanitize in place");
     }
   };
   const _stripAttributeNode = function _stripAttributeNode2(element, attribute, name) {
@@ -136231,34 +142576,25 @@ function createDOMPurify() {
       });
     }
     const attributes = getAttributes(root);
-    if (attributes) {
-      for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
-        const attribute = attributes[i2];
-        const name = attribute && attribute.name;
-        if (typeof name === "string") {
-          _stripAttributeNode(root, attribute, name);
-        }
-      }
+    if (attributes) for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
+      const attribute = attributes[i2];
+      const name = attribute && attribute.name;
+      if (typeof name === "string") _stripAttributeNode(root, attribute, name);
     }
   };
   const _removeAttribute = function _removeAttribute2(name, element, attr) {
-    if (!attr) {
-      try {
-        attr = element.getAttributeNode(name);
-      } catch (_3) {
-        attr = null;
-      }
+    if (!attr) try {
+      attr = element.getAttributeNode(name);
+    } catch (_3) {
+      attr = null;
     }
     arrayPush(DOMPurify.removed, {
       attribute: attr || null,
       from: element
     });
     try {
-      if (attr) {
-        removeAttributeNode(element, attr);
-      } else {
-        element.removeAttribute(name);
-      }
+      if (attr) removeAttributeNode(element, attr);
+      else element.removeAttribute(name);
     } catch (_3) {
       try {
         element.removeAttribute(name);
@@ -136266,30 +142602,23 @@ function createDOMPurify() {
       }
     }
     if (name === "is") {
-      if (RETURN_DOM || RETURN_DOM_FRAGMENT) {
-        try {
-          _forceRemove(element);
-        } catch (_3) {
-        }
-      } else {
-        try {
-          element.setAttribute(name, "");
-        } catch (_3) {
-        }
+      if (RETURN_DOM || RETURN_DOM_FRAGMENT) try {
+        _forceRemove(element);
+      } catch (_3) {
+      }
+      else try {
+        element.setAttribute(name, "");
+      } catch (_3) {
       }
     }
   };
   const _stripDisallowedAttributes = function _stripDisallowedAttributes2(element) {
     const attributes = getAttributes(element);
-    if (!attributes) {
-      return;
-    }
+    if (!attributes) return;
     for (let i2 = attributes.length - 1; i2 >= 0; --i2) {
       const attribute = attributes[i2];
       const name = attribute && attribute.name;
-      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) {
-        continue;
-      }
+      if (typeof name !== "string" || ALLOWED_ATTR2[transformCaseFunc(name)]) continue;
       _stripAttributeNode(element, attribute, name);
     }
   };
@@ -136297,31 +142626,18 @@ function createDOMPurify() {
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
-      const nodeType = _readNodeType(node2);
-      if (nodeType === NODE_TYPE.element) {
-        _stripDisallowedAttributes(node2);
-      }
+      if (_readNodeType(node2) === NODE_TYPE.element) _stripDisallowedAttributes(node2);
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _isPatchLinkageAttribute = function _isPatchLinkageAttribute2(lcName, lcTag) {
-    if (!SAFE_FOR_XML) {
-      return false;
-    }
-    if (lcName === "patchsrc") {
-      return true;
-    }
+    if (!SAFE_FOR_XML) return false;
+    if (lcName === "patchsrc") return true;
     return lcName === "for" && lcTag !== "label" && lcTag !== "output";
   };
   const _neutralizePatchLinkage = function _neutralizePatchLinkage2(root) {
-    if (!SAFE_FOR_XML) {
-      return;
-    }
+    if (!SAFE_FOR_XML) return;
     const stack = [root];
     while (stack.length > 0) {
       const node2 = stack.pop();
@@ -136337,41 +142653,28 @@ function createDOMPurify() {
         const element = node2;
         const lcTag = transformCaseFunc(_readNodeName(node2));
         try {
-          if (element.hasAttribute && element.hasAttribute("patchsrc")) {
-            element.removeAttribute("patchsrc");
-          }
-          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) {
-            element.removeAttribute("for");
-          }
+          if (element.hasAttribute && element.hasAttribute("patchsrc")) element.removeAttribute("patchsrc");
+          if (element.hasAttribute && element.hasAttribute("for") && _isPatchLinkageAttribute("for", lcTag)) element.removeAttribute("for");
         } catch (_3) {
         }
       }
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push(childNodes[i2]);
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push(childNodes[i2]);
     }
   };
   const _initDocument = function _initDocument2(dirty) {
     let doc = null;
     let leadingWhitespace = null;
-    if (FORCE_BODY) {
-      dirty = "<remove></remove>" + dirty;
-    } else {
+    if (FORCE_BODY) dirty = "<remove></remove>" + dirty;
+    else {
       const matches2 = stringMatch(dirty, /^[\r\n\t ]+/);
       leadingWhitespace = matches2 && matches2[0];
     }
-    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) {
-      dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
-    }
+    if (PARSER_MEDIA_TYPE === "application/xhtml+xml" && NAMESPACE === HTML_NAMESPACE) dirty = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' + dirty + "</body></html>";
     const dirtyPayload = trustedTypesPolicy ? _createTrustedHTML(dirty) : dirty;
-    if (NAMESPACE === HTML_NAMESPACE) {
-      try {
-        doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
-      } catch (_3) {
-      }
+    if (NAMESPACE === HTML_NAMESPACE) try {
+      doc = new DOMParser2().parseFromString(dirtyPayload, PARSER_MEDIA_TYPE);
+    } catch (_3) {
     }
     if (!doc || !doc.documentElement) {
       doc = implementation.createDocument(NAMESPACE, "template", null);
@@ -136381,23 +142684,13 @@ function createDOMPurify() {
       }
     }
     const body = doc.body || doc.documentElement;
-    if (dirty && leadingWhitespace) {
-      body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
-    }
-    if (NAMESPACE === HTML_NAMESPACE) {
-      return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
-    }
+    if (dirty && leadingWhitespace) body.insertBefore(document2.createTextNode(leadingWhitespace), body.childNodes[0] || null);
+    if (NAMESPACE === HTML_NAMESPACE) return getElementsByTagName.call(doc, WHOLE_DOCUMENT ? "html" : "body")[0];
     return WHOLE_DOCUMENT ? doc.documentElement : body;
   };
   const _createNodeIterator = function _createNodeIterator2(root) {
     const doc = getOwnerDocument ? getOwnerDocument(root) : root.ownerDocument;
-    return createNodeIterator.call(
-      doc || root,
-      root,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION,
-      null
-    );
+    return createNodeIterator.call(doc || root, root, NodeFilter2.SHOW_ELEMENT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_PROCESSING_INSTRUCTION | NodeFilter2.SHOW_CDATA_SECTION, null);
   };
   const _stripTemplateExpressions = function _stripTemplateExpressions2(value) {
     value = stringReplace(value, MUSTACHE_EXPR$1, " ");
@@ -136409,73 +142702,25 @@ function createDOMPurify() {
     var _node$querySelectorAl;
     node2.normalize();
     const doc = getOwnerDocument ? getOwnerDocument(node2) : node2.ownerDocument;
-    const walker = createNodeIterator.call(
-      doc || node2,
-      node2,
-      // eslint-disable-next-line no-bitwise
-      NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION,
-      null
-    );
+    const walker = createNodeIterator.call(doc || node2, node2, NodeFilter2.SHOW_TEXT | NodeFilter2.SHOW_COMMENT | NodeFilter2.SHOW_CDATA_SECTION | NodeFilter2.SHOW_PROCESSING_INSTRUCTION, null);
     let currentNode = walker.nextNode();
     while (currentNode) {
       currentNode.data = _stripTemplateExpressions(currentNode.data);
       currentNode = walker.nextNode();
     }
     const templates = (_node$querySelectorAl = node2.querySelectorAll) === null || _node$querySelectorAl === void 0 ? void 0 : _node$querySelectorAl.call(node2, "template");
-    if (templates) {
-      arrayForEach(templates, (tmpl) => {
-        if (_isDocumentFragment(tmpl.content)) {
-          _scrubTemplateExpressions2(tmpl.content);
-        }
-      });
-    }
+    if (templates) arrayForEach(templates, (tmpl) => {
+      if (_isDocumentFragment(tmpl.content)) _scrubTemplateExpressions2(tmpl.content);
+    });
   };
   const _isClobbered = function _isClobbered2(element) {
     const realTagName = getNodeName ? getNodeName(element) : null;
-    if (typeof realTagName !== "string") {
-      return false;
-    }
-    if (transformCaseFunc(realTagName) !== "form") {
-      return false;
-    }
-    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || // Realm-safe NamedNodeMap detection: equality against the cached
-    // prototype getter. Clobbered .attributes (e.g. <input name="attributes">)
-    // makes the direct read diverge from the cached read; a clean form
-    // (same-realm OR foreign-realm) has both reads pointing at the same
-    // canonical NamedNodeMap.
-    element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || // A form descendant named "removeAttributeNode" or "getAttributeNode"
-    // shadows these Attr-node methods via [LegacyOverrideBuiltIns].
-    // _removeAttribute() / _stripAttributeNode() reach for
-    // element.removeAttributeNode(attr) first; when it is shadowed the call
-    // throws and the name-based fallback element.removeAttribute(name)
-    // ASCII-lowercases its lookup key in an HTML document, silently missing
-    // a case-preserved event-handler attribute (e.g. an ONANIMATIONSTART
-    // that reached the sanitizer through an XML/XHTML parse). Flag the form
-    // so it is removed wholesale, exactly as for the other shadowed methods.
-    typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || // NodeType clobbering probe. Cached Node.prototype.nodeType getter
-    // returns the integer 1 for any Element regardless of realm; direct
-    // read on a clobbered form (e.g. <input name="nodeType">) returns
-    // the named child element. Cheap addition — nodeType is read from
-    // an internal slot, no serialization cost — and removes a residual
-    // clobbering surface used by several mXSS / PI / comment branches
-    // in _sanitizeElements that compare currentNode.nodeType directly.
-    element.nodeType !== getNodeType(element) || // HTMLFormElement has [LegacyOverrideBuiltIns]: a descendant named
-    // "childNodes" shadows the prototype getter. Direct reads of
-    // form.childNodes from a clobbered form return the named child
-    // instead of the real NodeList, so any walk that reads it directly
-    // skips the form's real children. Compare the direct read to the
-    // cached Node.prototype getter — when the form's named-property
-    // getter intercepts the read, the two values differ and we flag
-    // the form. This catches every clobbering child type (input,
-    // select, etc.) regardless of whether the named child happens to
-    // carry a numeric .length, which a typeof-based probe would miss
-    // (e.g. HTMLSelectElement.length is a defined unsigned-long).
-    element.childNodes !== getChildNodes(element);
+    if (typeof realTagName !== "string") return false;
+    if (transformCaseFunc(realTagName) !== "form") return false;
+    return typeof element.nodeName !== "string" || typeof element.textContent !== "string" || typeof element.removeChild !== "function" || element.attributes !== getAttributes(element) || typeof element.removeAttribute !== "function" || typeof element.removeAttributeNode !== "function" || typeof element.getAttributeNode !== "function" || typeof element.setAttribute !== "function" || typeof element.namespaceURI !== "string" || typeof element.insertBefore !== "function" || typeof element.hasChildNodes !== "function" || element.nodeType !== getNodeType(element) || element.childNodes !== getChildNodes(element);
   };
   const _isDocumentFragment = function _isDocumentFragment2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return getNodeType(value) === NODE_TYPE.documentFragment;
     } catch (_3) {
@@ -136483,9 +142728,7 @@ function createDOMPurify() {
     }
   };
   const _isNode = function _isNode2(value) {
-    if (!getNodeType || typeof value !== "object" || value === null) {
-      return false;
-    }
+    if (!getNodeType || typeof value !== "object" || value === null) return false;
     try {
       return typeof getNodeType(value) === "number";
     } catch (_3) {
@@ -136493,44 +142736,28 @@ function createDOMPurify() {
     }
   };
   function _executeHooks(hooks2, currentNode, data) {
-    if (hooks2.length === 0) {
-      return;
-    }
+    if (hooks2.length === 0) return;
     arrayForEach(hooks2, (hook) => {
       hook.call(DOMPurify, currentNode, data, CONFIG);
     });
   }
   const _isUnsafeNode = function _isUnsafeNode2(currentNode, tagName) {
-    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) {
-      return true;
-    }
-    if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
-      return true;
-    }
-    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) {
-      return true;
-    }
+    if (SAFE_FOR_XML && currentNode.hasChildNodes() && !_isNode(currentNode.firstElementChild) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.textContent) && regExpTest(ELEMENT_MARKUP_PROBE, currentNode.innerHTML)) return true;
+    if (SAFE_FOR_XML && currentNode.namespaceURI === HTML_NAMESPACE && LITERAL_TEXT_ELEMENTS[tagName] && (_isNode(currentNode.firstElementChild) || typeof currentNode.textContent === "string" && regExpTest(LITERAL_TEXT_CLOSE[tagName], currentNode.textContent))) return true;
+    if (currentNode.nodeType === NODE_TYPE.processingInstruction) return true;
+    if (SAFE_FOR_XML && currentNode.nodeType === NODE_TYPE.comment && regExpTest(COMMENT_MARKUP_PROBE, currentNode.data)) return true;
     return false;
   };
   const _matchesNameCheck = function _matchesNameCheck2(check2, name) {
-    if (check2 instanceof RegExp) {
-      return regExpTest(check2, name);
-    }
+    if (check2 instanceof RegExp) return regExpTest(check2, name);
     if (check2 instanceof Function) {
-      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-        args[_key - 2] = arguments[_key];
-      }
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
       return Boolean(check2(name, ...args));
     }
     return false;
   };
   const _sanitizeDisallowedNode = function _sanitizeDisallowedNode2(currentNode, tagName, root) {
-    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) {
-      return false;
-    }
+    if (!FORBID_TAGS[tagName] && _isBasicCustomElement(tagName) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, tagName)) return false;
     if (KEEP_CONTENT && !FORBID_CONTENTS[tagName]) {
       const parentNode = getParentNode(currentNode);
       const childNodes = getChildNodes(currentNode);
@@ -136546,25 +142773,17 @@ function createDOMPurify() {
     return true;
   };
   const _forkSharedAllowlist = function _forkSharedAllowlist2(hookList, set2, defaultSet, setConfigSet) {
-    if (hookList.length === 0) {
-      return set2;
-    }
+    if (hookList.length === 0) return set2;
     return set2 === defaultSet || set2 === setConfigSet ? clone2(set2) : set2;
   };
   const _handleHookDetachedNode = function _handleHookDetachedNode2(currentNode, root) {
-    if (currentNode === root || getParentNode(currentNode) !== null) {
-      return false;
-    }
-    if (IN_PLACE) {
-      _neutralizeSubtree(currentNode);
-    }
+    if (currentNode === root || getParentNode(currentNode) !== null) return false;
+    if (IN_PLACE) _neutralizeSubtree(currentNode);
     return true;
   };
   const _sanitizeElements = function _sanitizeElements2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeElements, currentNode, null);
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isClobbered(currentNode)) {
       _forceRemove(currentNode);
       return true;
@@ -136575,9 +142794,7 @@ function createDOMPurify() {
       tagName,
       allowedTags: ALLOWED_TAGS2
     });
-    if (_handleHookDetachedNode(currentNode, root)) {
-      return true;
-    }
+    if (_handleHookDetachedNode(currentNode, root)) return true;
     if (_isUnsafeNode(currentNode, tagName)) {
       _forceRemove(currentNode);
       return true;
@@ -136586,11 +142803,11 @@ function createDOMPurify() {
       const removed = _sanitizeDisallowedNode(currentNode, tagName, root);
       if (removed === false) {
         _executeHooks(hooks.afterSanitizeElements, currentNode, null);
+        if (_handleHookDetachedNode(currentNode, root)) return true;
       }
       return removed;
     }
-    const nt2 = _readNodeType(currentNode);
-    if (nt2 === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
+    if (_readNodeType(currentNode) === NODE_TYPE.element && !_checkValidNamespace(currentNode)) {
       _forceRemove(currentNode);
       return true;
     }
@@ -136601,81 +142818,53 @@ function createDOMPurify() {
     if (SAFE_FOR_TEMPLATES && currentNode.nodeType === NODE_TYPE.text) {
       const content = _stripTemplateExpressions(currentNode.textContent);
       if (currentNode.textContent !== content) {
-        arrayPush(DOMPurify.removed, {
-          element: currentNode.cloneNode()
-        });
+        arrayPush(DOMPurify.removed, { element: currentNode.cloneNode() });
         currentNode.textContent = content;
       }
     }
     _executeHooks(hooks.afterSanitizeElements, currentNode, null);
-    return false;
+    return _handleHookDetachedNode(currentNode, root);
   };
   const _isValidAttribute = function _isValidAttribute2(lcTag, lcName, value) {
-    if (FORBID_ATTR[lcName]) {
-      return false;
-    }
-    if (_isPatchLinkageAttribute(lcName, lcTag)) {
-      return false;
-    }
-    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) {
-      return false;
-    }
+    if (FORBID_ATTR[lcName]) return false;
+    if (_isPatchLinkageAttribute(lcName, lcTag)) return false;
+    if (SANITIZE_DOM && (lcName === "id" || lcName === "name") && (value in document2 || value in formElement)) return false;
     const nameIsPermitted = ALLOWED_ATTR2[lcName] || EXTRA_ELEMENT_HANDLING.attributeCheck instanceof Function && EXTRA_ELEMENT_HANDLING.attributeCheck(lcName, lcTag);
-    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) {
-      return true;
-    }
-    if (!nameIsPermitted) {
-      return (
-        // Condition a) covers a basically valid custom element tag name whose
-        // tag passes the configured tagNameCheck and whose attribute name
-        // passes the configured attributeNameCheck ...
-        _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || // Condition b) covers an `is` attribute whose value passes the
-        // configured tagNameCheck while customized built-in elements are
-        // allowed.
-        lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value)
-      );
-    }
-    if (URI_SAFE_ATTRIBUTES[lcName]) {
-      return true;
-    }
-    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
-    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) {
-      return true;
-    }
-    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) {
-      return true;
-    }
+    if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR$1, lcName)) return true;
+    if (ALLOW_ARIA_ATTR && regExpTest(ARIA_ATTR$1, lcName)) return true;
+    if (!nameIsPermitted) return _isBasicCustomElement(lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, lcTag) && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.attributeNameCheck, lcName, lcTag) || lcName === "is" && CUSTOM_ELEMENT_HANDLING.allowCustomizedBuiltInElements && _matchesNameCheck(CUSTOM_ELEMENT_HANDLING.tagNameCheck, value);
+    if (URI_SAFE_ATTRIBUTES[lcName]) return true;
+    if (regExpTest(IS_ALLOWED_URI$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
+    if ((lcName === "src" || lcName === "xlink:href" || lcName === "href") && lcTag !== "script" && stringIndexOf(value, "data:") === 0 && DATA_URI_TAGS[lcTag]) return true;
+    if (ALLOW_UNKNOWN_PROTOCOLS && !regExpTest(IS_SCRIPT_OR_DATA$1, stringReplace(value, ATTR_WHITESPACE$1, ""))) return true;
     return !value;
   };
-  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, ["annotation-xml", "color-profile", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "missing-glyph"]);
+  const RESERVED_CUSTOM_ELEMENT_NAMES = addToSet({}, [
+    "annotation-xml",
+    "color-profile",
+    "font-face",
+    "font-face-format",
+    "font-face-name",
+    "font-face-src",
+    "font-face-uri",
+    "missing-glyph"
+  ]);
   const _isBasicCustomElement = function _isBasicCustomElement2(tagName) {
     return !RESERVED_CUSTOM_ELEMENT_NAMES[stringToLowerCase(tagName)] && regExpTest(CUSTOM_ELEMENT$1, tagName);
   };
   const _applyTrustedTypesToAttribute = function _applyTrustedTypesToAttribute2(lcTag, lcName, namespaceURI, value) {
-    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) {
-      switch (trustedTypes.getAttributeType(lcTag, lcName)) {
-        case "TrustedHTML": {
-          return _createTrustedHTML(value);
-        }
-        case "TrustedScriptURL": {
-          return _createTrustedScriptURL(value);
-        }
-      }
+    if (trustedTypesPolicy && typeof trustedTypes === "object" && typeof trustedTypes.getAttributeType === "function" && !namespaceURI) switch (trustedTypes.getAttributeType(lcTag, lcName)) {
+      case "TrustedHTML":
+        return _createTrustedHTML(value);
+      case "TrustedScriptURL":
+        return _createTrustedScriptURL(value);
     }
     return value;
   };
   const _setAttributeValue = function _setAttributeValue2(currentNode, name, namespaceURI, value) {
     try {
-      if (namespaceURI) {
-        currentNode.setAttributeNS(namespaceURI, name, value);
-      } else {
-        currentNode.setAttribute(name, value);
-      }
+      if (namespaceURI) currentNode.setAttributeNS(namespaceURI, name, value);
+      else currentNode.setAttribute(name, value);
       if (_isClobbered(currentNode)) {
         _forceRemove(currentNode);
         return false;
@@ -136686,12 +142875,11 @@ function createDOMPurify() {
       return false;
     }
   };
-  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode) {
+  const _sanitizeAttributes = function _sanitizeAttributes2(currentNode, root) {
     _executeHooks(hooks.beforeSanitizeAttributes, currentNode, null);
+    if (_handleHookDetachedNode(currentNode, root)) return;
     const attributes = currentNode.attributes;
-    if (!attributes || _isClobbered(currentNode)) {
-      return;
-    }
+    if (!attributes || _isClobbered(currentNode)) return;
     ALLOWED_ATTR2 = _forkSharedAllowlist(hooks.uponSanitizeAttribute, ALLOWED_ATTR2, DEFAULT_ALLOWED_ATTR, SET_CONFIG_ALLOWED_ATTR);
     const hookEvent = {
       attrName: "",
@@ -136728,9 +142916,7 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (hookEvent.forceKeepAttr) {
-        continue;
-      }
+      if (hookEvent.forceKeepAttr) continue;
       if (!hookEvent.keepAttr) {
         _removeAttribute(name, currentNode, attr);
         continue;
@@ -136739,22 +142925,18 @@ function createDOMPurify() {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
-      if (SAFE_FOR_TEMPLATES) {
-        value = _stripTemplateExpressions(value);
-      }
+      if (SAFE_FOR_TEMPLATES) value = _stripTemplateExpressions(value);
       if (!_isValidAttribute(lcTag, lcName, value)) {
         _removeAttribute(name, currentNode, attr);
         continue;
       }
       value = _applyTrustedTypesToAttribute(lcTag, lcName, namespaceURI, value);
       if (value !== initValue) {
-        const cleanWrite = _setAttributeValue(currentNode, name, namespaceURI, value);
-        if (cleanWrite && recreatedNamedProp) {
-          arrayPop(DOMPurify.removed);
-        }
+        if (_setAttributeValue(currentNode, name, namespaceURI, value) && recreatedNamedProp) arrayPop(DOMPurify.removed);
       }
     }
     _executeHooks(hooks.afterSanitizeAttributes, currentNode, null);
+    _handleHookDetachedNode(currentNode, root);
   };
   const _sanitizeShadowDOM2 = function _sanitizeShadowDOM(fragment) {
     let shadowNode = null;
@@ -136763,10 +142945,8 @@ function createDOMPurify() {
     while (shadowNode = shadowIterator.nextNode()) {
       _executeHooks(hooks.uponSanitizeShadowNode, shadowNode, null);
       _sanitizeElements(shadowNode, fragment);
-      _sanitizeAttributes(shadowNode);
-      if (_isDocumentFragment(shadowNode.content)) {
-        _sanitizeShadowDOM2(shadowNode.content);
-      }
+      _sanitizeAttributes(shadowNode, fragment);
+      if (_isDocumentFragment(shadowNode.content)) _sanitizeShadowDOM2(shadowNode.content);
       if (_readNodeType(shadowNode) === NODE_TYPE.element) {
         const innerSr = getShadowRoot(shadowNode);
         if (_isDocumentFragment(innerSr)) {
@@ -136789,40 +142969,31 @@ function createDOMPurify() {
         continue;
       }
       const node2 = item.node;
-      const nodeType = _readNodeType(node2);
-      const isElement = nodeType === NODE_TYPE.element;
+      const isElement = _readNodeType(node2) === NODE_TYPE.element;
       const childNodes = getChildNodes(node2);
-      if (childNodes) {
-        for (let i2 = childNodes.length - 1; i2 >= 0; --i2) {
-          stack.push({
-            node: childNodes[i2],
-            shadow: null
-          });
-        }
-      }
+      if (childNodes) for (let i2 = childNodes.length - 1; i2 >= 0; --i2) stack.push({
+        node: childNodes[i2],
+        shadow: null
+      });
       if (isElement) {
         const rootName = getNodeName ? getNodeName(node2) : null;
         if (typeof rootName === "string" && transformCaseFunc(rootName) === "template") {
           const content = node2.content;
-          if (_isDocumentFragment(content)) {
-            stack.push({
-              node: content,
-              shadow: null
-            });
-          }
+          if (_isDocumentFragment(content)) stack.push({
+            node: content,
+            shadow: null
+          });
         }
       }
       if (isElement) {
         const sr2 = getShadowRoot(node2);
-        if (_isDocumentFragment(sr2)) {
-          stack.push({
-            node: null,
-            shadow: sr2
-          }, {
-            node: sr2,
-            shadow: null
-          });
-        }
+        if (_isDocumentFragment(sr2)) stack.push({
+          node: null,
+          shadow: sr2
+        }, {
+          node: sr2,
+          shadow: null
+        });
       }
     }
   };
@@ -136833,30 +143004,18 @@ function createDOMPurify() {
     let currentNode = null;
     let returnNode = null;
     IS_EMPTY_INPUT = !dirty;
-    if (IS_EMPTY_INPUT) {
-      dirty = "<!-->";
-    }
+    if (IS_EMPTY_INPUT) dirty = "<!-->";
     if (typeof dirty !== "string" && !_isNode(dirty)) {
       dirty = stringifyValue(dirty);
-      if (typeof dirty !== "string") {
-        throw typeErrorCreate("dirty is not a string, aborting");
-      }
+      if (typeof dirty !== "string") throw typeErrorCreate("dirty is not a string, aborting");
     }
-    if (!DOMPurify.isSupported) {
-      return dirty;
-    }
+    if (!DOMPurify.isSupported) return dirty;
     if (SET_CONFIG) {
       ALLOWED_TAGS2 = SET_CONFIG_ALLOWED_TAGS;
       ALLOWED_ATTR2 = SET_CONFIG_ALLOWED_ATTR;
-    } else {
-      _parseConfig(cfg);
-    }
-    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
-    }
-    if (hooks.uponSanitizeAttribute.length > 0) {
-      ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
-    }
+    } else _parseConfig(cfg);
+    if (hooks.uponSanitizeElement.length > 0 || hooks.uponSanitizeAttribute.length > 0) ALLOWED_TAGS2 = clone2(ALLOWED_TAGS2);
+    if (hooks.uponSanitizeAttribute.length > 0) ALLOWED_ATTR2 = clone2(ALLOWED_ATTR2);
     DOMPurify.removed = [];
     const inPlace = IN_PLACE && typeof dirty !== "string" && _isNode(dirty);
     if (inPlace) {
@@ -136882,83 +143041,57 @@ function createDOMPurify() {
     } else if (_isNode(dirty)) {
       body = _initDocument("<!---->");
       importedNode = body.ownerDocument.importNode(dirty, true);
-      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") {
-        body = importedNode;
-      } else if (importedNode.nodeName === "HTML") {
-        body = importedNode;
-      } else {
-        body.appendChild(importedNode);
-      }
+      if (importedNode.nodeType === NODE_TYPE.element && importedNode.nodeName === "BODY") body = importedNode;
+      else if (importedNode.nodeName === "HTML") body = importedNode;
+      else body.appendChild(importedNode);
       _sanitizeAttachedShadowRoots(body);
     } else {
-      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && // eslint-disable-next-line unicorn/prefer-includes
-      dirty.indexOf("<") === -1) {
-        return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
-      }
+      if (!RETURN_DOM && !SAFE_FOR_TEMPLATES && !WHOLE_DOCUMENT && dirty.indexOf("<") === -1) return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(dirty) : dirty;
       body = _initDocument(dirty);
-      if (!body) {
-        return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
-      }
+      if (!body) return RETURN_DOM ? null : RETURN_TRUSTED_TYPE ? emptyHTML : "";
     }
-    if (body && FORCE_BODY) {
-      _forceRemove(body.firstChild);
-    }
+    if (body && FORCE_BODY) _forceRemove(body.firstChild);
     const walkRoot = inPlace ? dirty : body;
     try {
       const nodeIterator = _createNodeIterator(walkRoot);
       while (currentNode = nodeIterator.nextNode()) {
         _sanitizeElements(currentNode, walkRoot);
-        _sanitizeAttributes(currentNode);
-        if (_isDocumentFragment(currentNode.content)) {
-          _sanitizeShadowDOM2(currentNode.content);
-        }
+        _sanitizeAttributes(currentNode, walkRoot);
+        if (_isDocumentFragment(currentNode.content)) _sanitizeShadowDOM2(currentNode.content);
       }
     } catch (error62) {
       if (inPlace) {
         _neutralizeRoot(dirty);
         arrayForEach(DOMPurify.removed, (entry) => {
-          if (entry.element) {
-            _neutralizeSubtree(entry.element);
-          }
+          if (entry.element) _neutralizeSubtree(entry.element);
         });
       }
       throw error62;
     }
     if (inPlace) {
+      let rootWasRemoved = false;
       arrayForEach(DOMPurify.removed, (entry) => {
         if (entry.element) {
+          if (entry.element === dirty) rootWasRemoved = true;
           _neutralizeSubtree(entry.element);
         }
       });
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(dirty);
-      }
+      if (rootWasRemoved) throw typeErrorCreate("a node selected for removal could not be safely returned; refusing to sanitize in place");
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(dirty);
       return dirty;
     }
     if (RETURN_DOM) {
-      if (SAFE_FOR_TEMPLATES) {
-        _scrubTemplateExpressions2(body);
-      }
+      if (SAFE_FOR_TEMPLATES) _scrubTemplateExpressions2(body);
       if (RETURN_DOM_FRAGMENT) {
         returnNode = createDocumentFragment.call(body.ownerDocument);
-        while (body.firstChild) {
-          returnNode.appendChild(body.firstChild);
-        }
-      } else {
-        returnNode = body;
-      }
-      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) {
-        returnNode = importNode.call(originalDocument, returnNode, true);
-      }
+        while (body.firstChild) returnNode.appendChild(body.firstChild);
+      } else returnNode = body;
+      if (ALLOWED_ATTR2.shadowroot || ALLOWED_ATTR2.shadowrootmode) returnNode = importNode.call(originalDocument, returnNode, true);
       return returnNode;
     }
     let serializedHTML = WHOLE_DOCUMENT ? body.outerHTML : body.innerHTML;
-    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) {
-      serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
-    }
-    if (SAFE_FOR_TEMPLATES) {
-      serializedHTML = _stripTemplateExpressions(serializedHTML);
-    }
+    if (WHOLE_DOCUMENT && ALLOWED_TAGS2["!doctype"] && body.ownerDocument && body.ownerDocument.doctype && body.ownerDocument.doctype.name && regExpTest(DOCTYPE_NAME, body.ownerDocument.doctype.name)) serializedHTML = "<!DOCTYPE " + body.ownerDocument.doctype.name + ">\n" + serializedHTML;
+    if (SAFE_FOR_TEMPLATES) serializedHTML = _stripTemplateExpressions(serializedHTML);
     return trustedTypesPolicy && RETURN_TRUSTED_TYPE ? _createTrustedHTML(serializedHTML) : serializedHTML;
   };
   DOMPurify.setConfig = function() {
@@ -136977,26 +143110,18 @@ function createDOMPurify() {
     emptyHTML = "";
   };
   DOMPurify.isValidAttribute = function(tag, attr, value) {
-    if (!CONFIG) {
-      _parseConfig({});
-    }
+    if (!CONFIG) _parseConfig({});
     const lcTag = transformCaseFunc(tag);
     const lcName = transformCaseFunc(attr);
     return _isValidAttribute(lcTag, lcName, value);
   };
   DOMPurify.addHook = function(entryPoint, hookFunction) {
-    if (typeof hookFunction !== "function") {
-      return;
-    }
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (typeof hookFunction !== "function") return;
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     arrayPush(hooks[entryPoint], hookFunction);
   };
   DOMPurify.removeHook = function(entryPoint, hookFunction) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return void 0;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     if (hookFunction !== void 0) {
       const index = arrayLastIndexOf(hooks[entryPoint], hookFunction);
       return index === -1 ? void 0 : arraySplice(hooks[entryPoint], index, 1)[0];
@@ -137004,9 +143129,7 @@ function createDOMPurify() {
     return arrayPop(hooks[entryPoint]);
   };
   DOMPurify.removeHooks = function(entryPoint) {
-    if (!objectHasOwnProperty(hooks, entryPoint)) {
-      return;
-    }
+    if (!objectHasOwnProperty(hooks, entryPoint)) return;
     hooks[entryPoint] = [];
   };
   DOMPurify.removeAllHooks = function() {
@@ -137014,9 +143137,18 @@ function createDOMPurify() {
   };
   return DOMPurify;
 }
-var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify;
+var entries, setPrototypeOf, isFrozen, getPrototypeOf, getOwnPropertyDescriptor, freeze, seal, create, _ref, apply, construct, arrayForEach, arrayLastIndexOf, arrayPop, arrayPush, arraySplice, arrayIsArray, stringToLowerCase, stringToString, stringMatch, stringReplace, stringIndexOf, stringTrim, numberToString, booleanToString, bigintToString, symbolToString, objectHasOwnProperty, objectToString, regExpTest, typeErrorCreate, html$1, svg$1, svgFilters, svgDisallowed, mathMl$1, mathMlDisallowed, text, html, svg, mathMl, xml, MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR, DATA_ATTR, ARIA_ATTR, IS_ALLOWED_URI, IS_SCRIPT_OR_DATA, ATTR_WHITESPACE, DOCTYPE_NAME, CUSTOM_ELEMENT, ELEMENT_MARKUP_PROBE, COMMENT_MARKUP_PROBE, FALLBACK_TAG_CLOSE, SELF_CLOSING_TAG, NODE_TYPE, LITERAL_TEXT_ELEMENT_NAMES, LITERAL_TEXT_ELEMENTS, LITERAL_TEXT_CLOSE, getGlobal, _createTrustedTypesPolicy, _createHooksMap, _resolveSetOption, _resolveObjectOption, purify_default;
 var init_purify_es = __esm({
-  "node_modules/.pnpm/dompurify@3.4.15/node_modules/dompurify/dist/purify.es.mjs"() {
+  "node_modules/.pnpm/dompurify@3.4.16/node_modules/dompurify/dist/purify.es.mjs"() {
+    AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+      return this;
+    }, AsyncGenerator.prototype.next = function(e3) {
+      return this._invoke("next", e3);
+    }, AsyncGenerator.prototype.throw = function(e3) {
+      return this._invoke("throw", e3);
+    }, AsyncGenerator.prototype.return = function(e3) {
+      return this._invoke("return", e3);
+    };
     entries = Object.entries;
     setPrototypeOf = Object.setPrototypeOf;
     isFrozen = Object.isFrozen;
@@ -137028,36 +143160,26 @@ var init_purify_es = __esm({
     _ref = typeof Reflect !== "undefined" && Reflect;
     apply = _ref.apply;
     construct = _ref.construct;
-    if (!freeze) {
-      freeze = function freeze2(x2) {
-        return x2;
-      };
-    }
-    if (!seal) {
-      seal = function seal2(x2) {
-        return x2;
-      };
-    }
-    if (!apply) {
-      apply = function apply2(func, thisArg) {
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
-        }
-        return func.apply(thisArg, args);
-      };
-    }
-    if (!construct) {
-      construct = function construct2(Func) {
-        for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-          args[_key2 - 1] = arguments[_key2];
-        }
-        return new Func(...args);
-      };
-    }
+    if (!freeze) freeze = function freeze2(x2) {
+      return x2;
+    };
+    if (!seal) seal = function seal2(x2) {
+      return x2;
+    };
+    if (!apply) apply = function apply2(func, thisArg) {
+      for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) args[_key - 2] = arguments[_key];
+      return func.apply(thisArg, args);
+    };
+    if (!construct) construct = function construct2(Func) {
+      for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) args[_key2 - 1] = arguments[_key2];
+      return new Func(...args);
+    };
     arrayForEach = unapply(Array.prototype.forEach);
+    Array.prototype.indexOf;
     arrayLastIndexOf = unapply(Array.prototype.lastIndexOf);
     arrayPop = unapply(Array.prototype.pop);
     arrayPush = unapply(Array.prototype.push);
+    Array.prototype.slice;
     arraySplice = unapply(Array.prototype.splice);
     arrayIsArray = Array.isArray;
     stringToLowerCase = unapply(String.prototype.toLowerCase);
@@ -137074,31 +143196,662 @@ var init_purify_es = __esm({
     objectToString = unapply(Object.prototype.toString);
     regExpTest = unapply(RegExp.prototype.test);
     typeErrorCreate = unconstruct(TypeError);
-    html$1 = freeze(["a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "content", "data", "datalist", "dd", "decorator", "del", "details", "dfn", "dialog", "dir", "div", "dl", "dt", "element", "em", "fieldset", "figcaption", "figure", "font", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "img", "input", "ins", "kbd", "label", "legend", "li", "main", "map", "mark", "marquee", "menu", "menuitem", "meter", "nav", "nobr", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "search", "section", "select", "shadow", "slot", "small", "source", "spacer", "span", "strike", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr"]);
-    svg$1 = freeze(["svg", "a", "altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "enterkeyhint", "exportparts", "filter", "font", "g", "glyph", "glyphref", "hkern", "image", "inputmode", "line", "lineargradient", "marker", "mask", "metadata", "mpath", "part", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "stop", "style", "switch", "symbol", "text", "textpath", "title", "tref", "tspan", "view", "vkern"]);
-    svgFilters = freeze(["feBlend", "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset", "fePointLight", "feSpecularLighting", "feSpotLight", "feTile", "feTurbulence"]);
-    svgDisallowed = freeze(["animate", "color-profile", "cursor", "discard", "font-face", "font-face-format", "font-face-name", "font-face-src", "font-face-uri", "foreignobject", "hatch", "hatchpath", "mesh", "meshgradient", "meshpatch", "meshrow", "missing-glyph", "script", "set", "solidcolor", "unknown", "use"]);
-    mathMl$1 = freeze(["math", "menclose", "merror", "mfenced", "mfrac", "mglyph", "mi", "mlabeledtr", "mmultiscripts", "mn", "mo", "mover", "mpadded", "mphantom", "mroot", "mrow", "ms", "mspace", "msqrt", "mstyle", "msub", "msup", "msubsup", "mtable", "mtd", "mtext", "mtr", "munder", "munderover", "mprescripts"]);
-    mathMlDisallowed = freeze(["maction", "maligngroup", "malignmark", "mlongdiv", "mscarries", "mscarry", "msgroup", "mstack", "msline", "msrow", "semantics", "annotation", "annotation-xml", "mprescripts", "none"]);
+    html$1 = freeze([
+      "a",
+      "abbr",
+      "acronym",
+      "address",
+      "area",
+      "article",
+      "aside",
+      "audio",
+      "b",
+      "bdi",
+      "bdo",
+      "big",
+      "blink",
+      "blockquote",
+      "body",
+      "br",
+      "button",
+      "canvas",
+      "caption",
+      "center",
+      "cite",
+      "code",
+      "col",
+      "colgroup",
+      "content",
+      "data",
+      "datalist",
+      "dd",
+      "decorator",
+      "del",
+      "details",
+      "dfn",
+      "dialog",
+      "dir",
+      "div",
+      "dl",
+      "dt",
+      "element",
+      "em",
+      "fieldset",
+      "figcaption",
+      "figure",
+      "font",
+      "footer",
+      "form",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "head",
+      "header",
+      "hgroup",
+      "hr",
+      "html",
+      "i",
+      "img",
+      "input",
+      "ins",
+      "kbd",
+      "label",
+      "legend",
+      "li",
+      "main",
+      "map",
+      "mark",
+      "marquee",
+      "menu",
+      "menuitem",
+      "meter",
+      "nav",
+      "nobr",
+      "ol",
+      "optgroup",
+      "option",
+      "output",
+      "p",
+      "picture",
+      "pre",
+      "progress",
+      "q",
+      "rp",
+      "rt",
+      "ruby",
+      "s",
+      "samp",
+      "search",
+      "section",
+      "select",
+      "shadow",
+      "slot",
+      "small",
+      "source",
+      "spacer",
+      "span",
+      "strike",
+      "strong",
+      "style",
+      "sub",
+      "summary",
+      "sup",
+      "table",
+      "tbody",
+      "td",
+      "template",
+      "textarea",
+      "tfoot",
+      "th",
+      "thead",
+      "time",
+      "tr",
+      "track",
+      "tt",
+      "u",
+      "ul",
+      "var",
+      "video",
+      "wbr"
+    ]);
+    svg$1 = freeze([
+      "svg",
+      "a",
+      "altglyph",
+      "altglyphdef",
+      "altglyphitem",
+      "animatecolor",
+      "animatemotion",
+      "animatetransform",
+      "circle",
+      "clippath",
+      "defs",
+      "desc",
+      "ellipse",
+      "enterkeyhint",
+      "exportparts",
+      "filter",
+      "font",
+      "g",
+      "glyph",
+      "glyphref",
+      "hkern",
+      "image",
+      "inputmode",
+      "line",
+      "lineargradient",
+      "marker",
+      "mask",
+      "metadata",
+      "mpath",
+      "part",
+      "path",
+      "pattern",
+      "polygon",
+      "polyline",
+      "radialgradient",
+      "rect",
+      "stop",
+      "style",
+      "switch",
+      "symbol",
+      "text",
+      "textpath",
+      "title",
+      "tref",
+      "tspan",
+      "view",
+      "vkern"
+    ]);
+    svgFilters = freeze([
+      "feBlend",
+      "feColorMatrix",
+      "feComponentTransfer",
+      "feComposite",
+      "feConvolveMatrix",
+      "feDiffuseLighting",
+      "feDisplacementMap",
+      "feDistantLight",
+      "feDropShadow",
+      "feFlood",
+      "feFuncA",
+      "feFuncB",
+      "feFuncG",
+      "feFuncR",
+      "feGaussianBlur",
+      "feImage",
+      "feMerge",
+      "feMergeNode",
+      "feMorphology",
+      "feOffset",
+      "fePointLight",
+      "feSpecularLighting",
+      "feSpotLight",
+      "feTile",
+      "feTurbulence"
+    ]);
+    svgDisallowed = freeze([
+      "animate",
+      "color-profile",
+      "cursor",
+      "discard",
+      "font-face",
+      "font-face-format",
+      "font-face-name",
+      "font-face-src",
+      "font-face-uri",
+      "foreignobject",
+      "hatch",
+      "hatchpath",
+      "mesh",
+      "meshgradient",
+      "meshpatch",
+      "meshrow",
+      "missing-glyph",
+      "script",
+      "set",
+      "solidcolor",
+      "unknown",
+      "use"
+    ]);
+    mathMl$1 = freeze([
+      "math",
+      "menclose",
+      "merror",
+      "mfenced",
+      "mfrac",
+      "mglyph",
+      "mi",
+      "mlabeledtr",
+      "mmultiscripts",
+      "mn",
+      "mo",
+      "mover",
+      "mpadded",
+      "mphantom",
+      "mroot",
+      "mrow",
+      "ms",
+      "mspace",
+      "msqrt",
+      "mstyle",
+      "msub",
+      "msup",
+      "msubsup",
+      "mtable",
+      "mtd",
+      "mtext",
+      "mtr",
+      "munder",
+      "munderover",
+      "mprescripts"
+    ]);
+    mathMlDisallowed = freeze([
+      "maction",
+      "maligngroup",
+      "malignmark",
+      "mlongdiv",
+      "mscarries",
+      "mscarry",
+      "msgroup",
+      "mstack",
+      "msline",
+      "msrow",
+      "semantics",
+      "annotation",
+      "annotation-xml",
+      "mprescripts",
+      "none"
+    ]);
     text = freeze(["#text"]);
-    html = freeze(["accept", "action", "align", "alt", "autocapitalize", "autocomplete", "autopictureinpicture", "autoplay", "background", "bgcolor", "border", "capture", "cellpadding", "cellspacing", "checked", "cite", "class", "clear", "color", "cols", "colspan", "command", "commandfor", "controls", "controlslist", "coords", "crossorigin", "datetime", "decoding", "default", "dir", "disabled", "disablepictureinpicture", "disableremoteplayback", "download", "draggable", "enctype", "enterkeyhint", "exportparts", "face", "for", "headers", "height", "hidden", "high", "href", "hreflang", "id", "inert", "inputmode", "integrity", "ismap", "kind", "label", "lang", "list", "loading", "loop", "low", "max", "maxlength", "media", "method", "min", "minlength", "multiple", "muted", "name", "nonce", "noshade", "novalidate", "nowrap", "open", "optimum", "part", "pattern", "placeholder", "playsinline", "popover", "popovertarget", "popovertargetaction", "poster", "preload", "pubdate", "radiogroup", "readonly", "rel", "required", "rev", "reversed", "role", "rows", "rowspan", "spellcheck", "scope", "selected", "shape", "size", "sizes", "slot", "span", "srclang", "start", "src", "srcset", "step", "style", "summary", "tabindex", "title", "translate", "type", "usemap", "valign", "value", "width", "wrap", "xmlns"]);
-    svg = freeze(["accent-height", "accumulate", "additive", "alignment-baseline", "amplitude", "ascent", "attributename", "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin", "bias", "by", "class", "clip", "clippathunits", "clip-path", "clip-rule", "color", "color-interpolation", "color-interpolation-filters", "color-profile", "color-rendering", "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dominant-baseline", "dur", "edgemode", "elevation", "end", "exponent", "fill", "fill-opacity", "fill-rule", "filter", "filterunits", "flood-color", "flood-opacity", "font-family", "font-size", "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx", "fy", "g1", "g2", "glyph-name", "glyphref", "gradientunits", "gradienttransform", "height", "href", "id", "image-rendering", "in", "in2", "intercept", "k", "k1", "k2", "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lang", "lengthadjust", "letter-spacing", "kernelmatrix", "kernelunitlength", "lighting-color", "local", "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth", "maskcontentunits", "maskunits", "max", "mask", "mask-type", "media", "method", "mode", "min", "name", "numoctaves", "offset", "operator", "opacity", "order", "orient", "orientation", "origin", "overflow", "paint-order", "path", "pathlength", "patterncontentunits", "patterntransform", "patternunits", "pointer-events", "points", "preservealpha", "preserveaspectratio", "primitiveunits", "r", "rx", "ry", "radius", "refx", "refy", "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed", "shape-rendering", "slope", "specularconstant", "specularexponent", "spreadmethod", "startoffset", "stddeviation", "stitchtiles", "stop-color", "stop-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "stroke", "stroke-width", "style", "surfacescale", "systemlanguage", "tabindex", "tablevalues", "targetx", "targety", "transform", "transform-origin", "text-anchor", "text-decoration", "text-orientation", "text-rendering", "textlength", "type", "u1", "u2", "unicode", "values", "vector-effect", "viewbox", "visibility", "version", "vert-adv-y", "vert-origin-x", "vert-origin-y", "width", "word-spacing", "wrap", "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "xmlns", "y", "y1", "y2", "z", "zoomandpan"]);
-    mathMl = freeze(["accent", "accentunder", "align", "bevelled", "close", "columnalign", "columnlines", "columnspacing", "columnspan", "denomalign", "depth", "dir", "display", "displaystyle", "encoding", "fence", "frame", "height", "href", "id", "largeop", "length", "linethickness", "lquote", "lspace", "mathbackground", "mathcolor", "mathsize", "mathvariant", "maxsize", "minsize", "movablelimits", "notation", "numalign", "open", "rowalign", "rowlines", "rowspacing", "rowspan", "rspace", "rquote", "scriptlevel", "scriptminsize", "scriptsizemultiplier", "selection", "separator", "separators", "stretchy", "subscriptshift", "supscriptshift", "symmetric", "voffset", "width", "xmlns"]);
-    xml = freeze(["xlink:href", "xml:id", "xlink:title", "xml:space", "xmlns:xlink"]);
+    html = freeze([
+      "accept",
+      "action",
+      "align",
+      "alt",
+      "autocapitalize",
+      "autocomplete",
+      "autopictureinpicture",
+      "autoplay",
+      "background",
+      "bgcolor",
+      "border",
+      "capture",
+      "cellpadding",
+      "cellspacing",
+      "checked",
+      "cite",
+      "class",
+      "clear",
+      "color",
+      "cols",
+      "colspan",
+      "command",
+      "commandfor",
+      "controls",
+      "controlslist",
+      "coords",
+      "crossorigin",
+      "datetime",
+      "decoding",
+      "default",
+      "dir",
+      "disabled",
+      "disablepictureinpicture",
+      "disableremoteplayback",
+      "download",
+      "draggable",
+      "enctype",
+      "enterkeyhint",
+      "exportparts",
+      "face",
+      "for",
+      "headers",
+      "height",
+      "hidden",
+      "high",
+      "href",
+      "hreflang",
+      "id",
+      "inert",
+      "inputmode",
+      "integrity",
+      "ismap",
+      "kind",
+      "label",
+      "lang",
+      "list",
+      "loading",
+      "loop",
+      "low",
+      "max",
+      "maxlength",
+      "media",
+      "method",
+      "min",
+      "minlength",
+      "multiple",
+      "muted",
+      "name",
+      "nonce",
+      "noshade",
+      "novalidate",
+      "nowrap",
+      "open",
+      "optimum",
+      "part",
+      "pattern",
+      "placeholder",
+      "playsinline",
+      "popover",
+      "popovertarget",
+      "popovertargetaction",
+      "poster",
+      "preload",
+      "pubdate",
+      "radiogroup",
+      "readonly",
+      "rel",
+      "required",
+      "rev",
+      "reversed",
+      "role",
+      "rows",
+      "rowspan",
+      "spellcheck",
+      "scope",
+      "selected",
+      "shape",
+      "size",
+      "sizes",
+      "slot",
+      "span",
+      "srclang",
+      "start",
+      "src",
+      "srcset",
+      "step",
+      "style",
+      "summary",
+      "tabindex",
+      "title",
+      "translate",
+      "type",
+      "usemap",
+      "valign",
+      "value",
+      "width",
+      "wrap",
+      "xmlns"
+    ]);
+    svg = freeze([
+      "accent-height",
+      "accumulate",
+      "additive",
+      "alignment-baseline",
+      "amplitude",
+      "ascent",
+      "attributename",
+      "attributetype",
+      "azimuth",
+      "basefrequency",
+      "baseline-shift",
+      "begin",
+      "bias",
+      "by",
+      "class",
+      "clip",
+      "clippathunits",
+      "clip-path",
+      "clip-rule",
+      "color",
+      "color-interpolation",
+      "color-interpolation-filters",
+      "color-profile",
+      "color-rendering",
+      "cx",
+      "cy",
+      "d",
+      "dx",
+      "dy",
+      "diffuseconstant",
+      "direction",
+      "display",
+      "divisor",
+      "dominant-baseline",
+      "dur",
+      "edgemode",
+      "elevation",
+      "end",
+      "exponent",
+      "fill",
+      "fill-opacity",
+      "fill-rule",
+      "filter",
+      "filterunits",
+      "flood-color",
+      "flood-opacity",
+      "font-family",
+      "font-size",
+      "font-size-adjust",
+      "font-stretch",
+      "font-style",
+      "font-variant",
+      "font-weight",
+      "fx",
+      "fy",
+      "g1",
+      "g2",
+      "glyph-name",
+      "glyphref",
+      "gradientunits",
+      "gradienttransform",
+      "height",
+      "href",
+      "id",
+      "image-rendering",
+      "in",
+      "in2",
+      "intercept",
+      "k",
+      "k1",
+      "k2",
+      "k3",
+      "k4",
+      "kerning",
+      "keypoints",
+      "keysplines",
+      "keytimes",
+      "lang",
+      "lengthadjust",
+      "letter-spacing",
+      "kernelmatrix",
+      "kernelunitlength",
+      "lighting-color",
+      "local",
+      "marker-end",
+      "marker-mid",
+      "marker-start",
+      "markerheight",
+      "markerunits",
+      "markerwidth",
+      "maskcontentunits",
+      "maskunits",
+      "max",
+      "mask",
+      "mask-type",
+      "media",
+      "method",
+      "mode",
+      "min",
+      "name",
+      "numoctaves",
+      "offset",
+      "operator",
+      "opacity",
+      "order",
+      "orient",
+      "orientation",
+      "origin",
+      "overflow",
+      "paint-order",
+      "path",
+      "pathlength",
+      "patterncontentunits",
+      "patterntransform",
+      "patternunits",
+      "pointer-events",
+      "points",
+      "preservealpha",
+      "preserveaspectratio",
+      "primitiveunits",
+      "r",
+      "rx",
+      "ry",
+      "radius",
+      "refx",
+      "refy",
+      "repeatcount",
+      "repeatdur",
+      "restart",
+      "result",
+      "rotate",
+      "scale",
+      "seed",
+      "shape-rendering",
+      "slope",
+      "specularconstant",
+      "specularexponent",
+      "spreadmethod",
+      "startoffset",
+      "stddeviation",
+      "stitchtiles",
+      "stop-color",
+      "stop-opacity",
+      "stroke-dasharray",
+      "stroke-dashoffset",
+      "stroke-linecap",
+      "stroke-linejoin",
+      "stroke-miterlimit",
+      "stroke-opacity",
+      "stroke",
+      "stroke-width",
+      "style",
+      "surfacescale",
+      "systemlanguage",
+      "tabindex",
+      "tablevalues",
+      "targetx",
+      "targety",
+      "transform",
+      "transform-origin",
+      "text-anchor",
+      "text-decoration",
+      "text-orientation",
+      "text-rendering",
+      "textlength",
+      "type",
+      "u1",
+      "u2",
+      "unicode",
+      "values",
+      "vector-effect",
+      "viewbox",
+      "visibility",
+      "version",
+      "vert-adv-y",
+      "vert-origin-x",
+      "vert-origin-y",
+      "width",
+      "word-spacing",
+      "wrap",
+      "writing-mode",
+      "xchannelselector",
+      "ychannelselector",
+      "x",
+      "x1",
+      "x2",
+      "xmlns",
+      "y",
+      "y1",
+      "y2",
+      "z",
+      "zoomandpan"
+    ]);
+    mathMl = freeze([
+      "accent",
+      "accentunder",
+      "align",
+      "bevelled",
+      "close",
+      "columnalign",
+      "columnlines",
+      "columnspacing",
+      "columnspan",
+      "denomalign",
+      "depth",
+      "dir",
+      "display",
+      "displaystyle",
+      "encoding",
+      "fence",
+      "frame",
+      "height",
+      "href",
+      "id",
+      "largeop",
+      "length",
+      "linethickness",
+      "lquote",
+      "lspace",
+      "mathbackground",
+      "mathcolor",
+      "mathsize",
+      "mathvariant",
+      "maxsize",
+      "minsize",
+      "movablelimits",
+      "notation",
+      "numalign",
+      "open",
+      "rowalign",
+      "rowlines",
+      "rowspacing",
+      "rowspan",
+      "rspace",
+      "rquote",
+      "scriptlevel",
+      "scriptminsize",
+      "scriptsizemultiplier",
+      "selection",
+      "separator",
+      "separators",
+      "stretchy",
+      "subscriptshift",
+      "supscriptshift",
+      "symmetric",
+      "voffset",
+      "width",
+      "xmlns"
+    ]);
+    xml = freeze([
+      "xlink:href",
+      "xml:id",
+      "xlink:title",
+      "xml:space",
+      "xmlns:xlink"
+    ]);
     MUSTACHE_EXPR = seal(/{{[\w\W]*|^[\w\W]*}}/g);
     ERB_EXPR = seal(/<%[\w\W]*|^[\w\W]*%>/g);
     TMPLIT_EXPR = seal(/\${[\w\W]*/g);
     DATA_ATTR = seal(/^data-[\-\w.\u00B7-\uFFFF]+$/);
     ARIA_ATTR = seal(/^aria-[\-\w]+$/);
-    IS_ALLOWED_URI = seal(
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-      // eslint-disable-line no-useless-escape
-    );
+    IS_ALLOWED_URI = seal(/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i);
     IS_SCRIPT_OR_DATA = seal(/^(?:\w+script|data):/i);
-    ATTR_WHITESPACE = seal(
-      /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
-      // eslint-disable-line no-control-regex
-    );
+    ATTR_WHITESPACE = seal(/[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g);
     DOCTYPE_NAME = seal(/^html$/i);
     CUSTOM_ELEMENT = seal(/^[a-z][.\w]*(-[.\w]+)+$/i);
     ELEMENT_MARKUP_PROBE = seal(/<[/\w!]/g);
@@ -137111,18 +143864,24 @@ var init_purify_es = __esm({
       text: 3,
       cdataSection: 4,
       entityReference: 5,
-      // Deprecated
       entityNode: 6,
-      // Deprecated
       processingInstruction: 7,
       comment: 8,
       document: 9,
       documentType: 10,
       documentFragment: 11,
       notation: 12
-      // Deprecated
     };
-    LITERAL_TEXT_ELEMENT_NAMES = ["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"];
+    LITERAL_TEXT_ELEMENT_NAMES = [
+      "style",
+      "script",
+      "xmp",
+      "iframe",
+      "noembed",
+      "noframes",
+      "plaintext",
+      "noscript"
+    ];
     LITERAL_TEXT_ELEMENTS = freeze(addToSet({}, LITERAL_TEXT_ELEMENT_NAMES));
     LITERAL_TEXT_CLOSE = (function() {
       const map2 = {};
@@ -137135,14 +143894,10 @@ var init_purify_es = __esm({
       return typeof window === "undefined" ? null : window;
     };
     _createTrustedTypesPolicy = function _createTrustedTypesPolicy2(trustedTypes, purifyHostElement) {
-      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") {
-        return null;
-      }
+      if (typeof trustedTypes !== "object" || typeof trustedTypes.createPolicy !== "function") return null;
       let suffix = null;
       const ATTR_NAME = "data-tt-policy-suffix";
-      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) {
-        suffix = purifyHostElement.getAttribute(ATTR_NAME);
-      }
+      if (purifyHostElement && purifyHostElement.hasAttribute(ATTR_NAME)) suffix = purifyHostElement.getAttribute(ATTR_NAME);
       const policyName = "dompurify" + (suffix ? "#" + suffix : "");
       try {
         return trustedTypes.createPolicy(policyName, {
@@ -137178,11 +143933,11 @@ var init_purify_es = __esm({
       const value = objectHasOwnProperty(cfg, key) ? cfg[key] : void 0;
       return value && typeof value === "object" ? clone2(value) : makeFallback();
     };
-    purify = createDOMPurify();
+    purify_default = createDOMPurify();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -137191,7 +143946,7 @@ function installHook() {
   if (hookInstalled)
     return;
   hookInstalled = true;
-  purify.addHook("uponSanitizeElement", (node2, data) => {
+  purify_default.addHook("uponSanitizeElement", (node2, data) => {
     activeOnElement?.(node2, data.tagName);
   });
 }
@@ -137206,12 +143961,12 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
       sanitize(html2, config2) {
-        return withGate(config2, () => purify.sanitize(html2, {
+        return withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr]
         }));
@@ -137222,7 +143977,7 @@ var init_sanitize_dompurify = __esm({
       // DOMPurify parses in body context, so content must be body-context-safe
       // (see the sanitizeInto contract in sanitize.ts).
       sanitizeInto(target, html2, config2) {
-        const fragment = withGate(config2, () => purify.sanitize(html2, {
+        const fragment = withGate(config2, () => purify_default.sanitize(html2, {
           ALLOWED_TAGS: [...config2.allowedTags],
           ALLOWED_ATTR: [...config2.allowedAttr],
           RETURN_DOM_FRAGMENT: true
@@ -144004,7 +150759,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -144015,7 +150770,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
@@ -144102,8 +150857,8 @@ async function boot() {
   installTooltips();
   mountSettingsDialog(store, api);
   mountOnboardingDialog(store, api);
-  mountApprovalDialog(api, store);
-  mountAskUserDialog(api, store);
+  const approvalRequests = mountApprovalDialog(api, store);
+  const askUserRequests = mountAskUserDialog(api, store);
   mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
@@ -144113,6 +150868,7 @@ async function boot() {
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
   openProcessManager = mountProcessManagerDialog(api, store);
+  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests });
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -144155,6 +150911,7 @@ async function boot() {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
@@ -144168,9 +150925,15 @@ async function boot() {
   };
   applyExternalLinkMarks();
   store.on("settings_changed", applyExternalLinkMarks);
+  let mobileRestored = () => {
+  };
+  const mobileReady = new Promise((resolve) => {
+    mobileRestored = resolve;
+  });
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
+    attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
     attachPrPanelFollow(store, api);
@@ -144276,6 +151039,7 @@ async function boot() {
       ensureLayout();
     });
   }
+  mobileRestored();
   if (popoutMode && store.getState().workspaceRoot) {
     await activatePopoutPane(popoutMode);
     return;
@@ -144385,6 +151149,12 @@ function updateFilesPane() {
 function registerKeyboardShortcuts() {
   document.addEventListener("keydown", (e3) => {
     const meta3 = e3.ctrlKey || e3.metaKey;
+    if (meta3 && e3.key === "w") {
+      e3.preventDefault();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
+      return;
+    }
+    if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
       openNewThread(store);
@@ -144392,6 +151162,10 @@ function registerKeyboardShortcuts() {
     if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       openProcessManager?.();
+    }
+    if (matchActivityPanelShortcut(e3)) {
+      e3.preventDefault();
+      openActivityPanel();
     }
     if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
@@ -144419,10 +151193,6 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       if (uiScaleAction === "reset") void resetUiScale(store, api);
       else void bumpUiScale(store, api, uiScaleAction === "in" ? 1 : -1);
-    }
-    if (meta3 && e3.key === "w") {
-      e3.preventDefault();
-      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e3.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -144492,6 +151262,7 @@ function switchToNextThread() {
 var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
+    init_mobile_chat();
     init_tokens();
     init_default();
     init_global();
@@ -144538,6 +151309,7 @@ var init_main = __esm({
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
     init_process_manager_dialog();
+    init_activity_panel();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -144670,5 +151442,6 @@ export default require_main();
    *)
 
 dompurify/dist/purify.es.mjs:
-  (*! @license DOMPurify 3.4.15 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.15/LICENSE *)
+  (*! @license DOMPurify 3.4.16 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.16/LICENSE *)
+  (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)
 */
