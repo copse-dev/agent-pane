@@ -78,12 +78,26 @@ class FakeModel {
  */
 class FakeToolFailureModel {
   opts: LLMRespondOpts | null = null
+  private readonly tokensBeforeFailure: number
+
+  constructor(tokensBeforeFailure: number) {
+    this.tokensBeforeFailure = tokensBeforeFailure
+  }
 
   respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
     this.opts = opts
     return {
       result: (): Promise<never> =>
         new Promise<never>((_resolve, reject) => {
+          if (this.tokensBeforeFailure > 0) {
+            opts.onPredictionFragment?.({
+              content: 'x',
+              tokensCount: this.tokensBeforeFailure,
+              containsDrafted: false,
+              reasoningType: 'none',
+              isStructural: false,
+            })
+          }
           opts.onToolCallRequestFailure?.(1, new ToolCallRequestError('bad tool call', '{['))
           opts.signal?.addEventListener(
             'abort',
@@ -138,7 +152,11 @@ class FakeEndlessClient {
 }
 
 class FakeToolFailureClient {
-  readonly modelHandle = new FakeToolFailureModel()
+  readonly modelHandle: FakeToolFailureModel
+
+  constructor(opts: { tokensBeforeFailure?: number } = {}) {
+    this.modelHandle = new FakeToolFailureModel(opts.tokensBeforeFailure ?? 0)
+  }
 
   model(): Promise<FakeToolFailureModel> {
     return Promise.resolve(this.modelHandle)
@@ -339,25 +357,80 @@ describe('LMStudioProvider', () => {
     assert.notEqual(first, second)
   })
 
-  it('cancels the prediction when the model emits an unparseable tool call', async () => {
+  it('ends the stream with a typed outcome and cancels the prediction on an unparseable tool call', async () => {
     // The SDK reports the bad tool call through a callback and keeps predicting
-    // until it is cancelled, so failing our queue alone would leave the local
-    // model generating tokens no one can read.
+    // until it is cancelled, so ending our queue alone would leave the local
+    // model generating tokens no one can read. The stream must end normally
+    // (not throw) so the agent loop can recover instead of the run dying.
     const client = new FakeToolFailureClient()
     const provider = new LMStudioProvider('local-model', { client })
 
-    await assert.rejects(
-      async () => {
-        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) {
-          // Drain the stream so the provider reaches the expected failure.
-        }
-      },
-      // The parse failure surfaces to the caller rather than being retried:
-      // replaying the same prompt would produce the same broken tool call.
-      /bad tool call/,
-    )
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      chunks.push(chunk)
+    }
+
+    assert.deepEqual(chunks.at(-1), {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: 'bad tool call', hitOutputCeiling: false },
+    })
     assert.equal(client.modelHandle.opts?.signal?.aborted, true)
   })
+
+  it('reports that the output ceiling cut off the tool call when the streamed tokens reach it', async () => {
+    const client = new FakeToolFailureClient({ tokensBeforeFailure: 16_000 })
+    const provider = new LMStudioProvider('local-model', {
+      client,
+      params: { maxOutputTokens: 16_384 },
+    })
+
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      chunks.push(chunk)
+    }
+
+    assert.deepEqual(chunks.at(-1), {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: 'bad tool call', hitOutputCeiling: true, outputTokens: 16_000 },
+    })
+    assert.deepEqual(
+      chunks.find((chunk) => chunk.type === 'usage'),
+      {
+        type: 'usage',
+        model: 'local-model',
+        inputTokens: 0,
+        outputTokens: 16_000,
+      },
+    )
+    assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens: 16_000 })
+  })
+
+  for (const outputTokens of [0, 16_000]) {
+    it(`does not reuse prior successful usage after a ${String(outputTokens)}-token malformed call`, async () => {
+      const successful = new FakeClient()
+      const failed = new FakeToolFailureClient({ tokensBeforeFailure: outputTokens })
+      let requests = 0
+      const provider = new LMStudioProvider('local-model', {
+        client: {
+          model: async (): Promise<FakeModel | FakeToolFailureModel> =>
+            requests++ === 0 ? successful.modelHandle : failed.modelHandle,
+          prepareImageBase64: (): Promise<never> => Promise.reject(new Error('unexpected image')),
+        },
+      })
+      await collect(provider)
+      assert.deepEqual(provider.lastUsage, { inputTokens: 123, outputTokens: 9 })
+      const chunks = await collect(provider)
+      assert.deepEqual(
+        chunks.filter((chunk) => chunk.type === 'usage'),
+        [{ type: 'usage', model: 'local-model', inputTokens: 0, outputTokens }],
+      )
+      assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens })
+      assert.equal(chunks.at(-1)?.type, 'done')
+      assert.equal(failed.modelHandle.opts?.signal?.aborted, true)
+    })
+  }
 
   it('cancels the prediction when the consumer stops reading early', async () => {
     // The agent loop breaks out of a stream it cut for runaway reasoning. LM

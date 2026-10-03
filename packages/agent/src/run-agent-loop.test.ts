@@ -11,8 +11,10 @@ import {
 } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import {
+  MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
+  TRUNCATED_TOOL_CALL_NUDGE,
   TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
@@ -2483,5 +2485,135 @@ describe('parallel explore fan-out', () => {
       { toolCallId: 'e2', isError: false },
     ])
     assertToolPairingValid(messages)
+  })
+})
+
+describe('runAgentLoop malformed tool call recovery', () => {
+  const PARSE_ERROR = 'Failed to parse tool call: Unexpected end of content.'
+
+  const malformed = (hitOutputCeiling: boolean): ProviderStreamChunk[] => [
+    { type: 'reasoning', text: 'planning a very large file' },
+    {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: PARSE_ERROR, hitOutputCeiling },
+    },
+  ]
+  const toolCall = (id: string): ProviderStreamChunk[] => [
+    { type: 'tool_call', toolCall: { id, name: 'shell', args: { command: `echo ${id}` } } },
+    { type: 'done', stopReason: 'tool_calls' },
+  ]
+  const answer: ProviderStreamChunk[] = [
+    { type: 'text', text: ANSWER_PAST_TOLERANCE },
+    { type: 'done', stopReason: 'stop' },
+  ]
+
+  function run(script: ProviderStreamChunk[][]): {
+    finished: Promise<void>
+    messages: LLMMessage[]
+    applied: import('./run-agent-loop.ts').AppliedNudgeRecord[]
+    calls: () => number
+  } {
+    let call = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        for (const chunk of script[call++] ?? answer) yield chunk
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'write the big file' }]
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    const finished = runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (record) => applied.push(record),
+    })
+    return { finished, messages, applied, calls: () => call }
+  }
+
+  it('nudges for a smaller call after a truncated tool call and continues', async () => {
+    const r = run([malformed(true), answer])
+    await r.finished
+    assert.equal(r.calls(), 2)
+    assert.ok(r.messages.some((m) => m.role === 'user' && m.content === TRUNCATED_TOOL_CALL_NUDGE))
+    assert.deepEqual(
+      r.applied.map((a) => a.hookId),
+      ['malformed-tool-call'],
+    )
+    assert.equal(r.applied[0]?.text, TRUNCATED_TOOL_CALL_NUDGE)
+  })
+
+  it('uses the generic malformed wording when the ceiling was not reached', async () => {
+    const r = run([malformed(false), answer])
+    await r.finished
+    assert.ok(r.messages.some((m) => m.role === 'user' && m.content === MALFORMED_TOOL_CALL_NUDGE))
+  })
+
+  it('still runs tool calls that parsed before the failure, keeping pairing valid', async () => {
+    const r = run([
+      [
+        { type: 'tool_call', toolCall: { id: 'ok1', name: 'shell', args: { command: 'ls' } } },
+        ...malformed(false),
+      ],
+      answer,
+    ])
+    await r.finished
+    assertToolPairingValid(r.messages)
+    const toolIndex = r.messages.findIndex((m) => m.role === 'tool')
+    const nudgeIndex = r.messages.findIndex(
+      (m) => m.role === 'user' && m.content === MALFORMED_TOOL_CALL_NUDGE,
+    )
+    assert.ok(toolIndex !== -1 && nudgeIndex > toolIndex)
+    assert.doesNotMatch(MALFORMED_TOOL_CALL_NUDGE, /nothing ran/)
+    assert.doesNotMatch(TRUNCATED_TOOL_CALL_NUDGE, /nothing ran/)
+  })
+
+  it('does not stack the truncation-continue nudge on a malformed stream', async () => {
+    const r = run([malformed(true), answer])
+    await r.finished
+    assert.equal(
+      r.messages.filter((m) => m.role === 'user' && m.content === TRUNCATION_CONTINUE_NUDGE).length,
+      0,
+    )
+  })
+
+  it('fails with the parse error after too many consecutive malformed calls', async () => {
+    const r = run([malformed(true), malformed(true), malformed(true), answer])
+    await assert.rejects(r.finished, /Failed to parse tool call: Unexpected end of content\./)
+    assert.equal(r.calls(), 3)
+    assert.equal(r.applied.length, 2)
+  })
+
+  it('resets the consecutive bound once a stream completes normally', async () => {
+    const r = run([
+      malformed(true),
+      malformed(true),
+      toolCall('a'),
+      malformed(true),
+      malformed(true),
+      answer,
+    ])
+    await r.finished
+    assert.equal(r.calls(), 6)
+  })
+
+  it('fails once the per-run cap is exceeded even when recoveries are not consecutive', async () => {
+    const r = run([
+      malformed(true),
+      toolCall('a'),
+      malformed(true),
+      toolCall('b'),
+      malformed(true),
+      toolCall('c'),
+      malformed(true),
+      toolCall('d'),
+      malformed(true),
+      answer,
+    ])
+    await assert.rejects(r.finished, /Failed to parse tool call/)
+    assert.equal(r.calls(), 9)
+    assert.equal(r.applied.length, 4)
   })
 })
