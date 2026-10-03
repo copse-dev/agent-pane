@@ -417,7 +417,8 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS)
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
@@ -725,8 +726,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...(scenario.followUps ?? [])])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
@@ -819,7 +820,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onConnectionChanged: subscribe,
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -858,8 +859,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolvedVoid()
       },
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) =>
+        resolved({
+          path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+          name: archive.name,
+          sizeBytes: archive.bytes?.byteLength ?? 0,
+        }),
+    },
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
@@ -1031,6 +1041,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported,
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
@@ -1340,7 +1359,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),

@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
@@ -8,15 +8,15 @@ describe('thread GitHub PR status icon', () => {
   let openThreadTitle: string
   let mergedThreadTitle: string
   let plainThreadTitle: string
+  let failingThreadTitle: string
 
   before(async function () {
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    ;({ openThreadTitle, mergedThreadTitle, plainThreadTitle } = seedThreadPrStatusFixture(
-      process.cwd(),
-    ))
+    ;({ openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle } =
+      seedThreadPrStatusFixture(process.cwd()))
     await browser.reloadSession()
   })
 
@@ -35,6 +35,22 @@ describe('thread GitHub PR status icon', () => {
     await expect(openIcon).toHaveElementClass('is-open')
     await expect(openIcon.$('svg[data-icon="git-pull-request"]')).toExist()
     await expect(openIcon).toHaveAttribute('aria-label', expect.stringMatching(/#42.*open/i))
+
+    // Threads that were never opened this session carry no PR refs yet; open
+    // the merged one so its icon resolves alongside the open one.
+    await $(`.chat-row[data-thread-id="e2e-pr-merged-thread"]`).click()
+    await $(`.chat-row[data-thread-id="e2e-pr-failing-thread"]`).click()
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-pr-status.is-open.has-ci-failure')).length > 0,
+      { timeout: 15_000, timeoutMsg: 'failing-CI dot never appeared' },
+    )
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-pr-status.is-merged')).length > 0,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'merged PR icon never resolved',
+      },
+    )
 
     const labels = await browser.execute(
       (openTitle, mergedTitle, plainTitle) => {
@@ -63,9 +79,43 @@ describe('thread GitHub PR status icon', () => {
     await expect(labels.openIcon).toBe('git-pull-request')
     await expect(labels.openLabel).toMatch(/#42.*open/i)
     await expect(labels.mergedKind).toBe(true)
-    await expect(labels.mergedIcon).toBe('git-pull-request')
+    await expect(labels.mergedIcon).toBe('git-merge')
     await expect(labels.mergedLabel).toMatch(/merged/i)
     await expect(labels.plainHasIcon).toBe(false)
+
+    // Merged follows GitHub's purple, distinct from the open (accent) and success hues.
+    const colours = await browser.execute(() => {
+      const resolve = (value: string): string => {
+        const probe = document.createElement('span')
+        probe.style.color = value
+        document.body.appendChild(probe)
+        const out = getComputedStyle(probe).color
+        probe.remove()
+        return out
+      }
+      const colourOf = (selector: string): string | null => {
+        const el = document.querySelector(selector)
+        return el ? getComputedStyle(el).color : null
+      }
+      return {
+        merged: colourOf('.chat-pr-status.is-merged'),
+        open: colourOf('.chat-pr-status.is-open'),
+        important: resolve('var(--pr-merged)'),
+        success: resolve('var(--success)'),
+      }
+    })
+    await expect(colours.merged).toBe(colours.important)
+    await expect(colours.merged).not.toBe(colours.success)
+    await expect(colours.merged).not.toBe(colours.open)
+
+    // Only the red-checks PR carries the dot; the green open PR must not.
+    const dots = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.chats-list .chat-row')].map((row) => ({
+        title: row.querySelector('.chat-title')?.textContent ?? '',
+        failing: row.querySelector('.chat-pr-status.has-ci-failure') !== null,
+      })),
+    )
+    await expect(dots.filter((d) => d.failing).map((d) => d.title)).toEqual([failingThreadTitle])
 
     await saveElementScreenshot('#pane-projects', 'thread-pr-status-icon.png')
   })

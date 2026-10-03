@@ -159,6 +159,9 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
     spend_control: { type: 'any' },
     promo: { type: 'any' },
     rate_limit_reset_credits: { type: 'any' },
+    model_usage: { type: 'any' },
+    modelUsage: { type: 'any' },
+    chatpass: { type: 'any' },
   },
   defs: {
     rateLimit: {

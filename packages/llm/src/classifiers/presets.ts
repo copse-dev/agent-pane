@@ -16,6 +16,19 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
     },
   },
   {
+    id: 'liquid',
+    label: 'Liquid / d1',
+    model: 'd1:free',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      baseUrl: 'https://api.liquid.ai/decisions/v1',
+      auth: 'bearer',
+      apiKeyEnv: 'LIQUID_API_KEY',
+    },
+  },
+  {
     id: 'kev',
     label: 'Kev (local)',
     model: 'kev-latest',
@@ -24,6 +37,18 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
       type: 'http',
       protocol: 'systemone',
       baseUrl: 'http://127.0.0.1:8009/v1',
+      auth: 'none',
+    },
+  },
+  {
+    id: 'winnow',
+    label: 'Winnow-12B (local)',
+    model: 'jev-latest',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      baseUrl: 'http://127.0.0.1:8091/v1',
       auth: 'none',
     },
   },

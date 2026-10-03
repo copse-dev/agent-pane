@@ -51,20 +51,20 @@ describe('projects pane SSH labels (component)', () => {
       projects: [
         {
           id: 'a',
-          path: '/etc/ddg',
-          name: 'euw-serp-dev-testing16:ddg',
-          sshHost: 'euw-serp-dev-testing16',
+          path: '/srv/app',
+          name: 'remote-dev-testing-016:app',
+          sshHost: 'remote-dev-testing-016',
         },
         {
           id: 'b',
-          path: '/home/ubuntu/ddg',
-          name: 'euw-serp-dev-testing16:ddg',
-          sshHost: 'euw-serp-dev-testing16',
+          path: '/home/ubuntu/app',
+          name: 'remote-dev-testing-016:app',
+          sshHost: 'remote-dev-testing-016',
         },
       ],
       activeProjectId: 'a',
       expandedProjectId: 'a',
-      workspaceRoot: '/etc/ddg',
+      workspaceRoot: '/srv/app',
       threads: [],
       activeThreadId: null,
     })
@@ -74,8 +74,8 @@ describe('projects pane SSH labels (component)', () => {
 
     const names = Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent)
     assert.deepEqual(names, [
-      'euw-serp-dev-testing16:/etc/ddg',
-      'euw-serp-dev-testing16:/home/ubuntu/ddg',
+      'remote-dev-testing-016:/srv/app',
+      'remote-dev-testing-016:/home/ubuntu/app',
     ])
   })
 })

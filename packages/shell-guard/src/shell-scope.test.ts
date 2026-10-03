@@ -919,3 +919,39 @@ describe('analyzeShellCommand — PATH assignments', () => {
     assert.equal(verdict('export MYPATH=/etc/x; cat $MYPATH'), 'external')
   })
 })
+
+describe('analyzeShellCommand — system executable heads and quoted separators', () => {
+  const root = '/Users/me/project'
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('does not count a system binary named by full path as a system path', () => {
+    const heredoc = "/usr/bin/python3 - <<'EOF'\nopen('a.txt','w').write('x')\nEOF"
+    assert.equal(verdict(heredoc), 'ambiguous')
+    assert.equal(verdict('/usr/bin/grep -rn TODO src | head'), 'sandbox')
+    assert.equal(verdict('/bin/ls src'), 'sandbox')
+  })
+
+  it('still applies the rules for the program behind the full path', () => {
+    assert.equal(verdict('/usr/bin/curl https://example.com'), 'external')
+    assert.equal(verdict('/usr/bin/ssh host'), 'external')
+  })
+
+  it('keeps operands and other directories visible as system paths', () => {
+    assert.equal(verdict('/usr/bin/grep -rn x /usr/share'), 'external')
+    assert.equal(verdict('cat /usr/bin/python3'), 'external')
+    assert.equal(verdict('/usr/local/bin/tool'), 'external')
+    assert.equal(verdict('/usr/bin/../../etc/passwd'), 'external')
+  })
+
+  it('does not read a separator inside a single-quoted sed script as a new command', () => {
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html"), 'sandbox')
+    assert.equal(verdict("sed -i '' 's/a||b/c/' f.html"), 'sandbox')
+    assert.equal(verdict("sed -i '' 's/a/c (d)/' f.html"), 'sandbox')
+  })
+
+  it('still sees a command after a real separator following a quoted one', () => {
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'external')
+    assert.equal(verdict("echo 'a;b' && bin/tool"), 'external')
+    assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
+  })
+})

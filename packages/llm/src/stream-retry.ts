@@ -125,6 +125,20 @@ export function isOutputCeilingRejectedError(err: unknown): boolean {
   return OUTPUT_CEILING_FIELD.test(err.message)
 }
 
+/**
+ * A 400 that rejects a `strict: true` tool schema ("Invalid schema for function
+ * 'x': ..."). The strict subset of JSON Schema is OpenAI's to widen or narrow,
+ * so a schema we believe qualifies can still be refused; the caller retries once
+ * with every tool non-strict rather than failing the turn. Matched on the
+ * message so an unrelated 400 keeps failing.
+ */
+export function isStrictSchemaRejectedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = errorStatus(err)
+  if (status !== 400 && status !== 422) return false
+  return /invalid schema for function/i.test(err.message)
+}
+
 const OUTPUT_CEILING_FIELD =
   /max_tokens|max_completion_tokens|max_output_tokens|maximum output tokens/i
 
