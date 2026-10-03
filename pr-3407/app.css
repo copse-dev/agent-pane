@@ -6429,13 +6429,57 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .message-queued-ui {
   margin-top: var(--spacing-sm);
 }
+.message-queued-model {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+.message-queued-model-label {
+  flex: none;
+}
+.message-queued-model-picker {
+  min-width: 0;
+  max-width: min(180px, 100%);
+}
+.message-queued-model-picker .model-picker {
+  min-width: 0;
+}
+.message-queued-model-picker .model-picker-trigger {
+  width: auto;
+  max-width: 100%;
+  padding: 1px 2px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+.message-queued-model-picker .model-picker-trigger:hover {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+.message-queued-model-picker .model-picker-trigger:focus-visible {
+  outline-offset: 1px;
+}
+.conversation-queued:has(.message-queued-model .model-picker-menu:not([hidden])),
+.msg-queued:has(.message-queued-model .model-picker-menu:not([hidden])) {
+  overflow: visible;
+}
 .message-queued-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: var(--spacing-xs);
+  min-width: 0;
   margin-top: var(--spacing-xs);
 }
 .queued-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--bg-hover);
