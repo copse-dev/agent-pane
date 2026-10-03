@@ -951,6 +951,9 @@
   /* Chat is only hidden by being underneath, so the cover must be opaque. */
   background: var(--bg-base);
 }
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
+}
 .pane-files-body {
   flex: 1;
   display: flex;

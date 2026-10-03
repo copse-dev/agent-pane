@@ -563,6 +563,13 @@
           0
         ]
       },
+      "classifiers:background": {
+        "api": "classifiers.background",
+        "args": [
+          0,
+          0
+        ]
+      },
       "classifiers:list": {
         "api": "classifiers.list",
         "args": [
@@ -589,6 +596,13 @@
         "args": [
           0,
           0
+        ]
+      },
+      "classifiers:set-background": {
+        "api": "classifiers.setBackground",
+        "args": [
+          1,
+          1
         ]
       },
       "classifiers:set-screening": {

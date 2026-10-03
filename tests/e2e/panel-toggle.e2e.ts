@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -142,6 +143,41 @@ describe('right panel toggle and shortcuts', () => {
     await sidebar.waitForDisplayed({ timeout: 5_000 })
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-shown.png'))
+  })
+
+  it('lets a maximized right panel cover the hidden projects sidebar', async () => {
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    const sidebarToggle = await $('.titlebar-sidebar-btn')
+    const panel = await $('#pane-files')
+    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    await closeRightPanelIfOpen()
+    await panelToggle.click()
+    await panel.waitForDisplayed({ timeout: 5_000 })
+    await $('.pane-maximize-btn').click()
+    await browser.waitUntil(
+      async () => (await $('.pane-maximize-btn').getAttribute('aria-pressed')) === 'true',
+      { timeout: 5_000, timeoutMsg: 'expected the right panel to maximize' },
+    )
+
+    await sidebarToggle.click()
+    await browser.waitUntil(async () => !(await $('#pane-projects').isDisplayed()), {
+      timeout: 5_000,
+      timeoutMsg: 'expected the projects sidebar to hide',
+    })
+    const bounds = await browser.execute(() => {
+      const body = document.getElementById('body')?.getBoundingClientRect()
+      const pane = document.getElementById('pane-files')?.getBoundingClientRect()
+      return { bodyLeft: body?.left ?? -1, paneLeft: pane?.left ?? -1 }
+    })
+    assert.ok(
+      bounds.paneLeft <= bounds.bodyLeft + 1,
+      `expected maximized pane at body left edge, got ${JSON.stringify(bounds)}`,
+    )
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
+
+    await sidebarToggle.click()
+    await $('.pane-maximize-btn').click()
+    await panelToggle.click()
   })
 
   it('opens explorer with Ctrl/Cmd+Shift+E', async () => {
