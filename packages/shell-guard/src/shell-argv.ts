@@ -597,12 +597,58 @@ const WRITE_REDIRECTS = new Set(['>', '>>'])
  */
 const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
 
+/**
+ * shell-quote treats newlines as argument whitespace and comments as extending
+ * to the end of its input. Give it one command line at a time, preserving quoted
+ * newlines and backslash continuations as part of the original input.
+ */
+function splitShellCommandLines(command: string): string[] {
+  const lines: string[] = []
+  let start = 0
+  let quote: "'" | '"' | null = null
+  let comment = false
+  let wordStarted = false
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index)
+    if (char === '\n' && (comment || quote === null)) {
+      lines.push(command.slice(start, index))
+      start = index + 1
+      comment = false
+      wordStarted = false
+      continue
+    }
+    if (comment) continue
+    if (char === '\\' && quote !== "'") {
+      if (command.charAt(index + 1) !== '\n') wordStarted = true
+      index++
+      continue
+    }
+    if (quote !== null) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      wordStarted = true
+    } else if (char === '#' && !wordStarted) {
+      comment = true
+    } else {
+      wordStarted = !/[\s;&|()<>]/.test(char)
+    }
+  }
+  lines.push(command.slice(start))
+  return lines
+}
+
 export function shellSegments(command: string, includeRawFallback = true): string[][] {
   const segments: string[][] = []
 
   let tokens: ReturnType<typeof parseShellCommand> | null
   try {
-    tokens = parseShellCommand(command)
+    tokens = []
+    for (const line of splitShellCommandLines(command)) {
+      tokens.push(...parseShellCommand(line), { op: ';' })
+    }
   } catch {
     tokens = null
   }

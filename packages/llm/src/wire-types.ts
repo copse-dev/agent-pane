@@ -243,6 +243,14 @@ export interface MalformedToolCallInfo {
 export interface LLMStreamOptions {
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
+  /**
+   * Ask the provider to minimise or skip hidden reasoning for this one call. A
+   * best-effort hint: providers with no wire control for it (Anthropic budgets,
+   * LM Studio's native SDK) ignore it, so callers must still bound the stream
+   * themselves. The agent loop sets it on the last-chance reasoning-runaway
+   * recovery turn.
+   */
+  readonly suppressReasoning?: boolean | undefined
 }
 
 export interface LLMProvider {

@@ -1,4 +1,5 @@
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
+import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { LM_STUDIO_MODEL_IDS, DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { getModelInfo } from '@copse/llm/model-catalog.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
@@ -57,6 +58,8 @@ export async function resolveContextWindow(model: string): Promise<number> {
     const ctx = await openRouterModelContextLength(openRouterModelId(model))
     return ctx ?? DEFAULT_CLOUD_CONTEXT
   }
+  const chatGpt = parseChatGptPlanModel(model)
+  if (chatGpt) return getModelInfo(chatGpt.model)?.contextWindow ?? DEFAULT_CLOUD_CONTEXT
 
   if (isExtraProviderModel(model)) {
     return extraProviderContextWindow(getResolvedExtraProviders(), model) ?? DEFAULT_CLOUD_CONTEXT

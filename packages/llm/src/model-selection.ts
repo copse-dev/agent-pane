@@ -21,6 +21,7 @@
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import {
   ACP_MODEL_PREFIX,
+  CHATGPT_PLAN_MODEL_PREFIX,
   AGENT_MODEL_SEP,
   AUTO_MODEL_PREFIX,
   LMSTUDIO_MODEL_PREFIX,
@@ -49,6 +50,7 @@ export type ModelNamespace =
   | 'extra-provider'
   | 'remote-agent'
   | 'acp'
+  | 'chatgpt-plan'
   | 'plugin-model'
   | 'auto'
 
@@ -84,6 +86,7 @@ const VENDOR_ADDRESSED: ReadonlySet<ModelNamespace> = new Set(['openrouter', 'ex
 const AGENT_SHAPED: ReadonlyArray<readonly [ModelNamespace, string, string]> = [
   ['remote-agent', REMOTE_AGENT_MODEL_PREFIX, AGENT_MODEL_SEP],
   ['acp', ACP_MODEL_PREFIX, AGENT_MODEL_SEP],
+  ['chatgpt-plan', CHATGPT_PLAN_MODEL_PREFIX, AGENT_MODEL_SEP],
   // A plugin route separates its two halves with `:` rather than `#`; both are
   // URI-encoded, so an encoded separator cannot be mistaken for the real one.
   ['plugin-model', PLUGIN_MODEL_PREFIX, ':'],

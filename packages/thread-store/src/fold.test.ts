@@ -3,9 +3,12 @@ import { deepStrictEqual, ok, strictEqual, throws } from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Message, Thread, ThreadReviewReport } from './thread-types.ts'
 import {
+  TOOL_RESULT_UNAVAILABLE,
   attachHookCards,
   explodeThread,
   foldThread,
+  idPathSegment,
+  isToolArgsBlobRef,
   refsOfLine,
   type FileToWrite,
   type RefResolver,
@@ -237,7 +240,7 @@ test('spills oversized tool args to a blob and folds them back', () => {
     },
   ]
   const { spine, files } = explodeThread(messages, hash)
-  const argsBlob = files.find((f) => f.ref === 'blobs/tc-fat.args.json')
+  const argsBlob = files.find((f) => f.ref === 'blobs/a1.tool-0.args.json')
   ok(argsBlob)
   const parsedArgs: unknown = JSON.parse(argsBlob.contents)
   ok(isRecord(parsedArgs))
@@ -247,7 +250,7 @@ test('spills oversized tool args to a blob and folds them back', () => {
   ok(tc)
   const tcArgs: unknown = tc.args
   ok(isRecord(tcArgs))
-  strictEqual(tcArgs['ref'], 'blobs/tc-fat.args.json')
+  strictEqual(tcArgs['ref'], 'blobs/a1.tool-0.args.json')
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
 })
 
@@ -348,7 +351,7 @@ test('round-trips tool-result images through referenced blobs', () => {
   const { spine, files } = explodeThread(messages, hash)
   const imageRef = spine[0]?.toolCalls[0]?.images?.[0]?.dataUrl
   ok(imageRef)
-  strictEqual(imageRef.ref, 'blobs/tc-image-img-0.dataurl')
+  strictEqual(imageRef.ref, 'blobs/a1.tool-0-img-0.dataurl')
   strictEqual(files.find((file) => file.ref === imageRef.ref)?.contents, dataUrl)
   strictEqual(
     JSON.stringify(spine).includes(dataUrl),
@@ -505,7 +508,7 @@ test('round-trips ACP rich content through blob refs without leaking base64 into
   strictEqual(serializedSpine.includes('base64,'), false)
   strictEqual(line.contentBlocks?.ref, 'blobs/a-rich.acp-content.json')
   strictEqual(line.reasoningBlocks?.ref, 'blobs/a-rich.acp-reasoning.json')
-  strictEqual(line.toolCalls[0]?.content?.ref, 'blobs/tc-rich.acp-content.json')
+  strictEqual(line.toolCalls[0]?.content?.ref, 'blobs/a-rich.tool-0.acp-content.json')
   for (const file of files.filter((entry) => entry.ref.endsWith('.md'))) {
     strictEqual(file.contents.includes('base64,'), false)
   }
@@ -625,6 +628,210 @@ test('skips hash verification when no hash fn is provided', () => {
   const { spine, files } = explodeThread(messages, hash)
   const folded = foldThread(meta(), spine, resolverFor(files))
   deepStrictEqual(folded.messages, messages)
+})
+
+/** An assistant message with one tool call that spills every kind of tool blob. */
+function toolHeavyMessage(id: string, toolCallId: string, result: string): Message {
+  return {
+    id,
+    role: 'assistant',
+    content: '',
+    toolCalls: [
+      {
+        id: toolCallId,
+        name: 'read_file',
+        args: { path: 'x'.repeat(3000) },
+        status: 'done',
+        result,
+        content: [{ type: 'content', content: { type: 'text', text: result } }],
+        images: [{ dataUrl: `data:image/png;base64,${result}` }],
+      },
+    ],
+    createdAt: 1,
+  }
+}
+
+test('names tool blobs by message and position, so a reused tool-call id cannot collide', () => {
+  // Providers that number calls per response (`call_0`, Kimi's
+  // `functions.read:0`) repeat ids across turns.
+  const messages = [
+    toolHeavyMessage('a1', 'call_0', 'first'),
+    toolHeavyMessage('a2', 'call_0', 'second'),
+  ]
+  const { files } = explodeThread(messages, hash)
+  const refs = files.map((f) => f.ref)
+  strictEqual(new Set(refs).size, refs.length, 'every file must have its own path')
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+test('keeps provider-controlled tool-call ids out of blob paths', () => {
+  const ids = ['../../../escape', 'a/b', 'functions.read:0', 'C:\\x', '']
+  const messages = ids.map((id, i) => toolHeavyMessage(`a${String(i)}`, id, `r${String(i)}`))
+  const { spine, files } = explodeThread(messages, hash)
+  for (const file of files) {
+    ok(/^(messages|blobs)\/a\d[\w.-]*$/.test(file.ref), `unexpected path ${file.ref}`)
+  }
+  strictEqual(spine[0]?.toolCalls[0]?.id, '../../../escape')
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+/** Rewrite exploded tool blobs to the pre-message-scoped `blobs/<toolCallId>…` names. */
+function withLegacyToolBlobNames(
+  spine: SpineMessageLine[],
+  files: FileToWrite[],
+): { spine: SpineMessageLine[]; files: FileToWrite[] } {
+  const renames = new Map<string, string>()
+  const legacySpine = spine.map((line) => {
+    const raw = JSON.stringify(line)
+    let renamed = raw
+    line.toolCalls.forEach((tc, index) => {
+      const base = `blobs/${line.id}.tool-${String(index)}`
+      for (const file of files) {
+        if (file.ref.startsWith(base)) {
+          renames.set(file.ref, `blobs/${tc.id}${file.ref.slice(base.length)}`)
+        }
+      }
+      renamed = renamed.replaceAll(`"${base}`, `"blobs/${tc.id}`)
+    })
+    return parseSpine(renamed)[0] ?? line
+  })
+  return {
+    spine: legacySpine,
+    files: files.map((f) => ({ ...f, ref: renames.get(f.ref) ?? f.ref })),
+  }
+}
+
+test('still folds threads written with legacy tool-call-id blob names', () => {
+  const messages = [toolHeavyMessage('a1', 'tc-old', 'legacy')]
+  const exploded = explodeThread(messages, hash)
+  const legacy = withLegacyToolBlobNames(exploded.spine, exploded.files)
+  const legacyLine = legacy.spine[0]
+  ok(legacyLine)
+  const tc = legacyLine.toolCalls[0]
+  ok(tc)
+  strictEqual(tc.result?.ref, 'blobs/tc-old.result.txt')
+  ok(isRecord(tc.args))
+  strictEqual(tc.args['ref'], 'blobs/tc-old.args.json')
+  deepStrictEqual(
+    foldThread(meta(), legacy.spine, resolverFor(legacy.files), { hash }).messages,
+    messages,
+  )
+  deepStrictEqual(refsOfLine(legacyLine).files.sort(), [
+    'blobs/tc-old-img-0.dataurl',
+    'blobs/tc-old.acp-content.json',
+    'blobs/tc-old.args.json',
+    'blobs/tc-old.result.txt',
+    'messages/a1.md',
+  ])
+})
+
+test('isToolArgsBlobRef accepts the current and legacy spill names only', () => {
+  const slot = { messageId: 'a1', index: 2, toolCallId: 'tc' }
+  const ref = (path: string): unknown => ({ ref: path, sha256: 'x' })
+  ok(isToolArgsBlobRef(slot, ref('blobs/a1.tool-2.args.json')))
+  ok(isToolArgsBlobRef(slot, ref('blobs/tc.args.json')))
+  ok(
+    isToolArgsBlobRef(
+      { ...slot, toolCallId: 'call\n1' },
+      ref(`blobs/${idPathSegment('call\n1')}.args.json`),
+    ),
+  )
+  // A tool's own args that merely look like a ref stay inline args.
+  strictEqual(isToolArgsBlobRef(slot, ref('blobs/a1.tool-1.args.json')), false)
+  strictEqual(isToolArgsBlobRef(slot, ref('blobs/other.args.json')), false)
+  strictEqual(isToolArgsBlobRef(slot, { ref: 'blobs/a1.tool-2.args.json' }), false)
+})
+
+test('a tool blob that fails its hash degrades that tool call, not the thread', () => {
+  const block = '<system-reminder>note</system-reminder>'
+  const damaged = toolHeavyMessage('a1', 'call_0', `first\n\n${block}`)
+  const damagedTool = damaged.toolCalls[0]
+  ok(damagedTool)
+  damagedTool.appendedReminderLengths = [block.length]
+  const intact = toolHeavyMessage('a2', 'call_0', 'second')
+  const { spine, files } = explodeThread([damaged, intact], hash)
+  // The shape the reused-id bug left behind: another call's bytes under a1's refs.
+  const tampered = files.map((f) =>
+    f.ref.startsWith('blobs/a1.tool-0') ? { ...f, contents: `${f.contents}!` } : f,
+  )
+  const reported: string[] = []
+  const folded = foldThread(meta(), spine, resolverFor(tampered), {
+    hash,
+    onIntegrityFailure: (ref) => reported.push(ref),
+  })
+
+  const [first, second] = folded.messages
+  deepStrictEqual(first?.toolCalls[0], {
+    id: 'call_0',
+    name: 'read_file',
+    args: {},
+    status: 'done',
+    result: TOOL_RESULT_UNAVAILABLE,
+  })
+  deepStrictEqual(second, intact)
+  deepStrictEqual(reported.sort(), [
+    'blobs/a1.tool-0-img-0.dataurl',
+    'blobs/a1.tool-0.acp-content.json',
+    'blobs/a1.tool-0.args.json',
+    'blobs/a1.tool-0.result.txt',
+  ])
+})
+
+test('a missing tool blob still fails the fold', () => {
+  const { spine, files } = explodeThread([toolHeavyMessage('a1', 'tc', 'r')], hash)
+  const without = files.filter((f) => f.ref !== 'blobs/a1.tool-0.result.txt')
+  throws(() => foldThread(meta(), spine, resolverFor(without), { hash }), /missing ref/)
+})
+
+test('reports a damaged subagent tool blob by its thread-relative path', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-sub',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'summary',
+          subagent: {
+            id: 'sub1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'p',
+            summary: 'found',
+            messages: [
+              {
+                id: 'sm1',
+                role: 'assistant',
+                content: 'nested',
+                toolCalls: [
+                  { id: 'call_0', name: 'grep', args: {}, status: 'done', result: 'hit' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      createdAt: 1,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const nestedRef = 'subagents/sub1/blobs/sm1.tool-0.result.txt'
+  ok(files.some((f) => f.ref === nestedRef))
+  const tampered = files.map((f) => (f.ref === nestedRef ? { ...f, contents: 'other' } : f))
+  const reported: string[] = []
+  const folded = foldThread(meta(), spine, resolverFor(tampered), {
+    hash,
+    onIntegrityFailure: (ref) => reported.push(ref),
+  })
+  deepStrictEqual(reported, [nestedRef])
+  strictEqual(
+    folded.messages[0]?.toolCalls[0]?.subagent?.messages[0]?.toolCalls[0]?.result,
+    TOOL_RESULT_UNAVAILABLE,
+  )
 })
 
 test('error-role messages round-trip', () => {
@@ -883,6 +1090,15 @@ test('refsOfLine enumerates exactly the refs the fold resolves', () => {
       toolCalls: [
         { id: 'tc0', name: 'read_file', args: { path: 'a' }, status: 'done', result: 'contents' },
         { id: 'tc1', name: 'noop', args: {}, status: 'done', result: null },
+        // Spilled args are recognised by their message-scoped name, so the
+        // prefetch must derive the same name the fold does.
+        {
+          id: 'tc-fat',
+          name: 'run_shell',
+          args: { command: 'x'.repeat(3000) },
+          status: 'done',
+          result: 'ok',
+        },
         {
           id: 'tc2',
           name: 'explore',
