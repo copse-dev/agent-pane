@@ -57056,6 +57056,11 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const { activeProjectId, backgroundThreads } = store2.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
   if (!projectId) throw new Error("Cannot run thread without an owning project");
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    if (thread.interruptedTurnAt === void 0) return thread;
+    const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
+    return rest;
+  });
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
@@ -57161,15 +57166,22 @@ async function runningThreadIdsOrNone(api2) {
   try {
     return await api2.agent.runningThreadIds();
   } catch {
-    return [];
+    return null;
   }
 }
 async function resumePendingQueues(store2, api2) {
-  const reallyRunning = new Set(await runningThreadIdsOrNone(api2));
+  const runningThreadIds = await runningThreadIdsOrNone(api2);
+  const reallyRunning = new Set(runningThreadIds ?? []);
   for (const thread of store2.getState().threads) {
     if (thread.queuePaused) setQueuePaused(store2, thread.id, false);
     let status = thread.status;
     if (status === "running" && !reallyRunning.has(thread.id)) {
+      if (runningThreadIds !== null) {
+        patchThreadAnywhere(store2, thread.id, (current) => ({
+          ...current,
+          interruptedTurnAt: Date.now()
+        }));
+      }
       setThreadStatus(store2, thread.id, "idle");
       status = "idle";
     }
@@ -82741,9 +82753,11 @@ function turnRecoveryForMessage(thread, failedMessageId) {
   if ((thread.pendingMessages?.length ?? 0) > 0) return null;
   const failedIndex = thread.messages.length - 1;
   const failed = thread.messages[failedIndex];
-  if (!failed || failed.id !== failedMessageId || failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") {
-    return null;
+  if (!failed || failed.id !== failedMessageId) return null;
+  if (thread.interruptedTurnAt !== void 0 && failed.createdAt <= thread.interruptedTurnAt && (failed.role === "user" || failed.role === "assistant") && failed.turnOutcome === void 0) {
+    return { interruptedByRestart: true };
   }
+  if (failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") return null;
   if (failed.turnOutcome.source !== "provider") return {};
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
     const candidate = thread.messages[index];
@@ -82819,7 +82833,7 @@ function createTurnRecoveryCard(options) {
     el(
       "div",
       { class: "turn-recovery-detail" },
-      "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+      options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
     )
   );
   if (options.lastKnownGoodLabel !== void 0) {
@@ -86023,6 +86037,7 @@ function mountConversation(root, store2, api2) {
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
     const card = createTurnRecoveryCard({
+      ...recovery.interruptedByRestart ? { interruptedByRestart: true } : {},
       ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
       onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
       ...fallback !== void 0 ? {
@@ -86425,7 +86440,7 @@ function mountConversation(root, store2, api2) {
           setReasoningDisclosureTitle(details, false);
         });
         const last = getThreadById(store2, tid)?.messages.at(-1);
-        if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
+        if (last) renderMessageTurnRecovery(tid, last.id);
       }
       syncAvatarMotion();
     }),
