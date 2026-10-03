@@ -755,6 +755,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    containerCleanup: (action: import('@shared/types/storage-cleanup.ts').ContainerStorageAction) =>
+      ipcRenderer.invoke('storage:container-cleanup', action),
     maintenance: () => ipcRenderer.invoke('storage:maintenance'),
     cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
       ipcRenderer.invoke('storage:cleanup', area),

@@ -190,3 +190,18 @@ test('concurrent cleaners serialize and reclaim uniquely named dead tickets', as
     )
     assert.deepEqual(await readdir(locks), [])
   }))
+
+test('shared maintenance refuses a live lease and holds the gate against new users', async () =>
+  fixture(async (_root, cleanup) => {
+    const release = await cleanup.hold('runs')
+    assert.equal(await cleanup.whenIdle(['runs'], async () => 'cleaned'), null)
+    await release()
+    assert.equal(await cleanup.whenIdle(['runs'], async () => 'cleaned'), 'cleaned')
+    await assert.rejects(
+      cleanup.whenIdle(['runs'], async () => {
+        throw new Error('failed')
+      }),
+      /failed/,
+    )
+    assert.equal(await cleanup.whenIdle(['runs'], async () => 'released'), 'released')
+  }))

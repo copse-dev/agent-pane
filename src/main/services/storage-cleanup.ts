@@ -144,6 +144,13 @@ export class StorageCleanup {
       await release()
     }
   }
+  /** Hold the gate while acting on a shared resource; new users wait until cleanup finishes. */
+  async whenIdle<T>(areas: readonly StorageArea[], run: () => Promise<T>): Promise<T | null> {
+    return this.locked(async () => {
+      for (const area of areas) if (await this.busy(area)) return null
+      return run()
+    })
+  }
   private async measure(path: string): Promise<{ bytes: number; modified: number }> {
     const stat = await lstat(path)
     if (stat.isSymbolicLink()) return { bytes: 0, modified: stat.mtimeMs }

@@ -1998,6 +1998,13 @@
           1
         ]
       },
+      "storage:container-cleanup": {
+        "api": "storage.containerCleanup",
+        "args": [
+          1,
+          1
+        ]
+      },
       "storage:get": {
         "api": "storage.get",
         "args": [
