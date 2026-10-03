@@ -185,6 +185,61 @@ describe('planAgentTextChunk', () => {
     assert.equal(plan.action === 'append' && plan.startNewMessage, false)
   })
 
+  it('keeps a trailing newline inside an open fence with its capitalized continuation', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Run:\n```sh\npnpm test\n' },
+      'Done\n```',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('starts a fresh bubble after a completed emphasis span', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: '**Completed.**' },
+      'Next, inspect the build.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, true)
+  })
+
+  for (const closing of ['~~~', '```', '```` trailing text']) {
+    it(`does not close a four-backtick fence with ${closing}`, () => {
+      const { plan } = planAgentTextChunk(
+        { msgId: 'msg-1', toolSinceText: true, currentText: `Run:\n\`\`\`\`sh\n${closing}\n` },
+        'Done\n````',
+      )
+      assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+    })
+  }
+
+  for (const currentText of [
+    'Run:\n````sh\npnpm test\n`````',
+    'Run:\n~~~sh\npnpm test\n~~~~',
+    '__Completed.__',
+    '```text\n**\n```\n\n**Completed.**',
+    '`**` **Completed.**',
+    '``a ` ** literal`` **Completed.**',
+    '\\` **Completed.**',
+    '~~Completed.~~',
+    '`Completed.`',
+    'A literal \\**',
+  ]) {
+    it(`starts a fresh bubble after closed or literal markup ${JSON.stringify(currentText)}`, () => {
+      const { plan } = planAgentTextChunk(
+        { msgId: 'msg-1', toolSinceText: true, currentText },
+        'Next, inspect the build.',
+      )
+      assert.equal(plan.action === 'append' && plan.startNewMessage, true)
+    })
+  }
+
+  it('keeps a real dangling bold marker after a code span whose closing tick follows a backslash', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: '`literal\\` **' },
+      'Why:** Continue here.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('rejoins a hyphenated word split by a tool call', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: 'about 5–10 sidebar-' },

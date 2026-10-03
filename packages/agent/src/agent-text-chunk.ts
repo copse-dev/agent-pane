@@ -51,11 +51,58 @@ function continuesSentence(prevText: string, text: string): boolean {
 // dangling emphasis/code marker. Splitting here strands the markers as literal
 // text in one bubble and a headless fragment in the next.
 function endsInsideMarkup(text: string): boolean {
+  let fence: { character: string; length: number } | undefined
+  let lastLineClosesFence = false
+  const inlineLines: string[] = []
+  for (const line of text.split('\n')) {
+    lastLineClosesFence = false
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+    if (!match) {
+      if (!fence) inlineLines.push(line)
+      continue
+    }
+    const marker = match[1] ?? ''
+    const rest = match[2] ?? ''
+    if (fence) {
+      if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
+        fence = undefined
+        lastLineClosesFence = true
+      }
+    } else if (marker[0] !== '`' || !rest.includes('`')) {
+      fence = { character: marker[0] ?? '', length: marker.length }
+    } else {
+      inlineLines.push(line)
+    }
+  }
+  if (fence) return true
+  if (lastLineClosesFence) return false
   if (/\n$/.test(text)) return false
-  if ((text.match(/^ {0,3}(```|~~~)/gm) ?? []).length % 2 === 1) return true
   const lastLine = text.slice(text.lastIndexOf('\n') + 1).trim()
   if (lastLine.startsWith('|') && !lastLine.endsWith('|')) return true
-  return /(\*\*|__|~~|[*_`])$/.test(lastLine)
+  const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1]
+  if (!trailingMarker) return false
+  // Closing markers are renderable on their own. Only an unmatched terminal
+  // run needs the next chunk, preserving the fresh-bubble boundary after a
+  // complete span such as "**Completed.**". Escaped runs are literal text.
+  let unmatched = false
+  let inlineCodeLength: number | undefined
+  const inlineText = inlineLines.join('\n')
+  for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
+    let precedingBackslashes = 0
+    for (let index = match.index - 1; index >= 0 && inlineText[index] === '\\'; index -= 1) {
+      precedingBackslashes += 1
+    }
+    if (precedingBackslashes % 2 !== 0 && inlineCodeLength === undefined) continue
+    const marker = match[0]
+    if (marker.startsWith('`')) {
+      if (inlineCodeLength === undefined) inlineCodeLength = marker.length
+      else if (marker.length === inlineCodeLength) inlineCodeLength = undefined
+    } else if (inlineCodeLength === undefined && marker === trailingMarker) {
+      unmatched = !unmatched
+    }
+  }
+  if (trailingMarker.startsWith('`')) return inlineCodeLength !== undefined
+  return unmatched
 }
 
 export function planAgentTextChunk(
