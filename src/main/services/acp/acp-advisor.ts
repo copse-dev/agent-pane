@@ -84,8 +84,8 @@ export async function runAcpAdvisorSession(
     if (stop.stopReason === 'cancelled') {
       throw new Error('Advisor consultation was cancelled.')
     }
-    const turn = acpTurnUsage(stop.usage, prompt, text)
-    return { text, usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens } }
+    const { estimated: _estimated, ...usage } = acpTurnUsage(stop.usage, prompt, text)
+    return { text, usage }
   } finally {
     await open.dispose()
   }

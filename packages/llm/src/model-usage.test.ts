@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mergeModelUsage, splitServiceTierUsage } from './model-usage.ts'
+import {
+  mergeModelUsage,
+  repairLegacyAcpInputTokens,
+  repairLegacyAcpTotalInputTokens,
+  splitServiceTierUsage,
+} from './model-usage.ts'
 
 describe('model usage service-tier buckets', () => {
   it('merges independent tier buckets alongside the total', () => {
@@ -56,5 +61,48 @@ describe('model usage service-tier buckets', () => {
       standard: { inputTokens: 20, outputTokens: 0, cacheReadTokens: 20 },
       tiers: { flex: { inputTokens: 80, outputTokens: 0, cacheReadTokens: 0 } },
     })
+  })
+})
+
+describe('repairLegacyAcpInputTokens', () => {
+  const legacy = {
+    inputTokens: 3,
+    outputTokens: 120,
+    cacheReadTokens: 40_000,
+    cacheCreationTokens: 1_200,
+  }
+
+  it('folds the cache share into a fresh-only ACP record, once', () => {
+    const repaired = repairLegacyAcpInputTokens('acp:claude-acp#opus', legacy)
+    assert.deepEqual(repaired, { ...legacy, inputTokens: 41_203 })
+    // Idempotent: the repaired record satisfies input >= cache and is returned as-is.
+    assert.equal(repairLegacyAcpInputTokens('acp:claude-acp#opus', repaired), repaired)
+  })
+
+  it('leaves ACP records whose input already covers the cache', () => {
+    const usage = { inputTokens: 41_203, outputTokens: 120, cacheReadTokens: 40_000 }
+    assert.equal(repairLegacyAcpInputTokens('acp:claude-acp#opus', usage), usage)
+  })
+
+  it('never touches non-ACP models', () => {
+    assert.equal(repairLegacyAcpInputTokens('claude-opus-4-6', legacy), legacy)
+    assert.equal(repairLegacyAcpInputTokens('openrouter:anthropic/claude-opus-4-6', legacy), legacy)
+  })
+})
+
+describe('repairLegacyAcpTotalInputTokens', () => {
+  it('raises a running total to its cache floor, which never overstates a mix', () => {
+    // 3 fresh + 40 cache (legacy, recorded as 3) merged with 40 normalised: truth is 83.
+    const mixed = { inputTokens: 43, outputTokens: 2, cacheReadTokens: 80 }
+    const repaired = repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', mixed)
+    assert.equal(repaired.inputTokens, 80)
+    assert.equal(repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', repaired), repaired)
+  })
+
+  it('leaves totals that already cover their cache, and non-ACP models, untouched', () => {
+    const covered = { inputTokens: 90, outputTokens: 2, cacheReadTokens: 80 }
+    assert.equal(repairLegacyAcpTotalInputTokens('acp:claude-acp#opus', covered), covered)
+    const cloud = { inputTokens: 3, outputTokens: 2, cacheReadTokens: 80 }
+    assert.equal(repairLegacyAcpTotalInputTokens('claude-opus-4-6', cloud), cloud)
   })
 })
