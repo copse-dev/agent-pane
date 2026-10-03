@@ -1,17 +1,29 @@
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedE2eViewport,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-acp-resource-file-project'
 const THREAD_ID = 'e2e-acp-resource-file-thread'
 const FILE_PATH = 'docs/agent-development.md'
 
+// Rendered from a fixed fixture, not the repo checkout: the Explorer lists the
+// workspace root and the preview shows this file, so the real docs/ tree made the
+// reference change with every commit.
+const GUIDE =
+  '# Agent development environment\n\nOperational reference for running and validating the app.\n'
+let workspace = ''
+
 describe('ACP resource file links', () => {
   before(async () => {
     const now = Date.now()
-    const workspace = process.cwd()
+    workspace = seedStableWorkspace({ files: { [FILE_PATH]: GUIDE } })
     const uri = join(workspace, FILE_PATH)
     resetUserData()
     seedE2eViewport()
@@ -88,7 +100,7 @@ describe('ACP resource file links', () => {
     assert.deepEqual(resource, {
       hidden: true,
       label: FILE_PATH,
-      title: join(process.cwd(), FILE_PATH),
+      title: join(workspace, FILE_PATH),
     })
 
     const link = await $('[data-message-id="assistant-resource-file-reply"] .message-text a')

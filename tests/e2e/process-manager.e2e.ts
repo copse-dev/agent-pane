@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed-config.ts'
+import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
@@ -170,6 +171,7 @@ describe('Process manager', function () {
         [...group.memory].sort((a, b) => b - a),
       )
     }
+    await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager.png')
 
     await dialog.$('[aria-label="Close process manager"]').click()
@@ -199,6 +201,7 @@ describe('Process manager', function () {
     await dialog.$(ownedSelector).waitForDisplayed({ timeout: 10_000 })
     await dialog.$(ownedSelector).click({ button: 'right' })
     await expect($('.context-menu-item=Stop terminal')).toBeDisplayed()
+    await maskProcessManagerLiveValues()
     await saveAppScreenshot('process-manager-actions.png')
     await $('.context-menu-item=Stop terminal').click()
     await expect($('#confirm-dialog')).toBeDisplayed()

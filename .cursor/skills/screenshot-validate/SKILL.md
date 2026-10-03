@@ -56,3 +56,9 @@ and identify the lower-risk command that still exercised the changed rendering p
 **Good:** Tool card shows "Write file"; expanded Arguments `<pre>` contains the literal string `</pre>`; no `<img>` nodes inside the card; card chrome (summary, result) still present.
 
 **Bad:** Missing `<pre>`, truncated JSON, extra DOM nodes from args content, or layout collapsed / overlapping text.
+
+## When a reference screenshot keeps changing
+
+Do not re-baseline to make it stop. Measure the diff, look at both renders, and fix the cause
+(live values, an async element not awaited, a real layout change) first. The procedure is in
+[`docs/agent-development.md`](../../../docs/agent-development.md#triage-a-recurring-candidate-before-re-baselining).

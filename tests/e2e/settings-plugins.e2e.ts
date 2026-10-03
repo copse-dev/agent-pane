@@ -435,7 +435,10 @@ describe('settings plugins (about:addons)', function () {
       '.model-picker-option[data-value="plugin-model:personal.reference-tools:reference-judge"]',
     )
     await personalModel.waitForExist({ timeout: 15_000 })
-    assert.equal(await personalModel.getText(), 'Reference judge (plugin disabled)')
+    assert.equal(
+      await personalModel.$('.model-picker-option-label').getText(),
+      'Reference judge (plugin disabled)',
+    )
     assert.equal(await personalModel.isEnabled(), false)
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
