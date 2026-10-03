@@ -175,12 +175,17 @@ describe('Balanced keeps a newly advertised Sol model on Codex ACP', function ()
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
     const fieldset = $('.frontier-fieldset')
-    await expect(fieldset.$(`circle.frontier-point.plan[data-model-id="${planRoute}"]`)).toExist()
+    await expect(
+      fieldset.$(`circle.frontier-point.plan.estimated[data-model-id="${planRoute}"]`),
+    ).toExist()
     await expect(
       fieldset.$('circle.frontier-point[data-model-id="openrouter:openai/gpt-6.1-sol"]'),
     ).not.toExist()
     await fieldset.$(`circle.frontier-hit[data-model-id="${planRoute}"]`).moveTo()
     await expect(fieldset.$('.frontier-tooltip')).toHaveText('included', { containing: true })
+    await expect(fieldset.$('.frontier-tooltip .tt-line strong')).toHaveText('~', {
+      containing: true,
+    })
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-value-map-codex-sol-launch.png')
   })

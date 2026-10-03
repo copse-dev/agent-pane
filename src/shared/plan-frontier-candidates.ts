@@ -72,6 +72,7 @@ export function planAcpFrontierCandidates(
       candidates.push({
         id: acpModelValue(agent.id, choice.value),
         intellect: score.value,
+        intellectEstimated: score.estimated === true,
         costPerMTok: price,
         planAccess: { provider, modelId: resolved },
       })

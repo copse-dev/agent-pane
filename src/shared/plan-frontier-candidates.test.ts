@@ -85,6 +85,9 @@ describe('ACP candidates while bundled pricing catches up', () => {
     assert.equal(candidates[0]?.id, 'acp:codex-acp#gpt-6.1-sol')
     assert.equal(candidates[0].costPerMTok, blendedPricePerMTok(info))
     assert.equal(candidates[0].planAccess?.modelId, 'gpt-6-1-sol')
+    const score = getIntellectScore(model)
+    assert.ok(score?.estimated, 'noncanonical benchmark scores must be marked estimated')
+    assert.equal(candidates[0].intellectEstimated, true)
     const paid = openRouterFrontierCandidates([
       { id: 'openai/gpt-6.1-sol', name: 'GPT-6.1 Sol', ...info },
     ])
@@ -99,6 +102,11 @@ describe('ACP candidates while bundled pricing catches up', () => {
     assert.equal(picked?.id, 'acp:codex-acp#gpt-6.1-sol')
     assert.equal(picked.plan, '5-hour')
     assert.equal(picked.costPerMTok, 0)
+    assert.equal(
+      picked.intellectEstimated,
+      true,
+      'plan identity folding must preserve the estimate',
+    )
   })
 
   it('does not infer free usage from the presence of a live price', () => {
