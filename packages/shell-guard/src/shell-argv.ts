@@ -304,7 +304,7 @@ const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
  * Refusal only ever means the command prompts, which was the status quo; the
  * read-outside-project grant still keeps its own head list and stays unchanged.
  */
-function isReadOnlySedCommand(argv: readonly string[]): boolean {
+export function isReadOnlySedCommand(argv: readonly string[]): boolean {
   const scripts: string[] = []
   const positional: string[] = []
   let expressionSeen = false
@@ -468,6 +468,25 @@ export function commandName(argv0: string | undefined): string {
 }
 
 /**
+ * Whether an argv invokes the shell's `printf -v name …` assignment form.
+ *
+ * `printf` normally only writes bytes, but Bash and Zsh implement `-v` as a
+ * shell builtin that writes a variable in the current shell. In a compound
+ * command, `printf -v PATH /tmp/evil && git …` can therefore replace the next
+ * executable without containing a leading `NAME=value` token. Authorization
+ * paths that treat ordinary `printf` as inert must reject this form.
+ */
+export function printfAssignsShellVariable(argv: readonly string[]): boolean {
+  if (commandName(argv[0]) !== 'printf') return false
+  for (const arg of argv.slice(1)) {
+    if (arg === '--') return false
+    if (arg === '-v' || arg.startsWith('-v')) return true
+    if (!arg.startsWith('-') || arg === '-') return false
+  }
+  return false
+}
+
+/**
  * Drop leading environment assignments and pass-through wrappers until the argv
  * starts at the command that actually runs.
  */
@@ -541,6 +560,14 @@ function withoutRawRedirects(argv: string[]): string[] {
     command.push(token)
   }
   return command
+}
+
+/**
+ * Quote-aware fallback argv for one already-separated shell segment. This keeps
+ * Windows separators and unknown variable spellings while dropping redirects.
+ */
+export function rawShellArgv(segment: string): string[] {
+  return withoutRawRedirects(rawTokens(segment))
 }
 
 /**
@@ -619,18 +646,110 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // Hard-deny consumers must not treat a separator inside quoted data as code.
   if (!includeRawFallback) return segments
 
-  for (const segment of command.split(/&&|\|\||[;&|(\r\n]+/)) {
-    const argv = withoutRawRedirects(rawTokens(segment))
+  // The `&` of a redirect (`2>&1`, `<&3`, `&>log`) separates nothing. Splitting on it
+  // made `1` a command head, and that phantom head's "not a plain read" blocker
+  // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
+  for (const segment of splitRawSegments(command)) {
+    const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
 
   return segments
 }
 
+const RAW_SEPARATORS = /&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/g
+
+/**
+ * Blank the separator characters inside a closed, single-line `'…'` span. The
+ * shell never expands single quotes, so `;` in `sed 's/a;b/c/'` starts nothing.
+ * Double quotes are left alone because `"$(a; b)"` does run `b`, and so is any
+ * `'` that has no closing partner on its line (an apostrophe in a heredoc body or
+ * comment) so an unbalanced quote can only add segments, never hide one.
+ */
+function maskSingleQuotedSeparators(command: string): string {
+  let out = ''
+  let index = 0
+  let inDouble = false
+  while (index < command.length) {
+    const char = command.charAt(index)
+    if (char === '\\') {
+      out += command.slice(index, index + 2)
+      index += 2
+      continue
+    }
+    if (char === '"') inDouble = !inDouble
+    if (char === "'" && !inDouble) {
+      const end = command.indexOf("'", index + 1)
+      const span = end === -1 ? '' : command.slice(index, end + 1)
+      if (end !== -1 && !/[\r\n]/.test(span)) {
+        out += span.replace(/[;|&(]/g, '_')
+        index = end + 1
+        continue
+      }
+    }
+    out += char
+    index++
+  }
+  return out
+}
+
+/** `command.split(RAW_SEPARATORS)` that ignores separators inside single quotes. */
+function splitRawSegments(command: string): string[] {
+  const masked = maskSingleQuotedSeparators(command)
+  const pieces: string[] = []
+  let start = 0
+  for (const match of masked.matchAll(RAW_SEPARATORS)) {
+    pieces.push(command.slice(start, match.index))
+    start = match.index + match[0].length
+  }
+  pieces.push(command.slice(start))
+  return pieces
+}
+
 export interface ShellRedirect {
   target: string
   /** True for `>` — the file's previous contents are gone whether or not the write succeeds. */
   truncates: boolean
+}
+
+/** Whether a command redirects descriptor 0 from a file, heredoc/string, or another descriptor. */
+export function hasShellInputRedirect(command: string): boolean {
+  // Let the shared parser reject malformed source, then retain the source text so
+  // `3< file` (descriptor 3) can be distinguished from `< file` (stdin). The
+  // parser's token stream drops that adjacency and reports both as the same `<`.
+  try {
+    parseShellCommand(command)
+  } catch {
+    return false
+  }
+  let quote: '"' | "'" | null = null
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index)
+    if (quote !== null) {
+      if (quote === '"' && char === '\\') index++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '\\') {
+      index++
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char !== '<' || command.charAt(index + 1) === '(') continue
+
+    let digitStart = index
+    while (digitStart > 0 && /\d/.test(command.charAt(digitStart - 1))) digitStart--
+    if (digitStart === index) return true
+    const beforeDigits = command.charAt(digitStart - 1)
+    // Digits are an IO-number only when they begin a shell word. In `arg3<file`,
+    // `arg3` remains an argument and the redirect still targets stdin.
+    if (digitStart > 0 && !/[\s;&|()]/.test(beforeDigits)) return true
+    if (/^0+$/.test(command.slice(digitStart, index))) return true
+  }
+  return false
 }
 
 /**

@@ -60,6 +60,7 @@ const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
   // File mutations.
   write_file: 'edit',
   str_replace: 'edit',
+  apply_patch: 'edit',
   make_directory: 'edit',
   delete_file: 'delete',
   rename_file: 'move',
@@ -340,10 +341,11 @@ function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk | null {
     case 'session_info_update':
       return null
     // These v1 exports are explicitly unstable. Copse advertises neither plan
-    // entities nor compaction capability, so receiving them is non-conforming;
+    // entities, notices, nor compaction capability, so receiving them is non-conforming;
     // they remain deferred until their lifecycle has a host-owned model.
     case 'plan_update':
     case 'plan_removed':
+    case 'notice':
     case 'compaction_update':
     case 'compaction_summary_chunk':
       return null

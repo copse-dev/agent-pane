@@ -175,6 +175,9 @@ export function createInlineArtefact(
   threadId: string,
   title: string,
 ): HTMLElement {
+  // Bundled explainers carry an opaque revision suffix in their storage key.
+  // Keep the human title in the conversation; the full key still owns all lookups.
+  const displayTitle = title.replace(/^Explainer (.+) [a-f0-9]{8}$/i, '$1')
   const preview = getArtefactPreview(threadId, title)
   const stage = canvasStage(title, preview)
   const status = el(
@@ -187,7 +190,7 @@ export function createInlineArtefact(
     {
       type: 'button',
       class: 'ui-btn ui-btn-ghost canvas-preview-open',
-      'aria-label': `Open ${title} in canvas`,
+      'aria-label': `Open ${displayTitle} in canvas`,
     },
     maximizeIcon('ui-icon ui-icon-sm'),
     'Open canvas',
@@ -201,7 +204,7 @@ export function createInlineArtefact(
     {
       type: 'button',
       class: 'ui-btn ui-btn-ghost canvas-preview-annotate',
-      'aria-label': `Annotate ${title}`,
+      'aria-label': `Annotate ${displayTitle}`,
       'aria-pressed': 'false',
     },
     penLineIcon('ui-icon ui-icon-sm'),
@@ -212,6 +215,7 @@ export function createInlineArtefact(
   let disposed = false
   let firstMountFrame: number | null = null
   let stableMountFrame: number | null = null
+  let mountTimer: ReturnType<typeof setTimeout> | null = null
   // A live guest is captured through the same IPC as a Browser pane tab; a
   // card still on its snapshot falls back to that snapshot.
   const captureBase = async (): Promise<string | null> => {
@@ -253,7 +257,7 @@ export function createInlineArtefact(
       el(
         'span',
         { class: 'canvas-preview-heading' },
-        el('span', { class: 'canvas-preview-title' }, title),
+        el('span', { class: 'canvas-preview-title' }, displayTitle),
         status,
       ),
       el('span', { class: 'canvas-preview-actions' }, open, annotate),
@@ -263,6 +267,7 @@ export function createInlineArtefact(
     disposed = true
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame)
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame)
+    if (mountTimer !== null) clearTimeout(mountTimer)
     annotation?.dispose()
     annotation = null
   })
@@ -312,7 +317,14 @@ export function createInlineArtefact(
       if (disposed || !card.isConnected) return
       stableMountFrame = requestAnimationFrame(() => {
         stableMountFrame = null
-        mount(artefact)
+        // Thread persistence and completion can reconcile the same message
+        // after its first paint. Keep the poster visible until this card has
+        // survived that short settling window; a detached pending Electron
+        // guest rejects its internal attach promise before we can cancel it.
+        mountTimer = setTimeout(() => {
+          mountTimer = null
+          mount(artefact)
+        }, 250)
       })
     })
   }

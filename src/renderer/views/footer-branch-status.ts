@@ -2,7 +2,12 @@ import { el, clear, on } from '../dom/helpers.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitBranchInfo, GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
+import type {
+  GitBranchInfo,
+  GitBranchStatus,
+  GitOpenPr,
+  ThreadWorktreeAttachment,
+} from '@shared/types/git.ts'
 import type { Thread } from '@shared/types'
 import {
   threadGitBranchMismatch,
@@ -11,11 +16,43 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
 let nextPickerId = 0
+
+type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
+
+function detachedTitle(detached: DetachedAttachment): string {
+  if (detached.uncommittedPick) {
+    return `This checkout is detached from ${detached.branch} because the rebase applied ${detached.uncommittedPick.commit.slice(0, 7)} but could not commit it, usually because signing failed. This commits the staged changes with that commit's message in a terminal for this thread, then continues the rebase.`
+  }
+  if (detached.recovery === 'bisect') {
+    return `This checkout is detached from ${detached.branch} because Git bisect is in progress. Reset the bisect in a terminal for this thread to return to the branch.`
+  }
+  return detached.recovery
+    ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.`
+    : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
+}
+
+/**
+ * The command that finishes an interrupted Git operation. It runs in the
+ * user's own shell rather than main's sandboxed Git: that shell has their
+ * signing key, and a stopped rebase is often waiting on exactly that. A pick
+ * whose commit failed is committed first, or `--continue` refuses its staged
+ * changes.
+ */
+function recoveryCommand(
+  detached: DetachedAttachment,
+  recovery: NonNullable<DetachedAttachment['recovery']>,
+): string {
+  if (recovery === 'bisect') return 'git bisect reset'
+  const pick = detached.uncommittedPick
+  if (!pick) return `git ${recovery} --continue`
+  const sign = pick.signOption ? `${pick.signOption} ` : ''
+  return `git commit ${sign}-C ${pick.commit} && git rebase --continue`
+}
 
 /**
  * Branch lookups fail for a legitimately broken worktree, so they never toast —
@@ -74,6 +111,11 @@ export function mountFooterBranchStatus(
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   trigger.append(label, chevron)
+  const reattachButton = el(
+    'button',
+    { type: 'button', class: 'branch-reattach-button', hidden: '' },
+    'Reattach',
+  )
   const menu = el('div', { class: 'branch-picker-menu', hidden: '' })
   const filterInput = el('input', {
     type: 'search',
@@ -93,10 +135,14 @@ export function mountFooterBranchStatus(
     'aria-label': 'Branches',
   })
   menu.append(filterInput, list)
-  wrap.append(trigger, menu)
+  wrap.append(trigger, reattachButton, menu)
   host.append(wrap)
 
   let status: GitBranchStatus | null = null
+  /** Set when branch status failed because the thread's own checkout lost its branch. */
+  let detached: (DetachedAttachment & { threadId: string }) | null = null
+  let reattaching = false
+  const recoveryRuns = new Map<string, string>()
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let branchToCopy: string | null = null
   let branches: GitBranchInfo[] = []
@@ -185,6 +231,7 @@ export function mountFooterBranchStatus(
       wrap.hidden = true
       branchToCopy = null
       setOpen(false)
+      renderReattach()
       return
     }
 
@@ -242,6 +289,119 @@ export function mountFooterBranchStatus(
           mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`,
         )
       }
+    }
+    renderReattach()
+  }
+
+  /**
+   * A detached thread checkout blocks every agent turn, so the footer offers the
+   * repair next to the branch it names. The trigger keeps its copy action.
+   */
+  function renderReattach(): void {
+    const current = activeDetached()
+    const shown = current !== null && !isPickerMode() && !wrap.hidden
+    reattachButton.hidden = !shown
+    trigger.classList.toggle('is-detached', shown)
+    if (!shown) return
+    const title = detachedTitle(current)
+    trigger.title = title
+    reattachButton.title = title
+    const recoveryRunning = activeRecoveryRunId() !== null
+    reattachButton.disabled = reattaching || recoveryRunning
+    if (current.uncommittedPick) {
+      reattachButton.setAttribute(
+        'aria-label',
+        `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`,
+      )
+      reattachButton.textContent = recoveryRunning ? 'Running…' : 'Commit and continue'
+      return
+    }
+    if (current.recovery === 'bisect') {
+      reattachButton.setAttribute(
+        'aria-label',
+        `Reset the bisect and return to ${current.branch} in a terminal`,
+      )
+      reattachButton.textContent = recoveryRunning ? 'Running…' : 'Reset bisect'
+      return
+    }
+    if (current.recovery) {
+      reattachButton.setAttribute(
+        'aria-label',
+        `Continue the ${current.recovery} on ${current.branch} in a terminal`,
+      )
+      reattachButton.textContent = recoveryRunning ? 'Running…' : `Continue ${current.recovery}`
+      return
+    }
+    reattachButton.setAttribute('aria-label', `Reattach checkout to ${current.branch}`)
+    reattachButton.textContent = reattaching ? 'Reattaching…' : 'Reattach'
+  }
+
+  /** The detached state, only while it still describes the active thread. */
+  function activeDetached(): DetachedAttachment | null {
+    return detached?.threadId === store.getState().activeThreadId ? detached : null
+  }
+
+  function recoveryKey(projectId: string, threadId: string): string {
+    return `${projectId}\0${threadId}`
+  }
+
+  function activeRecoveryRunId(): string | null {
+    const owner = getActiveThreadOwner(store)
+    return owner ? (recoveryRuns.get(recoveryKey(owner.projectId, owner.threadId)) ?? null) : null
+  }
+
+  async function readDetachedAttachment(
+    owner: ActiveThreadOwner,
+  ): Promise<DetachedAttachment | null> {
+    try {
+      const attachment = await api.git.worktreeAttachment(owner.projectId, owner.threadId)
+      return attachment.state === 'detached' ? attachment : null
+    } catch (error) {
+      reportBranchFailure('inspect worktree attachment', error)
+      return null
+    }
+  }
+
+  async function reattach(): Promise<void> {
+    const owner = getActiveThreadOwner(store)
+    const current = activeDetached()
+    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return
+    if (current.recovery) {
+      // A reattach would strand the half-applied state, so finish the
+      // operation in the thread's scoped background shell. A successful
+      // completion emits a machine-originated "continue" turn below.
+      const runId = globalThis.crypto.randomUUID()
+      recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId)
+      renderReattach()
+      store.emit('code_block_run_requested', {
+        id: runId,
+        command: recoveryCommand(current, current.recovery),
+        projectId: owner.projectId,
+        threadId: owner.threadId,
+        completion: {
+          type: 'continue',
+          prompt: 'Continue after the Git recovery command completed.',
+          operationId: `git-recovery:${runId}`,
+          turnTreeId: getThreadById(store, owner.threadId)?.currentEpoch ?? owner.threadId,
+        },
+      })
+      return
+    }
+    reattaching = true
+    renderReattach()
+    try {
+      const result = await api.git.reattachWorktree(owner.projectId, owner.threadId)
+      showToast(
+        result.backupBranch
+          ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.`
+          : `Reattached to ${result.branch}`,
+      )
+      store.emit('git_branch_changed')
+    } catch (error) {
+      showErrorToast('Could not reattach the checkout', error)
+    } finally {
+      reattaching = false
+      refreshNow()
     }
   }
 
@@ -434,6 +594,7 @@ export function mountFooterBranchStatus(
     const threadBranch = getActiveThreadBranch()
     branches = []
     defaultBranch = null
+    let nextDetached: (DetachedAttachment & { threadId: string }) | null = null
     try {
       const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
       if (token !== refreshToken) return
@@ -445,7 +606,11 @@ export function mountFooterBranchStatus(
       // the thread must stay selectable so the user can inspect and recover it.
       reportBranchFailure('read branch status', error)
       status = null
+      const attachment = await readDetachedAttachment(owner)
+      if (token !== refreshToken) return
+      nextDetached = attachment ? { ...attachment, threadId: owner.threadId } : null
     }
+    detached = nextDetached
     if (isPickerMode()) {
       try {
         await loadBranches(token)
@@ -505,6 +670,10 @@ export function mountFooterBranchStatus(
       })
   }
 
+  reattachButton.addEventListener('click', () => {
+    void reattach()
+  })
+
   trigger.addEventListener('click', () => {
     if (!isPickerMode()) {
       const url = getVisiblePr()?.url
@@ -561,6 +730,18 @@ export function mountFooterBranchStatus(
   })
 
   const unsubs = [
+    store.on('code_block_run_finished', (result) => {
+      const key = recoveryKey(result.projectId, result.threadId)
+      if (result.id !== recoveryRuns.get(key)) return
+      recoveryRuns.delete(key)
+      if (result.exitCode !== 0) {
+        showErrorToast(
+          'Could not continue the Git operation',
+          new Error(result.output.trim() || 'The recovery command failed'),
+        )
+      }
+      refreshNow()
+    }),
     store.on('workspace_changed', refreshNow),
     store.on('threads_changed', () => {
       // A real thread switch should repaint immediately. Same-thread metadata

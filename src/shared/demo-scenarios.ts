@@ -2,7 +2,11 @@ import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
+import type { FollowUpSuggestion } from './follow-ups/types.ts'
+import type { McpServerStatus } from './types/mcp.ts'
+import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
+import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -101,6 +105,22 @@ export interface DemoScenario {
     defaultIndex?: number
     cancelIndex?: number
   }[]
+  /**
+   * MCP servers the demo reports as configured, with the per-tool permission
+   * catalog Settings → Permissions lists for them. Scenarios without one show
+   * the default mail-server fixture.
+   */
+  mcpServers?: readonly McpServerStatus[]
+  toolPermissions?: ToolPermissionCatalog
+  /**
+   * What the follow-up model offers once the active thread's last turn ends.
+   * The demo has no model to ask, so without this no bubbles appear.
+   */
+  followUps?: readonly FollowUpSuggestion[]
+  /** The description the demo proposes when a visitor opens Create PR. */
+  prBody?: string
+  /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
+  changeStats?: { readonly additions: number; readonly deletions: number }
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -328,6 +348,274 @@ const PROPOSED_DIFF_TRACE: DemoTrace = {
     },
     { chunk: { type: 'done', stopReason: 'end_turn' }, delayMs: 300 },
   ],
+}
+
+// A stand-in browser capture for the concise-thread scenarios: the screenshot a
+// tool returned is the "work output" that view keeps on screen.
+const CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+  [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+    '<rect width="480" height="270" fill="#f4f1ea"/>',
+    '<rect width="480" height="36" fill="#2f3a2f"/>',
+    '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+    '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+    '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+    '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+    '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+    '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+    '</svg>',
+  ].join(''),
+)}`
+
+/**
+ * One finished turn — narration, reads, a failed then retried command, a
+ * screenshot and a closing summary — attributed to `model`, so the same
+ * transcript renders concisely for a capable model and in full otherwise.
+ */
+function conciseThreadMessages(model: string, live: boolean): Thread['messages'] {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: 'user',
+      content: 'Fix the settings form so Save stays aligned on narrow windows.',
+      toolCalls: [],
+      createdAt: FIXED_TIME,
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: 'assistant',
+      model,
+      reasoning: 'The Save button is absolutely positioned; check the form layout first.',
+      content: 'Let me look at how the settings form lays out its footer.',
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: 'read_file',
+          args: { path: 'src/renderer/views/settings-dialog.ts' },
+          status: 'done',
+          result: 'export function mountSettings() { … }',
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: 'str_replace',
+          args: { path: 'src/renderer/styles/settings.css' },
+          status: 'done',
+          result: 'Replaced 1 occurrence.',
+          editStats: { additions: 4, deletions: 2 },
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: 'run_shell',
+          args: { command: 'pnpm test -- settings-forms' },
+          status: 'error',
+          result: 'Error: settings-forms.test.ts expected footer to use grid',
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: 'run_shell',
+          args: { command: 'pnpm test -- settings-forms' },
+          status: live ? 'running' : 'done',
+          result: live ? null : 'ℹ pass 12',
+        },
+      ],
+      createdAt: FIXED_TIME + 1_000,
+    },
+    ...(live
+      ? []
+      : [
+          {
+            id: `concise-step-2-${model}`,
+            role: 'assistant' as const,
+            model,
+            content: 'Capturing the narrow layout to confirm.',
+            toolCalls: [
+              {
+                id: `concise-shot-${model}`,
+                name: 'browser_screenshot',
+                args: { width: 480 },
+                status: 'done' as const,
+                result: 'Captured the settings dialog at 480px.',
+                images: [
+                  {
+                    dataUrl: CONCISE_SCREENSHOT,
+                    name: 'settings-480px.png',
+                    kind: 'screenshot' as const,
+                  },
+                ],
+              },
+            ],
+            createdAt: FIXED_TIME + 2_000,
+          },
+          {
+            id: `concise-summary-${model}`,
+            role: 'assistant' as const,
+            model,
+            content:
+              'Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.',
+            toolCalls: [
+              {
+                id: `concise-audit-${model}`,
+                name: 'workspace_edit_audit',
+                args: {},
+                status: 'done' as const,
+                result: 'Audit complete.',
+              },
+            ],
+            createdAt: FIXED_TIME + 3_000,
+          },
+        ]),
+  ]
+}
+
+/**
+ * A longer finished thread for the concise view: a tool-and-screenshot turn,
+ * back-to-back text answers, a tool turn that ends in text only, a one-line
+ * answer and a closing screenshot turn. It exercises the spacing between
+ * prompts, hidden process bubbles and replies that a single turn cannot.
+ */
+function conciseMultiTurnMessages(model: string): Thread['messages'] {
+  const turn = (
+    n: number,
+    prompt: string,
+    replies: string[],
+    { tools = false, screenshot = false }: { tools?: boolean; screenshot?: boolean } = {},
+  ): Thread['messages'] => {
+    const at = FIXED_TIME + n * 10_000
+    return [
+      {
+        id: `concise-multi-user-${String(n)}`,
+        role: 'user',
+        content: prompt,
+        toolCalls: [],
+        createdAt: at,
+      },
+      ...(tools
+        ? [
+            {
+              id: `concise-multi-steps-${String(n)}`,
+              role: 'assistant' as const,
+              model,
+              content: 'Checking the code.',
+              toolCalls: [
+                {
+                  id: `concise-multi-read-${String(n)}`,
+                  name: 'read_file',
+                  args: { path: 'src/renderer/views/settings-dialog.ts' },
+                  status: 'done' as const,
+                  result: 'export function mountSettings() { … }',
+                },
+                {
+                  id: `concise-multi-edit-${String(n)}`,
+                  name: 'str_replace',
+                  args: { path: 'src/renderer/styles/settings.css' },
+                  status: 'done' as const,
+                  result: 'Replaced 1 occurrence.',
+                  editStats: { additions: 3, deletions: 1 },
+                },
+              ],
+              createdAt: at + 1,
+            },
+          ]
+        : []),
+      ...(screenshot
+        ? [
+            {
+              id: `concise-multi-shot-${String(n)}`,
+              role: 'assistant' as const,
+              model,
+              content: 'Capturing the narrow layout.',
+              toolCalls: [
+                {
+                  id: `concise-multi-capture-${String(n)}`,
+                  name: 'browser_screenshot',
+                  args: { width: 480 },
+                  status: 'done' as const,
+                  result: 'Captured the settings dialog at 480px.',
+                  images: [
+                    {
+                      dataUrl: CONCISE_SCREENSHOT,
+                      name: 'settings-480px.png',
+                      kind: 'screenshot' as const,
+                    },
+                  ],
+                },
+              ],
+              createdAt: at + 2,
+            },
+          ]
+        : []),
+      ...replies.map((content, i) => ({
+        id: `concise-multi-reply-${String(n)}-${String(i)}`,
+        role: 'assistant' as const,
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at + 3 + i,
+      })),
+    ]
+  }
+  return [
+    ...turn(
+      1,
+      'Fix the settings form so Save stays aligned on narrow windows.',
+      ['Save now stays pinned to the footer at every width. The settings form tests pass.'],
+      { tools: true, screenshot: true },
+    ),
+    ...turn(2, 'Why was it misaligned?', [
+      'The footer was absolutely positioned, so it ignored the form width.',
+      'I switched it to a grid so it follows the content box.',
+    ]),
+    ...turn(3, 'Rename the helper too.', ['Renamed `pinFooter` to `layoutFooter` in 3 files.'], {
+      tools: true,
+    }),
+    ...turn(4, 'Anything else?', ['No. Nothing else needs changing.']),
+    ...turn(5, 'Show me the narrow layout again.', ['Here is the 480px layout after the rename.'], {
+      tools: true,
+      screenshot: true,
+    }),
+  ]
+}
+
+/** `enabled` is the experimental Concise threads setting; on unless a scenario opts out. */
+function conciseThreadScenario(
+  id: string,
+  label: string,
+  model: string,
+  {
+    live = false,
+    enabled = true,
+    multiTurn = false,
+  }: { live?: boolean; enabled?: boolean; multiTurn?: boolean } = {},
+): DemoScenario {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model,
+      conciseThreadsEnabled: enabled,
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: 'Concise thread view',
+        status: live ? 'running' : 'idle',
+        model,
+        messages: multiTurn
+          ? [
+              ...conciseMultiTurnMessages(model),
+              ...(live ? conciseThreadMessages(model, true) : []),
+            ]
+          : conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  }
 }
 
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
@@ -610,6 +898,37 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       error: null,
       continuedFrom: null,
     },
+  },
+  {
+    id: 'balanced-model-label',
+    label: 'Balanced model rule label',
+    project: project('demo-balanced-model-label-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:balanced',
+    },
+    threads: [
+      {
+        id: 'demo-balanced-model-label-thread',
+        title: 'Balanced model label',
+        status: 'idle',
+        model: 'auto:balanced',
+        messages: [
+          {
+            id: 'demo-balanced-model-label-user',
+            role: 'user',
+            content: 'Keep this conversation on the balanced model rule.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
   },
   {
     id: 'footer-compact',
@@ -1148,6 +1467,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'automation-permissions',
+    label: 'Automation permission preferences',
+    project: project('demo-automation-permissions-project', 'Copse', '/demo/copse'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-automation-permissions-thread',
+        title: 'Automation permissions',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     // Per-model generation parameters. The scenario only has to seed the chat
     // model and its saved parameters — open Settings → General → Models in the
     // preview and the section renders itself against that selection. Uses an
@@ -1419,4 +1759,62 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  conciseThreadScenario(
+    'concise-thread',
+    'Concise thread view for a capable model',
+    'claude-opus-5-5',
+  ),
+  conciseThreadScenario(
+    'concise-thread-multi',
+    'Concise thread view across several turns',
+    'claude-opus-5-5',
+    { multiTurn: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-multi-working',
+    'Concise thread view with finished turns and a live one',
+    'claude-opus-5-5',
+    { multiTurn: true, live: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-full',
+    'Full thread view for a model below the concise gate',
+    'gpt-4o',
+  ),
+  conciseThreadScenario(
+    'concise-thread-working',
+    'Concise thread view while a capable model works',
+    'claude-opus-5-5',
+    { live: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-disabled',
+    'Full thread view for a capable model while the experiment is off',
+    'claude-opus-5-5',
+    { enabled: false },
+  ),
+  {
+    id: 'roadmap-chat-min-width',
+    label: 'Roadmap side panel minimum chat width',
+    project: project('demo-roadmap-chat-min-width-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: { filesPaneWidth: 4000 },
+    },
+    threads: [
+      {
+        id: 'demo-roadmap-chat-min-width-thread',
+        title: 'Roadmap layout bounds',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+  ...SITE_TOUR_SCENARIOS,
 ]

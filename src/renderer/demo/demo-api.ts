@@ -1,13 +1,22 @@
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
+import {
+  ADVISOR_MODEL_SETTING_ID,
+  ADVISOR_STRATEGY_PLUGIN_ID,
+  ADVISOR_STRATEGY_TOOL_NAME,
+  DEFAULT_ADVISOR_MODEL_ID,
+} from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -168,29 +177,30 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
     name: 'Todos',
     version: '1.0.0',
     description:
-      'Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
+      'Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
     enabled: true,
     contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
     settings: [],
   },
   {
-    id: 'copse.advisor-strategy',
+    id: ADVISOR_STRATEGY_PLUGIN_ID,
     trust: 'first-party',
     stability: 'experimental',
     name: 'Advisor strategy',
     version: '0.3.1',
     description:
-      'Pairs a second model with the executor to review strategy before long or risky work starts.',
+      'Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.',
     enabled: true,
-    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['consult_advisor'] },
+    contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
     settings: [
       {
-        id: 'maxReviewCycles',
-        kind: 'number',
-        title: 'Max review cycles',
-        description: 'How many times a failing review may buy the agent another turn.',
-        default: 2,
-        value: 2,
+        id: ADVISOR_MODEL_SETTING_ID,
+        kind: 'model',
+        title: 'Advisor model',
+        description:
+          'How to choose the model the advisor consults — re-derived from your configured providers each time it is called. A model assigned to the “advisor” role still takes precedence.',
+        default: DEFAULT_ADVISOR_MODEL_ID,
+        value: DEFAULT_ADVISOR_MODEL_ID,
       },
     ],
   },
@@ -235,6 +245,82 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
   },
 ]
 
+const DEMO_AUTOMATIONS_PLUGIN: PluginSummary = {
+  id: AUTOMATIONS_PLUGIN_ID,
+  trust: 'first-party',
+  stability: 'experimental',
+  name: AUTOMATIONS_PLUGIN_ID,
+  description:
+    'Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.',
+  enabled: true,
+  contributions: {
+    ...DEMO_PLUGIN_CONTRIBUTIONS,
+    ui: [
+      {
+        id: 'schedule-editor',
+        level: 3,
+        slot: 'settings-plugin-detail',
+        title: 'Automation schedules',
+      },
+    ],
+    storageNamespace: AUTOMATIONS_PLUGIN_ID,
+  },
+  settings: [],
+}
+
+const DEMO_AUTOMATION_PERMISSIONS: AutomationPermissionOption[] = [
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_create' },
+    label: 'Create pull requests',
+    detail: 'Pushes the current thread branch and opens a pull request in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_rerun_failed_ci' },
+    label: 'Re-run failed CI',
+    detail: 'Re-runs failed checks for pull requests in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_approve' },
+    label: 'Approve pull requests',
+    detail: 'Submits a GitHub approval for pull requests in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_mark_ready' },
+    label: 'Mark pull requests ready',
+    detail: 'Moves draft pull requests in this project repository into review.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_enable_auto_merge' },
+    label: 'Enable pull request auto-merge',
+    detail: 'Enables the repository-preferred auto-merge strategy for a pull request.',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__linear__create_issue' },
+    label: 'Create issue',
+    detail: 'Linear MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__linear__update_issue' },
+    label: 'Update issue',
+    detail: 'Linear MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__notion__create_page' },
+    label: 'Create page',
+    detail: 'Notion MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__slack__send_message' },
+    label: 'Send message',
+    detail: 'Slack MCP · may access external systems',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__figma__add_comment' },
+    label: 'Add comment',
+    detail: 'Figma MCP · changes external data',
+  },
+]
+
 /**
  * Provider slug for a model id, matching the conventions used elsewhere:
  * `<slug>:<model>` carries its slug, and built-in cloud ids are inferred from
@@ -244,9 +330,7 @@ function providerSlug(model: string | undefined): string | undefined {
   if (model === undefined) return undefined
   const colon = model.indexOf(':')
   if (colon > 0) return model.slice(0, colon)
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
-  return undefined
+  return firstPartyProviderOf(model) ?? undefined
 }
 
 export interface DemoApiOptions {
@@ -333,13 +417,37 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
-  let toolPermissionCatalog = structuredClone(DEMO_TOOL_PERMISSIONS)
+  let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
+  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
   ])
   let workspaceRoot = scenario.project.path
   let threads: Thread[] = structuredClone(scenario.threads)
+  const showAutomationPermissions = scenario.id === 'automation-permissions'
+  const demoPlugins = showAutomationPermissions
+    ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN]
+    : DEMO_PLUGINS
+  const automationSchedules: AutomationSchedule[] = showAutomationPermissions
+    ? [
+        {
+          id: 'demo-weekday-review',
+          projectId: scenario.project.id,
+          name: 'Weekday project review',
+          cron: '0 9 * * 1-5',
+          prompt: 'Review open work and prepare a concise project status update.',
+          model: 'claude-sonnet-4-6',
+          enabled: false,
+          permissions: [
+            { kind: 'copse-action', toolName: 'gh_pr_approve' },
+            { kind: 'mcp-tool', toolName: 'mcp__reports__publish_weekly' },
+          ],
+          createdAt: Date.parse(DEMO_TIME),
+          updatedAt: Date.parse(DEMO_TIME),
+        },
+      ]
+    : []
   let navigation: import('@shared/types/main-window.ts').MainWindowNavigation = {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null,
@@ -431,6 +539,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    mobile: { manage: async () => {}, onChat: () => () => {}, reply: async () => {} },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -469,6 +578,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe,
@@ -577,6 +687,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      runMachine: () => resolved('completed' as const),
       describeImages: () => resolved({ text: 'Demo image description.' }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -615,8 +726,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
-      suggestFollowUps: emptyArray,
-      suggestPrBody: () => resolved(null),
+      suggestFollowUps: () => resolved(structuredClone([...(scenario.followUps ?? [])])),
+      suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
@@ -709,7 +820,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onConnectionChanged: subscribe,
     },
     mcp: {
-      list: () => resolved(structuredClone(DEMO_MCP_STATUSES)),
+      list: () => resolved(structuredClone([...mcpStatuses])),
       reload: emptyArray,
       setEnabled: emptyArray,
       listCurated: emptyArray,
@@ -748,8 +859,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolvedVoid()
       },
     },
-    // The browser demo has no chat store on disk to hold an archive.
-    archive: { attach: unsupported },
+    // The browser demo has no chat store on disk, so a dropped archive is held
+    // by name only: the chip shows what the visitor attached, and the agent's
+    // reply is the demo's usual stub rather than a reading of its contents.
+    archive: {
+      attach: (_projectId, threadId, archive) =>
+        resolved({
+          path: archive.path ?? `/demo/${scenario.project.id}/${threadId}/blobs/${archive.name}`,
+          name: archive.name,
+          sizeBytes: archive.bytes?.byteLength ?? 0,
+        }),
+    },
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
@@ -765,6 +885,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => undefined,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,
@@ -920,6 +1041,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported,
+    },
+    localClassifiers: {
+      status: () => resolved({ servers: [], hosted: [] }),
+      install: unsupported,
+      start: unsupported,
+      stop: unsupported,
+      connect: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
@@ -950,6 +1080,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: 'demo', report: null }),
+      openLicenseFile: resolvedVoid,
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -1117,6 +1251,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
@@ -1125,7 +1260,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     plugins: {
       list: () =>
         resolved({
-          plugins: DEMO_PLUGINS.map((plugin) =>
+          plugins: demoPlugins.map((plugin) =>
             plugin.id === 'copse.apple-development'
               ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled }
               : plugin,
@@ -1140,10 +1275,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       export: () => resolved({ path: '', count: 0 }),
     },
     automations: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(automationSchedules)),
+      permissionOptions: () =>
+        resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe,
     },
     appRun: {
@@ -1168,6 +1310,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           supportedHost: state.supportedHost,
         })
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) =>
+        resolved({
+          offer: 'none',
+          pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled,
+        }),
+      answerSuggestion: () => resolved(undefined),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId)
         const state: AppleProjectState = {
@@ -1210,7 +1359,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     git: {
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
-      changeStats: () => resolved(null),
+      changeStats: () => resolved(scenario.changeStats ? { ...scenario.changeStats } : null),
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
@@ -1226,6 +1375,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           currentBranch: forBranch ?? currentBranch,
           pr: null,
         }),
+      // The demo has no linked worktrees, so there is never a detached one.
+      worktreeAttachment: () => resolved({ state: 'attached' }),
+      reattachWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch

@@ -14,7 +14,12 @@ const THREAD = 'thread-1'
 const SUMMARY = '1 finding: src/a.ts:3 drops the error from the retry path.'
 
 function settled(status: 'done' | 'error', summary = SUMMARY): ReviewRunResult {
-  const report = runningReviewReport({ reviewer: 'model-a', challenger: 'model-b' }, [], 1_000)
+  const report = runningReviewReport(
+    { reviewer: 'model-a', challenger: 'model-b' },
+    [],
+    1_000,
+    'user',
+  )
   return { report: { ...report, status }, summary }
 }
 

@@ -1,3 +1,5 @@
+import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
+import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
@@ -27,6 +29,7 @@ import {
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
+import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -66,6 +69,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'read_file',
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',
@@ -116,6 +120,9 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // attached archive — the bridge's tool list is sent once per session, so the
   // per-turn schema cost that motivates the native gate does not apply.
   'read_archive',
+  // Model-proposed threads. The ACP agent can offer the work, but the
+  // renderer card remains the approval boundary that actually starts it.
+  'propose_thread',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -146,7 +153,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
  * alongside the existing hooks, read-only checks, and permission gate.
  */
 export function activeBridgeToolNames(
-  _projectId?: string,
+  projectId?: string,
   registry?: ToolRegistry,
 ): readonly string[] {
   const mcpTools = registry?.names().filter((name) => name.startsWith('mcp__')) ?? []
@@ -156,7 +163,7 @@ export function activeBridgeToolNames(
       ...getDefaultPluginRegistry().activeAcpToolNames(),
       ...mcpTools,
     ]),
-  ]
+  ].filter((name) => isAppleDevelopmentToolOffered(name, projectId))
 }
 
 // Permission requests arrive on the ACP client channel without a reference to
@@ -292,6 +299,7 @@ interface BridgeExecuteContext {
    * than falling back to the shared checkout.
    */
   getExecutionContext: () => ThreadExecutionContext | null
+  getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   networkScopeAlreadyApplies: boolean
   recordWorkspaceWrite: (path: string) => void
 }
@@ -313,6 +321,8 @@ export function bridgedWorkspaceWritePaths(
       return stringValue('path')
     case 'rename_file':
       return [...stringValue('from'), ...stringValue('to')]
+    case 'apply_patch':
+      return patchTouchedPaths(args['input'])
     default:
       return []
   }
@@ -445,10 +455,13 @@ function buildMcpServer(
       // than the turn itself. The context is the turn's already-resolved one —
       // set by agent-service around the prompt — not a fresh per-request
       // resolve; the guard above already rejected any call with none bound.
+      const inlineCanvasScope = ctx.getInlineCanvasScope()
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        runWithActiveRunIdentity(ctx.threadId, () =>
-          runWithThreadExecutionContext(executionContext, () =>
-            runWithApprovalToolCallId(requestKey, withPermissionContext),
+        inlineCanvasScope(() =>
+          runWithActiveRunIdentity(ctx.threadId, () =>
+            runWithThreadExecutionContext(executionContext, () =>
+              runWithApprovalToolCallId(requestKey, withPermissionContext),
+            ),
           ),
         )
       const advisor = advisorContext.current
@@ -556,6 +569,7 @@ export async function startAcpNativeBridge(
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
+  let inlineCanvasScope = captureInlineCanvasScope()
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
 
@@ -594,6 +608,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
+        getInlineCanvasScope: () => inlineCanvasScope,
         networkScopeAlreadyApplies,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
@@ -637,6 +652,7 @@ export async function startAcpNativeBridge(
     },
     setExecutionContext: (context): void => {
       executionContext = context
+      inlineCanvasScope = captureInlineCanvasScope()
     },
     setTurnSignal: (next): void => {
       turnSignal = next

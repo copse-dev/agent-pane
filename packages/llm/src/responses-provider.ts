@@ -7,12 +7,24 @@ import type {
   Tool,
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
+import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
+import {
+  isOutputCeilingRejectedError,
+  isOutputCeilingRejectedMessage,
+  yieldStreamWithRetry,
+} from './stream-retry.ts'
+import { reasoningReplayFor, type ReplayableReasoning } from './reasoning-replay-store.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
-import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMTool,
+  ModelUsage,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { responsesParameterFields, type ModelParameters } from './model-parameters.ts'
 
 /**
@@ -28,9 +40,11 @@ export class ResponsesProvider implements LLMProvider {
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly serviceTier: ServiceTier | undefined
+  private readonly maxOutputTokens: number | undefined
   /** User-tuned reasoning / sampling, in this API's request shape. */
   private readonly tuned: ReturnType<typeof responsesParameterFields>
   private readonly promptCacheKey: string | undefined
+  private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly reasoningSummaries: boolean
   private readonly encryptedReasoning: boolean
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
@@ -40,18 +54,18 @@ export class ResponsesProvider implements LLMProvider {
   }
 
   /**
-   * Reasoning items from earlier turns of this run, keyed by the id of the first
-   * tool call they preceded.
+   * Reasoning items from earlier turns, keyed by the id of the first tool call
+   * they preceded.
    *
-   * Kept on the provider rather than in `LLMMessage` on purpose. These blobs are
-   * opaque, OpenAI-specific, and meaningless to any other provider; putting them
-   * in the app's neutral message history would push a vendor detail through the
-   * agent loop, thread storage, and every other adapter. The provider instance
-   * already has exactly the right lifetime — `agent-service` builds one per run,
-   * and a run is precisely the tool-calling chain over which reasoning should
-   * carry.
+   * Kept beside the provider rather than in `LLMMessage` on purpose. These blobs
+   * are opaque, OpenAI-specific, and meaningless to any other provider; putting
+   * them in the app's neutral message history would push a vendor detail through
+   * the agent loop, thread storage, and every other adapter. `agent-service`
+   * builds a provider per user turn, so the map is scoped to (model, thread) in
+   * process memory: replaying the same items on every later request is what
+   * keeps the request prefix byte-stable for prompt caching.
    */
-  private readonly reasoningByToolCall = new Map<string, ReasoningItem[]>()
+  private readonly reasoningByToolCall: Map<string, ReasoningItem[]>
 
   constructor(
     model: string,
@@ -64,6 +78,8 @@ export class ResponsesProvider implements LLMProvider {
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: ServiceTier
       params?: ModelParameters
+      /** Resolved request ceiling, sent as Responses API `max_output_tokens`. */
+      maxOutputTokens?: number
       promptCacheKey?: string
       /** Ask for visible reasoning summaries (`reasoning.summary: 'auto'`). */
       reasoningSummaries?: boolean
@@ -75,10 +91,18 @@ export class ResponsesProvider implements LLMProvider {
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
     this.serviceTier = opts.serviceTier
+    this.maxOutputTokens = opts.maxOutputTokens
     this.tuned = responsesParameterFields(opts.params ?? {})
     this.promptCacheKey = opts.promptCacheKey
+    this.cacheDiagnostics = new PromptCacheDiagnostics(
+      'responses',
+      model,
+      opts.baseURL ?? 'https://api.openai.com/v1',
+      opts.promptCacheKey,
+    )
     this.reasoningSummaries = opts.reasoningSummaries ?? false
     this.encryptedReasoning = opts.encryptedReasoning ?? false
+    this.reasoningByToolCall = reasoningReplayFor(model, opts.promptCacheKey)
     this.client = new OpenAI({
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       apiKey: opts.apiKey,
@@ -104,34 +128,91 @@ export class ResponsesProvider implements LLMProvider {
           parameters: tool.parameters,
           strict: false,
         }))
-        const response = await self.client.responses.create(
-          {
-            model: self.model,
-            input: toResponsesInput(messages, self.reasoningByToolCall),
-            stream: true,
-            tools: [...self.serverTools, ...localTools],
-            ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
-            // Without this, `store: false` leaves nothing to replay: OpenAI
-            // holds no server-side copy, so the encrypted blob has to come back
-            // on the response itself or the reasoning is gone.
-            ...(self.encryptedReasoning
-              ? { include: ['reasoning.encrypted_content' as const] }
-              : {}),
-            ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-            ...serviceTierBody(self.serviceTier),
-            // Last, so an explicit extraBody entry still wins — that field is
-            // the user's own escape hatch for provider-specific overrides.
-            ...self.tuned,
-            ...(self.extraBody ?? {}),
-          },
-          { signal },
+        const requestTools = [...self.serverTools, ...localTools]
+        const input = toResponsesInput(messages, self.reasoningByToolCall)
+        const reportCache = self.cacheDiagnostics.begin(
+          input.find((item) => 'role' in item && item.role !== 'user') ?? null,
+          requestTools,
+          input,
         )
+        let ceiling = self.maxOutputTokens
+        let droppedCeiling = false
+        for (;;) {
+          let response
+          try {
+            response = await self.client.responses.create(
+              {
+                model: self.model,
+                input,
+                stream: true,
+                tools: requestTools,
+                ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
+                // Without this, `store: false` leaves nothing to replay: OpenAI
+                // holds no server-side copy, so the encrypted blob has to come back
+                // on the response itself or the reasoning is gone.
+                ...(self.encryptedReasoning
+                  ? { include: ['reasoning.encrypted_content' as const] }
+                  : {}),
+                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+                ...serviceTierBody(self.serviceTier),
+                ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
+                // Last, so an explicit extraBody entry still wins — that field is
+                // the user's own escape hatch for provider-specific overrides.
+                ...self.tuned,
+                // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
+                // so merge it back with the summary request or OpenAI streams no
+                // reasoning summaries once the user tunes a level.
+                ...(self.reasoningSummaries && self.tuned.reasoning
+                  ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
+                  : {}),
+                ...(self.extraBody ?? {}),
+              },
+              { signal },
+            )
+          } catch (err) {
+            if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
+              droppedCeiling = true
+              ceiling = undefined
+              continue
+            }
+            throw err
+          }
 
-        // Reasoning items seen in *this* response, in order. Flushed onto each
-        // tool call the model emits after them.
-        const turnReasoning: ReasoningItem[] = []
-        for await (const event of response) {
-          yield* streamEventChunks(event, self.model, self, turnReasoning)
+          // Reasoning items seen in *this* response, in order. Flushed onto each
+          // tool call the model emits after them.
+          const turnReasoning: ReasoningItem[] = []
+          let yielded = false
+          let ceilingRejected = false
+          let usage: ModelUsage | null = null
+          for await (const event of response) {
+            // Some endpoints reject the ceiling in the stream instead of the
+            // request. Retrying is only safe before anything reached the caller.
+            if (!yielded && !droppedCeiling && ceiling !== undefined) {
+              if (ceilingRejectedInStream(event)) {
+                ceilingRejected = true
+                break
+              }
+            }
+            for (const chunk of streamEventChunks(event, self.model, self, turnReasoning)) {
+              yielded = true
+              if (chunk.type === 'usage') {
+                usage = {
+                  inputTokens: chunk.inputTokens,
+                  outputTokens: chunk.outputTokens,
+                  ...(chunk.cacheReadTokens !== undefined
+                    ? { cacheReadTokens: chunk.cacheReadTokens }
+                    : {}),
+                }
+              }
+              yield chunk
+            }
+          }
+          if (!ceilingRejected) {
+            reportCache(usage)
+            return
+          }
+          droppedCeiling = true
+          ceiling = undefined
         }
       },
       { ...(signal ? { signal } : {}) },
@@ -150,12 +231,7 @@ export class ResponsesProvider implements LLMProvider {
  * assigned it plus its encrypted payload. `summary` is required by the request
  * schema but carries no information back — the visible text was already streamed.
  */
-export interface ReasoningItem {
-  type: 'reasoning'
-  id: string
-  summary: []
-  encrypted_content: string
-}
+type ReasoningItem = ReplayableReasoning
 
 /** Read a streamed reasoning output item, if it carries a replayable payload. */
 function toReasoningItem(item: { type: string; id?: string }): ReasoningItem | null {
@@ -163,6 +239,15 @@ function toReasoningItem(item: { type: string; id?: string }): ReasoningItem | n
   const encrypted = 'encrypted_content' in item ? item.encrypted_content : undefined
   if (typeof encrypted !== 'string' || encrypted === '') return null
   return { type: 'reasoning', id: item.id, summary: [], encrypted_content: encrypted }
+}
+
+/** A stream `error` / `response.failed` event that rejects the output ceiling. */
+function ceilingRejectedInStream(event: ResponseStreamEvent): boolean {
+  if (event.type === 'error') return isOutputCeilingRejectedMessage(event.message, event.param)
+  if (event.type === 'response.failed') {
+    return isOutputCeilingRejectedMessage(event.response.error?.message ?? '')
+  }
+  return false
 }
 
 function* streamEventChunks(

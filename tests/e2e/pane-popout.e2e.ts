@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   resetUserData,
@@ -9,6 +10,7 @@ import {
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, waitForImagesSettled } from './helpers/screenshot.ts'
+import { assertPopoutModesAllShown } from './helpers/popout-panel-bar.ts'
 
 // Terminal is omitted: opening it spawns a PTY (node-pty), which isn't built in
 // this sandbox. The pop-out path is identical to the panes covered here — the
@@ -49,6 +51,14 @@ const PANES = [
     rowProbe: null,
     minImages: 0,
   },
+  {
+    mode: 'roadmap',
+    openLabel: 'Open roadmap',
+    listHost: '#roadmap-host',
+    probe: '#roadmap-host .roadmap-list',
+    rowProbe: '#roadmap-host .roadmap-list-empty',
+    minImages: 0,
+  },
 ] as const
 
 describe('Pane pop-out (mock gh)', () => {
@@ -59,7 +69,7 @@ describe('Pane pop-out (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd())
+    seedPrPanelChatFixture(process.cwd(), { roadmapPlansEnabled: true })
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
@@ -93,9 +103,15 @@ describe('Pane pop-out (mock gh)', () => {
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {
-        await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
-        await $('.browser-url-input').setValue('https://example.com')
-        await $('.browser-go-btn').click()
+        await navigateActiveBrowserTab('https://example.com')
+        // The submit reached navigation: the tab leaves "New tab" for the
+        // host (or the page title once it loads), before any network answer.
+        await browser.waitUntil(
+          async () =>
+            (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) !==
+            'New tab',
+          { timeout: 20_000, timeoutMsg: 'browser tab did not navigate before pop-out' },
+        )
         await browser.waitUntil(
           async () => (await $('.browser-url-input').getValue()).includes('example.com'),
           { timeout: 20_000, timeoutMsg: 'browser address bar did not update before pop-out' },
@@ -178,11 +194,19 @@ describe('Pane pop-out (mock gh)', () => {
         })
       }
 
+      if (pane.mode === 'roadmap') {
+        await expect(await $('.roadmap-list-empty')).toHaveText(
+          expect.stringContaining('No roadmap items yet'),
+        )
+        await expect(await $('.memories-error')).not.toBeDisplayed()
+      }
+
       // The probe above proves the list element exists, not that it has rows, and
       // rows are a stage before their icons paint. Capture only once every stage
       // this pane has is done.
       if (pane.rowProbe) await $(pane.rowProbe).waitForExist({ timeout: 30_000 })
       await waitForImagesSettled(pane.listHost, { minImages: pane.minImages })
+      await assertPopoutModesAllShown()
       await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, `pane-popout-${pane.mode}.png`))
 
       // Close this pop-out before opening the next so handles stay unambiguous.
@@ -201,7 +225,7 @@ describe('Pane pop-out (mock gh)', () => {
     await expect(await $('#pane-projects')).toBeDisplayed()
     await expect(await $('.prompt-input')).toBeExisting()
     await expect(await $('.titlebar-popout-btn')).not.toBeExisting()
-    await expect(await $('#browser-tabs-host .pane-popout-btn')).toBeDisplayed()
+    await expect(await $('#roadmap-host .pane-popout-btn')).toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-main.png'))
   })
 })

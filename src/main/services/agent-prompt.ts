@@ -106,11 +106,21 @@ export function buildAblatedBasePrompt(
   return assemblePromptFromSections(buildPromptSections(toSectionVars(v)), omit)
 }
 
+/**
+ * The explore-mode tool line for the CI investigator subagent. Only present
+ * when the turn is actually offered `investigate_ci` (see
+ * `isInvestigateCiOffered`); otherwise the prompt would point the model at a
+ * tool it cannot call.
+ */
+export const INVESTIGATE_CI_TOOL_LINE =
+  '- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI'
+
 const EXPLORE_MODE_VARS: BasePromptVars = {
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
-- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI
+${INVESTIGATE_CI_TOOL_LINE}
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
+- apply_patch: Edit, add, delete, or move several files or hunks in one patch; validated as a whole, same approval rules
 ${SHARED_WEB_TOOLS}`,
   gather:
     'Use explore to read or search the codebase, then finish with a clear written answer in plain language.',
@@ -127,6 +137,7 @@ const DIRECT_READS_MODE_VARS: BasePromptVars = {
   tools: `- read_file: Read a file from the workspace
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
+- apply_patch: Edit, add, delete, or move several files or hunks in one patch; validated as a whole, same approval rules
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - semantic_search: Search by meaning only (native gortex/vera index)
@@ -144,12 +155,28 @@ ${SHARED_WEB_TOOLS}`,
 }
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt(EXPLORE_MODE_VARS)
+/** Explore-mode base prompt for turns that are not offered `investigate_ci`. */
+export const BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI = buildBasePrompt({
+  ...EXPLORE_MODE_VARS,
+  tools: EXPLORE_MODE_VARS.tools.replace(`${INVESTIGATE_CI_TOOL_LINE}\n`, ''),
+})
 export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt(DIRECT_READS_MODE_VARS)
 
 /** Vars for the explore-mode base prompt — ablation evals pin against these. */
 export const EXPLORE_BASE_PROMPT_VARS = EXPLORE_MODE_VARS
 /** Vars for the direct-reads base prompt — ablation evals pin against these. */
 export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
+
+// Appended only when the turn runs in the thread's own linked worktree and
+// preflight_worktree is offered (#2493). Linked worktrees start without ignored
+// dependencies, and preparation is deliberately opt-in
+// (docs/plans/project-worktree-preparation.md), so without this steering an
+// agent typechecks an unprepared tree and chases missing-module and
+// missing-Node-type errors as code defects.
+export const WORKTREE_PREPARATION_BLOCK = `
+
+Worktree preparation:
+This thread's linked worktree starts without the project checkout's ignored dependencies and setup outputs (for example node_modules or .venv). Before the first typecheck, test, lint, or build here, call preflight_worktree; if it is not ready, call prepare_worktree with its plan fingerprint rather than an ad-hoc install command. Until preparation succeeds, treat unresolved modules, missing runtime types (such as Cannot find name 'process' or 'node:test'), and the errors they cascade into as an unprepared environment, not code defects: do not edit code to silence them.`
 
 // Appended when the `browserToolsEnabled` setting is on. Describes the built-in
 // headless browser tools so the agent prefers accessibility snapshots over blind

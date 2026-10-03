@@ -3,6 +3,7 @@ import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
+import { isAnyDialogOpen } from './views/dialog-shell.ts'
 
 type KeyboardShortcutEvent = Pick<
   KeyboardEvent,
@@ -56,6 +57,16 @@ export function matchCommandPaletteShortcut(e: KeyboardShortcutEvent): boolean {
   return e.key === 'k' || e.key === 'K'
 }
 
+/**
+ * Cmd/Ctrl+Shift+A opens the Activity panel — which threads need you, which are
+ * working. Fires from the composer too: it is a place to look, not an edit.
+ */
+export function matchActivityPanelShortcut(e: KeyboardShortcutEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || !e.shiftKey) return false
+  return e.key === 'a' || e.key === 'A'
+}
+
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {
@@ -86,6 +97,9 @@ export function handlePanelShortcut(
 
 export function registerPanelKeyboardShortcuts(store: AppStore, api: ApiClient): void {
   document.addEventListener('keydown', (e) => {
+    // Dialog controls and native Escape/Enter behavior take precedence over
+    // shortcuts that belong to the workspace behind the dialog.
+    if (isAnyDialogOpen()) return
     // New thread fires even from the composer, so it's checked before the
     // typing-target guard that the panel chords skip on.
     if (matchNewThreadShortcut(e)) {

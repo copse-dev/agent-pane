@@ -32,6 +32,7 @@ import {
   resetRunDeadlinesForTest,
 } from './hooks/run-deadline.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { storageSet } from './storage/storage.ts'
 
 const PROJECT = 'proj-approval'
@@ -85,6 +86,31 @@ describe('requestApproval pluggable transport', () => {
     })
     assert.deepEqual(await requestUnderThread(req), { approved: true, remember: true })
     assert.deepEqual(seen, [req])
+  })
+
+  it('records phone approval attribution without a remembered policy grant', async () => {
+    setApprovalHandler(async () => ({
+      approved: true,
+      remember: false,
+      grantScope: 'once',
+      device: { id: 'device-id', label: 'My phone' },
+    }))
+    storageSet('activeProjectId', 'another-project')
+    await runWithThreadExecutionContext(
+      {
+        projectId: PROJECT,
+        threadId: THREAD,
+        projectRoot: auditRoot,
+        root: auditRoot,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => requestUnderThread(req),
+    )
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.equal(event?.actor, 'mobile-device')
+    assert.equal(event.source, 'mobile:device-id (My phone)')
+    assert.equal(event.remembered, false)
   })
 
   it('reverts to denying once the handler is cleared', async () => {

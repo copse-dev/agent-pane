@@ -1,23 +1,26 @@
 import { execFile } from 'node:child_process'
-import { existsSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
+  fetchClaudePlanUsageFromCredentials,
   getPlanUsageSnapshot,
   orderClaudeOAuthCredentials,
   parseCodexAuthJson,
   parseCursorSessionToken,
   parseHuggingFaceToken,
-  type ClaudeRefreshedToken,
+  type PlanProviderId,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
+import { acpPlanProvider } from '@shared/acp.ts'
+import { listEnabledAcpAgents } from './acp/acp-agent-registry.ts'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
-import { resolveApiKey } from './storage/settings.ts'
+import { hasApiKey, resolveApiKey } from './storage/settings.ts'
 import { AsyncTtlCache } from './async-ttl-cache.ts'
-import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -48,9 +51,7 @@ const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
  * it is honoured on every platform here: on macOS the Keychain candidate is
  * still preferred by `orderClaudeOAuthCredentials`, so respecting the override
  * costs a miss on a file that isn't there and gains the users who relocated
- * their config anyway. Reading the wrong path is not a harmless miss — a
- * write-back would create a credentials file the CLI never reads while its real
- * one keeps the superseded token.
+ * their config anyway.
  */
 export function claudeCredentialsPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
   const configDir = env['CLAUDE_CONFIG_DIR']?.trim()
@@ -97,114 +98,6 @@ export async function readClaudeKeychainCredentialsJson(): Promise<string | null
     return raw || null
   } catch {
     return null
-  }
-}
-
-/**
- * Merge refreshed tokens into the existing credential JSON, preserving every
- * other field (`scopes`, `subscriptionType`, …) exactly as Claude Code wrote
- * it. Returns `null` when the payload isn't the shape we expect, so we never
- * clobber an unfamiliar credential store.
- */
-export function updateClaudeOAuthJson(
-  rawJson: string | null,
-  refreshed: ClaudeRefreshedToken,
-): string | null {
-  if (!rawJson) return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawJson)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed)) return null
-  const oauth = parsed['claudeAiOauth']
-  if (!isRecord(oauth)) return null
-  oauth['accessToken'] = refreshed.accessToken
-  if (refreshed.refreshToken) oauth['refreshToken'] = refreshed.refreshToken
-  if (refreshed.expiresAt !== null) oauth['expiresAt'] = refreshed.expiresAt
-  return JSON.stringify(parsed)
-}
-
-/** The account (`-a`) on the Keychain item, needed to update it in place. */
-async function readClaudeKeychainAccount(): Promise<string | null> {
-  if (process.platform !== 'darwin') return null
-  try {
-    // Attributes only (no `-w`/`-g`), so the password never hits our buffer.
-    const attrs = await runCommand('security', [
-      'find-generic-password',
-      '-s',
-      CLAUDE_KEYCHAIN_SERVICE,
-    ])
-    const match = /"acct"<blob>="([^"]*)"/.exec(attrs)
-    return match?.[1] ?? null
-  } catch {
-    return null
-  }
-}
-
-/** Update the `claude /login` Keychain item in place with a refreshed payload. */
-export async function writeClaudeKeychainCredentialsJson(json: string): Promise<void> {
-  if (process.platform !== 'darwin') return
-  const account = (await readClaudeKeychainAccount()) ?? process.env['USER'] ?? ''
-  await runCommand('security', [
-    'add-generic-password',
-    '-U',
-    '-s',
-    CLAUDE_KEYCHAIN_SERVICE,
-    '-a',
-    account,
-    '-w',
-    json,
-  ])
-}
-
-/** Atomic, owner-only write so a concurrent reader never sees a half-written file. */
-function atomicWriteFile(path: string, data: string): void {
-  const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  writeFileSync(tmp, data, { mode: 0o600 })
-  renameSync(tmp, path)
-}
-
-/**
- * Persist a refreshed Claude token back to the store it came from, mirroring
- * what the `claude` CLI does on its own refresh so both stay in sync. Rotated
- * refresh tokens must be saved or the next refresh fails. Best-effort — any
- * failure (Keychain ACL prompt denied, read-only FS) is swallowed; the fresh
- * in-memory token still served the current fetch.
- */
-export async function persistRefreshedClaudeToken(
-  source: string | undefined,
-  refreshed: ClaudeRefreshedToken,
-  home = homedir(),
-  readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
-  writeKeychain: (json: string) => Promise<void> = writeClaudeKeychainCredentialsJson,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
-  try {
-    if (source === 'credentials.json') {
-      // Must resolve the same way the read did, or a `CLAUDE_CONFIG_DIR` user
-      // gets their rotated token written to a file the CLI never reads.
-      const path = claudeCredentialsPath(home, env)
-      const next = updateClaudeOAuthJson(await readTextFile(path), refreshed)
-      if (next) atomicWriteFile(path, next)
-      return
-    }
-    if (source === 'keychain') {
-      const next = updateClaudeOAuthJson(await readKeychain(), refreshed)
-      if (next) await writeKeychain(next)
-    }
-    // 'env' / unknown: nothing to persist (env is process-scoped).
-  } catch (err) {
-    // Non-fatal: the fresh token still served the current fetch. But log it —
-    // if the server rotated the refresh token and we failed to save it, the
-    // stored one is now stale and the next refresh will need a re-login, so
-    // this shouldn't pass unnoticed.
-    console.warn(
-      `[plan-usage] could not persist refreshed Claude token to the ${source ?? 'unknown'} store; ` +
-        'a rotated refresh token may be lost and require re-running `claude /login`:',
-      err instanceof Error ? err.message : err,
-    )
   }
 }
 
@@ -302,7 +195,46 @@ async function discoverCursorSessionToken(
   return undefined
 }
 
-/** Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files, and env. */
+const ALL_PLAN_PROVIDERS: ReadonlySet<PlanProviderId> = new Set([
+  'claude',
+  'codex',
+  'huggingface',
+  'cursor',
+])
+
+/**
+ * The plan providers the user has set up in Settings → General, the only ones
+ * whose sign-ins plan usage may read. Claude and Codex count once an enabled
+ * Claude Code or Codex agent is registered; Cursor once an enabled Cursor agent
+ * is registered or a Cursor key is saved; Hugging Face once a key is saved in
+ * Copse. An environment variable alone does not confirm a provider.
+ */
+export function confirmedPlanUsageProviders(
+  agents = listEnabledAcpAgents(),
+  hasStoredKey: (provider: string) => boolean = hasApiKey,
+): ReadonlySet<PlanProviderId> {
+  const confirmed = new Set<PlanProviderId>()
+  for (const agent of agents) {
+    const plan = acpPlanProvider(agent)
+    if (plan !== null) confirmed.add(plan)
+    if (agent.id === 'cursor') confirmed.add('cursor')
+  }
+  if (hasStoredKey('cursor')) confirmed.add('cursor')
+  if (hasStoredKey('huggingface')) confirmed.add('huggingface')
+  return confirmed
+}
+
+const NOT_CONFIRMED_REASON: Record<PlanProviderId, string> = {
+  claude: 'Set up Claude Code in Settings → General to show this plan’s usage.',
+  codex: 'Set up Codex in Settings → General to show this plan’s usage.',
+  huggingface: 'Save a Hugging Face key in Settings → General to show this plan’s usage.',
+  cursor: 'Set up Cursor in Settings → General to show this plan’s usage.',
+}
+
+/**
+ * Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files,
+ * and env. Only `providers` are looked up: nothing is read for the others.
+ */
 export async function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
@@ -310,38 +242,29 @@ export async function discoverPlanUsageCredentials(
   resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
   readCursorKeychain: () => Promise<string | null> = readCursorKeychainAccessToken,
   readCursorStateDb: (dbPath: string) => Promise<string | null> = readCursorAccessTokenFromStateDb,
+  providers: ReadonlySet<PlanProviderId> = ALL_PLAN_PROVIDERS,
 ): Promise<PlanUsageCredentials> {
-  const claudeCredentials = orderClaudeOAuthCredentials({
-    keychainJson: await readKeychain(),
-    credentialsJson: await readJsonFile(claudeCredentialsPath(home, env)),
-    envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
-  })
+  const claudeCredentials = providers.has('claude')
+    ? orderClaudeOAuthCredentials({
+        keychainJson: await readKeychain(),
+        credentialsJson: await readJsonFile(claudeCredentialsPath(home, env)),
+        envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
+      })
+    : []
 
-  const codexFile = await readJsonFile(join(home, '.codex', 'auth.json'))
+  const codexFile = providers.has('codex')
+    ? await readJsonFile(join(home, '.codex', 'auth.json'))
+    : null
   const parsedCodex = parseCodexAuthJson(codexFile)
 
   const credentials: PlanUsageCredentials = {
     // Keep the flat token list for back-compat; `claudeCredentials` carries the
-    // refresh tokens the fetch needs to self-heal an expired access token.
+    // expiry so a lapsed token reads as "waiting on Claude Code", not a sign-in.
     claudeOAuthTokens: claudeCredentials.map((c) => c.accessToken),
     claudeCredentials: claudeCredentials.map((c) => ({
       accessToken: c.accessToken,
-      refreshToken: c.refreshToken,
       expiresAt: c.expiresAt,
-      source: c.source,
     })),
-    // `env` is threaded through so the write-back resolves `CLAUDE_CONFIG_DIR`
-    // exactly as the read above did; the Keychain writer is named explicitly
-    // only because it sits between `home` and `env` in the parameter list.
-    onClaudeTokenRefreshed: (credential, refreshed) =>
-      persistRefreshedClaudeToken(
-        credential.source,
-        refreshed,
-        home,
-        readKeychain,
-        writeClaudeKeychainCredentialsJson,
-        env,
-      ),
   }
   if (parsedCodex) {
     credentials.codex = {
@@ -349,11 +272,39 @@ export async function discoverPlanUsageCredentials(
       accountId: parsedCodex.accountId,
     }
   }
-  const hf = await discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
-  if (hf) credentials.huggingfaceToken = hf
-  const cursor = await discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
-  if (cursor) credentials.cursorSessionToken = cursor
+  if (providers.has('huggingface')) {
+    const hf = await discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
+    if (hf) credentials.huggingfaceToken = hf
+  }
+  if (providers.has('cursor')) {
+    const cursor = await discoverCursorSessionToken(
+      home,
+      env,
+      readCursorKeychain,
+      readCursorStateDb,
+    )
+    if (cursor) credentials.cursorSessionToken = cursor
+  }
   return credentials
+}
+
+/** Replace each unconfirmed provider's row with a pointer to Settings → General. */
+export function markUnconfirmedPlanProviders(
+  snapshot: PlanUsageSnapshot,
+  confirmed: ReadonlySet<PlanProviderId>,
+): PlanUsageSnapshot {
+  return {
+    ...snapshot,
+    providers: snapshot.providers.map((result) =>
+      confirmed.has(result.provider)
+        ? result
+        : {
+            status: 'unavailable',
+            provider: result.provider,
+            reason: NOT_CONFIRMED_REASON[result.provider],
+          },
+    ),
+  }
 }
 
 function mockSnapshot(): PlanUsageSnapshot {
@@ -542,15 +493,69 @@ function mockAuthErrorSnapshot(): PlanUsageSnapshot {
   }
 }
 
+/** Codex weekly window spent while the separate ChatPass pool still covers Astra. */
+function mockCodexChatpassSnapshot(): PlanUsageSnapshot {
+  const checkedAt = new Date().toISOString()
+  const resetsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+  return {
+    checkedAt,
+    providers: [
+      {
+        status: 'ok',
+        provider: 'codex',
+        usage: {
+          provider: 'codex',
+          plan: 'pro',
+          windows: [
+            { id: 'primary', label: 'Weekly', usedPercent: 100, resetsAt },
+            { id: 'chatpass_0', label: 'ChatPass Weekly', usedPercent: 0, resetsAt },
+          ],
+          modelAvailability: { 'gpt-6-astra': true },
+          checkedAt,
+        },
+      },
+    ],
+  }
+}
+
+/**
+ * A lapsed Claude access token, run through the real package path (it returns
+ * before any network call) so the fixture shows the copy users actually see.
+ */
+async function mockClaudeTokenExpiredSnapshot(): Promise<PlanUsageSnapshot> {
+  const claude = await fetchClaudePlanUsageFromCredentials([
+    { accessToken: 'sk-ant-oat01-mock', expiresAt: 0 },
+  ])
+  return { checkedAt: new Date().toISOString(), providers: [claude] }
+}
+
 async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
   try {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
+    if (process.env[MOCK_ENV] === 'codex-chatpass') return mockCodexChatpassSnapshot()
+    if (process.env[MOCK_ENV] === 'claude-token-expired')
+      return await mockClaudeTokenExpiredSnapshot()
+    // The mock's plans, filtered by the real Settings → General confirmation.
+    if (process.env[MOCK_ENV] === 'confirmed-only')
+      return markUnconfirmedPlanProviders(mockSnapshot(), confirmedPlanUsageProviders())
 
-    const credentials = await discoverPlanUsageCredentials()
-    return await getPlanUsageSnapshot(credentials, {
+    // Read only the sign-ins of providers set up in Settings → General. With
+    // none, nothing is read and every row says where to set one up.
+    const confirmed = confirmedPlanUsageProviders()
+    const credentials = await discoverPlanUsageCredentials(
+      homedir(),
+      process.env,
+      readClaudeKeychainCredentialsJson,
+      () => resolveApiKey('huggingface'),
+      readCursorKeychainAccessToken,
+      readCursorAccessTokenFromStateDb,
+      confirmed,
+    )
+    const snapshot = await getPlanUsageSnapshot(credentials, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.planUsage),
     })
+    return markUnconfirmedPlanProviders(snapshot, confirmed)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const checkedAt = new Date().toISOString()
@@ -579,7 +584,10 @@ export function setPlanUsageSnapshotFetcherForTest(
 export async function loadPlanUsageSnapshot(options?: {
   force?: boolean
 }): Promise<PlanUsageSnapshot> {
-  return planUsageCache.get('plan-usage', () => fetchPlanUsageSnapshot(), {
+  // Keyed by what is set up, so confirming or removing a provider fetches fresh
+  // instead of serving the previous snapshot for up to five minutes.
+  const key = `plan-usage:${[...confirmedPlanUsageProviders()].sort().join(',')}`
+  return planUsageCache.get(key, () => fetchPlanUsageSnapshot(), {
     force: options?.force === true,
   })
 }

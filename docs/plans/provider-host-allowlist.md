@@ -255,7 +255,7 @@ Concretely:
 | IPC (settings handlers)                                | Thread the approval prompt through the `saveExtraProvider` IPC; expose approved-host add/remove.                                                                       |
 | Tests                                                  | `provider-host-policy.test.ts`; extend `create-provider.test.ts`, `validate-api-key`/`provider-models` tests, and `extra-providers-store.test.ts` for the gated paths. |
 
-## 5. Open questions
+## 5. Decisions and open questions
 
 1. **One-time vs always-only approval.** The web policy offers both "always" and
    a one-shot grant. For a custom provider you intend to keep using, a one-shot
@@ -269,18 +269,19 @@ Concretely:
 3. **IP pinning / DNS rebinding** — deliberately out of scope (see threat
    model); revisit if provider egress ever needs to match the browser's
    resolved-IP guarantees.
-4. **A machine on the user's own network cannot be approved at all**, and the
-   shipped code makes that stronger than this document states.
+4. **Decision: ordinary provider approval does not include LAN machines.** A machine on the
+   user's own network cannot be approved at all, and the shipped code makes that stronger than
+   this document states.
    `assertLowRiskProviderHost` runs _before_ the approved set is consulted
    (`provider-host-policy.ts:81`), so a private IP or `.local` name throws even
    when the user has explicitly approved it — there is no path to serving models
    from the other machine on your desk. That is the intended reading of the
    threat model, but it currently looks like an oversight rather than a position,
    which invites someone to "fix" it locally.
-   [#1572](https://github.com/copse-dev/agent-pane/issues/1572) owns the decision:
-   either record the refusal here as deliberate, or design an explicit per-peer
-   pairing that is a **separate** concept from this allow-list, so the blanket
-   private-address rejection stays the default for ordinary custom providers. The
+   The refusal is deliberate: keep the blanket private-address rejection as the default for
+   ordinary custom providers. Any future support requires explicit per-peer pairing as a
+   **separate** concept from this allow-list, with authenticated identity, scoped credentials,
+   revocation, and full-context data-flow disclosure. The
    trust model it would sit inside is
    [`execution-runtime-security.md`](execution-runtime-security.md). Evidence:
    [`unowned-capability-gaps.md`](unowned-capability-gaps.md) G-01.

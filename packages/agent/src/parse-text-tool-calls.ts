@@ -76,6 +76,8 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   write_file: 'write_file',
   strreplace: 'str_replace',
   str_replace: 'str_replace',
+  applypatch: 'apply_patch',
+  apply_patch: 'apply_patch',
   gitstatus: 'git_status',
   git_status: 'git_status',
   gitdiff: 'git_diff',

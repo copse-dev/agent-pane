@@ -21,6 +21,7 @@ import { extractContextPathsFromText, type CursorRuleContext } from './skills/cu
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
+  BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI,
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
   EXTERNAL_CONTENT_BLOCK,
@@ -29,12 +30,17 @@ import {
   OPUS_5_TONE_REMINDER,
   PII_REDACTION_BLOCK,
   READ_TERMINAL_BLOCK,
+  WORKTREE_PREPARATION_BLOCK,
 } from './agent-prompt.ts'
 import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
+import {
+  INVESTIGATE_CI_TOOL_NAME,
+  isInvestigateCiOffered,
+} from './github/ci-investigator-availability.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
   READ_TERMINAL_ENABLED_SETTING,
@@ -78,6 +84,19 @@ async function buildRepositoryContext(): Promise<string> {
     ? ' (the working directory is a subdirectory of this repository)'
     : ''
   return `\nGit repository root: ${repositoryRoot}${subdirNote}`
+}
+
+/**
+ * Steer a linked-worktree turn to check dependency readiness before validating
+ * (#2493). Shared-checkout turns keep the user's own install, and a turn whose
+ * tool list omits preflight_worktree could not follow the steering.
+ */
+function worktreePreparationBlock(availableToolNames?: readonly string[]): string {
+  if (getThreadExecutionContext()?.checkoutMode !== 'worktree') return ''
+  if (availableToolNames !== undefined && !availableToolNames.includes('preflight_worktree')) {
+    return ''
+  }
+  return WORKTREE_PREPARATION_BLOCK
 }
 
 export interface BuildSystemPromptOptions {
@@ -130,7 +149,17 @@ export async function buildSystemPromptWithMetadata(
   )
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
-  const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
+  // Name investigate_ci only when this turn can call it: the shared predicate
+  // (plugin on, gh usable, subagents on, not read-only), and — on a real turn —
+  // the exact offered tool list parentTools built for it.
+  const investigateCiOffered =
+    isInvestigateCiOffered(subagentsEnabled) &&
+    (opts.availableToolNames?.includes(INVESTIGATE_CI_TOOL_NAME) ?? true)
+  const basePrompt = !subagentsEnabled
+    ? BASE_SYSTEM_PROMPT_DIRECT_READS
+    : investigateCiOffered
+      ? BASE_SYSTEM_PROMPT
+      : BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
   const browserToolsEnabled = getSetting<boolean>(
     BROWSER_TOOLS_ENABLED_SETTING,
@@ -157,6 +186,7 @@ export async function buildSystemPromptWithMetadata(
       // the main repo here makes the agent `cd` outside the grant and hit EPERM.
       .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)')
       .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
+    worktreePreparationBlock(opts.availableToolNames) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     // Workspace-authored instructions sit here — above every Copse-authored
     // steering block instead of terminal, so workspace text is never the

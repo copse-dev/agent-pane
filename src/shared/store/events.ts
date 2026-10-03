@@ -2,22 +2,39 @@
 import type { ThreadStatus, ToolCall } from '@shared/types'
 import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 
+export interface CodeBlockRunCompletion {
+  /** Automatically start a follow-up turn after the background command succeeds. */
+  type: 'continue'
+  /** The prompt shown in the transcript and sent to the model. */
+  prompt: string
+  /** Stable attribution for the machine-originated follow-up. */
+  operationId: string
+  /** Turn tree that authorized this continuation. */
+  turnTreeId: string
+}
+
 export interface CodeBlockRunRequest {
   id: string
   command: string
   projectId: string
   threadId: string
+  completion?: CodeBlockRunCompletion
 }
 
 export interface CodeBlockRunResult {
   id: string
+  projectId: string
   threadId: string
   exitCode: number | null
+  /** The terminal's text alone, for showing under the command's code block. */
+  output: string
+  /** The attachment the agent receives: command, exit code and output. */
   shell: {
     tabId: string
     label: string
     content: string
   }
+  completion?: CodeBlockRunCompletion
 }
 
 export interface StoreEvents {
@@ -34,6 +51,8 @@ export interface StoreEvents {
   thread_status_changed: [threadId: string, status: ThreadStatus]
   agent_activity: [threadId: string, label: string | null]
   threads_changed: []
+  reviewer_input_open: [requestId: string]
+  reviewer_input_jump: [messageId: string, requestId: string]
   // Draft composer text changed for a thread. Kept separate from
   // `threads_changed` so high-cost listeners (e.g. the conversation rebuild)
   // are not re-run on every keystroke while the user is typing.

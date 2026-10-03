@@ -2,21 +2,37 @@ const SHRINKING_FOOTER_ITEMS = '.footer-model-host, .footer-branch-host, .footer
 
 function footerNaturalWidth(footer: HTMLElement): number {
   const items = footer.querySelectorAll<HTMLElement>(SHRINKING_FOOTER_ITEMS)
-  const previousShrink = [...items].map((el) => el.style.flexShrink)
+  const previousFlex = [...items].map((el) => el.style.flex)
   const usage = footer.querySelector<HTMLElement>('.footer-usage')
   const previousUsageDisplay = usage?.style.display
+  const previousUsageDisplayPriority = usage?.style.getPropertyPriority('display')
 
+  // The pickers lay out from a zero basis (input-bar.css), so measure each at
+  // its own width rather than at whatever share of the room it was given.
   items.forEach((el) => {
-    el.style.flexShrink = '0'
+    el.style.flex = '0 0 auto'
   })
-  if (usage) usage.style.display = 'inline'
+  // `updateFooter` also sets the native `hidden` attribute while usage is
+  // tucked into the context wheel. The global `[hidden] { display: none
+  // !important }` backstop outranks an ordinary inline display declaration,
+  // which made a compact footer measure without usage and expand again. That
+  // expansion unhides usage, overflows, and repeats forever. An inline
+  // important declaration wins for this synchronous measurement without
+  // mutating `hidden` (and therefore without feeding its observers).
+  if (usage) usage.style.setProperty('display', 'inline', 'important')
 
   const width = footer.scrollWidth
 
   items.forEach((el, index) => {
-    el.style.flexShrink = previousShrink[index] ?? ''
+    el.style.flex = previousFlex[index] ?? ''
   })
-  if (usage) usage.style.display = previousUsageDisplay ?? ''
+  if (usage) {
+    if (previousUsageDisplay) {
+      usage.style.setProperty('display', previousUsageDisplay, previousUsageDisplayPriority)
+    } else {
+      usage.style.removeProperty('display')
+    }
+  }
   return width
 }
 
@@ -49,8 +65,30 @@ export function bindFooterCompactLayout(
 
   const observer = new ResizeObserver(sync)
   observer.observe(footer)
+  // Watch the controls too: a control that appears, disappears or changes size
+  // (a font or UI-scale change) moves the natural width.
+  // Toggling `is-compact` does resize the usage group, but the re-run measures
+  // the same natural width (usage forced visible), so it settles after one pass.
+  for (const control of footer.children) observer.observe(control)
   const inputBar = footer.closest('#input-bar')
   if (inputBar) observer.observe(inputBar)
+  // No box resizes when a label's text changes after mount (the model name, the
+  // branch loaded asynchronously): the footer is sized by the composer, and a
+  // host already squeezed to its share keeps that width while its label clips.
+  // Only the DOM change itself says the natural width moved, so re-measure on
+  // any text or `hidden` change under the footer. This covers every writer
+  // without each one having to know about the footer. `sync` coalesces bursts
+  // into one measurement per frame. Measuring writes only inline `style`, and
+  // compacting only the footer's `class`; neither is watched, so a
+  // measurement cannot re-trigger this observer.
+  const mutations = new MutationObserver(sync)
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['hidden'],
+  })
   window.addEventListener('resize', sync, { passive: true })
   sync()
 
@@ -59,6 +97,7 @@ export function bindFooterCompactLayout(
     destroy: (): void => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      mutations.disconnect()
       window.removeEventListener('resize', sync)
     },
   }

@@ -1,19 +1,27 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, Thread } from '@shared/types'
 import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import {
+  threadExecutionContextStorage,
+  type ThreadCheckoutMode,
+  type ThreadExecutionContext,
+} from './thread-execution-context-store.ts'
+import {
+  inspectThreadWorktreeAttachment,
+  reattachThreadWorktree,
   restoreRetiredThreadWorktree,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
+  type ValidateWorktreeInput,
   type ValidatedThreadWorktree,
   type ValidatedThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import type { ThreadWorktreeAttachment, ThreadWorktreeReattachResult } from '@shared/types/git.ts'
 
 async function syncAdoptedWorktreeBranch(
   projectId: string,
@@ -23,17 +31,7 @@ async function syncAdoptedWorktreeBranch(
   await updateMeta(projectId, threadId, { worktree, gitBranch: worktree.branch })
 }
 
-export type ThreadCheckoutMode = 'shared' | 'worktree'
-
-/** Trusted main-process identity and filesystem root for one agent turn. */
-export interface ThreadExecutionContext {
-  readonly projectId: string
-  readonly threadId: string
-  readonly projectRoot: string
-  readonly root: string
-  readonly checkoutMode: ThreadCheckoutMode
-  readonly branch: string | null
-}
+export type { ThreadCheckoutMode, ThreadExecutionContext }
 
 export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 'threadId'>
 
@@ -46,6 +44,7 @@ export interface ThreadExecutionContextDependencies {
     readonly id: string
     readonly gitBranch?: string
     readonly worktree?: ThreadWorktree
+    readonly automation?: NonNullable<Thread['automation']>
   } | null>
   validateWorktree?: (input: {
     projectId: string
@@ -81,7 +80,7 @@ export interface ThreadExecutionContextDependencies {
   startWorktreeIndexing?: (root: string) => void
 }
 
-const storage = new AsyncLocalStorage<ThreadExecutionContext>()
+const storage = threadExecutionContextStorage
 
 const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
@@ -141,8 +140,8 @@ export function resolveThreadExecutionContext(
 
 /**
  * Resolve a terminal root through the ordinary strict path first. A detached
- * checkout gets one narrower fallback so the user can repair a rebase or
- * cherry-pick that Git left in progress.
+ * checkout gets one narrower fallback so the user can repair a rebase,
+ * cherry-pick, or bisect that Git left in progress.
  */
 export async function resolveThreadTerminalExecutionContext(
   projectId: string,
@@ -192,7 +191,51 @@ export async function resolveThreadTerminalExecutionContext(
     root: worktree.root,
     checkoutMode: 'worktree',
     branch: null,
+    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
   })
+}
+
+/**
+ * The trusted input for inspecting or repairing a thread's own checkout. Only
+ * an active isolated worktree qualifies: a retired one is recreated on its
+ * branch by `restoreRetiredThreadWorktree`, and a shared checkout is the
+ * user's project directory, which Copse never reattaches on their behalf.
+ */
+async function activeThreadWorktreeInput(
+  projectId: string,
+  threadId: string,
+): Promise<ValidateWorktreeInput | null> {
+  const projectRoot = getProjectRoot(projectId)
+  if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
+  const threadMeta = await getThreadMeta(projectId, threadId)
+  if (threadMeta == null) {
+    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
+  }
+  if (threadMeta.id !== threadId) {
+    throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
+  }
+  const worktree = threadMeta.worktree
+  if (!worktree || worktree.retiredAt !== undefined || worktree.pullRequestUrl) return null
+  return { projectId, threadId, projectRoot, worktree }
+}
+
+/** Whether the thread's isolated checkout is detached; shared and retired checkouts report attached. */
+export async function inspectThreadCheckoutAttachment(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadWorktreeAttachment> {
+  const input = await activeThreadWorktreeInput(projectId, threadId)
+  return input ? inspectThreadWorktreeAttachment(input) : { state: 'attached' }
+}
+
+/** Reattach the thread's detached isolated checkout to its recorded branch. */
+export async function reattachThreadCheckout(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadWorktreeReattachResult> {
+  const input = await activeThreadWorktreeInput(projectId, threadId)
+  if (!input) throw new Error('Only an active thread worktree can be reattached')
+  return reattachThreadWorktree(input)
 }
 
 async function resolveThreadExecutionContextUncached(
@@ -253,6 +296,7 @@ async function resolveThreadExecutionContextUncached(
       root: worktree.root,
       checkoutMode: 'worktree',
       branch: worktree.branch,
+      ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
     })
   }
 
@@ -263,6 +307,7 @@ async function resolveThreadExecutionContextUncached(
     root: projectRoot,
     checkoutMode: 'shared',
     branch: threadMeta.gitBranch ?? null,
+    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
   })
 }
 

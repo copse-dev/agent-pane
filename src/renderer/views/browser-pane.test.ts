@@ -2,9 +2,10 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
+import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
@@ -678,7 +679,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -709,9 +711,8 @@ describe('browser pane requested URLs', () => {
       elsewhere.remove()
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -728,7 +729,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -737,7 +739,12 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const store = createStore({
+      activeProjectId: 'background-project',
+      activeThreadId: 'background-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
@@ -782,9 +789,59 @@ describe('browser pane requested URLs', () => {
       if (getUrlDescriptor) Object.defineProperty(HTMLElement.prototype, 'getURL', getUrlDescriptor)
       else Reflect.deleteProperty(HTMLElement.prototype, 'getURL')
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('defers a background thread canvas until that thread is selected', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Background Dashboard',
+        owner: { projectId: 'project-1', threadId: 'background-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Background</h1>',
+      })
+
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      switchThread(store, 'background-thread')
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Background Dashboard',
+      )
+      assert.ok(viewer.querySelector('.browser-tab-panel.is-active .browser-webview'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -795,7 +852,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -804,7 +862,11 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const store = createStore({
+      activeThreadId: 'thread-a',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
@@ -851,6 +913,8 @@ describe('browser pane requested URLs', () => {
         body: '<!doctype html><h1>other thread</h1>',
         threadId: 'thread-b',
       })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforeOtherThread)
+      switchThread(store, 'thread-b')
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforeOtherThread + 1)
 
       // A differently titled artefact is a different thing and gets its own tab.
@@ -864,9 +928,8 @@ describe('browser pane requested URLs', () => {
       assert.ok(labels().includes('Pricing Page'))
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -877,7 +940,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -945,9 +1009,8 @@ describe('browser pane requested URLs', () => {
       )
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -958,7 +1021,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -971,6 +1035,7 @@ describe('browser pane requested URLs', () => {
     // but the tab that used to render the artefact died with the last session.
     const store = createStore({
       activeProjectId: 'project-1',
+      activeThreadId: 'thread-a',
       filesPaneOpen: false,
       rightPanelMode: 'explorer',
     })
@@ -1026,10 +1091,66 @@ describe('browser pane requested URLs', () => {
       assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
+    }
+  })
+
+  it('keeps Download canvas enabled after a canvas tab moves to a pop-out', async () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const artefact = {
+      title: 'Sales dashboard',
+      mimeType: 'text/html',
+      body: '<!doctype html><h1>Sales</h1>',
+    }
+    const makeApi = (): ReturnType<typeof createPendingApi> =>
+      createPendingApi({
+        'browser.onOpenTab': (): (() => void) => (): void => {},
+        'browser.onShareText': (): (() => void) => (): void => {},
+        'browser.onShareImage': (): (() => void) => (): void => {},
+        'panes.popout': async (): Promise<void> => {},
+      })
+
+    const source = mountBrowserHosts()
+    const sourceStore = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+    const unmountSource = mountBrowserPane(source.list, source.viewer, sourceStore, makeApi())
+    let unmountTarget: (() => void) | undefined
+    try {
+      openCanvasArtefact(sourceStore, artefact)
+      const seed = capturePopoutSeed('browser', sourceStore)
+      unmountSource()
+
+      const target = mountBrowserHosts()
+      const targetStore = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+      unmountTarget = mountBrowserPane(target.list, target.viewer, targetStore, makeApi())
+      await applyPopoutSeed('browser', seed, targetStore)
+
+      const panel = target.viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(panel, 'the seeded canvas tab is active')
+      const item = [...panel.querySelectorAll<HTMLButtonElement>('.browser-menu-item')].find(
+        (candidate) => candidate.textContent === 'Download canvas',
+      )
+      assert.ok(item)
+      assert.equal(item.disabled, false, 'the pop-out keeps the artefact it needs to export')
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmountTarget?.()
     }
   })
 
@@ -1039,7 +1160,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -1053,6 +1175,7 @@ describe('browser pane requested URLs', () => {
     const sharedPageIds: number[] = []
     const sharedScreenshotIds: number[] = []
     const exportedPdfIds: number[] = []
+    const exportedArtefacts: { title: string; mimeType: string; body: string }[] = []
     const attachedText: BrowserTextShare[] = []
     const attachedImages: BrowserImageShare[] = []
     let shareTextHandler: ((share: BrowserTextShare) => void) | undefined
@@ -1069,6 +1192,14 @@ describe('browser pane requested URLs', () => {
       'browser.exportPdf': async (id: number): Promise<string | null> => {
         exportedPdfIds.push(id)
         // Cancelled export: the pane must not toast a path it never wrote.
+        return null
+      },
+      'browser.exportArtefact': async (artefact: {
+        title: string
+        mimeType: string
+        body: string
+      }): Promise<string | null> => {
+        exportedArtefacts.push(artefact)
         return null
       },
       'browser.onShareText': (handler: (share: BrowserTextShare) => void): (() => void) => {
@@ -1126,17 +1257,25 @@ describe('browser pane requested URLs', () => {
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
       const shareTextItem = items[0]
       const shareScreenshotItem = items[1]
-      const exportPdfItem = items[2]
-      const openExternalItem = items[3]
-      const inspectorItem = items[4]
+      const downloadCanvasItem = items[2]
+      const exportPdfItem = items[3]
+      const openExternalItem = items[4]
+      const inspectorItem = items[5]
       assert.ok(
-        shareTextItem && shareScreenshotItem && exportPdfItem && openExternalItem && inspectorItem,
+        shareTextItem &&
+          shareScreenshotItem &&
+          downloadCanvasItem &&
+          exportPdfItem &&
+          openExternalItem &&
+          inspectorItem,
       )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(downloadCanvasItem.textContent, 'Download canvas')
       assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)
       assert.equal(shareScreenshotItem.disabled, false)
+      assert.equal(downloadCanvasItem.disabled, true, 'a regular page cannot download a canvas')
       assert.equal(exportPdfItem.disabled, false, 'a live guest enables PDF export')
       assert.equal(openExternalItem.disabled, false, 'a real page enables open-in-default-browser')
 
@@ -1175,6 +1314,31 @@ describe('browser pane requested URLs', () => {
       assert.deepEqual(opened, ['https://example.com/page'])
       assert.ok(menu.hasAttribute('hidden'), 'selecting an item closes the menu')
 
+      openCanvasArtefact(store, {
+        title: 'Sales dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><style>body{color:red}</style><h1>Sales</h1>',
+      })
+      const canvasPanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(canvasPanel, 'canvas artefact should open its Browser tab')
+      const canvasMenuBtn = canvasPanel.querySelector<HTMLButtonElement>('.browser-menu-btn')
+      const canvasMenu = canvasPanel.querySelector<HTMLElement>('.browser-menu')
+      assert.ok(canvasMenuBtn && canvasMenu)
+      canvasMenuBtn.click()
+      const canvasDownloadItem = [
+        ...canvasMenu.querySelectorAll<HTMLButtonElement>('.browser-menu-item'),
+      ].find((item) => item.textContent === 'Download canvas')
+      assert.ok(canvasDownloadItem)
+      assert.equal(canvasDownloadItem.disabled, false, 'an HTML canvas enables download')
+      canvasDownloadItem.click()
+      assert.deepEqual(exportedArtefacts, [
+        {
+          title: 'Sales dashboard',
+          mimeType: 'text/html',
+          body: '<!doctype html><style>body{color:red}</style><h1>Sales</h1>',
+        },
+      ])
+
       menuBtn.click()
       webview.dispatchEvent(new Event('focus'))
       assert.ok(menu.hasAttribute('hidden'), 'focusing the guest page dismisses the menu')
@@ -1184,9 +1348,8 @@ describe('browser pane requested URLs', () => {
       assert.equal(devToolsOpens, 1, 'inspector item opens the guest devtools')
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unregisterAttachments()
       unmount()
     }

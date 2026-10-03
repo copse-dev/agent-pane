@@ -61,10 +61,19 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('settings dialog (native <dialog>)', () => {
   let dialog: HTMLDialogElement
   let spy: { showModalCalls: number }
+  let mobileManageCalls: number
 
   beforeEach(() => {
     document.body.innerHTML = ''
-    mountSettingsDialog(createStore(), stubApi())
+    mobileManageCalls = 0
+    mountSettingsDialog(
+      createStore(),
+      createPendingApi({
+        'mobile.manage': async () => {
+          mobileManageCalls += 1
+        },
+      }),
+    )
     dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     spy = shimModal(dialog)
     // openSettingsDialog dispatches 'settings-open' to kick off an async data
@@ -94,6 +103,16 @@ describe('settings dialog (native <dialog>)', () => {
     openSettingsDialog()
     assert.equal(spy.showModalCalls, 1)
     assert.equal(isSettingsDialogOpen(), true)
+  })
+
+  it('moves Mobile Companion management into Experimental settings', async () => {
+    openSettingsDialog('experimental')
+    const button = qsRequired<HTMLButtonElement>(dialog, '#mobile-companion-manage')
+    assert.match(button.textContent, /Set up or manage/)
+    button.click()
+    await Promise.resolve()
+    assert.equal(mobileManageCalls, 1)
+    assert.equal(isSettingsDialogOpen(), false)
   })
 
   it('tells the user auto-approval only applies while the project sandbox is running', () => {

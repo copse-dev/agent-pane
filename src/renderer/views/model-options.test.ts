@@ -24,6 +24,7 @@ interface MockOpts {
   openRouterModelSetting?: string
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
+  blockedModelMakers?: string[]
   acpAgents?: AcpAgentConfig[]
   pluginModels?: Array<{ id: string; label: string; group?: string }>
   pluginEnabled?: boolean
@@ -69,6 +70,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
           if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
           if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
           if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
+          if (key === 'blockedModelMakers') return opts.blockedModelMakers ?? []
           if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
           return null
         },
@@ -413,6 +415,58 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(grok43Routes.every((route) => route.label === 'Grok 4.3'))
   })
 
+  it('blocks xAI across OpenRouter and named agent models while preserving z-ai', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true, cursor: true },
+        blockedModelMakers: ['xai'],
+        openRouterModels: [
+          { id: 'x-ai/grok-4.5', name: 'Grok 4.5' },
+          { id: 'z-ai/glm-5.3', name: 'GLM 5.3' },
+        ],
+        cursorCloudModels: [
+          { id: 'grok-4.5', label: 'Grok 4.5' },
+          { id: 'composer-2', label: 'Composer 2' },
+        ],
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [
+              { value: 'grok-4.5', label: 'Grok 4.5' },
+              { value: 'composer-2', label: 'Composer 2' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+    assert.ok(!options.some((option) => option.value.includes('grok')))
+    assert.ok(options.some((option) => option.value === 'openrouter:z-ai/glm-5.3'))
+    assert.ok(options.some((option) => option.value === 'remote-agent:cursor#composer-2'))
+    assert.ok(options.some((option) => option.value === 'acp:cursor#composer-2'))
+  })
+
+  it('keeps a selected blocked model visible only as a disabled explanation', async () => {
+    const selected = 'openrouter:x-ai/grok-4.5'
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        blockedModelMakers: ['xai'],
+        openRouterModels: [{ id: 'x-ai/grok-4.5', name: 'Grok 4.5' }],
+      }),
+      selected,
+    )
+    assert.equal(options.filter((option) => option.value === selected).length, 1)
+    assert.equal(options.find((option) => option.value === selected)?.disabled, true)
+    assert.match(
+      options.find((option) => option.value === selected)?.label ?? '',
+      /blocked in Settings/,
+    )
+  })
+
   it('normalises raw GPT model ids advertised by an ACP agent', async () => {
     const options = await fetchModelOptions(
       mockApi({
@@ -486,6 +540,19 @@ describe('fetchModelOptions visibility', () => {
         `Claude Opus 5 (1M context)${intellectSuffix('claude-opus-5')}`,
         `Claude Sonnet 5${intellectSuffix('claude-sonnet-5')}`,
       ],
+    )
+  })
+
+  it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 cloud options', async () => {
+    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
+    const cloud = options.filter((o) => o.group === 'Cloud models')
+    const values = cloud.map((o) => o.value)
+    assert.ok(values.includes('claude-sonnet-5-5'))
+    assert.ok(values.indexOf('claude-sonnet-5-5') < values.indexOf('claude-sonnet-5'))
+    assert.ok(values.indexOf('claude-sonnet-5') < values.indexOf('claude-sonnet-4-6'))
+    assert.match(
+      cloud.find((o) => o.value === 'claude-sonnet-5-5')?.label ?? '',
+      /^Claude Sonnet 5\.5\b/,
     )
   })
 
@@ -584,6 +651,14 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(current)
     assert.equal(current.group, 'Cursor Cloud Agent')
     assert.match(current.label, /no valid key/)
+  })
+
+  it('labels a selected dynamic rule by its purpose, not as a missing key', async () => {
+    const options = await fetchModelOptions(mockApi(), 'auto:balanced')
+    const current = options.find((o) => o.value === 'auto:balanced')
+    assert.ok(current)
+    assert.equal(current.label, 'Balanced')
+    assert.doesNotMatch(current.label, /no key/)
   })
 
   it('names a selected cloud model whose provider has no key, not its raw id', async () => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import {
   setSeededSimulatorDesktopForTests,
   SimulatorDesktopService,
@@ -20,6 +20,7 @@ const OWNER: SimulatorDesktopOwner = {
 }
 
 afterEach(() => {
+  mock.restoreAll()
   setSeededSimulatorDesktopForTests([], null)
 })
 
@@ -53,6 +54,26 @@ describe('Simulator desktop device discovery', () => {
         runtime: 'iOS 26.5',
       },
     ])
+  })
+
+  it('cancels agent input before discovery or compilation and rejects a stopped simulator', async () => {
+    const service = new SimulatorDesktopService()
+    const list = mock.method(service, 'listDevices', async (signal?: AbortSignal) => {
+      assert.equal(signal, activeSignal)
+      return []
+    })
+    const activeSignal = new AbortController().signal
+    const cancelled = AbortSignal.abort(new Error('cancelled input'))
+    await assert.rejects(
+      service.agentInput(DEVICE.udid, { type: 'tap', x: 0.5, y: 0.5 }, cancelled),
+      /cancelled input/,
+    )
+    assert.equal(list.mock.callCount(), 0)
+    await assert.rejects(
+      service.agentInput(DEVICE.udid, { type: 'button-tap', name: 'home' }, activeSignal),
+      /no longer booted/,
+    )
+    assert.equal(list.mock.callCount(), 1)
   })
 
   it('allows only one live capture process per Simulator', async () => {

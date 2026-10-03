@@ -1,7 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -68,6 +78,63 @@ describe('ci.yml workflow invariants', () => {
     const next = rest.search(/^ {2}[a-z][a-z0-9-]*:$/m)
     return next >= 0 ? rest.slice(0, next) : rest
   }
+
+  function shardSpecs(mode: 'full' | 'subset', shard: number, total: number, specs = ''): string[] {
+    const job = jobBlock('e2e')
+    const start = job.indexOf('          if [ "$PLAN_MODE" = "full" ]; then')
+    const end = job.indexOf('          # `timeout`', start)
+    assert.ok(start >= 0 && end > start, 'expected the real shard-selection shell')
+    const script = job.slice(start, end).replaceAll('${{ matrix.shard }}', String(shard))
+    const result = spawnSync(
+      'bash',
+      ['-eu', '-c', `${script}\nprintf '\nSELECTED:%s\n' "$SPEC_ARGS"`],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, PLAN_MODE: mode, PLAN_SPECS: specs, SHARD_TOTAL: String(total) },
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const selected = result.stdout.match(/^SELECTED:(.*)$/m)?.[1]?.trim()
+    if (!selected) return []
+    const args = selected.split(/\s+/)
+    assert.ok(args.every((arg, index) => index % 2 === 1 || arg === '--spec'))
+    return args.filter((_arg, index) => index % 2 === 1)
+  }
+
+  it('spreads the full eligible suite without losing coverage or clustering explainer specs', () => {
+    const listed = spawnSync(process.execPath, ['scripts/test-oracle.mts', '--list-ci-specs'], {
+      encoding: 'utf8',
+    })
+    assert.equal(listed.status, 0, listed.stderr)
+    const expected = listed.stdout.trim().split('\n')
+    assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
+    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
+    assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
+    const sizes = buckets.map((bucket) => bucket.length)
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1)
+    const family = ['thread-explainer-drawing', 'thread-explainer-scenes', 'thread-explainer']
+    const owners = family.map((name) =>
+      buckets.findIndex((bucket) => bucket.includes(`tests/e2e/${name}.e2e.ts`)),
+    )
+    assert.equal(
+      new Set(owners).size,
+      family.length,
+      'long animation cases must not share a worker',
+    )
+    assert.ok(owners.every((owner) => owner >= 0))
+  })
+
+  it('keeps subset plans scoped and safely handles an empty slice', () => {
+    const specs = 'tests/e2e/a.e2e.ts tests/e2e/b.e2e.ts tests/e2e/c.e2e.ts'
+    assert.deepEqual(shardSpecs('subset', 1, 2, specs), [
+      'tests/e2e/a.e2e.ts',
+      'tests/e2e/c.e2e.ts',
+    ])
+    assert.deepEqual(shardSpecs('subset', 2, 2, specs), ['tests/e2e/b.e2e.ts'])
+    assert.deepEqual(shardSpecs('subset', 1, 1), [])
+  })
 
   it('fetches one commit history instead of every branch and tag', () => {
     // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
@@ -396,6 +463,38 @@ describe('ci.yml workflow invariants', () => {
       /- uses: \.\/\.github\/actions\/setup\n {8}if: steps\.changed\.outputs\.any == 'true'/,
       'setup must be gated on there being something to fix',
     )
+  })
+
+  it('accepts ignored-only autofix diffs while still formatting source and rejecting parse errors', () => {
+    const commands = [...jobBlock('autoformat').matchAll(/npx oxfmt ([^\n]+)/g)]
+    assert.equal(commands.length, 2, 'exercise both the initial formatter run and its OOM retry')
+    const root = mkdtempSync(join(tmpdir(), 'copse-autoformat-'))
+    const formatter = resolve('node_modules/.bin/oxfmt')
+    try {
+      writeFileSync(join(root, '.prettierignore'), 'package-lock.json\n')
+      const lockfile = '{ "generated":true }\n'
+      writeFileSync(join(root, 'package-lock.json'), lockfile)
+      for (const command of commands) {
+        assert.equal(command[1]?.endsWith('-- "${files[@]}"'), true)
+        const options = command[1].split(' -- ')[0]?.split(' ')
+        assert.ok(options)
+        const run = (files: string[]): SpawnSyncReturns<string> =>
+          spawnSync(formatter, [...options, '--', ...files], { cwd: root, encoding: 'utf8' })
+        const ignored = run(['package-lock.json'])
+        assert.equal(ignored.status, 0, ignored.stderr)
+        writeFileSync(join(root, 'source.json'), '{"source":true}\n')
+        const mixed = run(['package-lock.json', 'source.json'])
+        assert.equal(mixed.status, 0, mixed.stderr)
+        assert.equal(readFileSync(join(root, 'source.json'), 'utf8'), '{ "source": true }\n')
+        assert.equal(readFileSync(join(root, 'package-lock.json'), 'utf8'), lockfile)
+        writeFileSync(join(root, 'source.json'), '{ invalid json\n')
+        const malformed = run(['package-lock.json', 'source.json'])
+        assert.notEqual(malformed.status, 0, 'real formatter errors must still fail the job')
+        assert.equal(malformed.error, undefined)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('lets every branch-checkout job no-op when the PR merged and deleted its head', () => {
@@ -825,12 +924,38 @@ describe('release-bump.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
   })
 
+  const publicationCheck = 'gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current"'
+
   it('keeps one release in flight and skips an empty week', () => {
-    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
-    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const published = workflow.indexOf(publicationCheck)
     const bump = workflow.indexOf('node scripts/release-bump.mts')
     assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
     assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('cuts past an unpublished version only on an explicit dispatch, carrying its notes', () => {
+    // A version whose release run failed can never be published, so a gate
+    // with no way past it would stop the weekly train for good. The schedule
+    // still skips; only a person naming the next version cuts past it, and the
+    // abandoned version's notes move into the new section rather than vanish.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('node scripts/release-bump.mts'),
+    )
+    assert.match(gate, /if \[ -z "\$REQUESTED_VERSION" \]; then[\s\S]*?exit 0\n/)
+    assert.match(gate, /args\+=\(--carry-forward\)/)
+  })
+
+  it('treats only a confirmed 404 as unpublished', () => {
+    // A rate limit or outage read as "unpublished" would let a dispatch carry a
+    // published version's notes into the next release a second time.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('if [ -z "$REQUESTED_VERSION" ]'),
+    )
+    assert.match(gate, /\*"HTTP 404"\*\) ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(gate, /gh api "repos\/\$RELEASE_REPOSITORY" --silent[\s\S]*?exit 1\n/)
+    assert.doesNotMatch(workflow, /gh release view "v\$current"/)
   })
 
   it('passes the dispatch version through the environment, not the script text', () => {
@@ -890,6 +1015,52 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
 
+  it('opens an issue when any release job fails', () => {
+    // Without it a failed build is silent: nothing publishes and the weekly bump
+    // skips while the version stays unpublished.
+    const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
+    assert.match(
+      report,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+    )
+    assert.match(report, /^ {6}issues: write$/m)
+    assert.doesNotMatch(report, /contents: write/)
+    assert.match(report, /gh issue create --repo "\$GITHUB_REPOSITORY"/)
+    // The dispatch tag reaches the script through the environment only.
+    assert.match(report, /TAG: \$\{\{ inputs\.tag \|\| github\.ref_name \}\}/)
+    assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('signs, notarizes, and staples the DMG itself, then rebuilds its blockmap', () => {
+    // electron-builder notarizes only the app inside the image. Stapling the
+    // DMG rewrites it after electron-builder wrote its blockmap, so the map is
+    // rebuilt from the final bytes before anything verifies or uploads it.
+    assert.match(workflow, /electron-builder --mac .*-c\.dmg\.sign=true/)
+    const start = workflow.indexOf('- name: Notarize and staple the DMG')
+    const verify = workflow.indexOf('- name: Verify signatures, notarization, metadata')
+    const upload = workflow.indexOf('uses: actions/upload-artifact@', verify)
+    assert.ok(start > workflow.indexOf('-c.dmg.sign=true'), 'notarize after the signed build')
+    assert.ok(verify > start && upload > verify, 'verify and upload the stapled DMG')
+    const step = workflow.slice(start, verify)
+    assert.match(step, /xcrun notarytool submit "\$dmg" .*\n.*--wait/)
+    assert.match(step, /if \[ "\$status" != 'Accepted' \]; then[\s\S]*?exit 1\n/)
+    const staple = step.indexOf('xcrun stapler staple "$dmg"')
+    const rebuild = step.indexOf('node scripts/rebuild-dmg-blockmap.mts "$dmg"')
+    assert.ok(staple > step.indexOf("!= 'Accepted'") && rebuild > staple)
+    // Apple credentials reach the script through `env`, never the script text.
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('verifies the downloadable DMG, not only the app inside it', () => {
+    const verify = workflow.slice(
+      workflow.indexOf('- name: Verify signatures, notarization, metadata'),
+      workflow.indexOf('- name: Enforce the per-client size budget'),
+    )
+    assert.match(verify, /codesign --verify --strict --verbose=2 "\$dmg"/)
+    assert.match(verify, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/)
+    assert.match(verify, /xcrun stapler validate "\$dmg"/)
+  })
+
   it('bounds the signed package verification step', () => {
     assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
     assert.match(
@@ -936,8 +1107,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
-    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('tags each release on its own commit, so releases sort by publication', () => {
+    // GitHub dates and orders releases by the tagged commit. Tagging the binary
+    // repository's unchanging `main` dated every release to one commit, and a
+    // new beta sorted below the old ones.
+    assert.doesNotMatch(workflow, /--target main/)
+    const record = workflow.indexOf('- name: Record the release in the release repository')
+    const publish = workflow.indexOf('gh release create')
+    assert.ok(record >= 0 && publish > record, 'the release commit must precede the release')
+    const recordStep = workflow.slice(record, workflow.indexOf('- name: Publish the exact'))
+    assert.match(recordStep, /--method PUT "repos\/\$RELEASE_REPOSITORY\/contents\/\$path"/)
+    assert.match(recordStep, /-f branch=main/)
+    assert.match(recordStep, /\*"HTTP 404"\*\) current='' ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(recordStep, /echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/)
+    assert.match(workflow, /RELEASE_COMMIT: \$\{\{ steps\.record\.outputs\.commit \}\}/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target "\$RELEASE_COMMIT"/)
   })
 
   it('skips unavailable provenance only while the source repository is private', () => {
@@ -1008,6 +1195,19 @@ describe('codeql.yml workflow invariants', () => {
   })
 })
 
+describe('sync-model-catalog.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/sync-model-catalog.yml'), 'utf8')
+
+  it('provisions the hosted Linux sandbox before full validation', () => {
+    const provision = workflow.indexOf('Install sandbox dependencies for validation')
+    const validate = workflow.indexOf('- name: Validate')
+    assert.ok(provision >= 0 && validate > provision)
+    assert.match(workflow, /apt-get install -y --no-install-recommends bubblewrap socat/)
+    assert.match(workflow, /apparmor_restrict_unprivileged_userns=0/)
+    assert.ok(workflow.includes('bwrap --unshare-all --dev-bind / / --die-with-parent true'))
+  })
+})
+
 describe('acp-v2-watch.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/acp-v2-watch.yml'), 'utf8')
 
@@ -1025,6 +1225,24 @@ describe('acp-v2-watch.yml workflow invariants', () => {
     // call here would quietly reintroduce the multi-minute node_modules restore.
     assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
     assert.match(workflow, /run: pnpm run watch:acp-v2/)
+  })
+})
+
+describe('install-free scheduled repository script invariants', () => {
+  const workflows = [
+    '.github/workflows/acp-v2-watch.yml',
+    '.github/workflows/prune-scaleway-ips.yml',
+    '.github/workflows/prune-scaleway-volumes.yml',
+  ].map((path) => readFileSync(resolve(path), 'utf8'))
+
+  it('resolves the workspace leaf from source without restoring node_modules', () => {
+    for (const workflow of workflows) {
+      assert.ok(!workflow.includes('uses: ./.github/actions/setup'))
+    }
+    const watch = readFileSync(resolve('scripts/acp-v2-watch.mts'), 'utf8')
+    const helper = readFileSync(resolve('scripts/lib/cloud-hosts.mts'), 'utf8')
+    assert.ok(watch.includes('../packages/std/src/unknown-value.ts'))
+    assert.ok(helper.includes('../../packages/std/src/unknown-value.ts'))
   })
 })
 
@@ -1315,6 +1533,12 @@ describe('Copse Reviewer workflow invariants', () => {
         postingStep,
         /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
       )
+      // Reads driven by the pull request's text use the read-only workflow
+      // token; the App's write token is for the post alone.
+      assert.match(
+        postingStep,
+        /^ {10}COPSE_REVIEW_READ_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}$/m,
+      )
       assert.doesNotMatch(
         postingStep,
         /^\s+GITHUB_TOKEN:/m,
@@ -1403,7 +1627,10 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(workflow, /--max-verify "\$REVIEW_MAX_VERIFY"/)
     }
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
-      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness'"))
+      // The visual lens runs only when the change or its conversation has an image.
+      assert.ok(workflow.includes("COPSE_REVIEW_LENSES || 'correctness,visual'"))
+      // Reviews read the pull request's discussion and images, e.g. screenshot comments.
+      assert.match(workflow, /--read-pr github \\\n\s+--repo "\$GITHUB_REPOSITORY"/)
     }
     assert.ok(modelBenchWorkflow.includes("inputs.lenses || 'correctness,boundaries'"))
   })

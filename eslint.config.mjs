@@ -44,6 +44,9 @@ export default ts.config(
       '.portable/',
       '.pr-validation/',
       '.tmp/',
+      // Downloaded browser/driver caches (wdio.demo.conf.ts fetches Chrome for Testing
+      // into .cache/wdio-demo/). ESLint does not read .gitignore, so list them here.
+      '.cache/',
       // Generated benchmark outputs, private research scripts and downloaded model caches.
       // The maintained benchmark harnesses under benchmarks/ are linted separately below.
       'bench-results/',
@@ -67,6 +70,9 @@ export default ts.config(
       // Review-bench cases: the head trees carry the defects the reviewer is
       // measured on (an unused timer is one of them), so a linter must not "fix" them.
       'benchmarks/review/cases/**',
+      // Byte-exact, hash-verified upstream Cursor plugin files (pnpm sync:cursor-skills);
+      // a skill's referenced scripts are its authors' code, not ours to lint.
+      'vendor/bundled-cursor-skills/**',
     ],
   },
   js.configs.recommended,
@@ -422,7 +428,7 @@ export default ts.config(
   {
     // Reproducible research runners are native Node ESM, not TypeScript app code.
     // Keep ordinary JS linting; typed adapter libraries use the scoped project above.
-    files: ['benchmarks/shell-scope/scripts/**/*.mjs'],
+    files: ['benchmarks/shell-scope/scripts/**/*.mjs', 'benchmarks/escalation-review/**/*.mjs'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',
@@ -438,6 +444,7 @@ export default ts.config(
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         structuredClone: 'readonly',
+        fetch: 'readonly',
       },
     },
     // TypeScript-only annotation requirements cannot be expressed in these .mjs files.
@@ -472,6 +479,30 @@ export default ts.config(
         globalThis: 'readonly',
         importScripts: 'readonly',
       },
+    },
+  },
+  {
+    // Shipped Canvas worker runtime is plain browser JavaScript, embedded in
+    // self-contained artefacts rather than compiled by a TypeScript project.
+    files: ['assets/explainers/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        globalThis: 'readonly',
+        self: 'readonly',
+        OffscreenCanvas: 'readonly',
+        ImageBitmap: 'readonly',
+        Worker: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

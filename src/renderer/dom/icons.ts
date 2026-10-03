@@ -125,16 +125,34 @@ export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
 
-/** Open hand — an action needs the person's approval before it can continue. */
-export function handIcon(className = DEFAULT): SVGSVGElement {
+/** Shield — an action is gated on the person's approval before it can continue. */
+export function shieldIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
-    'hand',
+    'shield',
     [
-      'M18 11V6a2 2 0 0 0-4 0v5',
-      'M14 10V4a2 2 0 0 0-4 0v7',
-      'M10 10.5V6a2 2 0 0 0-4 0v8',
-      'M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z',
+      'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
     ],
+    className,
+  )
+}
+
+/** Bell — threads that are waiting on the person (the Activity panel's entry point). */
+export function bellIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'bell',
+    [
+      'M10.27 21a2 2 0 0 0 3.46 0',
+      'M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33',
+    ],
+    className,
+  )
+}
+
+/** Speech bubble with a question mark — the agent has asked the person something. */
+export function messageQuestionIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'message-circle-question',
+    ['M7.9 20A9 9 0 1 0 4 16.1L2 22Z', 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01'],
     className,
   )
 }
@@ -218,6 +236,17 @@ export function imageIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Sparkle — marks a suggestion Copse offers, such as a plugin for this project. */
+export function sparkleIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'sparkle',
+    [
+      'M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z',
+    ],
+    className,
+  )
+}
+
 /** Lightning/zap — marks the hook-card family (a hook fired / triggered). */
 export function zapIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
@@ -252,6 +281,19 @@ export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
       'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
       'M13 6h3a2 2 0 0 1 2 2v7',
       'M6 9v12',
+    ],
+    className,
+  )
+}
+
+/** Lucide git-merge — sidebar thread mark for a PR that has landed. */
+export function gitMergeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'git-merge',
+    [
+      'M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M6 21V9a9 9 0 0 0 9 9',
     ],
     className,
   )

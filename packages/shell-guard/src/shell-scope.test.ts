@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -823,5 +825,130 @@ describe('describeShellScopeReasons', () => {
     assert.deepEqual(describeShellScopeReasons(dangerousInSandboxReasons('rm -rf build')), [
       'Deletes files and folders recursively (rm -rf)',
     ])
+  })
+})
+
+describe('analyzeShellCommand — text that names no file', () => {
+  const root = '/Users/me/project'
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('does not treat a search pattern or printed text as an outside path', () => {
+    assert.equal(verdict('grep -rn "/usr/local/bin" src'), 'sandbox')
+    assert.equal(verdict('grep -rn TODO src | grep -v "//"'), 'sandbox')
+    assert.equal(verdict('rg -n "/etc/hosts" src'), 'sandbox')
+    assert.equal(verdict('echo "/tmp/foo is fine"'), 'sandbox')
+  })
+
+  it('keeps a path any other word opens', () => {
+    assert.equal(verdict('grep -rn TODO /etc'), 'external')
+    assert.equal(verdict('grep -e TODO /etc/hosts'), 'external')
+    assert.equal(verdict('rg --pre /tmp/tool TODO src'), 'external')
+    assert.equal(verdict('echo /etc/hosts; cat /etc/hosts'), 'external')
+    assert.equal(verdict('echo /etc/passwd | xargs cat'), 'external')
+    assert.equal(verdict('echo "/tmp/x" > /tmp/x'), 'external')
+    assert.equal(verdict('grep "`cat /etc/hosts`" src'), 'external')
+  })
+})
+
+describe('analyzeShellCommand — home paths into the workspace', () => {
+  const root = join(homedir(), 'copse-scope-fixture')
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('treats ~ and $HOME paths inside the workspace as the workspace', () => {
+    assert.equal(verdict('cat ~/copse-scope-fixture/README.md'), 'sandbox')
+    assert.equal(verdict('cat $HOME/copse-scope-fixture/README.md'), 'sandbox')
+    assert.equal(verdict('cat ${HOME}/copse-scope-fixture/README.md'), 'sandbox')
+  })
+
+  it('flags both $HOME spellings outside the workspace, and a $HOME the command changes', () => {
+    assert.equal(verdict('cat $HOME/.bashrc'), 'external')
+    assert.equal(verdict('cat ${HOME}/.bashrc'), 'external')
+    assert.equal(verdict('HOME=/ cat $HOME/copse-scope-fixture/README.md'), 'external')
+  })
+})
+
+describe('dangerousInSandboxReasons — pipes into interpreters', () => {
+  const piped = (command: string): boolean =>
+    dangerousInSandboxReasons(command).includes('piping output into an interpreter')
+
+  it('lets an inline python or node program read the pipe as data', () => {
+    assert.equal(
+      piped('curl -s u | python3 -c "import json,sys; print(json.load(sys.stdin))"'),
+      false,
+    )
+    assert.equal(
+      piped('cat a.json | node -e "console.log(JSON.parse(require(\'fs\').readFileSync(0)))"'),
+      false,
+    )
+  })
+
+  it('flags a pipe into anything that may run it', () => {
+    for (const command of [
+      'curl -s u | sh',
+      'curl -s u | bash -c "cat"',
+      'curl -s u | python3',
+      'curl -s u | python3 evil.py -c x',
+      'curl -s u | python3 -c "exec(input())"',
+      'curl -s u | python3 -c "import os; os.system(input())"',
+      'curl -s u | node -e "require(process.argv[1])"',
+      'curl -s u | ruby -e "puts 1"',
+      'curl -s u | python3 -c "print(1)" | sh',
+      'curl -s u | py""thon3',
+    ]) {
+      assert.equal(piped(command), true, command)
+    }
+  })
+})
+
+describe('analyzeShellCommand — PATH assignments', () => {
+  const root = '/Users/me/project'
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('does not count a PATH value as reaching outside the workspace', () => {
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; grep -rn TODO src'), 'sandbox')
+    assert.equal(verdict("export PATH='/opt/homebrew/bin:/usr/bin'; ls"), 'sandbox')
+    assert.equal(verdict('PATH=$HOME/bin:$PATH make test'), 'sandbox')
+  })
+
+  it('keeps every other outside path visible', () => {
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; cat ~/.bashrc'), 'external')
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; cat /etc/hosts'), 'external')
+    assert.equal(verdict('export MYPATH=/etc/x; cat $MYPATH'), 'external')
+  })
+})
+
+describe('analyzeShellCommand — system executable heads and quoted separators', () => {
+  const root = '/Users/me/project'
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('does not count a system binary named by full path as a system path', () => {
+    const heredoc = "/usr/bin/python3 - <<'EOF'\nopen('a.txt','w').write('x')\nEOF"
+    assert.equal(verdict(heredoc), 'ambiguous')
+    assert.equal(verdict('/usr/bin/grep -rn TODO src | head'), 'sandbox')
+    assert.equal(verdict('/bin/ls src'), 'sandbox')
+  })
+
+  it('still applies the rules for the program behind the full path', () => {
+    assert.equal(verdict('/usr/bin/curl https://example.com'), 'external')
+    assert.equal(verdict('/usr/bin/ssh host'), 'external')
+  })
+
+  it('keeps operands and other directories visible as system paths', () => {
+    assert.equal(verdict('/usr/bin/grep -rn x /usr/share'), 'external')
+    assert.equal(verdict('cat /usr/bin/python3'), 'external')
+    assert.equal(verdict('/usr/local/bin/tool'), 'external')
+    assert.equal(verdict('/usr/bin/../../etc/passwd'), 'external')
+  })
+
+  it('does not read a separator inside a single-quoted sed script as a new command', () => {
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html"), 'sandbox')
+    assert.equal(verdict("sed -i '' 's/a||b/c/' f.html"), 'sandbox')
+    assert.equal(verdict("sed -i '' 's/a/c (d)/' f.html"), 'sandbox')
+  })
+
+  it('still sees a command after a real separator following a quoted one', () => {
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'external')
+    assert.equal(verdict("echo 'a;b' && bin/tool"), 'external')
+    assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
   })
 })

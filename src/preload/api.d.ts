@@ -11,12 +11,21 @@ import type {
 } from '@shared/types/app-run.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
-import type { StreamChunk, ContextBreakdown } from '@shared/types'
+import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
+import type {
+  ContextBreakdown,
+  MachineAgentRunRequest,
+  MachineDispatchResult,
+  StreamChunk,
+} from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
-import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
+import type {
+  BundledSkillPluginSummary,
+  CursorPluginSummary,
+} from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
   HookRunDetail,
@@ -25,9 +34,12 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
+  AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
+  BranchCiAutomation,
+  BranchCiAutomationInput,
 } from '@shared/types/automations.ts'
 import type {
   AppleConfigureInput,
@@ -38,7 +50,9 @@ import type {
   AppleOperationLogPage,
   AppleProjectDetection,
   AppleProjectState,
+  AppleProjectSuggestion,
   AppleSelection,
+  AppleSuggestionAnswer,
 } from '@shared/types/apple-development.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
@@ -48,6 +62,8 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  ThreadWorktreeAttachment,
+  ThreadWorktreeReattachResult,
   GitPromptState,
   GitBranchInfo,
   SessionBackup,
@@ -148,6 +164,13 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  mobile: {
+    manage: () => Promise<void>
+    onChat: (
+      handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
+    ) => () => void
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) => Promise<void>
+  }
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (
@@ -192,6 +215,10 @@ export interface ApiClient {
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
+    /** Download an HTML canvas artefact as a self-contained document. */
+    exportArtefact: (
+      artefact: Pick<CanvasArtefact, 'title' | 'mimeType' | 'body'>,
+    ) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPluginTabRequest: (
@@ -244,6 +271,7 @@ export interface ApiClient {
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
       threadId: string,
@@ -510,6 +538,8 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    /** Fill legacy PR links for a bounded set of visible sidebar threads. */
+    backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
     loadMessages: (
       projectId: string,
       threadId: string,
@@ -761,6 +791,7 @@ export interface ApiClient {
     onUiScaleReset: (handler: () => void) => () => void
   }
   classifiers: ClassifierClient
+  localClassifiers: LocalClassifierClient
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
@@ -858,6 +889,14 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
+  }
+  about: {
+    /** The app version and the third-party licence report the build shipped. */
+    getInfo: () => Promise<import('@shared/third-party-licenses.mts').AboutInfo>
+    /** Open one of the shipped licence files in the system's default viewer. */
+    openLicenseFile: (
+      kind: import('@shared/third-party-licenses.mts').LicenseFileKind,
+    ) => Promise<void>
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
@@ -1061,6 +1100,13 @@ export interface ApiClient {
   cursorPlugins: {
     list: () => Promise<CursorPluginSummary[]>
   }
+  /**
+   * Cursor plugins whose skills ship inside Copse. Each has its own switch,
+   * saved with `settings.set('bundledSkillPluginOverrides', …)`.
+   */
+  bundledSkillPlugins: {
+    list: () => Promise<BundledSkillPluginSummary[]>
+  }
   hooks: {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
@@ -1080,9 +1126,24 @@ export interface ApiClient {
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
+    permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
+    upsertBranchCi: (
+      projectId: string,
+      input: BranchCiAutomationInput,
+    ) => Promise<BranchCiAutomation>
+    removeBranchCi: (projectId: string, id: string) => Promise<void>
+    testBranchCi: (
+      projectId: string,
+      branch: string,
+    ) => Promise<{ repository: string; branch: string; latestFailure: string | null }>
+    canStart: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ allowed: boolean; reason?: string; retryable?: boolean }>
     onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
   }
   appRun: {
@@ -1104,6 +1165,8 @@ export interface ApiClient {
   appleDevelopment: {
     state: (projectId: string, threadId: string) => Promise<AppleProjectState>
     detectProject: (projectId: string) => Promise<AppleProjectDetection>
+    suggestion: (projectId: string) => Promise<AppleProjectSuggestion>
+    answerSuggestion: (projectId: string, answer: AppleSuggestionAnswer) => Promise<void>
     setEnrolled: (
       projectId: string,
       threadId: string,
@@ -1203,6 +1266,10 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** Whether the thread's isolated checkout is detached, without throwing for it. */
+    worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
+    /** Put a detached thread checkout back on its branch, keeping any detached commits. */
+    reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

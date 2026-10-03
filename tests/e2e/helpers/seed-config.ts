@@ -28,6 +28,8 @@ import {
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
+import { isMandatoryWriteDenyMountPath } from '../../../src/main/project-sandbox/mandatory-write-deny.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../../packages/agent/src/plugins/first-party-plugins.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -39,25 +41,13 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
 
 /**
- * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
- * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
- * Seeding the list explicitly means a fixture never depends on that default.
+ * Plugins the host turns off on a profile with no `pluginDisabled` list — the
+ * same experimental-manifest set `plugin-service.ts` seeds, imported rather than
+ * copied so a new experiment can never be left on in e2e while a fresh install
+ * has it off. Seeding the list explicitly means a fixture never depends on the
+ * host's own seed having run.
  */
-const DEFAULT_DISABLED_PLUGIN_IDS = [
-  'copse.apple-development',
-  'copse.advisor-strategy',
-  'copse.artifact-checkpoint',
-  'copse.automations',
-  'copse.ci-investigator',
-  'copse.devtools-shortcut',
-  'copse.dark-factory',
-  'copse.long-horizon-tasks',
-  'copse.mcp-ui-canvas',
-  'copse.okf-memories',
-  'copse.pii-redaction',
-  'copse.review',
-  'copse.roadmap-plans',
-] as const
+const DEFAULT_DISABLED_PLUGIN_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS
 
 export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
   const validated = supervisedTaskMetaSchema.parse(task)
@@ -557,6 +547,8 @@ export function seedEmptyProject(
      * the prototype steering hook). Ships off, like the other experimental packs.
      */
     mcpUiCanvasEnabled?: boolean
+    /** Opt into the experimental CI investigator pack. */
+    ciInvestigatorEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -634,6 +626,7 @@ export function seedEmptyProject(
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
+  if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
@@ -1392,15 +1385,23 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
 export function seedPrPanelChatFixture(
   workspaceRoot: string,
-  options?: { worktreeMode?: 'always' | 'never' },
+  options?: { worktreeMode?: 'always' | 'never'; roadmapPlansEnabled?: boolean },
 ): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
+    projects: [
+      {
+        id: projectId,
+        path: workspaceRoot,
+        name: 'workspace',
+        ...(options?.worktreeMode ? { worktreeMode: options.worktreeMode } : {}),
+      },
+    ],
     activeProjectId: projectId,
+    pluginDisabled: pluginDisabledSeed(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
     [`threads:${projectId}`]: [
       {
         id: threadId,
@@ -2910,6 +2911,8 @@ export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
               executor: 'acp',
               provider: 'codex-acp',
               model: 'acp:codex-acp#gpt-5.6-sol',
+              // Recorded by the renderer when a queued prompt was sent now.
+              userAbort: 'send_now',
               // Send-now queues the human bubble before cancellation settles.
               endedAt: now + 4,
             },
@@ -3458,12 +3461,45 @@ function ensureGitChangesFixtureCommit(): void {
   git('commit', '-q', '-m', 'agent committed work')
 }
 
+/**
+ * `git clean -fd`, tolerant of Linux sandbox placeholders that vanish mid-clean.
+ *
+ * While a writable sandboxed command runs, bwrap creates empty placeholders in
+ * the checkout for the mandatory write-deny paths (`.bashrc`, `.vscode`, ...)
+ * and ASRT deletes them once no sandboxed command is active. `git clean` lists
+ * untracked entries first and then lstat()s each one, dying with "Cannot lstat"
+ * if an entry has gone in between (builtin/clean.c). Re-run only for that race
+ * on a placeholder path: the next listing no longer contains it. Any other
+ * failure, or a vanished path that is not a placeholder, still throws.
+ */
+function cleanUntracked(repoRoot: string): void {
+  const attempts = 3
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawnSync('git', ['clean', '-fd'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      // The message matched below must not be localized.
+      env: { ...process.env, LC_ALL: 'C' },
+    })
+    if (result.error) throw result.error
+    if (result.status === 0) return
+    const vanished = /^fatal: Cannot lstat '(.+)': No such file or directory$/m.exec(
+      result.stderr,
+    )?.[1]
+    if (attempt >= attempts || vanished === undefined || !isMandatoryWriteDenyMountPath(vanished)) {
+      throw new Error(
+        `git clean -fd failed in ${repoRoot} (exit ${String(result.status)}): ${result.stderr.trim()}`,
+      )
+    }
+  }
+}
+
 /** Reset the committed git-changes fixture to staged + unstaged + untracked state. */
 export function resetGitChangesFixtureState(): void {
   const repoRoot = GIT_CHANGES_FIXTURE_ROOT
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('checkout', '-f', 'HEAD')
-  git('clean', '-fd')
+  cleanUntracked(repoRoot)
   ensureGitChangesFixtureCommit()
   writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(2), 'utf8')
   git('add', 'staged.ts')
@@ -3555,7 +3591,7 @@ export function seedComposerDirtyWarningFixture(): {
     initComposerDirtyWarningFixtureRepo()
   } else {
     execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
-    execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+    cleanUntracked(repoRoot)
   }
   // Leave an uncommitted edit so the shared checkout is dirty.
   writeFileSync(join(repoRoot, 'README.md'), '# fixture\n\nuncommitted edit\n', 'utf8')
@@ -3588,7 +3624,7 @@ export function seedComposerDirtyWarningFixture(): {
 export function cleanupComposerDirtyWarningFixture(): void {
   const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
   execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
-  execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+  cleanUntracked(repoRoot)
 }
 
 const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
@@ -4420,6 +4456,7 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-status',
                 name: 'mcp__copse__git_status',
+                title: 'mcp.copse.git_status',
                 args: {},
                 status: 'done',
                 result: 'working tree clean',
@@ -4427,9 +4464,34 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
               {
                 id: 'tc-copse-diff',
                 name: 'mcp__copse__git_diff',
+                title: 'mcp__copse__git_diff',
                 args: {},
                 status: 'done',
                 result: 'no changes',
+              },
+              {
+                id: 'tc-copse-shell',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: { command: 'cd /workspace && pnpm test' },
+                status: 'done',
+                result: 'Tests passed',
+              },
+              {
+                id: 'tc-copse-read',
+                name: 'mcp__copse__read_file',
+                title: 'mcp.copse.read_file',
+                args: { path: 'README.md' },
+                status: 'done',
+                result: '# Copse',
+              },
+              {
+                id: 'tc-copse-error',
+                name: 'mcp.copse.run_shell',
+                title: 'mcp.copse.run_shell',
+                args: {},
+                status: 'error',
+                result: 'Command failed: exit 1',
               },
             ],
             createdAt: now + 3,
@@ -5161,11 +5223,14 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
   openThreadTitle: string
   mergedThreadTitle: string
   plainThreadTitle: string
+  failingThreadTitle: string
 } {
   const projectId = 'e2e-thread-pr-status-project'
   const openThreadTitle = 'Open PR thread'
   const mergedThreadTitle = 'Merged PR thread'
   const plainThreadTitle = 'No PR thread'
+  const failingThreadTitle = 'Failing CI thread'
+  const failingPrUrl = 'https://github.com/copse-dev/copse-panel/pull/88'
   const openPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   const mergedPrUrl = 'https://github.com/copse-dev/copse-panel/pull/99'
   const now = Date.now()
@@ -5237,9 +5302,32 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
         createdAt: now - 2000,
         updatedAt: now - 2000,
       },
+      {
+        id: 'e2e-pr-failing-thread',
+        title: failingThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-failing-pr',
+            role: 'assistant',
+            content: `Opened [PR #88](${failingPrUrl}); checks are red.`,
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-failing-agent',
+          prUrl: failingPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now - 3000,
+        },
+        createdAt: now - 3000,
+        updatedAt: now - 3000,
+      },
     ],
   })
-  return { openThreadTitle, mergedThreadTitle, plainThreadTitle }
+  return { openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle }
 }
 
 /**

@@ -1,4 +1,5 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { buildProviderFromDescription, type ProviderDescription } from './provider-description.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -39,6 +40,7 @@ import {
 } from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
@@ -88,8 +90,7 @@ export function normalizeRoleModelSelection(model: string): string {
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
     extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
-    value.startsWith('claude-') ||
-    value.startsWith('gpt-')
+    firstPartyProviderOf(value) !== null
   ) {
     return value
   }
@@ -165,6 +166,11 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
   return buildTaskRoleRoute(routedRoleModelSelection('reviewModel'))
 }
 
+/** Build a host-selected route for a registered reviewer specialist check. */
+export async function buildSpecialistCheckRoute(model: string): Promise<SubagentRoute> {
+  return buildTaskRoleRoute(model)
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
@@ -190,13 +196,25 @@ export interface BuildProviderOptions {
    * would arrive with nothing on screen to explain it.
    */
   maxReasoning?: ReasoningLevel
+  /**
+   * Ceiling on output tokens for this call only, for callers with a fixed output
+   * budget — the advisor consult is capped at `DEFAULT_ADVISOR_MAX_TOKENS`. Lowers
+   * the user's saved cap, never raises it. With no saved cap it stands in for the
+   * model card's recommended ceiling (`resolvedOutputCeiling` prefers an explicit
+   * cap), so it only lowers that ceiling while the card's is larger. Sent by the
+   * transports that carry an output cap (Anthropic, Chat Completions, OpenRouter,
+   * LM Studio, and Responses); compatible endpoints retry once without it when
+   * they reject the field.
+   */
+  maxOutputTokens?: number
 }
 
 /**
- * Generation parameters the user tuned for this exact model selection
- * (Settings → Models → Model parameters), sanitized against what the model
- * accepts so a value saved before the selection changed cannot 400 the turn.
- * Empty for every model the user has not touched.
+ * Generation parameters for this exact model selection: the model's curated
+ * recipe, if we hold one, with anything the user tuned in Settings → Models →
+ * Model parameters replacing it field by field. Sanitized against what the
+ * model accepts so a value saved before the selection changed cannot 400 the
+ * turn. Empty for a model with no recipe that the user has not touched.
  *
  * Keyed by selection rather than by feature, so a model carries its parameters
  * wherever it runs — chat, a task role, a subagent — the same way an ACP
@@ -210,7 +228,15 @@ export function resolveTurnParameters(
   const requested = opts.reasoning ?? saved.reasoning
   const reasoning =
     opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
-  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
+  const maxOutputTokens =
+    opts.maxOutputTokens === undefined
+      ? saved.maxOutputTokens
+      : Math.min(opts.maxOutputTokens, saved.maxOutputTokens ?? opts.maxOutputTokens)
+  return {
+    ...saved,
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  }
 }
 
 /**
@@ -304,6 +330,7 @@ export async function describeProvider(
   model: string,
   opts: BuildProviderOptions = {},
 ): Promise<ProviderDescription> {
+  assertModelMakerAllowed(model)
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)
@@ -375,12 +402,14 @@ export async function describeProvider(
       params,
     }
   }
-  if (model.startsWith('claude'))
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty === 'anthropic') {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }
-  if (model.startsWith('gpt')) {
+  }
+  if (firstParty === 'openai') {
     return { kind: 'openai', model, apiKeySlug: 'openai', params, ...openAiTransport() }
   }
-  // An id neither prefix claims goes to whichever cloud provider has a key,
+  // An id no first-party family claims goes to whichever cloud provider has a key,
   // Anthropic first — the order `createProvider` has always used.
   if (storedOrEnvApiKey('anthropic')) {
     return { kind: 'anthropic', model, apiKeySlug: 'anthropic', params }

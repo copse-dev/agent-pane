@@ -141,13 +141,15 @@ export function mountTerminalsPane(
     const tab = [...tabs.values()].find((t) => t.sessionId === id)
     if (!tab) return
     tab.sessionId = null
+    // Capture a Play run once its output is parsed but before the exit banner:
+    // the result reports the exit code on its own.
+    tab.term.write('', () => {
+      finishCodeBlockRun(tab, code)
+    })
     tab.term.writeln(
       code === -1
         ? '\r\n\x1b[90m[Terminal stopped]\x1b[0m'
         : `\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`,
-      () => {
-        finishCodeBlockRun(tab, code)
-      },
     )
   })
 
@@ -189,13 +191,16 @@ export function mountTerminalsPane(
     ].join('\n\n')
     store.emit('code_block_run_finished', {
       id: request.id,
+      projectId: request.projectId,
       threadId: request.threadId,
       exitCode,
+      output,
       shell: {
         tabId: tab.id,
         label: `${tab.label} · exit ${exitLabel}`,
         content,
       },
+      ...(request.completion ? { completion: request.completion } : {}),
     })
   }
 
@@ -217,10 +222,12 @@ export function mountTerminalsPane(
     const text = readTerminalText(tab)
     if (text.length < 8) return
     tab.naming = true
+    // Read afresh after the await: a user rename can land while the title is
+    // being suggested, but TypeScript keeps the narrowing from the guard above.
+    const renamedByUser = (): boolean => tab.renamed
     try {
       const title = await api.agent.suggestTerminalTitle(text)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- tab.renamed can be set by a user rename during the await above
-      if (title && !tab.renamed) {
+      if (title && !renamedByUser()) {
         setTabLabel(tab, title)
         tab.autoNamed = true
       }

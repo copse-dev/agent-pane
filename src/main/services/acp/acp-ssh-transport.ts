@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { PassThrough, Readable, Writable } from 'node:stream'
+import { PassThrough } from 'node:stream'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
   isSshExecutionTarget,
@@ -17,12 +18,17 @@ import {
   REMOTE_PGID_PREFIX,
 } from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
-import { registerRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
+import {
+  registerRemoteProcessMeta,
+  takeRemoteProcessMeta,
+} from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { killRemoteProcessGroup } from '../exec/remote-process-kill.ts'
 import { approveRemoteAcpInstall } from './acp-remote-install-approval.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
 import type { AcpTransport } from './acp-client.ts'
 import { watchAgentStderr, REMOTE_OPEN_FILE_LIMIT_LABEL } from './acp-resource-fault.ts'
+import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { posixQuote } from '../security/safe-install.ts'
 
 /**
@@ -68,6 +74,20 @@ export function isAcpOverSshEnabled(): boolean {
  * itself already fails closed unless `sshWorkspaceEnabled` is on and the host is
  * configured, so this never routes to a half-configured remote.
  */
+/**
+ * The SSH target a spawn config runs on: the decision its turn resolved once
+ * (`sshTarget`, where `null` means locally), or — for callers that made none —
+ * the live setting. Reading it through here keeps the spawn, the session pool
+ * and the turn's permission handling on one answer even if ACP-over-SSH is
+ * switched while the turn starts.
+ */
+export function spawnConfigSshTarget(config: {
+  cwd: string
+  sshTarget?: AcpSshTarget | null
+}): AcpSshTarget | null {
+  return config.sshTarget !== undefined ? config.sshTarget : acpSshTarget(config.cwd)
+}
+
 export function acpSshTarget(cwd: string): AcpSshTarget | null {
   if (!isAcpOverSshEnabled()) return null
   const target = resolveSshExecutionTargetForCwd(cwd)
@@ -223,6 +243,25 @@ export function remoteNpmInstallScript(pkg: string, npmBinDir: string | null): s
 }
 
 /**
+ * The exact `package@version` a remote install may fetch for a catalog agent,
+ * or `null` when Copse has no vetted pin for it. The pin is the one the
+ * unattended-container worker image bakes (`CONTAINER_ACP_AGENTS`), so every
+ * place Copse installs an adapter somewhere it cannot put Socket Firewall in
+ * front of npm installs the same reviewed version. Local installs float
+ * because Socket Firewall screens them; a remote install has no such screen,
+ * so it never takes whatever `latest` happens to be — no pin, no install.
+ */
+export function remoteAcpInstallSpec(known: {
+  id: string
+  installPackage?: string | undefined
+}): string | null {
+  if (!known.installPackage) return null
+  const pinned = containerAcpAgent(known.id)
+  if (pinned?.npmPackage !== known.installPackage) return null
+  return `${pinned.npmPackage}@${pinned.version}`
+}
+
+/**
  * Approval copy for a remote install. Deliberately names the host and the Node
  * prefix, and is explicit that Socket Firewall does not cover this install:
  * `sfw` runs on the desktop, so a remote install cannot be proxied through it.
@@ -274,7 +313,9 @@ async function installRemoteAcpAgent(
   signal?: AbortSignal,
 ): Promise<boolean> {
   const known = KNOWN_ACP_AGENTS.find((agent) => agent.command === command)
-  if (!known?.autoInstall || !known.installPackage) return false
+  if (!known?.autoInstall) return false
+  const spec = remoteAcpInstallSpec(known)
+  if (!spec) return false
 
   // Reuse the version-manager sweep to locate npm, newest Node first — the same
   // ordering rationale as the agent search: the agent needs a *newer* Node than
@@ -285,7 +326,7 @@ async function installRemoteAcpAgent(
   const npmBinDir = search ? (parseVersionManagerHits(search.stdout)[0] ?? null) : null
 
   const { title, body } = formatRemoteAcpInstallApproval({
-    pkg: known.installPackage,
+    pkg: spec,
     hostLabel,
     npmBinDir,
   })
@@ -293,8 +334,8 @@ async function installRemoteAcpAgent(
   // no way to prompt) — see acp-remote-install-approval.ts.
   if (!(await approveRemoteAcpInstall({ title, body }, signal))) return false
 
-  const script = remoteNpmInstallScript(known.installPackage, npmBinDir)
-  emitShellOutput(`[acp-ssh] installing ${known.installPackage} on ${hostLabel}…\n`)
+  const script = remoteNpmInstallScript(spec, npmBinDir)
+  emitShellOutput(`[acp-ssh] installing ${spec} on ${hostLabel}…\n`)
   // With a resolved Node prefix a clean non-interactive shell suffices; without
   // one, only an interactive login shell has a version manager's npm on PATH.
   const argv = npmBinDir ? [loginShell, '-lc', script] : [loginShell, '-i', '-l', '-c', script]
@@ -302,7 +343,7 @@ async function installRemoteAcpAgent(
     .execArgv(argv, { timeoutMs: REMOTE_INSTALL_TIMEOUT_MS })
     .catch(() => null)
   if (!result) {
-    emitShellOutput(`[acp-ssh] install of ${known.installPackage} failed to run.\n`)
+    emitShellOutput(`[acp-ssh] install of ${spec} failed to run.\n`)
     return false
   }
   emitShellOutput(`${result.stdout}${result.stderr}`)
@@ -625,21 +666,23 @@ export async function spawnRemoteAcpTransport(
   const envPreamble = buildRemoteEnvPreamble(input.env)
   if (envPreamble) child.stdin.write(`${envPreamble}\n`)
 
-  // Writable.toWeb is assignable to the DOM WritableStream brand; Readable.toWeb
-  // is not (node vs DOM ReadableStream). Re-wrap stdout through a global
-  // TransformStream so ndJsonStream typechecks without an `as` cast — new files
-  // must not expand eslint-suppressions.json (docs/type-safety.md).
-  const writable: WritableStream<Uint8Array> = Writable.toWeb(child.stdin)
-  const fromAgent = new TransformStream<Uint8Array, Uint8Array>()
-  void Readable.toWeb(stdout)
-    .pipeTo(fromAgent.writable)
-    .catch(() => {
-      /* child exit / dispose aborts the pipe */
-    })
+  const writable = nodeWritableStream(child.stdin)
+  const readable = nodeReadableStream(stdout)
+  let disposal: Promise<void> | null = null
   return {
-    stream: ndJsonStream(writable, fromAgent.readable),
-    dispose: (): void => {
-      terminateProcessTree(child)
+    stream: ndJsonStream(writable, readable),
+    dispose: (): Promise<void> => {
+      if (disposal) return disposal
+      const remote = takeRemoteProcessMeta(child)
+      if (!remote) {
+        terminateProcessTree(child)
+        disposal = Promise.resolve()
+        return disposal
+      }
+      disposal = killRemoteProcessGroup(remote.hostId, remote.pgid).finally(() => {
+        terminateProcessTree(child)
+      })
+      return disposal
     },
     resourceFault: faults.current,
   }

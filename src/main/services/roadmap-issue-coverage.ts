@@ -1,9 +1,12 @@
 import { parseIssueRef } from '@shared/git/issue-ref.ts'
-import { parseCoverageMatches, type RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
+import type { ClassifierQuestion, ClassifierRequest } from '@copse/llm/classifiers/types.ts'
 import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+  parseCoverageMatches,
+  type RoadmapCoverageVerdict,
+  type RoadmapIssueCoverageMatch,
+} from '@shared/roadmap/coverage.ts'
+import { askClassifierBatch, likeliestChoice } from './classifiers/background-classification.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { loadKnowledgeNotes } from './storage/knowledge-store.ts'
@@ -27,9 +30,12 @@ function pinnedIssueNumber(issueField: string): number | null {
  * by itself (the pane disables `likely` matches; `partial` stays selectable).
  *
  * Pin matches stay deterministic in the renderer (`issueAlreadyPinned`). This
- * path only covers the unpinned / semantic case. No heuristic fallback: when
- * no model is available or the reply is unparseable, the picker shows pin
- * status alone (same stance as fit-check / complexity).
+ * path only covers the unpinned / semantic case. The classifier connection
+ * chosen for background questions answers first, one request per issue with
+ * one question per item; when none is chosen or it fails, the small-tasks
+ * model is asked about every pair in one prompt, as before. No heuristic
+ * fallback: when neither answers, or the reply is unparseable, the picker shows
+ * pin status alone (same stance as fit-check / complexity).
  */
 
 const MATCH_TIMEOUT_MS = 30_000
@@ -53,30 +59,105 @@ export function coverageCandidateItems(): {
     }))
 }
 
+export type CoverageCandidate = ReturnType<typeof coverageCandidateItems>[number]
+
 /**
- * Ask the small-tasks model which open issues are already covered by existing
- * roadmap items. Issues already pinned on a candidate are skipped — the pane
- * already marks those. `complete` is injectable for tests.
+ * The classifier's answers, weakest first: a tie goes to the earlier one. A
+ * `likely` match disables importing the issue, so a tie must not reach it.
  */
-export async function matchOpenIssuesToRoadmapItems(
-  issues: RoadmapImportIssue[],
-  complete: (ask: string) => Promise<string> = askSmallTasks,
-): Promise<RoadmapIssueCoverageMatch[]> {
-  if (issues.length === 0) return []
-  const candidates = coverageCandidateItems()
-  if (candidates.length === 0) return []
+const COVERAGE_CHOICES = ['none', 'partial', 'likely'] as const
 
-  // Skip issues that already have a deterministic pin match — no model call
-  // needed for those, and we must not invent a second match that fights the
-  // pin badge.
-  const pinnedNumbers = new Set<number>()
-  for (const item of candidates) {
-    const n = pinnedIssueNumber(item.issue)
-    if (n !== null) pinnedNumbers.add(n)
+const COVERAGE_OPTIONS = {
+  none: 'the prompt does not address the goal of the issue',
+  partial: 'the prompt overlaps with the issue but would leave meaningful work undone',
+  likely: 'carrying out the prompt would largely resolve the issue, even if worded differently',
+} satisfies Record<(typeof COVERAGE_CHOICES)[number], string>
+
+/** The classifier's per-request question limit. */
+const MAX_QUESTIONS = 256
+
+function coverageQuestion(item: CoverageCandidate): ClassifierQuestion {
+  return {
+    type: 'choice',
+    instructions:
+      'Does this existing roadmap item already address the GitHub issue? ' +
+      `Roadmap item ${JSON.stringify(item.title.slice(0, 120))}: ${item.body.slice(0, 400)}`,
+    // A copy per question: request validation rejects an object reached twice,
+    // so questions sharing one options object fail every multi-item request.
+    options: { ...COVERAGE_OPTIONS },
   }
-  const open = issues.filter((i) => !pinnedNumbers.has(i.number))
-  if (open.length === 0) return []
+}
 
+/**
+ * Ask the chosen classifier connection about every issue × item pair: one
+ * request per issue (split when the items exceed one request's questions),
+ * with the issue as the state and one question per item. Each issue keeps its
+ * strongest match, the likelier one on a tie. Null when no connection is
+ * chosen or any answer is unusable, so the model can answer instead.
+ */
+export async function classifyCoverage(
+  open: readonly RoadmapImportIssue[],
+  candidates: readonly CoverageCandidate[],
+  ask: typeof askClassifierBatch = askClassifierBatch,
+): Promise<Omit<RoadmapIssueCoverageMatch, 'itemTitle'>[] | null> {
+  const requests: ClassifierRequest[] = []
+  const pairs: { issueNumber: number; items: CoverageCandidate[] }[] = []
+  for (const issue of open) {
+    const state = `Issue #${String(issue.number)}: ${issue.title.slice(0, 160)}\n\n${issue.body.slice(0, 600)}`
+    for (let start = 0; start < candidates.length; start += MAX_QUESTIONS) {
+      const items = candidates.slice(start, start + MAX_QUESTIONS)
+      requests.push({
+        state,
+        questions: Object.fromEntries(
+          items.map((item, index) => [`item-${String(index)}`, coverageQuestion(item)]),
+        ),
+      })
+      pairs.push({ issueNumber: issue.number, items })
+    }
+  }
+  const results = await ask(requests, {
+    timeoutMs: MATCH_TIMEOUT_MS,
+    signal: AbortSignal.timeout(MATCH_TIMEOUT_MS),
+  })
+  if (!results) return null
+
+  const best = new Map<
+    number,
+    { itemId: string; verdict: RoadmapCoverageVerdict; probability: number }
+  >()
+  for (const [index, { issueNumber, items }] of pairs.entries()) {
+    const answers = results[index]?.answers
+    if (!answers) return null
+    for (const [itemIndex, item] of items.entries()) {
+      const answer = likeliestChoice(COVERAGE_CHOICES, answers[`item-${String(itemIndex)}`])
+      if (!answer) return null
+      if (answer.choice === 'none') continue
+      const current = best.get(issueNumber)
+      const stronger =
+        !current ||
+        (answer.choice === 'likely' && current.verdict === 'partial') ||
+        (answer.choice === current.verdict && answer.probability > current.probability)
+      if (stronger) {
+        best.set(issueNumber, {
+          itemId: item.id,
+          verdict: answer.choice,
+          probability: answer.probability,
+        })
+      }
+    }
+  }
+  return [...best.entries()].map(([issueNumber, { itemId, verdict }]) => ({
+    issueNumber,
+    itemId,
+    verdict,
+  }))
+}
+
+/** The small-tasks model's coverage prompt: every open issue against every item, at once. */
+export function coveragePrompt(
+  open: readonly RoadmapImportIssue[],
+  candidates: readonly CoverageCandidate[],
+): string {
   const itemBlock = candidates
     .map(
       (c) =>
@@ -93,8 +174,7 @@ export async function matchOpenIssuesToRoadmapItems(
         `  body=${JSON.stringify(i.body.slice(0, 600))}`,
     )
     .join('\n')
-
-  const ask =
+  return (
     'You are matching open GitHub issues to existing roadmap prompts.\n' +
     'For each ISSUE that an ITEM already addresses (same goal, even if wording differs ' +
     'or the item is not pinned), output one line:\n' +
@@ -105,6 +185,42 @@ export async function matchOpenIssuesToRoadmapItems(
     'but would leave meaningful work undone. Use only item ids from the list. ' +
     'Output ONLY matching lines (or nothing). Do not invent issues or items.\n\n' +
     `ITEMS:\n${itemBlock}\n\nISSUES:\n${issueBlock}`
+  )
+}
+
+/**
+ * Judge which open issues are already covered by existing roadmap items: the
+ * classifier connection first, then the small-tasks model. Issues already
+ * pinned on a candidate are skipped — the pane already marks those.
+ * `complete` and `classify` are injectable for tests.
+ */
+export async function matchOpenIssuesToRoadmapItems(
+  issues: RoadmapImportIssue[],
+  complete: (ask: string) => Promise<string> = askSmallTasks,
+  classify: typeof classifyCoverage = classifyCoverage,
+): Promise<RoadmapIssueCoverageMatch[]> {
+  if (issues.length === 0) return []
+  const candidates = coverageCandidateItems()
+  if (candidates.length === 0) return []
+
+  // Skip issues that already have a deterministic pin match — no model call
+  // needed for those, and we must not invent a second match that fights the
+  // pin badge.
+  const pinnedNumbers = new Set<number>()
+  for (const item of candidates) {
+    const n = pinnedIssueNumber(item.issue)
+    if (n !== null) pinnedNumbers.add(n)
+  }
+  const open = issues.filter((i) => !pinnedNumbers.has(i.number))
+  if (open.length === 0) return []
+  const titleById = new Map(candidates.map((c) => [c.id, c.title] as const))
+
+  const classified = await classify(open, candidates)
+  if (classified) {
+    return classified.map((m) => ({ ...m, itemTitle: titleById.get(m.itemId) ?? m.itemId }))
+  }
+
+  const ask = coveragePrompt(open, candidates)
 
   let text: string
   try {
@@ -114,7 +230,6 @@ export async function matchOpenIssuesToRoadmapItems(
   }
 
   const knownIds = new Set(candidates.map((c) => c.id))
-  const titleById = new Map(candidates.map((c) => [c.id, c.title] as const))
   // Drop any pin collisions the model invents — the pane already owns those.
   return parseCoverageMatches(text, knownIds)
     .filter((m) => !pinnedNumbers.has(m.issueNumber))
@@ -125,13 +240,12 @@ export async function matchOpenIssuesToRoadmapItems(
 }
 
 async function askSmallTasks(ask: string): Promise<string> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) throw new Error('No small-tasks provider')
-  const model = resolveSmallTasksModelId()
-  const { text, usage } = await completeTextWithUsage(provider, ask, MATCH_TIMEOUT_MS)
+  const route = await resolveSmallTasksRoute()
+  if (!route) throw new Error('No small-tasks provider')
+  const { text, usage } = await completeTextWithUsage(route.provider, ask, MATCH_TIMEOUT_MS)
   if (usage.inputTokens || usage.outputTokens) {
     recordUsageEvent({
-      model,
+      model: route.model,
       source: 'small-tasks',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,

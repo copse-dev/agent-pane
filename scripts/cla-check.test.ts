@@ -219,6 +219,43 @@ describe('CLA evaluation', () => {
     assert.equal(stateOf(deps.result), 'success')
   })
 
+  it('lets repository automation answer for Copse, Codex, Claude and Cursor commits', async () => {
+    // App-made commits (copse@localhost), container runs (copse@copse.invalid)
+    // and agent trailers carry addresses linked to no account; on an
+    // automation pull request nobody else could answer for them.
+    const commits = [
+      commit(null, 'copse@localhost', 'x\n\nCo-authored-by: Codex <codex@openai.com>'),
+      commit(null, 'copse@copse.invalid'),
+      commit(null, 'copse@copse.dev', 'x\n\nCo-Authored-By: Copse <noreply@copse.dev>'),
+      commit(null, 'noreply@openai.com', 'x\n\nCo-authored-by: Cursor <cursoragent@cursor.com>'),
+      commit(claude, 'noreply@anthropic.com'),
+    ]
+    const { result } = await evaluate({ pr: pull(4019, releaseBot, commits), commits })
+    assert.equal(stateOf(result), 'success')
+  })
+
+  it('still makes an outside opener sign for a Copse- or Codex-authored commit', async () => {
+    for (const email of ['copse@localhost', 'codex@openai.com']) {
+      const commits = [commit(null, email)]
+      const { result } = await evaluate({
+        pr: pull(4020, outsider, commits, { fork: true }),
+        commits,
+      })
+      assert.equal(stateOf(result), 'failure', email)
+      assert.ok(result.kind === 'evaluated')
+      assert.deepEqual(
+        result.unsigned.map((u) => u.login),
+        ['eve'],
+      )
+    }
+  })
+
+  it('does not treat other addresses at the agent domains as agents', async () => {
+    const commits = [commit(null, 'someone@openai.com'), commit(null, 'someone@copse.dev')]
+    const { result } = await evaluate({ pr: pull(4021, releaseBot, commits), commits })
+    assert.equal(stateOf(result), 'failure')
+  })
+
   it('does not trust an App outside the automation allowlist, even from a same-repository branch', async () => {
     // Anyone can open a pull request from an existing branch here; a branch
     // in this repository says nothing about the App that opened it.
@@ -311,6 +348,28 @@ describe('CLA evaluation', () => {
     assert.equal(stateOf(result), 'failure')
     assert.ok(result.kind === 'evaluated')
     assert.match(result.unresolved.join('\n'), /opened by helper\[bot\]/)
+  })
+
+  it('makes an outside opener sign even when every commit claims a maintainer', async () => {
+    // A commit's author email is self-declared, and GitHub links it to the
+    // maintainer's account; only the opener is authenticated.
+    const commits = [commit(maintainer, 'jk@example.com')]
+    const spoofed = await evaluate({
+      pr: pull(4022, outsider, commits, { fork: true }),
+      commits,
+    })
+    assert.equal(stateOf(spoofed.result), 'failure')
+    assert.ok(spoofed.result.kind === 'evaluated')
+    assert.deepEqual(
+      spoofed.result.unsigned.map((u) => u.login),
+      ['eve'],
+    )
+
+    const signed = await evaluate(
+      { pr: pull(4023, outsider, commits, { fork: true }), commits },
+      { signatures: { signatures: [{ id: outsider.id, emails: [] }] } },
+    )
+    assert.equal(stateOf(signed.result), 'success')
   })
 
   it('fails an outside unsigned human author, even on a maintainer pull request', async () => {

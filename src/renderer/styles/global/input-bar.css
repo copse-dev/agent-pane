@@ -638,13 +638,24 @@
 .portrait-panel-overflow-item.is-active {
   color: var(--accent);
 }
-.footer-model-host {
+/* The model and branch pickers share whatever the fixed controls leave, each
+   up to its own width: zero basis plus `max-width: max-content`. A short
+   branch like `work` takes its whole width and the long model name gives way,
+   and when both are long they split the room evenly. Plain shrinking took
+   from both in proportion to their width, which cut a four-letter branch
+   while the model name still had plenty to spare. The caps sit on the pickers
+   so each host's max-content already honours them. `footer-compact.ts`
+   measures the natural width with the basis back at `auto`. */
+.footer-model-host,
+.footer-branch-host {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: max-content;
+}
+.footer-model-host .model-picker {
   max-width: min(220px, 40vw);
 }
-.footer-branch-host {
-  min-width: 0;
-  flex-shrink: 1;
+.footer-branch-host .branch-picker {
   max-width: min(200px, 30vw);
 }
 .footer-checkout-host {
@@ -737,6 +748,48 @@
 }
 .footer-branch-status.is-mismatch.is-link {
   color: var(--warning);
+}
+.footer-branch-status.is-detached {
+  color: var(--warning);
+}
+/* The repair button sits on the branch's own line: the label gives way to an
+   ellipsis and the button keeps its width. A block picker wrapped the button
+   under the branch name and doubled the footer's height. */
+.footer-branch-host .branch-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.footer-branch-host .branch-picker-trigger {
+  flex: 0 1 auto;
+}
+/* The button's width comes on top of the branch's own cap, not out of it. */
+.footer-branch-host .branch-picker:has(> .branch-reattach-button:not([hidden])) {
+  max-width: min(320px, 45vw);
+}
+.branch-reattach-button {
+  flex: none;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 6px;
+  cursor: pointer;
+}
+.branch-reattach-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.branch-reattach-button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.branch-reattach-button[hidden] {
+  display: none;
 }
 .footer-branch-label,
 .branch-picker-label {

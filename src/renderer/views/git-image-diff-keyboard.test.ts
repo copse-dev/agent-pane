@@ -71,7 +71,50 @@ describe('git image diff expansion', () => {
     assert.equal(expanded.alt, 'assets/banner.png (after)')
   })
 
-  it('restores focus to the equivalent side after a live diff refresh', async () => {
+  it('keeps the thumbnails, and their focus, when a refresh re-renders an unchanged diff', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const diff = imageDiff({ beforeImage: BEFORE_IMAGE, afterImage: AFTER_IMAGE })
+    renderImageDiff(host, diff)
+    const after = qsRequired<HTMLImageElement>(
+      host,
+      '.git-image-diff-img[alt="assets/banner.png (after)"]',
+    )
+
+    // A refresh while the preview is open, then one after it returned focus.
+    after.focus()
+    after.click()
+    renderImageDiff(host, { ...diff })
+    qsRequired<HTMLButtonElement>(document, '.attachment-preview-close').click()
+    await Promise.resolve()
+    assert.ok(document.activeElement === after, 'the preview returned focus to the after thumbnail')
+    renderImageDiff(host, { ...diff })
+
+    assert.equal(after.isConnected, true)
+    assert.equal(host.querySelectorAll('.git-image-diff-img').length, 2)
+    assert.ok(document.activeElement === after, 'the refresh kept focus on the after thumbnail')
+  })
+
+  it('moves focus to the same side when a refresh brings new pixels', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    renderImageDiff(host, imageDiff({ beforeImage: BEFORE_IMAGE, afterImage: BEFORE_IMAGE }))
+    qsRequired<HTMLImageElement>(
+      host,
+      '.git-image-diff-img[alt="assets/banner.png (after)"]',
+    ).focus()
+
+    renderImageDiff(host, imageDiff({ beforeImage: BEFORE_IMAGE, afterImage: AFTER_IMAGE }))
+
+    const after = qsRequired<HTMLImageElement>(
+      host,
+      '.git-image-diff-img[alt="assets/banner.png (after)"]',
+    )
+    assert.equal(after.src, AFTER_IMAGE)
+    assert.ok(document.activeElement === after, 'focus moved to the new after thumbnail')
+  })
+
+  it('restores focus to the equivalent side when the viewer is rebuilt under the preview', async () => {
     const host = document.createElement('div')
     document.body.append(host)
     const diff = imageDiff({ beforeImage: BEFORE_IMAGE, afterImage: AFTER_IMAGE })
@@ -84,6 +127,9 @@ describe('git image diff expansion', () => {
     originalBefore.focus()
     originalBefore.click()
 
+    // The pane clears the viewer when it leaves the file (another selection, a
+    // failed status read) and renders it afresh when it comes back.
+    host.replaceChildren()
     renderImageDiff(host, diff)
     const replacementBefore = qsRequired<HTMLImageElement>(
       host,

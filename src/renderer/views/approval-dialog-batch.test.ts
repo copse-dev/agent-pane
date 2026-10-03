@@ -400,11 +400,55 @@ describe('approval dialog coalescing', () => {
     assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
+  it('keeps prior-denial note, reason list, full command, and footer as distinct sections', () => {
+    // Mirrors formatExpectedSandboxBlockPromptParts output: denial note is its
+    // own prose block (not spliced into a bullet with the live script).
+    const prior =
+      'gh could not read its own config at ~/.config/gh (operation not permitted).\n\n' +
+      'Earlier in this thread: already confirmed denied (matched command: "set -o pipefail; gh pr list").'
+    const bodyAdvice =
+      `${prior}\n\n` +
+      'The agent expects the project sandbox to block this command:\n' +
+      '• Runs the GitHub CLI, which may reach GitHub\n\n' +
+      'It is asking to run outside the sandbox up front, rather than letting it fail inside first.'
+    const commandPreview =
+      'set -o pipefail\ngh search prs one\ngh search prs two\ngh search prs three'
+    emit({
+      id: 'outside-readable',
+      title: 'Run outside sandbox?',
+      body: commandPreview,
+      bodyAdvice,
+      bodyFooter:
+        "This is the agent's expectation, not a confirmed sandbox block. " +
+        'Allow running it once outside the sandbox?',
+    })
+    fireWindow()
+
+    const advice = qsRequired(dialog, '.approval-advice')
+    const body = qsRequired(dialog, '.approval-body')
+    const footer = qsRequired(dialog, '.approval-footer')
+
+    assert.match(advice.textContent, /Earlier in this thread: already confirmed denied/)
+    assert.match(advice.textContent, /The agent expects the project sandbox to block/)
+    assert.deepEqual(
+      [...advice.querySelectorAll('ul.approval-reasons > li')].map((node) => node.textContent),
+      ['Runs the GitHub CLI, which may reach GitHub'],
+    )
+    // Live command lives only in the monospaced block — not concatenated into advice.
+    assert.doesNotMatch(advice.textContent, /gh search prs two/)
+    assert.doesNotMatch(advice.textContent, /`/)
+    assert.equal(body.textContent, commandPreview)
+    assert.ok(body.classList.contains('approval-body-code'))
+    assert.match(footer.textContent, /Allow running it once outside the sandbox/)
+    assert.ok(advice.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING)
+    assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
   it('keeps GitHub-style MCP bodies in the interface font, not a code dump', () => {
     emit({
       id: 'gh',
       type: 'mcp',
-      title: 'Mark pull request ready for review?',
+      title: 'Mark pull request ready for review on GitHub?',
       body: 'PR #1478',
     })
     fireWindow()
@@ -412,7 +456,7 @@ describe('approval dialog coalescing', () => {
     assert.ok(body)
     assert.equal(body.textContent, 'PR #1478')
     assert.equal(body.classList.contains('approval-body-code'), false)
-    assert.equal(heading(), 'Mark pull request ready for review?')
+    assert.equal(heading(), 'Mark pull request ready for review on GitHub?')
   })
 
   it('keeps per-row labels and a count heading for a mixed batch', () => {

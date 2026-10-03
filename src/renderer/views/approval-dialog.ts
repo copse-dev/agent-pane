@@ -5,6 +5,21 @@ import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.t
 import { setAttentionThreads } from '../controller/attention.ts'
 import { uiActions } from '../ui/actions.ts'
 
+function githubMarkIcon(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('class', 'approval-github-icon')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute(
+    'd',
+    'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.729.084-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.29-1.552 3.295-1.23 3.295-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.43.372.81 1.102.81 2.222 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12',
+  )
+  svg.append(path)
+  return svg
+}
+
 /**
  * How long the first pending request waits before the dialog pops, so a burst of
  * concurrent `session/request_permission` calls (an agent running several tool
@@ -62,6 +77,31 @@ function approvalCopyElement(className: string, text: string): HTMLElement {
 }
 
 /**
+ * One request exactly as a single-request prompt presents it, fully expanded:
+ * the advice, the whole body (monospaced for shell), then the footer. Shared
+ * with the Activity panel so a request is never approved from a view that shows
+ * less than this prompt would. Nothing is truncated; a long body scrolls.
+ */
+export function approvalRequestDetails(req: {
+  body: string
+  bodyAdvice: string | undefined
+  bodyFooter: string | undefined
+  type: string
+}): HTMLElement[] {
+  const parts: HTMLElement[] = []
+  if (req.bodyAdvice) parts.push(approvalCopyElement('approval-advice', req.bodyAdvice))
+  parts.push(
+    el(
+      'div',
+      { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
+      req.body,
+    ),
+  )
+  if (req.bodyFooter) parts.push(approvalCopyElement('approval-footer', req.bodyFooter))
+  return parts
+}
+
+/**
  * Combine the distinct explanations for one grouped decision. Permission copy
  * commonly shares a lead line followed by request-specific bullets; keep that
  * lead once and preserve every unique detail below it. Unstructured advice stays
@@ -113,11 +153,46 @@ const defaultTimer: ApprovalTimer = (fn, ms) => {
   }
 }
 
+/** What another surface (the Activity panel) may read about one pending approval. */
+export interface PendingApprovalSummary {
+  id: string
+  /** Thread the request belongs to; undefined when it is not tied to a run. */
+  threadId: string | undefined
+  title: string
+  body: string
+  bodyAdvice: string | undefined
+  bodyFooter: string | undefined
+  type: string
+  /** Renderer clock when the request arrived — how long it has been waiting. */
+  receivedAt: number
+}
+
+/**
+ * The dialog's pending requests, exposed so a second surface can list and answer
+ * them without growing a second approval path. The dialog stays the only owner
+ * of its queue and the only caller of `approval.respond`.
+ */
+export interface ApprovalRequests {
+  /** Every request still waiting for an answer — on screen or queued — oldest first. */
+  pending(): PendingApprovalSummary[]
+  /**
+   * Answer one request with the narrowest decision the prompt offers: approve
+   * this request once (no remembered grant, no task lease), or reject it.
+   *
+   * Returns false, and sends nothing, when the request is no longer pending —
+   * it was answered here or on the prompt already, or main cancelled it. That is
+   * what makes a double click or a stale row harmless.
+   */
+  answerOnce(id: string, approved: boolean): boolean
+  /** Called after any change to {@link pending}. Returns an unsubscribe. */
+  onChange(listener: () => void): () => void
+}
+
 export function mountApprovalDialog(
   api: ApiClient,
   store: AppStore,
   options: ApprovalDialogOptions = {},
-): void {
+): ApprovalRequests {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS
   const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS
   const setTimer = options.setTimer ?? defaultTimer
@@ -136,6 +211,12 @@ export function mountApprovalDialog(
   )
   // One heading for the whole prompt (fixed); the items scroll under it so a big
   // batch doesn't push the buttons off screen.
+  const githubBrand = el(
+    'div',
+    { class: 'approval-github-brand', hidden: '', 'aria-hidden': 'true' },
+    el('span', { class: 'approval-github-mark' }, githubMarkIcon()),
+    el('span', {}, 'GitHub'),
+  )
   const heading = el('h3', { class: 'approval-heading' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
@@ -157,6 +238,7 @@ export function mountApprovalDialog(
   )
   const dialog = el('dialog', { id: 'approval-dialog' })
   dialog.append(
+    githubBrand,
     heading,
     items,
     rememberLabel,
@@ -203,7 +285,13 @@ export function mountApprovalDialog(
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
     turnTreeLeaseSubject: string | undefined
+    receivedAt: number
+    /** Arrival order; the clock alone ties within a millisecond. */
+    arrival: number
   }
+
+  const changeListeners = new Set<() => void>()
+  let arrivals = 0
 
   // Requests waiting for their turn (background threads, or arrived before the
   // coalesce window elapsed). `batch` holds the requests currently on screen —
@@ -255,6 +343,9 @@ export function mountApprovalDialog(
       .map((req) => req.threadId)
       .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
     setAttentionThreads(store, 'approval', waiting)
+    // Every queue/batch mutation ends here, so this is the one place the
+    // pending set is announced to other surfaces.
+    for (const listener of [...changeListeners]) listener()
   }
 
   /** Move every currently-showable queued request onto the on-screen batch,
@@ -356,6 +447,9 @@ export function mountApprovalDialog(
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
+    const isGithubApproval = batch.some((request) => request.title.includes('GitHub'))
+    githubBrand.hidden = !isGithubApproval
+    dialog.classList.toggle('approval-dialog-github', isGithubApproval)
 
     const requestBody = (req: PendingApproval): HTMLElement => {
       // Shell commands stay monospaced; other prompts (PR targets, origins) use the
@@ -662,6 +756,8 @@ export function mountApprovalDialog(
         turnTreeLeaseLabel,
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
+        receivedAt: Date.now(),
+        arrival: arrivals++,
       }
       queue.push(pending)
       if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
@@ -732,4 +828,35 @@ export function mountApprovalDialog(
   rejectButton.addEventListener('click', () => {
     resolve(false, false)
   })
+
+  return {
+    pending: () =>
+      [...batch, ...queue]
+        .sort((a, b) => a.arrival - b.arrival)
+        .map((req) => ({
+          id: req.id,
+          threadId: req.threadId,
+          title: req.title,
+          body: req.body,
+          bodyAdvice: req.bodyAdvice,
+          bodyFooter: req.bodyFooter,
+          type: req.type,
+          receivedAt: req.receivedAt,
+        })),
+    answerOnce: (id, approved): boolean => {
+      if (!batch.some((req) => req.id === id) && !queue.some((req) => req.id === id)) return false
+      // Taken off the dialog first, exactly as a cancellation would be: an open
+      // prompt that still holds siblings re-renders and re-arms its settle
+      // guard, and an emptied one closes and surfaces whatever waited behind it.
+      removeCancelled(id)
+      void api.approval.respond(id, approved, false, 'once')
+      return true
+    },
+    onChange: (listener) => {
+      changeListeners.add(listener)
+      return () => {
+        changeListeners.delete(listener)
+      }
+    },
+  }
 }

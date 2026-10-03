@@ -17,6 +17,11 @@ tests/fixtures/git-changes-repo/
 # Review-bench cases: the truth anchors are line numbers in these trees, so a
 # reformat could move a defect off the line the corpus says it is on.
 benchmarks/review/cases/
+# Risk-rating corpus and report: written by `pnpm run bench:risk collect` / `score`,
+# which keep hand-ruled verdicts across re-collects; a reformat would make every
+# re-collect a whole-file diff and hide the verdict changes in it.
+benchmarks/review-risk/corpus.json
+benchmarks/review-risk/results/
 # E2E markdown fixture with intentional hard-break trailing spaces + &nbsp;.
 tests/fixtures/job-description-metadata.md
 # Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never
@@ -25,6 +30,9 @@ schemas/vendor/*.json
 # Pinned Cursor plugin snapshot — upstream manifests, licenses, and skills are
 # content-addressed and must remain byte-identical to the downloaded commit.
 vendor/bundled-cursor-skills/plugins/
+# Its provenance record, written by `pnpm sync:cursor-skills` and re-read by the
+# build; a reformat would make the next sync show a spurious diff.
+vendor/bundled-cursor-skills/SOURCE.json
 # Hook wire-payload snapshots (G4) — a generated artifact written byte-exact by
 # payload-snapshots.test.ts (UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1); the test compares
 # against these bytes, so prettier must not reformat them (decision 14).

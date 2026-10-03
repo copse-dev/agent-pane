@@ -100,7 +100,13 @@ export function showContextMenu(
     dismiss()
   }
   const onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') dismiss()
+    if (e.key !== 'Escape') return
+    // The menu is the topmost interaction, including when it lives inside a
+    // native dialog. Consume Escape so dismissing the menu does not also run
+    // the dialog's native cancel action (or a workspace shortcut behind it).
+    e.preventDefault()
+    e.stopPropagation()
+    dismiss()
   }
 
   const dialog = withinDialog?.closest('dialog')

@@ -1,10 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
+import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -109,6 +110,252 @@ describe('footer branch status', () => {
     )
     assert.ok(button.classList.contains('is-copyable'))
     assert.equal(document.querySelector('.toast-error'), null)
+  })
+
+  describe('a detached thread checkout', () => {
+    function detachedStore(): AppStore {
+      return createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread('copse/thread-branch', true)],
+      })
+    }
+
+    function mountDetached(
+      git: Partial<ApiClient['git']>,
+      store: AppStore = detachedStore(),
+    ): HTMLElement {
+      const host = document.createElement('div')
+      document.body.append(host)
+      const base = createApi({ currentBranch: null, pr: null })
+      mountFooterBranchStatus(host, store, { ...base, git: { ...base['git'], ...git } })
+      return host
+    }
+
+    const detachedStatus = async (): Promise<never> => {
+      throw new Error('Thread worktree is on a detached HEAD')
+    }
+
+    it('offers a reattach that puts the checkout back on its branch', async () => {
+      let attached = false
+      const reattachCalls: string[] = []
+      const host = mountDetached({
+        branchStatus: async () => {
+          if (!attached) return detachedStatus()
+          return { currentBranch: 'copse/thread-branch', pr: null }
+        },
+        worktreeAttachment: async () =>
+          attached
+            ? { state: 'attached' }
+            : {
+                state: 'detached',
+                branch: 'copse/thread-branch',
+                recovery: null,
+                uncommittedPick: null,
+              },
+        reattachWorktree: async (projectId, threadId) => {
+          reattachCalls.push(`${projectId}/${threadId}`)
+          attached = true
+          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+        },
+      })
+      await settle()
+
+      const trigger = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.getAttribute('aria-label'), 'Reattach checkout to copse/thread-branch')
+      assert.ok(trigger.classList.contains('is-detached'))
+      assert.match(trigger.title, /detached from copse\/thread-branch\. Your files are preserved/)
+
+      reattach.click()
+      await settle()
+      await settle()
+
+      assert.deepEqual(reattachCalls, ['project-1/thread-1'])
+      assert.match(
+        document.querySelector('.toast-info')?.textContent ?? '',
+        /Reattached to copse\/thread-branch/,
+      )
+      assert.equal(reattach.hidden, true)
+      assert.equal(trigger.classList.contains('is-detached'), false)
+    })
+
+    it('continues an interrupted rebase in a terminal instead of reattaching', async () => {
+      let reattachCalled = false
+      const store = detachedStore()
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
+      })
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'rebase',
+            uncommittedPick: null,
+          }),
+          reattachWorktree: async () => {
+            reattachCalled = true
+            return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+          },
+        },
+        store,
+      )
+      await settle()
+
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Continue rebase')
+      assert.equal(
+        reattach.getAttribute('aria-label'),
+        'Continue the rebase on copse/thread-branch in a terminal',
+      )
+      assert.match(reattach.title, /a rebase stopped part-way\. Continue it in a terminal/)
+      reattach.click()
+      await settle()
+      assert.equal(requests.at(0)?.command, 'git rebase --continue')
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
+      assert.equal(requests.at(0)?.completion?.turnTreeId, 'thread-1')
+      assert.equal(reattach.disabled, true)
+      const request = requests.at(0)
+      assert.ok(request)
+
+      const otherThread = { ...thread('copse/other-thread', true), id: 'thread-2' }
+      store.setState({
+        activeThreadId: otherThread.id,
+        threads: [...store.getState().threads, otherThread],
+      })
+      store.emit('threads_changed')
+      await settle()
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Continue rebase')
+
+      store.setState({ activeThreadId: 'thread-1' })
+      store.emit('threads_changed')
+      await settle()
+      assert.equal(reattach.disabled, true)
+      assert.equal(reattach.textContent, 'Running…')
+
+      store.emit('code_block_run_finished', {
+        id: request.id,
+        projectId: request.projectId,
+        threadId: request.threadId,
+        exitCode: 0,
+        output: '',
+        shell: { tabId: 'recovery', label: 'Git recovery', content: '' },
+        ...(request.completion ? { completion: request.completion } : {}),
+      })
+      await settle()
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattachCalled, false)
+    })
+
+    it('resets an active bisect in a terminal instead of stranding its state', async () => {
+      let reattachCalled = false
+      const store = detachedStore()
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
+      })
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'bisect',
+            uncommittedPick: null,
+          }),
+          reattachWorktree: async () => {
+            reattachCalled = true
+            return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+          },
+        },
+        store,
+      )
+      await settle()
+
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.disabled, false)
+      assert.equal(button.textContent, 'Reset bisect')
+      assert.equal(
+        button.getAttribute('aria-label'),
+        'Reset the bisect and return to copse/thread-branch in a terminal',
+      )
+      assert.match(button.title, /Git bisect is in progress\. Reset the bisect in a terminal/)
+      button.click()
+      await settle()
+      assert.equal(requests.at(0)?.command, 'git bisect reset')
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
+      assert.equal(reattachCalled, false)
+    })
+
+    it('commits a pick that failed to sign before continuing the rebase', async () => {
+      const store = detachedStore()
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
+      })
+      const commit = 'aad0cc78baea8ca39676cbdf2de560c6f04d8417'
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'rebase',
+            uncommittedPick: { commit, signOption: '-S' },
+          }),
+        },
+        store,
+      )
+      await settle()
+
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.textContent, 'Commit and continue')
+      assert.equal(
+        button.getAttribute('aria-label'),
+        'Commit the staged pick and continue the rebase on copse/thread-branch in a terminal',
+      )
+      assert.match(button.title, /applied aad0cc7 but could not commit it/)
+      button.click()
+      await settle()
+      assert.equal(requests.at(0)?.command, `git commit -S -C ${commit} && git rebase --continue`)
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
+    })
+
+    it('keeps the button and reports the failure when git refuses to reattach', async () => {
+      const host = mountDetached({
+        branchStatus: detachedStatus,
+        worktreeAttachment: async () => ({
+          state: 'detached',
+          branch: 'copse/thread-branch',
+          recovery: null,
+          uncommittedPick: null,
+        }),
+        reattachWorktree: async () => {
+          throw new Error('Cannot reattach thread worktree: local changes would be overwritten')
+        },
+      })
+      await settle()
+
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      reattach.click()
+      await settle()
+      await settle()
+
+      assert.ok(document.querySelector('.toast-error'))
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Reattach')
+    })
   })
 
   it('keeps a readable branch status when only the branch listing fails', async () => {

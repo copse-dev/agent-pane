@@ -1,7 +1,9 @@
+import { summarizePatch, type PatchFileSummary } from '../patch/apply-patch.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
@@ -59,6 +61,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   get_ci_failure_logs: { running: 'Fetching CI failure logs', done: 'Fetched CI failure logs' },
   write_file: { running: 'Writing file', done: 'Wrote file' },
   str_replace: { running: 'Replacing in file', done: 'Replaced in file' },
+  apply_patch: { running: 'Applying patch', done: 'Applied patch' },
   delete_file: { running: 'Deleting file', done: 'Deleted file' },
   rename_file: { running: 'Renaming file', done: 'Renamed file' },
   make_directory: { running: 'Creating directory', done: 'Created directory' },
@@ -67,6 +70,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
   video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },
+  request_review_input: { running: 'Saving question', done: 'Saved question' },
   propose_thread: { running: 'Proposing a thread', done: 'Proposed a thread' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
@@ -76,6 +80,9 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   },
   preflight_worktree: { running: 'Checking worktree', done: 'Checked worktree' },
   prepare_worktree: { running: 'Preparing worktree', done: 'Prepared worktree' },
+  coordination_check: { running: 'Checking overlapping work', done: 'Checked overlapping work' },
+  coordination_note: { running: 'Sending peer note', done: 'Sent peer note' },
+  coordination_read: { running: 'Reading peer notes', done: 'Read peer notes' },
 }
 
 interface ToolGroupDef {
@@ -126,7 +133,14 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
     label: { running: 'Checking git', done: 'Checked git' },
   },
   writing: {
-    tools: ['write_file', 'str_replace', 'delete_file', 'rename_file', 'make_directory'],
+    tools: [
+      'write_file',
+      'str_replace',
+      'apply_patch',
+      'delete_file',
+      'rename_file',
+      'make_directory',
+    ],
     label: { running: 'Editing files', done: 'Edited files' },
   },
   shell: {
@@ -176,7 +190,6 @@ export type ToolCallDisplayItem =
   | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
   | { type: 'individual'; toolCall: ToolCall; label: string }
 
-const MCP_PREFIX = 'mcp__'
 const MCP_GROUP_PREFIX = 'mcp:'
 const TURN_ROLLUP_KEY = 'turn'
 export const RUN_ROLLUP_KEY = 'run'
@@ -187,16 +200,22 @@ interface ParsedMcp {
 }
 
 function parseMcp(name: string): ParsedMcp | null {
-  if (!name.startsWith(MCP_PREFIX)) return null
-  const rest = name.slice(MCP_PREFIX.length)
-  const sep = rest.indexOf('__')
-  if (sep < 0) return null
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) }
+  const match =
+    /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name)
+  const server = match?.[1]
+  const tool = match?.[2]
+  return server && tool ? { server, tool } : null
+}
+
+/** Display-only identity; the persisted name still controls tool execution. */
+function nativeDisplayToolName(name: string): string {
+  const mcp = parseMcp(name)
+  return mcp?.server.toLowerCase() === 'copse' ? mcp.tool : name
 }
 
 /** Human label for a tool name. Defaults to past/settled tense. */
 export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done'): string {
-  const known = TOOL_DISPLAY_NAMES[name]
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)]
   if (known) return pickLabel(known, tense)
   const mcp = parseMcp(name)
   // Codex reports connection failures as synthetic MCP startup calls. Their
@@ -230,9 +249,17 @@ const FILE_EDIT_PATH_ARG: Record<string, string> = {
   make_directory: 'path',
 }
 
+/** Files an `apply_patch` call names, read tolerantly from its (possibly still streaming) input. */
+export function getApplyPatchFiles(tc: ToolCall): PatchFileSummary[] {
+  const input = stringArg(tc.args, 'input')
+  return input === null ? [] : summarizePatch(input)
+}
+
 /** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
 export function getToolEditPath(tc: ToolCall): string | null {
-  const key = FILE_EDIT_PATH_ARG[tc.name]
+  const name = nativeDisplayToolName(tc.name)
+  if (name === 'apply_patch') return getApplyPatchFiles(tc)[0]?.path ?? null
+  const key = FILE_EDIT_PATH_ARG[name]
   if (!key) return null
   return stringArg(tc.args, key)
 }
@@ -279,22 +306,39 @@ export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
  */
 export function getToolCallLabel(tc: ToolCall): string {
   const tense = tenseFromStatus(tc.status)
-  if (tc.name === 'write_file' || tc.name === 'str_replace') {
+  // ACP can repeat the raw MCP identifier as its title. That is an identity,
+  // not a human description, and must follow the same formatting as `name`.
+  const mcpTitle = tc.title && parseMcp(tc.title) ? tc.title : undefined
+  const name = nativeDisplayToolName(mcpTitle ?? tc.name)
+  const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : undefined
+  if (name === 'write_file' || name === 'str_replace') {
     const path = fileEditPath(tc.args)
     if (path) return tense === 'running' ? `Editing ${path}` : `Edited ${path}`
   }
-  if (tc.name === 'delete_file') {
+  if (name === 'apply_patch') {
+    const files = getApplyPatchFiles(tc)
+    if (files.length === 1) {
+      const only = files[0]?.path ?? ''
+      return tense === 'running' ? `Patching ${only}` : `Patched ${only}`
+    }
+    if (files.length > 1) {
+      return tense === 'running'
+        ? `Patching ${String(files.length)} files`
+        : `Patched ${String(files.length)} files`
+    }
+  }
+  if (name === 'delete_file') {
     const path = fileEditPath(tc.args)
     if (path) return tense === 'running' ? `Deleting ${path}` : `Deleted ${path}`
   }
-  if (tc.name === 'rename_file') {
+  if (name === 'rename_file') {
     const from = stringArg(tc.args, 'from')
     const to = stringArg(tc.args, 'to')
     if (from && to) {
       return tense === 'running' ? `Renaming ${from} → ${to}` : `Renamed ${from} → ${to}`
     }
   }
-  if (tc.name === 'make_directory') {
+  if (name === 'make_directory') {
     const path = fileEditPath(tc.args)
     if (path) {
       return tense === 'running' ? `Creating directory ${path}` : `Created directory ${path}`
@@ -304,24 +348,24 @@ export function getToolCallLabel(tc: ToolCall): string {
   // agent's name rather than a generic "Ran agent". The session is authoritative
   // (it survives a reload); `subagent_type` is the fallback while the call is
   // still being streamed and no session has been attached yet.
-  if (tc.name === 'task') {
+  if (name === 'task') {
     const agentName = tc.subagent?.agentName ?? stringArg(tc.args, 'subagent_type')
     if (agentName) {
       return tense === 'running' ? `Running ${agentName}` : `Ran ${agentName}`
     }
   }
-  if (tc.name === 'run_shell' || tc.kind === 'execute') {
+  if (name === 'run_shell' || tc.kind === 'execute') {
     // ACP shells (`kind: 'execute'`) may carry the command in `rawInput`; when
     // they don't, the ACP title (the tool's `name`) is already the command.
     // Commands are tenseless — the same string works while running and after.
     const command = shellCommandArg(tc.args)
     if (command) return shellCommandLabel(command)
-    if (tc.title) return tc.title
+    if (title) return title
   }
   // ACP keeps a user-facing title distinct from its programmatic identity.
   // Use it for display without sacrificing `name` for grouping and behavior.
-  if (tc.title && !/^MCP\s*:\s*tool$/i.test(tc.title)) return tc.title
-  return getToolDisplayName(tc.name, tense)
+  if (title) return title
+  return getToolDisplayName(mcpTitle ?? tc.name, tense)
 }
 
 export function getToolGroupKey(name: string, kind?: string): string | null {
@@ -437,26 +481,48 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
     base = `Used ${String(n)} tools`
   }
 
-  if (failed > 0 && status !== 'running') {
+  if (failed > 0) {
     return `${base} · ${String(failed)} failed`
   }
   return base
+}
+
+export interface ToolDisplayOptions {
+  /**
+   * Wrap even a single regular tool so a co-located reasoning trail can nest
+   * inside the italic summary (rather than floating above it).
+   */
+  forceRollup?: boolean
+  /**
+   * Calls the user interrupted. The host records them as errors so the next
+   * model never assumes they completed, but they are not failures to surface:
+   * they stay inside the rollup rather than beside it. Only the renderer knows
+   * the turn outcome that makes this call.
+   */
+  isInterrupted?: (toolCall: ToolCall) => boolean
+}
+
+/** A genuine failure: it stays visible beside the rollup instead of inside it. */
+function isSurfacedFailure(tc: ToolCall, opts: ToolDisplayOptions | undefined): boolean {
+  return tc.status === 'error' && opts?.isInterrupted?.(tc) !== true
 }
 
 /**
  * Build the cards for a message's tool calls. Subagent runs stay as top-level
  * cards (they have their own timeline). Everything else collapses into one
  * quiet turn rollup when there are two or more calls — including Cursor cloud /
- * ACP titles that never map onto a built-in group.
+ * ACP titles that never map onto a built-in group — unless every call failed:
+ * failures stay visible beside the rollup, so it would be empty.
  *
  * `forceRollup` wraps even a single regular tool so a co-located reasoning trail
  * can nest inside the italic summary (rather than floating above it).
  */
 export function buildToolCallDisplayItems(
   toolCalls: ToolCall[],
-  opts?: { forceRollup?: boolean },
+  opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
+  const isVisibleFailure = (tc: ToolCall): boolean => isSurfacedFailure(tc, opts)
 
   const subagents: ToolCall[] = []
   const proposals: ToolCall[] = []
@@ -466,20 +532,30 @@ export function buildToolCallDisplayItems(
     // A proposed thread is an offer addressed to the user, so it keeps a
     // top-level card for the same reason a subagent does: folded into
     // `Used 12 tools` it is an offer nobody is ever shown.
-    else if (tc.name === THREAD_PROPOSAL_TOOL) proposals.push(tc)
+    else if (tc.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc)) proposals.push(tc)
     else regular.push(tc)
   }
 
   const result: ToolCallDisplayItem[] = []
   const grouped = buildGroupedDisplayItems(regular)
-  if (regular.length >= 2 || (opts?.forceRollup === true && regular.length >= 1)) {
+  // When every call failed, nothing would sit inside the rollup: it would only
+  // repeat the failure count above the cards that already show it. A forced
+  // rollup is kept because it hosts nested reasoning even with no calls inside.
+  const hasQuietCall = regular.some((tc) => !isVisibleFailure(tc))
+  if (
+    (hasQuietCall && regular.length >= 2) ||
+    (opts?.forceRollup === true && regular.length >= 1)
+  ) {
     result.push({
       type: 'rollup',
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc) => !isVisibleFailure(tc))),
       toolCalls: regular,
     })
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)))
   } else {
     result.push(...grouped)
   }
@@ -519,7 +595,7 @@ export function summarizeToolRun(run: ToolRun): string {
     parts.push(status === 'running' ? `Using ${String(n)} tools` : `Used ${String(n)} tools`)
   }
   parts.push(`${String(run.steps.length)} steps`)
-  if (failed > 0 && status !== 'running') parts.push(`${String(failed)} failed`)
+  if (failed > 0) parts.push(`${String(failed)} failed`)
   return parts.join(' · ')
 }
 
@@ -534,38 +610,35 @@ function summarizeToolRunStep(step: ToolRunStep, children: ToolCallDisplayItem[]
   // summarizeToolTurn appends the failure count itself; the polished label
   // replaces it, so carry the failures over rather than losing them.
   const failed = step.toolCalls.filter((tc) => tc.status === 'error').length
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== 'running') {
-    return `${polished} · ${String(failed)} failed`
-  }
-  return polished
+  return failed > 0 ? `${polished} · ${String(failed)} failed` : polished
 }
 
 /**
  * Build the cards for a whole presentation run. A single-step run is exactly
  * the per-message rollup it replaces — the nesting only appears once the run
  * actually spans more than one assistant message, where each member becomes a
- * step inside the shared summary.
+ * step inside the shared summary. The run rollup is always kept (it hosts the
+ * steps' reasoning trails); failed calls leave their step and sit beside it,
+ * as they do beside a single-message rollup.
  *
  * Only the run's *regular* calls are covered here; subagent cards stay on their
  * own message (see {@link buildSubagentDisplayItems}).
  */
 export function buildToolRunDisplayItems(
   run: ToolRun,
-  opts?: { forceRollup?: boolean },
+  opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (run.steps.length < 2) return buildToolCallDisplayItems(run.toolCalls, opts)
+  const isVisibleFailure = (tc: ToolCall): boolean => isSurfacedFailure(tc, opts)
 
-  const children: ToolCallDisplayItem[] = run.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls)
-    return {
-      type: 'step',
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls,
-    }
-  })
+  const children: ToolCallDisplayItem[] = run.steps.map((step) => ({
+    type: 'step',
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc) => !isVisibleFailure(tc))),
+    toolCalls: step.toolCalls,
+  }))
 
   return [
     {
@@ -575,5 +648,6 @@ export function buildToolRunDisplayItems(
       children,
       toolCalls: run.toolCalls,
     },
+    ...buildGroupedDisplayItems(run.toolCalls.filter(isVisibleFailure)),
   ]
 }

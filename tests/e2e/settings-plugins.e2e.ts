@@ -160,6 +160,17 @@ describe('settings plugins (about:addons)', function () {
     assert.equal(await pluginRow.$('.plugin-name').getText(), 'PII redaction')
     await expect(pluginRow.$('.plugin-badge-first-party')).toBeDisplayed()
     assert.equal(await pluginRow.getAttribute('data-enabled'), 'false')
+    // The description must not promise name/phone redaction: releases ship
+    // Rampart's heuristic layer only, and URLs / IPs are deliberately kept.
+    const piiText = await pluginRow.getText()
+    assert.match(piiText, /email addresses, SSNs and card numbers/)
+    assert.match(piiText, /names, phone numbers and street addresses are only caught when/)
+    assert.match(piiText, /URLs and IP addresses are left as typed/)
+    await pluginRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.pii-redaction"]',
+      'settings-pii-redaction-plugin.png',
+    )
 
     // Background execution is a stable primitive and is available without a
     // fresh-profile opt-in. Loopback binding still prompts separately at use time.
@@ -283,6 +294,29 @@ describe('settings plugins (about:addons)', function () {
       'settings-artifact-checkpoint-plugin.png',
     )
 
+    // Dark factory is groundwork with no consumer yet; its copy must not claim
+    // to watch pull requests.
+    const darkFactoryRow = plugins.$('.plugin-row[data-plugin-id="copse.dark-factory"]')
+    await expect(darkFactoryRow).toBeDisplayed()
+    const darkFactoryText = await darkFactoryRow.getText()
+    assert.match(darkFactoryText, /groundwork only/i)
+    assert.doesNotMatch(darkFactoryText, /observes Copse-owned pull requests/)
+    await darkFactoryRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.dark-factory"]',
+      'settings-dark-factory-plugin.png',
+    )
+
+    // The DevTools shortcut is a global accelerator; the row says so.
+    const devtoolsRow = plugins.$('.plugin-row[data-plugin-id="copse.devtools-shortcut"]')
+    await expect(devtoolsRow).toBeDisplayed()
+    assert.match(await devtoolsRow.getText(), /system-wide Ctrl\+Shift\+I/)
+    await devtoolsRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.devtools-shortcut"]',
+      'settings-devtools-shortcut-plugin.png',
+    )
+
     // A selected directory remains an ordinary user plugin. Its declared tool
     // behavior is visible even when this platform cannot start the macOS-only
     // isolated worker and therefore leaves the plugin disabled.
@@ -386,6 +420,8 @@ describe('settings plugins (about:addons)', function () {
     const cls = (await todosRow.getAttribute('class')) ?? ''
     assert.ok(cls.includes('plugin-row-disabled'), 'disabled row must be visually greyed')
 
+    await todosRow.scrollIntoView({ block: 'center' })
+    await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-plugins.png')
 
     // The same manifest metadata is represented in the thread model picker.

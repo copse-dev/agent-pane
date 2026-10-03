@@ -28,6 +28,7 @@
 // mappers own the wire.
 
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
+import { firstPartyProviderOf, hasModelIdPrefix } from './model-families.ts'
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 
@@ -43,10 +44,12 @@ export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
 export const isReasoningLevel = memberOf(REASONING_LEVELS)
 
 /**
- * User-chosen generation parameters for one model selection. Every field is
- * optional and an absent field means "send nothing" — the provider default,
- * not a value of our choosing. That distinction matters: a model's own default
- * temperature is not necessarily 1, and sending 1 is not the same as omitting.
+ * Generation parameters for one model selection. Every field is optional and an
+ * absent field means "send nothing" — the provider default, not a value of our
+ * choosing. That distinction matters: a model's own default temperature is not
+ * necessarily 1, and sending 1 is not the same as omitting. (A stored entry's
+ * absent field falls back to the model's curated recipe first; see
+ * {@link resolveModelParameters}.)
  */
 export interface ModelParameters {
   reasoning?: ReasoningLevel
@@ -186,9 +189,12 @@ const CLAUDE_EFFORT_WITH_SAMPLING = [
 
 /**
  * Thinking is always on for these — an explicit `thinking: { type: 'disabled' }`
- * is rejected — so `off` is not offered.
+ * is rejected — so `off` is not offered. The 5.5 models are listed by full id
+ * because Opus 5 and Sonnet 5, which share their prefixes, still accept it.
  */
 const CLAUDE_THINKING_ALWAYS_ON = [
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
   'claude-fable-5',
   'claude-mythos-5',
   'claude-mythos-preview',
@@ -196,7 +202,8 @@ const CLAUDE_THINKING_ALWAYS_ON = [
 
 /** OpenAI families that take `reasoning_effort` and reject non-default sampling. */
 const OPENAI_REASONING_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const
-const OPENAI_ASTRA_PREFIXES = ['gpt-6-astra'] as const
+/** GPT-6 models documented with a `low`–`max` effort ladder (no `none`/`minimal`). */
+const OPENAI_GPT6_PREFIXES = ['gpt-6-astra', 'gpt-6.1-sol'] as const
 
 const FULL_EFFORT_LADDER: readonly ReasoningLevel[] = [
   'off',
@@ -209,7 +216,7 @@ const FULL_EFFORT_LADDER: readonly ReasoningLevel[] = [
 const CAPPED_EFFORT_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high', 'max']
 const BUDGET_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high']
 const OPENAI_LADDER: readonly ReasoningLevel[] = ['minimal', 'low', 'medium', 'high']
-const OPENAI_ASTRA_LADDER: readonly ReasoningLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const OPENAI_GPT6_LADDER: readonly ReasoningLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const OPENAI_COMPATIBLE_LADDER: readonly ReasoningLevel[] = [
   'off',
   'minimal',
@@ -222,6 +229,12 @@ const OPENAI_COMPATIBLE_LADDER: readonly ReasoningLevel[] = [
 
 function matchesFamily(modelId: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => modelId.startsWith(prefix))
+}
+
+// OpenAI ladders match on an id boundary like the routing table does, so the
+// transport and the parameters cannot disagree about which family an id is in.
+function matchesOpenAiFamily(modelId: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix))
 }
 
 function claudeSupport(modelId: string): ModelParameterSupport {
@@ -259,16 +272,16 @@ function claudeSupport(modelId: string): ModelParameterSupport {
 }
 
 function openAiSupport(modelId: string): ModelParameterSupport {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: 'openai-effort',
       sampling: [],
       outputCap: false,
       temperatureMax: 2,
     }
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: 'openai-effort',
@@ -310,8 +323,9 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     }
   }
   if (selection.namespace === 'cloud') {
-    if (selection.modelId.startsWith('claude')) return claudeSupport(selection.modelId)
-    if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
+    const provider = firstPartyProviderOf(selection)
+    if (provider === 'anthropic') return claudeSupport(selection.modelId)
+    if (provider === 'openai') return openAiSupport(selection.modelId)
     // An unrecognised bare id is routed by whichever key is configured, so we
     // cannot say what it takes. Offer sampling only — the safe intersection.
     return {
@@ -439,12 +453,17 @@ export function clampReasoning(
 /**
  * A sourced parameter recipe for a model.
  *
- * Deliberately *offered*, never applied: recipes are scenario-specific (DeepSeek
- * publishes one `top_p` for agentic use and another for everything else), an
- * aggregator may route the same id to an endpoint the recipe was not written
- * for, and a value we applied on the user's behalf is invisible when it turns
- * out to be wrong. Filling the visible fields keeps the choice theirs and the
- * result on screen.
+ * Applied by default, underneath whatever the user saved (see
+ * {@link resolveModelParameters}). It used to be offered only, behind a button
+ * next to the default chat model — and a thread that picked the model any other
+ * way ran on the server's own sampling instead. For Qwen3.6 in thinking mode
+ * that meant no `presence_penalty`, and the reasoning looped on itself for
+ * hundreds of lines, which is exactly what the card's recipe exists to prevent.
+ *
+ * The risks that argued for offering still hold — a recipe is scenario-specific
+ * and an aggregator may route the id to an endpoint it was not written for — so
+ * the settings UI shows every applied value as the field's placeholder, and any
+ * value the user types replaces the recipe's for that field.
  */
 export interface ModelParameterRecommendation {
   /** What the recipe is tuned for, shown on the affordance. */
@@ -493,6 +512,16 @@ export interface RecommendedOutputCeiling {
  */
 const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
   {
+    match: 'glm-4.7-flash',
+    label: 'Z.ai’s coding-agent recipe',
+    source: 'https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters',
+    // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+    // Its general-task recipe uses different sampling and a larger ceiling;
+    // Copse's coding tool loop uses the coding benchmark profile. The card does
+    // not specify a reasoning-effort value or repetition penalty for this set.
+    params: { temperature: 0.7, topP: 1, maxOutputTokens: 16_384 },
+  },
+  {
     match: 'glm-5.3-flash',
     label: 'Copse’s experimental balanced agent profile',
     source:
@@ -511,7 +540,8 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
     // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
     // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
     // for the model in general; we keep `medium` for this scenario on our own
-    // evidence, and the row stays opt-in and experimental because that evidence is
+    // evidence. Like every recipe it applies by default (a user-set field replaces
+    // its value), but the row stays labelled experimental because that evidence is
     // one benchmark on one host.
     params: { reasoning: 'medium', maxOutputTokens: 16_384, temperature: 1, topP: 0.95 },
   },
@@ -836,8 +866,13 @@ export function decodeModelParametersMap(value: unknown): Record<string, ModelPa
   return out
 }
 
-/** The parameters stored for `model`, sanitized against what it accepts. */
+/**
+ * The parameters a turn on `model` is sent with: its curated recipe, if we hold
+ * one, with the user's stored values replacing it field by field, sanitized
+ * against what the model accepts.
+ */
 export function resolveModelParameters(stored: unknown, model: string): ModelParameters {
-  const entry = decodeModelParametersMap(stored)[model]
-  return entry ? sanitizeModelParameters(entry, model) : {}
+  const entry = decodeModelParametersMap(stored)[model] ?? {}
+  const recipe = recommendedModelParameters(model)?.params ?? {}
+  return sanitizeModelParameters({ ...recipe, ...entry }, model)
 }

@@ -1,10 +1,8 @@
-import { parseCategoryWord, type RoadmapCategory } from '@shared/roadmap/complexity.ts'
+import { ROADMAP_CATEGORIES, type RoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
-import { completeTextWithUsage } from './providers/llm-complete-text.ts'
-import { recordUsageEvent } from './storage/usage-ledger.ts'
+  askBackgroundChoice,
+  type BackgroundChoiceQuestion,
+} from './classifiers/background-classification.ts'
 import { getKnowledgeNote, updateKnowledgeNote } from './storage/knowledge-store.ts'
 
 /**
@@ -13,50 +11,48 @@ import { getKnowledgeNote, updateKnowledgeNote } from './storage/knowledge-store
  * ambient). Saving never waits on it: the note persists immediately and the
  * category is stamped in the background (stampRoadmapCategory).
  *
- * Classification is model-only via the configured small-tasks provider (the
- * local default used for titles/summaries). Keyword or model-routing heuristics
- * are not a substitute for a real judgement — when no provider answers in time
- * (or the reply is unparseable), the stamp is simply skipped and the item stays
- * without a category badge, same as complexity.
+ * Classification is a background question (`background-classification.ts`):
+ * the classifier connection chosen in Settings → Classifiers, else the
+ * configured small-tasks provider, then the chat model. Keyword or
+ * model-routing heuristics are not a substitute for a real judgement — when
+ * nothing answers in time (or the reply is unparseable), the stamp is simply
+ * skipped and the item stays without a category badge, same as complexity.
  *
- * The ask spells out the per-word calibration so a small model doesn't default
- * everything to `feature` — bugs and multi-part projects are called out
- * explicitly.
+ * The question spells out the per-word calibration so a small model doesn't
+ * default everything to `feature` — bugs and multi-part projects are called
+ * out explicitly. Feature comes before project, so a classifier's tie between
+ * them picks feature, as the guidance asks.
  */
 
 const CLASSIFY_TIMEOUT_MS = 10_000
 
-const CLASSIFY_ASK =
-  'Classify the coding task below as exactly one word: bug, feature, or project.\n' +
-  '- bug: fixing broken behavior — a crash, wrong output, an exception, a regression, ' +
-  'or something that does not work as documented.\n' +
-  '- feature: new functionality or an enhancement to existing behavior — a new control, ' +
-  'command, option, or small improvement, contained to a familiar area.\n' +
-  '- project: a multi-part initiative — a new subsystem, a migration, an architectural ' +
-  'change, or a goal that needs design and several distinct pieces of work before it lands.\n' +
-  'Use all three options: not every task is a feature. If torn between feature and project, ' +
-  'pick feature unless the work clearly spans multiple coordinated pieces.\n' +
-  'Reply with ONLY the word.\n\nTask:\n'
+export const ROADMAP_CATEGORY_QUESTION: BackgroundChoiceQuestion<RoadmapCategory> = {
+  task: 'Classify the coding task below',
+  choices: ROADMAP_CATEGORIES,
+  describe: {
+    bug:
+      'fixing broken behavior — a crash, wrong output, an exception, a regression, ' +
+      'or something that does not work as documented.',
+    feature:
+      'new functionality or an enhancement to existing behavior — a new control, ' +
+      'command, option, or small improvement, contained to a familiar area.',
+    project:
+      'a multi-part initiative — a new subsystem, a migration, an architectural ' +
+      'change, or a goal that needs design and several distinct pieces of work before it lands.',
+  },
+  guidance:
+    'Use all three options: not every task is a feature. If torn between feature and project, ' +
+    'pick feature unless the work clearly spans multiple coordinated pieces.',
+  stateLabel: 'Task',
+}
 
 export async function classifyRoadmapCategory(prompt: string): Promise<RoadmapCategory | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
-  const ask = CLASSIFY_ASK + prompt.slice(0, 2000)
-  try {
-    const { text, usage } = await completeTextWithUsage(provider, ask, CLASSIFY_TIMEOUT_MS)
-    if (usage.inputTokens || usage.outputTokens) {
-      recordUsageEvent({
-        model,
-        source: 'small-tasks',
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-      })
-    }
-    return parseCategoryWord(text)
-  } catch {
-    return null
-  }
+  const answer = await askBackgroundChoice(
+    ROADMAP_CATEGORY_QUESTION,
+    prompt.slice(0, 2000),
+    CLASSIFY_TIMEOUT_MS,
+  )
+  return answer?.choice ?? null
 }
 
 /**

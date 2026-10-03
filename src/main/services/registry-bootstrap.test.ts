@@ -5,14 +5,19 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   createRegistry,
+  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
+  syncModelClassifierTools,
   syncOkfMemoryTools,
+  syncOrchestrationStrategyTools,
   syncParallelSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
@@ -22,12 +27,17 @@ import { setGhAvailableForTest } from './tool-availability.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import {
+  CI_INVESTIGATOR_PLUGIN_ID,
+  CI_INVESTIGATOR_PLUGIN_TOOL_NAMES,
+} from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
@@ -202,22 +212,38 @@ describe('syncAppleDevelopmentTools', () => {
     setDefaultPluginRegistry(null)
   })
 
-  it('keeps the visible Simulator tool aligned with the Apple plugin', () => {
+  it('keeps Simulator and Device Hub tools aligned with the Apple plugin', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+    assert.equal(registry.has('device_hub'), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+  })
+
+  it('never registers the Simulator tool on a host without Xcode', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+
+    syncAppleDevelopmentTools(registry, 'linux')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
   })
 })
 
@@ -275,6 +301,30 @@ describe('syncRoadmapPlanTools', () => {
   })
 })
 
+describe('syncReviewerInputTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers the request tool only while the experimental plugin is enabled', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
+
+    plugins.enable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), true)
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
+  })
+})
+
 describe('syncImageGenerationTools', () => {
   afterEach(() => {
     deleteApiKey('openai')
@@ -319,5 +369,113 @@ describe('syncParallelSearchTools', () => {
     plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), false)
+  })
+})
+
+describe('syncCiInvestigatorTools', () => {
+  afterEach(() => {
+    setGhAvailableForTest(null)
+    setDefaultPluginRegistry(null)
+  })
+
+  const registered = (registry: ToolRegistry): boolean[] =>
+    CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
+
+  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    // Plugin on, gh unusable: nothing to advertise.
+    plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    setGhAvailableForTest(false)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
+
+    // gh probe answers: all three appear.
+    setGhAvailableForTest(true)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+
+    // Idempotent while enabled.
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+
+    // Plugin off drops all three even though gh is still usable.
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
+
+    // Re-enable, then gh goes away: the tools follow gh too.
+    plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+    setGhAvailableForTest(false)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
+  })
+})
+
+describe('experimental setting tool syncs', () => {
+  afterEach(() => {
+    setSetting('modelClassifierEnabled', false)
+    setSetting('orchestrationStrategyEnabled', false)
+  })
+
+  const cases = [
+    { setting: 'modelClassifierEnabled', tool: 'suggest_model', sync: syncModelClassifierTools },
+    {
+      setting: 'orchestrationStrategyEnabled',
+      tool: 'delegate_step',
+      sync: syncOrchestrationStrategyTools,
+    },
+  ] as const
+
+  for (const { setting, tool, sync } of cases) {
+    it(`${tool} follows ${setting} live in both directions`, () => {
+      setSetting(setting, false)
+      const registry = createRegistry()
+      assert.equal(registry.has(tool), false, 'off at boot')
+
+      // The Settings checkbox writes the setting; settings:set then resyncs.
+      setSetting(setting, true)
+      sync(registry)
+      assert.equal(registry.has(tool), true, 'on without a restart')
+
+      // Idempotent while on.
+      sync(registry)
+      assert.equal(registry.has(tool), true)
+
+      setSetting(setting, false)
+      sync(registry)
+      assert.equal(registry.has(tool), false, 'off without a restart')
+    })
+
+    it(`createRegistry registers ${tool} when ${setting} is on at boot`, () => {
+      setSetting(setting, true)
+      assert.equal(createRegistry().has(tool), true)
+    })
+  }
+})
+
+describe('pluginEnableRefusal', () => {
+  afterEach(() => {
+    deleteApiKey('parallel')
+  })
+
+  it('refuses to enable Parallel Search without a resolvable key', () => {
+    deleteApiKey('parallel')
+    assert.match(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true) ?? '', /Parallel API key/)
+  })
+
+  it('allows enabling Parallel Search once a key is stored', () => {
+    setApiKey('parallel', 'test-key')
+    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true), null)
+  })
+
+  it('never blocks disabling, and ignores other plugins', () => {
+    deleteApiKey('parallel')
+    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, false), null)
+    assert.equal(pluginEnableRefusal(OKF_MEMORIES_PLUGIN_ID, true), null)
   })
 })

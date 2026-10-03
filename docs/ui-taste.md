@@ -426,6 +426,25 @@ A row that needs more air should change the token, not opt out locally. Rows may
 what they stack inside that padding (memories rows are two lines, roadmap rows one).
 Spec: [`tests/e2e/list-row-rhythm.e2e.ts`](../tests/e2e/list-row-rhythm.e2e.ts).
 
+## Decide which label gives way first
+
+When a one-line row runs out of room, pick the part that truncates, and keep a short identifier
+(a chip's `Hooks`, a schedule's name, a branch like `work`) whole. Cutting a short word saves
+almost nothing: `Hoo…` or `CI re…` is as wide as the word minus a letter or two.
+
+- A secondary label that should use only the leftover space gets `flex: 1 1 0; min-width: 0` plus
+  `text-overflow: ellipsis` (the automation owner label `· workspace`). Weighted `flex-shrink`
+  can't order the truncation: the favoured item still loses a fraction of a pixel, and that is
+  enough to ellipsize it.
+- A fixed word that names the element gets `flex-shrink: 0`, and the long text beside it
+  ellipsizes (hook group chips).
+- Ellipsis needs width for at least one letter and the `…`. A label squeezed below that clips to
+  a bare letter, as in the branch chip `w`, so prefer collapsing something else (the footer's
+  compact mode, the Browser's text Go button) over squeezing a label that far.
+
+Specs: `automation-settings-link`, `browser-preview-tool`, `selected-plugin-browser`, and
+`terminal-new-thread` in `tests/e2e/`.
+
 ## Pane headers share one band
 
 Every right-panel list pane (Explorer, Terminal, Changes, PRs, Memories, Roadmap, Browser, Desktop)
@@ -596,7 +615,8 @@ when it would overflow; expand them again when room returns.
 
 The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
 controls must not consume that last draggable strip, even when every optional panel mode is visible.
-The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
+The regression state lives in
+[`tests/demo/titlebar-compact.demo.ts`](../tests/demo/titlebar-compact.demo.ts).
 
 ## Sticky footers inside scroll containers (gotcha)
 
@@ -763,7 +783,7 @@ wherever the trick is copied. Spec: `modern-css.test.ts`.
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
-Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+Two remotes ending in the same leaf (e.g. `/srv/app` and `/home/ubuntu/app`) must stay
 visually distinct. Display re-derives from `project.path` so older basename-only stored
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
@@ -771,11 +791,15 @@ names still render correctly (`projectDisplayName` in
 ## Thread GitHub PR status icon
 
 Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
-show a single git-pull-request icon after lifecycle resolves — not text, not a pill:
+show a single icon after lifecycle resolves — not text, not a pill:
 
-- open → accent
-- merged → success
-- closed → muted
+- open → git-pull-request glyph, accent
+- merged → git-merge glyph, `--pr-merged` (GitHub purple; fixed, so a purple custom accent
+  cannot collapse it into open)
+- closed → git-pull-request glyph, `--pr-closed` (red)
+
+An open PR whose checks are failing fills the glyph's top node with `--pr-closed`
+(`.has-ci-failure`). Pending and passing checks add nothing; merged and closed never show it.
 
 The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …).
 Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
@@ -852,21 +876,29 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
   `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
   tool, and do not keep progressive wording on a completed card.
-- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
-  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
-  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
-- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
-  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
-  body (above the tool rows) so the collapsed view is only the italic heading. Standalone
-  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning…` while live, `Reasoned` when settled.
+- **One quiet rollup for background activity.** Two or more non-subagent tool calls on a
+  message collapse into `.tool-card-rollup`. The collapsed summary is **italic muted text**
+  (like reasoning) and stays closed by default, including while tools run — click to expand
+  nested category groups and individuals. When prose-less assistant messages follow one
+  another, the same disclosure becomes the run and nests one `.tool-card-step` per message;
+  it is patched in place, so it keeps its open state as messages join. Failed tools render
+  open beside the rollup rather than inside it, so a failure is visible without exposing
+  successful work (a call the user interrupted is not a failure and stays inside). When every
+  call failed there is no rollup. Subagent and proposal cards keep their own surfaces.
+- **Reasoning nests with its tools and starts closed.** When a segment has both `reasoning`
+  and tools, do **not** render a standalone Reasoning block above the rollup. Put it inside
+  the expanded rollup body (above the tool rows), or on its message's step in a run, so the
+  collapsed view is only the italic heading. Every reasoning disclosure starts closed,
+  including while live. Standalone Reasoning remains for answer-only / no-tool segments; empty
+  trails are omitted.
+  Title tense matches tools: `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
-  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. Settled
-  reasoning disclosures return to a static chevron.
+  `.messages-list`, never a strip inside `#input-bar`. Fold that row into the live disclosure
+  title only when the title is visible; keep it while reasoning is inside a closed rollup.
+  Settled reasoning disclosures return to a static chevron.
 - **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
   precede a live label, or the row reads at a different indent than its settled self and the hover
   pill stretches past the text. Two placements, by where the row's label sits:
@@ -881,6 +913,14 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
     label there is no indent to preserve, only a gap to avoid.
 
   When a tool settles, drop the icon; do not keep animating it.
+
+- **The subagent glyph is the one exception to "nothing precedes the label".** A subagent row
+  reads exactly like a parent tool row once it settles collapsed (#2452), so
+  `.tool-subagent-marker` sits in flow ahead of `.tool-name` inside the `<summary>`, where it
+  survives collapse. The subagent label therefore starts one glyph (about 20px) right of its
+  model badge, summary preview and neighbouring tool rows; that indent is the mark, not drift.
+  Keep it static (never the activity spiral), give it `role="img"` with `aria-label="Subagent"`,
+  and do not add other leading glyphs to any row.
 
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
@@ -1034,7 +1074,8 @@ manual VNC glance.
 Use these sparingly: duotone identifies remote cloud agents; pastel riso identifies user-created
 named agents (custom ACP registrations, excluding catalog presets). Ordinary Copse replies,
 user messages, and generic subagent tool cards have no avatar. Show one identity marker at the
-start of each agent's contiguous stretch of replies, not on every message. Use message provenance
+start of each agent's contiguous stretch of replies, not on every message; a user message ends the
+stretch, so the marker that animates sits beside the reply being written. Use message provenance
 so changing the picker never reattributes old replies. Named agents keep their art across threads
 and renames; remote agents use the thread and provider as their stable seed. Styles keep their own
 paper/ink palettes in light and dark themes; never recolor them to indicate status. The 28px size
@@ -1310,6 +1351,33 @@ direct Settings shortcut. Keep the modal header outside its scroll body, retain
 the project scope above the form, and use the identical editor inside Settings.
 Do not recreate the editor when plugin enablement changes: it may contain a draft.
 Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
+
+## Activity panel: attention first, answer in place
+
+The Activity panel ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts),
+[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) is a sibling of the
+Process Manager overlay, not a new surface kind.
+
+- **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
+  An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
+  three dots, triangle, check) and a short label beside it. Colour is a third, redundant
+  channel. The running dots are held still here; the sidebar already animates them.
+- **List and detail, not a wide table.** Rows are two lines in a narrow list — the thread
+  name leads, age on its right; the state word, what it wants and the project beneath — so
+  the eye never crosses the panel to connect a thread to its state. The selected row shows
+  in full in the pane beside it.
+- **One action bar per selection.** Open thread sits on the left, the answers on the right
+  (Reject, then `ui-btn-primary` Approve once; outlined chips with `--border-strong`). List
+  rows carry no buttons.
+- **Approve once is the only in-place grant, and only beside the full request.** The detail
+  renders the request with the prompt's own advice / body / footer classes and never
+  truncates. Broader answers stay on the prompt in the thread.
+- **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
+  selection and focus are restored to the same row, and Approve pauses whenever a request it
+  has not shown yet takes the detail pane or the waiting list changes.
+
+Spec: [`tests/e2e/activity-panel.e2e.ts`](../tests/e2e/activity-panel.e2e.ts).
 
 ## Settings → Usage worth-it card
 

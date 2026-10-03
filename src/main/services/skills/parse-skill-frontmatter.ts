@@ -45,6 +45,7 @@ export function toSkillMetadata(
   source: SkillSource,
   externalLinks: string[] = [],
   missingReferences: string[] = [],
+  plugin?: string,
 ): SkillMetadata {
   const parts = skillPath.split(/[/\\]/)
   parts.pop()
@@ -59,5 +60,6 @@ export function toSkillMetadata(
     paths: parsed.paths,
     externalLinks,
     missingReferences,
+    ...(plugin ? { plugin } : {}),
   }
 }

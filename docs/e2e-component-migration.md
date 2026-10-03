@@ -39,6 +39,10 @@ selection. This doc tracks what can move.
 - `subagent-display` visual smoke, `settings-footer`, and `chat-layout-styling` → browser-hosted
   scenarios. The latter two remove active Electron sessions from the CI suite; none needs main or
   preload IPC.
+- `roadmap-chat-min-width` → browser-hosted geometry; the deterministic fixture carries the
+  oversized persisted pane width and the spec measures the renderer-only clamp.
+- `titlebar-compact` → browser-hosted geometry; its overflow, control bounds, and draggable-gap
+  assertions depend on Chromium layout but not Electron or main-process state.
 
 ## The discriminator
 
