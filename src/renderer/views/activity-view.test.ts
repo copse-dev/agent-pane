@@ -434,6 +434,38 @@ describe('activity view answering a question in place', () => {
     assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['SQLite', ''] }])
   })
 
+  it('fills a field with the rendered label of a Markdown quick answer, and renders the question', () => {
+    const { harness, fake } = showAsked([
+      {
+        ...ASKED,
+        questions: ['Run `npm test` first?'],
+        options: [['Run `npm test`', 'Skip it']],
+      },
+    ])
+    assert.equal(
+      harness.view.body.querySelector('.activity-question code')?.textContent,
+      'npm test',
+    )
+    harness.view.body.querySelector<HTMLButtonElement>('.activity-option')?.click()
+
+    assert.equal(field(harness, 0).value, 'Run npm test', 'no raw backticks go to the agent')
+    sendButton(harness).click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Run npm test'] }])
+  })
+
+  it('keeps the draft when the send did not go', () => {
+    const { harness, fake } = showAsked([ASKED, { ...ASKED, id: 'ask2', receivedAt: 2 }])
+    fake.accept.value = false
+    typeInto(field(harness, 0), 'Postgres')
+    sendButton(harness).click()
+    // The question is still pending (the fake refused it), so a redraw brings the
+    // form back with the text in it.
+    harness.store.emit('thread_status_changed', 't1', 'idle')
+    harness.flush()
+
+    assert.equal(field(harness, 0).value, 'Postgres')
+  })
+
   it('reports a question that was answered elsewhere first', () => {
     const { harness, fake } = showAsked()
     fake.accept.value = false

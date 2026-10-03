@@ -567,6 +567,23 @@ describe('answering from another surface', () => {
     assert.equal(dialog().open, false)
   })
 
+  it('answers a queued question without disturbing the one on screen', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'shown', threadId: 'focused', questions: [{ question: 'On screen?' }] })
+    harness.emit({ id: 'queued', threadId: 'other', questions: [{ question: 'Elsewhere?' }] })
+
+    assert.equal(requests.answer('queued', ['ok']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'queued', answers: ['ok'] }])
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'On screen?')
+    assert.deepEqual(
+      requests.pending().map((request) => request.id),
+      ['shown'],
+    )
+  })
+
   it('sends nothing for a request that is gone or an answer that does not fit', () => {
     const { api, harness } = stubApi()
     const requests = mountHandle(api)

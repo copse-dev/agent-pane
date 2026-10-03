@@ -28,9 +28,10 @@ export interface PendingQuestionSummary {
 }
 
 /**
- * The dialog's pending questions. Answering goes through the dialog's own queue
- * ({@link AskUserRequests.answer}), so there is still exactly one path that
- * releases a blocked agent; a surface that would rather not answer opens the
+ * The dialog's pending questions. Answering goes through the dialog
+ * ({@link AskUserRequests.answer}), which releases a blocked agent through the
+ * same function its own buttons use, whether the question is on screen or still
+ * queued for another thread; a surface that would rather not answer opens the
  * thread, which makes the dialog surface the question.
  */
 export interface AskUserRequests {
@@ -184,27 +185,34 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     syncAttention()
   }
 
-  function respond(answers: string[]): void {
-    const current = active
-    if (!current) return
-    dialog.close()
-    active = null
-    void api.ask.respond(current.id, answers)
+  /**
+   * The one place a question is released: it leaves the screen or the queue, the
+   * agent is told, and whatever is next is shown. The dialog's own buttons and
+   * another surface answering both end here, so there is a single path that
+   * unblocks an agent.
+   */
+  function settle(request: AskUserRequest, answers: string[]): void {
+    if (active === request) {
+      dialog.close()
+      active = null
+    } else {
+      const idx = queue.indexOf(request)
+      if (idx === -1) return
+      queue.splice(idx, 1)
+    }
+    void api.ask.respond(request.id, answers)
     showNext()
+    syncAttention()
+  }
+
+  function respond(answers: string[]): void {
+    if (active) settle(active, answers)
   }
 
   function answerFrom(id: string, answers: readonly string[]): boolean {
-    if (active?.id === id) {
-      if (answers.length !== active.questions.length) return false
-      respond([...answers])
-      return true
-    }
-    const idx = queue.findIndex((req) => req.id === id)
-    const queued = queue[idx]
-    if (queued === undefined || answers.length !== queued.questions.length) return false
-    queue.splice(idx, 1)
-    void api.ask.respond(queued.id, [...answers])
-    syncAttention()
+    const request = active?.id === id ? active : queue.find((req) => req.id === id)
+    if (request === undefined || answers.length !== request.questions.length) return false
+    settle(request, [...answers])
     return true
   }
 

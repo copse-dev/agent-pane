@@ -62,9 +62,10 @@ What is in:
 - **Questions are answered in place, through the dialog's queue.** `mountAskUserDialog`
   returns an `AskUserRequests` handle with the pending questions (and the quick answers the
   agent offered) and `answer(id, answers)`. The detail renders each question with a field and
-  **Send answer**; the send goes through the dialog's own `respond`, so the dialog stays the
-  only path that releases a blocked agent, and `answer` reports false for a question already
-  settled elsewhere. Quick answers fill the field rather than send, so a click on a row that
+  **Send answer**; the send goes through the dialog's `settle` function, the same one its own
+  buttons use, for a question on screen or one still queued for another thread, so there is a
+  single path that releases a blocked agent, and `answer` reports false for a question already
+  settled elsewhere or answers that do not match its questions. Quick answers fill the field rather than send, so a click on a row that
   moved under the pointer cannot answer. Drafts live in the view (the detail pane rebuilds on a
   redraw) and the pane is left alone while someone is typing in it. **Open thread** is still
   there for a question that wants the transcript.
