@@ -1091,6 +1091,17 @@ const api: ApiClient = {
     refreshHuggingFaceModels: (apiKey?: string) =>
       ipcRenderer.invoke('settings:refresh-hugging-face-models', apiKey),
   },
+  chatGptPlan: {
+    status: () => ipcRenderer.invoke('chat-gpt-plan:status'),
+    signIn: (clientId?: string) => ipcRenderer.invoke('chat-gpt-plan:sign-in', clientId),
+    refreshAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:refresh-account', clientId),
+    cancelSignIn: () => ipcRenderer.invoke('chat-gpt-plan:cancel-sign-in'),
+    selectAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:select-account', clientId),
+    signOut: (clientId: string) => ipcRenderer.invoke('chat-gpt-plan:sign-out', clientId),
+    models: () => ipcRenderer.invoke('chat-gpt-plan:models'),
+  },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },

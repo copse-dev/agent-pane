@@ -1056,6 +1056,21 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       stop: unsupported,
       connect: unsupported,
     },
+    chatGptPlan: {
+      status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      refreshAccount: () => (scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()),
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () =>
+        resolved({
+          clientId: scenario.chatGptPlan?.activeClientId ?? null,
+          models: scenario.chatGptPlan?.activeClientId
+            ? [{ slug: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna' }]
+            : [],
+        }),
+    },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {

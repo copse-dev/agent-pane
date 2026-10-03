@@ -1,4 +1,5 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
@@ -1404,6 +1405,37 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+
+  ipcMain.handle('chat-gpt-plan:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().status()
+  })
+  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signIn(
+      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
+    )
+  })
+  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
+    assertMainFrameSender(event, win)
+    getChatGptPlanService().cancelSignIn()
+  })
+  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:models', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().models()
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {
