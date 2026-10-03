@@ -54662,7 +54662,7 @@ async function openRouterOptions(api2, available, current) {
   }
   const seen = /* @__PURE__ */ new Set();
   const entries2 = [];
-  const add2 = (id, label, supportsImages) => {
+  const add2 = (id, label, supportsImages, free = false) => {
     const value = toOpenRouterModel(id);
     if (!id || seen.has(value)) return;
     seen.add(value);
@@ -54672,11 +54672,17 @@ async function openRouterOptions(api2, available, current) {
       value,
       label: hint ? `${label} \u2014 ${hint}` : label,
       group,
-      ...supportsImages !== void 0 ? { supportsImages } : {}
+      ...supportsImages !== void 0 ? { supportsImages } : {},
+      ...free ? { coverage: "free" } : {}
     });
   };
   for (const model of liveModels)
-    add2(model.id, modelDisplayName(model.name || model.id), model.supportsImages);
+    add2(
+      model.id,
+      modelDisplayName(model.name || model.id),
+      model.supportsImages,
+      model.inputPricePerMTok === 0 && model.outputPricePerMTok === 0
+    );
   if (customId) add2(customId, `${customId} (custom)`);
   if (isOpenRouterModel(current)) add2(openRouterModelId(current), modelDisplayLabel(current));
   if (entries2.length === 0) {
@@ -54932,7 +54938,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
   }
   const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage };
   return visibleOptions.map((option) => {
-    const coverage = modelCoverage(option.value, coverageContext);
+    const coverage = option.coverage ?? modelCoverage(option.value, coverageContext);
     return coverage ? { ...option, coverage } : option;
   });
 }
@@ -55409,7 +55415,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
               class: opt.coverage === "paid" ? "model-picker-cost" : "model-picker-coverage-label",
               ...opt.coverage === "paid" ? { "aria-label": "Potential usage charge", title: "Potential usage charge" } : {}
             },
-            opt.coverage === "paid" ? "$" : opt.coverage === "local" ? "Local" : "Plan"
+            opt.coverage === "paid" ? "$" : opt.coverage === "local" ? "Local" : opt.coverage === "free" ? "Free" : "Plan"
           )
         ] : [],
         ...recentMode || hasCoverage ? [
