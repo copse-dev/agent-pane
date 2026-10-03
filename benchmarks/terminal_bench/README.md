@@ -457,6 +457,11 @@ weights unless the verifier requires them and there is no smaller route.
 
 Optional tuning variables:
 
+- `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY` (default: the profile's immutable
+  `legacy-two-cut-v1`; `suppression-ladder-v1` explicitly opts into the bounded three-cut
+  recovery experiment). The runtime record and stream-cap overrides identify this experiment;
+  it does not change any existing profile's content hash or baseline behavior. The ladder's
+  second recovery stream uses the profile's recorded suppression protocol and 1024-token cap.
 - `COPSE_TERMINAL_MAX_STEPS` (default `80`)
 - `COPSE_TERMINAL_MAX_LLM_CALLS` (default: step limit plus `3` finalization calls)
 - `COPSE_TERMINAL_CONTEXT_TOKENS` (default `32768`)
