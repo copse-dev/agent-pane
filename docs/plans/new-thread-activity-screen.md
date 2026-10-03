@@ -116,9 +116,9 @@ This document, plus the `mission-control.md` update. No code.
 - Risk: low. It touches the approval path, so keep exactly one caller of
   `approval.respond` (`answerOnce`) and the 500 ms settle behaviour.
 
-### 1b. Shared thread-row model and keyed Activity rows (3-4 days)
+### 1b. Keyed Activity rows (1.5-2 days) - [#3458](https://github.com/copse-dev/agent-pane/pull/3458)
 
-Simplification first; performance only where measured.
+Correctness first; performance only where measured.
 
 **Measured (happy-dom, relative cost, M-series Mac; layout and paint not captured):**
 
@@ -136,18 +136,22 @@ threads. The one real cost is the Activity panel's full-row rebuild, 85 ms for 4
 nodes), on an unrealistic profile (10% of threads running); it is already throttled to 250 ms.
 **Conclusion: do not diff or patch the sidebar for speed.**
 
-What stays:
+What this slice does:
 
-1. **One derived row model.** A pure module producing thread rows (stable key per thread,
-   state, project, age, PR, attention, automation schedule) from the store, plus the
-   automation fold from slice 4 as a pure function over those rows. The Activity view and the
-   new sort/group-by consume it; neither walks the store itself.
-2. **Keyed rows in the Activity view only.** `Map<key, row>`, update in place, reorder with
-   `insertBefore`. Needed because the view now lives on a screen where the user types and
-   hovers, and [#3386](https://github.com/copse-dev/agent-pane/pull/3386) hit stale clicks and
-   a replaced rename input from rebuilds. Optionally cap rows rendered at once.
-3. **Break up `projects-pane.ts` as it is touched** (row, group header, drag, automations
+1. **Keyed rows in the Activity view only.** Rows and groups are cached by key and reused while
+   everything they draw is unchanged; a `patchChildren` helper reconciles the list, moving nodes
+   only where the position differs. Needed because the view now lives on a screen where the user
+   types and hovers, and [#3386](https://github.com/copse-dev/agent-pane/pull/3386) hit stale
+   clicks and a replaced rename input from rebuilds. The detail pane is **not** patched: its
+   buttons carry imperative state (the settle window and "answered" flags), so it still rebuilds
+   on every redraw and a click landing on a rebuilt Approve button remains possible. Follow-up.
+2. **Break up `projects-pane.ts` as it is touched** (row, group header, drag, automations
    section) when slice 4 reaches them. No up-front rewrite.
+
+**Moved to slice 4: the shared thread-row model and the automation fold.** They were planned
+here, but `scripts/check-dead-code.mts` rejects product modules used only by tests, and neither
+has a consumer until the sidebar and the new screen are built around them. Building them first
+would fail that gate or force a throwaway consumer.
 
 Dropped after measurement: sidebar keyed patching, a shared frame-batching helper, and the
 sidebar row cap (it is already 10).
@@ -155,9 +159,9 @@ sidebar row cap (it is already 10).
 - Inspect-only Git status for inactive threads (no watcher arming, one read per shared
   checkout) is only needed if slice 4 shows status for non-expanded projects; if so, it changes
   the `git:status` IPC and needs an API protocol version bump (see Validation findings).
-- Proof: existing `projects-pane-*.test.ts`, `thread-sidebar-*.e2e.ts` and
-  `activity-panel.e2e.ts` pass unchanged; new unit tests for the model and the keyed rows.
-- Risk: low-medium. Run the full `pnpm run check` if the Activity view's re-render path changes.
+- Proof: the existing `activity-panel` tests and `activity-panel.e2e.ts` pass unchanged; new
+  unit tests for `patchChildren` and for row/group identity and focus; a mutation check.
+- Risk: low-medium. Renderer only.
 
 ### 2. Activity restyle (1 day)
 
@@ -195,10 +199,13 @@ sidebar row cap (it is already 10).
 - Risk: medium. The welcome screen (`views/welcome.ts`, no project open) is separate and must
   not regress. Expect a screenshot-baseline review.
 
-### 4. Sidebar sort and group-by (3-4 days)
+### 4. Row model, sort, group-by and automation fold (4-5.5 days)
 
-- Pure comparators and a `groupBy` of project / status / none, over the shared row model from
-  slice 1b, in a new controller module with unit tests; then wire `projects-pane.ts`
+- **One derived row model** (moved from slice 1b): a pure module producing thread rows (stable
+  key per thread, state, project, age, PR, attention, automation schedule) from the store. The
+  sidebar and the Activity view consume it; neither walks the store itself.
+- Pure comparators and a `groupBy` of project / status / none, over that row model, in a
+  new controller module with unit tests; then wire `projects-pane.ts`
   (`render()` at about `:1051-1850`).
 - **The sort is not applied at `projects-pane.ts:1647`.** That line is only the thread-filter
   branch. The normal path reads `getSidebarThreads` (`controller/projects.ts:171`), which does
@@ -239,9 +246,9 @@ sidebar row cap (it is already 10).
     the `automation-*` e2e specs and `automation-settings-link` behaviour re-checked.
   - `activity-model.ts` has no automation awareness today (no `automation` or `scheduleId`
     reference), so the Activity list shows every run as an ordinary row. Fold logic belongs in
-    the shared row model (slice 1b) as a pure function over rows, keyed by
-    `thread.automation?.scheduleId`, so the sidebar and Activity list cannot drift. Slice 1b
-    grows by about 1 day.
+    the shared row model (built in this slice) as a pure function over rows, keyed by
+    `thread.automation?.scheduleId`, so the sidebar and Activity list cannot drift. This is
+    part of this slice's 4-5.5 days.
   - The settings link, **Run now** and **Automation setup** row actions need a home on the fold
     row; the prototype only shows a header menu entry (Automations, New automation).
   - Unvisited projects contribute nothing (`getSidebarThreads` limit), so folds only cover
@@ -273,7 +280,7 @@ references stay stable.
 - If [#3407](https://github.com/copse-dev/agent-pane/pull/3407) is discarded, fold the
   context-ring work in here.
 
-**Total: about 18-28 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
+**Total: about 17.5-26 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
 effort (CI cycles, merging main, screenshot review). Slices 4 and 6 are independent of 3 and can
 run in parallel once slices 1 and 1b are merged. Add 0.25-0.5 day to any slice that changes the
 IPC surface (API protocol version bump).
