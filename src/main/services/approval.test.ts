@@ -365,6 +365,23 @@ describe('requestApproval pluggable transport', () => {
     )
   })
 
+  it('keeps different visible grant actions from sharing an answer', () => {
+    assert.notEqual(
+      approvalDedupeKey({
+        title: 'Read access',
+        body: 'cat notes',
+        type: 'shell',
+        approveLabel: 'Run once',
+      }),
+      approvalDedupeKey({
+        title: 'Read access',
+        body: 'cat notes',
+        type: 'shell',
+        approveLabel: 'Allow reads for this chat',
+      }),
+    )
+  })
+
   it('cancelApprovalsForThread dismisses waiters for that thread only', async () => {
     let releaseOther!: (response: { approved: boolean; remember: boolean }) => void
     setApprovalHandler(

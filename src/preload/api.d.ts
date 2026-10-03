@@ -362,6 +362,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean

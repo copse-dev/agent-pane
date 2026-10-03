@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
   containedPreparationPath,
@@ -57,7 +58,6 @@ import {
   decideWebSearchPermission,
   describeMcpAnnotations,
   fetchUrlFromArgs,
-  formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptParts,
   formatPortBindingPromptParts,
@@ -89,10 +89,8 @@ import {
   READ_ONLY_BROWSER_TOOLS,
   BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
-  formatBrowserPromptBody,
 } from '../browser/browser-origin-policy.ts'
 import {
-  DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
   grantWebOriginForNextFetch,
@@ -277,6 +275,7 @@ async function requestEscalationApproval(
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
+      approveLabel: 'Run command',
       type: 'shell',
       ...shellPromptToApprovalFields(parts),
       subject: SHELL_DECISION_SUBJECT,
@@ -393,6 +392,7 @@ async function resolveReadOutsideProject(
       // the scope one; the third button that approves only this command appears
       // with the details it refers to.
       collapseDetails: true,
+      approveLabel: 'Allow reads for this chat',
       approveOnceLabel: 'Approve this command',
     },
     signal,
@@ -428,13 +428,18 @@ async function promptShell(
       leaseIdentity,
     )
   }
+  const sandboxed =
+    containedCause !== 'shell-no-containment' &&
+    (containedCause !== 'shell-network-scope-overlap' ||
+      commandRunsSandboxed(getAgentExecutionRoot()))
   const { approved, grantScope } = await requestApproval(
     {
-      title: 'Run shell command?',
+      title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
+      approveLabel: 'Run command',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons)),
+      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons, sandboxed)),
       subject: SHELL_DECISION_SUBJECT,
-      scope: 'sandbox',
+      scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
@@ -697,13 +702,22 @@ async function checkMcpPermission(
   if (decision.action === 'allow') return true
 
   const hints = describeMcpAnnotations(meta?.annotations)
-  const bodyLines = [JSON.stringify(args, null, 2)]
-  if (hints.length) bodyLines.push('', `Hints: ${hints.join(', ')}`)
 
   const { approved, remember } = await requestApproval(
     {
       title: `MCP tool: ${mcpToolLabel(toolName)}`,
-      body: bodyLines.join('\n'),
+      body: JSON.stringify(args, null, 2),
+      bodyAdvice:
+        'These arguments are sent to the MCP server. The tool may change files or external services using the server’s access.' +
+        (hints.length
+          ? `\n\nServer-reported hints (not verified by Copse): ${hints.join(', ')}`
+          : ''),
+      bodyFooter:
+        explicitPolicy === 'ask'
+          ? 'Approval runs this call once.'
+          : automation
+            ? 'Approval runs this call once. Remembering allows this tool with other arguments in future runs of the named schedule.'
+            : 'Approval runs this call once. “Always allow” permits this exact tool with other arguments in future chats.',
       type: 'mcp',
       subject: toolName,
       scope: 'external',
@@ -711,7 +725,7 @@ async function checkMcpPermission(
       allowRemember: explicitPolicy !== 'ask',
       ...(automation
         ? { rememberLabel: automationRememberLabel('tool', automation.scheduleName) }
-        : {}),
+        : { rememberLabel: `Always allow ${mcpToolLabel(toolName)}` }),
     },
     signal,
   )
@@ -738,20 +752,22 @@ async function rememberWebOrigin(origin: string): Promise<void> {
 
 async function promptWebOrigin(
   origin: string,
-  detail: string,
+  url: string,
   signal?: AbortSignal,
   allowRemember = true,
+  context?: string,
 ): Promise<boolean> {
   const { approved, remember } = await requestApproval(
     {
       title: 'Allow web origin?',
-      body: formatWebPromptBody(origin, detail),
+      ...webApprovalDetails(origin, url, allowRemember, context),
+      approveLabel: 'Allow request',
       type: 'web',
       cause: 'web-origin',
       subject: origin,
       scope: 'external',
       allowRemember,
-      ...(allowRemember ? { rememberLabel: 'Always allow this web origin' } : {}),
+      ...(allowRemember ? { rememberLabel: `Always allow ${origin}` } : {}),
     },
     signal,
   )
@@ -808,9 +824,10 @@ async function checkWebSearchPermission(
   }
   return promptWebOrigin(
     decision.origin,
-    `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+    decision.origin,
     signal,
     explicitPolicy !== 'ask',
+    'Search queries will be sent to DuckDuckGo.',
   )
 }
 
@@ -841,9 +858,10 @@ async function checkParallelSearchPermission(
   }
   return promptWebOrigin(
     decision.origin,
-    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
+    PARALLEL_SEARCH_API_URL,
     signal,
     explicitPolicy !== 'ask',
+    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
   )
 }
 
@@ -868,9 +886,16 @@ async function checkCustomToolPermission(
     {
       title: `Custom tool: ${customToolLabel(toolName)}`,
       body: JSON.stringify(args, null, 2),
+      bodyAdvice:
+        'This runs user-authored code with your user account’s access to files and the network. Review the arguments before allowing it.',
+      bodyFooter:
+        explicitPolicy === 'ask' || alwaysPrompt
+          ? 'Approval covers this call once.'
+          : 'Approval covers this call once. “Always allow” permits this exact tool with other arguments in future chats.',
       type: 'mcp',
       cause: 'custom-tool',
       allowRemember: explicitPolicy !== 'ask' && !alwaysPrompt,
+      rememberLabel: `Always allow ${customToolLabel(toolName)}`,
     },
     signal,
   )
@@ -927,8 +952,13 @@ async function checkGithubWriteToolPermission(
   const prompt = formatGithubWritePrompt(toolName, args)
   const { approved, remember } = await requestApproval(
     {
-      title: prompt.title,
-      body: prompt.body,
+      ...prompt,
+      ...(automation
+        ? {
+            bodyFooter:
+              'Approval covers this action once. Remembering permits this GitHub action for other pull requests in this project in future runs of the named schedule.',
+          }
+        : {}),
       type: 'mcp',
       cause: 'github-write',
       allowRemember: automation !== null,
@@ -1463,7 +1493,10 @@ export async function ensureShellCommandPermitted(
             title: 'Run package command?',
             type: 'shell',
             ...shellPromptToApprovalFields(
-              formatEphemeralRunnerPromptParts(command, { outsideSandbox, safeInstall }),
+              formatEphemeralRunnerPromptParts(command, {
+                outsideSandbox: outsideSandbox || !sandboxEnabled,
+                safeInstall,
+              }),
             ),
             subject: SHELL_DECISION_SUBJECT,
             scope: outsideSandbox ? 'external' : 'sandbox',
@@ -1474,7 +1507,7 @@ export async function ensureShellCommandPermitted(
             type: 'shell',
             ...shellPromptToApprovalFields(
               formatInstallPromptParts(command, {
-                outsideSandbox,
+                outsideSandbox: outsideSandbox || !sandboxEnabled,
                 safeInstall,
                 jsManager: install.jsManager,
               }),
@@ -1572,12 +1605,14 @@ async function checkBrowserNavigatePermission(
   const { approved, remember } = await requestApproval(
     {
       title: 'Allow browser navigation?',
-      body: formatBrowserPromptBody(decision.origin, url),
+      ...browserApprovalDetails(decision.origin, url, explicitPolicy !== 'ask'),
+      approveLabel: 'Allow navigation',
       type: 'mcp',
       cause: 'browser-navigation',
       subject: url,
       scope: 'external',
       allowRemember: explicitPolicy !== 'ask',
+      rememberLabel: `Always allow ${decision.origin}`,
     },
     signal,
   )
