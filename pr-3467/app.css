@@ -12834,7 +12834,9 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-md);
 }
 .activity-home .activity-detail-actions {
-  padding: 14px 30px;
+  padding: 14px clamp(14px, 4cqw, 30px);
+  flex-wrap: wrap;
+  row-gap: 8px;
   background: none;
 }
 .activity-home .activity-detail-actions .ui-btn {
