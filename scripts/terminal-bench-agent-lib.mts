@@ -32,6 +32,11 @@ import {
   TERMINAL_PREFLIGHT_TOOL_ID,
 } from './lib/terminal-bench-preflight.mts'
 import { BenchTranscript } from './lib/bench-transcript.mts'
+import {
+  appendStepTimingSink,
+  STEP_TIMING_FILE,
+  StepTimingRecorder,
+} from './lib/terminal-bench-step-timing.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
 export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
@@ -454,6 +459,9 @@ export async function runTerminalBenchAgent(): Promise<void> {
     copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
   const transcript = new BenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
+  const stepTiming = new StepTimingRecorder({
+    sink: appendStepTimingSink(join(agentDirectory, STEP_TIMING_FILE)),
+  })
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>
@@ -489,6 +497,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
       usageModel,
       onLlmCall: (count) => {
         usage.llmCalls = count
+        stepTiming.stepStarted(count)
       },
       recordAppliedNudge: (record) => {
         if (
@@ -507,6 +516,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
         transcript.recordHookRun(record)
       },
       recordStreamCut: (record) => {
+        stepTiming.streamCut(record.cutReason)
         transcript.recordStreamCut(record)
       },
       recordReasoningCheckpoint: (record) => {
@@ -519,6 +529,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           usage.outputTokens += chunk.outputTokens
         }
         if (chunk.type === 'done') stopReason = chunk.stopReason
+        stepTiming.chunk(chunk)
         transcript.record(chunk)
         traceEvents.push(chunk)
         if (traceEvents.length >= TRACE_EVENT_BATCH_SIZE) flushTraceEvents()
@@ -579,17 +590,25 @@ export async function runTerminalBenchAgent(): Promise<void> {
           )
         }
         flushTraceEvents()
-        writeProtocol({
-          type: 'tool_request',
-          id,
-          command,
-          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-        })
-        const next = await input.next()
-        if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
-        const response: unknown = JSON.parse(next.value)
-        if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
-          throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+        stepTiming.toolStarted(id, name)
+        let toolFailed = true
+        let response: unknown
+        try {
+          writeProtocol({
+            type: 'tool_request',
+            id,
+            command,
+            ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+          })
+          const next = await input.next()
+          if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
+          response = JSON.parse(next.value)
+          if (!isInputMessage(response) || response.type !== 'tool_result' || response.id !== id) {
+            throw new Error(`Terminal bridge received an invalid result for tool '${id}'.`)
+          }
+          toolFailed = response.exitCode !== 0
+        } finally {
+          stepTiming.toolFinished(id, toolFailed)
         }
         if (response.exitCode === 124) {
           usage.commandTimeouts += 1
@@ -608,12 +627,14 @@ export async function runTerminalBenchAgent(): Promise<void> {
       },
     })
   } catch (error) {
+    stepTiming.finish()
     transcript.fail(error)
     transcript.write()
     flushTraceEvents()
     throw error
   }
 
+  stepTiming.finish()
   flushTraceEvents()
   transcript.write()
   writeProtocol({
