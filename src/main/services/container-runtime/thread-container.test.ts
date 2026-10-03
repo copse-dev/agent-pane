@@ -1181,7 +1181,10 @@ describe('guarded worker executable', () => {
     // user cannot read as non-dumpable, closing /proc/<pid>/environ, mem and
     // ptrace to same-uid shell children.
     assert.match(WORKER_DOCKERFILE, /install -o root -g root -m 0711 .*node-guarded/)
-    assert.match(WORKER_ENTRYPOINT_SH, /exec setpriv --no-new-privs -- \/usr\/local\/bin\/node-guarded \/app\/worker\.cjs/)
+    assert.match(
+      WORKER_ENTRYPOINT_SH,
+      /exec setpriv --no-new-privs -- \/usr\/local\/bin\/node-guarded \/app\/worker\.cjs/,
+    )
     const read = WORKER_ENTRYPOINT_SH.indexOf('read -r COPSE_EGRESS_TOKEN')
     const exec = WORKER_ENTRYPOINT_SH.indexOf('exec ')
     assert.ok(read > 0 && read < exec, 'the token is read before the worker is exec-ed')
