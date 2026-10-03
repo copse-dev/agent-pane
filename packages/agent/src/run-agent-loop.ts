@@ -79,6 +79,11 @@ import {
   type ReasoningCheckpointRecord,
   type ReasoningCircleSignal,
 } from './reasoning-circle-detector.ts'
+import {
+  REASONING_BUDGET_CARRY_FORWARD_HOOK_ID,
+  buildReasoningBudgetCarryForwardNudge,
+  validateReasoningSoftBudget,
+} from './reasoning-budget.ts'
 
 /**
  * Recent tool-call fingerprints (and per-attempt progress markers) kept for
@@ -1156,7 +1161,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     recordStreamCut,
     recordReasoningCheckpoint: reasoningCheckpointSink,
   } = opts
-  if (reasoningCheckpointPolicy) validateReasoningCheckpointPolicy(reasoningCheckpointPolicy)
+  if (reasoningCheckpointPolicy) {
+    validateReasoningCheckpointPolicy(reasoningCheckpointPolicy)
+    if (reasoningCheckpointPolicy.softReasoningBudget) {
+      validateReasoningSoftBudget(reasoningCheckpointPolicy.softReasoningBudget)
+    }
+  }
   const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
     llmCalls: 0,
@@ -1199,6 +1209,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let consecutiveMalformedToolCalls = 0
   let malformedToolCallsThisRun = 0
   let reasoningRunawayExhausted = false
+  // Soft reasoning budget (see reasoning-budget.ts): cuts this run, and cuts in a row.
+  let softBudgetCutsInRun = 0
+  let softBudgetCutStreak = 0
   const recentFingerprints: string[] = []
   // One entry per recent tool attempt: a fingerprint means successful,
   // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
@@ -1469,6 +1482,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let trailingReasoningCut = false
     let trailingReasoningCutTokens: number | undefined
     let streamCappedAsRunaway = false
+    let softBudgetCut = false
+    const softBudget = reasoningCheckpointPolicy?.softReasoningBudget
+    const softBudgetArmed =
+      softBudget !== undefined &&
+      reasoningRunawayStreak === 0 &&
+      softBudgetCutsInRun < softBudget.maxCutsPerRun &&
+      softBudgetCutStreak < softBudget.maxConsecutiveCuts
     let streamCutReason: StreamCutRecord['cutReason'] = 'reasoning_runaway_cap'
     // Rung 2 of the runaway ladder: this stream is the reasoning-suppressed
     // recovery turn, so it gets a much tighter cap and a provider hint to skip
@@ -1565,6 +1585,32 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // treat the partial turn as truncated so the loop can recover (#489).
         if (!pendingToolCalls.length) {
           if (reasoningCheckpointPolicy && reasoningCheckpointHardMax && nextReasoningCheckpoint) {
+            // Soft budget first: a tool-less, answer-less stream that has spent its
+            // per-step reasoning allowance is cut now and carried forward as a
+            // partial plan (applied after the stream), rather than left to run to
+            // the hard cap and be discarded whole.
+            if (
+              softBudget &&
+              softBudgetArmed &&
+              streamReasoningChars > assistantText.length &&
+              assistantText.trim().length <= reasoningRunawayTextToleranceChars &&
+              isStreamOutputRunaway(streamReasoningChars, softBudget.tokens)
+            ) {
+              recordReasoningCheckpoint(reasoningCheckpointSink, {
+                step: budget.llmCalls,
+                checkpointTokens: softBudget.tokens,
+                hardMaxTokens: reasoningCheckpointHardMax,
+                streamOutputChars,
+                streamReasoningChars,
+                visibleTextChars: assistantText.length,
+                decision: 'cut',
+                signals: [],
+                cause: 'soft_budget',
+              })
+              softBudgetCut = true
+              streamCutReason = 'reasoning_budget_soft'
+              break
+            }
             // Trailing reasoning is checkpointed first and on its own budget: the
             // whole-stream checkpoints below classify any stream carrying a real
             // answer as non-reasoning, so without this a post-answer loop rides
@@ -1763,27 +1809,38 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       streamReasoningChars > assistantText.length &&
       assistantText.trim().length <= reasoningRunawayTextToleranceChars
 
-    if (streamCappedAsRunaway || trailingReasoningCut) {
+    if (streamCappedAsRunaway || trailingReasoningCut || softBudgetCut) {
       emitStreamCutRecord(recordStreamCut, {
         step: budget.llmCalls,
         cutReason: streamCutReason,
-        streamOutputTokenLimit: trailingReasoningCut
-          ? trailingReasoningCutTokens
-          : reasoningCheckpointPolicy && nextReasoningCheckpoint
-            ? nextReasoningCheckpoint
-            : effectiveMaxStreamOutputTokens,
+        streamOutputTokenLimit: softBudgetCut
+          ? softBudget?.tokens
+          : trailingReasoningCut
+            ? trailingReasoningCutTokens
+            : reasoningCheckpointPolicy && nextReasoningCheckpoint
+              ? nextReasoningCheckpoint
+              : effectiveMaxStreamOutputTokens,
         streamOutputChars,
         streamReasoningChars,
         reasoningText: streamReasoningText,
         hasToolCalls: pendingToolCalls.length > 0,
         toolCallCount: pendingToolCalls.length,
-        stopReason: stopReason ?? (trailingReasoningCut ? 'trailing_reasoning' : 'max_tokens'),
+        stopReason:
+          stopReason ??
+          (softBudgetCut
+            ? 'reasoning_budget'
+            : trailingReasoningCut
+              ? 'trailing_reasoning'
+              : 'max_tokens'),
         streamCappedAsRunaway: true,
         reasoningRunawayStreak,
-        willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,
+        willInjectReasoningRunawayNudge: !softBudgetCut && reasoningRunawayNudge !== undefined,
       })
     }
 
+    // Every non-soft-cut stream breaks the streak, including malformed recovery
+    // streams which continue before ordinary assistant/tool history handling.
+    if (!softBudgetCut) softBudgetCutStreak = 0
     if (malformedToolCallNudge !== undefined) {
       // The provider could not parse this stream's tool call. Keep whatever
       // usable output arrived (calls that parsed before the failure still run),
@@ -1819,6 +1876,27 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         hookId: MALFORMED_TOOL_CALL_HOOK_ID,
         mechanism: 'tool-enabled-message',
         text: malformedToolCallNudge,
+      })
+      continue
+    }
+
+    if (softBudgetCut && softBudget && pendingToolCalls.length === 0 && !streamCappedAsRunaway) {
+      // Carry the cut reasoning forward as a bounded partial plan and continue
+      // with a tool-enabled turn. In-loop nudge: it spends a step and an LLM
+      // call but never the continuation budget, and the per-run and consecutive
+      // caps keep it bounded; past them the hard caps and give-up path own it.
+      softBudgetCutsInRun++
+      softBudgetCutStreak++
+      const carryForward = buildReasoningBudgetCarryForwardNudge(streamReasoningText, {
+        carryChars: softBudget.carryChars,
+        cutNumber: softBudgetCutStreak,
+      })
+      messages.push({ role: 'user', content: carryForward })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: REASONING_BUDGET_CARRY_FORWARD_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: carryForward,
       })
       continue
     }
