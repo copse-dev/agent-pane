@@ -72517,16 +72517,14 @@ function mountProjectsPane(root, store2, api2) {
           render();
         }
       },
-      ...store2.getState().projects.map(
-        (project2) => ({
-          label: projectDisplayName(project2),
-          checked: project2.id === projectFilterId,
-          onSelect: () => {
-            projectFilterId = project2.id;
-            render();
-          }
-        })
-      )
+      ...store2.getState().projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        checked: project2.id === projectFilterId,
+        onSelect: () => {
+          projectFilterId = project2.id;
+          render();
+        }
+      }))
     ]);
   });
   sortBtn.addEventListener("click", () => {
@@ -73835,7 +73833,8 @@ function mountProjectsPane(root, store2, api2) {
       list.append(...renderThreadSections(groupMode));
     } else {
       for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
-        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0) continue;
+        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+          continue;
         if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
         else list.append(renderProjectEntry(node2.project));
       }
