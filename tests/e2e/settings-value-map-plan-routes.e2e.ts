@@ -165,7 +165,7 @@ describe('Balanced keeps a newly advertised Sol model on Codex ACP', function ()
     // Enter through the real new-thread action: seeding an already-resolved
     // ACP selection would not exercise the automatic default controller.
     await expect($('.chat-row.selected .chat-title')).toHaveText('Current Qwen thread')
-    await $('.project-new-thread-btn').click()
+    await $('.thread-browser [aria-label="New thread"]').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await expect($('.model-picker-trigger')).toHaveText('GPT-6.1 Sol', { containing: true })
     await expect($('.model-picker-trigger .model-picker-label')).toHaveAttribute('title', planRoute)
