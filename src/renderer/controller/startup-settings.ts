@@ -11,6 +11,8 @@ export interface StartupSettings {
   layout: unknown
   autoPortraitRightPanel: unknown
   rightPanelPosition: unknown
+  sidebarThreadSort: unknown
+  sidebarThreadSortReverse: unknown
   openLinksInBuiltInBrowser: unknown
   theme: unknown
   fontSize: unknown
@@ -38,6 +40,8 @@ export async function loadStartupSettings(
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -54,6 +58,8 @@ export async function loadStartupSettings(
     settings.get('layout'),
     settings.get('autoPortraitRightPanel'),
     settings.get('rightPanelPosition'),
+    settings.get('sidebarThreadSort'),
+    settings.get('sidebarThreadSortReverse'),
     settings.get('openLinksInBuiltInBrowser'),
     settings.get('theme'),
     settings.get('fontSize'),
@@ -72,6 +78,8 @@ export async function loadStartupSettings(
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
