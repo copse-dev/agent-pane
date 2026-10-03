@@ -1060,6 +1060,9 @@
   --footer-popup-min-width: 220px;
   --footer-popup-max-width: 420px;
 }
+.footer-model-host .model-picker-menu.has-coverage-filters {
+  width: min(var(--footer-popup-max-width), 100%);
+}
 .footer-model-host .model-picker-filter {
   min-width: min(220px, 100%);
   box-sizing: border-box;
