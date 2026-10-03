@@ -6,6 +6,7 @@ import {
   ACP_MODELS_TTL_MS,
   acpModelsCacheStale,
   formatAcpPackageApproval,
+  installAcpPackageChanges,
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
   updateCurrentAcpAgentModels,
@@ -276,14 +277,17 @@ describe('ACP package install approval', () => {
       return { approved: false, remember: false }
     })
     assert.equal(
-      await requestAcpPackageInstallApproval([
-        {
-          agent: codex,
-          action: 'upgrade',
-          fromVersion: '1.1.0',
-          toVersion: '1.1.7',
-        },
-      ]),
+      await requestAcpPackageInstallApproval(
+        [
+          {
+            agent: codex,
+            action: 'upgrade',
+            fromVersion: '1.1.0',
+            toVersion: '1.1.7',
+          },
+        ],
+        true,
+      ),
       true,
     )
     assert.equal(requests, 0)
@@ -308,6 +312,74 @@ describe('ACP package install approval', () => {
     assert.match(body, /claude-agent-acp/)
     assert.doesNotMatch(body, /codex-acp/)
     assert.equal(formatAcpPackageApproval(changes).title, 'Install ACP adapters globally?')
+  })
+})
+
+describe('ACP package mutations and Socket Firewall bootstrap consent', () => {
+  const upgrade: AcpPackageChange = {
+    agent: codex,
+    action: 'upgrade',
+    fromVersion: '1.1.0',
+    toVersion: '1.1.7',
+  }
+
+  for (const approved of [false, true]) {
+    it(`requests fresh SFW consent for an upgrade and ${approved ? 'runs' : 'blocks'} all global mutations`, async () => {
+      const prompts: string[] = []
+      const installed: string[] = []
+      setApprovalHandler(async (request) => {
+        prompts.push(request.title)
+        assert.match(request.body, /install Socket Firewall \(sfw\) globally before updating/)
+        assert.match(request.body, /lifecycle scripts disabled/)
+        assert.equal(request.allowRemember, false)
+        assert.equal(request.showWhileSettingsOpen, true)
+        return { approved, remember: false }
+      })
+      const result = await installAcpPackageChanges([upgrade], new AbortController().signal, {
+        socketFirewallAvailable: () => false,
+        requestInstallApproval: requestAcpPackageInstallApproval,
+        resolveNpmBin: async () => '/existing/node/bin/npm',
+        install: async (pkg, _signal, options) => {
+          assert.equal(options?.npmBin, '/existing/node/bin/npm')
+          installed.push(pkg)
+          return true
+        },
+      })
+      assert.deepEqual(prompts, ['Install Socket Firewall globally?'])
+      assert.deepEqual(installed, approved ? ['@agentclientprotocol/codex-acp'] : [])
+      assert.deepEqual(result.upgraded, approved ? ['codex'] : [])
+      assert.equal(result.failed.length, approved ? 0 : 1)
+    })
+  }
+
+  for (const socketFirewallAvailable of [false, true]) {
+    it(`declining a fresh adapter ${socketFirewallAvailable ? 'allows' : 'blocks'} an existing adapter upgrade when SFW is ${socketFirewallAvailable ? 'present' : 'absent'}`, async () => {
+      const installed: string[] = []
+      setApprovalHandler(async () => ({ approved: false, remember: false }))
+      const result = await installAcpPackageChanges(
+        [{ agent: claude, action: 'install' }, upgrade],
+        new AbortController().signal,
+        {
+          socketFirewallAvailable: () => socketFirewallAvailable,
+          requestInstallApproval: requestAcpPackageInstallApproval,
+          resolveNpmBin: async () => undefined,
+          install: async (pkg) => {
+            installed.push(pkg)
+            return true
+          },
+        },
+      )
+      assert.deepEqual(installed, socketFirewallAvailable ? ['@agentclientprotocol/codex-acp'] : [])
+      assert.deepEqual(result.upgraded, socketFirewallAvailable ? ['codex'] : [])
+      assert.equal(result.failed.length, socketFirewallAvailable ? 1 : 2)
+    })
+  }
+
+  it('does not bootstrap SFW or request approval when there are no package changes', async () => {
+    setApprovalHandler(async () => {
+      assert.fail('no-op setup must not request installation consent')
+    })
+    assert.equal(await requestAcpPackageInstallApproval([], false), true)
   })
 })
 
