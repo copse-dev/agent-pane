@@ -163,13 +163,24 @@ sidebar row cap (it is already 10).
   unit tests for `patchChildren` and for row/group identity and focus; a mutation check.
 - Risk: low-medium. Renderer only.
 
-### 2. Activity restyle (1 day)
+### 2. (Folded into slice 3) Activity restyle
 
-- Restyle rows, group headers and the detail pane to the prototype's look using existing
-  tokens.
-- Visual spec: dark and light screenshots of the overlay.
+Decided: slice 2 is part of slice 3, not its own PR. Comparing the prototype's Activity list
+and detail with the current panel (2026-10-03) showed the current CSS already implements the
+same list-and-detail design with real tokens. What differs and where it goes:
 
-### 3. New-thread screen host (4-6 days)
+- **Safe restyle, small, and tied to the new layout:** a larger serif detail title and a neutral
+  "Needs you" chip (the current chip is warning-tinted). Done in slice 3 with the screen host,
+  so the screenshots are reviewed once.
+- **Approve label:** "Approve" (decided; see Decisions).
+- **Not adopted, because they contradict `ui-taste.md`:** dropping the state word from rows
+  ("State is glyph + word") and pill-shaped Reject/Approve buttons (kit buttons with
+  `--border-strong` outlined chips). Reopen only with an owner decision.
+- **Collapsible group headers (chevron, no count):** new interaction, not styling. **Open
+  question: do you want it in slice 3?** Until answered, the static headers stay.
+- The rounded card with no header or Esc hint is the screen host's layout (slice 3).
+
+### 3. New-thread screen host, with the Activity restyle (4.5-6.5 days)
 
 **Decided layout: A, composer docked, Activity list fills the pane above it** (spike below).
 
@@ -289,7 +300,7 @@ references stay stable.
 - If [#3407](https://github.com/copse-dev/agent-pane/pull/3407) is discarded, fold the
   context-ring work in here.
 
-**Total: about 17.5-26 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
+**Total: about 17-26 focused days (sum of the slice ranges), or 4-6 calendar weeks.** Calendar time runs 1.5-2.5x focused
 effort (CI cycles, merging main, screenshot review). Slices 4 and 6 are independent of 3 and can
 run in parallel once slices 1 and 1b are merged. Add 0.25-0.5 day to any slice that changes the
 IPC surface (API protocol version bump).
