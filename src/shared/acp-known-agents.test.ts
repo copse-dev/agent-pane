@@ -5,9 +5,21 @@ import {
   LEGACY_ACP_AGENT_IDS,
   RETIRED_ACP_AGENTS,
   KNOWN_ACP_AGENTS,
+  acpReauthCommand,
+  findAcpCatalogEntry,
 } from './acp-known-agents.ts'
 
 describe('KNOWN_ACP_AGENTS', () => {
+  it('uses the dedicated Claude login for setup and recovery without forcing SSO', () => {
+    for (const id of ['claude-acp', 'claude-agent-acp']) {
+      const claude = findAcpCatalogEntry(id)
+      assert.ok(claude, 'Claude entry is missing from the catalog')
+      assert.equal(claude.setup, 'claude auth login')
+      assert.equal(acpReauthCommand(claude), 'claude auth login')
+      assert.doesNotMatch(claude.note ?? '', /claude-agent-acp|SDK|ACP|--sso/)
+    }
+  })
+
   it('launches Gemini CLI with the canonical --acp flag, not the deprecated alias', () => {
     // `--acp` landed in @google/gemini-cli 0.33.0 and is what the ACP registry
     // lists for agent id `gemini`. `--experimental-acp` still works as a

@@ -49,6 +49,18 @@ is exactly why it "isn't working." Fix: don't. Use one of the flows below.
 
 ## Setup
 
+### Subscription sign-in
+
+For Claude Pro, Max, Team, or Enterprise, sign in with your Claude account:
+
+```sh
+claude auth login
+```
+
+Use the same command if your sign-in expires. `--sso` is optional to force your
+company's SSO flow; ordinary setup and reauthentication do not require it.
+`claude setup-token` prints a token for headless or CI use without saving a login.
+
 ### Option A — `claude-code-acp` with your existing subscription login (deprecated)
 
 > **Deprecated — do not set this up fresh.** The package was renamed to

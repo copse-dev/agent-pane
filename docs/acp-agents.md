@@ -15,7 +15,7 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
 > thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
 > `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
-> authenticated with its own command (e.g. `claude setup-token`). The Settings
+> authenticated with its own command (e.g. `claude auth login`). The Settings
 > panel shows the exact install and sign-in commands per agent.
 
 > Status: client role, second slice (issues #264, #605). Terminals are not
@@ -121,7 +121,7 @@ you've already added.
 
 - **Known agents** lead the row (Gemini CLI, Claude Agent, Claude Code, Cursor,
   Codex). Select one to see whether it's installed, the **Install** command to get
-  it, the **Sign in** command to authenticate it (e.g. `claude setup-token`), and
+  it, the **Sign in** command to authenticate it (e.g. `claude auth login`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
   permission mode, enable/disable it, or **Remove** it.
@@ -145,15 +145,16 @@ in that prefix. Cursor is never auto-installed (its installer is not npm).
 External agents hold their own credentials, and those expire. When a turn fails
 because the agent could not authenticate, Copse now says so in the agent's own
 terms and offers to fix it: the chat message names the command that signs that
-agent in again (`claude /login`, `cursor-agent login`, `codex login`, …), and a
+agent in again (`claude auth login`, `cursor-agent login`, `codex login`, …), and a
 prompt offers to open a shell in the **Shells** pane already running it. Finish
 the sign-in there, then re-send your message — Copse cannot complete another
 program's login flow for you.
 
-The distinction matters because the commands differ. `claude setup-token` mints a
-long-lived token for an agent that has never been signed in; an OAuth session
-that has lapsed is renewed with `claude /login`. Copse tells the two apart from
-the failure and names the right one.
+Claude uses `claude auth login` for both first-time sign-in and expired-session
+recovery. The normal login flow chooses the account method; `--sso` is optional
+when you need to force corporate SSO. `claude setup-token` is for headless or CI
+use: it prints a long-lived token without saving a login, so it is not the
+desktop sign-in command.
 
 Expiry is worth understanding rather than just re-running: an OAuth login
 refreshes its own access token in the background, so a _sandboxed_ agent that

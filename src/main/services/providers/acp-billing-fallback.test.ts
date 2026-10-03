@@ -98,7 +98,7 @@ describe('offerAcpClaudeFallback', () => {
     // Only assert the warning when discovery actually found nothing — a dev
     // machine running the suite may have a real `claude` login on disk.
     const question = askedQuestion(asked)
-    if (question.includes('No local')) assert.match(question, /claude setup-token/)
+    if (question.includes('No local')) assert.match(question, /claude auth login/)
   })
 
   // The Cloud Agent picker pins upstream Anthropic ids; an ACP model is that

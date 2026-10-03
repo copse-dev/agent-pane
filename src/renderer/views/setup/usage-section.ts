@@ -49,11 +49,11 @@ function isAbortTimeoutMessage(message: string): boolean {
 
 /**
  * True when a Claude "unavailable" reason is a sign-in / credential problem a
- * fresh `claude /login` would fix — not an inherent limitation like a Console
+ * fresh `claude auth login` would fix — not an inherent limitation like a Console
  * API key that simply can't report plan windows. Exported for unit tests.
  */
 export function claudeReasonNeedsLogin(reason: string): boolean {
-  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason)
+  return /claude (?:auth login|\/login)|user:profile|rejected|access token has expired/i.test(reason)
 }
 
 /**
@@ -70,7 +70,7 @@ export function createPlanSignInHandler(
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit('request_terminal_command', provider === 'claude' ? 'claude /login' : 'codex login')
+    store.emit('request_terminal_command', provider === 'claude' ? 'claude auth login' : 'codex login')
   }
 }
 
@@ -173,7 +173,7 @@ export function renderPlanProvider(
       signIn.type = 'button'
       signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
       signIn.textContent = signInProvider === 'claude' ? 'Sign in to Claude' : 'Sign in to Codex'
-      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude /login' : 'codex login'}`
+      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude auth login' : 'codex login'}`
       signIn.addEventListener('click', () => {
         onProviderSignIn()
       })

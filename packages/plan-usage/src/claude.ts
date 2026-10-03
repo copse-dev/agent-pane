@@ -21,10 +21,10 @@ const CLAUDE_BETA = 'oauth-2025-04-20'
 /** Anthropic rate-limits bare User-Agents harder; mirror Claude Code's UA family. */
 const CLAUDE_USER_AGENT = 'claude-code/2.1.72'
 const CLAUDE_AUTH_REJECTED_HINT =
-  'Claude credentials were rejected. Re-run `claude /login` so Copse can read a fresh Claude OAuth login token.'
+  'Claude credentials were rejected. Re-run `claude auth login` so Copse can read a fresh Claude OAuth login token.'
 /**
  * The stored login is fine but its access token has lapsed. Only Claude Code
- * refreshes it, so this must not read as a sign-in problem (no `claude /login`).
+ * refreshes it, so this must not read as a sign-in problem (no `claude auth login`).
  */
 const CLAUDE_TOKEN_EXPIRED_HINT =
   'Claude’s access token has expired. Usage updates the next time Claude Code refreshes it (any `claude` session or Claude agent turn).'
@@ -380,7 +380,7 @@ export async function fetchClaudePlanUsage(
       status: 'unavailable',
       provider: 'claude',
       reason:
-        'No Claude OAuth token (sign in with `claude /login` or set `CLAUDE_CODE_OAUTH_TOKEN`)',
+        'No Claude OAuth token (sign in with `claude auth login` or set `CLAUDE_CODE_OAUTH_TOKEN`)',
     }
   }
   if (token.startsWith('sk-ant-api')) {
@@ -495,7 +495,7 @@ export async function fetchClaudePlanUsageFromCredentials(
     last ?? {
       status: 'unavailable',
       provider: 'claude',
-      reason: 'No Claude OAuth token (sign in with `claude /login`)',
+      reason: 'No Claude OAuth token (sign in with `claude auth login`)',
     }
   )
 }

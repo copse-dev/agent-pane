@@ -80,7 +80,7 @@ describe('fetchClaudePlanUsageFromCredentials', () => {
     )
     assert.equal(result.status, 'unavailable')
     assert.match(result.reason, /access token has expired/i)
-    assert.doesNotMatch(result.reason, /claude \/login|rejected/i)
+    assert.doesNotMatch(result.reason, /claude auth login|rejected/i)
     assert.equal(calls.length, 0)
   })
 

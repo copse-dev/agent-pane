@@ -2690,7 +2690,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '',
     '**To continue**',
     '',
-    '1. Run `claude /login` in a terminal.',
+    '1. Run `claude auth login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
     '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
