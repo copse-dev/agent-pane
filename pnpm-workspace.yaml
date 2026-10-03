@@ -128,6 +128,25 @@ patchedDependencies:
 # `network.mitmProxy` mode (signing goes through native crypto), never calls
 # verify, and Copse never enables `mitmProxy`. Remove this once node-forge
 # publishes a patched version.
+#
+# GHSA-ch52-4w7c-c8xp (http-cache-semantics <=4.2.0, max-stale can reuse
+# security-zeroed shared-cache responses) has no patched npm release as of
+# 2026-10-03. It is only pulled in by @electron/get via got/cacheable-request
+# for electron-builder and electron-chromedriver. @electron/get uses got.stream
+# without enabling got's HTTP cache; its on-disk artifact cache is separate.
+# Copse does not run a shared HTTP response cache. Remove the exception when
+# a patched release is available, or reassess before enabling HTTP caching.
+#
+# GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, recursive AST walkers can exhaust the
+# stack on deeply nested patterns) also has no patched npm release as of
+# 2026-10-03. Copse uses micromatch's matching/isMatch APIs, which call
+# picomatch directly, not braces' parse/compile/expand walkers. The remaining
+# consumers are Mocha's chokidar watch mode and type-coverage's fast-glob,
+# which process developer-controlled watch/source patterns. Reassess before
+# using micromatch.parse/braces/braceExpand or passing untrusted patterns to
+# those build tools, and remove the exception when a patched release exists.
 auditConfig:
   ignoreGhsas:
     - GHSA-86w9-cpqp-85rv
+    - GHSA-ch52-4w7c-c8xp
+    - GHSA-vfj7-8cjw-p6xm
