@@ -141,6 +141,43 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('keeps Files separate from Overview and retains the selected section on refresh', async () => {
+    const { listRoot, viewerRoot } = mount([], {
+      prDetails: async () => ({
+        ...LINKED_PR,
+        body: '**Summary** of the change.',
+        additions: 12,
+        deletions: 3,
+        files: [{ path: 'src/login.ts', status: 'modified', additions: 12, deletions: 3 }],
+      }),
+    })
+    await settle()
+    const files = viewerRoot.querySelector<HTMLElement>('.pr-viewer-files')
+    const description = viewerRoot.querySelector<HTMLElement>('.pr-viewer-description')
+    assert.ok(files)
+    assert.ok(description)
+    assert.equal(files.hidden, true)
+    assert.equal(description.hidden, false)
+    const filesTab = viewerRoot.querySelector<HTMLButtonElement>('[data-section="files"]')
+    assert.ok(filesTab)
+    filesTab.click()
+    assert.equal(files.hidden, false)
+    assert.equal(description.hidden, true)
+    assert.equal(files.querySelectorAll('.pr-file-row').length, 1)
+    assert.equal(files.querySelector('.pr-file-stats')?.textContent, '+12−3')
+    listRoot.querySelector<HTMLButtonElement>('.pr-pane-refresh-btn')?.click()
+    await settle()
+    assert.equal(
+      viewerRoot.querySelector('[data-section="files"]')?.getAttribute('aria-pressed'),
+      'true',
+    )
+    assert.equal(files.hidden, false)
+    viewerRoot.querySelector<HTMLButtonElement>('[data-section="overview"]')?.click()
+    assert.equal(files.hidden, true)
+    assert.equal(description.hidden, false)
+    assert.equal(viewerRoot.querySelector('.git-diff-editor-wrap')?.hasAttribute('hidden'), true)
+  })
+
   it('shows known conflicts as an X while retaining the failing CI label', async () => {
     const { listRoot } = mount([], {
       linkedUrls: 'https://github.com/acme/widgets/pull/994',

@@ -1374,16 +1374,52 @@
   overflow: hidden;
   min-height: 0;
 }
+.pr-list-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-xs);
+}
 .pr-list-number {
   flex-shrink: 0;
-  width: 36px;
   font-size: var(--font-size-2xs);
-  font-weight: 600;
   font-family: var(--font-mono);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .pr-list-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.pr-list-row.is-selected .pr-list-title {
+  font-weight: 600;
+}
+.pr-list-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-2xs);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.pr-list-repo {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-list-checks-label {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.pr-list-checks-label[data-state='failure'] {
+  color: var(--error);
+}
+.pr-list-checks-label[data-state='pending'] {
+  color: var(--warning);
 }
 .pr-list-agent-badge {
   flex-shrink: 0;
@@ -1419,26 +1455,47 @@
 }
 .pr-viewer-host {
   gap: 0;
+  container-type: inline-size;
 }
 .pr-detail-sections {
   display: flex;
   flex-shrink: 0;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-md);
+  gap: 0;
+  padding: 0 var(--spacing-xs);
   border-bottom: 1px solid var(--border);
 }
 .pr-detail-sections:empty {
   display: none;
 }
 .pr-detail-section {
-  padding: var(--spacing-sm) 0;
-  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-xs);
+  color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 .pr-detail-section[aria-pressed='true'] {
   color: var(--text-primary);
   border-bottom-color: var(--accent);
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.pr-section-count {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: max-content;
+  min-width: calc(20px * var(--ui-scale));
+  aspect-ratio: 1;
+  line-height: 1;
+  font-size: var(--font-size-2xs);
+  font-weight: 400;
+  padding: 0 var(--spacing-xs);
+  border-radius: 50%;
+  background: var(--bg-muted);
 }
 .pr-activity {
   flex: 1;
@@ -1448,53 +1505,166 @@
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
-.pr-activity-notice,
-.pr-comment-meta {
-  color: var(--text-muted);
+.pr-activity-notice {
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
 }
 .pr-comment {
-  padding: var(--spacing-md) 0;
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--spacing-md);
+  overflow: hidden;
 }
 .pr-comment-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.pr-comment-avatar {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: calc(24px * var(--ui-scale));
+  height: calc(24px * var(--ui-scale));
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-size: var(--font-size-2xs);
+}
+.pr-comment-author {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: var(--spacing-xs) var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+  min-width: 0;
+}
+.pr-comment-author strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.pr-comment-meta time {
+  font-size: var(--font-size-2xs);
+}
+.pr-review-state {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 var(--spacing-xs);
+  font-size: var(--font-size-2xs);
+}
+.pr-review-state-changes_requested {
+  color: var(--error);
+  border-color: var(--error);
+}
+.pr-review-state-approved {
+  color: var(--success);
+  border-color: var(--success);
+}
+.message-text.pr-comment-body {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.pr-comment-body > :first-child {
+  margin-top: 0;
+}
+.pr-comment-body > :last-child {
+  margin-bottom: 0;
+}
+.pr-comment-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.pr-comment-body .code-block-shell {
+  min-width: 0;
+}
+@container (max-width: 380px) {
+  .pr-section-count {
+    display: none;
+  }
+  .pr-comment-meta time {
+    grid-column: 2 / -1;
+  }
 }
 .pr-activity-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
   color: var(--accent);
-  font-size: inherit;
+  font-size: var(--font-size-xs);
   text-align: left;
 }
 .pr-activity-link:hover {
   text-decoration: underline;
 }
+.pr-check-group {
+  margin-top: var(--spacing-md);
+}
+.pr-check-group-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+summary.pr-check-group-heading {
+  cursor: pointer;
+  list-style: none;
+}
+summary.pr-check-group-heading::-webkit-details-marker {
+  display: none;
+}
+.pr-check-group[open] .pr-check-chevron {
+  transform: rotate(90deg);
+}
+.pr-check-count {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
 .pr-check-row {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
-.pr-check-name {
+.pr-check-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
 }
-.pr-check-state {
-  color: var(--text-muted);
+.pr-check-name {
+  overflow-wrap: anywhere;
 }
-.pr-check-state-success {
+.pr-check-state {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.pr-check-icon {
+  display: inline-flex;
+  padding-top: var(--spacing-xs);
+}
+.pr-check-state-success,
+.pr-check-tone-success {
   color: var(--success);
 }
-.pr-check-state-failure {
+.pr-check-state-failure,
+.pr-check-tone-failure {
   color: var(--error);
 }
-.pr-check-state-pending {
+.pr-check-state-pending,
+.pr-check-tone-pending {
   color: var(--warning);
 }
 .pr-viewer-meta {
@@ -1509,31 +1679,93 @@
 .pr-viewer-files:empty {
   display: none;
 }
-.pr-viewer-title-row {
+.pr-viewer-repo-line {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
 }
-/* <h4>: the PR title is a utility heading in a dense side pane, not a page
-   masthead, so it stays in the interface family (docs/ui-taste.md). */
+.pr-viewer-repo-line > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-viewer-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+/* A PR title is a utility heading, so it stays in the interface family. */
 .pr-viewer-title {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
-  line-height: var(--line-height-base);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.pr-viewer-number {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
 }
 .pr-viewer-subtitle {
-  margin-top: 4px;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.pr-viewer-subtitle code {
+  font-size: var(--font-size-2xs);
+}
+.pr-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-right: var(--spacing-xs);
+}
+.pr-lifecycle .chat-pr-status {
+  margin-left: 0;
 }
 .pr-viewer-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+.pr-more-actions {
+  position: relative;
+  margin-left: auto;
+}
+.pr-more-toggle {
+  list-style: none;
+}
+.pr-more-toggle::-webkit-details-marker {
+  display: none;
+}
+.pr-actions-menu {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.pr-actions-menu .ui-btn {
+  justify-content: flex-start;
 }
 /* Open on GitHub / thread links are compact ghost kit buttons and the
    lifecycle actions (Rerun CI, Approve, …) compact secondary ones (ui.css). */
@@ -1548,12 +1780,16 @@
 .pr-viewer-badges {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+.pr-viewer-badges:empty {
+  display: none;
 }
 .pr-badge {
   font-size: var(--font-size-xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1565,6 +1801,13 @@
 .pr-badge-approved {
   color: var(--success);
   border-color: var(--success);
+}
+.pr-description-meta {
+  display: flex;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font: var(--font-size-xs) var(--font-family);
+  margin-bottom: var(--spacing-md);
 }
 .pr-viewer-description {
   flex-shrink: 0;
@@ -1580,6 +1823,11 @@
   flex: 1;
   max-height: none;
   min-height: 0;
+}
+.pr-viewer-files.pr-viewer-files-fill {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 .pr-viewer-files {
   flex-shrink: 0;
@@ -1600,18 +1848,30 @@
   color: var(--text-muted);
   background: none;
   border: none;
-  cursor: pointer;
   font-family: inherit;
   text-align: left;
-}
-.pr-files-header:hover {
-  color: var(--text-primary);
 }
 .pr-files-list {
   padding-bottom: var(--spacing-xs);
 }
 .pr-file-row {
   padding-left: var(--spacing-md);
+}
+.pr-file-row .git-change-path {
+  flex: 1;
+  min-width: 0;
+}
+.pr-file-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: var(--spacing-xs);
+  font: var(--font-size-2xs) var(--font-mono);
+}
+.pr-additions {
+  color: var(--change-added);
+}
+.pr-deletions {
+  color: var(--change-deleted);
 }
 .pr-empty-state {
   line-height: var(--line-height-base);

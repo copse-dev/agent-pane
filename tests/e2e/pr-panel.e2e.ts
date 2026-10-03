@@ -156,23 +156,16 @@ describe('PR panel (mock gh)', () => {
       expect.stringMatching(/template hint|<!--|Copse PR template/i),
     )
 
-    // Changed files start collapsed (a count-only toggle) and, with no file
-    // selected, the description takes the whole column — no dead
-    // "Select a changed file" area.
-    const filesToggle = await $('.pr-files-header')
-    await expect(filesToggle).toHaveText(expect.stringMatching(/changed files \(4\)/i))
-    await expect(filesToggle).toHaveAttribute('aria-expanded', 'false')
-    await expect(await $('.pr-file-row')).not.toBeExisting()
+    // Overview uses the full body; Files is a separate destination.
+    await expect(await $('.pr-viewer-files')).not.toBeDisplayed()
     await expect(await $('.pr-viewer-description-fill')).toBeDisplayed()
     await expect(await $('#pr-viewer-host .panel-empty')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
-
-    // Expanding the toggle reveals the file list; opening a file swaps the
-    // filled description for the diff editor.
-    await filesToggle.click()
-    // Expanding re-renders the viewer, so re-query the toggle instead of
-    // retaining the now-detached WebdriverIO element handle.
-    await expect(await $('.pr-files-header')).toHaveAttribute('aria-expanded', 'true')
+    await $('.pr-detail-section[data-section="files"]').click()
+    await expect(await $('.pr-viewer-description')).not.toBeDisplayed()
+    await expect(await $('.pr-files-header')).toHaveText(
+      expect.stringMatching(/changed files \(4\)/i),
+    )
     await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(4)
     await browser.execute(() => {
       const row = [...document.querySelectorAll<HTMLButtonElement>('.pr-file-row')].find(
@@ -189,10 +182,10 @@ describe('PR panel (mock gh)', () => {
     // side. This is the path that previously decoded PNG bytes as UTF-8 text.
     await $('.pr-list-title*=Polish footer branch status').click()
     await expect(await $('.pr-viewer-title')).toHaveText('Polish footer branch status')
+    await $('.pr-detail-section[data-section="files"]').click()
     await expect(await $('.pr-files-header')).toHaveText(
       expect.stringMatching(/changed files \(2\)/i),
     )
-    await $('.pr-files-header').click()
     await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(2)
     await browser.execute(() => {
       const row = [...document.querySelectorAll<HTMLButtonElement>('.pr-file-row')].find(
