@@ -9,7 +9,7 @@ import type {
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
 import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
-import { normalizeOpenAIToolSchema } from './openai-tool-schema.ts'
+import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import {
