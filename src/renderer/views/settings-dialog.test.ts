@@ -124,6 +124,56 @@ describe('settings dialog (native <dialog>)', () => {
   })
 })
 
+it('refreshes machines only while their settings section remains open and mounted', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  document.body.innerHTML = ''
+  let calls = 0
+  const base = createFakeApi()
+  mountSettingsDialog(
+    createStore(),
+    createPendingApi({
+      'machines.state': async () => {
+        calls += 1
+        return base.machines.state()
+      },
+    }),
+  )
+  const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+  shimModal(dialog)
+  const settle = async (): Promise<void> => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+  openSettingsDialog()
+  t.mock.timers.tick(9000)
+  assert.equal(calls, 0)
+  qsRequired<HTMLButtonElement>(dialog, 'button[data-section="ssh"]').click()
+  await settle()
+  assert.equal(calls, 1)
+  t.mock.timers.tick(3000)
+  await settle()
+  assert.equal(calls, 2)
+  qsRequired<HTMLButtonElement>(dialog, 'button[data-section="general"]').click()
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 2)
+  closeSettingsDialog()
+  dialog.dispatchEvent(new Event('close'))
+  openSettingsDialog('ssh')
+  await settle()
+  assert.equal(calls, 3)
+  closeSettingsDialog()
+  dialog.dispatchEvent(new Event('close'))
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 3)
+  openSettingsDialog('ssh')
+  await settle()
+  assert.equal(calls, 4)
+  dialog.remove()
+  t.mock.timers.tick(6000)
+  assert.equal(calls, 4)
+})
+
 describe('accent colour', () => {
   it('applies the hue and chooses readable text for light and dark accents', () => {
     applyUiAccent('#2A9D8F')

@@ -57,6 +57,7 @@ import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createAboutSection } from './setup/about-section.ts'
+import { createMachinesSection } from './setup/machines-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -319,6 +320,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
+  { name: 'remoteSystemOneModelsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
@@ -569,7 +571,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="customise">Customise</button>
           <button type="button" class="settings-nav-btn" data-section="storage">Storage</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
-          <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
+          <button type="button" class="settings-nav-btn" data-section="ssh">Machines</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
           <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
@@ -1436,11 +1438,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           </section>
 
           <section class="settings-section" data-section="ssh">
-            <h3>SSH</h3>
+            <h3>Machines</h3>
             <p class="settings-section-desc">
-              Work on a remote Linux machine over SSH. Commands, git, search, and files all run
-              there while Copse stays on your desktop.
+              Connect other computers to use their models, or manage SSH hosts for remote projects and agents.
             </p>
+            <div id="settings-machines-host" class="settings-mount"></div>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
 
             <fieldset>
@@ -1479,6 +1481,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   Open explainer settings…
                 </button>
               </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Remote System One models</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteSystemOneModelsEnabled" />
+                Connect Copse computers to share local models
+              </label>
+              <p class="field-hint">
+                After saving, open Machines to pair computers on the same network and choose which
+                models to share. No SSH is needed. Turning this off stops sharing and remote calls;
+                saved pairings stay available to reconnect or remove.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -1643,6 +1658,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // silent non-null assertion.
   const classifiersSection = createClassifiersSection(api)
   qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
+
+  const machinesSection = createMachinesSection(api)
+  qsRequired(overlay, '#settings-machines-host').append(machinesSection.root)
+  let machineRefreshTimer: ReturnType<typeof setInterval> | undefined
+  overlay.addEventListener('close', () => {
+    clearInterval(machineRefreshTimer)
+  })
 
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     // Live-persist toggles must wake listeners (e.g. the projects add menu)
@@ -1951,6 +1973,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   function showSection(id: SettingsSection): void {
     activeSection = id
+    clearInterval(machineRefreshTimer)
+    if (overlay.open && id === 'ssh')
+      machineRefreshTimer = setInterval(() => {
+        if (!overlay.isConnected || !overlay.open) {
+          clearInterval(machineRefreshTimer)
+          return
+        }
+        void machinesSection.refresh()
+      }, 3000)
     renderPluginLists()
     navBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['section'] === id))
     sections.forEach((sec) => sec.classList.toggle('active', sec.dataset['section'] === id))
@@ -2047,6 +2078,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void providersPanel.refresh()
       void classifiersSection.refresh()
       void sshWorkspaceSection.refresh()
+      void machinesSection.refresh()
       void refreshSources()
     }
 
@@ -2100,7 +2132,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
-        if (id === 'ssh') void sshWorkspaceSection.refresh()
+        if (id === 'ssh') {
+          void sshWorkspaceSection.refresh()
+          void machinesSection.refresh()
+        }
         if (id === 'customise') {
           void refreshSources()
         }
@@ -4803,7 +4838,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Deep-links (e.g. status banner → SSH, an automation heading → Plugins) skip
     // the nav click path, so refresh lazy section content here too.
     if (openedSection === 'classifiers') void classifiersSection.refresh()
-    if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
+    if (openedSection === 'ssh') {
+      void sshWorkspaceSection.refresh()
+      void machinesSection.refresh()
+    }
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
     if (openedSection === 'about') void aboutSection.refresh()

@@ -362,6 +362,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // The MCP-UI artefacts (canvas) gate moved to the `copse.mcp-ui-canvas`
   // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
+  remoteSystemOneModelsEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
   // Experimental next-step tab complete: after a turn, a small-tasks model may
   // offer one obvious next step as composer placeholder text the user accepts
@@ -456,6 +457,7 @@ export const isRendererWritableSettingKey = keyOf(RENDERER_WRITABLE_SETTING_SCHE
  * generic settings API.
  */
 export function isSecretSettingKey(key: string): boolean {
+  if (key === 'machineConnections' || key.startsWith('machineConnections.')) return true
   return (
     key === 'apiKey' ||
     key.startsWith('apiKey.') ||

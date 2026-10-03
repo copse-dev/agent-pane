@@ -451,6 +451,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
 .settings-search-results > fieldset,
+.machines-settings > fieldset,
 .usage-section-root > fieldset {
   /* Flat, not a card: the group's own heading and the gap to the next group are
      what separate it, so its controls share the section's left edge instead of
@@ -481,6 +482,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
 .settings-search-results > fieldset > legend,
+.machines-settings > fieldset > legend,
 .usage-section-root > fieldset > legend {
   /* A top-level group is the section's second tier, so it takes the display
      face too — one clear step down from the <h3>. Nested card titles (provider
@@ -503,6 +505,7 @@ dialog.settings-overlay::backdrop {
     .settings-section > fieldset,
     .settings-section > .settings-mount > fieldset,
     .settings-search-results > fieldset,
+    .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
   > legend {
@@ -517,6 +520,7 @@ dialog.settings-overlay::backdrop {
     .settings-section > fieldset,
     .settings-section > .settings-mount > fieldset,
     .settings-search-results > fieldset,
+    .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
   > legend
@@ -2863,4 +2867,32 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Machine connections share the Settings field and button recipes. */
+.machines-settings textarea {
+  width: min(100%, 38rem);
+  min-height: 5rem;
+  resize: vertical;
+}
+.machine-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.machine-row h4 {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.machine-client-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.machine-share-models {
+  margin: 12px 0;
+}
+.machine-status {
+  margin: 12px 0;
 }

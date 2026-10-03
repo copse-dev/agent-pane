@@ -27,12 +27,18 @@ export interface SemIfClassifierConnection {
   maxTokens?: number
 }
 
+export interface MachineClassifierConnection {
+  type: 'machine'
+  machineId: string
+  profileId: string
+}
+
 export interface ClassifierProfile {
   id: string
   label: string
   model: string
   timeoutMs: number
-  connection: HttpClassifierConnection | SemIfClassifierConnection
+  connection: HttpClassifierConnection | SemIfClassifierConnection | MachineClassifierConnection
 }
 
 export type ClassifierQuestion =
