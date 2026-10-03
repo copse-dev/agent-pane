@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
+import { getAppVersion } from './app-version.ts'
 import { augmentPathForGuiLaunch } from './launch-path.ts'
 import { setElectronAppRuntime } from './services/electron-app-runtime.ts'
 import { installElectronStoreBackend } from './services/storage/electron-store-backend.ts'
@@ -41,7 +42,7 @@ app.setPath('userData', userData.dir)
 
 setElectronAppRuntime({
   userDataPath: app.getPath('userData'),
-  version: app.getVersion(),
+  version: getAppVersion(),
   isPackaged: app.isPackaged,
 })
 installElectronStoreBackend()

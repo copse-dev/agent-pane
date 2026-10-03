@@ -3028,7 +3028,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
     assertMainFrameSender(event, win)
-    return { version: app.getVersion(), report: await readThirdPartyLicenseReport() }
+    return { version: getElectronAppVersion(), report: await readThirdPartyLicenseReport() }
   })
   ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
     assertMainFrameSender(event, win)
