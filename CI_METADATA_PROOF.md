@@ -1,0 +1,1 @@
+This controlled draft is never eligible for merging or queue admission. It deliberately fails a unit test to verify that metadata-only events preserve failed and missing CI Passed identities. Close it after evidence is recorded. No production implementation is taken from this fixture.
