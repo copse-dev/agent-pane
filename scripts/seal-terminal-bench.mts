@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { execFileSync } from 'node:child_process'
 import { glob, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
@@ -345,6 +347,25 @@ for (const { resultPath, result } of storedTrials) {
   ) {
     throw new Error(`Task image metadata lacks an immutable digest for ${taskName}.`)
   }
+  // Sampling belongs to the recorded trial, not the machine sealing it later.
+  // Historical runs lack this artifact; preserve that uncertainty explicitly.
+  let recordedSampling: { mode: 'client' | 'server'; outputCeiling: number | null } | null = null
+  try {
+    const text = await readFile(join(directory, 'agent', 'model-parameters.json'), 'utf8')
+    recordedSampling = safeJsonParse(
+      text,
+      decodeWithSchema(
+        z.object({
+          schemaVersion: z.literal(1),
+          mode: z.enum(['client', 'server']),
+          outputCeiling: z.number().int().positive().nullable(),
+        }),
+      ),
+    )
+    if (!recordedSampling) throw new Error(`Invalid recorded sampling for ${taskName}.`)
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') throw error
+  }
   const rawStarted = nested(result, 'started_at')
   const rawFinished = nested(result, 'finished_at')
   const manifest = {
@@ -407,10 +428,8 @@ for (const { resultPath, result } of storedTrials) {
         process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim(),
         '120',
       ),
-      modelParameters: nonEmptyStringOr(
-        process.env['COPSE_TERMINAL_MODEL_PARAMETERS']?.trim(),
-        'client',
-      ),
+      modelParameters: recordedSampling?.mode ?? null,
+      maxOutputTokens: recordedSampling?.outputCeiling ?? null,
       maxCommandTimeoutSeconds: nonEmptyStringOr(
         process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim(),
         '600',

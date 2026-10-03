@@ -460,7 +460,10 @@ Optional tuning variables:
   81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
   none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
   two modes are not comparable. Each trial records the mode and values in
-  `agent/model-parameters.json` and on every `provider-requests.jsonl` line)
+  `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
+  read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
+  historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
+  fail sealing rather than substituting current defaults.
 - `COPSE_TERMINAL_MAX_OUTPUT_TOKENS` (unset by default; a positive integer that replaces the
   per-request output ceiling in both parameter modes, e.g. `16384`). The loop's stream caps cannot
   see a tool call's arguments growing, because the SDK transport delivers a tool call as one chunk

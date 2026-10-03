@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -184,7 +185,7 @@ describe('terminal bench model parameters', () => {
     await drain(recorded)
     const line: unknown = JSON.parse(readFileSync(path, 'utf8').trim())
     assert.deepEqual(
-      typeof line === 'object' && line !== null && 'sampling' in line ? line.sampling : undefined,
+      isRecord(line) && Object.hasOwn(line, 'sampling') ? line['sampling'] : undefined,
       { mode: 'client', params: record.params },
     )
   })
