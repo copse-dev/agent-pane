@@ -303,6 +303,48 @@ describe('browser-hosted Activity home', () => {
       await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     }
   })
+
+  it('never clips the action bar at the widths the pane divider leaves the chat pane', async () => {
+    await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    await $('#pane-files').waitForDisplayed()
+    const paneWidth = async (): Promise<number> =>
+      browser.execute(
+        () => document.getElementById('pane-chat')?.getBoundingClientRect().width ?? 0,
+      )
+    const widths: number[] = []
+    try {
+      // Through the product's own divider, as a user would: 641px is just past the
+      // stacking breakpoint, 345px is the narrowest the divider allows.
+      for (const target of [700, 641, 560, 450, 345]) {
+        const current = await paneWidth()
+        await $('#resizer-files').dragAndDrop({ x: Math.round(target - current), y: 0 })
+        await browser.pause(150)
+        const probe = await browser.execute(() => {
+          const body = document.querySelector('#activity-home .activity-panel-body')
+          const controls = [
+            '#activity-home .activity-open-thread',
+            '#activity-home .activity-reject',
+            '#activity-home .activity-approve',
+          ].map((selector) => document.querySelector(selector)?.getBoundingClientRect())
+          const frame = body?.getBoundingClientRect()
+          const pane = document.getElementById('pane-chat')?.getBoundingClientRect()
+          return {
+            pane: Math.round(pane?.width ?? 0),
+            clipped: controls.some(
+              (box) => !box || !frame || box.left < frame.left - 1 || box.right > frame.right + 1,
+            ),
+          }
+        })
+        widths.push(probe.pane)
+        expect(probe.clipped).toBe(false)
+      }
+      // The sweep must have reached the widths that clipped, or it proves nothing.
+      expect(widths.some((width) => width >= 620 && width <= 680)).toBe(true)
+      expect(widths.some((width) => width <= 400)).toBe(true)
+    } finally {
+      await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    }
+  })
 })
 
 describe('browser-hosted Activity home with nothing to list', () => {
