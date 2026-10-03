@@ -221,7 +221,8 @@ describe('read-outside prompt copy', () => {
     assert.equal(parts.command, 'ls -la ~/.copse/workspace')
     assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
     assert.match(parts.bodyAdvice ?? '', /read from sensitive locations on your computer/)
-    assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.match(parts.bodyFooter ?? '', /rest of this chat/)
+    assert.match(parts.bodyFooter ?? '', /other paths outside the project too/)
     assert.match(parts.bodyFooter ?? '', /credential/)
   })
 

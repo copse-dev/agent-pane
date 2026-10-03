@@ -736,9 +736,11 @@ describe('ensureToolPermitted', () => {
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
+    let approvalAdvice = ''
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalAdvice = request.bodyAdvice ?? ''
       approvalCause = request.cause
       return { approved: false, remember: false }
     })
@@ -749,8 +751,8 @@ describe('ensureToolPermitted', () => {
       )
       assert.match(approvalBody, /api\.parallel\.ai/)
       assert.equal(approvalCause, 'web-origin')
-      assert.match(approvalBody, /paid API credits/i)
-      assert.match(approvalBody, /Zero Data Retention/i)
+      assert.match(approvalAdvice, /paid API credits/i)
+      assert.match(approvalAdvice, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
       setDefaultPluginRegistry(null)
@@ -766,12 +768,12 @@ describe('ensureToolPermitted', () => {
     })
     let approvalBody = ''
     let approvalSubject = ''
-    let approvalFooter = ''
+    let approvalAdvice = ''
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
-      approvalFooter = request.bodyFooter ?? ''
+      approvalAdvice = request.bodyAdvice ?? ''
       approvalCause = request.cause
       return { approved: false, remember: false }
     })
@@ -781,9 +783,9 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(approvalBody, 'printf hello')
-      assert.match(approvalFooter, /network allowlist is temporarily widened/i)
-      assert.match(approvalFooter, /this command could inherit that access/i)
-      assert.match(approvalFooter, /before running them at the same time/i)
+      assert.match(approvalAdvice, /network allowlist is temporarily widened/i)
+      assert.match(approvalAdvice, /this command could inherit that access/i)
+      assert.match(approvalAdvice, /before running them at the same time/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
       // The cause is what makes this prompt countable in the D0/U0 report: an
       // artifact of ASRT's process-global allowlist, which a per-runtime
@@ -802,15 +804,15 @@ describe('ensureToolPermitted', () => {
       allowLocalBinding: false,
       label: 'agent: codex',
     })
-    let approvalFooter = ''
+    let approvalAdvice = ''
     setApprovalHandler(async (request) => {
-      approvalFooter = request.bodyFooter ?? ''
+      approvalAdvice = request.bodyAdvice ?? ''
       return { approved: false, remember: false }
     })
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
-      assert.match(approvalFooter, /widened for agent: codex/)
-      assert.match(approvalFooter, /on macOS, this command could inherit that access/)
+      assert.match(approvalAdvice, /widened for agent: codex/)
+      assert.match(approvalAdvice, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
       release()
@@ -2148,47 +2150,88 @@ describe('decideShellPermission', () => {
   })
 })
 
-describe('formatGithubWritePrompt', () => {
-  it('uses a question title and PR target body', () => {
-    assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
-      title: 'Mark pull request ready for review on GitHub?',
-      body: 'PR #1478',
+describe('shell prompt execution boundary', () => {
+  it('names missing containment when auto-run is off, without authorizing execution', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/approval-copy-project')
+    let prompted = false
+    setApprovalHandler(async (request) => {
+      prompted = true
+      assert.equal(request.title, 'Run without sandbox?')
+      assert.equal(request.body, 'node --version')
+      assert.match(request.bodyAdvice ?? '', /sandbox is unavailable/)
+      assert.match(request.bodyAdvice ?? '', /user account’s access to files and the network/)
+      assert.equal(request.scope, 'external')
+      assert.equal(request.cause, 'shell-no-containment')
+      return { approved: false, remember: false }
     })
-    assert.deepEqual(
-      formatGithubWritePrompt('gh_pr_approve', { number: 42, owner: 'acme', repo: 'widgets' }),
-      {
-        title: 'Approve pull request on GitHub?',
-        body: 'acme/widgets#42',
-      },
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('node --version', {
+          sandboxEnabled: false,
+          autoRun: false,
+          toolPolicy: 'ask',
+        }),
+        false,
+      )
+      assert.equal(prompted, true)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+})
+
+describe('formatGithubWritePrompt', () => {
+  it('names concrete effects while keeping the PR target visible', () => {
+    const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
+    assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')
+    assert.equal(ready.body, 'PR #1478')
+    assert.match(ready.bodyAdvice, /notify reviewers or trigger workflows/)
+    const approve = formatGithubWritePrompt('gh_pr_approve', {
+      number: 42,
+      owner: 'acme',
+      repo: 'widgets',
+    })
+    assert.equal(approve.body, 'acme/widgets#42')
+    assert.match(approve.bodyAdvice, /required approval for merging/)
+    assert.match(
+      formatGithubWritePrompt('gh_pr_enable_auto_merge', { number: 42 }).bodyAdvice,
+      /merge the pull request when its requirements are met/,
+    )
+    assert.match(
+      formatGithubWritePrompt('gh_pr_rerun_failed_ci', { number: 42 }).bodyAdvice,
+      /CI resources or secrets/,
     )
   })
-
-  it('falls back to JSON when args are not a PR target', () => {
+  it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
-    assert.equal(prompt.title, 'Re-run failed CI on GitHub?')
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
-
-  it('shows the PR title and the implicit branch push for gh_pr_create', () => {
-    assert.deepEqual(formatGithubWritePrompt('gh_pr_create', { title: 'Fix the parser' }), {
-      title: 'Open pull request on GitHub?',
-      body: 'Push the current branch, then open “Fix the parser”.',
+  it('exposes publication contents and branch targets for PR creation', () => {
+    const prompt = formatGithubWritePrompt('gh_pr_create', {
+      title: 'Fix the parser',
+      body: 'Review all changes',
+      head: 'fix/parser',
+      base: 'develop',
+      draft: true,
+      owner: 'acme',
+      repo: 'widgets',
     })
-    assert.equal(
-      formatGithubWritePrompt('gh_pr_create', {
-        title: 'Fix the parser',
-        head: 'feature/already-pushed',
-      }).body,
-      'Open “Fix the parser” from feature/already-pushed.',
-    )
-    assert.equal(
-      formatGithubWritePrompt('gh_pr_create', {
-        title: 'Fix the parser',
-        owner: 'acme',
-        repo: 'widgets',
-      }).body,
-      'acme/widgets: “Fix the parser”',
-    )
+    for (const value of [
+      'acme/widgets',
+      'Fix the parser',
+      'Review all changes',
+      'fix/parser',
+      'develop',
+      'Draft: yes',
+    ])
+      assert.ok(prompt.body.includes(value))
+    assert.match(prompt.bodyAdvice, /people with access/)
+    assert.match(prompt.bodyFooter, /once/)
+    const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
+    assert.match(implicit.body, /current branch \(will be pushed\)/)
+    assert.match(implicit.body, /repository default branch/)
   })
 })
 
@@ -2863,7 +2906,11 @@ describe('browser network approvals', () => {
       await import('../browser/browser-network-grants.ts')
     await setSetting('webAllowedOrigins', [])
     let prompts = 0
-    setApprovalHandler(async () => {
+    setApprovalHandler(async (request) => {
+      assert.equal(request.body, 'https://example.com')
+      assert.match(request.bodyAdvice ?? '', /site can see the request/)
+      assert.match(request.bodyFooter ?? '', /chat’s browser session/)
+      assert.equal(request.rememberLabel, 'Always allow https://example.com:443')
       prompts += 1
       return { approved: true, remember: false }
     })
