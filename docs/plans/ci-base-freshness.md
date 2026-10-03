@@ -23,9 +23,11 @@ directly: "base advancement ... cannot authorize an untested candidate".
 
 Two structural constraints shape the fix:
 
-- **No merge queue.** GitHub's merge queue requires Enterprise Cloud for a
-  private repository and this org is on Team (see ci.yml's `merge_group` note),
-  so the `main` → `release` promotion flow stands in for one.
+- **Merge queue available after the public-repository transition.** The earlier
+  private-repository/Team limitation no longer applies. Queue CI now tests the
+  synthetic candidate against the event's exact base; the initial main rollout
+  preserves required CI, CLA and screenshot review with one entry at a time.
+  The `main` → `release` promotion flow still runs the full release tier.
 - **Re-running is unaffordable.** Re-dispatching CI for every open pull request
   on each push to `main` would multiply the day's load across an ephemeral
   self-hosted fleet that already serves both tiers.
@@ -173,12 +175,13 @@ decision:
   throughput: on a busy `main` every candidate must refresh before it merges.
   Applying it to `release` only is the cheaper option, and a stale promotion is
   the expensive case.
-- **A merge queue** — unavailable on this plan (Enterprise Cloud for a private
-  repository; see ci.yml's `merge_group` note).
+- **A merge queue** — available after the repository became public. The main
+  queue evaluates each synthetic candidate against its exact event base before
+  merging; its required CI, CLA and screenshot contexts must all succeed.
 
-That choice is the remaining R11 base-advancement work. This workflow's job is
-to make the condition visible while it is being made, and afterwards to explain
-on the pull request what the rule is blocking on.
+The main merge queue supplies the R11 base-advancement gate. This workflow
+remains an advisory explanation of a source PR's base freshness; it does not
+replace validation of the queue's synthetic candidate.
 
 ## Validation evidence
 

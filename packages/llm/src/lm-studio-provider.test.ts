@@ -97,6 +97,46 @@ class FakeToolFailureModel {
   }
 }
 
+/** Streams one fragment, then keeps predicting until it is cancelled. */
+class FakeEndlessModel {
+  opts: LLMRespondOpts | null = null
+
+  respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
+    this.opts = opts
+    return {
+      result: (): Promise<never> =>
+        new Promise<never>((_resolve, reject) => {
+          opts.onPredictionFragment?.({
+            content: 'thinking',
+            tokensCount: 1,
+            containsDrafted: false,
+            reasoningType: 'reasoning',
+            isStructural: false,
+          })
+          opts.signal?.addEventListener(
+            'abort',
+            (): void => {
+              reject(new Error('prediction cancelled'))
+            },
+            { once: true },
+          )
+        }),
+    }
+  }
+}
+
+class FakeEndlessClient {
+  readonly modelHandle = new FakeEndlessModel()
+
+  model(): Promise<FakeEndlessModel> {
+    return Promise.resolve(this.modelHandle)
+  }
+
+  prepareImageBase64(): Promise<never> {
+    return Promise.reject(new Error('unexpected image'))
+  }
+}
+
 class FakeToolFailureClient {
   readonly modelHandle = new FakeToolFailureModel()
 
@@ -317,6 +357,31 @@ describe('LMStudioProvider', () => {
       /bad tool call/,
     )
     assert.equal(client.modelHandle.opts?.signal?.aborted, true)
+  })
+
+  it('cancels the prediction when the consumer stops reading early', async () => {
+    // The agent loop breaks out of a stream it cut for runaway reasoning. LM
+    // Studio keeps predicting up to its output ceiling unless it is cancelled,
+    // and the next request then waits behind that abandoned prediction.
+    const client = new FakeEndlessClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      if (chunk.type === 'reasoning') break
+    }
+
+    assert.equal(client.modelHandle.opts?.signal?.aborted, true)
+  })
+
+  it('does not cancel a prediction that the consumer reads to the end', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      // Drain to completion.
+    }
+
+    assert.equal(client.modelHandle.opts?.signal?.aborted, false)
   })
 
   it('converts the configured OpenAI endpoint into the SDK WebSocket origin', () => {
