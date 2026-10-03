@@ -64,4 +64,5 @@
 // v36 versions the Apple container attestation (engine, isolation, process limit, and the
 // `none` security profile) on container runs.
 // v37 conservatively versions the optional `verbosity` field on turn model parameters.
-export const API_PROTOCOL_VERSION = 37 as const
+// v38 conservatively versions interrupted-turn recovery metadata.
+export const API_PROTOCOL_VERSION = 38 as const
