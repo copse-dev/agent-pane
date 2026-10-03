@@ -66465,10 +66465,12 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 Adds "Run unattended in a container" to the message box menu. The run works on a
-                snapshot of the thread's checkout with no prompts, reaching only its model's
-                origin, and brings its commits back for you to apply. Needs Docker; the first run
-                builds the worker image. A run carries one credential: the model's API key, or,
-                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+                snapshot of the thread's checkout with no prompts and brings its commits back for
+                you to apply. Its network reaches only its model's origin, plus, when the run
+                installs dependencies (on by default, per run), the npm registry, GitHub and
+                Electron's download hosts. Needs Docker; the first run builds the worker image. A
+                run carries one credential: the model's API key, or, if you opt in per run, your
+                Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 
@@ -70905,7 +70907,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return stats;
   }
   function stripCard(id, name, need, working) {
-    const selected = (projectFilter ?? "all") === id;
+    const selected = projectFilter === id;
     const signature = JSON.stringify([name, need, working, selected]);
     const hit = stripCache.get(id);
     if (hit?.signature === signature) return hit.node;
@@ -70919,14 +70921,15 @@ function createActivityView(api2, store2, sources3, deps, host) {
       {
         type: "button",
         class: "activity-strip-card",
-        "data-project": id,
+        "data-project": id ?? "all",
+        "data-project-key": JSON.stringify(id),
         "aria-pressed": selected ? "true" : "false"
       },
       el("span", { class: "activity-strip-name" }, name),
       stats
     );
     node2.addEventListener("click", () => {
-      projectFilter = id === "all" ? null : id;
+      projectFilter = id;
       renderNow();
     });
     stripCache.set(id, { signature, node: node2 });
@@ -70934,17 +70937,14 @@ function createActivityView(api2, store2, sources3, deps, host) {
   }
   function renderStrip(groups) {
     const stats = projectStats(groups);
-    const total2 = { need: 0, working: 0 };
-    for (const entry of stats.values()) {
-      total2.need += entry.need;
-      total2.working += entry.working;
-    }
-    const cards = [stripCard("all", "All projects", total2.need, total2.working)];
+    const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
+    const working = groups.find((group) => group.id === "working")?.total ?? 0;
+    const cards = [stripCard(null, "All projects", need, working)];
     const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
     for (const [id, entry] of shown)
       cards.push(stripCard(id, entry.name, entry.need, entry.working));
     patchChildren(strip, cards);
-    const live = /* @__PURE__ */ new Set(["all", ...shown.map(([id]) => id)]);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id);
     }
@@ -70997,8 +70997,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (!(active2 instanceof HTMLElement)) return null;
     const toggled = active2.dataset["groupToggle"];
     if (toggled !== void 0) return { area: "toggle", group: toggled };
-    const project2 = active2.dataset["project"];
-    if (project2 !== void 0 && strip.contains(active2)) return { area: "strip", project: project2 };
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
     if (list.contains(active2)) return { area: "list" };
     if (detail.contains(active2)) {
       return {
@@ -71018,9 +71018,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
       return;
     }
     if (spot.area === "strip") {
-      strip.querySelector(`[data-project="${spot.project}"]`)?.focus({
-        preventScroll: true
-      });
+      const card = [...strip.querySelectorAll("[data-project-key]")].find(
+        (node2) => node2.dataset["projectKey"] === spot.projectKey
+      );
+      card?.focus({ preventScroll: true });
       return;
     }
     if (spot.area === "detail" && spot.key === selectedKey) {
@@ -71109,6 +71110,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const workCount = working?.total ?? 0;
     summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
+    const populatedIds = new Set(populated.map((group) => group.id));
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren();
+    }
     if (populated.length === 0) {
       list.hidden = true;
       list.replaceChildren();
@@ -71212,6 +71217,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     selectedIndex = 0;
     shownKey = null;
     status.textContent = "";
+    for (const entry of groupCache.values()) entry.rows.replaceChildren();
     rowCache.clear();
     stripCache.clear();
     collapsed = defaultCollapsed();
