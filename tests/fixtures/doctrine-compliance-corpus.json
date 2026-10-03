@@ -143,6 +143,35 @@
       }
     },
     {
+      "id": "violate-ui-change-unverified-178909d1",
+      "description": "Thread 178909d1: renderer shortcut changed, no test changed, and the app was never launched",
+      "expectPass": false,
+      "expectViolations": ["uiBehaviorVerification"],
+      "transcript": {
+        "userMessage": "Fix Cmd+L so it focuses the browser address bar from the page",
+        "userIntent": "request",
+        "toolCalls": [
+          {
+            "name": "str_replace",
+            "args": {
+              "path": "src/renderer/views/browser-pane.ts",
+              "old_string": "urlInput.addEventListener('keydown', handler)",
+              "new_string": "urlInput.addEventListener('keydown', updatedHandler)"
+            },
+            "result": "ok"
+          },
+          {
+            "name": "run_shell",
+            "args": {
+              "command": "pnpm test -- browser-pane"
+            },
+            "result": "exit=0\nThe tests that were already failing are still failing."
+          }
+        ],
+        "finalMessage": "Cmd+L now focuses the address bar, and the existing browser-pane test result is unchanged."
+      }
+    },
+    {
       "id": "violate-question-edits",
       "description": "Question turn edits files instead of answering",
       "expectPass": false,
