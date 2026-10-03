@@ -190,7 +190,7 @@ export function createActivityView(
     role: 'group',
     'aria-label': 'Projects',
   })
-  const stripCache = new Map<string, { signature: string; node: HTMLElement }>()
+  const stripCache = new Map<string | null, { signature: string; node: HTMLElement }>()
   // Session-only: folded groups and the project filter reset with the selection.
   const defaultCollapsed = (): Set<ActivityGroupId> =>
     new Set<ActivityGroupId>(host.collapsibleGroups ? ['working'] : [])
@@ -304,7 +304,7 @@ export function createActivityView(
    * What the selected row is about, in full. For an approval that is the
    * request exactly as the approval prompt shows it — full title, advice, the
    * whole body and the footer, rendered by the prompt's own
-   * `approvalRequestDetails` — and this pane is the only place Approve once
+   * `approvalRequestDetails` — and this pane is the only place the Approve action
    * exists, so a request is never approved from a view that shows less.
    */
   function detailContent(row: ActivityRow): HTMLElement[] {
@@ -595,8 +595,8 @@ export function createActivityView(
     return stats
   }
 
-  function stripCard(id: string, name: string, need: number, working: number): HTMLElement {
-    const selected = (projectFilter ?? 'all') === id
+  function stripCard(id: string | null, name: string, need: number, working: number): HTMLElement {
+    const selected = projectFilter === id
     const signature = JSON.stringify([name, need, working, selected])
     const hit = stripCache.get(id)
     if (hit?.signature === signature) return hit.node
@@ -612,14 +612,15 @@ export function createActivityView(
       {
         type: 'button',
         class: 'activity-strip-card',
-        'data-project': id,
+        'data-project': id ?? 'all',
+        'data-project-key': JSON.stringify(id),
         'aria-pressed': selected ? 'true' : 'false',
       },
       el('span', { class: 'activity-strip-name' }, name),
       stats,
     )
     node.addEventListener('click', () => {
-      projectFilter = id === 'all' ? null : id
+      projectFilter = id
       renderNow()
     })
     stripCache.set(id, { signature, node })
@@ -629,19 +630,17 @@ export function createActivityView(
   /** All projects, then the ones that need you (most waiting first) and the chosen one. */
   function renderStrip(groups: readonly ActivityGroup[]): void {
     const stats = projectStats(groups)
-    const total = { need: 0, working: 0 }
-    for (const entry of stats.values()) {
-      total.need += entry.need
-      total.working += entry.working
-    }
-    const cards = [stripCard('all', 'All projects', total.need, total.working)]
+    // Aggregate counts include requests whose thread has no project association.
+    const need = groups.find((group) => group.id === 'needs-you')?.total ?? 0
+    const working = groups.find((group) => group.id === 'working')?.total ?? 0
+    const cards = [stripCard(null, 'All projects', need, working)]
     const shown = [...stats.entries()]
       .filter(([id, entry]) => entry.need > 0 || id === projectFilter)
       .sort((a, b) => b[1].need - a[1].need || a[1].name.localeCompare(b[1].name))
     for (const [id, entry] of shown)
       cards.push(stripCard(id, entry.name, entry.need, entry.working))
     patchChildren(strip, cards)
-    const live = new Set(['all', ...shown.map(([id]) => id)])
+    const live = new Set<string | null>([null, ...shown.map(([id]) => id)])
     for (const id of stripCache.keys()) {
       if (!live.has(id)) stripCache.delete(id)
     }
@@ -706,14 +705,14 @@ export function createActivityView(
     | { area: 'list' }
     | { area: 'toggle'; group: string }
     | { area: 'detail'; key: string; control: string }
-    | { area: 'strip'; project: string }
+    | { area: 'strip'; projectKey: string }
     | null {
     const active = document.activeElement
     if (!(active instanceof HTMLElement)) return null
     const toggled = active.dataset['groupToggle']
     if (toggled !== undefined) return { area: 'toggle', group: toggled }
-    const project = active.dataset['project']
-    if (project !== undefined && strip.contains(active)) return { area: 'strip', project }
+    const projectKey = active.dataset['projectKey']
+    if (projectKey !== undefined && strip.contains(active)) return { area: 'strip', projectKey }
     if (list.contains(active)) return { area: 'list' }
     if (detail.contains(active)) {
       return {
@@ -734,9 +733,10 @@ export function createActivityView(
       return
     }
     if (spot.area === 'strip') {
-      strip.querySelector<HTMLElement>(`[data-project="${spot.project}"]`)?.focus({
-        preventScroll: true,
-      })
+      const card = [...strip.querySelectorAll<HTMLElement>('[data-project-key]')].find(
+        (node) => node.dataset['projectKey'] === spot.projectKey,
+      )
+      card?.focus({ preventScroll: true })
       return
     }
     if (spot.area === 'detail' && spot.key === selectedKey) {
