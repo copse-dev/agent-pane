@@ -62,8 +62,18 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
-import { orderSidebarThreads } from '../controller/thread-order.ts'
-import { THREAD_SORT_MODES, type ThreadSortMode } from '@shared/types/state.ts'
+import {
+  groupRowsByStatus,
+  orderSidebarRows,
+  orderSidebarThreads,
+  type SidebarRow,
+} from '../controller/thread-order.ts'
+import {
+  THREAD_GROUP_MODES,
+  THREAD_SORT_MODES,
+  type ThreadGroupMode,
+  type ThreadSortMode,
+} from '@shared/types/state.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
@@ -415,11 +425,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     created: 'Created',
     title: 'Thread name',
   }
+  const GROUP_LABELS: Readonly<Record<ThreadGroupMode, string>> = {
+    project: 'Project',
+    status: 'Status',
+    none: 'None',
+  }
   // The menu applies the choice at once; a save that fails would otherwise be lost
   // silently and the order would revert on the next launch.
   const saveSort = (
-    key: 'sidebarThreadSort' | 'sidebarThreadSortReverse',
-    value: ThreadSortMode | boolean,
+    key: 'sidebarThreadSort' | 'sidebarThreadSortReverse' | 'sidebarThreadGroup',
+    value: ThreadSortMode | ThreadGroupMode | boolean,
   ): void => {
     void api.settings.set(key, value).catch((err: unknown) => {
       showErrorToast('Could not save the thread order', err)
@@ -427,8 +442,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
   sortBtn.addEventListener('click', () => {
     const rect = sortBtn.getBoundingClientRect()
-    const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+    const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store.getState()
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: 'Group by' },
+      ...THREAD_GROUP_MODES.map((mode): ContextMenuEntry => ({
+        label: GROUP_LABELS[mode],
+        checked: mode === sidebarThreadGroup,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadGroup: mode })
+          saveSort('sidebarThreadGroup', mode)
+          render()
+        },
+      })),
       { heading: 'Sort by' },
       ...THREAD_SORT_MODES.map((mode): ContextMenuEntry => ({
         label: SORT_LABELS[mode],
@@ -1880,9 +1905,83 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const automationsSection = renderAutomationsSection()
     if (automationsSection) list.append(automationsSection)
 
-    for (const node of buildProjectTree(projects, projectGroups)) {
-      if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
-      else list.append(renderProjectEntry(node.project))
+    /**
+     * Threads from every visited project, laid out without the project tree:
+     * sections by status, or one flat list. Each row names its project, since
+     * the tree that used to say so is gone. A search filter is scoped to the
+     * open project, so it keeps the tree.
+     */
+    function renderThreadSections(mode: Exclude<ThreadGroupMode, 'project'>): HTMLElement[] {
+      const owners = new Map<string, Project>()
+      const rows: SidebarRow[] = []
+      for (const project of projects) {
+        if (project.missing) continue
+        owners.set(project.id, project)
+        for (const thread of getSidebarThreads(store, project.id)) {
+          if (thread.automation === undefined) rows.push({ projectId: project.id, thread })
+        }
+      }
+      const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse)
+      const sections =
+        mode === 'status'
+          ? groupRowsByStatus(ordered, isThreadAwaitingAttention)
+          : [{ id: 'all', label: '', rows: ordered }]
+      if (ordered.length === 0) {
+        return [el('div', { class: 'sidebar-empty' }, 'No threads yet')]
+      }
+      return sections.map((section) => {
+        const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
+        if (section.label) {
+          block.append(el('div', { class: 'thread-section-heading' }, section.label))
+        }
+        const byThread = new Map(section.rows.map((row) => [row.thread, row]))
+        const countKey = `section:${mode}:${section.id}`
+        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE
+        const activeRow = section.rows.find(
+          (row) => row.projectId === activeProjectId && row.thread.id === activeThreadId,
+        )
+        const paged = paginateSidebarThreads(
+          section.rows.map((row) => row.thread),
+          limit,
+          activeRow?.thread.id,
+        )
+        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount)
+        const chats = el('div', { class: 'chats-list' })
+        for (const thread of paged.visibleThreads) {
+          const project = owners.get(byThread.get(thread)?.projectId ?? '')
+          if (!project) continue
+          const row = renderThreadRow(project, thread)
+          row
+            .querySelector('.chat-title')
+            ?.after(el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`))
+          chats.append(row)
+        }
+        if (paged.hasMore) {
+          const showMoreBtn = el(
+            'button',
+            { type: 'button', class: 'chats-show-more' },
+            'Show more',
+          )
+          showMoreBtn.addEventListener('click', () => {
+            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
+            render()
+          })
+          chats.append(showMoreBtn)
+        }
+        block.append(chats)
+        return block
+      })
+    }
+
+    const groupMode = store.getState().sidebarThreadGroup
+    if (groupMode !== 'project' && threadFilter.length === 0) {
+      list.append(...renderThreadSections(groupMode))
+    } else {
+      for (const node of buildProjectTree(projects, projectGroups)) {
+        if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
+        else list.append(renderProjectEntry(node.project))
+      }
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())

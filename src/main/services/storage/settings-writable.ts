@@ -192,6 +192,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   sidebarThreadSort: z.enum(['activity', 'created', 'title']),
   sidebarThreadSortReverse: z.boolean(),
+  sidebarThreadGroup: z.enum(['project', 'status', 'none']),
   // Interaction colour for links, primary actions, selections, and chat
   // emphasis. Theme CSS derives accessible link/hover shades from this hue.
   uiAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),

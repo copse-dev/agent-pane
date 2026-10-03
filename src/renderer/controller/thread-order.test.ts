@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SidebarThread } from './sidebar-thread.ts'
-import { orderSidebarThreads } from './thread-order.ts'
+import {
+  groupRowsByStatus,
+  orderSidebarRows,
+  orderSidebarThreads,
+  type SidebarRow,
+} from './thread-order.ts'
 
 function thread(id: string, title: string, createdAt?: number): SidebarThread {
   return { id, title, status: 'idle', ...(createdAt === undefined ? {} : { createdAt }) }
@@ -45,5 +50,58 @@ describe('orderSidebarThreads', () => {
     const input = [...storeOrder]
     orderSidebarThreads(input, 'title', true)
     assert.deepEqual(ids(input), ['b', 'c', 'a'])
+  })
+})
+
+function row(projectId: string, t: SidebarThread): SidebarRow {
+  return { projectId, thread: t }
+}
+const rowIds = (rows: readonly SidebarRow[]): string[] => rows.map((r) => r.thread.id)
+
+describe('orderSidebarRows', () => {
+  const rows = [
+    row('p1', { ...thread('old', 'old', 10), lastPromptAt: 90 }),
+    row('p2', { ...thread('new', 'new', 5), lastPromptAt: 100 }),
+    row('p2', thread('unprompted', 'unprompted', 50)),
+  ]
+
+  it('orders activity across projects by last prompt, falling back to creation', () => {
+    assert.deepEqual(rowIds(orderSidebarRows(rows, 'activity', false)), [
+      'new',
+      'old',
+      'unprompted',
+    ])
+  })
+
+  it('sorts by creation and by name, and reverses', () => {
+    assert.deepEqual(rowIds(orderSidebarRows(rows, 'created', false)), ['unprompted', 'old', 'new'])
+    assert.deepEqual(rowIds(orderSidebarRows(rows, 'title', true)), ['unprompted', 'old', 'new'])
+  })
+})
+
+describe('groupRowsByStatus', () => {
+  const running = row('p1', { ...thread('run', 'run'), status: 'running' })
+  const idle = row('p1', thread('idle', 'idle'))
+  const asking = row('p2', { ...thread('ask', 'ask'), status: 'running' })
+
+  it('puts a thread that needs the user ahead of working, even while it runs', () => {
+    const sections = groupRowsByStatus([running, idle, asking], (id) => id === 'ask')
+    assert.deepEqual(
+      sections.map((s) => [s.id, rowIds(s.rows)]),
+      [
+        ['needs-you', ['ask']],
+        ['working', ['run']],
+        ['recent', ['idle']],
+      ],
+    )
+  })
+
+  it('leaves out an empty section and keeps the incoming order', () => {
+    const sections = groupRowsByStatus([idle, row('p1', thread('idle2', 'idle2'))], () => false)
+    assert.deepEqual(
+      sections.map((s) => s.label),
+      ['Recent'],
+    )
+    assert.deepEqual(rowIds(sections[0]?.rows ?? []), ['idle', 'idle2'])
   })
 })

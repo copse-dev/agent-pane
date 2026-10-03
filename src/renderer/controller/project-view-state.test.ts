@@ -39,6 +39,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     rightPanelPosition: 'auto',
     sidebarThreadSort: 'activity',
     sidebarThreadSortReverse: false,
+    sidebarThreadGroup: 'project',
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...partial,
