@@ -17,6 +17,22 @@ const PROMPT = 'Start the original thread in its isolated checkout.'
 const OTHER_PROMPT = 'Send from the other thread while checkout is pending.'
 const NEXT_DRAFT = 'Keep this draft in the other thread.'
 
+/**
+ * Select a thread's sidebar row. The row is rebuilt as its running and
+ * selected state change, so find and click it in one page task rather than
+ * holding a WebDriver element across that update.
+ */
+async function selectThread(threadId: string): Promise<void> {
+  const selector = `.chat-row[data-thread-id="${threadId}"]`
+  await $(selector).waitForExist({ timeout: 10_000 })
+  const clicked = await browser.execute((target) => {
+    const row = document.querySelector<HTMLElement>(target)
+    row?.click()
+    return row !== null
+  }, selector)
+  assert.ok(clicked, `sidebar row ${threadId} should be present`)
+}
+
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
@@ -218,7 +234,7 @@ describe('switching threads during first-message checkout', () => {
     await expect($$('.msg-user')).toBeElementsArrayOfSize(1)
     await saveAppScreenshot('thread-checkout-switch-background.png')
 
-    await $(`.chat-row[data-thread-id="${ORIGINAL}"]`).click()
+    await selectThread(ORIGINAL)
     await expect($('.msg-user')).toHaveText(expect.stringContaining(PROMPT))
     await expect($$('.msg-user')).toBeElementsArrayOfSize(1)
     await expect($('.msg-assistant')).toBeDisplayed()
@@ -227,7 +243,7 @@ describe('switching threads during first-message checkout', () => {
     assert.equal(git(projectRoot, ['branch', '--show-current']), 'main')
     await saveAppScreenshot('thread-checkout-switch-sent.png')
 
-    await $(`.chat-row[data-thread-id="${OTHER}"]`).click()
+    await selectThread(OTHER)
     assert.equal(await $('.prompt-input').getText(), NEXT_DRAFT)
     const persisted = await browser.execute(
       async (project, thread) => window.api.threads.loadMessages(project, thread),
