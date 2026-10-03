@@ -172,6 +172,17 @@
       "reviewBy": "2026-09-27",
       "coverage": "Unit/component assertions do not replace Monaco approval IPC. Current runtime reproduction and successful evidence remain outstanding.",
       "markers": ["wdio.ci.conf.ts: exclude"]
+    },
+    {
+      "spec": "tests/e2e/thread-deep-links.e2e.ts",
+      "category": "platform",
+      "reason": "The native process-boundary fixture uses a POSIX shell launcher, which cannot be executed by ChromeDriver on Windows. Windows cold/warm protocol delivery remains unverified.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Main runtime and protocol navigation maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-10-03",
+      "reviewBy": "2026-10-10",
+      "coverage": "Routing and renderer unit contracts run on every platform; native cold launch, second-instance selection and settings screenshots passed on macOS. The POSIX native spec remains enabled on Linux.",
+      "markers": ["this.skip"]
     }
   ]
 }
