@@ -1008,6 +1008,33 @@ describe('footer branch status', () => {
     assert.equal(filter.getAttribute('aria-expanded'), 'false')
   })
 
+  it('starts a blank thread from the default branch, not the checkout the last thread left', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'feature/left-behind', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/left-behind', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.equal(control.pendingBaseBranch('thread-1'), 'main')
+  })
+
   it('keeps exactly one option selected while moving from an open PR to a branch', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -1033,7 +1060,7 @@ describe('footer branch status', () => {
           { name: 'main', lastCommitDate: '2024-01-01' },
           { name: 'feature/with-pr', lastCommitDate: '2024-01-02' },
         ],
-        'main',
+        null,
       ),
     )
     await settle()
