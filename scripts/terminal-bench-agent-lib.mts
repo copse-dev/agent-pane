@@ -25,9 +25,11 @@ import {
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
 import {
+  TERMINAL_MAX_OUTPUT_TOKENS_ENV,
   TERMINAL_MODEL_PARAMETERS_ENV,
   buildTerminalProviders,
   resolveTerminalModelParameters,
+  terminalMaxOutputTokens,
   terminalModelParametersMode,
   writeTerminalModelParametersRecord,
 } from './lib/terminal-bench-model-parameters.mts'
@@ -378,6 +380,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const modelParameters = resolveTerminalModelParameters(
     terminalModelParametersMode(process.env[TERMINAL_MODEL_PARAMETERS_ENV]),
     parsed.model,
+    terminalMaxOutputTokens(process.env[TERMINAL_MAX_OUTPUT_TOKENS_ENV]),
   )
   writeTerminalModelParametersRecord(agentDirectory, modelParameters)
   const { base: baseProvider, forcedWrite: forcedWriteProvider } = buildTerminalProviders({

@@ -11,6 +11,7 @@ import {
   TERMINAL_MODEL_PARAMETERS_ARTIFACT,
   buildTerminalProviders,
   resolveTerminalModelParameters,
+  terminalMaxOutputTokens,
   terminalModelParametersMode,
   writeTerminalModelParametersRecord,
 } from './terminal-bench-model-parameters.mts'
@@ -186,5 +187,39 @@ describe('terminal bench model parameters', () => {
       typeof line === 'object' && line !== null && 'sampling' in line ? line.sampling : undefined,
       { mode: 'client', params: record.params },
     )
+  })
+})
+
+describe('terminal output ceiling cap', () => {
+  it('parses a positive integer and treats blank as unset', () => {
+    assert.equal(terminalMaxOutputTokens(undefined), undefined)
+    assert.equal(terminalMaxOutputTokens('  '), undefined)
+    assert.equal(terminalMaxOutputTokens('16384'), 16_384)
+  })
+
+  it('rejects values that are not positive integers', () => {
+    for (const bad of ['0', '-5', '1.5', 'many']) {
+      assert.throws(() => terminalMaxOutputTokens(bad), /COPSE_TERMINAL_MAX_OUTPUT_TOKENS/)
+    }
+  })
+
+  it('adds nothing in server mode when no cap is set', () => {
+    const record = resolveTerminalModelParameters('server', QWEN)
+    assert.equal(record.outputCeiling, null)
+    assert.deepEqual(record.params, {})
+  })
+
+  it('lets the cap replace the card ceiling in both modes', () => {
+    for (const mode of ['server', 'client'] as const) {
+      const record = resolveTerminalModelParameters(mode, QWEN, 16_384)
+      assert.equal(record.outputCeiling, 16_384, mode)
+      assert.equal(record.params.maxOutputTokens, 16_384, mode)
+    }
+  })
+
+  it('keeps the sampling recipe when a cap is set in client mode', () => {
+    const record = resolveTerminalModelParameters('client', QWEN, 16_384)
+    assert.equal(record.params.presencePenalty, 1.5)
+    assert.equal(record.params.topK, 20)
   })
 })

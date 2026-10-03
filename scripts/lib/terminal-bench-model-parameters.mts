@@ -29,6 +29,26 @@ export type TerminalModelParametersMode = (typeof TERMINAL_MODEL_PARAMETER_MODES
 export const DEFAULT_TERMINAL_MODEL_PARAMETERS_MODE: TerminalModelParametersMode = 'client'
 export const TERMINAL_MODEL_PARAMETERS_ENV = 'COPSE_TERMINAL_MODEL_PARAMETERS'
 export const TERMINAL_MODEL_PARAMETERS_ARTIFACT = 'model-parameters.json'
+export const TERMINAL_MAX_OUTPUT_TOKENS_ENV = 'COPSE_TERMINAL_MAX_OUTPUT_TOKENS'
+
+/**
+ * Optional per-request output ceiling. The Qwen3.6 recipe publishes 81,920 and
+ * the SDK transport applies it by model id even in `server` mode. The loop's
+ * stream caps cannot see a tool call's arguments growing (the SDK delivers a
+ * tool call as one chunk when it ends), so one runaway call can generate to the
+ * ceiling: about 19 minutes at 70 tokens/s. A lower ceiling bounds that.
+ */
+export function terminalMaxOutputTokens(raw: string | undefined): number | undefined {
+  const value = raw?.trim()
+  if (!value) return undefined
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `${TERMINAL_MAX_OUTPUT_TOKENS_ENV} must be a positive integer, received '${value}'.`,
+    )
+  }
+  return parsed
+}
 
 export function terminalModelParametersMode(raw: string | undefined): TerminalModelParametersMode {
   const value = raw?.trim()
@@ -62,16 +82,21 @@ function lmStudioSelection(model: string): string {
 export function resolveTerminalModelParameters(
   mode: TerminalModelParametersMode,
   model: string,
+  maxOutputTokens?: number,
 ): TerminalModelParametersRecord {
+  const cap = maxOutputTokens === undefined ? {} : { maxOutputTokens }
   if (mode === 'server') {
+    const selection = lmStudioSelection(model)
     return {
       schemaVersion: 1,
       mode,
       model,
-      selection: lmStudioSelection(model),
+      selection,
       recipe: null,
-      params: {},
-      outputCeiling: null,
+      params: cap,
+      // `max_tokens` on the OpenAI-compatible transport: none unless a cap is set.
+      // (The native SDK transport still applies the card's ceiling by model id.)
+      outputCeiling: maxOutputTokens ?? null,
     }
   }
   // The recipe's support table is keyed by a stored model selection, and a bare
@@ -80,7 +105,7 @@ export function resolveTerminalModelParameters(
   // LM Studio model: `lmstudio:<id>`.
   const selection = lmStudioSelection(model)
   const recommendation = recommendedModelParameters(selection)
-  const params = recommendation?.params ?? {}
+  const params = { ...(recommendation?.params ?? {}), ...cap }
   return {
     schemaVersion: 1,
     mode,
@@ -125,7 +150,10 @@ export function buildTerminalProviders(options: {
   const params = record.params
   const applied = record.mode === 'client'
   const openAi = (extraBody?: Record<string, unknown>): OpenAIProvider => {
-    const ceiling = applied ? (record.outputCeiling ?? undefined) : undefined
+    const ceiling =
+      applied || record.params.maxOutputTokens !== undefined
+        ? (record.outputCeiling ?? undefined)
+        : undefined
     return new OpenAIProvider(model, {
       baseURL: baseUrl,
       apiKey,
