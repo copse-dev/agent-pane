@@ -565,3 +565,63 @@ describe('activity view answering a question in place', () => {
     assert.equal(harness.view.body.querySelectorAll('.activity-answer-input').length, 0)
   })
 })
+
+describe('activity view folding an automation schedule', () => {
+  const run = (id: string, patch: Partial<Thread> = {}): Thread =>
+    thread(id, {
+      unreadAt: 500,
+      automation: { scheduleId: 'docs', scheduleName: 'Docs freshness', triggeredAt: 1 },
+      ...patch,
+    })
+  const keys = (view: ActivityView): Array<string | undefined> =>
+    Array.from(view.body.querySelectorAll<HTMLElement>('.activity-row')).map(
+      (row) => row.dataset['rowKey'],
+    )
+
+  it("draws a schedule's settled runs as one row that opens out into them", () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b'), run('c')])
+    state.shown = true
+    view.show()
+    assert.equal(rowCount(view), 1)
+    const toggle = view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+    assert.ok(toggle)
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+    assert.match(view.body.querySelector('.activity-fold')?.textContent ?? '', /Docs freshness/)
+    assert.match(toggle.textContent, /Done.*3 runs/)
+
+    toggle.click()
+    assert.equal(rowCount(view), 4)
+    assert.equal(
+      view.body.querySelector('.activity-fold-toggle')?.getAttribute('aria-expanded'),
+      'true',
+    )
+    assert.equal(view.body.querySelectorAll('.activity-fold-run').length, 3)
+
+    view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')?.click()
+    assert.equal(rowCount(view), 1)
+  })
+
+  it('keeps the fold out of the arrow-key rows and never selects it', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    state.shown = true
+    view.show()
+    assert.equal(
+      view.body.querySelector('.activity-fold-toggle')?.getAttribute('aria-current'),
+      null,
+    )
+    assert.equal(keys(view).length, 1)
+    // Nothing is selectable, so the detail pane stays out of the way.
+    assert.equal(view.body.querySelector('.activity-detail')?.hasAttribute('hidden'), true)
+  })
+
+  it('forgets which folds were open on hide()', () => {
+    const { view, state } = setup([thread('chat'), run('a'), run('b')])
+    state.shown = true
+    view.show()
+    view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')?.click()
+    assert.equal(rowCount(view), 3)
+    view.hide()
+    view.show()
+    assert.equal(rowCount(view), 1)
+  })
+})

@@ -1377,6 +1377,13 @@ than the card. Differences from the overlay are listed under each point below.
 
 - **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **A schedule's settled runs fold.** In Recently finished, two or more settled runs of one
+  automation schedule become one row (clock glyph, the schedule name, "Done" or "Failed" and
+  the run count) that opens out into the runs; clean finishes and failures fold apart, so a
+  failure is never hidden among successes. A lone run stays its own row. Folds come first, so
+  the cap of ten never hides one. A fold names no thread and opens nothing, so it is never
+  selected and the arrow keys skip it. Needs-you rows are never folded: each is a request
+  that has to be handled. The sidebar applies the same idea in `foldAutomationRuns`.
 - **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
   three dots, triangle, check) and a short label beside it. Colour is a third, redundant
   channel. The running dots are held still here; the sidebar already animates them. **On the
