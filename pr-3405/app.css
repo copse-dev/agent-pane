@@ -1352,7 +1352,7 @@ copse-ui-field input[type=password],
   border-radius: 3px;
   padding: 0 2px;
 }
-.chat-delete {
+.chat-menu-btn {
   flex-shrink: 0;
   width: var(--projects-action-size);
   height: var(--projects-action-size);
@@ -1363,7 +1363,8 @@ copse-ui-field input[type=password],
   color: var(--text-muted);
   padding: 0;
 }
-.chat-row:hover .chat-delete {
+.chat-row:hover .chat-menu-btn,
+.chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
 .chat-row:hover .automation-setup-btn {
