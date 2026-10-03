@@ -1981,7 +1981,6 @@ export async function runThreadInContainer(
         provider: (maximum): Promise<LLMProvider> => hostProvider(maximum, runtimeId),
         tokenCeiling: request.budgets.tokenCeiling,
         wallClockMs: request.budgets.wallClockMs,
-        maxRequests: request.maxSteps ?? 128,
         ...(options.signal ? { signal: options.signal } : {}),
       })
     : null

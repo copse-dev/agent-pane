@@ -8,7 +8,6 @@ interface HostInferenceOptions {
   provider: (maxOutputTokens: number) => Promise<LLMProvider>
   tokenCeiling: number
   wallClockMs: number
-  maxRequests: number
   signal?: AbortSignal
 }
 
@@ -17,7 +16,6 @@ export class HostInference {
   private readonly timer: NodeJS.Timeout
   private readonly options: HostInferenceOptions
   private active = false
-  private requests = 0
   private used = 0
   private readonly stopRequested = (): void => {
     this.stop()
@@ -67,8 +65,6 @@ export class HostInference {
     try {
       signal.throwIfAborted()
       if (this.active) throw new Error('Only one inference request may run at a time')
-      if (this.requests >= this.options.maxRequests)
-        throw new Error('Host inference request budget reached')
       this.active = true
       ownsSlot = true
       const parts: Buffer[] = []
@@ -89,7 +85,6 @@ export class HostInference {
       if (this.used + reservation >= this.options.tokenCeiling)
         throw new Error('Host inference token budget reached')
       this.used += reservation
-      this.requests += 1
       const provider = await this.options.provider(
         Math.min(4096, this.options.tokenCeiling - this.used),
       )

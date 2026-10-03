@@ -481,13 +481,16 @@ guarantee, and the record must say so.
   author after the native ChatGPT bridge: all built-in providers, including local servers, use a
   run-scoped model RPC on private stdio. The guest receives no provider endpoint, API key, or OAuth
   token. The host pins the selected provider settings/key (OAuth pins its account and refreshes on
-  the host), enforces one concurrent request and run/request/size/token/time bounds, and cancels
+  the host), enforces one concurrent request and run/size/token/time bounds, and cancels
   inference when the guest disconnects or the run stops. Known authentication literals are scrubbed
   from streamed responses and diagnostics. The synthetic inference origin is a capability handled
   by the broker, never a TCP destination. Dependency-install network grants remain separate.
   A1 and A1′ still govern external ACP agents: their agent processes and tools remain in the guest;
   this does not move external agent commands onto the user's host. Token reservation is an estimate
   before a call; reported usage can exhaust the budget during that call and refuses later calls.
+  The broker has no separate request-count ceiling: the time and token budgets selected when
+  starting the run bound inference. An explicit CLI `--max-steps` still bounds the guest loop;
+  shared agent-loop termination and progress safeguards are separate from broker admission.
 
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
