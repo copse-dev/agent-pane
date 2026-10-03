@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { quote } from 'shell-quote'
 import { describe, it } from 'node:test'
 import {
   capTerminalPreflightText,
@@ -52,6 +56,25 @@ describe('terminal benchmark pre-flight probe', () => {
     assert.match(output, /== \/logs\/verifier ==/)
     if (!output.includes('/tests: readable')) {
       assert.match(output, /\/tests: missing or unreadable.*do not search the filesystem/)
+    }
+  })
+
+  it('counts readable text files after filtering binary candidates', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'copse-preflight-'))
+    try {
+      for (let index = 0; index < 6; index++) {
+        writeFileSync(join(directory, `a${String(index)}.bin`), Buffer.from([0]))
+      }
+      for (let index = 0; index < 7; index++) {
+        writeFileSync(join(directory, `z${String(index)}.py`), `assert verifier_${String(index)}\n`)
+      }
+      const command = terminalPreflightCommand().replaceAll('/tests', quote([directory]))
+      const output = execFileSync('sh', ['-c', command], { encoding: 'utf8', timeout: 20_000 })
+      assert.match(output, /assert verifier_0/)
+      assert.match(output, /assert verifier_5/)
+      assert.doesNotMatch(output, /assert verifier_6/)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 

@@ -413,3 +413,35 @@ jobs:
             release/RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 30
+
+  # A failed release run is otherwise silent: nothing reaches the public feed,
+  # and the weekly bump skips while the version stays unpublished. Betas 9-11
+  # failed this way for days unnoticed. Keep one open issue per tag so the
+  # failure is seen; a retry that fails again comments on it.
+  report-failure:
+    needs: [preflight, verify-clean-release-build, build-test, assemble]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the release-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Release (macOS) failed for $TAG"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label area:release \
+            --search "\"$title\" in:title" --json number,title \
+            | jq -r --arg title "$title" 'map(select(.title == $title))[0].number // empty')"
+          body="$(printf '%s\n\n%s\n\n%s\n' \
+            "[Release (macOS) run]($RUN_URL) for \`$TAG\` failed, so nothing was published." \
+            "A cut version is not re-cut: fix forward, then cut the next version by dispatching \`Bump release version\` with it, which carries this version's notes forward. See docs/releasing-macos.md#failed-releases." \
+            "Close this issue once a later release is published.")"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label area:release --body "$body"
+          fi
