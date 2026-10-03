@@ -35,7 +35,6 @@ function fixture(
   provider: LLMProvider,
   overrides: {
     tokenCeiling?: number
-    maxRequests?: number
     wallClockMs?: number
     signal?: AbortSignal
   } = {},
@@ -52,7 +51,6 @@ function fixture(
       return provider
     },
     tokenCeiling: 10000,
-    maxRequests: 8,
     wallClockMs: 10000,
     ...overrides,
   })
@@ -132,10 +130,31 @@ describe('run-scoped host inference', () => {
     await assert.rejects(raw(f.link, 'x'.repeat(INFERENCE_MESSAGE_LIMIT + 1)))
     assert.equal(calls, 0)
   })
-  it('enforces request and token budgets on the host', async (t) => {
-    const f = fixture(t, echo, { maxRequests: 1 })
+  it('admits more than 128 requests while the run has token and time budget', async (t) => {
+    const f = fixture(t, echo, { tokenCeiling: 20000 })
+    for (let request = 0; request < 130; request++) {
+      assert.equal((await collect(f.provider)).length, 4)
+    }
+    assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 130)
+  })
+  it('refuses the next request when the remaining token budget cannot cover it', async (t) => {
+    let calls = 0
+    const f = fixture(
+      t,
+      {
+        async *stream(messages, tools, signal, options) {
+          calls++
+          yield* echo.stream(messages, tools, signal, options)
+        },
+      },
+      { tokenCeiling: 110 },
+    )
     await collect(f.provider)
-    await assert.rejects(collect(f.provider), /request budget/)
+    await assert.rejects(collect(f.provider), /token budget/)
+    assert.equal(calls, 1)
+    assert.equal(f.broker.log().filter((entry) => entry.event === 'connect').length, 2)
+  })
+  it('enforces the token budget during a request', async (t) => {
     const tokens = fixture(t, echo, { tokenCeiling: 90 })
     await assert.rejects(collect(tokens.provider), /token budget/)
   })
