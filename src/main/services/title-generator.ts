@@ -1,7 +1,7 @@
 import { mockScenarioTitle } from '@copse/llm/mock-script.ts'
 import {
-  resolveSmallTasksFallbackRoute,
   resolveSmallTasksRoute,
+  smallTasksRoutes,
   type SmallTasksRoute,
 } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
@@ -21,17 +21,6 @@ function recordSmallTasksUsage(
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
   })
-}
-
-async function* threadTitleRoutes(): AsyncIterable<SmallTasksRoute> {
-  const primary = await resolveSmallTasksRoute()
-  if (!primary) return
-  yield primary
-
-  // An async generator stays paused after the primary yield, so the chat route
-  // is resolved only after the local/configured model actually fails.
-  const fallback = await resolveSmallTasksFallbackRoute(primary.model)
-  if (fallback) yield fallback
 }
 
 export interface ThreadTitleCompletion {
@@ -84,7 +73,7 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
   if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
     return mockScenarioTitle(text)
   }
-  const completion = await completeThreadTitleWithRoutes(text, threadTitleRoutes())
+  const completion = await completeThreadTitleWithRoutes(text, smallTasksRoutes())
   return completion?.title ?? null
 }
 

@@ -156,7 +156,7 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonCenterDelta).toBeLessThanOrEqual(1)
     expect(layout.composerBottomGap).toBeGreaterThanOrEqual(11)
     expect(layout.composerBottomGap).toBeLessThanOrEqual(13)
-    expect(layout.topFadeHeight).toBe('32px')
+    expect(layout.topFadeHeight).toBe('28px')
     expect(layout.topFadeBackground).toContain('linear-gradient')
     expect(layout.topFadePointerEvents).toBe('none')
     expect(layout.reasoningBorderWidth).toBe('0px')

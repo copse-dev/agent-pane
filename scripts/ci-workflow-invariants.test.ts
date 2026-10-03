@@ -924,12 +924,38 @@ describe('release-bump.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
   })
 
+  const publicationCheck = 'gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current"'
+
   it('keeps one release in flight and skips an empty week', () => {
-    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
-    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const published = workflow.indexOf(publicationCheck)
     const bump = workflow.indexOf('node scripts/release-bump.mts')
     assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
     assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('cuts past an unpublished version only on an explicit dispatch, carrying its notes', () => {
+    // A version whose release run failed can never be published, so a gate
+    // with no way past it would stop the weekly train for good. The schedule
+    // still skips; only a person naming the next version cuts past it, and the
+    // abandoned version's notes move into the new section rather than vanish.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('node scripts/release-bump.mts'),
+    )
+    assert.match(gate, /if \[ -z "\$REQUESTED_VERSION" \]; then[\s\S]*?exit 0\n/)
+    assert.match(gate, /args\+=\(--carry-forward\)/)
+  })
+
+  it('treats only a confirmed 404 as unpublished', () => {
+    // A rate limit or outage read as "unpublished" would let a dispatch carry a
+    // published version's notes into the next release a second time.
+    const gate = workflow.slice(
+      workflow.indexOf(publicationCheck),
+      workflow.indexOf('if [ -z "$REQUESTED_VERSION" ]'),
+    )
+    assert.match(gate, /\*"HTTP 404"\*\) ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(gate, /gh api "repos\/\$RELEASE_REPOSITORY" --silent[\s\S]*?exit 1\n/)
+    assert.doesNotMatch(workflow, /gh release view "v\$current"/)
   })
 
   it('passes the dispatch version through the environment, not the script text', () => {
@@ -989,6 +1015,52 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
 
+  it('opens an issue when any release job fails', () => {
+    // Without it a failed build is silent: nothing publishes and the weekly bump
+    // skips while the version stays unpublished.
+    const report = workflow.slice(workflow.indexOf('\n  report-failure:'))
+    assert.match(
+      report,
+      /needs: \[preflight, verify-clean-release-build, build-test, assemble\]\n {4}if: failure\(\)/,
+    )
+    assert.match(report, /^ {6}issues: write$/m)
+    assert.doesNotMatch(report, /contents: write/)
+    assert.match(report, /gh issue create --repo "\$GITHUB_REPOSITORY"/)
+    // The dispatch tag reaches the script through the environment only.
+    assert.match(report, /TAG: \$\{\{ inputs\.tag \|\| github\.ref_name \}\}/)
+    assert.doesNotMatch(report.slice(report.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('signs, notarizes, and staples the DMG itself, then rebuilds its blockmap', () => {
+    // electron-builder notarizes only the app inside the image. Stapling the
+    // DMG rewrites it after electron-builder wrote its blockmap, so the map is
+    // rebuilt from the final bytes before anything verifies or uploads it.
+    assert.match(workflow, /electron-builder --mac .*-c\.dmg\.sign=true/)
+    const start = workflow.indexOf('- name: Notarize and staple the DMG')
+    const verify = workflow.indexOf('- name: Verify signatures, notarization, metadata')
+    const upload = workflow.indexOf('uses: actions/upload-artifact@', verify)
+    assert.ok(start > workflow.indexOf('-c.dmg.sign=true'), 'notarize after the signed build')
+    assert.ok(verify > start && upload > verify, 'verify and upload the stapled DMG')
+    const step = workflow.slice(start, verify)
+    assert.match(step, /xcrun notarytool submit "\$dmg" .*\n.*--wait/)
+    assert.match(step, /if \[ "\$status" != 'Accepted' \]; then[\s\S]*?exit 1\n/)
+    const staple = step.indexOf('xcrun stapler staple "$dmg"')
+    const rebuild = step.indexOf('node scripts/rebuild-dmg-blockmap.mts "$dmg"')
+    assert.ok(staple > step.indexOf("!= 'Accepted'") && rebuild > staple)
+    // Apple credentials reach the script through `env`, never the script text.
+    assert.doesNotMatch(step.slice(step.indexOf('run: |')), /\$\{\{/)
+  })
+
+  it('verifies the downloadable DMG, not only the app inside it', () => {
+    const verify = workflow.slice(
+      workflow.indexOf('- name: Verify signatures, notarization, metadata'),
+      workflow.indexOf('- name: Enforce the per-client size budget'),
+    )
+    assert.match(verify, /codesign --verify --strict --verbose=2 "\$dmg"/)
+    assert.match(verify, /spctl -a -vvv -t open --context context:primary-signature "\$dmg"/)
+    assert.match(verify, /xcrun stapler validate "\$dmg"/)
+  })
+
   it('bounds the signed package verification step', () => {
     assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
     assert.match(
@@ -1035,8 +1107,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
-    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('tags each release on its own commit, so releases sort by publication', () => {
+    // GitHub dates and orders releases by the tagged commit. Tagging the binary
+    // repository's unchanging `main` dated every release to one commit, and a
+    // new beta sorted below the old ones.
+    assert.doesNotMatch(workflow, /--target main/)
+    const record = workflow.indexOf('- name: Record the release in the release repository')
+    const publish = workflow.indexOf('gh release create')
+    assert.ok(record >= 0 && publish > record, 'the release commit must precede the release')
+    const recordStep = workflow.slice(record, workflow.indexOf('- name: Publish the exact'))
+    assert.match(recordStep, /--method PUT "repos\/\$RELEASE_REPOSITORY\/contents\/\$path"/)
+    assert.match(recordStep, /-f branch=main/)
+    assert.match(recordStep, /\*"HTTP 404"\*\) current='' ;;\n\s+\*\)\n[\s\S]*?exit 1\n/)
+    assert.match(recordStep, /echo "commit=\$commit" >> "\$GITHUB_OUTPUT"/)
+    assert.match(workflow, /RELEASE_COMMIT: \$\{\{ steps\.record\.outputs\.commit \}\}/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target "\$RELEASE_COMMIT"/)
   })
 
   it('skips unavailable provenance only while the source repository is private', () => {
