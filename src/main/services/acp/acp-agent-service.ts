@@ -1230,7 +1230,22 @@ export const ACP_TURN_PROMPT_NOTE =
   'web implementations. Use copse read_file/search_code/find_files for inspection ' +
   'instead of your own shell. Use copse run_shell/run_background for ' +
   'commands and copse write/replace/file-operation tools for edits so the same ' +
-  'sandbox, approval, and diff-queue rules as a built-in Copse model apply.' +
+  'sandbox, approval, and diff-queue rules as a built-in Copse model apply. ' +
+  'For long builds, test suites, and other bounded commands, use copse ' +
+  'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
+  'rather than your own shell background jobs or monitors. Copse owns these ' +
+  'tasks independently of the ACP session; their completion can resume the ' +
+  "thread after idle session reaping. Use the repository's actual command; " +
+  'run_background start example: ' +
+  '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +
+  '\nAfter a successful start, retain the task id and end the turn; completion ' +
+  "will wake the thread. Inspect that task's logs and exit status before " +
+  'reporting validation as complete. run_background does not accept ' +
+  'expects_sandbox_block or support outside-sandbox execution. If a command ' +
+  'needs that approval path, use copse run_shell with an explicit timeout_ms ' +
+  '(up to 1800000), setting expects_sandbox_block=true when required. Use ' +
+  'tool deadlines instead of assuming a shell timeout executable is installed ' +
+  '(macOS does not provide it by default).' +
   '\n\n' +
   AGENT_EXECUTION_GUIDANCE
 

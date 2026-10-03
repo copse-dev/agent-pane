@@ -3,6 +3,25 @@ import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import {
+  clearActiveRunThread,
+  getActiveRunTurnTreeId,
+  runWithActiveRunIdentity,
+  setActiveRunTurnTreeId,
+} from '../thread-models.ts'
+import { runBackgroundTool } from '../../tools/background-process-tool.ts'
+import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
+import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
+import { installBackgroundProcessSupervisor } from '../exec/supervised-background-process.ts'
+import { stopAllBackgroundProcesses } from '../exec/background-process.ts'
+import {
+  setBackgroundCompletionWakeHandler,
+  type BackgroundCompletionWakeRequest,
+} from '../exec/background-completion-wake.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
   clearAbandonedVerdictsForTest,
@@ -531,6 +550,119 @@ describe('startAcpNativeBridge', () => {
     assert.equal(rpcResult(betweenTurns)['isError'], true)
     assert.match(contentText(betweenTurns) ?? '', /after its agent turn ended/)
     assert.equal(seen.length, 1, 'the straggling call must never reach the tool')
+  })
+
+  it('rebinds the human epoch across HTTP and clears it when a pooled bridge changes turns', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const seen: (string | null)[] = []
+    const registry = testRegistry([])
+    registry.register({
+      name: 'run_background',
+      description: 'Read the background completion epoch',
+      parameters: z.object({}),
+      execute: () => {
+        seen.push(getActiveRunTurnTreeId())
+        return 'inspected'
+      },
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'epoch-thread',
+    })
+    assert.ok(bridge)
+    const currentBridge = bridge
+    const bindTurn = (epoch: string | null, threadId = 'epoch-thread'): void => {
+      runWithActiveRunIdentity(threadId, () => {
+        if (epoch !== null) setActiveRunTurnTreeId(asTurnTreeId(epoch))
+        currentBridge.setExecutionContext(worktreeContext('epoch-thread', process.cwd()))
+        // Ending the originating run must not mutate the bridge's snapshot.
+        clearActiveRunThread(threadId)
+      })
+    }
+    const call = (id: number): unknown => ({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: { name: 'run_background', arguments: {} },
+    })
+    for (const init of initialized()) await rpc(currentBridge, init)
+    bindTurn('human-epoch-1')
+    await rpc(currentBridge, call(2))
+    currentBridge.setExecutionContext(null)
+    const betweenTurns = await rpc(currentBridge, call(3))
+    assert.equal(rpcResult(betweenTurns)['isError'], true)
+    bindTurn('human-epoch-2')
+    await rpc(currentBridge, call(4))
+    bindTurn(null)
+    await rpc(currentBridge, call(5))
+    bindTurn('another-thread-epoch', 'another-thread')
+    await rpc(currentBridge, call(6))
+    assert.deepEqual(seen, ['human-epoch-1', 'human-epoch-2', null, null])
+  })
+
+  it('launches the real background tool over MCP and wakes on the originating human epoch', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const root = mkdtempSync(join(process.cwd(), '.tmp/copse-bridge-background-'))
+    const releaseGate = `.tmp/${basename(root)}/release`
+    const supervisor = new TaskSupervisor({
+      store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: root }),
+    })
+    const dispose = installBackgroundProcessSupervisor(supervisor)
+    const wakes: BackgroundCompletionWakeRequest[] = []
+    setBackgroundCompletionWakeHandler(async (request) => {
+      wakes.push(request)
+      return 'completed'
+    })
+    try {
+      await supervisor.start()
+      const registry = new ToolRegistry()
+      registry.register(runBackgroundTool)
+      bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+        threadId: 'background-thread',
+      })
+      assert.ok(bridge)
+      const currentBridge = bridge
+      runWithActiveRunIdentity('background-thread', () => {
+        setActiveRunTurnTreeId(asTurnTreeId('background-human-epoch'))
+        currentBridge.setExecutionContext(worktreeContext('background-thread', process.cwd()))
+      })
+      for (const init of initialized()) await rpc(currentBridge, init)
+      const result = await rpc(currentBridge, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'run_background',
+          arguments: {
+            action: 'start',
+            command: `node -e "const fs = require('node:fs'); const timer = setInterval(() => { if (fs.existsSync('${releaseGate}')) clearInterval(timer) }, 20)"`,
+            wake_on_completion: true,
+            timeout_ms: 10_000,
+          },
+        },
+      })
+      assert.match(contentText(result) ?? '', /Completion wake is armed/)
+      // Release the real child only after the foreground turn has ended.
+      currentBridge.setExecutionContext(null)
+      writeFileSync(join(root, 'release'), '')
+      const deadline = Date.now() + 5_000
+      while (wakes.length === 0 && Date.now() < deadline) await delay(20)
+      assert.equal(wakes.length, 1)
+      const wake = at(wakes, 0)
+      assert.equal(wake.turnTreeId, 'background-human-epoch')
+      assert.deepEqual(wake.owner, { projectId: 'project-1', threadId: 'background-thread' })
+      assert.equal(wake.exitCode, 0)
+      assert.equal(wake.timedOut, false)
+      const task = supervisor
+        .list('project-1')
+        .find((item) => item.processHandleId === wake.operationId)
+      assert.equal(task?.state, 'completed')
+    } finally {
+      stopAllBackgroundProcesses()
+      setBackgroundCompletionWakeHandler(null)
+      await supervisor.shutdown()
+      dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('rebinds inline explainer publication across the bridge HTTP boundary', async () => {
