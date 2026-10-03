@@ -18,8 +18,9 @@ We design for that.
   and anything reachable from it.
 - **The workspace** — the opened project. The agent is expected to change it, but
   only with the user's awareness.
-- **Secrets** — API keys (provider and MCP), and any credentials reachable from
-  the user's environment.
+- **Secrets** — API keys (provider and MCP), MCP OAuth tokens
+  ([mcp-oauth.md](mcp-oauth.md)), and any credentials reachable from the user's
+  environment.
 - **Outbound network** — the ability to exfiltrate data or pull in further
   instructions/payloads.
 - **The Mobile Companion root key** — `~/.copse/lan/ca.key` can sign certificates

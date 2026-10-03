@@ -695,6 +695,9 @@ const api: ApiClient = {
     listDeclared: () => ipcRenderer.invoke('mcp:list-declared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:set-curated-enabled', name, enabled),
+    signIn: (name: string) => ipcRenderer.invoke('mcp:sign-in', name),
+    cancelSignIn: (name: string) => ipcRenderer.invoke('mcp:cancel-sign-in', name),
+    signOut: (name: string) => ipcRenderer.invoke('mcp:sign-out', name),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {

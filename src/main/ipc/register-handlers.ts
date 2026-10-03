@@ -385,8 +385,10 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
+import { signInMcpServer, signOutMcpServer } from '../services/mcp/mcp-oauth.ts'
 import {
   getMcpServerStatuses,
+  getMcpSignInTarget,
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
@@ -3228,6 +3230,47 @@ export function registerAllHandlers(
       enabled,
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return statuses
+  })
+  // One browser sign-in per server at a time; starting another cancels the first.
+  const mcpSignIns = new Map<string, AbortController>()
+  const mcpSignInTargetUrl = (name: string): string => {
+    const target = getMcpSignInTarget(name)
+    if (target?.url === undefined) {
+      throw new Error(`"${name}" is not a connected remote MCP server.`)
+    }
+    return target.url
+  }
+  ipcMain.handle('mcp:sign-in', async (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    const serverUrl = mcpSignInTargetUrl(parsedName)
+    mcpSignIns.get(parsedName)?.abort()
+    const controller = new AbortController()
+    mcpSignIns.set(parsedName, controller)
+    try {
+      await signInMcpServer(serverUrl, {
+        signal: controller.signal,
+        openExternal: (url) => shell.openExternal(url),
+      })
+    } finally {
+      if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)
+    }
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('mcp:cancel-sign-in', (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    mcpSignIns.get(parsedName)?.abort()
+  })
+  ipcMain.handle('mcp:sign-out', async (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    await signOutMcpServer(mcpSignInTargetUrl(parsedName))
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status-changed', statuses)
     return statuses
