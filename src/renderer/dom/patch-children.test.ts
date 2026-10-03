@@ -50,6 +50,42 @@ describe('patchChildren', () => {
     assert.equal(ul.children[2], b)
   })
 
+  it('moves nothing when a node is removed from the front or the middle', () => {
+    const ul = document.createElement('ul')
+    const [a, b, c, d] = items('a', 'b', 'c', 'd')
+    assert.ok(a && b && c && d)
+    patchChildren(ul, [a, b, c, d])
+    let inserts = 0
+    const insertBefore = ul.insertBefore.bind(ul)
+    ul.insertBefore = <T extends Node>(node: T, child: Node | null): T => {
+      inserts += 1
+      return insertBefore(node, child)
+    }
+    patchChildren(ul, [b, c, d])
+    assert.deepEqual(order(ul), ['b', 'c', 'd'])
+    assert.equal(inserts, 0, 'the nodes after a removed one must stay put')
+    patchChildren(ul, [b, d])
+    assert.deepEqual(order(ul), ['b', 'd'])
+    assert.equal(inserts, 0, 'a removal from the middle must not move its neighbours')
+    assert.equal(c.parentElement, null)
+  })
+
+  it('removes and inserts in one pass without moving the nodes that stayed', () => {
+    const ul = document.createElement('ul')
+    const [a, b, c, d] = items('a', 'b', 'c', 'd')
+    assert.ok(a && b && c && d)
+    patchChildren(ul, [a, b, c])
+    const moved: string[] = []
+    const insertBefore = ul.insertBefore.bind(ul)
+    ul.insertBefore = <T extends Node>(node: T, child: Node | null): T => {
+      if (node instanceof Element) moved.push(node.id)
+      return insertBefore(node, child)
+    }
+    patchChildren(ul, [b, c, d])
+    assert.deepEqual(order(ul), ['b', 'c', 'd'])
+    assert.deepEqual(moved, ['d'], 'only the new node is inserted')
+  })
+
   it('removes nodes that are no longer wanted', () => {
     const ul = document.createElement('ul')
     const [a, b, c] = items('a', 'b', 'c')
