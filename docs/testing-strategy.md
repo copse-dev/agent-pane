@@ -463,6 +463,20 @@ and shots outside the diff's ownership map; it is an aid, not an author.
 
 ## Where each tier runs: `main` and `release`
 
+`main` uses GitHub's merge queue. Queue checks execute the synthetic candidate
+against `merge_group.base_sha`, including all commits in that candidate. The
+oracle still selects focused e2e coverage when confidence permits it; queue
+units are never thinned. Every queue candidate must finish a native build, and
+full/subset plans must finish e2e with a positive shard count. Release promotions
+continue to exercise the full tier.
+
+CLA and screenshot review remain required on source PR heads. A separate queue
+workflow verifies those exact current-head statuses and the candidate's live
+queue membership before reporting the same contexts on its synthetic SHA. It
+runs trusted base code and fails closed on missing, stale, ambiguous or untrusted
+metadata. Initial rollout uses one build and one merge at a time; increase
+concurrency only after the live source-head mapping has been verified.
+
 `main` is the default branch and the integration target. `release` only ever
 receives promotion PRs from `main`, so it stays in a state a release can be
 cut from.

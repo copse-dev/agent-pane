@@ -85,6 +85,11 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
     },
   })
   popoutWindow = win
+  // The shared renderer's <title> is "Copse"; without this it overwrites the
+  // per-pane title on load and the Dock lists the pop-out as a second "Copse".
+  win.on('page-title-updated', (event) => {
+    event.preventDefault()
+  })
   attachWebContentsLockdown(win.webContents)
   attachRendererCrashRecovery(win.webContents)
   attachVisualPinchZoom(win.webContents)

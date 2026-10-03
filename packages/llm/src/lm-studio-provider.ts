@@ -16,6 +16,7 @@ import {
   type ModelParameters,
 } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -236,8 +237,8 @@ export class LMStudioProvider implements LLMProvider {
           const chunk = chunkFromPredictionFragment(fragment)
           if (chunk) queue.push(chunk)
         },
-        onToolCallRequestEnd: (callId, { toolCallRequest }) => {
-          queue.push(toolCallChunk(callId, toolCallRequest))
+        onToolCallRequestEnd: (_callId, { toolCallRequest }) => {
+          queue.push(toolCallChunk(toolCallRequest))
         },
         onToolCallRequestFailure: (_callId, error) => {
           // The model emitted a tool call we cannot parse; nothing later in this
@@ -283,13 +284,14 @@ function chunkFromPredictionFragment(
 }
 
 function toolCallChunk(
-  callId: number,
   request: FunctionToolCallRequest,
 ): Extract<ProviderStreamChunk, { type: 'tool_call' }> {
   return {
     type: 'tool_call',
     toolCall: {
-      id: request.id ?? `lmstudio-${callId.toString()}`,
+      // Not the SDK's `callId`: that counts from 0 in every prediction, so it
+      // would repeat across turns of one thread.
+      id: toolCallIdOrSynthesized(request.id),
       name: request.name,
       args: request.arguments ?? {},
     },
