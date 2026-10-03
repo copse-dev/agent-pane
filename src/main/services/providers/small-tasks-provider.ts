@@ -79,3 +79,16 @@ export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> 
     return resolveSmallTasksFallbackRoute()
   }
 }
+
+/**
+ * The small-tasks route, then the chat model only after it fails. An async
+ * generator stays paused after the primary yield, so the chat route is resolved
+ * only when a caller asks for it — after the local/configured model failed.
+ */
+export async function* smallTasksRoutes(): AsyncIterable<SmallTasksRoute> {
+  const primary = await resolveSmallTasksRoute()
+  if (!primary) return
+  yield primary
+  const fallback = await resolveSmallTasksFallbackRoute(primary.model)
+  if (fallback) yield fallback
+}

@@ -1,4 +1,5 @@
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
+import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
@@ -298,6 +299,7 @@ interface BridgeExecuteContext {
    * than falling back to the shared checkout.
    */
   getExecutionContext: () => ThreadExecutionContext | null
+  getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   networkScopeAlreadyApplies: boolean
   recordWorkspaceWrite: (path: string) => void
 }
@@ -453,10 +455,13 @@ function buildMcpServer(
       // than the turn itself. The context is the turn's already-resolved one —
       // set by agent-service around the prompt — not a fresh per-request
       // resolve; the guard above already rejected any call with none bound.
+      const inlineCanvasScope = ctx.getInlineCanvasScope()
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        runWithActiveRunIdentity(ctx.threadId, () =>
-          runWithThreadExecutionContext(executionContext, () =>
-            runWithApprovalToolCallId(requestKey, withPermissionContext),
+        inlineCanvasScope(() =>
+          runWithActiveRunIdentity(ctx.threadId, () =>
+            runWithThreadExecutionContext(executionContext, () =>
+              runWithApprovalToolCallId(requestKey, withPermissionContext),
+            ),
           ),
         )
       const advisor = advisorContext.current
@@ -564,6 +569,7 @@ export async function startAcpNativeBridge(
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
+  let inlineCanvasScope = captureInlineCanvasScope()
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
 
@@ -602,6 +608,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
+        getInlineCanvasScope: () => inlineCanvasScope,
         networkScopeAlreadyApplies,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
@@ -645,6 +652,7 @@ export async function startAcpNativeBridge(
     },
     setExecutionContext: (context): void => {
       executionContext = context
+      inlineCanvasScope = captureInlineCanvasScope()
     },
     setTurnSignal: (next): void => {
       turnSignal = next

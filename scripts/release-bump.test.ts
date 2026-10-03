@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
+  hasNotesToRelease,
   hasUnreleasedNotes,
   nextBetaVersion,
   setPackageVersion,
@@ -79,6 +80,52 @@ describe('stampChangelog', () => {
     assert.throws(
       () => hasUnreleasedNotes('# Changelog\n\n## 1.0.0\n\n- Old.\n'),
       /no "## Unreleased"/,
+    )
+  })
+})
+
+describe('stampChangelog with carryForward', () => {
+  // Cutting past a version whose release run failed: it was never published,
+  // so its notes have nowhere to live but the next release.
+  const stamped = stampChangelog(changelog, '0.1.0-beta.10', { carryForward: true })
+
+  it('folds the unpublished version into the new one, below this release’s own notes', () => {
+    assert.equal(
+      extractReleaseSection(stamped, '0.1.0-beta.10'),
+      '- New this week.\n\n- Shipped last week.',
+    )
+    assert.equal(findSectionBody(stamped, '0.1.0-beta.9'), undefined)
+  })
+
+  it('still opens an empty Unreleased and keeps non-release sections', () => {
+    assert.equal(findSectionBody(stamped, 'Unreleased'), '')
+    assert.equal(findSectionBody(stamped, 'Release-note process'), 'Process text.')
+    assert.ok(stamped.startsWith('# Changelog and release notes\n\nPreamble.\n\n'))
+  })
+
+  it('cuts with carried notes alone when Unreleased is empty', () => {
+    const recut = stampChangelog(stamped, '0.1.0-beta.11', { carryForward: true })
+    assert.equal(
+      extractReleaseSection(recut, '0.1.0-beta.11'),
+      '- New this week.\n\n- Shipped last week.',
+    )
+    assert.equal(hasNotesToRelease(stamped), false)
+    assert.equal(hasNotesToRelease(stamped, { carryForward: true }), true)
+  })
+
+  it('leaves the stamped text byte-identical when there is nothing to carry', () => {
+    const onlyUnreleased = changelog.replace('## 0.1.0-beta.9\n\n- Shipped last week.\n\n', '')
+    assert.equal(
+      stampChangelog(onlyUnreleased, '0.1.0-beta.10', { carryForward: true }),
+      stampChangelog(onlyUnreleased, '0.1.0-beta.10'),
+    )
+  })
+
+  it('still refuses when there is nothing at all to release', () => {
+    const empty = '# Changelog\n\n## Unreleased\n\n## Release-note process\n\nText.\n'
+    assert.throws(
+      () => stampChangelog(empty, '0.1.0-beta.10', { carryForward: true }),
+      /nothing to release/,
     )
   })
 })

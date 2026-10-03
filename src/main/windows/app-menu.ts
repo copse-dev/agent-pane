@@ -1,9 +1,10 @@
-import { app, Menu, dialog, type BrowserWindow } from 'electron'
+import { app, Menu, dialog, shell, type BrowserWindow } from 'electron'
 import { registerAllowedWorkspaceRoot, setWorkspaceRoot } from '../services/workspace.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { checkForUpdatesManually } from '../services/auto-update.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { buildAppFileMenuItems } from './app-menu-file-items.ts'
+import { buildAppHelpMenuItems, reportIssueUrl } from './app-menu-help-items.ts'
 
 export interface AppMenuWindowProvider {
   getFocusedWindow(): BrowserWindow | null
@@ -225,15 +226,22 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
     },
     {
       role: 'help' as const,
-      submenu: [
-        {
-          label: 'Keyboard Shortcuts',
-          accelerator: 'CmdOrCtrl+/',
-          click: (): void => {
-            sendToFocused('menu:keyboard-shortcuts')
-          },
+      submenu: buildAppHelpMenuItems({
+        showKeyboardShortcuts: () => {
+          sendToFocused('menu:keyboard-shortcuts')
         },
-      ],
+        reportIssue: () => {
+          void shell.openExternal(
+            reportIssueUrl({
+              version: app.getVersion(),
+              packaged: app.isPackaged,
+              platform: process.platform,
+              arch: process.arch,
+              systemVersion: process.getSystemVersion(),
+            }),
+          )
+        },
+      }),
     },
   ]
 

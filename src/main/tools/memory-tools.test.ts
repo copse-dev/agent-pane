@@ -182,6 +182,26 @@ describe('memory-tools', () => {
       assert.match(out, /sources: unknown/)
     })
 
+    it('preserves commas in sources and applicability through persistence and recall', async () => {
+      await run(rememberTool, {
+        title: 'Comma references',
+        content: 'c',
+        sources: ['https://example.com/a,b', 'msg:1'],
+        appliesTo: ['src/{a,b}/**'],
+      })
+      const out = await run(recallTool, {})
+      assert.ok(out.includes('https://example.com/a,b'))
+      assert.ok(out.includes('src/{a,b}/**'))
+      const { addKnowledgeNote } = await import('../services/storage/knowledge-store.ts')
+      addKnowledgeNote({
+        type: MEMORY_TYPE,
+        title: 'Legacy list',
+        body: 'b',
+        fields: { sources: 'msg:old,tool:old', appliesTo: 'legacy/**' },
+      })
+      assert.ok((await run(recallTool, {})).includes('msg:old, tool:old'))
+    })
+
     it('treats legacy notes without revision as revision 1', async () => {
       const { addKnowledgeNote } = await import('../services/storage/knowledge-store.ts')
       addKnowledgeNote({ type: MEMORY_TYPE, title: 'Old', body: 'b' })

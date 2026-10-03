@@ -69,6 +69,13 @@ describe('browser-hosted footer geometry', () => {
     await expect($('.footer-overflow')).toBeDisplayed()
     await expect($('.footer-usage')).not.toBeDisplayed()
 
+    for (let index = 0; index < 12; index += 1) {
+      await browser.pause(25)
+      const footerClasses = await $('.input-footer').getAttribute('class')
+      expect(footerClasses?.includes('is-compact')).toBe(true)
+      await expect($('.footer-usage')).not.toBeDisplayed()
+    }
+
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
     const title = await wheel.getAttribute('title')

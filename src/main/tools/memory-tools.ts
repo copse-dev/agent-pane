@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { safeJsonParse, safeJsonStringify, decodeWithSchema } from '@shared/safe-json.ts'
 import { defineTool } from '@shared/types'
 import {
   addKnowledgeNote,
@@ -36,7 +37,8 @@ function savedFromExternalTurn(note: KnowledgeNote): boolean {
 
 /**
  * Scalar frontmatter added for project-context-and-memory (issue #3358, phase 3).
- * `fields` values are strings, so lists are comma-joined. Legacy notes have none
+ * `fields` values are strings, so lists use JSON arrays. Legacy comma-separated
+ * fields remain readable. Legacy notes have none
  * of these and read as revision 1 with unknown provenance.
  */
 export const REVISION_FIELD = 'revision'
@@ -55,17 +57,17 @@ function noteRevision(note: KnowledgeNote): number {
 }
 
 function noteList(note: KnowledgeNote, field: string): string[] {
-  return (note.fields[field] ?? '')
+  const text = note.fields[field] ?? ''
+  const decoded = safeJsonParse(text, decodeWithSchema(z.array(z.string())))
+  if (decoded !== null) return decoded
+  return text
     .split(LIST_SEPARATOR)
     .map((item) => item.trim())
     .filter(Boolean)
 }
 
 function joinList(items: readonly string[]): string {
-  return items
-    .map((item) => item.trim().replaceAll(LIST_SEPARATOR, ' '))
-    .filter(Boolean)
-    .join(LIST_SEPARATOR)
+  return safeJsonStringify(items.map((item) => item.trim()).filter(Boolean)) ?? '[]'
 }
 
 function formatMemory(note: KnowledgeNote): string {
