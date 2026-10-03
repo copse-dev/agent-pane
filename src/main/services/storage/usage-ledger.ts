@@ -26,6 +26,7 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
     requestedServiceTier,
     responseServiceTier,
     serviceTierUsage,
+    hostingProvider,
     ...usage
   } = input
   if (!usage.inputTokens && !usage.outputTokens) {
@@ -47,6 +48,7 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
     ...(requestedServiceTier !== undefined ? { requestedServiceTier } : {}),
     ...(responseServiceTier !== undefined ? { responseServiceTier } : {}),
     ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
+    ...(hostingProvider !== undefined ? { hostingProvider } : {}),
   }
 }
 
@@ -88,6 +90,7 @@ export function recordAgentUsageChunk(
       ? { responseServiceTier: chunk.responseServiceTier }
       : {}),
     ...(chunk.serviceTierUsage !== undefined ? { serviceTierUsage: chunk.serviceTierUsage } : {}),
+    ...(chunk.hostingProvider !== undefined ? { hostingProvider: chunk.hostingProvider } : {}),
   })
 }
 
