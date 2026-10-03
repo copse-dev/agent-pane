@@ -31,6 +31,37 @@ afterEach(() => {
 })
 
 describe('footer model picker', () => {
+  it('offers usage management only for a ChatGPT plan model and updates when the route changes', () => {
+    const root = document.createElement('div')
+    let current = 'chatgpt-plan:client#gpt-5.6-luna'
+    let opened = ''
+    const base = createApi()
+    const picker = mountFooterModelPicker(
+      root,
+      {
+        ...base,
+        shell: {
+          ...base.shell,
+          openExternal: async (url: string): Promise<void> => {
+            opened = url
+          },
+        },
+      },
+      () => current,
+      () => {},
+    )
+    const usage = root.querySelector<HTMLButtonElement>('[aria-label="Manage ChatGPT usage"]')
+    assert.ok(usage)
+    assert.equal(usage.hidden, false)
+    usage.click()
+    assert.equal(opened, 'https://chatgpt.com/settings/usage')
+    current = 'gpt-4o'
+    picker.refresh()
+    assert.equal(usage.hidden, true)
+    picker.destroy()
+    assert.equal(root.querySelector('[aria-label="Manage ChatGPT usage"]'), null)
+  })
+
   it('opens on recent models and keeps the full searchable catalog one level deeper', async () => {
     const root = document.createElement('div')
     const composer = document.createElement('textarea')

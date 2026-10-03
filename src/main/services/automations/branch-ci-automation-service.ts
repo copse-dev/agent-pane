@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { z } from 'zod'
 import type {
   BranchCiAutomation,
@@ -298,11 +299,7 @@ export function createBranchCiAutomationService(
           MAX_RUNS_PER_24_HOURS
         )
           return { allowed: false, reason: 'Daily CI automation run limit reached' }
-        if (
-          threads.some(
-            (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-          )
-        )
+        if (threads.some((thread) => automationRunBlock(thread) !== null))
           return { allowed: false, reason: 'A run is already pending or active' }
         let retained = 0
         for (const thread of threads) {
@@ -416,12 +413,7 @@ export function createBranchCiAutomationService(
               const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
                 (thread) => thread.automation?.scheduleId === definition.id,
               )
-              if (
-                prior.some(
-                  (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-                )
-              )
-                continue
+              if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
               const occurredAt = Date.parse(run.updated_at)
               await inbox.admit(definition.id, definition.revision, {
                 sourceId: SOURCE_ID,

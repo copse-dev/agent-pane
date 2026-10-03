@@ -132,6 +132,15 @@ export function startGuestEgressProxy(
   options: GuestEgressProxyOptions = {},
 ): Promise<GuestEgressProxy> {
   const server: Server = createHttpServer()
+  // CONNECT detaches the socket from HTTP's parser before authentication or
+  // the broker dial. A client may reset a refused connection (or reset while
+  // the dial is pending), when pipeBoth has not installed its error handlers.
+  // Handle errors from acceptance so that only this connection is lost.
+  server.on('connection', (socket) => {
+    socket.on('error', () => {
+      socket.destroy()
+    })
+  })
   // Every socket a tunnel holds open, on both ends. `closeAllConnections`
   // only knows the sockets the HTTP parser still owns; a CONNECT tunnel and
   // a detached plain-HTTP response are past that, and a client that keeps

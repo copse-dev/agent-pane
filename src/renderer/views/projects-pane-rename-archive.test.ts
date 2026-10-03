@@ -204,6 +204,37 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.deepEqual(cleared, [['a', 't2']])
   })
 
+  it('keeps same-thread history editing inside the Fork menu', () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Editable chat')],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    rowFor('Editable chat').dispatchEvent(
+      new window.MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 40,
+        clientY: 80,
+      }),
+    )
+    const fork = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Fork')
+    assert.ok(fork)
+    fork.click()
+
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Fork a copy', 'Edit thread history…'],
+    )
+  })
+
   it('context-menu Rename starts inline editing', () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],

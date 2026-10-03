@@ -59,6 +59,13 @@ export function guestAcpAgentConfig(
 ): AcpAgentConfig {
   const env: Record<string, string> = {
     ...(apiKey ? { [harness.keyEnvName]: apiKey } : {}),
+    // The pinned Codex adapter does not log in merely because CODEX_API_KEY
+    // exists. Its supported default request selects the API-key method,
+    // which reads that same run-scoped key from the explicit env map. Leave
+    // sign-in runs alone: without a key, their carried auth.json is authority.
+    ...(apiKey && harness.agent.id === 'codex-acp'
+      ? { DEFAULT_AUTH_REQUEST: JSON.stringify({ methodId: 'api-key' }) }
+      : {}),
     ...(proxyUrl
       ? {
           HTTPS_PROXY: proxyUrl,
