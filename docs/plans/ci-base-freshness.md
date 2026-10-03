@@ -9,6 +9,63 @@ slice landed in [#2722](https://github.com/copse-dev/agent-pane/pull/2722); the
 retarget-only trigger is [#2970](https://github.com/copse-dev/agent-pane/pull/2970).
 Independent acceptance (R06) remains separate work.
 
+## Bounded oracle refresh planning — 3 October 2026
+
+The maintainer's current constraint is that base-change revalidation must **never
+trigger a full-suite rerun**. A base change requiring broad testing for itself
+must not spread that execution plan to every open PR. The opt-in oracle planner
+separates affected areas from execution cost:
+
+```bash
+pnpm run oracle -- --refresh \
+  --tested-base <previous-target-sha> \
+  --tested-candidate <previous-validated-merge-sha> \
+  --base <current-target-sha> \
+  --pr-head <unchanged-source-head-sha> \
+  --candidate <fresh-combined-merge-sha> --json
+```
+
+The caller retains the previous successful run's target and combined candidate
+SHAs and constructs the fresh candidate. Both candidates must contain the source
+head and their respective target as ancestors; a changed source head, missing
+history, rewritten target, or stale candidate returns `review`. This initial
+interface accepts ancestry-preserving merge candidates, not squash-only queue
+trees. It reads immutable Git blobs without checking out or executing candidate
+code. Uncommitted working-tree edits cannot change the snapshot being planned.
+
+The planner maps PR and newly landed target changes separately in the previous
+target, old candidate and fresh candidate trees. It uses the oracle's direct test/import/selector
+evidence, changed dependencies used by the other side, and an explicit shared
+IPC contract area (preload, main IPC handlers, API protocol, and their consumers).
+Deleted files, both paths of renames, and dependencies removed from the new tree
+remain visible through the old mapping. Two callers merely importing an unchanged
+utility do not overlap on that utility alone.
+
+Results are `skip` (no mapped overlap), `subset` (explicit unit/E2E lists for the
+interaction), or `review` (bounded independence or testing cannot be established).
+Broadness and LOW-confidence execution plans do not expand these lists to the
+whole suite. Global build/workflow/oracle inputs and unmapped paths return review;
+they never request a full run. A subset is capped at 64 unit files and 16 E2E specs
+and cannot select an entire tier. Empty, removed-test or over-limit plans return
+review with empty runnable lists. E2E plans retain CI's configured exclusions.
+IPC is deliberately a conservative shared contract area, not a claim that
+separate IPC channels are independent.
+
+JSON records the resolved source/target/candidate SHAs, candidate tree, changed
+paths, overlapping areas, mapping version and reasons. `--plan` emits separate
+`refresh_mode`, `refresh_unit_specs` and `refresh_e2e_specs` keys; it must not be
+fed to the ordinary CI plan/runner. `review` exits with code 2, invalid CLI usage
+with code 1; `skip` and `subset` exit with code 0. `--run` is intentionally rejected
+in this mode. Explicit selected tests may be scheduled by a future controller
+against the recorded candidate; this command only plans them.
+
+This is advisory impact evidence, not proof of semantic independence or merge
+authorization. No workflow dispatch, required-status replacement, or merge-time
+freshness gate is installed by this change. The future controller must verify
+successful base/source evidence and revisit the plan if the target moves again;
+the asynchronous invalidation race described below still applies. Existing PR,
+nightly and release validation retain their ordinary policies.
+
 ## Problem and acceptance
 
 `CI Passed` is a check run attached to a head SHA. GitHub tests

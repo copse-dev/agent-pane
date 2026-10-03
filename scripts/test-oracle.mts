@@ -109,6 +109,11 @@ Options:
   --explain        show why each test was selected
   --json           machine-readable output
   --plan           emit a CI plan (mode=/count=/specs=) for $GITHUB_OUTPUT
+  --refresh        plan bounded base-change revalidation; never runs a full suite
+  --tested-base <ref>  target SHA used by the previous successful PR validation
+  --tested-candidate <ref>  combined commit used by that previous validation
+  --pr-head <ref>  source PR head for --refresh (required)
+  --candidate <ref>  fresh combined candidate for --refresh (default: HEAD)
   --list-ci-specs   list the full CI e2e suite, retaining configured exclusions
   --run <tier>     run the recommendation: e2e (default) | unit | all
   --help           show this help
@@ -126,6 +131,11 @@ type Args = {
   plan: boolean
   listCiSpecs: boolean
   run: 'e2e' | 'unit' | 'all' | null
+  refresh: boolean
+  testedBase: string | null
+  testedCandidate: string | null
+  prHead: string | null
+  candidate: string
 }
 
 function parseArgs(argv: string[]): Args {
@@ -138,6 +148,11 @@ function parseArgs(argv: string[]): Args {
     plan: false,
     listCiSpecs: false,
     run: null,
+    refresh: false,
+    testedBase: null,
+    testedCandidate: null,
+    prHead: null,
+    candidate: 'HEAD',
   }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -147,7 +162,12 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--base') {
       a.base = argv[++i] ?? a.base
       a.baseExplicit = true
-    } else if (arg === '--explain') a.explain = true
+    } else if (arg === '--refresh') a.refresh = true
+    else if (arg === '--tested-base') a.testedBase = argv[++i] ?? null
+    else if (arg === '--tested-candidate') a.testedCandidate = argv[++i] ?? null
+    else if (arg === '--pr-head') a.prHead = argv[++i] ?? null
+    else if (arg === '--candidate') a.candidate = argv[++i] ?? 'HEAD'
+    else if (arg === '--explain') a.explain = true
     else if (arg === '--json') a.json = true
     else if (arg === '--plan') a.plan = true
     else if (arg === '--list-ci-specs') a.listCiSpecs = true
@@ -223,7 +243,9 @@ export function changedFiles(base: string): string[] | null {
     const t = f.trim()
     if (t) set.add(t)
   }
-  return [...set].filter((f) => existsSync(join(ROOT, f)))
+  // Deleted paths still affect their old consumers. They must not disappear
+  // from the change set merely because the current tree cannot read them.
+  return [...set]
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -246,10 +268,25 @@ export function read(rel: string): string {
   }
 }
 
+/** Read-only source view; refresh planning uses immutable Git trees. */
+export type OracleFiles = {
+  paths: (dir: string) => string[]
+  read: (path: string) => string
+  exists: (path: string) => boolean
+}
+
+const workingTree: OracleFiles = {
+  paths: (dir) => walk(dir),
+  read,
+  exists: (path) => existsSync(join(ROOT, path)),
+}
+
 /** Specs wdio.ci.conf.ts excludes from the CI gate (flaky/heavy/network). */
-function ciExcludedSpecs(): Set<string> {
+export function ciExcludedSpecs(tree: OracleFiles = workingTree): Set<string> {
   const out = new Set<string>()
-  for (const m of read('wdio.ci.conf.ts').matchAll(/['"]\.\/(tests\/e2e\/[^'"]+\.e2e\.ts)['"]/g))
+  for (const m of tree
+    .read('wdio.ci.conf.ts')
+    .matchAll(/['"]\.\/(tests\/e2e\/[^'"]+\.e2e\.ts)['"]/g))
     if (m[1] !== undefined) out.add(m[1])
   return out
 }
@@ -474,7 +511,7 @@ const PACKAGE_ENTRIES: Record<string, string> = {
   '@copse/plan-usage': 'packages/plan-usage/src/index',
 }
 
-function resolveImport(fromRel: string, spec: string): string | null {
+function resolveImport(fromRel: string, spec: string, tree: OracleFiles): string | null {
   let baseRel: string
   const entry = PACKAGE_ENTRIES[spec]
   const alias = PACKAGE_ALIASES.find(([prefix]) => spec.startsWith(prefix))
@@ -488,11 +525,11 @@ function resolveImport(fromRel: string, spec: string): string | null {
   // A .json specifier (e.g. the provider catalog imported by @copse/llm) is an
   // exact path — resolve it as-is so data-file edits map to the tests that
   // exercise them instead of silently falling out of the graph.
-  if (baseRel.endsWith('.json')) return existsSync(join(ROOT, baseRel)) ? baseRel : null
+  if (baseRel.endsWith('.json')) return tree.exists(baseRel) ? baseRel : null
   baseRel = baseRel.replace(/\.(ts|mts|tsx|js|mjs)$/, '')
-  for (const ext of CODE_EXTS) if (existsSync(join(ROOT, baseRel + ext))) return baseRel + ext
+  for (const ext of CODE_EXTS) if (tree.exists(baseRel + ext)) return baseRel + ext
   for (const ext of CODE_EXTS)
-    if (existsSync(join(ROOT, `${baseRel}/index${ext}`))) return `${baseRel}/index${ext}`
+    if (tree.exists(`${baseRel}/index${ext}`)) return `${baseRel}/index${ext}`
   return null
 }
 
@@ -500,16 +537,23 @@ function resolveImport(fromRel: string, spec: string): string | null {
 // are computed once. Without this every `reachableFiles` walk re-read and
 // re-resolved the whole shared graph: `check:oracle`, which calls
 // `computeSelection` once per invariant, took ~3 minutes of every CI precheck.
-const directImportsCache = new Map<string, string[]>()
+const directImportsCaches = new WeakMap<OracleFiles, Map<string, string[]>>()
 
-function directImports(rel: string): string[] {
+function directImports(rel: string, tree: OracleFiles): string[] {
+  let directImportsCache = directImportsCaches.get(tree)
+  if (!directImportsCache) {
+    directImportsCache = new Map()
+    directImportsCaches.set(tree, directImportsCache)
+  }
   const cached = directImportsCache.get(rel)
   if (cached) return cached
-  const body = read(rel)
+  const body = tree.read(rel)
   const out: string[] = []
-  for (const m of body.matchAll(/(?:from|import\(|require\()\s*['"]([^'"]+)['"]/g)) {
+  for (const m of body.matchAll(
+    /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"]+)['"]/g,
+  )) {
     if (m[1] === undefined) continue
-    const resolved = resolveImport(rel, m[1])
+    const resolved = resolveImport(rel, m[1], tree)
     if (resolved) out.push(resolved)
   }
   directImportsCache.set(rel, out)
@@ -517,7 +561,11 @@ function directImports(rel: string): string[] {
 }
 
 /** Transitive set of local files reachable from `entry` (excluding itself). */
-export function reachableFiles(entry: string, cache: Map<string, Set<string>>): Set<string> {
+export function reachableFiles(
+  entry: string,
+  cache: Map<string, Set<string>>,
+  tree: OracleFiles = workingTree,
+): Set<string> {
   const cached = cache.get(entry)
   if (cached) return cached
   const seen = new Set<string>()
@@ -525,7 +573,7 @@ export function reachableFiles(entry: string, cache: Map<string, Set<string>>): 
   while (stack.length) {
     const cur = stack.pop()
     if (cur === undefined) break
-    for (const dep of directImports(cur)) {
+    for (const dep of directImports(cur, tree)) {
       if (!seen.has(dep)) {
         seen.add(dep)
         stack.push(dep)
@@ -554,8 +602,9 @@ export type Selection = {
 }
 
 /** Runnable e2e specs (the wdio.conf.ts glob minus its one exclude). */
-export function listSpecs(): string[] {
-  return walk(E2E_DIR)
+export function listSpecs(tree: OracleFiles = workingTree): string[] {
+  return tree
+    .paths(E2E_DIR)
     .filter((f) => f.endsWith('.e2e.ts') && !E2E_GLOB_EXCLUDE.has(f.replace(`${E2E_DIR}/`, '')))
     .sort()
 }
@@ -566,8 +615,8 @@ export function listSpecs(): string[] {
  * build scripts — or the "N / total" the oracle reports is measured against a
  * suite smaller than the one `npm test` actually runs.
  */
-export function listUnitTests(): string[] {
-  return [...walk('src'), ...walk('packages'), ...walk('scripts')]
+export function listUnitTests(tree: OracleFiles = workingTree): string[] {
+  return [...tree.paths('src'), ...tree.paths('packages'), ...tree.paths('scripts')]
     .filter((f) => f.endsWith('.test.ts'))
     .filter((f) => !f.startsWith('packages/') || /^packages\/[^/]+\/src\//.test(f))
     .sort()
@@ -587,20 +636,23 @@ export function listSourceFiles(): string[] {
  * Map a set of changed files to the affected e2e specs and unit tests. `null`
  * (see {@link changedFiles}) means the change set is unknown: select everything.
  */
-export function computeSelection(changedInput: string[] | null): Selection {
+export function computeSelection(
+  changedInput: string[] | null,
+  tree: OracleFiles = workingTree,
+): Selection {
   const baseUnknown = changedInput === null
   const changed = (changedInput ?? []).map((f) => f.replace(/\\/g, '/'))
-  const specs = listSpecs()
-  const unitTests = listUnitTests()
+  const specs = listSpecs(tree)
+  const unitTests = listUnitTests(tree)
 
   const specTokens = new Map<string, Token[]>()
-  for (const s of specs) specTokens.set(s, extractSpecTokens(read(s)))
+  for (const s of specs) specTokens.set(s, extractSpecTokens(tree.read(s)))
 
   const importCache = new Map<string, Set<string>>()
   const specImports = new Map<string, Set<string>>()
-  for (const s of specs) specImports.set(s, reachableFiles(s, importCache))
+  for (const s of specs) specImports.set(s, reachableFiles(s, importCache, tree))
   const unitImports = new Map<string, Set<string>>()
-  for (const t of unitTests) unitImports.set(t, reachableFiles(t, importCache))
+  for (const t of unitTests) unitImports.set(t, reachableFiles(t, importCache, tree))
 
   const broadHits = changed.filter((f) => BROAD_PATTERNS.some((re) => re.test(f)))
   const broad = baseUnknown || broadHits.length > 0
@@ -646,7 +698,7 @@ export function computeSelection(changedInput: string[] | null): Selection {
       !f.endsWith('.test.ts') &&
       !f.endsWith('.e2e.ts')
     if (isSelectorHost) {
-      const body = read(f)
+      const body = tree.read(f)
       for (const s of specs) {
         const hits = (specTokens.get(s) ?? []).filter(
           (tok) => fileContainsToken(body, tok) && !SELECTOR_STOPLIST.has(tok.value),
@@ -758,8 +810,35 @@ export function computeScreenshotGate(changed: string[], labeled: boolean): Scre
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
+  if (args.refresh) {
+    if (
+      !args.testedBase ||
+      !args.testedCandidate ||
+      !args.prHead ||
+      args.run ||
+      args.files ||
+      args.listCiSpecs
+    ) {
+      throw new Error(
+        '--refresh requires --tested-base, --tested-candidate and --pr-head; --run/--files/--list-ci-specs are not supported',
+      )
+    }
+    const { planRefresh, emitRefreshPlan } = await import('./lib/oracle-refresh.mts')
+    const refresh = planRefresh({
+      testedBase: args.testedBase,
+      testedCandidate: args.testedCandidate,
+      base: args.base,
+      prHead: args.prHead,
+      candidate: args.candidate,
+    })
+    if (args.plan) emitRefreshPlan(refresh)
+    else console.log(JSON.stringify(refresh, null, 2))
+    // A review result is not a successful validation or an empty test run.
+    if (refresh.mode === 'review') process.exitCode = 2
+    return
+  }
   if (args.listCiSpecs) {
     const excluded = ciExcludedSpecs()
     console.log(
@@ -956,4 +1035,8 @@ function runSelected(
 
 // Run the CLI only when invoked directly — importing this module (e.g. from
 // scripts/check-oracle.mts) must not trigger a git diff + report.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  void main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })

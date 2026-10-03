@@ -225,6 +225,13 @@ new tests should keep that trend:
   for broad/low-confidence changes; the nightly schedule runs everything. Keep
   selector/DOM coupling honest so the oracle can confidently subset — and keep
   the oracle liveness gate (`npm run check:oracle`) passing.
+- **Base-change refresh planning** is a separate opt-in oracle mode:
+  `pnpm run oracle -- --refresh --tested-base <sha> --tested-candidate <sha>
+--base <sha> --pr-head <sha> --candidate <sha> --json`. It compares affected
+  areas on both sides and emits `skip`, explicit bounded test lists, or `review`.
+  It never requests a full-suite rerun or executes tests, and it does not replace
+  required CI. See [bounded refresh planning](plans/ci-base-freshness.md#bounded-oracle-refresh-planning--3-october-2026)
+  for the snapshot contract, limits and unresolved merge-time enforcement.
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.
