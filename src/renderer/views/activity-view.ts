@@ -334,6 +334,7 @@ export function createActivityView(
     const input = el('textarea', {
       class: 'activity-answer-input',
       rows: '2',
+      placeholder: 'Or type an answer…',
       'data-control': `answer-${String(index)}`,
       'aria-labelledby': questionId,
     })
@@ -478,10 +479,12 @@ export function createActivityView(
   }
 
   function detailActions(row: ActivityRow): HTMLElement {
-    const actions: HTMLElement[] = [openThreadButton(row), el('span', { class: 'activity-spacer' })]
+    const actions: HTMLElement[] = [openThreadButton(row)]
+    // The decision stays one unit when the bar wraps: Reject never parts from Approve.
+    const decide: HTMLElement[] = []
     if (row.state === 'needs-approval' && row.approval) {
       const title = row.approval.title
-      actions.push(
+      decide.push(
         button(
           'ui-btn-secondary activity-reject',
           'reject',
@@ -502,7 +505,7 @@ export function createActivityView(
         `Approve: ${title} (${row.threadTitle})`,
       )
       approve.disabled = settling
-      actions.push(approve)
+      decide.push(approve)
     } else if (row.state === 'needs-answer' && row.requestId) {
       const requestId = row.requestId
       const answer = button(
@@ -516,8 +519,9 @@ export function createActivityView(
       )
       answer.dataset['requestId'] = requestId
       answer.disabled = settling || !hasAnswer(requestId)
-      actions.push(answer)
+      decide.push(answer)
     }
+    if (decide.length > 0) actions.push(el('span', { class: 'activity-decide' }, ...decide))
     return el('div', { class: 'activity-detail-actions' }, ...actions)
   }
 
@@ -815,7 +819,9 @@ export function createActivityView(
         ? el('span', { class: 'activity-strip-need' }, `${String(need)} need you`)
         : el('span', {}, 'All clear'),
     )
-    if (working > 0) stats.append(el('span', {}, `${String(working)} working`))
+    if (working > 0) {
+      stats.append(el('span', { class: 'activity-strip-working' }, `${String(working)} working`))
+    }
     const node = el(
       'button',
       {
