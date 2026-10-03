@@ -1,6 +1,12 @@
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from './safe-json.mts'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { terminalBenchProfile, type TerminalBenchProfile } from './terminal-bench-profiles.mts'
+import {
+  terminalBenchProfile,
+  terminalBenchProfileForIdentity,
+  type TerminalBenchProfile,
+} from './terminal-bench-profiles.mts'
 
 const PROFILE_METADATA_FILE = 'terminal-bench-profile.json'
 
@@ -36,7 +42,18 @@ export async function readTerminalBenchTrialProfile(
 ): Promise<TerminalBenchProfile | undefined> {
   let value: unknown
   try {
-    value = JSON.parse(await readFile(join(dirname(resultPath), PROFILE_METADATA_FILE), 'utf8'))
+    value = safeJsonParse(
+      await readFile(join(dirname(resultPath), PROFILE_METADATA_FILE), 'utf8'),
+      decodeWithSchema(
+        z
+          .object({
+            schemaVersion: z.literal(1),
+            profile: z.string(),
+            contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .strict(),
+      ),
+    )
   } catch (error) {
     if (isMissingFile(error)) return undefined
     throw new Error(
@@ -49,9 +66,15 @@ export async function readTerminalBenchTrialProfile(
   if (field(value, 'schemaVersion') !== 1 || typeof rawProfile !== 'string') {
     throw new Error(`Invalid retained Terminal-Bench profile metadata for ${resultPath}`)
   }
-  const profile = terminalBenchProfile(rawProfile)
-  if (rawProfile !== profile.versionedId || rawHash !== profile.contentHash) {
-    throw new Error(`Inconsistent retained Terminal-Bench profile metadata for ${resultPath}`)
+  if (typeof rawHash !== 'string')
+    throw new Error(`Invalid retained Terminal-Bench profile metadata for ${resultPath}`)
+  let profile: TerminalBenchProfile
+  try {
+    profile = terminalBenchProfileForIdentity(rawProfile, rawHash)
+  } catch (error) {
+    throw new Error(`Inconsistent retained Terminal-Bench profile metadata for ${resultPath}`, {
+      cause: error,
+    })
   }
   return profile
 }

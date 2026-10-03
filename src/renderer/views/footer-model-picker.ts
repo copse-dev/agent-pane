@@ -22,6 +22,8 @@ export interface FooterModelPickerOptions {
   getRecentModels?: () => readonly string[]
   /** Override the trigger label for the current picker value (resolved route). */
   formatCurrentLabel?: (current: string) => string | undefined
+  /** Actual route for a dynamic model, shared by its label and coverage badge. */
+  getCurrentRoute?: (current: string) => string | undefined
   /** This chat's reasoning override, if any. Omit to hide the effort selector. */
   getReasoning?: () => ReasoningLevel | undefined
   /** Applies an effort pick; `undefined` clears the chat's override. */
@@ -60,7 +62,7 @@ export function mountFooterModelPicker(
       void picker.refresh()
     },
     (current) =>
-      fetchModelOptions(api, current, {
+      fetchModelOptions(api, pickerOpts.getCurrentRoute?.(current) ?? current, {
         sshWorkspace: pickerOpts.isSshWorkspace?.() === true,
       }),
     {
@@ -92,6 +94,7 @@ export function mountFooterModelPicker(
       ...(pickerOpts.formatCurrentLabel
         ? { formatCurrentLabel: pickerOpts.formatCurrentLabel }
         : {}),
+      ...(pickerOpts.getCurrentRoute ? { getCurrentRoute: pickerOpts.getCurrentRoute } : {}),
     },
   )
 

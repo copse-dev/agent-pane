@@ -37,40 +37,25 @@ on:
   # environment drift. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
-  # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
-  # requires Enterprise Cloud for private repositories and this org is on Team,
-  # so the trigger could never fire. The `main` -> `release` promotion flow is
-  # the stand-in: `main` absorbs the day's merges under the light tier, and
-  # the promotion PR runs the full tier once for the whole batch. What we give
-  # up versus a real queue is automatic bisection — a red promotion names a
-  # batch, not a commit — which is why promotions should be frequent enough to
-  # stay small.
+  # Queue commits combine candidates with the latest base. They must earn
+  # the same required CI Passed gate before GitHub can merge them.
+  merge_group:
+    types: [checks_requested]
 
+# Candidate code, including merge groups with fork commits, gets no write token.
+permissions:
+  contents: read
+
+# Only the known Copse feedback label may skip CI. Every edited event runs
+# normal CI, including title/body edits: Actions cannot whitelist change keys.
+# The same predicate controls concurrency, roots of the job graph, and the
+# aggregate NAME: a skipped required check would otherwise authorize a red head.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Nightly schedule must not cancel an in-flight tip push/PR: cron can fire
-  # hours late, and schedule+push share `ci-refs/heads/main`. They also use
-  # different e2e runners (hosted vs self-hosted), so running in parallel is
-  # fine. A new push/PR sync still cancels older runs in the group.
-  #
-  # A cosmetic `edited` must not cancel either. #2970 subscribed to `edited` so
-  # a base retarget re-runs (#2520), but GitHub fires the same action for a
-  # title or body edit, and those land in this group mid-run. Cancelling there
-  # is not a wasted run, it is a RED one: since #2722 `ci-passed` turns a
-  # cancelled run into an explicit failure rather than a skip, so editing a
-  # description while CI was running left a red `CI Passed` on a SHA that had
-  # been green. `changes.base` is present only on a retarget, which is the case
-  # that genuinely invalidates the in-flight run and must still cancel it.
-  #
-  # Deliberately not solved with a job-level `if:`. `ci-passed` is `always()`
-  # over `needs: [precheck, …]`, so skipping the upstream jobs either fails it
-  # (a green PR goes red on a title edit) or skips it — and GitHub accepts a
-  # skipped required check, which would let a RED PR be flipped to mergeable by
-  # editing its title. The cost of this shape is a duplicate run on a cosmetic
-  # edit; it never produces a false red or a false pass.
+  # Metadata must never replace a pending real run, even with cancellation off.
+  group: >-
+    ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
-    ${{ github.event_name != 'schedule' &&
-    (github.event.action != 'edited' || github.event.changes.base != null) }}
+    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -121,7 +106,9 @@ jobs:
   # Fork PRs run only the `precheck` safe tier, forced onto a GitHub-hosted
   # runner with a read-only token. Every heavier job that executes repository
   # code keeps its same-repo `if` guard, so untrusted commits never run on the
-  # self-hosted fleet.
+  # self-hosted fleet. Merge groups have no PR-origin field and may contain
+  # fork commits, so every candidate job is pinned to hosted even with fleet
+  # variables enabled. Secret-bearing real-model jobs never run for queues.
 
   # Cheap static gate + e2e planning. Runs the fast static checks (typecheck,
   # lint, format, dead-code, oracle liveness) AND computes the e2e oracle plan in
@@ -131,6 +118,8 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
+    if: >-
+      ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -138,12 +127,12 @@ jobs:
     # public-repo hosted runner (16 GiB) that headroom is no longer scarce; the
     # retries stay because opting back onto the fleet must not silently regress.
     #
-    # Fork PRs are pinned to GitHub-hosted: this is the one job that executes
+    # Queue groups and fork PRs are pinned to GitHub-hosted. This job executes
     # fork code (typecheck/lint run the PR's package scripts and plugins), and
     # it must never reach the self-hosted fleet — same invariant gitleaks.yml
     # states for its standalone fork scan. Hosted minutes are free once the
     # repository is public, so this costs nothing on the runs it applies to.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -162,11 +151,26 @@ jobs:
       # Whether the real Docker reviewer cell needs its focused conformance job.
       review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
     steps:
+      - name: Verify merge-queue GitHub client methods
+        uses: actions/github-script@v9
+        with:
+          script: |
+            if (typeof github.graphql !== 'function') throw new Error('Missing GraphQL client');
+            for (const [namespace, method] of [
+              ['pulls', 'get'],
+              ['repos', 'getCommit'],
+              ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'createCommitStatus'],
+            ]) {
+              if (typeof github.rest[namespace]?.[method] !== 'function') {
+                throw new Error(`Missing queue API method: ${namespace}.${method}`);
+              }
+            }
       - uses: actions/checkout@v7.0.1
         with:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
-          # Same-repo runs keep credentials for the oracle's base ref fetches.
-          persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          # Queues also leave no token; public history/base fetches need none.
+          persist-credentials: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
       # Full history of the commit under test, for the oracle's base diff and the
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
@@ -182,7 +186,7 @@ jobs:
         id: review-cell-plan
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "schedule" ] ||
@@ -210,7 +214,7 @@ jobs:
       # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
       # remain on the standalone hosted workflow in gitleaks.yml.
       - name: Install pinned gitleaks CLI
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
@@ -226,7 +230,7 @@ jobs:
           tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
           "${RUNNER_TEMP}/gitleaks" version
       - name: Scan repository history for secrets
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
             --log-opts="--full-history --diff-filter=tuxdb HEAD" .
@@ -276,8 +280,8 @@ jobs:
       # so it is skipped on schedule / branch-create runs.
       - name: API protocol compatibility
         env:
-          # PR base on pull_request; previous tip on push. Empty for schedule.
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # PR/queue base; previous tip on push. Empty for schedule.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           # No usable base (schedule, first push, branch create) -> nothing to
@@ -340,9 +344,9 @@ jobs:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          # PR base on pull_request; previous-tip on push. Empty for schedule.
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           # Real PR head commit (not the merge ref this job checks out), used to
           # avoid rerunning e2e after a human commits only reviewed screenshots.
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -356,6 +360,7 @@ jobs:
           # blast radius the selector-vocabulary map cannot see).
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
         run: |
+          BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
@@ -379,7 +384,7 @@ jobs:
           # to thin or skip it. Keep this after the screenshot-only escape above:
           # a reference-only follow-up already has immutable evidence from its
           # parent and does not need another full render.
-          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "release" ]; then
+          if { [ "$EVENT" = "pull_request" ] || [ "$EVENT" = "merge_group" ]; } && [ "$BASE_REF" = "release" ]; then
             echo "PR targets release -> full e2e suite (promotion gate)"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
@@ -518,10 +523,10 @@ jobs:
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -659,10 +664,12 @@ jobs:
     # self-hosted check fleet (see the routing note above). History: coverage/esbuild has died with "service was stopped" on
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # Preparation tests exercise the real kernel boundary and must not skip it.
       - name: Install sandbox dependencies for unit integration tests
@@ -809,6 +816,7 @@ jobs:
     needs: precheck
     if: >-
       (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
+      (github.event_name != 'merge_group' || github.event.merge_group.base_ref == 'refs/heads/release') &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
@@ -831,10 +839,12 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). No Electron/display need.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
@@ -905,6 +915,7 @@ jobs:
   bench-agent-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -939,6 +950,7 @@ jobs:
   doctrine-eval-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -985,6 +997,7 @@ jobs:
   eval-tool-preference:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -1058,6 +1071,7 @@ jobs:
   scratch-path-eval-model:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       vars.LM_EVAL_RUNNER != '' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -1123,7 +1137,7 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Produces the dist artifact consumed by the e2e shards below.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
@@ -1133,6 +1147,8 @@ jobs:
     # get a byte-identical dist without each rebuilding it.
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
@@ -1140,7 +1156,12 @@ jobs:
       # this tier and attached its immutable render evidence.
       - run: npm run build:demo
         if: needs.precheck.outputs.mode != 'skip'
-      - run: npm run test:demo
+      # Keep the frame-by-frame motion eval off the other Chrome workers: CPU
+      # contention delays RAF callbacks and creates catch-up scroll steps that
+      # do not measure the renderer's idle motion. Keep its strict limits.
+      - run: npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts
+        if: needs.precheck.outputs.mode != 'skip'
+      - run: npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1
         if: needs.precheck.outputs.mode != 'skip'
       - name: Collect changed browser reference screenshots
         if: >-
@@ -1239,7 +1260,9 @@ jobs:
     # mistyped variable is "runs on hosted", not "never runs".
     #
     # Runner is still picked by TRUST and still fails closed:
-    #   - Nightly `schedule` and trusted push/same-repo PRs default to hosted.
+    #   - Nightly `schedule` and all merge groups always use hosted.
+    #     Queue commits may include forks; opt-in never grants fleet access.
+    #   - Trusted push/same-repo PRs default to hosted and may opt into the fleet.
     #   - The opt-in label set requires BOTH `self-hosted` AND `copse-e2e`, so an
     #     opted-in job lands only on the Linux Docker runners, never the macOS
     #     `self-hosted` boxes (which lack `copse-e2e`).
@@ -1249,7 +1272,7 @@ jobs:
     #     label) so the job fails closed instead of dispatching untrusted code
     #     anywhere — including onto a free hosted runner.
     runs-on: >-
-      ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
+      ${{ (github.event_name == 'schedule' || github.event_name == 'merge_group') && fromJSON('["ubuntu-latest"]') ||
           ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
@@ -1268,13 +1291,12 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 600s (step cap 22 min: 2 attempts plus setup and
-    # diagnostics) so attempt 1 finishes instead of being SIGKILL'd mid-retry,
-    # letting attempt 2 relaunch. It was 480s until the densest shards' healthy
-    # runtime reached 410-460s: the timer then killed whichever spec was running
-    # last and reported it as the failure (exit 124). Keep ~25% headroom over the
-    # slowest healthy shard; if a shard outgrows that, rebalance or speed up its
-    # specs rather than adding shards (the count is a memory ceiling, #339).
+    # The per-attempt `timeout` is 720s (step cap 26 min: two attempts plus
+    # cleanup and diagnostics). The ten-minute budget interrupted otherwise
+    # passing 44-spec shards at the tail (exit 124), so twelve minutes gives
+    # the growing suite bounded headroom without changing individual test caps.
+    # Keep eight shards as the memory ceiling (#339); rebalance or speed up
+    # specs if healthy shard runtime outgrows this budget.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
@@ -1306,6 +1328,8 @@ jobs:
       COPSE_E2E_HEADLESS: '0'
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
       # and prune Docker images because shards hit "No space left on device" on
@@ -1409,7 +1433,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 22
+        timeout-minutes: 26
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -1762,7 +1786,10 @@ jobs:
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             # Tee so the reporter output can be re-read for the digest below.
             # PIPESTATUS, not $?, or we would read tee's status instead.
-            ${TIMEOUT:+$TIMEOUT -k 15 600} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+            # Full shards can exceed ten minutes as the native suite grows. Keep
+            # a bounded twelve-minute attempt watchdog; the enclosing step allows
+            # both attempts plus cleanup without changing individual test caps.
+            ${TIMEOUT:+$TIMEOUT -k 15 720} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
@@ -1849,7 +1876,7 @@ jobs:
     if: >-
       !cancelled() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
     # cold runner, not the steady state.
@@ -2005,12 +2032,16 @@ jobs:
     # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
-      ${{ (github.event_name == 'pull_request' &&
+      ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && 'CI metadata ignored' ||
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
+    # Queue this tiny aggregate even for metadata: GitHub leaves a skipped
+    # job's name expression unevaluated. Metadata gets its separate check name
+    # and exits before candidate-result validation; it never creates CI Passed.
     if: ${{ always() }}
     needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
@@ -2025,18 +2056,29 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
+          METADATA_ONLY: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
-          E2E_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
+          QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
+          BENCH_RESULT: ${{ needs.bench.result }}
+          REVIEW_CELL_REQUIRED: ${{ needs.precheck.outputs.review_cell_required }}
+          REVIEW_CELL_RESULT: ${{ needs.review-cell.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          E2E_REQUIRED: ${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full'))) }}
           E2E_SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
           E2E_RESULT: ${{ needs.e2e.result }}
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -eu
+          if [ "${METADATA_ONLY:-false}" = "true" ]; then
+            echo "Metadata event ignored; this check does not authorize a merge."
+            exit 0
+          fi
           # Supersession explains why work was canceled; it is never evidence
           # that THIS run passed. The new run must earn its own green check.
           # This guard precedes fork and skip-mode acceptance deliberately.
@@ -2063,6 +2105,43 @@ jobs:
             full|subset|skip) ;;
             *) echo "Missing or invalid CI plan: $MODE"; exit 1 ;;
           esac
+          # A queue group is a new combined candidate, even when the oracle
+          # finds no visual change. It always needs a completed native build.
+          if [ "$MERGE_GROUP" = "true" ]; then
+            case "$REVIEW_CELL_REQUIRED" in
+              true|false) ;;
+              *) echo "Missing or invalid queue reviewer-cell plan"; exit 1 ;;
+            esac
+            case "$QUEUE_BASE_REF" in
+              refs/heads/main|refs/heads/release) ;;
+              *) echo "Unsupported merge queue base: $QUEUE_BASE_REF"; exit 1 ;;
+            esac
+            if [ "$REVIEW_CELL_REQUIRED" = "true" ] && [ "$REVIEW_CELL_RESULT" != "success" ]; then
+              echo "Required merge-queue reviewer-cell check did not complete successfully."
+              exit 1
+            fi
+            if [ "$QUEUE_BASE_REF" = "refs/heads/release" ] && [ "$BENCH_RESULT" != "success" ]; then
+              echo "Required release-queue benchmark did not complete successfully."
+              exit 1
+            fi
+            if [ "$BUILD_RESULT" != "success" ]; then
+              echo "Required merge-queue build did not complete successfully."
+              exit 1
+            fi
+            if [ "$MODE" != "skip" ]; then
+              case "$E2E_SHARD_TOTAL" in
+                ''|0|*[!0-9]*) echo "Invalid queue e2e shard count: $E2E_SHARD_TOTAL"; exit 1 ;;
+              esac
+              if [ "$E2E_SHARD_TOTAL" -le 0 ]; then
+                echo "Queue e2e shard count must be positive."
+                exit 1
+              fi
+              if [ "$E2E_RESULT" != "success" ]; then
+                echo "Required merge-queue e2e did not complete successfully."
+                exit 1
+              fi
+            fi
+          fi
           # Zero-shard / screenshot-only plans intentionally SKIP heavy jobs
           # (#1233). They may not disguise failures or cancellations above.
           if [ "$MODE" = "skip" ]; then

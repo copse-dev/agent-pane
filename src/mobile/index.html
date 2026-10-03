@@ -12,7 +12,12 @@
     <main class="shell">
       <header class="topbar">
         <div class="brand"><span class="brand-mark" aria-hidden="true"></span> Copse</div>
-        <span class="session-label">DESKTOP SESSION</span>
+        <button id="back" class="back" type="button" hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5m7 7-7-7 7-7" />
+          </svg>
+          <span>Activity</span>
+        </button>
       </header>
       <section id="pair" class="pair" hidden>
         <span class="eyebrow">MOBILE COMPANION</span>
@@ -51,7 +56,6 @@
         <div id="groups"></div>
       </section>
       <section id="thread" hidden>
-        <button id="back" class="back">← Activity</button>
         <span id="thread-project" class="eyebrow"></span>
         <h1 id="thread-title"></h1>
         <p id="thread-status" class="read-only"></p>

@@ -72,6 +72,7 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
       ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
@@ -552,6 +553,21 @@ const api: ApiClient = {
       ipcRenderer.on('alerts:open-thread', listener)
       return (): void => {
         ipcRenderer.off('alerts:open-thread', listener)
+      }
+    },
+  },
+  deepLinks: {
+    ready: () => ipcRenderer.invoke('deep-links:ready'),
+    onOpenThread: (handler: (target: { threadId: string; projectId: string | null }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        target: { threadId: string; projectId: string | null },
+      ): void => {
+        handler(target)
+      }
+      ipcRenderer.on('deep-links:open-thread', listener)
+      return (): void => {
+        ipcRenderer.off('deep-links:open-thread', listener)
       }
     },
   },
@@ -1627,11 +1643,10 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
-    },
-    requestAcpPackageUpgradeApproval() {
-      return ipcRenderer.invoke('test:requestAcpPackageUpgradeApproval')
+    requestAcpPackageInstallApproval(
+      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
+    ) {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)

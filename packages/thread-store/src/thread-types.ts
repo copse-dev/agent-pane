@@ -303,6 +303,8 @@ export interface Thread {
    */
   autoTitleCount?: number
   status: ThreadStatus
+  /** A run confirmed absent after reopening Copse. Cleared when another run starts. */
+  interruptedTurnAt?: number
   messages: Message[]
   /**
    * `false` means this thread's transcript has not been read off disk yet, so an

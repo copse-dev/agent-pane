@@ -19,8 +19,16 @@
  * (trixie) rather than 12: a project's own tooling can be built against a
  * newer C++ runtime than bookworm's GCC 12 provides (`GLIBCXX_3.4.32`, seen
  * on the first install that got as far as running one).
+ *
+ * Pinned by the multi-platform index digest, so every build of one Copse
+ * version starts from the same bytes and the image fingerprint (which hashes
+ * this string) changes when the pin does. The tag stays for readers; Docker
+ * resolves the digest. To move it, run
+ * `docker buildx imagetools inspect node:24-trixie-slim` and copy the top-level
+ * `Digest:` line.
  */
-export const WORKER_BASE_IMAGE = 'node:24-trixie-slim'
+export const WORKER_BASE_IMAGE =
+  'node:24-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe'
 
 /**
  * The pnpm baked into the image for a carried-in project's install. A project
@@ -100,7 +108,28 @@ WORKDIR /app
 COPY --chown=root:root package.json ./
 COPY --chown=root:root node_modules ./node_modules
 COPY --chown=root:root worker.cjs entrypoint.sh ./
-RUN chmod 0755 /app/entrypoint.sh && mkdir -p /workspace/.pnpm-store && chown -R "\${WORKER_UID}" /workspace
+# pnpm can materialise package files as 0600 (notably from an APFS clone).
+# The image copies them as root, so normalise read/traverse bits before the
+# unprivileged worker loads the runtime. Preserve executable files with X.
+RUN chmod -R a+rX /app/node_modules \\
+    && chmod 0755 /app/entrypoint.sh \\
+    && mkdir -p /workspace/.pnpm-store \\
+    && chown -R "\${WORKER_UID}" /workspace
+
+# The context's nested files must have arrived: a builder that drops them
+# (Apple container, for a context under /private) otherwise yields an image
+# whose worker cannot load its sandbox runtime, found only at run time.
+RUN test -f /app/node_modules/@anthropic-ai/sandbox-runtime/package.json
+
+# No-new-privileges is set by the entrypoint (setpriv, from util-linux), not
+# only by the engine: Apple container has no such flag, and a guest without
+# it could exec a setuid-root binary back to euid 0. The build fails here
+# rather than producing an image whose entrypoint cannot set it. The setuid
+# and setgid bits come off as well, so the image carries nothing to escalate
+# through even if an engine dropped both.
+RUN command -v setpriv >/dev/null \\
+    && find / -xdev -type f -perm /6000 -exec chmod ug-s {} + \\
+    && test -z "$(find / -xdev -type f -perm /6000 -print -quit)"
 
 USER \${WORKER_UID}:\${WORKER_UID}
 ENV NODE_PATH=/app/node_modules
@@ -112,7 +141,10 @@ ENTRYPOINT ["/app/entrypoint.sh"]
  * Guest entrypoint. Runs as the unprivileged worker user with no network
  * interface. Egress is the worker's own loopback proxy over the link on the
  * container's stdio, so the entrypoint listens for nothing: the addresses the
- * worker and its children use are in the environment Docker was given.
+ * worker and its children use are in the environment the engine was given.
+ * The worker starts under no-new-privileges, which every process it spawns
+ * inherits and none can clear; the worker checks it is set before declaring
+ * containment.
  */
 export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Guest entrypoint for a Copse container run. Runs as the unprivileged worker
@@ -120,7 +152,10 @@ export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # the worker's own loopback proxy, which speaks to the host broker over this
 # process's stdin and stdout; HTTPS_PROXY and friends already point every
 # client here at it, so there is nothing to start first.
+# setpriv sets no-new-privileges before the worker exists: Docker sets it too,
+# Apple container cannot, and the worker refuses to declare containment
+# without it.
 set -eu
 
-exec node /app/worker.cjs
+exec setpriv --no-new-privs -- node /app/worker.cjs
 `

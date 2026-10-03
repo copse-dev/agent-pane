@@ -113,6 +113,11 @@ export function moreHorizontalIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('more-horizontal', ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], className)
 }
 
+/** Three vertical dots for row action menus. */
+export function moreVerticalIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('more-vertical', ['M12 5h.01', 'M12 12h.01', 'M12 19h.01'], className)
+}
+
 /**
  * Same three-dot glyph as {@link moreHorizontalIcon}, used as a running-thread
  * status mark. CSS animates opacity across the paths so the ellipsis "walks".
@@ -125,15 +130,12 @@ export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
 
-/** Open hand — an action needs the person's approval before it can continue. */
-export function handIcon(className = DEFAULT): SVGSVGElement {
+/** Shield — an action is gated on the person's approval before it can continue. */
+export function shieldIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
-    'hand',
+    'shield',
     [
-      'M18 11V6a2 2 0 0 0-4 0v5',
-      'M14 10V4a2 2 0 0 0-4 0v7',
-      'M10 10.5V6a2 2 0 0 0-4 0v8',
-      'M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z',
+      'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
     ],
     className,
   )

@@ -60,4 +60,9 @@
 // v32 versions automation worktree-limit status in list/upsert payloads.
 // v33 versions machine-turn dispatch and its chunk metadata.
 // v34 versions the per-model availability shape returned by `usage:get-plan-usage`.
-export const API_PROTOCOL_VERSION = 34 as const
+// v35 conservatively versions optional malformed-tool-call metadata on streamed chunks.
+// v36 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+// v37 conservatively versions the optional `verbosity` field on turn model parameters.
+// v38 conservatively versions interrupted-turn recovery metadata.
+export const API_PROTOCOL_VERSION = 38 as const

@@ -25,7 +25,7 @@
  *   --tokens <n>            token ceiling (default 2,000,000)
  *   --max-steps <n>         cap on agent steps (default: product default)
  *   --image <ref>           worker image (default copse-worker:local)
- *   --base-image <ref>      base image for --build (default node:24-trixie-slim)
+ *   --base-image <ref>      base image for --build (default: node:24-trixie-slim, pinned by digest)
  *   --build-network <net>   docker build --network (some sandboxes need host)
  *   --worker-bundle <path>  bundled guest entry (the wrapper passes the one it built)
  *   --build                 rebuild the worker image first
@@ -44,6 +44,7 @@ import {
   teardownRuntime,
   WORKER_IMAGE,
 } from './thread-container.ts'
+import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
 
 interface Cli {
   flags: Map<string, string[]>
@@ -79,19 +80,28 @@ function required(value: string | undefined, what: string): string {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2))
-  await assertThreadContainerEngine()
+  // Before any Docker command: the key must not sit in the environment every
+  // Docker subprocess inherits.
+  const apiKeyEnv = cli.one('api-key-env')
+  const apiKey = takeProviderKeyFromEnv(apiKeyEnv)
+  // One engine for the whole invocation; COPSE_CONTAINER_ENGINE picks it.
+  const engine = await assertThreadContainerEngine()
   if (cli.has('list')) {
-    for (const runtime of await listManagedRuntimes()) {
+    for (const runtime of await listManagedRuntimes(engine)) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)
     }
     return
   }
   if (cli.has('forget-store')) {
+    if (engine === 'apple') {
+      console.log('pnpm store: none (runs under Apple container do not share one)')
+      return
+    }
     console.log(`pnpm store: ${await forgetPnpmStoreVolume()}`)
     return
   }
   if (cli.has('sweep')) {
-    const sweep = await sweepOrphanedRuntimes()
+    const sweep = await sweepOrphanedRuntimes([engine])
     console.log(
       `removed ${String(sweep.removed.length)}, skipped ${String(sweep.skipped.length)} running, failed ${String(sweep.failed.length)}`,
     )
@@ -100,7 +110,7 @@ async function main(): Promise<void> {
   }
   const teardown = cli.one('teardown')
   if (teardown !== undefined) {
-    console.log(`${teardown}: ${await teardownRuntime(teardown)}`)
+    console.log(`${teardown}: ${await teardownRuntime(teardown, engine)}`)
     return
   }
 
@@ -110,6 +120,7 @@ async function main(): Promise<void> {
     const buildNetwork = cli.one('build-network') ?? process.env['COPSE_WORKER_BUILD_NETWORK']
     const workerBundle = cli.one('worker-bundle')
     await buildWorkerImage({
+      engine,
       image,
       ...(baseImage ? { baseImage } : {}),
       ...(buildNetwork ? { buildNetwork } : {}),
@@ -129,15 +140,17 @@ async function main(): Promise<void> {
     if (!host || !addr) throw new Error(`--resolve expects host=addr, got "${entry}"`)
     egressResolve[host] = addr
   }
-  const apiKeyEnv = cli.one('api-key-env')
+  if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
   const record = await runThreadInContainer({
+    engine,
     workspace: cli.one('workspace') ?? process.cwd(),
     prompt: required(cli.one('prompt'), '--prompt'),
     model,
     // The CLI names an OpenAI-compatible endpoint directly; a key, when
-    // given, travels through `apiKeyEnv` as it does for the app's runs.
+    // given, is read here and crosses the stdio link as it does for the
+    // app's runs (decision A17).
     provider: {
       kind: 'openai-compatible',
       model,
@@ -150,7 +163,7 @@ async function main(): Promise<void> {
       extraBody: null,
       params: {},
     },
-    ...(apiKeyEnv ? { apiKeyEnv } : {}),
+    ...(apiKey ? { apiKey } : {}),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,
       tokenCeiling: Number(cli.one('tokens') ?? '2000000'),

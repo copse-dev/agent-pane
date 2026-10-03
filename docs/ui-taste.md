@@ -1177,7 +1177,7 @@ sidebar taste as thread rows and PR status icons:
 - **Icons over labels.** Linked threads use the muted messages icon (tooltip /
   `aria-label` carries the thread title); attachments are a muted paperclip +
   count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
-  until row hover or focus (same idea as `.chat-delete`).
+  until row hover or focus (same idea as `.chat-menu-btn`).
 - **Status colours mean status.** Only the status chip is coloured (`blocked` in
   `--warning`, `conflicts` in `--danger`). The category chip (`bug`, `feature`,
   `project`) is a neutral label: tinting categories with status hues made `project`
