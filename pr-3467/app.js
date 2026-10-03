@@ -71162,6 +71162,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       renderDetail(selected, at3);
     }
     host.onNeedsYou?.(needCount);
+    host.onIdle?.(everything.every((group) => group.rows.length === 0));
     restoreFocus(focus);
   }
   function select(rowKey2) {
@@ -139922,6 +139923,12 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
     onNeedsYou: (count) => {
       root.dataset["needsYou"] = String(count);
     },
+    // With nothing to list the strip and card would only say so: the screen steps
+    // aside and the composer takes the middle of the pane, as a first run always had.
+    onIdle: (idle) => {
+      root.dataset["idle"] = String(idle);
+      pane.classList.toggle("is-activity-idle", idle);
+    },
     collapsibleGroups: true,
     projectStrip: true,
     followUrgent: true,
@@ -139941,6 +139948,7 @@ function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
       if (next === shown) return;
       shown = next;
       root.hidden = !next;
+      if (!next) pane.classList.remove("is-activity-idle");
       if (next) view.show({ focusFirstRow: false });
       else view.hide();
     }

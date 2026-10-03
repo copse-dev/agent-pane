@@ -1604,6 +1604,27 @@ copse-ui-field input[type=password],
 .pane-chat.is-activity-home {
   --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
 }
+.pane-chat.is-activity-idle {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+}
+.pane-chat.is-activity-idle #input-bar {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-lg);
+  max-height: calc(100% - 2 * var(--spacing-xl));
+}
+.pane-chat.is-activity-idle .prompt-input {
+  border-top: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.pane-chat.is-activity-idle .input-footer {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
 .pane-chat.is-activity-home .conversation {
   display: none;
 }
@@ -6029,7 +6050,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   border-top-left-radius: var(--radius-lg);
   border-top-right-radius: var(--radius-lg);
 }
-.pane-chat #input-bar > .is-composer-top {
+.pane-chat:not(.is-activity-idle) #input-bar > .is-composer-top {
   border-top-left-radius: calc(var(--radius-lg) - 1px);
   border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
@@ -6398,7 +6419,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
 }
-#app.is-portrait-chrome .pane-chat #input-bar {
+#app.is-portrait-chrome .pane-chat:not(.is-activity-idle) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
   max-height: calc(100% - var(--chrome-action-band-height) - 2 * var(--spacing-md));
 }
@@ -12496,6 +12517,7 @@ dialog.activity-panel-overlay {
   margin-inline: auto;
   padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
 }
+.activity-home[data-idle=true],
 .activity-home[hidden] {
   display: none;
 }
