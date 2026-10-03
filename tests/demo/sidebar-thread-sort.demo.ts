@@ -37,6 +37,12 @@ describe('sidebar thread sort', () => {
     })
   })
 
+  it('shows the search field and the project and sort buttons under it', async () => {
+    await expect($('.pane-projects-header .projects-search-input')).toBeDisplayed()
+    await expect($('.projects-filters .projects-filter-btn')).toHaveText('All projects')
+    await saveAppScreenshot('sidebar-search-and-filters.png')
+  })
+
   it('offers the sorts and marks the current one', async () => {
     await openMenu()
     const labels = await (await $$('.context-menu-item')).map((i) => i.getText())

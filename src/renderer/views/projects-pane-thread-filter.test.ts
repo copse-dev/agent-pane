@@ -67,6 +67,12 @@ describe('projects pane thread filter (component)', () => {
     return store
   }
 
+  function filterValue(): string {
+    const input = document.querySelector<HTMLInputElement>('.projects-search-input')
+    assert.ok(input, 'expected the thread-filter input')
+    return input.value
+  }
+
   function titles(): string[] {
     return [...document.querySelectorAll('.chat-title')].map((n) => n.textContent)
   }
@@ -78,17 +84,15 @@ describe('projects pane thread filter (component)', () => {
     input.dispatchEvent(new Event('input'))
   }
 
-  it('hides the filter row until the search toggle is clicked', () => {
+  it('shows the search field without any toggle', () => {
     mount()
-    const row = must('.projects-search-row')
-    assert.equal(row.hidden, true)
-    must('.projects-search-btn').click()
-    assert.equal(row.hidden, false)
+    const input = must('.projects-search-input')
+    assert.equal(input.closest('[hidden]'), null)
+    assert.equal(input.getAttribute('placeholder'), 'Search threads…')
   })
 
   it('narrows the thread list to title matches', () => {
     mount()
-    must('.projects-search-btn').click()
     assert.deepEqual(titles(), ['Fix login bug', 'Refactor sidebar', 'Login rate limiting'])
     setFilter('login')
     assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
@@ -96,7 +100,6 @@ describe('projects pane thread filter (component)', () => {
 
   it('shows a no-matches note only after searching user requests', async () => {
     mount()
-    must('.projects-search-btn').click()
     setFilter('zzz-nothing')
     // Nothing flashes while the query is still debouncing.
     assert.equal(document.querySelector('.thread-filter-status'), null)
@@ -130,7 +133,6 @@ describe('projects pane thread filter (component)', () => {
       ],
       api,
     )
-    must('.projects-search-btn').click()
     setFilter('needle')
     await delay(250)
     assert.deepEqual(reads, ['new', 'old'])
@@ -162,31 +164,29 @@ describe('projects pane thread filter (component)', () => {
     assert.equal(document.querySelector('.thread-filter-status'), null)
   })
 
-  it('clicking the toggle again clears and hides the filter', () => {
+  it('Escape clears the filter', () => {
     mount()
-    const toggle = must('.projects-search-btn')
-    toggle.click()
     setFilter('login')
     assert.equal(titles().length, 2)
-    toggle.click() // second click closes + clears
-    const row = must('.projects-search-row')
-    assert.equal(row.hidden, true)
+    const keydown = new Event('keydown', { bubbles: true })
+    Object.defineProperty(keydown, 'key', { value: 'Escape' })
+    must('.projects-search-input').dispatchEvent(keydown)
+    assert.equal(filterValue(), '')
     assert.equal(titles().length, 3)
   })
 
   it('keeps the filter open when another project changes the workspace', () => {
     const store = mount()
-    must('.projects-search-btn').click()
     setFilter('login')
     store.setState({
       projects: [...store.getState().projects, { id: 'p2', path: '/other', name: 'Other' }],
     })
     store.emit('workspace_changed')
-    assert.equal(must('.projects-search-row').hidden, false)
+    assert.equal(filterValue(), 'login')
     assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
 
     store.setState({ activeProjectId: 'p2', expandedProjectId: 'p2' })
     store.emit('workspace_changed')
-    assert.equal(must('.projects-search-row').hidden, true)
+    assert.equal(filterValue(), '')
   })
 })
