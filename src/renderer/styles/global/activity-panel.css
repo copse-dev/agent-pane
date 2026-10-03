@@ -520,7 +520,11 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-md);
 }
 .activity-home .activity-detail-actions {
-  padding: 14px 30px;
+  /* The side padding follows the pane (cqw is the chat pane's own width) and the
+     bar wraps, so Open thread, Reject and Approve never clip in a squeezed card. */
+  padding: 14px clamp(14px, 4cqw, 30px);
+  flex-wrap: wrap;
+  row-gap: 8px;
   background: none;
 }
 .activity-home .activity-detail-actions .ui-btn {
