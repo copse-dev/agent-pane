@@ -383,8 +383,8 @@ async function fetchSessionUsage(input: {
 }): Promise<{
   freshInputTokens: number
   outputTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
+  cacheReadTokens: number | undefined
+  cacheCreationTokens: number | undefined
 }> {
   const response = await input.fetchImpl(
     joinUrl(input.baseUrl, `/v1/sessions/${encodeURIComponent(input.sessionId)}`),
@@ -395,10 +395,13 @@ async function fetchSessionUsage(input: {
   return {
     freshInputTokens: json.usage?.input_tokens ?? 0,
     outputTokens: json.usage?.output_tokens ?? 0,
-    cacheReadTokens: json.usage?.cache_read_input_tokens ?? 0,
+    cacheReadTokens: json.usage?.cache_read_input_tokens,
     cacheCreationTokens:
-      (cacheCreation?.ephemeral_5m_input_tokens ?? 0) +
-      (cacheCreation?.ephemeral_1h_input_tokens ?? 0),
+      cacheCreation?.ephemeral_5m_input_tokens === undefined &&
+      cacheCreation?.ephemeral_1h_input_tokens === undefined
+        ? undefined
+        : (cacheCreation.ephemeral_5m_input_tokens ?? 0) +
+          (cacheCreation.ephemeral_1h_input_tokens ?? 0),
   }
 }
 
@@ -486,22 +489,25 @@ async function reportManagedAgentUsage(input: {
     // delta and persist the new running totals.
     const { session } = input
     const deltaFresh = Math.max(0, cumulative.freshInputTokens - session.usageInput)
+    const cacheReadTokens = cumulative.cacheReadTokens ?? session.usageCacheRead ?? 0
+    const cacheCreationTokens = cumulative.cacheCreationTokens ?? session.usageCacheCreation ?? 0
     const deltaCacheRead = Math.max(
       0,
-      cumulative.cacheReadTokens - (session.usageCacheRead ?? cumulative.cacheReadTokens),
+      cacheReadTokens - (session.usageCacheRead ?? cacheReadTokens),
     )
     const deltaCacheCreation = Math.max(
       0,
-      cumulative.cacheCreationTokens -
-        (session.usageCacheCreation ?? cumulative.cacheCreationTokens),
+      cacheCreationTokens - (session.usageCacheCreation ?? cacheCreationTokens),
     )
     // Copse usage records count cache reads and writes inside inputTokens.
     deltaInput = deltaFresh + deltaCacheRead + deltaCacheCreation
     deltaOutput = Math.max(0, cumulative.outputTokens - session.usageOutput)
     session.usageInput = cumulative.freshInputTokens
     session.usageOutput = cumulative.outputTokens
-    session.usageCacheRead = cumulative.cacheReadTokens
-    session.usageCacheCreation = cumulative.cacheCreationTokens
+    if (cumulative.cacheReadTokens !== undefined)
+      session.usageCacheRead = cumulative.cacheReadTokens
+    if (cumulative.cacheCreationTokens !== undefined)
+      session.usageCacheCreation = cumulative.cacheCreationTokens
     writeSession(input.threadId, session)
     if (deltaInput || deltaOutput) {
       input.onChunk({

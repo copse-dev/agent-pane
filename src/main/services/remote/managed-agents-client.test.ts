@@ -224,6 +224,45 @@ describe('runManagedAgentFromSettings usage', () => {
     }
   })
 
+  it('preserves cumulative cache baselines across omitted and null counters', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest(null)
+    const threadId = 'thread-managed-cache-omitted'
+    clearManagedAgentSession(threadId)
+    process.env['ANTHROPIC_API_KEY'] = 'test-key'
+    try {
+      await runTurn(threadId, {
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_input_tokens: 500,
+        cache_creation: { ephemeral_5m_input_tokens: 50 },
+      })
+      await runTurn(threadId, { input_tokens: 130, output_tokens: 30 })
+      await runTurn(threadId, {
+        input_tokens: 140,
+        output_tokens: 35,
+        cache_read_input_tokens: null,
+        cache_creation: null,
+      })
+      const persisted = expectRecord(storageGet(`managed-agent-session:${threadId}`))
+      assert.equal(persisted['usageCacheRead'], 500)
+      assert.equal(persisted['usageCacheCreation'], 50)
+      const { usage } = await runTurn(threadId, {
+        input_tokens: 150,
+        output_tokens: 40,
+        cache_read_input_tokens: 700,
+        cache_creation: { ephemeral_5m_input_tokens: 80 },
+      })
+      const chunk = usage[0]
+      assert.ok(chunk?.type === 'usage')
+      assert.equal(chunk.cacheReadTokens, 200)
+      assert.equal(chunk.cacheCreationTokens, 30)
+      assert.equal(chunk.inputTokens, 240)
+    } finally {
+      clearManagedAgentSession(threadId)
+      restoreWorkspace()
+    }
+  })
+
   it('treats null cache fields as zero', async () => {
     const restoreWorkspace = setWorkspaceRootForTest(null)
     clearManagedAgentSession('thread-managed-cache-null')
