@@ -974,6 +974,16 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   human-authored blue bubble. While any turn is running, the submit action says `Queue`, so typing
   during a machine turn has an explicit destination rather than silently entering the pending queue.
 
+## Footer context ring: colour is the passive signal
+
+The footer's context control is a ring with no text beside it; the percentage lives in its
+`aria-label` and the hover, which also carries token usage, cache, cost and subagent runs. Because
+nothing else says how full the window is, the ring fill carries the state: neutral below 80%, amber
+(`--warning`) from 80%, red (`--danger`) from 95%. Use the theme tokens, never literal colours, and
+keep the thresholds in `context-wheel.ts` (`CONTEXT_WARN_RATIO`, `CONTEXT_DANGER_RATIO`). An ACP
+agent's figure looks the same as a measured one; the hover's source note says where it came from. Do
+not reintroduce a second footer control for tokens; add rows to the shared hover instead.
+
 ## Footer popovers: one boundary, distinct trigger anchors
 
 Model, checkout, branch, overflow, and context-wheel popovers in `.input-footer` use the

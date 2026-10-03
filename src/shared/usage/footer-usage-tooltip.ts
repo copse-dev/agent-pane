@@ -8,15 +8,28 @@ import {
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import type { Message, ModelUsage, ThreadUsage } from '@shared/types'
 import type { FooterUsageDisplay } from './footer-usage-summary.ts'
-import { sumSubagentUsage } from './footer-usage-summary.ts'
+import { listSubagentRuns, sumSubagentUsage } from './footer-usage-summary.ts'
 import { formatTokenCount, formatUsd } from './format-usage-summary.ts'
 
 export type { SubagentUsageTotals } from './footer-usage-summary.ts'
 export { sumSubagentUsage } from './footer-usage-summary.ts'
 
+/** Listed runs beyond this collapse into a "+N more" line so the popover stays bounded. */
+const MAX_LISTED_SUBAGENT_RUNS = 5
+
 export interface FooterUsageTooltipRow {
   label: string
   value: string
+}
+
+/** One delegated run listed under the Subagents row. */
+export interface FooterUsageTooltipRun {
+  label: string
+  /** Model and state: "Haiku · running", "claude-sonnet-4-6 · done". */
+  detail: string
+  /** "21.8k in / 3.1k out"; empty until the run reports usage. */
+  value: string
+  status: 'running' | 'done' | 'error'
 }
 
 export interface FooterUsageTooltipModel {
@@ -38,6 +51,10 @@ export interface FooterUsageTooltipModel {
    * the thread has reported usage. Not folded into `rows` above.
    */
   subagentRow: FooterUsageTooltipRow | null
+  /** The runs behind `subagentRow`, capped; empty when none were recorded. */
+  subagentRuns: FooterUsageTooltipRun[]
+  /** Runs recorded beyond the cap in `subagentRuns`. */
+  subagentRunsOverflow: number
   /** Per-model tokens + cost, only when the thread spans more than one model. */
   modelRows: FooterUsageTooltipRow[]
   /** Why numbers are approximate or a cost is missing; null when neither applies. */
@@ -145,6 +162,22 @@ export function buildFooterUsageTooltip(
           )} in / ${formatTokenCount(subagents.outputTokens)} out`,
         }
       : null
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages)
+  const subagentRuns: FooterUsageTooltipRun[] = allRuns
+    .slice(0, MAX_LISTED_SUBAGENT_RUNS)
+    .map((run) => ({
+      label: run.label,
+      detail: [
+        run.model,
+        run.status === 'done' ? 'done' : run.status === 'error' ? 'failed' : 'running',
+      ]
+        .filter((part) => part !== undefined)
+        .join(' · '),
+      value: run.usage
+        ? `${formatTokenCount(run.usage.inputTokens)} in / ${formatTokenCount(run.usage.outputTokens)} out`
+        : '',
+      status: run.status,
+    }))
   const conversationLabel = subagentRow ? 'Excluding subagents' : null
   const threadLabel = subagentRow ? 'Whole thread' : null
 
@@ -173,6 +206,8 @@ export function buildFooterUsageTooltip(
     threadLabel,
     threadRows,
     subagentRow,
+    subagentRuns,
+    subagentRunsOverflow: Math.max(0, allRuns.length - subagentRuns.length),
     modelRows,
     note,
     freeNote,
