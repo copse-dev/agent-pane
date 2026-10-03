@@ -746,7 +746,22 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return (): void => undefined
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...(askUserRequest.threadId === undefined ? {} : { threadId: askUserRequest.threadId }),
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...(question.options === undefined ? {} : { options: [...question.options] }),
+            })),
+          }
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,

@@ -22,17 +22,26 @@ export interface PendingQuestionSummary {
   threadId: string | undefined
   /** The question texts, in order, as the agent wrote them (Markdown source). */
   questions: string[]
+  /** The quick answers the agent offered for each question, in question order ([] for none). */
+  options: readonly (readonly string[])[]
   receivedAt: number
 }
 
 /**
- * The dialog's pending questions, read-only. Answering stays in the dialog: a
- * surface that wants a question answered opens its thread, which is exactly
- * what makes the dialog surface it.
+ * The dialog's pending questions. Answering goes through the dialog's own queue
+ * ({@link AskUserRequests.answer}), so there is still exactly one path that
+ * releases a blocked agent; a surface that would rather not answer opens the
+ * thread, which makes the dialog surface the question.
  */
 export interface AskUserRequests {
   /** Every question still waiting — on screen or queued — oldest first. */
   pending(): PendingQuestionSummary[]
+  /**
+   * Answer a pending question from another surface, one answer per question in
+   * order. Returns false, sending nothing, when the request is no longer pending
+   * (answered or withdrawn elsewhere) or the answers do not match its questions.
+   */
+  answer(id: string, answers: readonly string[]): boolean
   /** Called after any change to {@link pending}. Returns an unsubscribe. */
   onChange(listener: () => void): () => void
 }
@@ -184,6 +193,21 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     showNext()
   }
 
+  function answerFrom(id: string, answers: readonly string[]): boolean {
+    if (active?.id === id) {
+      if (answers.length !== active.questions.length) return false
+      respond([...answers])
+      return true
+    }
+    const idx = queue.findIndex((req) => req.id === id)
+    const queued = queue[idx]
+    if (queued === undefined || answers.length !== queued.questions.length) return false
+    queue.splice(idx, 1)
+    void api.ask.respond(queued.id, [...answers])
+    syncAttention()
+    return true
+  }
+
   function submit(): void {
     respond(inputs.map((input) => input.value))
   }
@@ -275,8 +299,10 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           id: req.id,
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
+          options: req.questions.map((q) => q.options ?? []),
           receivedAt: req.receivedAt,
         })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener)
       return () => {

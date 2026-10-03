@@ -176,7 +176,11 @@ describe('projects pane Activity entry (component)', () => {
       answerOnce: () => false,
       onChange: () => () => {},
     }
-    const questions: AskUserRequests = { pending: () => [], onChange: () => () => {} }
+    const questions: AskUserRequests = {
+      pending: () => [],
+      answer: () => false,
+      onChange: () => () => {},
+    }
     const panel = mountActivityPanel(apiStub, store, { approvals, questions })
     button.click()
     assert.equal(panel.isOpen(), true)

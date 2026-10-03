@@ -268,6 +268,44 @@ dialog.activity-panel-overlay {
   padding-left: var(--spacing-lg);
   line-height: var(--line-height-base);
 }
+/* A question answered in place: the question, the agent's quick answers, then a
+   field. The quick answers fill the field; Send answer is in the action bar. */
+.activity-answer-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.activity-answer-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.activity-question {
+  margin: 0;
+  line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
+}
+.activity-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.activity-answer-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  resize: vertical;
+}
+.activity-answer-input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}
 .activity-detail-label {
   margin: 0 0 var(--spacing-xs);
   color: var(--text-muted);

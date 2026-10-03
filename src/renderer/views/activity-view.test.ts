@@ -3,13 +3,13 @@
 // row can hold it, and forgets everything on hide(). The overlay's behaviour
 // around it is covered by activity-panel.test.ts.
 import '../../../tests/setup-dom.ts'
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import type { ApprovalRequests } from './approval-dialog.ts'
-import type { AskUserRequests } from './ask-user-dialog.ts'
+import type { AskUserRequests, PendingQuestionSummary } from './ask-user-dialog.ts'
 import {
   createActivityView,
   ACTIVITY_AGE_REFRESH_MS as VIEW_AGE_REFRESH_MS,
@@ -43,6 +43,7 @@ const noApprovals: ApprovalRequests = {
 
 const noQuestions: AskUserRequests = {
   pending: () => [],
+  answer: () => false,
   onChange: () => () => {},
 }
 
@@ -60,7 +61,7 @@ interface Harness {
   flush: () => void
 }
 
-function setup(threads: Thread[]): Harness {
+function setup(threads: Thread[], questions: AskUserRequests = noQuestions): Harness {
   const store = createStore({
     projects: [{ id: 'p1', path: '/work', name: 'workspace' }],
     activeProjectId: 'p1',
@@ -86,7 +87,7 @@ function setup(threads: Thread[]): Harness {
     },
   }
   // Existing panel callers retain these named type imports after extraction.
-  const sources: ActivitySources = { approvals: noApprovals, questions: noQuestions }
+  const sources: ActivitySources = { approvals: noApprovals, questions }
   const deps: ActivityPanelDeps = {
     now: () => state.clock,
     setTimer: (fn) => {
@@ -292,5 +293,194 @@ describe('activity view', () => {
         'the finished run is listed under Recently finished',
       )
     })
+  })
+})
+
+/** A question source the test can drive: pending questions, and every answer sent. */
+function fakeQuestions(initial: PendingQuestionSummary[]): {
+  source: AskUserRequests
+  answers: Array<{ id: string; answers: readonly string[] }>
+  settle: (id: string) => void
+  accept: { value: boolean }
+} {
+  let pending = initial
+  const listeners = new Set<() => void>()
+  const answers: Array<{ id: string; answers: readonly string[] }> = []
+  const accept = { value: true }
+  const notify = (): void => {
+    for (const listener of [...listeners]) listener()
+  }
+  return {
+    answers,
+    accept,
+    settle: (id): void => {
+      pending = pending.filter((request) => request.id !== id)
+      notify()
+    },
+    source: {
+      pending: () => pending,
+      answer: (id, given): boolean => {
+        answers.push({ id, answers: given })
+        if (!accept.value) return false
+        pending = pending.filter((request) => request.id !== id)
+        notify()
+        return true
+      },
+      onChange: (listener) => {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+    },
+  }
+}
+
+const ASKED: PendingQuestionSummary = {
+  id: 'ask1',
+  threadId: 't1',
+  questions: ['Which database?', 'Why?'],
+  options: [['Postgres', 'SQLite'], []],
+  receivedAt: 1,
+}
+
+function showAsked(asked: PendingQuestionSummary[] = [ASKED]): {
+  harness: Harness
+  fake: ReturnType<typeof fakeQuestions>
+} {
+  const fake = fakeQuestions(asked)
+  const harness = setup([thread('t1')], fake.source)
+  document.body.append(harness.view.body, harness.view.status)
+  harness.state.shown = true
+  harness.view.show()
+  return { harness, fake }
+}
+
+function field(harness: Harness, index: number): HTMLTextAreaElement {
+  const found = harness.view.body.querySelector<HTMLTextAreaElement>(
+    `[data-control="answer-${String(index)}"]`,
+  )
+  if (!found) throw new Error(`no answer field ${String(index)}`)
+  return found
+}
+
+function typeInto(input: HTMLTextAreaElement, text: string): void {
+  input.value = text
+  input.dispatchEvent(new window.Event('input', { bubbles: true }))
+}
+
+function sendButton(harness: Harness): HTMLButtonElement {
+  const found = harness.view.body.querySelector<HTMLButtonElement>('.activity-answer')
+  if (!found) throw new Error('no Send answer button')
+  return found
+}
+
+describe('activity view answering a question in place', () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('shows each question with its quick answers and a field, Send answer off until typed', () => {
+    const { harness } = showAsked()
+    const body = harness.view.body
+    assert.deepEqual(
+      Array.from(body.querySelectorAll('.activity-question')).map((node) => node.textContent),
+      ['Which database?', 'Why?'],
+    )
+    assert.deepEqual(
+      Array.from(body.querySelectorAll('.activity-option')).map((node) => node.textContent),
+      ['Postgres', 'SQLite'],
+    )
+    assert.equal(body.querySelectorAll('.activity-answer-input').length, 2)
+    assert.equal(sendButton(harness).textContent, 'Send answer')
+    assert.equal(sendButton(harness).disabled, true)
+  })
+
+  it('fills the field from a quick answer without sending it', () => {
+    const { harness, fake } = showAsked()
+    harness.view.body.querySelector<HTMLButtonElement>('.activity-option')?.click()
+
+    assert.equal(field(harness, 0).value, 'Postgres')
+    assert.equal(sendButton(harness).disabled, false)
+    assert.deepEqual(fake.answers, [])
+  })
+
+  it('sends one answer per question, in order, and says so', () => {
+    const { harness, fake } = showAsked()
+    typeInto(field(harness, 0), 'Postgres')
+    typeInto(field(harness, 1), 'It scales')
+    sendButton(harness).click()
+
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Postgres', 'It scales'] }])
+    assert.equal(harness.view.status.textContent, 'Answered t1.')
+  })
+
+  it('sends an unanswered question as an empty answer rather than dropping it', () => {
+    const { harness, fake } = showAsked()
+    typeInto(field(harness, 1), 'Because')
+    sendButton(harness).click()
+
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['', 'Because'] }])
+  })
+
+  it('sends on Cmd+Enter in a field', () => {
+    const { harness, fake } = showAsked()
+    const input = field(harness, 0)
+    typeInto(input, 'SQLite')
+    input.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }),
+    )
+
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['SQLite', ''] }])
+  })
+
+  it('reports a question that was answered elsewhere first', () => {
+    const { harness, fake } = showAsked()
+    fake.accept.value = false
+    typeInto(field(harness, 0), 'Postgres')
+    sendButton(harness).click()
+
+    assert.equal(harness.view.status.textContent, 'That question was already answered.')
+  })
+
+  it('keeps a half-written answer across a redraw', () => {
+    const { harness, fake } = showAsked([
+      ASKED,
+      { ...ASKED, id: 'ask2', questions: ['Other?'], options: [[]], receivedAt: 2 },
+    ])
+    typeInto(field(harness, 0), 'Post')
+    // Another question lands while the field is not focused: the pane redraws.
+    harness.store.emit('thread_status_changed', 't1', 'idle')
+    harness.flush()
+    fake.settle('ask2')
+    harness.flush()
+
+    assert.equal(field(harness, 0).value, 'Post')
+    assert.equal(sendButton(harness).disabled, false)
+  })
+
+  it('does not rebuild the pane under someone who is typing in it', () => {
+    const { harness, fake } = showAsked([
+      ASKED,
+      { ...ASKED, id: 'ask2', questions: ['Other?'], options: [[]], receivedAt: 2 },
+    ])
+    const input = field(harness, 0)
+    input.focus()
+    typeInto(input, 'Post')
+    fake.settle('ask2')
+    harness.flush()
+
+    assert.ok(field(harness, 0) === input, 'the same field node is still on screen')
+    assert.ok(document.activeElement === input)
+    assert.equal(input.value, 'Post')
+  })
+
+  it('forgets a draft once its question is gone', () => {
+    const { harness, fake } = showAsked()
+    typeInto(field(harness, 0), 'Postgres')
+    fake.settle('ask1')
+    harness.flush()
+
+    assert.equal(harness.view.body.querySelectorAll('.activity-answer-input').length, 0)
   })
 })

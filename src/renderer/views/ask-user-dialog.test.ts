@@ -508,3 +508,81 @@ describe('ask_user dialog thread scoping', () => {
     assert.deepEqual(harness.responses, [{ id: 'q-other', answers: ['2'] }])
   })
 })
+
+// Another surface (the Activity view) answers through the dialog's own queue, so
+// the dialog stays the one path that releases a blocked agent.
+describe('answering from another surface', () => {
+  let store: AppStore
+
+  function mountHandle(api: ApiClient): ReturnType<typeof mountAskUserDialog> {
+    store = createStore({ activeThreadId: 'focused' })
+    const requests = mountAskUserDialog(api, store)
+    shimModal(dialog())
+    return requests
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    resetAttention()
+  })
+
+  it('reports the options the agent offered, per question', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({
+      id: 'q',
+      threadId: 'other',
+      questions: [{ question: 'Which DB?', options: ['Postgres', 'SQLite'] }, { question: 'Why?' }],
+    })
+
+    assert.deepEqual(requests.pending()[0]?.options, [['Postgres', 'SQLite'], []])
+  })
+
+  it('answers the question on screen, closes the dialog and moves to the next', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'first', threadId: 'focused', questions: [{ question: 'First?' }] })
+    harness.emit({ id: 'second', threadId: 'focused', questions: [{ question: 'Second?' }] })
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'First?')
+
+    assert.equal(requests.answer('first', ['yes']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'first', answers: ['yes'] }])
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Second?')
+  })
+
+  it('answers a question queued for another thread without opening the dialog', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'q', threadId: 'other', questions: [{ question: 'Which DB?' }] })
+    assert.equal(dialog().open, false)
+    assert.equal(isThreadAwaitingAttention('other'), true)
+
+    assert.equal(requests.answer('q', ['Postgres']), true)
+
+    assert.deepEqual(harness.responses, [{ id: 'q', answers: ['Postgres'] }])
+    assert.deepEqual(requests.pending(), [])
+    assert.equal(isThreadAwaitingAttention('other'), false)
+    assert.equal(dialog().open, false)
+  })
+
+  it('sends nothing for a request that is gone or an answer that does not fit', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({
+      id: 'q',
+      threadId: 'other',
+      questions: [{ question: 'One?' }, { question: 'Two?' }],
+    })
+
+    assert.equal(requests.answer('nope', ['x']), false)
+    assert.equal(requests.answer('q', ['only one']), false)
+    assert.deepEqual(harness.responses, [])
+    assert.equal(requests.pending().length, 1)
+
+    assert.equal(requests.answer('q', ['a', 'b']), true)
+    assert.equal(requests.answer('q', ['a', 'b']), false, 'a second answer finds nothing pending')
+    assert.equal(harness.responses.length, 1)
+  })
+})
