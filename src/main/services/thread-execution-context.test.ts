@@ -91,6 +91,39 @@ describe('thread execution context', () => {
       /does not belong/,
     )
   })
+  it('inspects a checkout paused in Git recovery without recording its detached HEAD', async () => {
+    const persisted: ThreadWorktree = {
+      path: '/diagnostic/path',
+      branch: 'feature/rebase',
+      baseBranch: 'main',
+      baseCommit: 'abc',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    let branchSyncs = 0
+    const dependencies: ThreadExecutionContextDependencies = {
+      getProjectRoot: () => '/project',
+      getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+      validateWorktree: async () => {
+        throw new ThreadWorktreeDetachedError(persisted.branch)
+      },
+      validateWorktreeRecovery: async (): Promise<ValidatedThreadWorktreeRecovery> => ({
+        ...persisted,
+        branch: null,
+        path: '/validated/root',
+        root: '/validated/root',
+        gitDir: '/repo/.git/worktrees/thread-1',
+        commonGitDir: '/repo/.git',
+      }),
+      syncWorktreeBranch: async () => {
+        branchSyncs += 1
+      },
+    }
+    const context = await inspectThreadExecutionContext('project-1', 'thread-1', dependencies)
+    assert.equal(context.root, '/validated/root')
+    assert.equal(context.branch, null)
+    assert.equal(branchSyncs, 0)
+  })
   it('is absent outside an agent run', () => {
     assert.equal(getThreadExecutionContext(), null)
     assert.throws(() => requireThreadExecutionContext(), /No thread execution context/)
