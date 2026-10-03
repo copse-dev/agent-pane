@@ -1,3 +1,4 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -628,7 +629,7 @@ export class AppleDevelopmentService {
     this.leases.set(key, queued)
     await prior
     try {
-      return await run()
+      return await storageCleanup().use('builds', run)
     } finally {
       release()
       if (this.leases.get(key) === queued) this.leases.delete(key)

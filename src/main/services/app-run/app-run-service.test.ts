@@ -94,7 +94,17 @@ afterEach(() => {
   services.length = 0
   storageDelete('app-run.state')
 })
-function fixture(): {
+async function waitStage(service: AppRunService, id: string, expected: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while ((await service.operations(owner)).find((op) => op.id === id)?.stage !== expected) {
+    assert.ok(Date.now() < deadline, `Operation did not reach ${expected}`)
+    await tick()
+  }
+}
+function fixture(
+  holdStorage: () => Promise<() => Promise<void>> = async (): Promise<() => Promise<void>> =>
+    async (): Promise<void> => {},
+): {
   service: AppRunService
   driver: Driver
   presented: { id: string; owner: AppRunOwner }[]
@@ -113,6 +123,7 @@ function fixture(): {
   let root = '/work/thread'
   const presented: { id: string; owner: AppRunOwner }[] = []
   const service = new AppRunService({
+    holdStorage,
     drivers: { android: driver, apple: empty },
     resolveRoot: async (): Promise<string> => root,
     present: async (id, context): Promise<void> => {
@@ -146,11 +157,11 @@ describe('shared app running', () => {
     const { service, driver } = fixture()
     await service.discover(owner)
     const first = await service.execute(owner, selection, 'run')
-    await tick()
+    await waitStage(service, first.id, 'building')
     driver.finish?.()
-    await tick()
+    await waitStage(service, first.id, 'running')
     const second = await service.execute(owner, selection, 'run')
-    await tick()
+    await waitStage(service, second.id, 'building')
     assert.deepEqual(driver.stopped, ['session'])
     assert.equal(
       (await service.operations(owner)).find((op) => op.id === first.id)?.stage,
@@ -163,13 +174,13 @@ describe('shared app running', () => {
     const { service, driver, presented } = fixture()
     await service.discover(owner)
     const operation = await service.execute(owner, selection, 'run')
-    await tick()
+    await waitStage(service, operation.id, 'building')
     assert.equal(driver.root, '/work/thread')
     assert.equal((await service.operations(owner))[0]?.stage, 'building')
     assert.match((await service.operations(owner))[0]?.logs ?? '', /Compiling/)
     assert.deepEqual(presented, [])
     driver.finish?.()
-    await tick()
+    await waitStage(service, operation.id, 'running')
     assert.equal((await service.operations(owner))[0]?.stage, 'running')
     assert.deepEqual(presented, [{ id: 'android:123', owner }])
     assert.equal((await service.discover(owner)).preferred?.appId, selection.appId)
@@ -196,17 +207,57 @@ describe('shared app running', () => {
     const { service, driver, presented } = fixture()
     await service.discover(owner)
     const operation = await service.execute(owner, selection, 'run')
-    await tick()
+    await waitStage(service, operation.id, 'building')
     await assert.rejects(service.execute(owner, selection, 'build'), /already running/)
     const other = { projectId: owner.projectId, threadId: 'other' }
     assert.deepEqual(await service.operations(other), [])
     await assert.rejects(service.cancel(other, operation.id), /belongs/)
     await assert.rejects(service.stop(other, operation.id), /belongs/)
     await service.cancel(owner, operation.id)
-    await tick()
+    await waitStage(service, operation.id, 'cancelled')
     assert.equal(driver.aborted, true)
     assert.equal((await service.operations(owner))[0]?.stage, 'cancelled')
     assert.deepEqual(presented, [])
+  })
+  it('cancels while waiting for the storage lease without starting the driver', async () => {
+    let grant = (_release: () => Promise<void>): void => {
+      throw new Error('Lease not requested')
+    }
+    let released = 0
+    const held = new Promise<() => Promise<void>>((resolve) => {
+      grant = resolve
+    })
+    const { service, driver } = fixture(() => held)
+    await service.discover(owner)
+    const operation = await service.execute(owner, selection, 'run')
+    await service.cancel(owner, operation.id)
+    grant(async () => {
+      released++
+    })
+    await waitStage(service, operation.id, 'cancelled')
+    const deadline = Date.now() + 5_000
+    while (released === 0) {
+      assert.ok(Date.now() < deadline, 'Cancelled operation did not release storage')
+      await tick()
+    }
+    assert.equal(driver.root, '')
+    assert.equal(released, 1)
+  })
+  it('holds build data for a launched app until that app is stopped', async () => {
+    let released = 0
+    const { service, driver } = fixture(
+      async (): Promise<() => Promise<void>> => async (): Promise<void> => {
+        released++
+      },
+    )
+    await service.discover(owner)
+    const operation = await service.execute(owner, selection, 'run')
+    await waitStage(service, operation.id, 'building')
+    driver.finish?.()
+    await waitStage(service, operation.id, 'running')
+    assert.equal(released, 0)
+    await service.stop(owner, operation.id)
+    assert.equal(released, 1)
   })
   it('never replays a persisted operation after a restart', async () => {
     const { service, driver } = fixture()
