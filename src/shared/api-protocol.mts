@@ -67,5 +67,6 @@
 // v38 conservatively versions interrupted-turn recovery metadata.
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
 // v40 versions the queued-message model snapshot in thread payloads.
-// v41 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 41 as const
+// v41 versions container-run consent fields and terminal state.
+// v42 versions the context_compacted agent chunk (OpenAI server-side compaction).
+export const API_PROTOCOL_VERSION = 42 as const
