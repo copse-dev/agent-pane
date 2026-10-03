@@ -82443,7 +82443,12 @@ function bindSelectionQuote(transcript, actions) {
   const status = el("div", { class: "transcript-selection-status", role: "status", hidden: true });
   const popup = el(
     "div",
-    { class: "transcript-selection-quote", hidden: true, role: "group", "aria-label": "Selection reply" },
+    {
+      class: "transcript-selection-quote",
+      hidden: true,
+      role: "group",
+      "aria-label": "Selection reply"
+    },
     input2,
     el("div", { class: "transcript-selection-actions" }, sendButton),
     status
@@ -82491,7 +82496,9 @@ function bindSelectionQuote(transcript, actions) {
   };
   const selectionBounds = () => {
     if (!selectedRange) return null;
-    const rects = [...selectedRange.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+    const rects = [...selectedRange.getClientRects()].filter(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
     if (rects.length === 0) return null;
     return {
       top: Math.min(...rects.map((rect) => rect.top)),
@@ -82538,7 +82545,10 @@ function bindSelectionQuote(transcript, actions) {
         top = selection2.bottom + gap;
       }
     }
-    const left = Math.max(bounds.left + gap, Math.min(selection2.left, bounds.right - size.width - gap));
+    const left = Math.max(
+      bounds.left + gap,
+      Math.min(selection2.left, bounds.right - size.width - gap)
+    );
     popup.style.left = `${Math.max(gap, Math.min(left, window.innerWidth - size.width - gap))}px`;
     popup.style.top = `${top}px`;
   };
@@ -82618,7 +82628,9 @@ function bindSelectionQuote(transcript, actions) {
     if (event.metaKey || event.ctrlKey) void sendReply();
     else addToPrompt();
   });
-  sendButton.addEventListener("mousedown", (event) => event.preventDefault());
+  sendButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
   sendButton.addEventListener("click", () => void sendReply());
   const onPointerDown = (event) => {
     if (event.target instanceof Node && popup.contains(event.target)) return;
