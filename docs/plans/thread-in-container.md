@@ -475,6 +475,11 @@ guarantee, and the record must say so.
   the secret canary exists to catch precisely that. Decision 3 stays "narrowed": exactly
   one credential, by value, for the run — now held by a third-party process, which is the
   material change and the reason for A3.
+  The pinned Codex ACP adapter also receives its supported
+  `DEFAULT_AUTH_REQUEST={"methodId":"api-key"}` when a key is supplied: its login
+  method reads that same environment key, whereas the variable alone does not
+  authenticate a fresh guest. The request carries no secret and is absent from
+  sign-in runs, which continue to use the explicitly carried login files.
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed
