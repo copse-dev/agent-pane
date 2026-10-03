@@ -135,6 +135,15 @@ dialog.activity-panel-overlay {
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
 }
+/* A folded schedule's runs, once opened out, sit under it as ordinary rows. */
+.activity-fold-run .activity-row-open {
+  padding-left: calc(var(--spacing-lg) + var(--spacing-lg));
+}
+.activity-fold-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
 .activity-glyph {
   grid-area: glyph;
   justify-self: center;
@@ -219,6 +228,7 @@ dialog.activity-panel-overlay {
 }
 .activity-detail-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm);
   margin: 0;
@@ -226,6 +236,8 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-sm);
 }
 .activity-detail-state {
+  flex: none;
+  white-space: nowrap;
   padding: 2px var(--spacing-sm);
   border-radius: var(--radius);
   background: var(--bg-muted);
@@ -333,8 +345,10 @@ dialog.activity-panel-overlay {
   border-top: 1px solid var(--border);
   background: var(--bg-subtle);
 }
-.activity-spacer {
-  flex: 1 1 auto;
+.activity-decide {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
 }
 /* Beside a filled Approve, an outlined chip needs an edge that can be located
    (docs/ui-taste.md, "An outlined chip needs an edge you can find"). */
@@ -399,6 +413,7 @@ dialog.activity-panel-overlay {
   box-sizing: border-box;
   flex: none;
   width: var(--chat-composer-width);
+  max-width: 100%;
   margin: 14px auto 7px;
   padding-left: 2px;
   color: var(--text-muted);
@@ -444,6 +459,7 @@ dialog.activity-panel-overlay {
 }
 .activity-strip-name {
   overflow: hidden;
+  line-height: 1.4;
   font-size: var(--font-size-sm);
   font-weight: 600;
   text-overflow: ellipsis;
@@ -451,6 +467,7 @@ dialog.activity-panel-overlay {
 }
 .activity-strip-stats {
   display: flex;
+  line-height: 1.4;
   gap: 6px;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -484,6 +501,7 @@ dialog.activity-panel-overlay {
 .activity-home .activity-group-title {
   display: block;
   padding: 11px 18px 7px;
+  line-height: 1.4;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -523,6 +541,13 @@ dialog.activity-panel-overlay {
 .activity-home .activity-row[data-state='needs-answer'] .activity-state,
 .activity-home .activity-row[data-state='working'] .activity-state {
   display: none;
+}
+
+/* The row glyph is the state's whole signal once the word is dropped, so it takes
+   the normal icon size rather than the small one (chevrons keep theirs). */
+.activity-home .activity-glyph {
+  width: calc(16px * var(--ui-scale));
+  height: calc(16px * var(--ui-scale));
 }
 
 /* The detail pane. */
@@ -617,6 +642,9 @@ dialog.activity-panel-overlay {
   }
   .activity-home .activity-strip {
     margin-bottom: 10px;
+    /* The strip scrolls without a bar, so its overflowing edge fades to say there
+       is more. A strip that fits ends before the fade starts. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .activity-home .activity-strip-card,
   .activity-home .activity-strip-card:first-child {
@@ -626,6 +654,10 @@ dialog.activity-panel-overlay {
     width: auto;
     padding: 6px 12px;
     border-radius: var(--radius);
+  }
+  /* A one-line pill keeps the count that needs you and drops the rest. */
+  .activity-home .activity-strip-working {
+    display: none;
   }
   .activity-home .activity-panel-body {
     grid-template-columns: minmax(0, 1fr);

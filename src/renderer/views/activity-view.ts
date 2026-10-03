@@ -8,6 +8,8 @@ import {
   arrowUpRightIcon,
   checkIcon,
   chevronDownIcon,
+  chevronRightIcon,
+  clockIcon,
   messageQuestionIcon,
   runningStatusIcon,
   shieldIcon,
@@ -209,6 +211,10 @@ export function createActivityView(
   // re-open what the user folded.
   const seenNeedsYou = new Set<string>()
   let projectFilter: string | null = null
+  // Automation folds the user has opened out. Session-only, like the folded groups.
+  const expandedFolds = new Set<string>()
+  // Rows drawn under an opened fold, as of the last draw: they sit indented.
+  const foldRunKeys = new Set<string>()
   // The user has chosen a row (click or arrow key) since the view was shown.
   let userChose = false
   let renderScheduled = false
@@ -328,6 +334,7 @@ export function createActivityView(
     const input = el('textarea', {
       class: 'activity-answer-input',
       rows: '2',
+      placeholder: 'Or type an answer…',
       'data-control': `answer-${String(index)}`,
       'aria-labelledby': questionId,
     })
@@ -472,10 +479,12 @@ export function createActivityView(
   }
 
   function detailActions(row: ActivityRow): HTMLElement {
-    const actions: HTMLElement[] = [openThreadButton(row), el('span', { class: 'activity-spacer' })]
+    const actions: HTMLElement[] = [openThreadButton(row)]
+    // The decision stays one unit when the bar wraps: Reject never parts from Approve.
+    const decide: HTMLElement[] = []
     if (row.state === 'needs-approval' && row.approval) {
       const title = row.approval.title
-      actions.push(
+      decide.push(
         button(
           'ui-btn-secondary activity-reject',
           'reject',
@@ -496,7 +505,7 @@ export function createActivityView(
         `Approve: ${title} (${row.threadTitle})`,
       )
       approve.disabled = settling
-      actions.push(approve)
+      decide.push(approve)
     } else if (row.state === 'needs-answer' && row.requestId) {
       const requestId = row.requestId
       const answer = button(
@@ -510,8 +519,9 @@ export function createActivityView(
       )
       answer.dataset['requestId'] = requestId
       answer.disabled = settling || !hasAnswer(requestId)
-      actions.push(answer)
+      decide.push(answer)
     }
+    if (decide.length > 0) actions.push(el('span', { class: 'activity-decide' }, ...decide))
     return el('div', { class: 'activity-detail-actions' }, ...actions)
   }
 
@@ -557,7 +567,68 @@ export function createActivityView(
     )
   }
 
+  /** The rows a group draws: each fold, followed by its runs while it is opened out. */
+  function drawnRows(group: ActivityGroup): ActivityRow[] {
+    return group.rows.flatMap((row) => {
+      if (!row.fold || !expandedFolds.has(row.key)) return [row]
+      for (const run of row.fold.runs) foldRunKeys.add(run.key)
+      return [row, ...row.fold.runs]
+    })
+  }
+
+  /** One row standing for several runs of an automation schedule; it opens out, not into a thread. */
+  function foldElement(
+    row: ActivityRow,
+    at: number,
+    fold: NonNullable<ActivityRow['fold']>,
+  ): HTMLLIElement {
+    const open = expandedFolds.has(row.key)
+    const elapsed = row.since === null ? null : Math.max(0, at - row.since)
+    const toggle = el(
+      'button',
+      {
+        type: 'button',
+        class: 'activity-row-open activity-fold-toggle',
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-label': `${STATE_LONG[row.state]}: ${row.threadTitle}, ${row.want}${row.projectName ? `, ${row.projectName}` : ''}`,
+      },
+      clockIcon('ui-icon ui-icon-sm activity-glyph'),
+      el('span', { class: 'activity-thread', title: row.threadTitle }, row.threadTitle),
+      elapsed === null || row.since === null
+        ? el('span', { class: 'activity-age' })
+        : el(
+            'time',
+            { class: 'activity-age', datetime: new Date(row.since).toISOString() },
+            formatAge(elapsed),
+          ),
+      el(
+        'span',
+        { class: 'activity-row-second' },
+        el('span', { class: 'activity-state' }, fold.kind === 'failed' ? 'Failed' : 'Done'),
+        el('span', { class: 'activity-want-text' }, row.want),
+        (open ? chevronDownIcon : chevronRightIcon)('ui-icon ui-icon-sm activity-fold-chevron'),
+      ),
+      el('span', { class: 'activity-project' }, row.projectName ?? ''),
+    )
+    toggle.addEventListener('click', () => {
+      if (expandedFolds.has(row.key)) expandedFolds.delete(row.key)
+      else expandedFolds.add(row.key)
+      renderNow()
+    })
+    return el(
+      'li',
+      {
+        class: 'activity-row activity-fold',
+        'data-row-key': row.key,
+        'data-state': row.state,
+        'data-fold': fold.kind,
+      },
+      toggle,
+    )
+  }
+
   function rowElement(row: ActivityRow, at: number): HTMLLIElement {
+    if (row.fold) return foldElement(row, at, row.fold)
     const elapsed = row.since === null ? null : Math.max(0, at - row.since)
     const selected = row.key === selectedKey
     const second = el(
@@ -607,7 +678,7 @@ export function createActivityView(
     return el(
       'li',
       {
-        class: 'activity-row',
+        class: foldRunKeys.has(row.key) ? 'activity-row activity-fold-run' : 'activity-row',
         'data-row-key': row.key,
         'data-state': row.state,
         ...(selected ? { 'data-selected': 'true' } : {}),
@@ -634,6 +705,8 @@ export function createActivityView(
       row.key === selectedKey,
       elapsed === null ? null : formatAge(elapsed),
       rowLabel(row, at),
+      row.fold ? [row.fold.kind, row.fold.runs.length, expandedFolds.has(row.key)] : null,
+      foldRunKeys.has(row.key),
     ])
   }
 
@@ -709,7 +782,7 @@ export function createActivityView(
         ?.setAttribute('aria-expanded', folded ? 'false' : 'true')
     }
     entry.rows.hidden = folded
-    patchChildren(entry.rows, folded ? [] : group.rows.map((row) => cachedRow(row, at)))
+    patchChildren(entry.rows, folded ? [] : drawnRows(group).map((row) => cachedRow(row, at)))
     return entry.section
   }
 
@@ -746,7 +819,9 @@ export function createActivityView(
         ? el('span', { class: 'activity-strip-need' }, `${String(need)} need you`)
         : el('span', {}, 'All clear'),
     )
-    if (working > 0) stats.append(el('span', {}, `${String(working)} working`))
+    if (working > 0) {
+      stats.append(el('span', { class: 'activity-strip-working' }, `${String(working)} working`))
+    }
     const node = el(
       'button',
       {
@@ -802,7 +877,10 @@ export function createActivityView(
   }
 
   function rowOpeners(): HTMLButtonElement[] {
-    return [...list.querySelectorAll<HTMLButtonElement>('.activity-row-open')]
+    // A fold's toggle opens nothing, so the arrow keys skip it (Tab still reaches it).
+    return [
+      ...list.querySelectorAll<HTMLButtonElement>('.activity-row-open:not(.activity-fold-toggle)'),
+    ]
   }
 
   function selectedOpener(): HTMLButtonElement | undefined {
@@ -925,6 +1003,7 @@ export function createActivityView(
     cancelRender = null
     const at = now()
     lastRenderAt = at
+    foldRunKeys.clear()
     const focus = captureFocus()
     const previousListScrollTop = list.scrollTop
     const listScrollAnchor = captureListScrollAnchor()
@@ -981,9 +1060,10 @@ export function createActivityView(
     needsYouSignature = signature
 
     // Folded groups hold no selectable row: selection moves to the nearest visible one.
-    const rows = groups
-      .filter((group) => !(host.collapsibleGroups && collapsed.has(group.id)))
-      .flatMap((group) => group.rows)
+    const shownGroups = groups.filter(
+      (group) => !(host.collapsibleGroups && collapsed.has(group.id)),
+    )
+    const rows = shownGroups.flatMap((group) => drawnRows(group)).filter((row) => !row.fold)
     const urgent = rows[0]
     if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key
     let selected = rows.find((row) => row.key === selectedKey)
@@ -1027,7 +1107,7 @@ export function createActivityView(
       if (!needsYou || needsYou.rows.length === 0) children.push(quiet)
       children.push(...populated.map((group) => groupElement(group, at)))
       patchChildren(list, children)
-      const live = new Set(rows.map((row) => row.key))
+      const live = new Set(shownGroups.flatMap((group) => drawnRows(group)).map((row) => row.key))
       for (const rowKey of rowCache.keys()) {
         if (!live.has(rowKey)) rowCache.delete(rowKey)
       }
@@ -1130,6 +1210,7 @@ export function createActivityView(
     rowCache.clear()
     stripCache.clear()
     collapsed = defaultCollapsed()
+    expandedFolds.clear()
     seenNeedsYou.clear()
     projectFilter = null
     userChose = false

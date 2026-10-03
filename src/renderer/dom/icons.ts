@@ -25,6 +25,15 @@ export function chevronDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-down', ['m6 9 6 6 6-6'], className)
 }
 
+/** Clock face — a schedule, or something that ran at a set time. */
+export function clockIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'clock',
+    ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', 'M12 6v6l4 2'],
+    className,
+  )
+}
+
 export function chevronUpIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-up', ['m18 15-6-6-6 6'], className)
 }

@@ -28,6 +28,8 @@ export interface ActivityThread {
   unreadAt?: number
   projectId: string
   projectName: string
+  /** The automation schedule that started the thread, when one did. */
+  schedule?: { id: string; name: string }
 }
 
 /** What the renderer observed of a thread's runs this session. */
@@ -63,6 +65,12 @@ export interface ActivityRow {
   approval: PendingApprovalSummary | null
   /** Epoch the age counts from; null when the renderer never saw it start. */
   since: number | null
+  /**
+   * Set on a row that stands for several runs of one automation schedule (see
+   * {@link foldScheduleRuns}). Such a row names no thread and opens nothing; its
+   * `runs` are the ordinary rows it folds, newest first.
+   */
+  fold?: { kind: 'finished' | 'failed'; runs: ActivityRow[] }
 }
 
 export interface ActivityGroup {
@@ -82,6 +90,8 @@ export interface ActivityInput {
 
 /** Settled rows are a reminder, not a log: the group keeps only the latest few. */
 export const RECENT_ROW_LIMIT = 10
+/** This many settled runs of one schedule fold into one row; a single run stays its own row. */
+export const SCHEDULE_FOLD_AT = 2
 /** Long enough to identify the request; the row's own CSS ellipsis does the rest. */
 export const WANT_MAX_CHARS = 140
 /** Shown for a thread that has no name yet (plan: "never blank"). */
@@ -162,6 +172,7 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
   ].sort((a, b) => (a.since ?? 0) - (b.since ?? 0))
   const waitingThreads = new Set(needsYou.flatMap((row) => (row.threadId ? [row.threadId] : [])))
 
+  const scheduleOf = new Map(input.threads.map((thread) => [thread.id, thread.schedule]))
   const threadRow = (
     thread: ActivityThread,
     state: ActivityRowState,
@@ -217,17 +228,73 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
   working.sort(newestFirst)
   recent.sort((a, b) => (a.state === b.state ? newestFirst(a, b) : a.state === 'failed' ? -1 : 1))
 
+  const { folds: folded, rest: single } = foldScheduleRuns(recent, scheduleOf)
+
   const groups: ActivityGroup[] = [
     { id: 'needs-you', label: GROUP_LABELS['needs-you'], rows: needsYou, total: needsYou.length },
     { id: 'working', label: GROUP_LABELS.working, rows: working, total: working.length },
     {
       id: 'recent',
       label: GROUP_LABELS.recent,
-      rows: recent.slice(0, RECENT_ROW_LIMIT),
-      total: recent.length,
+      rows: [...folded, ...single.slice(0, RECENT_ROW_LIMIT)],
+      total: folded.length + single.length,
     },
   ]
   return groups
+}
+
+/**
+ * Fold the settled runs of one automation schedule into one row per schedule
+ * and outcome, so a schedule that runs every hour cannot fill the list.
+ *
+ * Clean finishes and failures fold separately, so a failure is never hidden among
+ * successes. A schedule needs {@link SCHEDULE_FOLD_AT} runs of one outcome to
+ * fold; a lone run stays an ordinary row. Failed folds come first, and both come
+ * before the single rows, so the recent cap never hides one. Runs inside a fold
+ * keep the incoming (newest first) order. A thread that is not from a schedule is
+ * never folded.
+ */
+export function foldScheduleRuns(
+  recent: readonly ActivityRow[],
+  scheduleOf: ReadonlyMap<string, ActivityThread['schedule']>,
+): { folds: ActivityRow[]; rest: ActivityRow[] } {
+  const buckets = new Map<string, ActivityRow[]>()
+  const keyOf = (row: ActivityRow): string | null => {
+    const schedule = row.threadId === null ? undefined : scheduleOf.get(row.threadId)
+    if (!schedule || row.projectId === null) return null
+    return `${row.state}:${row.projectId}:${schedule.id}`
+  }
+  for (const row of recent) {
+    const key = keyOf(row)
+    if (key === null) continue
+    buckets.set(key, [...(buckets.get(key) ?? []), row])
+  }
+  const folds: ActivityRow[] = []
+  const folded = new Set<ActivityRow>()
+  for (const [bucket, runs] of buckets) {
+    const first = runs[0]
+    if (!first || runs.length < SCHEDULE_FOLD_AT) continue
+    const kind = first.state === 'failed' ? 'failed' : 'finished'
+    const name = first.threadId === null ? undefined : scheduleOf.get(first.threadId)?.name
+    for (const run of runs) folded.add(run)
+    folds.push({
+      key: `fold:${bucket}`,
+      state: first.state,
+      threadId: null,
+      threadTitle: name ?? first.threadTitle,
+      projectId: first.projectId,
+      projectName: first.projectName,
+      want: `${String(runs.length)} runs`,
+      detail: null,
+      requestId: null,
+      requestType: null,
+      approval: null,
+      since: first.since,
+      fold: { kind, runs },
+    })
+  }
+  folds.sort((a, b) => (a.state === b.state ? 0 : a.state === 'failed' ? -1 : 1))
+  return { folds, rest: recent.filter((row) => !folded.has(row)) }
 }
 
 /**
@@ -252,6 +319,14 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
         ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
         projectId: project.id,
         projectName,
+        ...(thread.automation
+          ? {
+              schedule: {
+                id: thread.automation.scheduleId,
+                name: thread.automation.scheduleName,
+              },
+            }
+          : {}),
       })
     }
   }
@@ -265,6 +340,14 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
       ...(carried.thread.unreadAt !== undefined ? { unreadAt: carried.thread.unreadAt } : {}),
       projectId: project.id,
       projectName: projectDisplayName(project),
+      ...(carried.thread.automation
+        ? {
+            schedule: {
+              id: carried.thread.automation.scheduleId,
+              name: carried.thread.automation.scheduleName,
+            },
+          }
+        : {}),
     })
   }
   return [...out.values()]
