@@ -65,4 +65,72 @@ describe('bindChatComposerLayout', () => {
     assert.equal(focusCount, 0)
     unbind()
   })
+  it('shows the Activity home for an empty thread and hands the pane back with the first message', () => {
+    mountLayout()
+    const store = createStore({ activeThreadId: 'thread-1', threads: [emptyThread()] })
+    const shown: boolean[] = []
+
+    const unbind = bindChatComposerLayout(store, (value) => {
+      shown.push(value)
+    })
+    const pane = document.getElementById('pane-chat')
+    assert.ok(pane?.classList.contains('is-activity-home'))
+    assert.equal(shown.at(-1), true)
+
+    store.setState({
+      threads: [
+        {
+          ...emptyThread(),
+          messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 2 }],
+        },
+      ],
+    })
+    store.emit('message_added', 'thread-1', 'm1')
+    assert.equal(pane?.classList.contains('is-activity-home'), false)
+    assert.equal(shown.at(-1), false)
+    unbind()
+  })
+
+  it('does not treat a thread that still has to load as empty', () => {
+    mountLayout()
+    const store = createStore({
+      activeThreadId: 'thread-1',
+      threads: [{ ...emptyThread(), messagesLoaded: false }],
+    })
+    const shown: boolean[] = []
+
+    const unbind = bindChatComposerLayout(store, (value) => {
+      shown.push(value)
+    })
+
+    assert.equal(
+      document.getElementById('pane-chat')?.classList.contains('is-activity-home'),
+      false,
+    )
+    assert.equal(shown.at(-1), false)
+    unbind()
+  })
+
+  it('focuses the composer once per empty thread, not on every store event', () => {
+    const composer = mountLayout()
+    let focusCount = 0
+    composer.focus = (): void => {
+      focusCount += 1
+    }
+    const store = createStore({ activeThreadId: 'thread-1', threads: [emptyThread()] })
+
+    const unbind = bindChatComposerLayout(store)
+    assert.equal(focusCount, 1)
+    store.emit('threads_changed')
+    store.emit('threads_changed')
+    assert.equal(focusCount, 1, 'a re-focus would pull the caret out of the Activity list')
+
+    store.setState({
+      activeThreadId: 'thread-2',
+      threads: [emptyThread(), { ...emptyThread(), id: 'thread-2' }],
+    })
+    store.emit('threads_changed')
+    assert.equal(focusCount, 2, 'a different empty thread gets the composer')
+    unbind()
+  })
 })

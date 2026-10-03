@@ -110,9 +110,9 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-divider-hover.png')
   })
 
-  it('shows the gradient in an empty composer-centered chat', async () => {
+  it('shows the gradient in an empty Activity-home chat', async () => {
     await $('.project-new-thread-btn').click()
-    await $('.pane-chat.composer-centered').waitForExist()
+    await $('.pane-chat.is-activity-home').waitForExist()
     const gradient = await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
       return pane ? getComputedStyle(pane).backgroundImage : ''
@@ -121,32 +121,29 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-gradient-empty.png')
   })
 
-  it('keeps a single hairline on the centered new-thread composer', async () => {
+  it('docks the composer with its own single border under the Activity home', async () => {
     // Prior test already opened a blank thread; ensure we stay on that surface
     // without a full remount (another navigation was the flake surface).
-    if (!(await $('.pane-chat.composer-centered').isExisting())) {
+    if (!(await $('.pane-chat.is-activity-home').isExisting())) {
       await $('.project-new-thread-btn').click()
-      await $('.pane-chat.composer-centered').waitForExist()
+      await $('.pane-chat.is-activity-home').waitForExist()
     }
-    const border = await browser.execute(() => {
+    const layout = await browser.execute(() => {
+      const home = document.getElementById('activity-home')
+      const body = home?.querySelector('.activity-panel-body')
       const input = document.getElementById('input-bar')
-      if (!input) return null
+      if (!home || !body || !input) return null
       const style = getComputedStyle(input)
       return {
-        top: style.borderTopWidth,
-        right: style.borderRightWidth,
-        bottom: style.borderBottomWidth,
-        left: style.borderLeftWidth,
-        boxShadow: style.boxShadow,
+        borderTop: style.borderTopWidth,
+        bodyBottom: body.getBoundingClientRect().bottom,
+        inputTop: input.getBoundingClientRect().top,
       }
     })
-    expect(border).not.toBeNull()
-    if (!border) throw new Error('Missing #input-bar')
-    expect(border.top).toBe('0px')
-    expect(border.right).toBe('0px')
-    expect(border.bottom).toBe('0px')
-    expect(border.left).toBe('0px')
-    expect(border.boxShadow).toMatch(/0px 0px 0px 1px/)
-    await saveAppScreenshot('chat-layout-composer-centered-border.png')
+    expect(layout).not.toBeNull()
+    if (!layout) throw new Error('Missing Activity home or #input-bar')
+    expect(layout.borderTop).toBe('1px')
+    expect(layout.bodyBottom).toBeLessThanOrEqual(layout.inputTop + 1)
+    await saveAppScreenshot('chat-layout-activity-home.png')
   })
 })

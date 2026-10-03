@@ -837,43 +837,15 @@
       var(--chat-gradient-bottom) 100%
     );
 }
-.pane-chat.composer-centered {
-  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
-}
 .conversation,
 .conversation-scroll,
 .messages-list {
   background: transparent;
 }
-.pane-chat.composer-centered .conversation {
-  padding-bottom: 0;
-}
-.pane-chat.composer-centered #input-bar {
-  top: 50%;
-  bottom: auto;
-  left: 50%;
-  right: auto;
-  transform: translate(-50%, -50%);
-  /* Clear the full docked `#input-bar` border — a leftover `border-top: none`
-     left left/right/bottom borders stacked under the hairline shadow ring. */
-  border: none;
-  border-radius: var(--radius-lg);
-  /* Floats over the chat gradient: keep the hairline ring, add real depth. */
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
-  /* Centered on both axes rather than pinned to the bottom, so the even margin
-     this variant wants is --spacing-xl top and bottom, not the docked card's
-     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
-     card so a long draft can't push past the pane's edges. */
-  max-height: calc(100% - 2 * var(--spacing-xl));
-}
-.pane-chat.composer-centered .prompt-input {
-  border-top: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-.pane-chat.composer-centered .input-footer {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+.pane-chat.is-activity-home .conversation {
+  /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
+     takes the pane above the docked composer. */
+  display: none;
 }
 .conversation {
   flex: 1 1 0;
