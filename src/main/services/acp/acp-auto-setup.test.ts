@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
+import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
   ACP_MODELS_TTL_MS,
@@ -66,6 +66,26 @@ const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): Acp
 })
 
 describe('planAcpAutoSetup', () => {
+  it('never installs, registers, upgrades or probes the manual Copilot entry', () => {
+    const copilot = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'github-copilot-cli')
+    assert.ok(copilot)
+    for (const agentInstalled of [false, true]) {
+      for (const configured of [false, true]) {
+        assert.deepEqual(
+          planAcpAutoSetup([
+            input(copilot, {
+              agentInstalled,
+              configured,
+              clientInstalled: true,
+              outdated: { installedVersion: '1.0.0', latestVersion: '2.0.0' },
+            }),
+          ]),
+          { install: [], upgrade: [], register: [], refreshModels: [] },
+        )
+      }
+    }
+  })
+
   it('installs + registers a preset whose client is present but adapter is missing', () => {
     const plan = planAcpAutoSetup([input(claude, { clientInstalled: true, agentInstalled: false })])
     assert.deepEqual(

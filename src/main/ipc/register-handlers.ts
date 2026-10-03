@@ -190,6 +190,7 @@ import {
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -3016,6 +3017,11 @@ export function registerAllHandlers(
   ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
+  })
+  ipcMain.handle('acp:browse-registry', (event, refresh: unknown) => {
+    assertMainFrameSender(event, win)
+    const force = parseIpcArgs(z.boolean().optional(), [refresh])
+    return browseAcpRegistry(force)
   })
   ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)
