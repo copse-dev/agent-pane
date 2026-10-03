@@ -846,9 +846,14 @@ guarantee, and the record must say so.
   On Apple container 1.5.0, overlapping image builds intermittently fail context transfer
   with `archive/tar: invalid tar header`, even with separate immutable contexts; the same
   builds pass serially. Copse queues Apple image builds within its process, releasing the
-  queue on failure. The opt-in Apple integration runner also uses one test-file process
-  at a time. Independent CLI or app processes still share Apple's builder and must avoid
-  overlapping builds. Every integration test owns and cleans its worker bundle directory.
+  queue on failure. Builds additionally run under macOS `/usr/bin/lockf`, using a stable
+  per-user file in `/private/tmp` shared across profiles and temp-directory overrides.
+  The kernel lock covers independent Copse processes and releases on process exit;
+  `-k` retains the inode so waiting callers never lock different files. Waiting is bounded
+  to 15 minutes and failure to acquire the lock never runs the build. External callers
+  invoking Apple's CLI directly do not participate in this lock. The opt-in Apple
+  integration runner also uses one test-file process at a time. Every integration test
+  owns and cleans its worker bundle directory.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
