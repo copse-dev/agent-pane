@@ -50,6 +50,11 @@ select {
   padding-right: calc(2 * var(--spacing-sm) + 12px);
 }
 dialog {
+  /* Chromium makes modal dialogs selectable even when body opts out. Keep
+     dialog chrome consistent with the page; content and fields opt back in
+     through the explicit selectors in base.css. */
+  user-select: none;
+  -webkit-user-select: none;
   /* The global `* { margin: 0 }` reset removes the UA `margin: auto` that
      centers a modal <dialog>, jamming it into the top-left. Restore it. */
   margin: auto;

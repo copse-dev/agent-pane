@@ -190,7 +190,7 @@
   color: var(--text-muted);
 }
 /* Mark-done / reopen — icon only, hidden until row hover or focus (same idea
-   as `.chat-delete`). Rows are <button>s so this is a span with role=button. */
+   as `.chat-menu-btn`). Rows are <button>s so this is a span with role=button. */
 .roadmap-done-toggle {
   display: inline-flex;
   align-items: center;

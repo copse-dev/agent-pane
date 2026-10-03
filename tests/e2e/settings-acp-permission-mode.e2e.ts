@@ -1,17 +1,56 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('ACP permission-mode settings', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
+  let fixtureBin = ''
   before(async function () {
     this.timeout(90_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
+    // Exercise selector settings with installed agents. Keep ambient host CLIs
+    // out of detection; fresh adapter installation has its own approval spec.
+    fixtureBin = mkdtempSync(join(tmpdir(), 'copse-acp-mode-bin-'))
+    const agentModule = pathToFileURL(join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs'))
+    for (const command of ['codex-acp', 'fixture-acp']) {
+      const windows = process.platform === 'win32'
+      const executable = join(fixtureBin, windows ? `${command}.cmd` : command)
+      writeFileSync(
+        executable,
+        windows
+          ? `@echo off\r\n"${process.execPath}" "${join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs')}" %*\r\n`
+          : `#!${process.execPath}\nimport(${JSON.stringify(agentModule.href)})\n`,
+      )
+      if (!windows) chmodSync(executable, 0o755)
+    }
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH: [
+        fixtureBin,
+        ...(process.platform === 'win32'
+          ? [join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')]
+          : ['/usr/bin', '/bin']),
+      ].join(delimiter),
+    })
     seedEmptyProject(process.cwd(), 'e2e-acp-permission-mode', {
       windowBounds: { width: 1280, height: 800 },
       registeredAcpAgents: [
+        {
+          id: 'codex-acp',
+          title: 'Codex',
+          command: 'codex-acp',
+          availableModels: [{ value: 'fixture-sonnet', label: 'Fixture Sonnet' }],
+          modelsProbedAt: Date.now(),
+          enabled: false,
+        },
         {
           id: 'fixture-agent',
           title: 'Fixture ACP Agent',
@@ -41,7 +80,9 @@ describe('ACP permission-mode settings', () => {
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
+    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
   })
 
   it('shows the saved ACP session mode and its discovered choices', async function () {

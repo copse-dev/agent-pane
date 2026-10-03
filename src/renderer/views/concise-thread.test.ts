@@ -8,7 +8,9 @@ import {
   isConciseThread,
   isConciseThreadModel,
   isConciseWorkingMessage,
+  liveTurnStartId,
   syncConciseMessageClasses,
+  turnStartId,
 } from './concise-thread.ts'
 
 // Opus 5.5 sits well above the gate; Haiku 4.5 and gpt-4o well below it.
@@ -175,5 +177,33 @@ describe('concise activity label', () => {
       }),
     )
     assert.match(label ?? '', /^Running ls… \(.+\)$/)
+  })
+})
+
+describe('turn identity', () => {
+  const messages = [
+    message({ id: 'a0', role: 'assistant' }),
+    message({ id: 'u1', role: 'user' }),
+    message({ id: 'a1', role: 'assistant' }),
+    message({ id: 'a2', role: 'assistant' }),
+    message({ id: 'u2', role: 'user' }),
+    message({ id: 'a3', role: 'assistant' }),
+  ]
+
+  it('names the prompt that started a message’s turn', () => {
+    assert.equal(turnStartId(messages, 'a1'), 'u1')
+    assert.equal(turnStartId(messages, 'a2'), 'u1')
+    assert.equal(turnStartId(messages, 'u2'), 'u2')
+    assert.equal(turnStartId(messages, 'a3'), 'u2')
+  })
+
+  it('has no turn before the first prompt or for an unknown message', () => {
+    assert.equal(turnStartId(messages, 'a0'), null)
+    assert.equal(turnStartId(messages, 'missing'), null)
+  })
+
+  it('finds the live turn from the newest prompt', () => {
+    assert.equal(liveTurnStartId(messages), 'u2')
+    assert.equal(liveTurnStartId([]), null)
   })
 })

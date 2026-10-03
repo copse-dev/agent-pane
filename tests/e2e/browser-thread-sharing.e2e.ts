@@ -128,6 +128,17 @@ describe('browser context sharing with a thread', function () {
     await expect($('.browser-menu')).not.toBeDisplayed()
   })
 
+  it('offers the live regular page as an enabled HTML download', async () => {
+    await openBrowserMenu()
+    const download = await $('.browser-menu-item*=Download page')
+    await expect(download).toBeDisplayed()
+    await expect(download).toBeEnabled()
+    await expect(download).toHaveText('Download page')
+    await saveElementScreenshot('#pane-files', 'browser-page-html-download-menu.png')
+    await $('.browser-webview').click()
+    await expect($('.browser-menu')).not.toBeDisplayed()
+  })
+
   it('attaches page text and a viewport screenshot to the active composer', async () => {
     await openBrowserMenu()
     await clickBrowserMenuItem('Share page text')

@@ -360,7 +360,8 @@ export function getToolCallLabel(tc: ToolCall): string {
     // Commands are tenseless — the same string works while running and after.
     const command = shellCommandArg(tc.args)
     if (command) return shellCommandLabel(command)
-    if (title) return title
+    // Claude's ACP titles shells with the full command, so cap it like `command`.
+    if (title) return shellCommandLabel(title)
   }
   // ACP keeps a user-facing title distinct from its programmatic identity.
   // Use it for display without sacrificing `name` for grouping and behavior.

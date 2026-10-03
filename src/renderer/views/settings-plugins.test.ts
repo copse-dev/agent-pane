@@ -23,7 +23,11 @@ interface StubApiSpy {
   addSourceCalls: number
 }
 
-function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
+function stubApi(
+  initial: PluginsListResult,
+  spy: StubApiSpy,
+  listOverride?: (current: PluginsListResult) => Promise<PluginsListResult>,
+): ApiClient {
   let current = initial
   return createPendingApi({
     'instructions.list': () => Promise.resolve([]),
@@ -33,7 +37,7 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
     'cursorPlugins.list': () => Promise.resolve([]),
     'bundledSkillPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
-    'plugins.list': () => Promise.resolve(current),
+    'plugins.list': () => listOverride?.(current) ?? Promise.resolve(current),
     'plugins.setEnabled': (id: string, enabled: boolean) => {
       spy.lastSetEnabled = { id, enabled }
       current = {
@@ -209,17 +213,20 @@ async function openPlugins(
   initial: PluginsListResult,
   spy: StubApiSpy,
   store: AppStore = createStore(),
+  section: 'customise' | 'experimental' = 'customise',
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(store, stubApi(initial, spy))
   const btn = document.querySelector<HTMLButtonElement>(
-    '.settings-nav-btn[data-section="customise"]',
+    `.settings-nav-btn[data-section="${section}"]`,
   )
   assert.ok(btn)
   btn.click()
   // refreshPlugins() awaits api.plugins.list — let the microtask queue drain.
   await new Promise((resolve) => setTimeout(resolve, 0))
-  const list = document.getElementById('plugins-list')
+  const list = document.getElementById(
+    section === 'experimental' ? 'experimental-plugins-list' : 'plugins-list',
+  )
   assert.ok(list)
   return list
 }
@@ -232,6 +239,43 @@ function pluginsFieldset(): HTMLElement {
   assert.ok(fieldset)
   return fieldset
 }
+
+it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
+  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const initial = { plugins: [{ ...demoPlugin, enabled: true }] }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const toggle = document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')
+  assert.ok(toggle)
+  toggle.checked = false
+  toggle.dispatchEvent(new Event('change'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release)
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')?.checked,
+    false,
+  )
+  assert.equal(
+    document.querySelector('#plugins-list .plugins-group-heading')?.textContent,
+    'Inactive',
+  )
+})
 
 describe('settings → plugins list', () => {
   let spy: StubApiSpy
@@ -251,6 +295,111 @@ describe('settings → plugins list', () => {
     assert.ok(btn)
     assert.match(btn.textContent, /Customise/)
     assert.match(list.textContent, /No plugins installed\./)
+  })
+
+  it('lists all experimental plugins, active first, including disabled user plugins', async () => {
+    const experimentalPlugin: PluginSummary = { ...demoPlugin, stability: 'experimental' }
+    const list = await openPlugins(
+      { plugins: [disabledUserPlugin, modelFieldPlugin, experimentalPlugin] },
+      spy,
+      createStore(),
+      'experimental',
+    )
+    assert.deepEqual(
+      [...list.querySelectorAll<HTMLElement>('.plugin-row')].map((row) => row.dataset['pluginId']),
+      [experimentalPlugin.id, disabledUserPlugin.id],
+    )
+    assert.deepEqual(
+      [...list.querySelectorAll('.plugins-group-heading')].map((heading) => heading.textContent),
+      ['Active', 'Inactive'],
+    )
+    assert.equal(list.querySelectorAll('.plugin-badge-stable').length, 0)
+
+    const customise = document.querySelector<HTMLButtonElement>(
+      '.settings-nav-btn[data-section="customise"]',
+    )
+    assert.ok(customise)
+    customise.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelectorAll('#plugins-list .plugin-row').length, 3)
+    assert.equal(
+      document.querySelectorAll('.plugin-row').length,
+      3,
+      'plugin controls are never duplicated',
+    )
+    assert.equal(document.getElementById('experimental-plugins-fieldset')?.hidden, true)
+  })
+
+  it('shows an experimental empty state when only stable plugins are installed', async () => {
+    const list = await openPlugins({ plugins: [demoPlugin] }, spy, createStore(), 'experimental')
+    assert.match(list.textContent, /No experimental plugins installed\./)
+    assert.equal(list.querySelectorAll('.plugins-group-heading').length, 0)
+  })
+
+  it('shares enablement and settings between Experimental and Customise', async () => {
+    const plugin: PluginSummary = { ...demoPlugin, stability: 'experimental', enabled: false }
+    const list = await openPlugins({ plugins: [plugin] }, spy, createStore(), 'experimental')
+    const toggle = list.querySelector<HTMLInputElement>('.plugin-toggle-input')
+    assert.ok(toggle)
+    toggle.checked = true
+    toggle.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetEnabled, { id: plugin.id, enabled: true })
+    assert.equal(list.querySelector('.plugins-group-heading')?.textContent, 'Active')
+
+    const setting = list.querySelector<HTMLInputElement>('.plugin-setting-number')
+    assert.ok(setting)
+    setting.value = '7'
+    setting.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetSetting, { id: plugin.id, key: 'budget', value: 7 })
+
+    const customise = document.querySelector<HTMLButtonElement>(
+      '.settings-nav-btn[data-section="customise"]',
+    )
+    assert.ok(customise)
+    customise.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const sharedToggle = document.querySelector<HTMLInputElement>(
+      '#plugins-list .plugin-toggle-input',
+    )
+    assert.ok(sharedToggle)
+    assert.equal(sharedToggle.checked, true)
+    assert.equal(
+      document.querySelector<HTMLInputElement>('#plugins-list .plugin-setting-number')?.value,
+      '7',
+    )
+    sharedToggle.checked = false
+    sharedToggle.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const experimental = document.querySelector<HTMLButtonElement>(
+      '.settings-nav-btn[data-section="experimental"]',
+    )
+    assert.ok(experimental)
+    experimental.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(list.querySelector<HTMLInputElement>('.plugin-toggle-input')?.checked, false)
+    assert.equal(list.querySelector<HTMLInputElement>('.plugin-setting-number')?.value, '7')
+  })
+
+  it('keeps the advisor picker unique when moving between plugin lists', async () => {
+    const plugin: PluginSummary = {
+      ...modelFieldPlugin,
+      id: 'copse.advisor-strategy',
+      stability: 'experimental',
+    }
+    const list = await openPlugins({ plugins: [plugin] }, spy, createStore(), 'experimental')
+    assert.ok(list.querySelector('#advisorModel'))
+    assert.equal(document.querySelectorAll('#advisorModel').length, 1)
+    const customise = document.querySelector<HTMLButtonElement>(
+      '.settings-nav-btn[data-section="customise"]',
+    )
+    assert.ok(customise)
+    customise.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.ok(document.querySelector('#plugins-list #advisorModel'))
+    assert.equal(document.querySelectorAll('#advisorModel').length, 1)
   })
 
   it('describes plugins without internal design-doc leaks, linking the add-a-plugin guide', async () => {
@@ -318,7 +467,7 @@ describe('settings → plugins list', () => {
       ['copse.pii-redaction', 'PII redaction'],
       ['copse.ci-investigator', 'CI investigator'],
       ['copse.okf-memories', 'OKF memories'],
-      ['copse.mcp-ui-canvas', 'MCP UI canvas'],
+      ['copse.mcp-ui-canvas', 'Canvas and explainers'],
       ['copse.agents-md', 'AGENTS.md'],
       ['copse.claude-md', 'CLAUDE.md'],
       ['copse.devtools-shortcut', 'DevTools shortcut'],

@@ -11,6 +11,7 @@ import type {
 } from '@shared/types/app-run.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
+import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
 import type {
   ContextBreakdown,
   MachineAgentRunRequest,
@@ -214,6 +215,8 @@ export interface ApiClient {
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
+    /** Download the current live browser page as HTML. */
+    exportPage: (webContentsId: number) => Promise<string | null>
     /** Download an HTML canvas artefact as a self-contained document. */
     exportArtefact: (
       artefact: Pick<CanvasArtefact, 'title' | 'mimeType' | 'body'>,
@@ -790,6 +793,7 @@ export interface ApiClient {
     onUiScaleReset: (handler: () => void) => () => void
   }
   classifiers: ClassifierClient
+  localClassifiers: LocalClassifierClient
   settings: {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>

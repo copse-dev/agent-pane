@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { promises as fsPromises, type PathLike } from 'node:fs'
@@ -18,8 +18,10 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
+import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
   clearAllowedWorkspaceRootsForTest,
@@ -1404,5 +1406,94 @@ describe('worktree manager', () => {
     assert.equal(getInternalWorkspaceRootRegistration(worktree.path), null)
     assert.ok((await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
     assert.notEqual(git(repo, ['branch', '--list', worktree.branch]).trim(), '')
+  })
+})
+
+/** The Git subcommand of a sandbox-wrapped `git -c k=v … <subcommand> …` line. */
+function gitSubcommand(command: string): string | undefined {
+  const tokens = command.replaceAll("'", '').split(/\s+/).filter(Boolean)
+  const start = tokens.indexOf('git')
+  if (start === -1) return undefined
+  for (let index = start + 1; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === '-c') index += 1
+    else if (token !== undefined && !token.startsWith('-')) return token
+  }
+  return undefined
+}
+
+// On Linux, bubblewrap realizes every missing mandatory write-deny path of a
+// writable overlay as an empty file or directory in the host checkout, and ASRT
+// removes them only once no sandbox is active. A Git command that only reads
+// the project checkout must therefore not receive the checkout-writable manager
+// overlay, or `git status` in the user's repository lists `.bashrc`,
+// `.gitconfig`, `.vscode`, ... while the first message allocates a worktree.
+describe('worktree manager sandbox overlays', () => {
+  const cleanups: string[] = []
+  let previousRoot: string | undefined
+
+  afterEach(async () => {
+    setProjectSandboxEnabled(false)
+    mock.restoreAll()
+    if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
+    else process.env['COPSE_WORKTREES_DIR'] = previousRoot
+    previousRoot = undefined
+    setGitAvailableForTest(null)
+    clearAllowedWorkspaceRootsForTest()
+    for (const path of cleanups.splice(0).reverse()) {
+      await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('gives read-only Git probes on the project checkout no write-deny mount points', async () => {
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    const temp = await realpath(await mkdtemp(join(tmpdir(), 'copse-worktree-overlays-')))
+    cleanups.push(temp)
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    setGitAvailableForTest(true)
+    const repo = await repository(temp, 'repo')
+
+    const placeholderCommands: string[] = []
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (command: string, _shell?: string, customConfig?: Partial<SandboxRuntimeConfig>) => {
+        // A deny entry for a missing root-level file is exactly what bwrap
+        // materializes in the checkout; record which commands would do so.
+        if (customConfig?.filesystem?.denyWrite.includes(join(repo, '.bashrc'))) {
+          placeholderCommands.push(gitSubcommand(command) ?? command)
+        }
+        // Run the real Git command unconfined; only the overlay is under test.
+        return Promise.resolve({ argv: ['/bin/sh', '-c', command], env: { ...process.env } })
+      },
+    )
+    setProjectSandboxEnabled(true)
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-overlay-abc123',
+      projectRoot: repo,
+      prompt: 'Probe overlays',
+      baseBranch: 'main',
+    })
+    const renamed = await renameThreadWorktreeBranch({
+      projectId: 'project-1',
+      threadId: 'thread-overlay-abc123',
+      projectRoot: repo,
+      title: 'Probe Overlays',
+      worktree,
+    })
+
+    assert.ok(renamed)
+    // Only the commands that write Git metadata keep the manager overlay.
+    const writers = new Set(['worktree', 'config', 'branch'])
+    assert.deepEqual(
+      placeholderCommands.filter((command) => !writers.has(command)),
+      [],
+      `read-only Git commands received the checkout-writable overlay: ${placeholderCommands.join(', ')}`,
+    )
+    assert.ok(placeholderCommands.includes('worktree'), 'expected the sandboxed worktree add')
   })
 })

@@ -81,6 +81,42 @@ describe('hooks:run-detail — the raw record behind a hook card', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('captures own proto fields and native toJSON key and self-return semantics', async () => {
+    let calls = 0
+    const selfReturning = {
+      label: 'self',
+      toJSON(): unknown {
+        calls++
+        return this
+      },
+    }
+    const payload = {
+      nested: {
+        toJSON(key: string): unknown {
+          return { suppliedKey: key }
+        },
+      },
+      selfReturning,
+    }
+    Object.defineProperty(payload, '__proto__', { value: { preserved: true }, enumerable: true })
+    recordFunctionHookRun({
+      event: 'beforeFinalize',
+      hookId: 'json-semantics',
+      startedAt: 100,
+      durationMs: 1,
+      payload,
+      outcome: { injectContext: 'context' },
+    })
+    await flushStore()
+    const detail = await readHookRunDetail(PROJECT, THREAD, recordedRunId(root))
+    assert.ok(detail.payload)
+    assert.ok(detail.payload.includes('"__proto__"'))
+    assert.ok(detail.payload.includes('"preserved": true'))
+    assert.ok(detail.payload.includes('"suppliedKey": "nested"'))
+    assert.ok(detail.payload.includes('"label": "self"'))
+    assert.equal(calls, 1)
+  })
+
   it('returns the context a function hook injected, not just its length', async () => {
     setHookRunStep(2)
     recordFunctionHookRun({
@@ -179,5 +215,86 @@ describe('hooks:run-detail — the raw record behind a hook card', () => {
     const detail = await readHookRunDetail(PROJECT, THREAD, recordedRunId(root))
     assert.ok((detail.outcome?.length ?? 0) < 80_000)
     assert.match(detail.outcome ?? '', /truncated \d+ more chars/)
+  })
+
+  it('keeps the decision inputs of a truncated payload, not just the transcript prefix', async () => {
+    // The stepBoundary payload nests the transcript ahead of the numbers the
+    // guards decide on. A real run's transcript outgrows the capture bound, so
+    // field order alone decided whether the inputs survived — they never did.
+    const messages = Array.from({ length: 60 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `turn ${String(i)} `.repeat(120),
+    }))
+    recordFunctionHookRun({
+      event: 'stepBoundary',
+      hookId: 'loop-nudge',
+      startedAt: 100,
+      durationMs: 1,
+      outcome: { injectContext: 'stop gathering context' },
+      payload: {
+        phase: 'preStream',
+        escalation: {
+          input: {
+            messages,
+            maxContextTokens: 128_000,
+            toolSchemaReserveTokens: 4_000,
+            toolOnlySteps: 7,
+            trimEvents: 2,
+          },
+          pressure: {
+            conversationBudget: 120_000,
+            conversationTokens: 109_200,
+            fillRatio: 0.91,
+            thresholds: { softNudgeMinToolSteps: 30, forceTextMinToolSteps: 48 },
+          },
+        },
+        loopNudgeSent: false,
+        forceTextAttempted: false,
+        streamCappedAsRunaway: false,
+        consecutiveExploreWithoutRead: 1,
+      },
+    })
+    await flushStore()
+
+    const payload = (await readHookRunDetail(PROJECT, THREAD, recordedRunId(root))).payload ?? ''
+    assert.ok(JSON.stringify(messages).length > 32_000, 'fixture must outgrow the capture bound')
+    assert.match(payload, /truncated \d+ more chars/)
+    for (const field of [
+      /"phase": "preStream"/,
+      /"loopNudgeSent": false/,
+      /"forceTextAttempted": false/,
+      /"consecutiveExploreWithoutRead": 1/,
+      /"maxContextTokens": 128000/,
+      /"toolSchemaReserveTokens": 4000/,
+      /"toolOnlySteps": 7/,
+      /"trimEvents": 2/,
+      /"conversationBudget": 120000/,
+      /"conversationTokens": 109200/,
+      /"fillRatio": 0.91/,
+      /"softNudgeMinToolSteps": 30/,
+      /"forceTextMinToolSteps": 48/,
+    ]) {
+      assert.match(payload, field)
+    }
+    // Order is presentation only: the arrays inside keep theirs.
+    assert.ok(payload.indexOf('turn 0 ') < payload.indexOf('turn 1 '))
+  })
+
+  it('drops only the payload blob when the payload cannot be serialized', async () => {
+    const cyclic: Record<string, unknown> = { prompt: 'loop' }
+    cyclic['self'] = cyclic
+    recordFunctionHookRun({
+      event: 'beforeSubmitPrompt',
+      hookId: 'cyclic-hook',
+      startedAt: 100,
+      durationMs: 1,
+      outcome: { injectContext: 'still recorded' },
+      payload: cyclic,
+    })
+    await flushStore()
+
+    const detail = await readHookRunDetail(PROJECT, THREAD, recordedRunId(root))
+    assert.equal(detail.payload, undefined)
+    assert.match(detail.outcome ?? '', /still recorded/)
   })
 })

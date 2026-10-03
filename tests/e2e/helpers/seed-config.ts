@@ -815,7 +815,9 @@ export function seedRoadmapNotes(
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
-  const iso = new Date().toISOString()
+  // Fixed, not `new Date()`: the pane prints "Updated <date>", so a live clock
+  // changed the reference shot every day.
+  const iso = '2026-01-15T09:00:00.000Z'
   for (const note of notes) {
     const contents = [
       '---',
@@ -5223,11 +5225,14 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
   openThreadTitle: string
   mergedThreadTitle: string
   plainThreadTitle: string
+  failingThreadTitle: string
 } {
   const projectId = 'e2e-thread-pr-status-project'
   const openThreadTitle = 'Open PR thread'
   const mergedThreadTitle = 'Merged PR thread'
   const plainThreadTitle = 'No PR thread'
+  const failingThreadTitle = 'Failing CI thread'
+  const failingPrUrl = 'https://github.com/copse-dev/copse-panel/pull/88'
   const openPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   const mergedPrUrl = 'https://github.com/copse-dev/copse-panel/pull/99'
   const now = Date.now()
@@ -5299,9 +5304,32 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
         createdAt: now - 2000,
         updatedAt: now - 2000,
       },
+      {
+        id: 'e2e-pr-failing-thread',
+        title: failingThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-failing-pr',
+            role: 'assistant',
+            content: `Opened [PR #88](${failingPrUrl}); checks are red.`,
+            createdAt: now - 3000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-failing-agent',
+          prUrl: failingPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now - 3000,
+        },
+        createdAt: now - 3000,
+        updatedAt: now - 3000,
+      },
     ],
   })
-  return { openThreadTitle, mergedThreadTitle, plainThreadTitle }
+  return { openThreadTitle, mergedThreadTitle, plainThreadTitle, failingThreadTitle }
 }
 
 /**

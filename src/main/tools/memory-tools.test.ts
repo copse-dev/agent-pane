@@ -137,4 +137,145 @@ describe('memory-tools', () => {
     const empty = await run(recallTool, {})
     assert.match(empty, /No memories stored yet/)
   })
+
+  describe('revisions, provenance and paging', () => {
+    it('assigns revision 1 and bumps it on update by title', async () => {
+      const first = await run(rememberTool, { title: 'A', content: 'one' })
+      assert.match(first, /revision 1/)
+      const second = await run(rememberTool, { title: 'A', content: 'two' })
+      assert.match(second, /revision 2/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 1)
+    })
+
+    it('rejects a stale expectedRevision and leaves the note untouched', async () => {
+      await run(rememberTool, { title: 'A', content: 'one' })
+      const note = loadKnowledgeNotes(MEMORY_TYPE)[0]
+      assert.ok(note)
+      await run(rememberTool, { id: note.id, title: 'A', content: 'two', expectedRevision: 1 })
+      const stale = await run(rememberTool, {
+        id: note.id,
+        title: 'A',
+        content: 'three',
+        expectedRevision: 1,
+      })
+      assert.match(stale, /Not saved.*revision 2/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE)[0]?.body, 'two')
+    })
+
+    it('rejects an unknown id instead of creating a duplicate', async () => {
+      const out = await run(rememberTool, { id: 'nope', title: 'X', content: 'x' })
+      assert.match(out, /No memory with id/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 0)
+    })
+
+    it('records sources and appliesTo, and marks missing sources unknown', async () => {
+      await run(rememberTool, {
+        title: 'With',
+        content: 'c',
+        sources: ['msg:1', 'tool:2'],
+        appliesTo: ['src/**'],
+      })
+      await run(rememberTool, { title: 'Without', content: 'c' })
+      const out = await run(recallTool, {})
+      assert.match(out, /msg:1, tool:2/)
+      assert.match(out, /applies to: src\/\*\*/)
+      assert.match(out, /sources: unknown/)
+    })
+
+    it('preserves commas in sources and applicability through persistence and recall', async () => {
+      await run(rememberTool, {
+        title: 'Comma references',
+        content: 'c',
+        sources: ['https://example.com/a,b', 'msg:1'],
+        appliesTo: ['src/{a,b}/**'],
+      })
+      const out = await run(recallTool, {})
+      assert.ok(out.includes('https://example.com/a,b'))
+      assert.ok(out.includes('src/{a,b}/**'))
+      const { addKnowledgeNote } = await import('../services/storage/knowledge-store.ts')
+      addKnowledgeNote({
+        type: MEMORY_TYPE,
+        title: 'Legacy list',
+        body: 'b',
+        fields: { memorySchema: '1', sources: 'msg:old,tool:old', appliesTo: 'legacy/**' },
+      })
+      assert.ok((await run(recallTool, {})).includes('msg:old, tool:old'))
+      addKnowledgeNote({
+        type: MEMORY_TYPE,
+        title: 'Legacy JSON-looking reference',
+        body: 'b',
+        fields: { memorySchema: '1', sources: '["msg:literal"]' },
+      })
+      assert.ok((await run(recallTool, {})).includes('["msg:literal"]'))
+      await run(rememberTool, {
+        title: 'Legacy JSON-looking reference',
+        content: 'updated without replacing sources',
+      })
+      assert.ok((await run(recallTool, {})).includes('["msg:literal"]'))
+    })
+
+    it('treats legacy notes without revision as revision 1', async () => {
+      const { addKnowledgeNote } = await import('../services/storage/knowledge-store.ts')
+      addKnowledgeNote({ type: MEMORY_TYPE, title: 'Old', body: 'b' })
+      assert.match(await run(recallTool, {}), /revision: 1/)
+      assert.match(await run(rememberTool, { title: 'Old', content: 'n' }), /revision 2/)
+    })
+
+    it('pages recall with a cursor and rejects a bad one', async () => {
+      for (const n of ['a', 'b', 'c']) await run(rememberTool, { title: n, content: n })
+      const p1 = await run(recallTool, { limit: 2 })
+      assert.match(p1, /showing 1–2/)
+      const cursor = /Next cursor: (m:\d+)/.exec(p1)?.[1]
+      assert.ok(cursor)
+      const p2 = await run(recallTool, { limit: 2, cursor })
+      assert.match(p2, /## c/)
+      assert.doesNotMatch(p2, /Next cursor/)
+      assert.match(await run(recallTool, { cursor: 'x' }), /Invalid cursor/)
+    })
+
+    it('updates by id without a title and keeps the existing one', async () => {
+      const a = await run(rememberTool, { title: 'A', content: 'a' })
+      const idA = /id (\S+),/.exec(a)?.[1]
+      assert.ok(idA)
+      assert.match(
+        await run(rememberTool, { id: idA, content: 'a2' }),
+        /Saved memory "A".*revision 2/,
+      )
+      const notes = loadKnowledgeNotes(MEMORY_TYPE)
+      assert.equal(notes.length, 1)
+      const note = notes.find((n) => n.id === idA)
+      assert.ok(note)
+      assert.equal(note.title, 'A')
+      assert.equal(note.body.trim(), 'a2')
+    })
+
+    it('requires a title when no id is given', async () => {
+      assert.match(await run(rememberTool, { content: 'x' }), /title is required/)
+      assert.match(await run(rememberTool, { title: '  ', content: 'x' }), /title is required/)
+      assert.equal(loadKnowledgeNotes(MEMORY_TYPE).length, 0)
+    })
+
+    it('reports a cursor past the end instead of an empty page', async () => {
+      for (const n of ['a', 'b', 'c']) await run(rememberTool, { title: n, content: n })
+      const out = await run(recallTool, { cursor: 'm:99' })
+      assert.match(out, /past the end; there are only 3 memories/)
+      assert.doesNotMatch(out, /showing/)
+      assert.match(await run(recallTool, { cursor: 'm:3' }), /past the end/)
+    })
+
+    it('rejects an id update that would rename onto another memory title', async () => {
+      await run(rememberTool, { title: 'A', content: 'a' })
+      const b = await run(rememberTool, { title: 'B', content: 'b' })
+      const idB = /id (\S+),/.exec(b)?.[1]
+      assert.ok(idB)
+      const out = await run(rememberTool, { id: idB, title: 'A', content: 'b2' })
+      assert.match(out, /already titled "A"/)
+      const notes = loadKnowledgeNotes(MEMORY_TYPE)
+      assert.deepEqual(notes.map((n) => n.title).sort(), ['A', 'B'])
+      assert.equal(notes.find((n) => n.title === 'B')?.body.trim(), 'b')
+      // Renaming to its own title, or to a free one, still works.
+      assert.match(await run(rememberTool, { id: idB, title: 'B', content: 'b3' }), /revision 2/)
+      assert.match(await run(rememberTool, { id: idB, title: 'C', content: 'b4' }), /revision 3/)
+    })
+  })
 })

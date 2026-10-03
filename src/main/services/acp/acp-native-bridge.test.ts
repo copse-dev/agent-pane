@@ -1,3 +1,5 @@
+import { queueInlineCanvasReference, runWithInlineCanvas } from '../inline-canvas-context.ts'
+import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
@@ -529,6 +531,45 @@ describe('startAcpNativeBridge', () => {
     assert.equal(rpcResult(betweenTurns)['isError'], true)
     assert.match(contentText(betweenTurns) ?? '', /after its agent turn ended/)
     assert.equal(seen.length, 1, 'the straggling call must never reach the tool')
+  })
+
+  it('rebinds inline explainer publication across the bridge HTTP boundary', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'mcp__copse-canvas__render_explainer',
+      description: 'Publish a captioned animation',
+      parameters: z.object({}),
+      execute: () =>
+        Promise.resolve(String(queueInlineCanvasReference('explainer-thread', 'Example'))),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'explainer-thread',
+    })
+    assert.ok(bridge)
+    const currentBridge = bridge
+    const chunks: StreamChunk[] = []
+    const finish = runWithInlineCanvas(
+      'explainer-thread',
+      { emit: (_id, chunk) => chunks.push(chunk) },
+      (host) => {
+        currentBridge.setExecutionContext(worktreeContext('explainer-thread', '/worktrees/example'))
+        return (): void => {
+          host.emit('explainer-thread', { type: 'done' })
+        }
+      },
+    )
+    for (const init of initialized()) await rpc(currentBridge, init)
+    const result = await rpc(currentBridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'mcp__copse-canvas__render_explainer', arguments: {} },
+    })
+    assert.equal(contentText(result), 'true')
+    finish()
+    assert.deepEqual(chunks[0], { type: 'canvas_artefact', artefact: { title: 'Example' } })
+    currentBridge.setExecutionContext(null)
   })
 
   it('rejects a bridged call dispatched with no bound execution context', async () => {

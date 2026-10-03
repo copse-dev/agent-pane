@@ -14,6 +14,7 @@ import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { warmupLmStudioModel } from './providers/lm-studio-warmup.ts'
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
@@ -111,6 +112,8 @@ export interface ThreadCheckoutTransactionDependencies {
     threadId: string,
     patch: Partial<Omit<Thread, 'messages'>>,
   ) => Promise<void>
+  /** Speculative model loading, started alongside first-message checkout setup. */
+  warmupModel: (model?: string) => Promise<void>
   inspect: (project: Project, isLocal: boolean) => Promise<CheckoutInspection>
   allocate: (input: {
     projectId: string
@@ -249,6 +252,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   getProject: projectById,
   getThread: getProjectThread,
   updateMeta: updateMetaOrThrow,
+  warmupModel: warmupLmStudioModel,
   inspect: inspectProject,
   allocate: allocateThreadWorktree,
   recoverUnpersisted: recoverUnpersistedWorktree,
@@ -330,6 +334,10 @@ export function createThreadCheckoutTransaction(
       // Old conversations predate checkout metadata and must keep their shared
       // behavior. Only a genuinely blank thread enters the first-message policy.
       if (thread.messages.length > 0) return persistedResult('shared', thread.gitBranch)
+
+      // Loading a local model can overlap every Git probe and the allocation.
+      // Do not await it: unavailable/older model servers must not delay checkout.
+      void dependencies.warmupModel(input.model ?? thread.model).catch(() => undefined)
 
       const isLocal = !project.sshHost && !(input.model && isRemoteAgentModel(input.model))
       const inspection = await dependencies.inspect(project, isLocal)
