@@ -69,4 +69,7 @@
 // v40 versions the queued-message model snapshot in thread payloads.
 // v41 versions container-run consent fields and terminal state.
 // v42 conservatively versions the persisted sidebar grouping in settings payloads.
-export const API_PROTOCOL_VERSION = 42 as const
+// v43 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
+// threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
+// agent chunk.
+export const API_PROTOCOL_VERSION = 43 as const
