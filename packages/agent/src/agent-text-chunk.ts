@@ -46,11 +46,30 @@ function continuesSentence(prevText: string, text: string): boolean {
   return false
 }
 
+function pipeCells(line: string): string[] {
+  const cells: string[] = []
+  let cell = ''
+  let escaped = false
+  for (const character of line) {
+    if (character === '|' && !escaped) {
+      cells.push(cell.trim())
+      cell = ''
+    } else {
+      cell += character
+    }
+    escaped = character === '\\' ? !escaped : false
+  }
+  cells.push(cell.trim())
+  if (cells[0] === '') cells.shift()
+  if (cells[cells.length - 1] === '') cells.pop()
+  return cells
+}
+
 // The prior text stops inside a markdown construct that cannot render on its
-// own: an unclosed code fence, a table row cut before its closing pipe, or a
-// dangling emphasis/code marker. Splitting here strands the markers as literal
-// text in one bubble and a headless fragment in the next.
-function endsInsideMarkup(text: string): boolean {
+// own: an unclosed code fence, an unfinished table row, or a dangling marker.
+// Splitting here strands the markers as literal text in one bubble and a
+// headless fragment in the next.
+function endsInsideMarkup(text: string, incomingText: string): boolean {
   let fence: { character: string; length: number } | undefined
   let lastLineClosesFence = false
   const inlineLines: string[] = []
@@ -78,6 +97,29 @@ function endsInsideMarkup(text: string): boolean {
   if (lastLineClosesFence) return false
   if (/\n$/.test(text)) return false
   const lastLine = text.slice(text.lastIndexOf('\n') + 1).trim()
+  // Optional outer pipes do not change a table's column count. Recognize a
+  // genuine header/delimiter pair in this uninterrupted paragraph before
+  // treating a row with fewer cells as a continuation. Ordinary pipe prose
+  // and already complete rows retain the fresh-reply boundary.
+  for (let index = inlineLines.length - 2; index > 0; index -= 1) {
+    const line = inlineLines[index] ?? ''
+    if (!line.trim()) break
+    const delimiterCells = pipeCells(line)
+    if (delimiterCells.length < 2 || !delimiterCells.every((cell) => /^:?-+:?$/.test(cell))) {
+      continue
+    }
+    const headerCells = pipeCells(inlineLines[index - 1] ?? '')
+    if (headerCells.length === delimiterCells.length) {
+      if (pipeCells(lastLine).length < headerCells.length) return true
+      // Equal column counts can still stop inside the final word. A directly
+      // attached lowercase fragment resumes it; a capitalized fresh answer
+      // after a complete row retains its independent bubble. A plain lowercase
+      // standalone sentence is ambiguous here; this bounded heuristic favors
+      // preserving the interrupted table word over splitting its cells.
+      return /[A-Za-z]$/.test(lastLine) && /^[a-z]/.test(incomingText)
+    }
+    break
+  }
   if (lastLine.startsWith('|') && !lastLine.endsWith('|')) return true
   const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1]
   if (!trailingMarker) return false
@@ -130,7 +172,7 @@ export function planAgentTextChunk(
     !isWhitespaceOnly &&
     state.msgId !== null &&
     state.toolSinceText &&
-    (endsInsideMarkup(currentText) ||
+    (endsInsideMarkup(currentText, text) ||
       (!endsAtBoundary(currentText) && continuesSentence(currentText, text)))
 
   const needsNewMessage = (!state.msgId || state.toolSinceText) && !isMidSentenceContinuation

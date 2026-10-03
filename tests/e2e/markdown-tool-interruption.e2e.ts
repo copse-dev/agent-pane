@@ -127,4 +127,39 @@ describe('markdown interrupted by real tool rounds', () => {
     await expect(replies[previousReplies + 1]).toHaveText('Next, inspect the build.')
     await saveAppScreenshot('markdown-tool-interruption-completed-emphasis.png')
   })
+
+  it('keeps a table row with optional outer pipes together across the tool', async function () {
+    this.timeout(60_000)
+    const previousReplies = (await $$('.msg-assistant .message-text')).length
+    const prompt = 'Inspect the workspace and complete the table without outer pipes.'
+    const scenario = await installMockScenario({
+      title: 'Optional table outer pipes',
+      turns: [
+        {
+          user: prompt,
+          responses: [
+            {
+              text: 'Item | Status\n--- | ---\nSource',
+              toolCalls: [{ name: 'list_dir', args: { path: '.' } }],
+            },
+            {
+              text: 'Continued | value',
+              expectToolResults: [{ name: 'list_dir', includes: 'src' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(prompt)
+    await submitComposer()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    const replies = await $$('.msg-assistant .message-text')
+    expect(replies.length).toBe(previousReplies + 1)
+    const lastReply = replies.at(-1)
+    if (!lastReply) throw new Error('Expected the table reply')
+    await expect(lastReply.$('table tbody tr td:first-child')).toHaveText('SourceContinued')
+    await expect(lastReply.$('table tbody tr td:last-child')).toHaveText('value')
+    await saveAppScreenshot('markdown-tool-interruption-optional-pipes.png')
+  })
 })

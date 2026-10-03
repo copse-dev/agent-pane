@@ -169,6 +169,51 @@ describe('planAgentTextChunk', () => {
     assert.equal(plan.action === 'append' && plan.startNewMessage, false)
   })
 
+  it('joins the lowercase word fragment in the last table cell across a tool', () => {
+    const { plan } = planAgentTextChunk(
+      {
+        msgId: 'msg-1',
+        toolSinceText: true,
+        currentText: '| Item | Status |\n| --- | --- |\n| Source | Re',
+      },
+      'ady |\n\n- **',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('keeps an interrupted table row without its optional leading pipe together', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Item | Status\n--- | ---\nSource' },
+      'Continued | value',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  for (const currentText of [
+    'Item | Status\n--- | ---\nSource | Ready',
+    '| Item | Status |\n| --- | --- |\n| Source | Ready',
+    'Item\\|detail | Status\n--- | ---\nSource\\|detail | Ready',
+    'Item | Status\n--- | ---\n\nSource',
+    'Item | Status\n-x | --\nSource',
+    'Choose source | target\nSource',
+  ]) {
+    it(`keeps a fresh reply separate from complete rows or non-table text ${JSON.stringify(currentText)}`, () => {
+      const { plan } = planAgentTextChunk(
+        { msgId: 'msg-1', toolSinceText: true, currentText },
+        'Next, inspect the build.',
+      )
+      assert.equal(plan.action === 'append' && plan.startNewMessage, true)
+    })
+  }
+
+  it('recognizes the single-hyphen aligned delimiter supported by the GFM renderer', () => {
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Item | Status\n:- | -:\nSource' },
+      'Continued | value',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('keeps a dangling bold marker with the text that closes it', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: 'rows\n\n- **' },
