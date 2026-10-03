@@ -21,6 +21,26 @@ export type ContainerEngine = (typeof CONTAINER_ENGINES)[number]
 /** The engine an unattended thread run is driven by; chosen once per run. */
 export type ThreadContainerEngine = ContainerEngine
 
+let appleImageBuildTail: Promise<void> = Promise.resolve()
+
+/**
+ * Apple container 1.5.0 intermittently corrupts context transfer when builds
+ * overlap against its shared builder. Queue this process's image builds;
+ * Docker builds remain independent. A failed build must release the queue.
+ */
+export async function runContainerImageBuild<T>(
+  engine: ContainerEngine,
+  build: () => Promise<T>,
+): Promise<T> {
+  if (engine !== 'apple') return build()
+  const result = appleImageBuildTail.then(build)
+  appleImageBuildTail = result.then(
+    () => {},
+    () => {},
+  )
+  return result
+}
+
 export const CONTAINER_ENGINE_PREFERENCES = ['auto', 'docker', 'apple'] as const
 export type ContainerEnginePreference = (typeof CONTAINER_ENGINE_PREFERENCES)[number]
 export type ContainerArchitecture = 'amd64' | 'arm64'

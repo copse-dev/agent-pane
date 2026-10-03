@@ -325,7 +325,10 @@ async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Pr
 // of short-lived children in flight and turn fixed 2s safety deadlines into
 // load-dependent failures. Four keeps independent file workers parallel while
 // bounding that shared OS pressure.
-const TEST_FILE_CONCURRENCY = 4
+// Apple integration files each drive the same host builder from a separate
+// process. Apple container 1.5.0 intermittently fails parallel context transfer;
+// the product's in-process image queue cannot serialize these test processes.
+const TEST_FILE_CONCURRENCY = process.env['COPSE_THREAD_CONTAINER_E2E'] === 'apple' ? 1 : 4
 
 // Bound each test so a hang fails fast and names itself. CI's unit job has hung
 // twice with no failing test: dots stopped, the runner waited until the job

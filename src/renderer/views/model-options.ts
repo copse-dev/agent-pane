@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { chatGptPlanModelValue, parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { getLocalModelCapability, localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
@@ -23,6 +24,7 @@ import {
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 
 export interface ModelOptionsApi {
+  chatGptPlan?: Pick<ApiClient['chatGptPlan'], 'models'>
   settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
   openRouter: Pick<ApiClient['openRouter'], 'models'>
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
@@ -501,6 +503,20 @@ export async function fetchModelOptions(
   // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
+  try {
+    const catalog = await api.chatGptPlan?.models()
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} · ChatGPT plan`,
+          group: 'ChatGPT plan',
+        })
+      }
+    }
+  } catch {
+    /* A failed/expired plan connection cannot expose API-key models as substitutes. */
+  }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue
     // GPT-6 Astra is a staged OpenAI rollout. A valid provider credential is
@@ -633,6 +649,13 @@ export async function fetchModelOptions(
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: 'ChatGPT plan',
+        disabled: true,
+      })
     } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,

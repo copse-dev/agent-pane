@@ -5,6 +5,7 @@ import {
   addMessage,
   applyPreparedThreadCheckout,
   getThreadById,
+  markAutomationStartFailed,
   setThreadDraftPrompt,
   sortThreadsNewestFirst,
 } from '@shared/store/thread-helpers.ts'
@@ -28,6 +29,7 @@ function isPendingAutomation(thread: Thread): boolean {
   return (
     thread.automation !== undefined &&
     thread.status === 'idle' &&
+    thread.automation.startFailedAt === undefined &&
     Boolean(thread.draftPrompt?.trim())
   )
 }
@@ -168,13 +170,16 @@ export function attachAutomationController(
       // watching, so the record has to outlive the moment, which a toast does
       // not.
       if (hydrated) {
+        // Without this marker the kept draft counts as a run still waiting to
+        // start, and every later trigger of the schedule is skipped behind it.
+        markAutomationStartFailed(store, threadId)
         addMessage(
           store,
           threadId,
           'error',
           `This scheduled run could not start: ${startFailureDetail(error)}\n\n` +
             'Its prompt is kept as a draft, so nothing is lost — send it once the ' +
-            'cause is resolved, or leave it for the next run.',
+            'cause is resolved. The schedule is not held up: its next run starts normally.',
         )
       }
     } finally {

@@ -322,6 +322,8 @@ copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 // the first-party ones. Shipped as the real asset for the same reason the Copse
 // mark is: an approximation drawn by hand would misrepresent someone's brand.
 copyFileSync('assets/cursor-mark.svg', `${rendererOutDir}/cursor-mark.svg`)
+// Official sign-in asset: https://developers.openai.com/assets/siwc/chatgpt-logo-white.svg
+copyFileSync('assets/chatgpt-logo-white.svg', `${rendererOutDir}/chatgpt-logo-white.svg`)
 cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
 
 // Monaco's ESM `vs/` tree is ~34MB of small files, and it is identical for every
