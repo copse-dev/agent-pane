@@ -7,7 +7,9 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
+import { getAppVersion } from './app-version.ts'
 import { getSetting } from './services/storage/settings.ts'
+import { getElectronBuildCommit } from './services/electron-app-runtime.ts'
 
 /** Bundled next to main (dist/assets after build/dev copy). */
 const assetsDir = join(__dirname, '../assets')
@@ -47,9 +49,25 @@ function loadDockIcon(variant = getAppIconVariant()): Electron.NativeImage | und
   return image.isEmpty() ? undefined : image
 }
 
+/**
+ * An unpackaged run (`electron dist/main/index.js`) has no Info.plist or
+ * adjacent package.json of its own, so the stock About panel shows Electron's
+ * icon and Electron's version. Spell out Copse's identity explicitly.
+ */
+function applyAboutPanel(variant: AppIconVariant): void {
+  const commit = getElectronBuildCommit()
+  app.setAboutPanelOptions({
+    applicationName: app.name,
+    applicationVersion: getAppVersion(),
+    version: commit ? commit.slice(0, 7) : '',
+    iconPath: getAppIconPath(variant),
+  })
+}
+
 export function applyAppIcon(windows: BrowserWindow[] = []): void {
   const variant = getAppIconVariant()
   const windowIcon = getAppIcon(variant)
+  applyAboutPanel(variant)
 
   for (const win of windows) {
     if (win.isDestroyed()) continue
