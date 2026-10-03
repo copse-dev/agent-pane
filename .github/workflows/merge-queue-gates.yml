@@ -24,7 +24,9 @@ jobs:
         with:
           ref: ${{ github.event.merge_group.base_sha }}
           persist-credentials: false
-          sparse-checkout: scripts/merge-queue-gates.mts
+          sparse-checkout: |
+            scripts/merge-queue-gates.mts
+            scripts/merge-queue-tree.mts
           sparse-checkout-cone-mode: false
       - name: Verify PR decisions and report them on the synthetic commit
         uses: actions/github-script@v9
