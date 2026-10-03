@@ -21318,6 +21318,7 @@ function parseDynamicModel(value) {
   if (body === "best-local") return { kind: "best-local" };
   if (body === "cheapest") return { kind: "cheapest" };
   if (body === "balanced") return { kind: "balanced" };
+  if (body === "balanced-included") return { kind: "balanced-included" };
   if (body.startsWith(MIN_INTELLECT_INFIX)) {
     const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
     if (!Number.isFinite(threshold) || threshold <= 0) return null;
@@ -21343,6 +21344,8 @@ function dynamicModelLabel(value) {
       return "Cheapest";
     case "balanced":
       return "Balanced";
+    case "balanced-included":
+      return "Balanced (no usage charges)";
     case "min-intellect":
       return `At least ${String(selector.threshold)} intelligence`;
     case "role":
@@ -21380,6 +21383,12 @@ function dynamicModelChoices() {
       label: "Balanced",
       description: "Strong capability at a fair price; favors plans",
       group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_INCLUDED_MODEL_SELECTOR,
+      label: "Balanced (no usage charges)",
+      description: "Uses only loaded local, available plan, or zero-priced routes",
+      group: AUTOMATIC_GROUP
     }
   ];
   for (const threshold of MIN_INTELLECT_THRESHOLDS) {
@@ -21400,7 +21409,7 @@ function dynamicModelChoices() {
   }
   return choices;
 }
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, BALANCED_INCLUDED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
 var init_dynamic_model = __esm({
   "packages/llm/src/dynamic-model.ts"() {
     init_agent_roles();
@@ -21411,6 +21420,7 @@ var init_dynamic_model = __esm({
     BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
     CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
     BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    BALANCED_INCLUDED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced-included`;
     MIN_INTELLECT_INFIX = "min-intellect:";
     ROLE_INFIX = "role:";
     MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
