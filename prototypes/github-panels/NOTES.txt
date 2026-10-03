@@ -102,3 +102,17 @@ Implementation completion evidence
   SemIf cleanup failure also reproduces in isolation. A Python preparation test
   worker stalled beyond its configured timeout and was terminated to let the
   runner complete. The full unit gate is not green; no baseline pass is claimed.
+
+Number indicator follow-up acceptance
+Keep every visible tab count circular, including multi-digit counts. Hide count
+badges at detail widths of 380px or less so tab labels retain the space. Verify
+expanded and narrow Electron layouts with geometry assertions and screenshots;
+apply the same rule to mocks.
+
+Number indicator follow-up evidence
+Build, the static gate and 91 focused component/style tests passed. The Electron
+activity spec passed: expanded count badges have equal width and height, a
+temporary 100+ count fits and stays round, and narrow badges disappear while
+navigation fits. Visually inspected the expanded and narrow screenshots. Mock
+browser navigation/overflow probes and wide/mobile badge geometry also passed.
+The earlier full-unit-gate limitations remain; the broad unit suite was not rerun.
