@@ -175,6 +175,43 @@ describe('scoreDoctrineCompliance', () => {
     }
   })
 
+  it('does not count failed app-launch attempts as renderer verification', () => {
+    for (const launch of [
+      { status: 'error', result: 'could not spawn app' },
+      { status: 'failed', result: 'could not spawn app' },
+      { result: 'exit=1\nsh: pnpm: command not found' },
+    ]) {
+      const report = scoreDoctrineCompliance({
+        userMessage: 'Fix browser behavior',
+        userIntent: 'request',
+        toolCalls: [
+          { name: 'str_replace', args: { path: 'src/renderer/views/browser-pane.ts' } },
+          { name: 'run_shell', args: { command: 'pnpm run dev' }, ...launch },
+        ],
+        finalMessage: 'Changed browser behavior. The app failed to launch; it remains unverified.',
+      })
+      assert.ok(report.violations.includes('uiBehaviorVerification'))
+    }
+  })
+
+  it('accepts a successful app launch after a failed attempt', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Fix browser behavior',
+      userIntent: 'request',
+      toolCalls: [
+        { name: 'str_replace', args: { path: 'src/renderer/views/browser-pane.ts' } },
+        {
+          name: 'run_shell',
+          args: { command: 'pnpm run dev' },
+          result: 'exit=1\nERROR: startup failed',
+        },
+        { name: 'run_shell', args: { command: 'pnpm run dev' }, result: 'exit=0\napp started' },
+      ],
+      finalMessage: 'Changed browser behavior and verified the app after retrying startup.',
+    })
+    assert.ok(!report.violations.includes('uiBehaviorVerification'))
+  })
+
   it('rejects a renderer view change accompanied only by an unrelated test edit', () => {
     const report = scoreDoctrineCompliance({
       userMessage: 'Make Cmd+L focus the browser address bar',

@@ -418,6 +418,13 @@ function scoreUiBehaviorVerification(toolCalls: readonly DoctrineToolCall[]): Do
 
   const launchedApp = toolCalls.some((call) => {
     if (!SHELL_TOOLS.has(call.name)) return false
+    if (
+      call.status === 'error' ||
+      call.status === 'failed' ||
+      (typeof call.result === 'string' && FAILURE_SIGNAL.test(call.result))
+    ) {
+      return false
+    }
     const command = call.args?.['command']
     return typeof command === 'string' && APP_LAUNCH_COMMAND.test(command)
   })
