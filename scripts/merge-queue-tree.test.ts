@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { computeMergeTree } from './merge-queue-tree.mts'
 
-const ORIGIN = 'https://github.com/copse-dev/agent-pane.git'
+// actions/checkout configures the HTTPS repository URL without a .git suffix.
+const ORIGIN = 'https://github.com/copse-dev/agent-pane'
 
 async function repository(
   run: (cwd: string, git: (args: string[]) => string) => Promise<void>,
@@ -147,6 +148,26 @@ describe('trusted queue merge tree', () => {
       const tree = git(['rev-parse', 'HEAD^{tree}'])
       const head = git(['rev-parse', 'HEAD'])
       await assert.rejects(computeMergeTree(tree, head, { cwd }))
+    })
+  })
+
+  it('accepts only the two exact public checkout URL forms', async () => {
+    await repository(async (cwd, git) => {
+      const head = git(['rev-parse', 'HEAD'])
+      const tree = git(['rev-parse', 'HEAD^{tree}'])
+      for (const origin of [ORIGIN, `${ORIGIN}.git`]) {
+        git(['remote', 'set-url', 'origin', origin])
+        assert.equal(await computeMergeTree(head, head, { cwd }), tree)
+      }
+      for (const origin of [
+        `${ORIGIN}.git.evil`,
+        `${ORIGIN}?token=fixture`,
+        'https://github.com/external/agent-pane',
+        'https://fixture@github.com/copse-dev/agent-pane',
+      ]) {
+        git(['remote', 'set-url', 'origin', origin])
+        await assert.rejects(computeMergeTree(head, head, { cwd }), /public trusted origin/)
+      }
     })
   })
 

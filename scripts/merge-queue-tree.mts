@@ -6,7 +6,8 @@ import { promisify } from 'node:util'
 
 const execute = promisify(execFile)
 const SHA = /^[0-9a-f]{40}$/
-const PUBLIC_ORIGIN = 'https://github.com/copse-dev/agent-pane.git'
+const CHECKOUT_ORIGIN = 'https://github.com/copse-dev/agent-pane'
+const PUBLIC_ORIGIN = `${CHECKOUT_ORIGIN}.git`
 const GIT = '/usr/bin/git'
 const CONFIG = [
   '-c',
@@ -77,7 +78,7 @@ export async function computeMergeTree(
   }
   try {
     const origin = await git(cwd, ['remote', 'get-url', 'origin'])
-    if (origin !== PUBLIC_ORIGIN)
+    if (origin !== PUBLIC_ORIGIN && origin !== CHECKOUT_ORIGIN)
       throw new Error('Queue merge verification requires the public trusted origin')
     const objectPath = await git(cwd, ['rev-parse', '--git-path', 'objects'])
     if (!objectPath || objectPath.includes('\n'))
