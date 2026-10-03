@@ -195,6 +195,15 @@ sidebar row cap (it is already 10).
 - Start by listing every spec that assumes the centred composer before any code change; on
   [#3386](https://github.com/copse-dev/agent-pane/pull/3386) the old-pane assumption cost three
   failed demo runs and 36 specs.
+- **Approve label: use the prototype's "Approve" (decided; the prototype wording is intentional).**
+  The Activity detail's primary button reads **Approve**, not **Approve once**. Behaviour is
+  unchanged: it still sends the narrowest answer through `answerOnce` (no remembered grant, no
+  task lease), only beside the full request. Touch points: the button label and its aria-label
+  (`Approve once: ...`) in `activity-view.ts`; the comment in the same file; the doc lines in
+  `ui-taste.md` ("Approve once is the only in-place grant") and `mission-control.md`. The
+  confirmation line ("Approved once for ...", asserted by `activity-panel.test.ts` and
+  `activity-panel.e2e.ts`) is not part of the prototype and keeps saying "once" so the scope of
+  the grant is still stated after the click; **confirm** whether you want it shortened too.
 - Docs: rewrite the `ui-taste.md` "Centered new-thread composer" and "Activity panel" sections.
 - Risk: medium. The welcome screen (`views/welcome.ts`, no project open) is separate and must
   not regress. Expect a screenshot-baseline review.
@@ -337,3 +346,5 @@ settings keys.
 2. Thread drag between projects: **unsupported for now**; slice dropped.
 3. Sort and group-by: **persisted**, per profile.
 4. Attention colour: **fixed**; no token, no `?attn=` equivalent.
+5. Activity primary button label: **"Approve"** (the prototype's wording is intentional), with the
+   same once-only behaviour. Lands with slice 3.
