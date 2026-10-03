@@ -44,6 +44,10 @@ import {
   teardownRuntime,
   WORKER_IMAGE,
 } from './thread-container.ts'
+import { buildGuestProvider } from './guest-provider.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
 
 interface Cli {
@@ -140,6 +144,15 @@ async function main(): Promise<void> {
     if (!host || !addr) throw new Error(`--resolve expects host=addr, got "${entry}"`)
     egressResolve[host] = addr
   }
+  const hostProviderUrl = new URL(providerUrl)
+  const mapped = egressResolve[hostProviderUrl.hostname]
+  if (mapped) {
+    const destination = new URL(
+      `${hostProviderUrl.protocol}//${mapped === '::1' ? '[::1]' : mapped}`,
+    )
+    hostProviderUrl.hostname = destination.hostname
+    if (destination.port) hostProviderUrl.port = destination.port
+  }
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
@@ -148,27 +161,33 @@ async function main(): Promise<void> {
     workspace: cli.one('workspace') ?? process.cwd(),
     prompt: required(cli.one('prompt'), '--prompt'),
     model,
-    // The CLI names an OpenAI-compatible endpoint directly; a key, when
-    // given, is read here and crosses the stdio link as it does for the
-    // app's runs (decision A17).
-    provider: {
-      kind: 'openai-compatible',
-      model,
-      apiKeySlug: 'cli',
-      url: providerUrl,
-      label: 'the --provider-url endpoint',
-      local: true,
-      includeUsage: true,
-      apiStyle: null,
-      extraBody: null,
-      params: {},
-    },
-    ...(apiKey ? { apiKey } : {}),
+    // CLI provider inference and its selected key stay on this host (A1″).
+    hostInference: (maxOutputTokens): Promise<LLMProvider> =>
+      Promise.resolve(
+        withCredentialOutputRedaction(
+          buildGuestProvider(
+            {
+              kind: 'openai-compatible',
+              model,
+              apiKeySlug: 'cli',
+              url: hostProviderUrl.toString(),
+              label: 'the --provider-url endpoint',
+              local: true,
+              includeUsage: true,
+              apiStyle: null,
+              extraBody: null,
+              params: { maxOutputTokens },
+            },
+            apiKey ?? null,
+          ),
+          apiKey ? [apiKey] : [],
+        ),
+      ),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,
       tokenCeiling: Number(cli.one('tokens') ?? '2000000'),
     },
-    egressAllowlist: allow,
+    egressAllowlist: [...new Set([HOST_INFERENCE_TARGET, ...allow])],
     egressResolve,
     image,
     ...(maxSteps !== undefined ? { maxSteps: Number(maxSteps) } : {}),

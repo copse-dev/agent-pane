@@ -14,6 +14,9 @@ import {
   teardownRuntime,
 } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { buildGuestProvider } from './guest-provider.ts'
+import { withCredentialOutputRedaction } from '@copse/llm/credential-output-provider.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
 import { startScriptedModelServer } from './scripted-model-server.ts'
 import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 
@@ -35,15 +38,6 @@ import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-cont
 
 const E2E = process.env['COPSE_THREAD_CONTAINER_E2E']
 const IMAGE = 'copse-worker:e2e'
-const MODEL_HOST = 'model.copse.internal'
-/**
- * The guest is told the model lives on 443, the port a real provider uses and
- * the one the old per-origin listener needed a sysctl to bind. It reaches it
- * through the loopback proxy and the broker, which admits it by wildcard and
- * dials the scripted server's ephemeral port instead.
- */
-const GUEST_MODEL_ORIGIN = `${MODEL_HOST}:443`
-const EGRESS_WILDCARD = '*.copse.internal:443'
 
 /**
  * Runs inside the guest as an ordinary shell child of the agent: tries every
@@ -229,21 +223,27 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
         workspace: repo,
         prompt: 'Build the project, push it, and tidy the README.',
         model: 'scripted',
-        provider: {
-          kind: 'openai-compatible',
-          model: 'scripted',
-          apiKeySlug: 'scripted',
-          url: `http://${GUEST_MODEL_ORIGIN}/v1`,
-          label: 'the scripted model',
-          local: true,
-          includeUsage: true,
-          apiStyle: null,
-          extraBody: null,
-          params: {},
-        },
+        hostInference: async (maxOutputTokens) =>
+          withCredentialOutputRedaction(
+            buildGuestProvider(
+              {
+                kind: 'openai-compatible',
+                model: 'scripted',
+                apiKeySlug: 'scripted',
+                url: `http://127.0.0.1:${String(model.port)}/v1`,
+                label: 'scripted host model',
+                local: true,
+                includeUsage: true,
+                apiStyle: null,
+                extraBody: null,
+                params: { maxOutputTokens },
+              },
+              'host-only-provider-secret-123456',
+            ),
+            ['host-only-provider-secret-123456'],
+          ),
         budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-        egressAllowlist: [EGRESS_WILDCARD],
-        egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+        egressAllowlist: [HOST_INFERENCE_TARGET],
         image: IMAGE,
         runtimesDir,
         maxSteps: 8,
@@ -288,11 +288,16 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     //    was told, admitted by the wildcard rule; nothing else was asked for.
     const connects = record.egress.filter((e) => e.event === 'connect')
     assert.ok(connects.length > 0)
-    assert.ok(record.egress.every((e) => e.origin === GUEST_MODEL_ORIGIN))
-    assert.ok(connects.every((e) => e.detail === `rule ${EGRESS_WILDCARD}`))
+    assert.ok(record.egress.every((e) => e.origin === HOST_INFERENCE_TARGET))
+    assert.ok(connects.every((e) => e.detail === 'host-authenticated model inference'))
     assert.equal(record.egress.filter((e) => e.event === 'refused').length, 0)
-    assert.deepEqual(record.attestation.egressAllowlist, [EGRESS_WILDCARD])
+    assert.deepEqual(record.attestation.egressAllowlist, [HOST_INFERENCE_TARGET])
     assert.ok(model.requests >= 5)
+    assert.equal(record.credential, 'host')
+    const spec = readFileSync(join(runtimesDir, record.runtimeId, 'run.json'), 'utf8')
+    assert.ok(!spec.includes('host-only-provider-secret-123456'))
+    assert.ok(!spec.includes('127.0.0.1'))
+    assert.ok(!spec.includes('apiKeySlug'))
     // 6. The host's secret never entered the guest.
     assert.equal(record.secretCanary.present, false, record.secretCanary.detail)
     const written = readFileSync(join(runtimesDir, record.runtimeId, 'out', 'result.json'), 'utf8')
@@ -300,6 +305,7 @@ async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
     // variable must not be among them, and its value must not appear anywhere.
     assert.ok(!written.includes('COPSE_SECRET_CANARY'))
     assert.ok(!written.includes(canary))
+    assert.ok(!written.includes('host-only-provider-secret-123456'))
     // 7. The decision log and queue live in the run's own state, not the host profile.
     assert.ok(
       readFileSync(
