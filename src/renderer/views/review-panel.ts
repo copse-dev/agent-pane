@@ -19,6 +19,12 @@ function statusLabel(status: ThreadReview['status']): string {
   }
 }
 
+function skippedReviewReason(summary: string): string {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, '')
+  if (!reason) return 'No review ran.'
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`
+}
+
 /** Clean reviews (explicit `issuesFound: false`) collapse by default so a
  * positive verdict stays out of the way; reviews with findings (or unknown
  * legacy verdicts without the structured signal) stay expanded. */
@@ -44,6 +50,11 @@ function appendReviewHeader(panel: HTMLElement, review: ThreadReview, onRetry?: 
   if (review.status === 'error' && onRetry) {
     header.append(createRetryButton(onRetry))
   }
+  if (review.status === 'skipped') {
+    header.append(
+      el('span', { class: 'review-panel-skipped-summary' }, skippedReviewReason(review.summary)),
+    )
+  }
   panel.append(header)
 }
 
@@ -64,7 +75,7 @@ export function createReviewCardEl(
 
   appendReviewHeader(panel, review, onRetry)
 
-  if (review.status === 'running') return panel
+  if (review.status === 'running' || review.status === 'skipped') return panel
 
   const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
   // The verdict asked for follow-up but the turn stopped without acting on it

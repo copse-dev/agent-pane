@@ -2,7 +2,11 @@ import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { DemoTrace } from './demo-traces.ts'
+import type { FollowUpSuggestion } from './follow-ups/types.ts'
+import type { McpServerStatus } from './types/mcp.ts'
+import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
+import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
 const FOOTER_INPUT_TOKENS = 50_000
@@ -101,6 +105,22 @@ export interface DemoScenario {
     defaultIndex?: number
     cancelIndex?: number
   }[]
+  /**
+   * MCP servers the demo reports as configured, with the per-tool permission
+   * catalog Settings → Permissions lists for them. Scenarios without one show
+   * the default mail-server fixture.
+   */
+  mcpServers?: readonly McpServerStatus[]
+  toolPermissions?: ToolPermissionCatalog
+  /**
+   * What the follow-up model offers once the active thread's last turn ends.
+   * The demo has no model to ask, so without this no bubbles appear.
+   */
+  followUps?: readonly FollowUpSuggestion[]
+  /** The description the demo proposes when a visitor opens Create PR. */
+  prBody?: string
+  /** Uncommitted line counts the demo's working tree reports for the Changes chip. */
+  changeStats?: { readonly additions: number; readonly deletions: number }
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -432,10 +452,127 @@ function conciseThreadMessages(model: string, live: boolean): Thread['messages']
             model,
             content:
               'Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.',
-            toolCalls: [],
+            toolCalls: [
+              {
+                id: `concise-audit-${model}`,
+                name: 'workspace_edit_audit',
+                args: {},
+                status: 'done' as const,
+                result: 'Audit complete.',
+              },
+            ],
             createdAt: FIXED_TIME + 3_000,
           },
         ]),
+  ]
+}
+
+/**
+ * A longer finished thread for the concise view: a tool-and-screenshot turn,
+ * back-to-back text answers, a tool turn that ends in text only, a one-line
+ * answer and a closing screenshot turn. It exercises the spacing between
+ * prompts, hidden process bubbles and replies that a single turn cannot.
+ */
+function conciseMultiTurnMessages(model: string): Thread['messages'] {
+  const turn = (
+    n: number,
+    prompt: string,
+    replies: string[],
+    { tools = false, screenshot = false }: { tools?: boolean; screenshot?: boolean } = {},
+  ): Thread['messages'] => {
+    const at = FIXED_TIME + n * 10_000
+    return [
+      {
+        id: `concise-multi-user-${String(n)}`,
+        role: 'user',
+        content: prompt,
+        toolCalls: [],
+        createdAt: at,
+      },
+      ...(tools
+        ? [
+            {
+              id: `concise-multi-steps-${String(n)}`,
+              role: 'assistant' as const,
+              model,
+              content: 'Checking the code.',
+              toolCalls: [
+                {
+                  id: `concise-multi-read-${String(n)}`,
+                  name: 'read_file',
+                  args: { path: 'src/renderer/views/settings-dialog.ts' },
+                  status: 'done' as const,
+                  result: 'export function mountSettings() { … }',
+                },
+                {
+                  id: `concise-multi-edit-${String(n)}`,
+                  name: 'str_replace',
+                  args: { path: 'src/renderer/styles/settings.css' },
+                  status: 'done' as const,
+                  result: 'Replaced 1 occurrence.',
+                  editStats: { additions: 3, deletions: 1 },
+                },
+              ],
+              createdAt: at + 1,
+            },
+          ]
+        : []),
+      ...(screenshot
+        ? [
+            {
+              id: `concise-multi-shot-${String(n)}`,
+              role: 'assistant' as const,
+              model,
+              content: 'Capturing the narrow layout.',
+              toolCalls: [
+                {
+                  id: `concise-multi-capture-${String(n)}`,
+                  name: 'browser_screenshot',
+                  args: { width: 480 },
+                  status: 'done' as const,
+                  result: 'Captured the settings dialog at 480px.',
+                  images: [
+                    {
+                      dataUrl: CONCISE_SCREENSHOT,
+                      name: 'settings-480px.png',
+                      kind: 'screenshot' as const,
+                    },
+                  ],
+                },
+              ],
+              createdAt: at + 2,
+            },
+          ]
+        : []),
+      ...replies.map((content, i) => ({
+        id: `concise-multi-reply-${String(n)}-${String(i)}`,
+        role: 'assistant' as const,
+        model,
+        content,
+        toolCalls: [],
+        createdAt: at + 3 + i,
+      })),
+    ]
+  }
+  return [
+    ...turn(
+      1,
+      'Fix the settings form so Save stays aligned on narrow windows.',
+      ['Save now stays pinned to the footer at every width. The settings form tests pass.'],
+      { tools: true, screenshot: true },
+    ),
+    ...turn(2, 'Why was it misaligned?', [
+      'The footer was absolutely positioned, so it ignored the form width.',
+      'I switched it to a grid so it follows the content box.',
+    ]),
+    ...turn(3, 'Rename the helper too.', ['Renamed `pinFooter` to `layoutFooter` in 3 files.'], {
+      tools: true,
+    }),
+    ...turn(4, 'Anything else?', ['No. Nothing else needs changing.']),
+    ...turn(5, 'Show me the narrow layout again.', ['Here is the 480px layout after the rename.'], {
+      tools: true,
+      screenshot: true,
+    }),
   ]
 }
 
@@ -444,7 +581,11 @@ function conciseThreadScenario(
   id: string,
   label: string,
   model: string,
-  { live = false, enabled = true }: { live?: boolean; enabled?: boolean } = {},
+  {
+    live = false,
+    enabled = true,
+    multiTurn = false,
+  }: { live?: boolean; enabled?: boolean; multiTurn?: boolean } = {},
 ): DemoScenario {
   return {
     id,
@@ -463,7 +604,12 @@ function conciseThreadScenario(
         title: 'Concise thread view',
         status: live ? 'running' : 'idle',
         model,
-        messages: conciseThreadMessages(model, live),
+        messages: multiTurn
+          ? [
+              ...conciseMultiTurnMessages(model),
+              ...(live ? conciseThreadMessages(model, true) : []),
+            ]
+          : conciseThreadMessages(model, live),
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -752,6 +898,37 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       error: null,
       continuedFrom: null,
     },
+  },
+  {
+    id: 'balanced-model-label',
+    label: 'Balanced model rule label',
+    project: project('demo-balanced-model-label-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:balanced',
+    },
+    threads: [
+      {
+        id: 'demo-balanced-model-label-thread',
+        title: 'Balanced model label',
+        status: 'idle',
+        model: 'auto:balanced',
+        messages: [
+          {
+            id: 'demo-balanced-model-label-user',
+            role: 'user',
+            content: 'Keep this conversation on the balanced model rule.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
   },
   {
     id: 'footer-compact',
@@ -1588,6 +1765,18 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'claude-opus-5-5',
   ),
   conciseThreadScenario(
+    'concise-thread-multi',
+    'Concise thread view across several turns',
+    'claude-opus-5-5',
+    { multiTurn: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-multi-working',
+    'Concise thread view with finished turns and a live one',
+    'claude-opus-5-5',
+    { multiTurn: true, live: true },
+  ),
+  conciseThreadScenario(
     'concise-thread-full',
     'Full thread view for a model below the concise gate',
     'gpt-4o',
@@ -1626,4 +1815,6 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
+  ...SITE_TOUR_SCENARIOS,
 ]

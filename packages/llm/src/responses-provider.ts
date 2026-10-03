@@ -159,6 +159,12 @@ export class ResponsesProvider implements LLMProvider {
                 // Last, so an explicit extraBody entry still wins — that field is
                 // the user's own escape hatch for provider-specific overrides.
                 ...self.tuned,
+                // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
+                // so merge it back with the summary request or OpenAI streams no
+                // reasoning summaries once the user tunes a level.
+                ...(self.reasoningSummaries && self.tuned.reasoning
+                  ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
+                  : {}),
                 ...(self.extraBody ?? {}),
               },
               { signal },

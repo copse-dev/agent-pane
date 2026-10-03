@@ -28,6 +28,7 @@
 // mappers own the wire.
 
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
+import { firstPartyProviderOf, hasModelIdPrefix } from './model-families.ts'
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 
@@ -230,6 +231,12 @@ function matchesFamily(modelId: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => modelId.startsWith(prefix))
 }
 
+// OpenAI ladders match on an id boundary like the routing table does, so the
+// transport and the parameters cannot disagree about which family an id is in.
+function matchesOpenAiFamily(modelId: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix))
+}
+
 function claudeSupport(modelId: string): ModelParameterSupport {
   const withoutOff = (ladder: readonly ReasoningLevel[]): readonly ReasoningLevel[] =>
     matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON)
@@ -265,7 +272,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
 }
 
 function openAiSupport(modelId: string): ModelParameterSupport {
-  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
       reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: 'openai-effort',
@@ -274,7 +281,7 @@ function openAiSupport(modelId: string): ModelParameterSupport {
       temperatureMax: 2,
     }
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: 'openai-effort',
@@ -316,8 +323,9 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     }
   }
   if (selection.namespace === 'cloud') {
-    if (selection.modelId.startsWith('claude')) return claudeSupport(selection.modelId)
-    if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
+    const provider = firstPartyProviderOf(selection)
+    if (provider === 'anthropic') return claudeSupport(selection.modelId)
+    if (provider === 'openai') return openAiSupport(selection.modelId)
     // An unrecognised bare id is routed by whichever key is configured, so we
     // cannot say what it takes. Offer sampling only — the safe intersection.
     return {
@@ -503,6 +511,16 @@ export interface RecommendedOutputCeiling {
  * or infer a recipe from another model in the same family.
  */
 const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
+  {
+    match: 'glm-4.7-flash',
+    label: 'Z.ai’s coding-agent recipe',
+    source: 'https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters',
+    // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+    // Its general-task recipe uses different sampling and a larger ceiling;
+    // Copse's coding tool loop uses the coding benchmark profile. The card does
+    // not specify a reasoning-effort value or repetition penalty for this set.
+    params: { temperature: 0.7, topP: 1, maxOutputTokens: 16_384 },
+  },
   {
     match: 'glm-5.3-flash',
     label: 'Copse’s experimental balanced agent profile',

@@ -25,18 +25,17 @@ describe('read_skill error guidance', () => {
   /**
    * Open the newest failed tool card and return a selector unique to it. Both
    * cases run in one thread, so the second must not read the first's card.
+   * Failures render beside the turn's rollup rather than inside it, so the card
+   * is visible without opening the rollup.
    */
   async function expandLatestFailedTool(): Promise<string> {
-    // Live tools retain their turn wrapper even when only one tool ran.
-    const rollups = await $$('.tool-card-rollup[data-status="error"]')
-    const rollup = rollups[rollups.length - 1]
-    if (!rollup) throw new Error('no failed tool rollup rendered')
-    await rollup.waitForDisplayed({ timeout: 10_000 })
-    if (!(await rollup.getProperty('open'))) {
-      await rollup.$('summary.tool-card-header').click()
-    }
-    const failedTool = rollup.$('.tool-card[data-tool-id][data-status="error"]')
+    const failedTools = await $$('.tool-card[data-tool-id][data-status="error"]')
+    const failedTool = failedTools[failedTools.length - 1]
+    if (!failedTool) throw new Error('no failed tool card rendered')
     await failedTool.waitForDisplayed({ timeout: 10_000 })
+    await expect(
+      $$('.tool-card-rollup .tool-card[data-tool-id][data-status="error"]'),
+    ).toBeElementsArrayOfSize(0)
     if (!(await failedTool.getProperty('open'))) {
       await failedTool.$('summary.tool-card-header').click()
     }

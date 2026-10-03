@@ -1,5 +1,5 @@
 import { requestApproval } from '../approval.ts'
-import { acpSshTarget } from './acp-ssh-transport.ts'
+import { spawnConfigSshTarget, type AcpSshTarget } from './acp-ssh-transport.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
 
 /**
@@ -45,7 +45,7 @@ export async function gateRemoteAcpEnvForward(
 ): Promise<AcpAgentSpawnConfig> {
   const envNames = Object.keys(config.env ?? {})
   if (envNames.length === 0) return config
-  const target = acpSshTarget(config.cwd)
+  const target = spawnConfigSshTarget(config)
   if (!target) return config
 
   const key = decisionKey(agentId, target.hostId, envNames)
@@ -82,17 +82,18 @@ export async function gateRemoteAcpEnvForward(
 /**
  * A JSON-RPC "Authentication required" from an agent running on an SSH host.
  * The default message is a dead end there — the fix is on the *remote* box —
- * so name the two working paths. Returns null when the failure is anything
+ * so name the two working paths. `target` is where the turn placed the agent
+ * (its resolved SSH target, or null for local), not the live setting, which
+ * may have changed since the spawn. Returns null when the failure is anything
  * else or the agent ran locally.
  */
 export function remoteAcpAuthRequiredHint(
   err: unknown,
-  cwd: string,
+  target: AcpSshTarget | null,
   agentId: string,
 ): Error | null {
   const errorMessage = err instanceof Error ? err.message : String(err)
   if (!/authentication required|authentication_failed/i.test(errorMessage)) return null
-  const target = acpSshTarget(cwd)
   if (!target) return null
   return new Error(
     `The "${agentId}" agent on ${target.hostId} has no model-provider credentials. ` +

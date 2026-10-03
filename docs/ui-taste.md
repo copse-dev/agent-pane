@@ -783,7 +783,7 @@ wherever the trick is copied. Spec: `modern-css.test.ts`.
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
-Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+Two remotes ending in the same leaf (e.g. `/srv/app` and `/home/ubuntu/app`) must stay
 visually distinct. Display re-derives from `project.path` so older basename-only stored
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
@@ -791,11 +791,15 @@ names still render correctly (`projectDisplayName` in
 ## Thread GitHub PR status icon
 
 Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
-show a single git-pull-request icon after lifecycle resolves — not text, not a pill:
+show a single icon after lifecycle resolves — not text, not a pill:
 
-- open → accent
-- merged → success
-- closed → muted
+- open → git-pull-request glyph, accent
+- merged → git-merge glyph, `--pr-merged` (GitHub purple; fixed, so a purple custom accent
+  cannot collapse it into open)
+- closed → git-pull-request glyph, `--pr-closed` (red)
+
+An open PR whose checks are failing fills the glyph's top node with `--pr-closed`
+(`.has-ci-failure`). Pending and passing checks add nothing; merged and closed never show it.
 
 The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …).
 Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
@@ -872,21 +876,29 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
   `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
   tool, and do not keep progressive wording on a completed card.
-- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
-  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
-  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
-- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
-  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
-  body (above the tool rows) so the collapsed view is only the italic heading. Standalone
-  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning…` while live, `Reasoned` when settled.
+- **One quiet rollup for background activity.** Two or more non-subagent tool calls on a
+  message collapse into `.tool-card-rollup`. The collapsed summary is **italic muted text**
+  (like reasoning) and stays closed by default, including while tools run — click to expand
+  nested category groups and individuals. When prose-less assistant messages follow one
+  another, the same disclosure becomes the run and nests one `.tool-card-step` per message;
+  it is patched in place, so it keeps its open state as messages join. Failed tools render
+  open beside the rollup rather than inside it, so a failure is visible without exposing
+  successful work (a call the user interrupted is not a failure and stays inside). When every
+  call failed there is no rollup. Subagent and proposal cards keep their own surfaces.
+- **Reasoning nests with its tools and starts closed.** When a segment has both `reasoning`
+  and tools, do **not** render a standalone Reasoning block above the rollup. Put it inside
+  the expanded rollup body (above the tool rows), or on its message's step in a run, so the
+  collapsed view is only the italic heading. Every reasoning disclosure starts closed,
+  including while live. Standalone Reasoning remains for answer-only / no-tool segments; empty
+  trails are omitted.
+  Title tense matches tools: `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
-  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. Settled
-  reasoning disclosures return to a static chevron.
+  `.messages-list`, never a strip inside `#input-bar`. Fold that row into the live disclosure
+  title only when the title is visible; keep it while reasoning is inside a closed rollup.
+  Settled reasoning disclosures return to a static chevron.
 - **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
   precede a live label, or the row reads at a different indent than its settled self and the hover
   pill stretches past the text. Two placements, by where the row's label sits:

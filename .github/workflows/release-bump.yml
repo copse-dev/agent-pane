@@ -8,9 +8,11 @@ name: Bump release version
 #
 # It skips the week when:
 #   - the current version has not been published yet. One release is in flight
-#     at a time; bumping past an unpublished version would drop its notes and
-#     queue betas nobody has install-tested. Publish it (or cut past it by hand,
-#     docs/releasing-macos.md) and the next run resumes.
+#     at a time, so the schedule never queues betas nobody has install-tested.
+#     Publish it and the next run resumes. If it can never be published (its
+#     release run failed), dispatch this workflow with the next version: an
+#     explicit version cuts past the unpublished one and carries its notes
+#     forward, since it has no GitHub Release to keep them.
 #   - Unreleased is empty. There is nothing to release.
 #
 # Publication stays manual (`Publish release artifacts`). Stable releases are
@@ -69,12 +71,34 @@ jobs:
         run: |
           set -euo pipefail
           current="$(node -p "require('./package.json').version")"
-          # The release repository is public, so the workflow token can read it.
-          if ! gh release view "v$current" --repo "$RELEASE_REPOSITORY" > /dev/null 2>&1; then
-            echo "::notice::v$current is not published in $RELEASE_REPOSITORY yet; skipping this week's bump."
-            exit 0
-          fi
           args=(--skip-if-empty)
+          # The release repository is public, so the workflow token can read it.
+          # Only a confirmed 404 means unpublished. Any other failure (rate limit,
+          # outage, auth) must stop the run: treating it as unpublished would let
+          # a dispatch carry an already-published version's notes forward again.
+          if ! lookup="$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/v$current" --silent 2>&1)"; then
+            case "$lookup" in
+              *"HTTP 404"*) ;;
+              *)
+                echo "::error::Could not check whether v$current is published in $RELEASE_REPOSITORY: $lookup"
+                exit 1
+                ;;
+            esac
+            # A missing repository also answers 404; make sure that is not the cause.
+            if ! gh api "repos/$RELEASE_REPOSITORY" --silent; then
+              echo "::error::$RELEASE_REPOSITORY is not reachable, so v$current's publication cannot be checked."
+              exit 1
+            fi
+            if [ -z "$REQUESTED_VERSION" ]; then
+              echo "::notice::v$current is not published in $RELEASE_REPOSITORY yet; skipping this week's bump. If its release run failed, dispatch this workflow with the next version to cut past it."
+              exit 0
+            fi
+            # A person chose to abandon the unpublished version, usually one
+            # whose release run failed. Its notes ship with this release.
+            echo "::notice::v$current is not published; cutting $REQUESTED_VERSION past it and carrying its notes forward."
+            args+=(--carry-forward)
+            echo "carried=$current" >> "$GITHUB_OUTPUT"
+          fi
           if [ -n "$REQUESTED_VERSION" ]; then
             args+=("$REQUESTED_VERSION")
           fi
@@ -120,7 +144,7 @@ jobs:
             Weekly release bump from [`release-bump.yml`](.github/workflows/release-bump.yml).
 
             Sets `package.json` to `${{ steps.bump.outputs.version }}` and moves `CHANGELOG.md`'s
-            Unreleased notes under `## ${{ steps.bump.outputs.version }}`. Once this merges, the next
+            Unreleased notes under `## ${{ steps.bump.outputs.version }}`.${{ steps.bump.outputs.carried && format(' It cuts past {0}, which was never published, and folds that version''s notes into this section.', steps.bump.outputs.carried) || '' }} Once this merges, the next
             daily promotion carries it to `release`, `Cut release tag` tags it, and
             `Release (macOS)` builds the signed artifacts. Publishing them stays manual — see
             [docs/releasing-macos.md](docs/releasing-macos.md).
