@@ -11,6 +11,12 @@ describe('Terminal-Bench Python adapter', () => {
     assert.match(source, /create_subprocess_exec\([\s\S]+limit=_BRIDGE_STREAM_LIMIT_BYTES/)
   })
 
+  it('stops reading stdout at the result message and bounds the exit wait', () => {
+    assert.match(source, /if message_type == "result":[\s\S]+?break/)
+    assert.match(source, /wait_for\(process\.wait\(\), timeout=_EXIT_GRACE_SECONDS\)/)
+    assert.match(source, /forced_stop = True\s+process\.terminate\(\)/)
+  })
+
   it('sends the discovered workspace root to the agent bridge', () => {
     assert.match(source, /"workspaceRoot": workspace_root/)
     assert.match(source, /COPSE_TERMINAL_PROFILE_VERSIONED_ID/)

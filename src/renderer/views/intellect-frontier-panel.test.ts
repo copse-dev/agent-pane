@@ -1132,11 +1132,11 @@ describe('plan coverage on the map', () => {
 
     assert.ok(
       panel.root.querySelector(
-        'circle.frontier-point.plan[data-model-id="acp:codex-acp#gpt-6-astra"]',
+        'circle.frontier-point.plan.estimated[data-model-id="acp:codex-acp#gpt-6-astra"]',
       ),
     )
     const labels = [...panel.root.querySelectorAll('text.frontier-label')].map((t) => t.textContent)
-    assert.ok(labels.includes('GPT-6 Astra · plan'))
+    assert.ok(labels.includes('GPT-6 Astra (~) · plan'))
   })
 
   it('does not treat a direct Astra API route as Codex plan usage', async () => {

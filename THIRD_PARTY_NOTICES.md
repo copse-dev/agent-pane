@@ -16,14 +16,15 @@ checks the real archive again. In the app the files are in
 `Copse.app/Contents/Resources/app.asar.unpacked/dist/resources/licenses/`
 (`THIRD_PARTY_LICENSES.txt` and `LICENSE.txt`), while electron-builder retains
 Chromium and Node.js's `LICENSES.chromium.html` beside the packaged runtime.
-**Settings → About** lists every component with its licence.
+**Settings → About** lists every component with its licence. That generated
+list is the record of which version of each component ships.
 
 The sections below record how Copse meets each licence that asks for more than
 attribution, or that offers a choice. The build checks them against what it
 ships (`scripts/lib/third-party-notices.mts`) and fails if a component that
-needs an entry lacks one, if an entry quotes a version that no longer ships or
-names a package that no longer ships, if a dual-licensed entry does not say
-which licence Copse elects, or if a "Not shipped" package ships. An entry
+needs an entry lacks one, if an entry names a package that no longer ships or
+quotes a version (the generated list carries those), if a dual-licensed entry
+does not say which licence Copse elects, or if a "Not shipped" package ships. An entry
 heading ends with the npm package name in parentheses, for example
 `## noVNC (@novnc/novnc)`.
 
@@ -64,7 +65,7 @@ and note any changes — which this notice does.
   https://www.mozilla.org/MPL/2.0/
 - **Used by:** the opt-in, read-only Remote Desktop pane. Copse supplies an
   IPC-backed channel; noVNC decodes and paints the RFB stream in the renderer.
-- **Modifications:** none. Version 1.7.0 is bundled as published.
+- **Modifications:** none. Bundled as published.
 
 The MPL applies at file level to noVNC's own files and does not change Copse's
 AGPL-3.0-only license. noVNC's sources carry no "Incompatible With Secondary
@@ -86,7 +87,7 @@ code: the unmodified upstream release linked above.
   (`@copse/streaming-markdown`'s DOMPurify backend, loaded lazily by
   `src/renderer/markdown/sanitizer-backend.ts`), the Mermaid diagram frame, and
   Monaco. Compiled into the renderer bundles.
-- **Modifications:** none. Version 3.4.15 is bundled as published.
+- **Modifications:** none. Bundled as published.
 
 Under the Apache-2.0 option, Copse passes on DOMPurify's copyright notice and
 the license text, which ship in the generated `THIRD_PARTY_LICENSES.txt`.
@@ -105,7 +106,7 @@ combined into Copse's AGPL-3.0-only work.
   sandbox's network proxy uses Forge to create its local TLS certificate
   authority and leaf certificates. Shipped in the app archive under
   `node_modules/node-forge/`.
-- **Modifications:** none. Version 1.4.0 is shipped as published.
+- **Modifications:** none. Shipped as published.
 
 Under the BSD-3-Clause option, Copse keeps Digital Bazaar's copyright notice,
 license conditions, and disclaimer. They ship with the package in

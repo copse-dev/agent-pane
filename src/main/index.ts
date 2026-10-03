@@ -20,6 +20,8 @@ armPerfTrace()
 installIpcPerfTracing()
 
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
+import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
@@ -93,6 +95,7 @@ import {
   repairCorruptGortexConfig,
   stopGortexDaemon,
 } from './services/search/semantic-index.ts'
+import { stopLocalClassifierServers } from './services/classifiers/local-classifiers.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
@@ -576,6 +579,7 @@ app
     })
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
+    setExplainerPreviewCapture(captureExplainerFrames)
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
@@ -1204,6 +1208,7 @@ app.on('before-quit', (event) => {
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  stopLocalClassifierServers()
   // The hidden video-decoder window is not the main window, so nothing else
   // closes it — left open it would keep the app alive past the last quit.
   closeVideoDecoder()

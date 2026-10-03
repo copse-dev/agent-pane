@@ -111,6 +111,12 @@
   --change-modified: var(--warning);
   --change-deleted: var(--error);
   --change-renamed: var(--info);
+  /* Linked-PR lifecycle on thread rows, following GitHub: merged is purple,
+     closed is red. Bound to --important / --error so light derives for free;
+     merged stays a fixed hue (not --accent) so a purple custom accent does not
+     collapse it into the open state. */
+  --pr-merged: var(--important);
+  --pr-closed: var(--error);
   /* --success is a bright teal in dark, so its wash runs lighter than red's to
      leave code on a changed character (line + char wash) above 4.5:1. */
   --diff-insert: color-mix(in srgb, var(--success) 20%, transparent);
