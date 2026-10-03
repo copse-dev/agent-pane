@@ -457,6 +457,11 @@ async function canApplyDirectly(
  * setting off — so the caller keeps the plain staging message rather than
  * explaining a fast path this thread never had.
  *
+ * `mkdir` is exempt from the worktree-only and setting gates as well as the git
+ * checks, so it applies directly in a shared checkout too: a fresh project has no
+ * worktree thread yet, and asking approval for an empty directory on first run
+ * protects nothing.
+ *
  * `mkdir` skips the git checks entirely. Everything {@link canApplyDirectly}
  * guards against is destruction of content that is not Copse's to destroy — the
  * backup it takes, the unowned-changes scan, the stale-content comparison — and
@@ -472,14 +477,14 @@ async function canApplyFileOpDirectly(
   op: DiffOp,
   path: string,
 ): Promise<{ ok: true } | { ok: false; reason: string | null }> {
-  if (state.checkoutMode !== 'worktree') return { ok: false, reason: null }
-  if (!getSetting<boolean>('worktreeAutoApproveEdits', true)) return { ok: false, reason: null }
   if (op === 'mkdir') {
     if (state.queue.length > 0) {
       return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
     }
     return { ok: true }
   }
+  if (state.checkoutMode !== 'worktree') return { ok: false, reason: null }
+  if (!getSetting<boolean>('worktreeAutoApproveEdits', true)) return { ok: false, reason: null }
   return canApplyDirectly(state, path, op)
 }
 
@@ -1195,7 +1200,11 @@ export async function applyOrStageFileOp(request: FileOpRequest): Promise<string
     const backupNote = backup
       ? ` The worktree had uncommitted changes, so those were backed up to ${backup.ref} first.`
       : ''
-    return `${appliedFileOpVerb(entry)} directly. This thread runs in its own isolated worktree, so no approval was required.${backupNote} You can validate with run_shell/read_file/git now.`
+    const reason =
+      state.checkoutMode === 'worktree'
+        ? 'This thread runs in its own isolated worktree'
+        : 'Creating a directory destroys nothing'
+    return `${appliedFileOpVerb(entry)} directly. ${reason}, so no approval was required.${backupNote} You can validate with run_shell/read_file/git now.`
   }
   if (result.status === 'conflict') {
     // A move carries whatever is on disk now, so a restaged rename follows the
