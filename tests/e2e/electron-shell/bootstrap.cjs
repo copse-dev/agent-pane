@@ -91,4 +91,11 @@ if (process.env.COPSE_E2E_NATIVE_ALERTS) {
   require('./native-alerts-fixture.cjs').install(process.env.COPSE_E2E_NATIVE_ALERTS)
 }
 
+// Delay only the committed lookup at Electron's existing IPC dependency boundary.
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_GIT_COMMITTED_BARRIER) {
+  require('./git-committed-barrier-fixture.cjs').install(
+    process.env.COPSE_E2E_GIT_COMMITTED_BARRIER,
+  )
+}
+
 require('../../../dist/main/index.js')

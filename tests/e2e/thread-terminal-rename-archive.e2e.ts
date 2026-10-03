@@ -26,21 +26,38 @@ describe('thread + terminal rename / archive', () => {
     resetUserData()
   })
 
-  it('double-click renames a thread; right-click offers Rename, Fork and Archive', async function () {
+  it('thread dots and right-click share actions; double-click renames and Archive hides the row', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const archiveRow = await $(`.chat-row*=${archiveTitle}`)
     await archiveRow.waitForExist({ timeout: 10_000 })
 
-    // Context menu on the thread that will be archived.
-    await archiveRow.click({ button: 'right' })
+    // The dots open the menu without selecting or deleting this thread.
+    const selectedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    await archiveRow.moveTo()
+    const menuButton = archiveRow.$('.chat-menu-btn')
+    await expect(menuButton).toHaveAttribute('aria-haspopup', 'menu')
+    await expect(menuButton.$('[data-icon="more-vertical"]')).toBeExisting()
+    await menuButton.click()
     const menu = await $('.context-menu')
     await menu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
     )
-    expect(labels).toEqual(['Rename', 'Fork', 'Archive'])
+    expect(labels).toEqual(['Rename', 'Fork', 'Archive', 'Delete'])
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', selectedThreadId)
+    await expect(archiveRow).toBeExisting()
+    await saveAppScreenshot('thread-actions-menu.png')
+
+    await browser.keys('Escape')
+    await expect($('.context-menu')).not.toBeExisting()
+    await archiveRow.click({ button: 'right' })
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    const rightClickLabels = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
+    )
+    expect(rightClickLabels).toEqual(labels)
     await saveAppScreenshot('thread-context-menu-rename-archive.png')
 
     // Dismiss and exercise double-click rename on the keep thread.

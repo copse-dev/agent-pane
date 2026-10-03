@@ -6,9 +6,11 @@ import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 class FakePrediction {
   private readonly opts: LLMRespondOpts
+  private readonly toolCallId: string | null
 
-  constructor(opts: LLMRespondOpts) {
+  constructor(opts: LLMRespondOpts, toolCallId: string | null) {
     this.opts = opts
+    this.toolCallId = toolCallId
   }
 
   async result(): Promise<{
@@ -33,9 +35,11 @@ class FakePrediction {
       reasoningType: 'none',
       isStructural: false,
     })
-    this.opts.onToolCallRequestEnd?.(7, {
+    // The SDK's `callId` is a per-prediction counter, so the first tool call
+    // of every prediction reports 0 whatever the server called it.
+    this.opts.onToolCallRequestEnd?.(0, {
       toolCallRequest: {
-        id: 'call-7',
+        ...(this.toolCallId === null ? {} : { id: this.toolCallId }),
         type: 'function',
         name: 'list_dir',
         arguments: { path: '.' },
@@ -55,11 +59,16 @@ class FakePrediction {
 class FakeModel {
   chat: Chat | null = null
   opts: LLMRespondOpts | null = null
+  private readonly toolCallId: string | null
+
+  constructor(toolCallId: string | null) {
+    this.toolCallId = toolCallId
+  }
 
   respond(chat: Chat, opts: LLMRespondOpts): FakePrediction {
     this.chat = chat
     this.opts = opts
-    return new FakePrediction(opts)
+    return new FakePrediction(opts, this.toolCallId)
   }
 }
 
@@ -69,12 +78,26 @@ class FakeModel {
  */
 class FakeToolFailureModel {
   opts: LLMRespondOpts | null = null
+  private readonly tokensBeforeFailure: number
+
+  constructor(tokensBeforeFailure: number) {
+    this.tokensBeforeFailure = tokensBeforeFailure
+  }
 
   respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
     this.opts = opts
     return {
       result: (): Promise<never> =>
         new Promise<never>((_resolve, reject) => {
+          if (this.tokensBeforeFailure > 0) {
+            opts.onPredictionFragment?.({
+              content: 'x',
+              tokensCount: this.tokensBeforeFailure,
+              containsDrafted: false,
+              reasoningType: 'none',
+              isStructural: false,
+            })
+          }
           opts.onToolCallRequestFailure?.(1, new ToolCallRequestError('bad tool call', '{['))
           opts.signal?.addEventListener(
             'abort',
@@ -88,8 +111,52 @@ class FakeToolFailureModel {
   }
 }
 
+/** Streams one fragment, then keeps predicting until it is cancelled. */
+class FakeEndlessModel {
+  opts: LLMRespondOpts | null = null
+
+  respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
+    this.opts = opts
+    return {
+      result: (): Promise<never> =>
+        new Promise<never>((_resolve, reject) => {
+          opts.onPredictionFragment?.({
+            content: 'thinking',
+            tokensCount: 1,
+            containsDrafted: false,
+            reasoningType: 'reasoning',
+            isStructural: false,
+          })
+          opts.signal?.addEventListener(
+            'abort',
+            (): void => {
+              reject(new Error('prediction cancelled'))
+            },
+            { once: true },
+          )
+        }),
+    }
+  }
+}
+
+class FakeEndlessClient {
+  readonly modelHandle = new FakeEndlessModel()
+
+  model(): Promise<FakeEndlessModel> {
+    return Promise.resolve(this.modelHandle)
+  }
+
+  prepareImageBase64(): Promise<never> {
+    return Promise.reject(new Error('unexpected image'))
+  }
+}
+
 class FakeToolFailureClient {
-  readonly modelHandle = new FakeToolFailureModel()
+  readonly modelHandle: FakeToolFailureModel
+
+  constructor(opts: { tokensBeforeFailure?: number } = {}) {
+    this.modelHandle = new FakeToolFailureModel(opts.tokensBeforeFailure ?? 0)
+  }
 
   model(): Promise<FakeToolFailureModel> {
     return Promise.resolve(this.modelHandle)
@@ -101,7 +168,12 @@ class FakeToolFailureClient {
 }
 
 class FakeClient {
-  readonly modelHandle = new FakeModel()
+  readonly modelHandle: FakeModel
+
+  /** `toolCallId` is the id the server reports; `null` omits it. */
+  constructor(toolCallId: string | null = 'call-7') {
+    this.modelHandle = new FakeModel(toolCallId)
+  }
 
   model(): Promise<FakeModel> {
     return Promise.resolve(this.modelHandle)
@@ -268,24 +340,121 @@ describe('LMStudioProvider', () => {
     )
   })
 
-  it('cancels the prediction when the model emits an unparseable tool call', async () => {
+  it('gives each id-less tool call a unique id across predictions', async () => {
+    // Falling back to the SDK's per-prediction `callId` named the first call of
+    // every turn `lmstudio-0`; the thread store keys tool-result blobs by id, so
+    // the second turn overwrote the first turn's result and the thread stopped
+    // loading.
+    const provider = new LMStudioProvider('local-model', { client: new FakeClient(null) })
+    const toolCallIds = async (): Promise<string[]> =>
+      (await collect(provider)).flatMap((chunk) =>
+        chunk.type === 'tool_call' ? [chunk.toolCall.id] : [],
+      )
+    const [first] = await toolCallIds()
+    const [second] = await toolCallIds()
+    assert.ok(first && second)
+    assert.match(first, /^tc_/)
+    assert.notEqual(first, second)
+  })
+
+  it('ends the stream with a typed outcome and cancels the prediction on an unparseable tool call', async () => {
     // The SDK reports the bad tool call through a callback and keeps predicting
-    // until it is cancelled, so failing our queue alone would leave the local
-    // model generating tokens no one can read.
+    // until it is cancelled, so ending our queue alone would leave the local
+    // model generating tokens no one can read. The stream must end normally
+    // (not throw) so the agent loop can recover instead of the run dying.
     const client = new FakeToolFailureClient()
     const provider = new LMStudioProvider('local-model', { client })
 
-    await assert.rejects(
-      async () => {
-        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) {
-          // Drain the stream so the provider reaches the expected failure.
-        }
-      },
-      // The parse failure surfaces to the caller rather than being retried:
-      // replaying the same prompt would produce the same broken tool call.
-      /bad tool call/,
-    )
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      chunks.push(chunk)
+    }
+
+    assert.deepEqual(chunks.at(-1), {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: 'bad tool call', hitOutputCeiling: false },
+    })
     assert.equal(client.modelHandle.opts?.signal?.aborted, true)
+  })
+
+  it('reports that the output ceiling cut off the tool call when the streamed tokens reach it', async () => {
+    const client = new FakeToolFailureClient({ tokensBeforeFailure: 16_000 })
+    const provider = new LMStudioProvider('local-model', {
+      client,
+      params: { maxOutputTokens: 16_384 },
+    })
+
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      chunks.push(chunk)
+    }
+
+    assert.deepEqual(chunks.at(-1), {
+      type: 'done',
+      stopReason: 'tool_call_malformed',
+      malformedToolCall: { message: 'bad tool call', hitOutputCeiling: true, outputTokens: 16_000 },
+    })
+    assert.deepEqual(
+      chunks.find((chunk) => chunk.type === 'usage'),
+      {
+        type: 'usage',
+        model: 'local-model',
+        inputTokens: 0,
+        outputTokens: 16_000,
+      },
+    )
+    assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens: 16_000 })
+  })
+
+  for (const outputTokens of [0, 16_000]) {
+    it(`does not reuse prior successful usage after a ${String(outputTokens)}-token malformed call`, async () => {
+      const successful = new FakeClient()
+      const failed = new FakeToolFailureClient({ tokensBeforeFailure: outputTokens })
+      let requests = 0
+      const provider = new LMStudioProvider('local-model', {
+        client: {
+          model: async (): Promise<FakeModel | FakeToolFailureModel> =>
+            requests++ === 0 ? successful.modelHandle : failed.modelHandle,
+          prepareImageBase64: (): Promise<never> => Promise.reject(new Error('unexpected image')),
+        },
+      })
+      await collect(provider)
+      assert.deepEqual(provider.lastUsage, { inputTokens: 123, outputTokens: 9 })
+      const chunks = await collect(provider)
+      assert.deepEqual(
+        chunks.filter((chunk) => chunk.type === 'usage'),
+        [{ type: 'usage', model: 'local-model', inputTokens: 0, outputTokens }],
+      )
+      assert.deepEqual(provider.lastUsage, { inputTokens: 0, outputTokens })
+      assert.equal(chunks.at(-1)?.type, 'done')
+      assert.equal(failed.modelHandle.opts?.signal?.aborted, true)
+    })
+  }
+
+  it('cancels the prediction when the consumer stops reading early', async () => {
+    // The agent loop breaks out of a stream it cut for runaway reasoning. LM
+    // Studio keeps predicting up to its output ceiling unless it is cancelled,
+    // and the next request then waits behind that abandoned prediction.
+    const client = new FakeEndlessClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    for await (const chunk of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      if (chunk.type === 'reasoning') break
+    }
+
+    assert.equal(client.modelHandle.opts?.signal?.aborted, true)
+  })
+
+  it('does not cancel a prediction that the consumer reads to the end', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) {
+      // Drain to completion.
+    }
+
+    assert.equal(client.modelHandle.opts?.signal?.aborted, false)
   })
 
   it('converts the configured OpenAI endpoint into the SDK WebSocket origin', () => {

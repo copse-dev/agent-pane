@@ -66,6 +66,7 @@
     "bench:terminal:analyze": "node scripts/analyze-terminal-bench.mts",
     "bench:terminal:ablation-plan": "node scripts/terminal-bench-ablation-plan.mts",
     "bench:terminal:compare": "node scripts/compare-terminal-bench-profiles.mts",
+    "bench:terminal:timing": "node scripts/summarize-terminal-bench-timing.mts",
     "bench:terminal:debug": "node scripts/debug-terminal-bench.mts",
     "bench:terminal:fleet": "node scripts/run-terminal-bench-fleet.mts",
     "bench:terminal:report": "node scripts/report-terminal-bench.mts",
@@ -185,7 +186,21 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
-      "icon": "assets/icons/app.icns"
+      "icon": "assets/icons/app.icns",
+      "background": "build/dmg-background.png",
+      "contents": [
+        {
+          "x": 130,
+          "y": 140,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 140,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     }
   },
   "dependencies": {

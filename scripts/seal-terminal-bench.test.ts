@@ -80,6 +80,61 @@ function readCapsulesIndex(path: string): Record<string, unknown>[] {
 }
 
 describe('terminal benchmark capsule sealing', () => {
+  it('seals the recorded sampling and output ceiling instead of the sealer environment', () => {
+    const root = fixture()
+    const trial = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+    writeFileSync(
+      join(trial, 'agent', 'model-parameters.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        mode: 'server',
+        model: 'fixture',
+        selection: 'lmstudio:fixture',
+        recipe: null,
+        params: { maxOutputTokens: 16384 },
+        outputCeiling: 16384,
+      }),
+    )
+    const sealed = runSeal(root, {
+      COPSE_TERMINAL_MODEL_PARAMETERS: 'client',
+      COPSE_TERMINAL_MAX_OUTPUT_TOKENS: '999',
+    })
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const manifest = expectRecord(
+      JSON.parse(readFileSync(join(trial, 'run-manifest.json'), 'utf8')),
+    )
+    const configuration = expectRecord(manifest['configuration'])
+    assert.equal(configuration['modelParameters'], 'server')
+    assert.equal(configuration['maxOutputTokens'], 16384)
+  })
+
+  it('does not invent sampling settings for historical runs without an artifact', () => {
+    const root = fixture()
+    const sealed = runSeal(root, { COPSE_TERMINAL_MODEL_PARAMETERS: 'client' })
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const manifest = expectRecord(
+      JSON.parse(
+        readFileSync(
+          join(root, 'bench-results', 'terminal-bench', 'job', 'trial', 'run-manifest.json'),
+          'utf8',
+        ),
+      ),
+    )
+    assert.equal(expectRecord(manifest['configuration'])['modelParameters'], null)
+  })
+
+  it('rejects malformed recorded sampling rather than substituting current settings', () => {
+    const root = fixture()
+    const trial = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+    writeFileSync(
+      join(trial, 'agent', 'model-parameters.json'),
+      '{"schemaVersion":1,"mode":"invented","outputCeiling":null}',
+    )
+    const sealed = runSeal(root)
+    assert.notEqual(sealed.status, 0)
+    assert.match(String(sealed.stderr), /sampling/)
+  })
+
   it('writes a per-trial archive and a digest-bearing suite index', () => {
     const root = fixture()
     const sealed = runSeal(root, {

@@ -27,7 +27,11 @@ interface StubApiSpy {
   addSourceCalls: number
 }
 
-function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
+function stubApi(
+  initial: PluginsListResult,
+  spy: StubApiSpy,
+  listOverride?: (current: PluginsListResult) => Promise<PluginsListResult>,
+): ApiClient {
   let current = initial
   let installs: PluginInstallRecord[] = []
   return createPendingApi({
@@ -38,7 +42,7 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
     'cursorPlugins.list': () => Promise.resolve([]),
     'bundledSkillPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
-    'plugins.list': () => Promise.resolve(current),
+    'plugins.list': () => listOverride?.(current) ?? Promise.resolve(current),
     'plugins.setEnabled': (id: string, enabled: boolean) => {
       spy.lastSetEnabled = { id, enabled }
       current = {
@@ -284,6 +288,43 @@ function pluginsFieldset(): HTMLElement {
   assert.ok(fieldset)
   return fieldset
 }
+
+it('ignores a pre-toggle plugin refresh that completes after the updated list', async () => {
+  const spy: StubApiSpy = { lastSetEnabled: null, lastSetSetting: null, addSourceCalls: 0 }
+  const initial = { plugins: [{ ...demoPlugin, enabled: true }] }
+  let release: ((result: PluginsListResult) => void) | undefined
+  let reads = 0
+  const api = stubApi(initial, spy, (current) => {
+    reads++
+    if (reads === 2)
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    return Promise.resolve(current)
+  })
+  document.body.innerHTML = ''
+  mountSettingsDialog(createStore(), api)
+  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const toggle = document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')
+  assert.ok(toggle)
+  toggle.checked = false
+  toggle.dispatchEvent(new Event('change'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(release)
+  release(initial)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')?.checked,
+    false,
+  )
+  assert.equal(
+    document.querySelector('#plugins-list .plugins-group-heading')?.textContent,
+    'Inactive',
+  )
+})
 
 describe('settings → plugins list', () => {
   let spy: StubApiSpy
