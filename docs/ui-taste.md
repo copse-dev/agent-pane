@@ -1429,6 +1429,12 @@ than the card. Differences from the overlay are listed under each point below.
   rows carry no buttons. The button reads "Approve", the prototype's wording, and still answers
   once: no remembered grant, no task lease. **On the new-thread screen** Open thread is bold with
   a trailing arrow and Reject / Approve are pills, as in the prototype.
+- **A question is answered in place, not granted.** A `needs-answer` detail shows each
+  question with its quick answers and a field, and **Send answer** (primary) sits in the action
+  bar beside Open thread. An answer is input to the agent, not a permission: it carries no
+  scope and nothing is remembered, which is why it can live here while Approve stays the only
+  in-place grant. Quick answers fill the field and never send. Cmd/Ctrl+Enter sends, as in the
+  ask dialog.
 - **Approve is the only in-place grant, and only beside the full request.** The detail
   renders the request with the prompt's own advice / body / footer classes and never
   truncates. Broader answers stay on the prompt in the thread.

@@ -2018,6 +2018,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-question',
+    label: 'Activity home with a question waiting',
+    project: project('demo-activity-home-question-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the active, empty one; the second is blocked on a question.
+    threads: [
+      {
+        id: 'demo-activity-home-question-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-home-question-schema',
+        title: 'Schema bump',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    askUserRequests: [
+      {
+        id: 'demo-activity-home-question',
+        threadId: 'demo-activity-home-question-schema',
+        questions: [
+          {
+            question: 'Which migration order should the schema bump use?',
+            options: ['Columns first', 'Backfill first'],
+          },
+          { question: 'Keep the old column until the next release?' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),
