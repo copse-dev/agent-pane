@@ -177,6 +177,7 @@ import {
   type ThreadDeletionRuntime,
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
+import { archiveStoredThread } from '../services/thread-archiving.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -1939,6 +1940,17 @@ export function registerAllHandlers(
         ...selection,
       }
       return recordModelSelection(pid, tid, line).then(() => selection)
+    },
+  )
+  ipcMain.handle(
+    'threads:archive',
+    (event, projectId: unknown, threadId: unknown, discard: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, discardChanges] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        [projectId, threadId, discard],
+      )
+      return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)
     },
   )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {

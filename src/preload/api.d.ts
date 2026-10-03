@@ -596,6 +596,12 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    archive: (
+      projectId: string,
+      threadId: string,
+      discardChanges: boolean,
+    ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
      * subagents) for download. The JSONL export stays the portable single-file

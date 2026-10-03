@@ -887,6 +887,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now()
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) thread.archivedAt = archivedAt
+        return resolved({ status: 'archived', archivedAt, worktree: thread?.worktree })
+      },
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to

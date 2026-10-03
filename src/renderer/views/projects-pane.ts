@@ -36,6 +36,7 @@ import {
 } from '@shared/git/thread-pr-status.ts'
 import {
   addProject,
+  archiveCachedSidebarThread,
   addRemoteProject,
   createNewProject,
   getSidebarThreads,
@@ -71,6 +72,7 @@ import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
+import { flushProjectThreads } from '../controller/persistence.ts'
 import {
   buildProjectTree,
   projectGroupId,
@@ -594,11 +596,52 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     })
   }
 
-  function archiveProjectThread(projectId: string, threadId: string): void {
+  const archivingThreads = new Set<string>()
+
+  async function archiveProjectThread(projectId: string, threadId: string): Promise<void> {
     // Only the active project's in-memory thread list is mutable here; other
     // projects' rows are cache-backed until switched.
-    if (projectId !== store.getState().activeProjectId) return
-    archiveThread(store, threadId)
+    if (projectId !== store.getState().activeProjectId || archivingThreads.has(threadId)) return
+    archivingThreads.add(threadId)
+    try {
+      await flushProjectThreads(api, projectId, store.getState().threads)
+      if (projectId !== store.getState().activeProjectId) return
+      let result = await api.threads.archive(projectId, threadId, false)
+      if (result.status === 'blocked-dirty') {
+        const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
+        const shown = result.paths.slice(0, 10)
+        const remaining = result.paths.length - shown.length
+        const confirmed = await showConfirmDialog({
+          message: `Discard uncommitted files and archive “${title}”?`,
+          detail: [
+            'The worktree will be removed. These changes and local files will be permanently discarded:',
+            ...shown,
+            ...(remaining > 0 ? [`…and ${String(remaining)} more`] : []),
+            'The chat history and committed work on its branch will be kept.',
+          ].join('\n'),
+          confirmLabel: 'Discard and archive',
+          danger: true,
+        })
+        if (!confirmed) return
+        result = await api.threads.archive(projectId, threadId, true)
+      }
+      if (result.status === 'blocked-running') {
+        showToast('Stop the chat’s agent, terminals and background processes before archiving.', {
+          variant: 'error',
+        })
+        return
+      }
+      if (result.status === 'blocked-dirty') return
+      if (projectId === store.getState().activeProjectId) archiveThread(store, threadId, result)
+      else {
+        archiveCachedSidebarThread(projectId, threadId, result.archivedAt)
+        render()
+      }
+    } catch (error) {
+      showErrorToast('Could not archive chat', error)
+    } finally {
+      archivingThreads.delete(threadId)
+    }
   }
 
   function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
@@ -1279,7 +1322,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 {
                   label: 'Archive',
                   onSelect: (): void => {
-                    archiveProjectThread(project.id, thread.id)
+                    void archiveProjectThread(project.id, thread.id)
                   },
                 },
               ]

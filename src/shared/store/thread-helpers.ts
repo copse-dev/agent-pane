@@ -37,6 +37,7 @@ import {
 import { parseReviewerInputAnswers } from '@shared/threads/reviewer-input.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
+import type { ThreadArchiveResult } from '@shared/threads/archive-thread.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
 
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
@@ -350,17 +351,30 @@ export function deleteThread(store: AppStore, id: string): void {
 
 /**
  * Soft-hide a thread from the sidebar (and `@`-catalog via persistence). The
- * thread directory stays on disk; only `archivedAt` is stamped. When the last
+ * thread directory stays on disk. Mirror main's worktree retirement when given
+ * its persisted archive result. When the last
  * visible thread is archived, a fresh blank thread is created so the composer
  * always has somewhere to land.
  */
-export function archiveThread(store: AppStore, id: string): void {
+export function archiveThread(
+  store: AppStore,
+  id: string,
+  persisted?: Extract<ThreadArchiveResult, { status: 'archived' }>,
+): void {
   const { threads, activeThreadId } = store.getState()
   const target = threads.find((t) => t.id === id)
   if (!target || isThreadArchived(target)) return
 
-  const now = Date.now()
-  const updated = threads.map((t) => (t.id !== id ? t : { ...t, archivedAt: now, updatedAt: now }))
+  const now = persisted?.archivedAt ?? Date.now()
+  const updated = threads.map((t) => {
+    if (t.id !== id) return t
+    const archived = { ...t, archivedAt: now, updatedAt: now }
+    if (persisted) {
+      if (persisted.worktree) archived.worktree = persisted.worktree
+      else delete archived.worktree
+    }
+    return archived
+  })
   const visible = updated.filter((t) => !isThreadArchived(t))
 
   if (visible.length === 0) {

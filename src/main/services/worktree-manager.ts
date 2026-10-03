@@ -1451,6 +1451,46 @@ export async function listProjectWorktrees(projectRoot: string): Promise<Worktre
   return listRecords((await repositoryLocation(projectRoot)).repositoryRoot)
 }
 
+/** Archive a checkout, keeping its branch even when its commits are unmerged. */
+export async function archiveThreadWorktree(
+  input: ValidateWorktreeInput,
+  discardChanges: boolean,
+  beforeRemove: () => Promise<void>,
+): Promise<{ status: 'removed' } | { status: 'blocked-dirty'; paths: string[] }> {
+  const { repositoryRoot } = await repositoryLocation(input.projectRoot)
+  return runSerialized(`worktree-manager:${repositoryRoot}`, async () => {
+    const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+    const registered = (await listRecords(repositoryRoot)).some((record) =>
+      sameWorktreePath(record.path, target),
+    )
+    // Parked checkouts need no reconstruction merely to archive their chat.
+    if (!registered && input.worktree.retiredAt !== undefined) return { status: 'removed' }
+    const validated = await validateThreadWorktree(input)
+    const status = await git(validated.path, [
+      'status',
+      '--porcelain=v1',
+      '-z',
+      '--untracked-files=all',
+      '--ignored=matching',
+    ])
+    if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
+    if (status.stdout && !discardChanges) {
+      return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
+    }
+    // Record recoverable retirement before deletion. A failed metadata write
+    // must leave the checkout intact; a failed Git removal can be reopened.
+    await beforeRemove()
+    const removed = await removeRegisteredWorktreeCheckout(
+      repositoryRoot,
+      validated.path,
+      discardChanges,
+    )
+    if (removed.code !== 0) throw commandFailure('Cannot archive thread worktree', removed)
+    releaseWorktreeRoot(validated.root)
+    return { status: 'removed' }
+  })
+}
+
 /** Paths out of `git status --porcelain=v1 -z`, with rename/copy sources folded in. */
 export function changedPaths(raw: string): string[] {
   const out: string[] = []
