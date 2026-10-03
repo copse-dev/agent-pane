@@ -652,6 +652,10 @@ export function createActivityView(
         : `${needCount === 0 ? 'Nothing needs' : `${String(needCount)} ${needCount === 1 ? 'needs' : 'need'}`} you · ${String(workCount)} working`
 
     const populated = groups.filter((group) => group.rows.length > 0)
+    const populatedIds = new Set(populated.map((group) => group.id))
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren()
+    }
     if (populated.length === 0) {
       list.hidden = true
       list.replaceChildren()
@@ -765,6 +769,7 @@ export function createActivityView(
     selectedIndex = 0
     shownKey = null
     status.textContent = ''
+    for (const entry of groupCache.values()) entry.rows.replaceChildren()
     rowCache.clear()
   }
 
