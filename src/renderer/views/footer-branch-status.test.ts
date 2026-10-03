@@ -1035,6 +1035,31 @@ describe('footer branch status', () => {
     assert.equal(control.pendingBaseBranch('thread-1'), 'main')
   })
 
+  for (const defaultBranch of [null, 'unlisted/default']) {
+    it(`retains checkout fallback when the default is ${String(defaultBranch)}`, async () => {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(
+        host,
+        store,
+        createApi(
+          { currentBranch: 'feature/left-behind', pr: null },
+          [{ name: 'feature/left-behind', lastCommitDate: '2024-01-02' }],
+          defaultBranch,
+        ),
+      )
+      await settle()
+      assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/left-behind')
+      assert.equal(control.pendingBaseBranch('thread-1'), undefined)
+    })
+  }
+
   it('keeps exactly one option selected while moving from an open PR to a branch', async () => {
     const store = createStore({
       workspaceRoot: '/repo',

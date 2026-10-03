@@ -30,7 +30,7 @@ describe('footer branch picker', () => {
 
     const picker = await $('.branch-picker.is-picker-mode')
     await expect(picker).toBeDisplayed()
-    await expect(picker.$('.branch-picker-label')).toHaveText(seed.currentBranch)
+    await expect(picker.$('.branch-picker-label')).toHaveText('main')
     await expect(picker.$('.branch-picker-chevron')).toBeDisplayed()
 
     await picker.$('.branch-picker-trigger').click()
@@ -61,12 +61,12 @@ describe('footer branch picker', () => {
     let picked: string | null = null
     for (const option of await menu.$$('.branch-picker-option')) {
       const name = await option.$('.branch-picker-option-label').getText()
-      if (name === seed.currentBranch) continue
+      if (name === 'main') continue
       picked = name
       await option.click()
       break
     }
-    assert.ok(picked, 'expected a branch other than the current one to pick')
+    assert.ok(picked, 'expected a branch other than the default to pick')
 
     // Selecting only names the base: the menu closes, the trigger says which
     // branch the thread will start from, and the checkout's PR chip does not

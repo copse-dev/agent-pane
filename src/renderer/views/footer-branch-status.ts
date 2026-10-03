@@ -94,7 +94,7 @@ export function mountFooterBranchStatus(
 ): {
   destroy: () => void
   refresh: () => void
-  /** The branch a blank thread was told to start from, if the user picked one. */
+  /** The selected or listed default branch a blank thread will start from. */
   pendingBaseBranch: (threadId: string) => string | undefined
 } {
   const listId = `branch-picker-list-${String(++nextPickerId)}`
