@@ -61,5 +61,7 @@
 // v33 versions machine-turn dispatch and its chunk metadata.
 // v34 versions the per-model availability shape returned by `usage:get-plan-usage`.
 // v35 conservatively versions optional malformed-tool-call metadata on streamed chunks.
-// v36 versions the optional `inspectOnly` argument on `git:status`.
-export const API_PROTOCOL_VERSION = 36 as const
+// v36 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+// v37 versions the optional `inspectOnly` argument on `git:status`.
+export const API_PROTOCOL_VERSION = 37 as const

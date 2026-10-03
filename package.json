@@ -121,6 +121,14 @@
   "build": {
     "appId": "dev.copse.app",
     "productName": "Copse",
+    "protocols": [
+      {
+        "name": "Copse thread",
+        "schemes": [
+          "copse"
+        ]
+      }
+    ],
     "copyright": "Copyright © 2026 Jonathan Kingston",
     "asar": true,
     "directories": {

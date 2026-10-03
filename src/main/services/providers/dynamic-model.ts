@@ -95,6 +95,11 @@ export async function resolveDynamicModelId(
     ? pool.filter((point) => !excluded.has(toRoutableModelId(point)))
     : pool
   const picked = pickDynamicModel(selector, remaining.length > 0 ? remaining : pool)
+  if (selector.kind === 'balanced-included' && !picked) {
+    throw new Error(
+      'Balanced (no usage charges) has no available local, subscription-covered, or zero-priced model. Load a local model, wait for plan capacity, or choose another model.',
+    )
+  }
   return picked ? toRoutableModelId(picked) : FALLBACK_APP_CHAT_MODEL
 }
 

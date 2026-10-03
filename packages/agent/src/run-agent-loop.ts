@@ -184,6 +184,8 @@ export interface AgentLoopOptions {
    * product-wide limit; benchmark hosts may lower it for slower local models.
    */
   maxStreamOutputTokens?: number
+  /** Explicit historical strategy selected by immutable benchmark profiles. */
+  reasoningRunawayRecoveryStrategy?: 'legacy-two-cut-v1'
   /**
    * Optional per-stream cap for the single retry after a reasoning-runaway
    * nudge. Hosts may allow that bounded recovery more room to reach a tool call
