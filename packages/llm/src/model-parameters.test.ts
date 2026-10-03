@@ -406,6 +406,20 @@ describe('decodeModelParametersMap', () => {
 })
 
 describe('resolveModelParameters', () => {
+  it('applies the GLM-4.7-Flash coding defaults and preserves explicit overrides', () => {
+    const model = 'lmstudio:zai-org/glm-4.7-flash'
+    const defaults = resolveModelParameters({}, model)
+    assert.deepEqual(defaults, { temperature: 0.7, topP: 1, maxOutputTokens: 16_384 })
+    assert.equal(resolvedOutputCeiling(model, defaults), 16_384)
+
+    const overridden = resolveModelParameters(
+      { [model]: { temperature: 0.5, maxOutputTokens: 8_192 } },
+      model,
+    )
+    assert.deepEqual(overridden, { temperature: 0.5, topP: 1, maxOutputTokens: 8_192 })
+    assert.equal(resolvedOutputCeiling(model, overridden), 8_192)
+  })
+
   it('sanitizes a stale entry against the model it is read for', () => {
     const stored = { 'claude-opus-5': { reasoning: 'high', temperature: 0.7 } }
     assert.deepEqual(resolveModelParameters(stored, 'claude-opus-5'), { reasoning: 'high' })
@@ -472,6 +486,32 @@ describe('clampReasoning', () => {
 })
 
 describe('recommendedModelParameters', () => {
+  it('links GLM-4.7-Flash routes to the published coding recipe', () => {
+    for (const model of [
+      'lmstudio:zai-org/glm-4.7-flash',
+      'openrouter:z-ai/glm-4.7-flash',
+      'lmstudio:zai-org/GLM-4.7-Flash',
+    ]) {
+      const recommendation = recommendedModelParameters(model)
+      assert.ok(recommendation, model)
+      assert.deepEqual(recommendation.params, {
+        temperature: 0.7,
+        topP: 1,
+        maxOutputTokens: 16_384,
+      })
+      assert.equal(
+        recommendation.source,
+        'https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters',
+      )
+    }
+    // This route only exposes sampling controls; do not offer an unsupported cap.
+    assert.deepEqual(
+      recommendedModelParameters('huggingface:zai-org/GLM-4.7-Flash:together')?.params,
+      { temperature: 0.7, topP: 1 },
+    )
+    assert.equal(recommendedModelParameters('openrouter:z-ai/glm-4.7'), null)
+  })
+
   it('offers the evidence-backed experimental GLM-5.3-Flash profile', () => {
     const recommendation = recommendedModelParameters('openrouter:z-ai/glm-5.3-flash')
     assert.ok(recommendation)

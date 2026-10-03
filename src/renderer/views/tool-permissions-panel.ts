@@ -8,7 +8,7 @@ import {
   type ToolPermissionPolicy,
 } from '@shared/types/tool-permissions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { banIcon, checkIcon, chevronDownIcon, handIcon } from '../dom/icons.ts'
+import { banIcon, checkIcon, chevronDownIcon, shieldIcon } from '../dom/icons.ts'
 import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 
 const isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES)
@@ -21,7 +21,7 @@ const POLICY_LABELS: Record<ToolPermissionPolicy, string> = {
 
 const POLICY_ICON = {
   allow: checkIcon,
-  ask: handIcon,
+  ask: shieldIcon,
   block: banIcon,
 } satisfies Record<ToolPermissionPolicy, (className?: string) => SVGSVGElement>
 
