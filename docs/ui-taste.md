@@ -1384,6 +1384,15 @@ the actionable run. While the older history is filtered out, the schedule keeps
 the right-facing chevron; the first deliberate click rotates it and expands the
 complete run list.
 
+What a collapsed schedule keeps in view is `foldAutomationRuns`: runs that need you
+or are working stay their own rows, and so does a failure, so none hides inside the
+fold; the heading's run count carries the finished ones. A busy schedule collapses
+rather than filling the list: more than three waiting runs become one "N need you"
+row that opens the Activity list, and two or more failed runs become one "N failed"
+row that opens out into the runs (a single failed run stays its own row). Whether old
+failures age out of that set is undecided; today they stay until the run is archived.
+The section itself still opens on its own only for attention or a selected run.
+
 Do not create a second permanent pane or one sidebar section per schedule. The
 schedule editor owns configuration; the collapsed project disclosure owns task
 history.

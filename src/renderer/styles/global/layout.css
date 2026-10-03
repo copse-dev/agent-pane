@@ -518,6 +518,22 @@
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+/* One row standing for several runs of a schedule: "N need you" or "N failed". */
+.automation-fold-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs) var(--projects-nested-title-indent);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-fold-row:hover {
+  color: var(--text-primary);
+}
+.automation-fold-row.is-failed .automation-fold-label {
+  color: var(--error);
+}
 .automation-schedule-runs .chat-row {
   padding-left: var(--projects-nested-title-indent);
   color: var(--text-muted);

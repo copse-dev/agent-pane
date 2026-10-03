@@ -1859,6 +1859,66 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     },
   },
   {
+    id: 'sidebar-automation-fold',
+    label: 'Sidebar automation fold',
+    project: project('demo-automation-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // One schedule with every kind of run: four waiting on the user (collapsed into one
+    // row), one working, two failed (collated), and three that finished cleanly.
+    // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+    threads: [
+      {
+        id: 'demo-automation-fold-chat',
+        title: 'A regular conversation',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 1,
+        updatedAt: FIXED_TIME + 1,
+      },
+      ...(
+        [
+          ['wait-1', 'idle'],
+          ['wait-2', 'idle'],
+          ['wait-3', 'idle'],
+          ['wait-4', 'idle'],
+          ['working', 'running'],
+          ['fail-1', 'error'],
+          ['fail-2', 'error'],
+          ['done-1', 'idle'],
+          ['done-2', 'idle'],
+          ['done-3', 'idle'],
+        ] as const
+      ).map(([suffix, status], index) => ({
+        id: `demo-automation-fold-${suffix}`,
+        title: 'Docs freshness',
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        automation: {
+          scheduleId: 'demo-automation-fold-schedule',
+          scheduleName: 'Docs freshness',
+          triggeredAt: FIXED_TIME - index * 3_600_000,
+        },
+        createdAt: FIXED_TIME - index,
+        updatedAt: FIXED_TIME - index,
+      })),
+    ],
+    approvalRequests: ['wait-1', 'wait-2', 'wait-3', 'wait-4'].map((suffix) => ({
+      id: `demo-automation-fold-approval-${suffix}`,
+      threadId: `demo-automation-fold-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: 'node scripts/check-docs.mjs',
+      type: 'shell',
+    })),
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),

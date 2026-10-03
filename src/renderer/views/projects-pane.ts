@@ -80,6 +80,7 @@ import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
+import { foldAutomationRuns } from '../controller/automation-fold.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import { flushProjectThreads } from '../controller/persistence.ts'
@@ -551,6 +552,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // open on their own when the active thread is one of theirs).
   let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
+  // Schedules whose collated failed runs are opened out into rows. Session-only.
+  const expandedFailedSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
   // Project selection and expansion also emit `projects_changed`, but only a
   // change to the project ids can alter which thread stores are orphaned.
@@ -1593,11 +1596,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
           const scheduleKey = `${project.id}\0${scheduleId}`
           const hasActiveRun = runs.some((thread) => thread.id === activeThreadId)
-          const attentionScheduleRuns = runs.filter((thread) =>
-            isThreadAwaitingAttention(thread.id),
-          )
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
-          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0
+          // Collapsed, a schedule keeps its live and failed runs in view and folds
+          // the finished ones into its heading's run count (see `foldAutomationRuns`).
+          const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention)
+          const scheduleRevealed = showingAllRuns || foldEntries.length > 0
           const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
           const scheduleGroup = el('div', {
             class: 'automation-schedule-group',
@@ -1665,8 +1668,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           })
           if (scheduleRevealed) {
             const runRows = el('div', { class: 'automation-schedule-runs' })
-            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns
-            for (const thread of visibleRuns) {
+            const runRow = (thread: SidebarThread): HTMLElement => {
               const index = runs.indexOf(thread)
               const timestamp = thread.automation?.triggeredAt
               const when = timestamp
@@ -1675,12 +1677,58 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     timeStyle: 'short',
                   })
                 : 'Unknown time'
-              runRows.append(
-                renderThreadRow(project, thread, {
-                  displayTitle: index === 0 ? `Latest · ${when}` : when,
-                  allowRename: false,
-                }),
-              )
+              return renderThreadRow(project, thread, {
+                displayTitle: index === 0 ? `Latest · ${when}` : when,
+                allowRename: false,
+              })
+            }
+            if (showingAllRuns) {
+              for (const thread of runs) runRows.append(runRow(thread))
+            } else {
+              for (const entry of foldEntries) {
+                if (entry.kind === 'run') {
+                  runRows.append(runRow(entry.run))
+                } else if (entry.kind === 'pending') {
+                  // Too many to list: one row that hands off to the Activity list,
+                  // where each can be approved or answered with its full request.
+                  const row = el(
+                    'button',
+                    { type: 'button', class: 'automation-fold-row needs-attention' },
+                    el(
+                      'span',
+                      { class: 'automation-fold-label' },
+                      `${String(entry.runs.length)} need you`,
+                    ),
+                    el('span', { class: 'chat-thread-owner' }, 'Open in Activity'),
+                  )
+                  row.addEventListener('click', () => {
+                    openActivityPanel()
+                  })
+                  runRows.append(row)
+                } else {
+                  const open = expandedFailedSchedules.has(scheduleKey)
+                  const row = el(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'automation-fold-row is-failed',
+                      'aria-expanded': open ? 'true' : 'false',
+                    },
+                    el(
+                      'span',
+                      { class: 'automation-fold-label' },
+                      `${String(entry.runs.length)} failed`,
+                    ),
+                  )
+                  row.addEventListener('click', () => {
+                    if (open) expandedFailedSchedules.delete(scheduleKey)
+                    else expandedFailedSchedules.add(scheduleKey)
+                    render()
+                  })
+                  runRows.append(row)
+                  if (open) for (const thread of entry.runs) runRows.append(runRow(thread))
+                }
+              }
             }
             scheduleGroup.append(runRows)
           }
