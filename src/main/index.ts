@@ -1,4 +1,4 @@
-import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 // MUST be second — owns the profile (single-instance lock, vault replay) before any store opens.
 import { profileSingleInstanceLock } from './app-profile-owner.ts'
 import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
@@ -30,7 +30,7 @@ import {
 armPerfTrace()
 installIpcPerfTracing()
 
-import { app, BrowserWindow, ipcMain, safeStorage, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
