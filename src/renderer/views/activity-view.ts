@@ -1,6 +1,8 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { el } from '../dom/helpers.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import { patchChildren } from '../dom/patch-children.ts'
 import {
   arrowUpRightIcon,
@@ -303,7 +305,9 @@ export function createActivityView(
       requestId,
       asked.questions.map((_, index) => typed[index] ?? ''),
     )
-    drafts.delete(requestId)
+    // A draft survives a send that did not go: the controls come back on the next
+    // redraw with the text still in them.
+    if (sent) drafts.delete(requestId)
     status.textContent = sent
       ? `Answered ${row.threadTitle}.`
       : 'That question was already answered.'
@@ -341,23 +345,27 @@ export function createActivityView(
       event.preventDefault()
       sendAnswer(row)
     })
-    const field = el(
-      'div',
-      { class: 'activity-answer-field' },
-      el('p', { id: questionId, class: 'activity-question' }, question),
-    )
+    // Questions are agent-authored, so they get the same sanitized Markdown as the
+    // dialog and chat: a command reads as a command, not as backticks.
+    const asked = el('div', {
+      id: questionId,
+      class: 'activity-question streaming-markdown',
+    })
+    asked.innerHTML = renderMarkdown(question)
+    const field = el('div', { class: 'activity-answer-field' }, asked)
     if (options.length > 0) {
       const choices = el('div', { class: 'activity-options' })
       for (const option of options) {
-        const choice = el(
-          'button',
-          { type: 'button', class: 'ui-btn ui-btn-secondary activity-option' },
-          option,
-        )
+        const choice = el('button', {
+          type: 'button',
+          class: 'ui-btn ui-btn-secondary activity-option',
+        })
+        setInlineMarkdown(choice, option)
         // Fills the answer rather than sending it: a click on a row that moved
-        // under the pointer must not release the agent.
+        // under the pointer must not release the agent. It fills the rendered label,
+        // not its Markdown source, as the dialog does.
         choice.addEventListener('click', () => {
-          input.value = option
+          input.value = choice.textContent
           sync()
           input.focus()
         })
