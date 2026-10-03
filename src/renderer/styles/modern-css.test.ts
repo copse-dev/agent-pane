@@ -354,6 +354,17 @@ describe('modern CSS adoptions', () => {
       !css.includes('composer-centered'),
       'layout.css must not keep a centred-composer variant',
     )
+    // With nothing to list the home steps aside and the composer is centred; that
+    // variant draws its ring with a shadow, so it must clear the docked border.
+    assert.ok(
+      declares(css, '.pane-chat.is-activity-idle #input-bar', /border:\s*none/) &&
+        declares(
+          css,
+          '.pane-chat.is-activity-idle #input-bar',
+          /0\s+0\s+0\s+1px\s+var\(--border\)/,
+        ),
+      'the idle composer must keep a single hairline ring',
+    )
     assert.ok(
       declares(css, '.pane-chat.is-activity-home .conversation', /display:\s*none/),
       'the empty conversation must give the pane to the Activity home',
@@ -567,15 +578,23 @@ describe('modern CSS adoptions', () => {
       declares(inputBar, '.prompt-input', /flex:\s*1 1 auto/),
       '.prompt-input must carry the shrink from .input-row down to the scrollable element',
     )
-    // Portrait mode changes the card's margin from the docked --spacing-md, so it
-    // needs its own cap.
+    // Portrait mode and the centred idle composer both change the card's margin
+    // from the docked --spacing-md, so each needs its own cap.
     assert.ok(
       declares(
         inputBar,
-        '#app.is-portrait-chrome .pane-chat #input-bar',
+        '#app.is-portrait-chrome .pane-chat:not(.is-activity-idle) #input-bar',
         /max-height:\s*calc\(100%/,
       ),
       'the portrait composer must re-derive its cap for the taller bottom offset',
+    )
+    assert.ok(
+      declares(
+        read('layout.css'),
+        '.pane-chat.is-activity-idle #input-bar',
+        /max-height:\s*calc\(100%/,
+      ),
+      'the centred idle composer must cap itself too',
     )
   })
 

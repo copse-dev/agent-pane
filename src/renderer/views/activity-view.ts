@@ -127,6 +127,11 @@ export interface ActivityViewHost {
   fallbackFocus: () => void
   /** Called after each draw with the number of rows that need the user. */
   onNeedsYou?: (count: number) => void
+  /**
+   * Called after each draw with whether no thread anywhere has anything to list
+   * (before any project filter). The screen uses it to step aside for the composer.
+   */
+  onIdle?: (idle: boolean) => void
   /** Group headers fold their rows (Working starts folded); the overlay keeps them static. */
   collapsibleGroups?: boolean
   /** Keep a per-project strip current and let it filter the list; the overlay has none. */
@@ -884,6 +889,7 @@ export function createActivityView(
       renderDetail(selected, at)
     }
     host.onNeedsYou?.(needCount)
+    host.onIdle?.(everything.every((group) => group.rows.length === 0))
     restoreFocus(focus)
   }
 

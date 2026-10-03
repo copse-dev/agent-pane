@@ -337,6 +337,7 @@ dialog.activity-panel-overlay {
   padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
 }
 /* display above would otherwise beat the UA's [hidden] rule. */
+.activity-home[data-idle='true'],
 .activity-home[hidden] {
   display: none;
 }

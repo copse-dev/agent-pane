@@ -172,6 +172,23 @@ describe('activity home', () => {
     assert.ok(document.activeElement === composer, 'the composer keeps focus')
   })
 
+  it('steps aside for the composer while nothing is running or waiting', () => {
+    const { store, pane, home, flush } = mount([thread('t1')])
+    home.setShown(true)
+    const root = pane.querySelector<HTMLElement>('#activity-home')
+    assert.equal(root?.dataset['idle'], 'true')
+    assert.ok(pane.classList.contains('is-activity-idle'))
+
+    store.setState({ threads: [thread('t1'), thread('t2', { status: 'running' })] })
+    store.emit('thread_status_changed', 't2', 'running')
+    flush()
+    assert.equal(root.dataset['idle'], 'false', 'a run arriving brings the screen back')
+    assert.equal(pane.classList.contains('is-activity-idle'), false)
+
+    home.setShown(false)
+    assert.equal(pane.classList.contains('is-activity-idle'), false, 'hiding clears the class')
+  })
+
   it('stops drawing once hidden', () => {
     const { store, pane, home, flush } = mount([thread('t1', { status: 'running' })])
     home.setShown(true)

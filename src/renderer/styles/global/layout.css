@@ -847,6 +847,31 @@
      over the composer uses the same width so the two line up. */
   --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
 }
+.pane-chat.is-activity-idle {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+}
+.pane-chat.is-activity-idle #input-bar {
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  /* The docked card's real border would stack under the hairline ring. */
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-lg);
+  /* Centred on both axes, so a long draft is capped to the pane. */
+  max-height: calc(100% - 2 * var(--spacing-xl));
+}
+.pane-chat.is-activity-idle .prompt-input {
+  border-top: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.pane-chat.is-activity-idle .input-footer {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
      takes the pane above the docked composer. */

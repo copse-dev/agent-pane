@@ -218,33 +218,33 @@ describe('browser-hosted Activity home with nothing to list', () => {
   before(async () => {
     await browser.url('about:blank')
     await browser.url('/?scenario=activity-home-empty')
-    await $('.pane-chat.is-activity-home').waitForExist({ timeout: 30_000 })
+    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 30_000 })
   })
 
-  it('keeps the composer docked and the card inside the pane', async () => {
+  it('leaves just the composer, centred in the pane', async () => {
     const probe = await browser.execute(() => {
-      const root = document.getElementById('activity-home')
+      const home = document.getElementById('activity-home')
       const input = document.getElementById('input-bar')
       const pane = document.getElementById('pane-chat')
-      if (!root || !input || !pane) return null
-      const body = root.querySelector('.activity-panel-body')
-      if (!body) return null
-      const card = body.getBoundingClientRect()
+      if (!home || !input || !pane) return null
       const bar = input.getBoundingClientRect()
       const frame = pane.getBoundingClientRect()
       return {
-        cardBottom: card.bottom,
-        inputTop: bar.top,
-        inputBottom: bar.bottom,
-        paneBottom: frame.bottom,
-        overflowsSideways: root.scrollWidth > root.clientWidth + 1,
+        homeDisplay: getComputedStyle(home).display,
+        barMid: (bar.top + bar.bottom) / 2,
+        paneMid: (frame.top + frame.bottom) / 2,
+        barLeftGap: bar.left - frame.left,
+        barRightGap: frame.right - bar.right,
+        composerFocused: input.contains(document.activeElement),
       }
     })
     await saveAppScreenshot('activity-home-empty.png')
     expect(probe).not.toBeNull()
     if (!probe) return
-    expect(probe.cardBottom).toBeLessThanOrEqual(probe.inputTop + 1)
-    expect(probe.inputBottom).toBeLessThanOrEqual(probe.paneBottom + 1)
-    expect(probe.overflowsSideways).toBe(false)
+    // No strip, card or caption: the screen steps aside until there is something to list.
+    expect(probe.homeDisplay).toBe('none')
+    expect(Math.abs(probe.barMid - probe.paneMid)).toBeLessThanOrEqual(2)
+    expect(Math.abs(probe.barLeftGap - probe.barRightGap)).toBeLessThanOrEqual(2)
+    expect(probe.composerFocused).toBe(true)
   })
 })
