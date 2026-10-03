@@ -222,7 +222,7 @@ async function openRouterOptions(
     /* keep the plain heading */
   }
 
-  let liveModels: Array<{ id: string; name: string; supportsImages?: boolean }> = []
+  let liveModels: Awaited<ReturnType<ModelOptionsApi['openRouter']['models']>> = []
   try {
     liveModels = await api.openRouter.models()
   } catch {
@@ -239,7 +239,7 @@ async function openRouterOptions(
 
   const seen = new Set<string>()
   const entries: ModelOption[] = []
-  const add = (id: string, label: string, supportsImages?: boolean): void => {
+  const add = (id: string, label: string, supportsImages?: boolean, free = false): void => {
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
@@ -254,11 +254,17 @@ async function openRouterOptions(
       label: hint ? `${label} — ${hint}` : label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
+      ...(free ? { coverage: 'free' } : {}),
     })
   }
 
   for (const model of liveModels)
-    add(model.id, modelDisplayName(model.name || model.id), model.supportsImages)
+    add(
+      model.id,
+      modelDisplayName(model.name || model.id),
+      model.supportsImages,
+      model.inputPricePerMTok === 0 && model.outputPricePerMTok === 0,
+    )
   if (customId) add(customId, `${customId} (custom)`)
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
@@ -675,7 +681,7 @@ export async function fetchModelOptions(
 
   const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage }
   return visibleOptions.map((option) => {
-    const coverage = modelCoverage(option.value, coverageContext)
+    const coverage = option.coverage ?? modelCoverage(option.value, coverageContext)
     return coverage ? { ...option, coverage } : option
   })
 }

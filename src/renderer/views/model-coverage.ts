@@ -7,7 +7,7 @@ import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { resolvePlanInclusion } from '@shared/plan-inclusion.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
-export type ModelCoverage = 'local' | 'plan' | 'paid'
+export type ModelCoverage = 'local' | 'plan' | 'paid' | 'free'
 
 interface CoverageContext {
   agents: readonly AcpAgentConfig[]

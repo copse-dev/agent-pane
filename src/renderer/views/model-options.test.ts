@@ -14,11 +14,17 @@ import {
 } from './model-options.ts'
 import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import type { ModelCoverage } from './model-coverage.ts'
 
 interface MockOpts {
   available?: Record<string, boolean>
   extraProviders?: ExtraProvider[]
-  openRouterModels?: Array<{ id: string; name: string }>
+  openRouterModels?: Array<{
+    id: string
+    name: string
+    inputPricePerMTok?: number | null
+    outputPricePerMTok?: number | null
+  }>
   cursorCloudModels?: Array<{ id: string; label: string }>
   lmStudioModels?: string[]
   lmStudioModelInfo?: Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>
@@ -86,8 +92,8 @@ function mockApi(opts: MockOpts = {}): ApiClient {
         models: async () =>
           (opts.openRouterModels ?? []).map((model) => ({
             ...model,
-            inputPricePerMTok: null,
-            outputPricePerMTok: null,
+            inputPricePerMTok: model.inputPricePerMTok ?? null,
+            outputPricePerMTok: model.outputPricePerMTok ?? null,
           })),
       },
       remoteAgent: {
@@ -138,6 +144,50 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('marks only catalog routes with both known zero token prices as free', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        openRouterModels: [
+          { id: 'vendor/zero', name: 'Zero', inputPricePerMTok: 0, outputPricePerMTok: 0 },
+          {
+            id: 'vendor/input-paid',
+            name: 'Input paid',
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 0,
+          },
+          {
+            id: 'vendor/output-paid',
+            name: 'Output paid',
+            inputPricePerMTok: 0,
+            outputPricePerMTok: 1,
+          },
+          { id: 'vendor/unknown:free', name: 'Free in name', inputPricePerMTok: 0 },
+          {
+            id: 'vendor/router:free',
+            name: 'Free router',
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 1,
+          },
+        ],
+        openRouterModelSetting: 'vendor/custom:free',
+      }),
+      '',
+    )
+    const coverage = (id: string): ModelCoverage | undefined =>
+      options.find((option) => option.value === `openrouter:${id}`)?.coverage
+    assert.equal(coverage('vendor/zero'), 'free')
+    for (const id of [
+      'vendor/input-paid',
+      'vendor/output-paid',
+      'vendor/unknown:free',
+      'vendor/router:free',
+      'vendor/custom:free',
+    ]) {
+      assert.equal(coverage(id), 'paid', id)
+    }
+  })
+
   it('attaches plan coverage to the agent route without covering the same API model', async () => {
     const api = mockApi({
       available: { anthropic: true },

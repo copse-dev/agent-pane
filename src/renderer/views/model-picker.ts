@@ -544,7 +544,13 @@ export function mountModelPicker(
                     ? { 'aria-label': 'Potential usage charge', title: 'Potential usage charge' }
                     : {}),
                 },
-                opt.coverage === 'paid' ? '$' : opt.coverage === 'local' ? 'Local' : 'Plan',
+                opt.coverage === 'paid'
+                  ? '$'
+                  : opt.coverage === 'local'
+                    ? 'Local'
+                    : opt.coverage === 'free'
+                      ? 'Free'
+                      : 'Plan',
               ),
             ]
           : []),
