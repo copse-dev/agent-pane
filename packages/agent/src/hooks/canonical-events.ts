@@ -133,6 +133,11 @@ export interface StepBoundaryPayload {
    */
   streamCappedAsRunaway: boolean
   /**
+   * `postStream`, with the `tool_call_malformed` stop reason: whether the output
+   * ceiling is what cut the tool call off (selects the nudge wording).
+   */
+  malformedToolCallHitCeiling?: boolean
+  /**
    * Consecutive `explore` tool calls with no intervening `read_file` call
    * (#1433), read by `loop-nudge` for its explore-without-read condition.
    * `preStream` only; omitted (treated as 0) wherever the caller does not

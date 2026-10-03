@@ -15,6 +15,7 @@ import {
   resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -250,6 +251,7 @@ export class LMStudioProvider implements LLMProvider {
     // consumer stopping early, see `AsyncChunkQueue.return`) stop the
     // prediction instead of leaving a local model generating tokens nobody will
     // read.
+    let predictedTokens = 0
     try {
       const [model, chat] = await Promise.all([
         this.client.model(this.modelName),
@@ -264,6 +266,7 @@ export class LMStudioProvider implements LLMProvider {
           queue.push({ type: 'prompt_progress', fraction: clampProgress(progress) })
         },
         onPredictionFragment: (fragment) => {
+          predictedTokens += fragment.tokensCount
           const chunk = chunkFromPredictionFragment(fragment)
           if (chunk) queue.push(chunk)
         },
@@ -271,9 +274,25 @@ export class LMStudioProvider implements LLMProvider {
           queue.push(toolCallChunk(toolCallRequest))
         },
         onToolCallRequestFailure: (_callId, error) => {
-          // The model emitted a tool call we cannot parse; nothing later in this
-          // prediction can be used, so stop it rather than paying for the rest.
-          queue.fail(error)
+          // The model emitted a tool call we cannot parse (typically one cut off
+          // at the output ceiling). End the stream with a typed outcome rather
+          // than throwing so the agent loop can ask for a smaller call: replaying
+          // the identical request would reproduce the same broken call, but the
+          // run should not die over it. Nothing later in this prediction can be
+          // used, so stop it rather than paying for the rest.
+          const ceiling = resolvedOutputCeiling(this.modelName, this.params)
+          queue.push({
+            type: 'done',
+            stopReason: TOOL_CALL_MALFORMED_STOP_REASON,
+            malformedToolCall: {
+              message: error.message,
+              // Aborting discards the prediction's own stats, so the ceiling is
+              // judged from the tokens streamed so far (approximate).
+              hitOutputCeiling: ceiling !== undefined && predictedTokens >= ceiling * 0.95,
+              ...(predictedTokens > 0 ? { outputTokens: predictedTokens } : {}),
+            },
+          })
+          queue.end()
           cancel.abort(error)
         },
       })

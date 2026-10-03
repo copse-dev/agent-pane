@@ -928,6 +928,30 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   the pre-existing ceiling (SkillsBench profiles construct their policy explicitly and stay opted
   out; Terminal-Bench spreads the product policy and inherits it). Ordinary long visible answers are
   untouched: only reasoning is counted against this budget.
+- **An unparseable tool call is a recoverable outcome, not an exception.** LM Studio's SDK reports a
+  tool call it cannot parse (typically one cut off at the per-request output ceiling) through a
+  callback; the provider used to fail the stream, which killed the whole run or turn after the
+  expensive generation had already been paid for, and replaying the identical prompt would only
+  reproduce the broken call. `LMStudioProvider` now ends the stream with a `done` chunk carrying
+  stop reason `tool_call_malformed` (plus `malformedToolCall` with the parse message,
+  `hitOutputCeiling`, and optional `outputTokens`; the ceiling verdict is approximate because aborting the prediction discards the
+  SDK's own stats) and still cancels the prediction. A fifth `stepBoundary` hook,
+  `malformed-tool-call`, selects the nudge text (a "your call was cut off, emit a much smaller one,
+  write large files in short pieces" message, worded differently when the ceiling was hit); the
+  loop applies it as a plain user message and continues, after first running any tool calls that
+  parsed before the failure so tool_use/tool_result pairing stays valid. The stop reason is
+  deliberately not a truncation reason, so `truncation-continue` never stacks on it, and it resets
+  `reasoningRunawayStreak` (a tool-call attempt is not a reasoning-only runaway). The bounds are loop
+  mechanism: at most `MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS` (2) in a row and
+  `MAX_MALFORMED_TOOL_CALLS_PER_RUN` (4) per run; past either the loop throws the provider's parse
+  error, i.e. the pre-recovery failure behaviour, so a model that cannot stop emitting broken calls
+  still ends rather than looping to the wall-clock deadline. Like the other in-loop nudges it does
+  not touch the continuation budget, and it is recorded through `recordAppliedNudge` (so it shows
+  in the bench transcript and, as a generic hook card, in the desktop spine). The text-only
+  finalize/forced turns and the todo-closeout turn do not recover: they treat a malformed stream as
+  an empty turn and fall through to their existing bounded handling. OpenAI-compatible streaming
+  already recovers (an unparseable argument string becomes `argsError`, answered with a tool
+  result), so only LM Studio needed the typed outcome.
 
 ## Codebase impact
 
