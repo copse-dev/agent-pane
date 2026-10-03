@@ -625,6 +625,11 @@
   fill: var(--pr-closed);
   stroke: var(--pr-closed);
 }
+/* Known merge conflicts replace the source node with a red X. */
+.chat-pr-status.has-conflicts svg path:nth-child(2) {
+  fill: none;
+  stroke: var(--pr-closed);
+}
 .chat-pr-status.is-merged {
   color: var(--pr-merged);
 }
@@ -1380,30 +1385,6 @@
 .pr-list-title {
   flex: 1;
 }
-.pr-list-ci {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  margin-left: var(--spacing-xs);
-  border-radius: 50%;
-  background: transparent;
-}
-.pr-list-ci-success {
-  background: var(--success);
-}
-.pr-list-ci-failure {
-  background: var(--error);
-}
-.pr-list-ci-pending {
-  background: var(--warning);
-}
-.pr-list-ci-loading {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-  opacity: 0.5;
-}
-/* no_checks keeps the transparent default — an empty slot, no dot. */
 .pr-list-agent-badge {
   flex-shrink: 0;
   margin-left: var(--spacing-xs);
