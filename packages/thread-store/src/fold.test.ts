@@ -7,6 +7,7 @@ import {
   attachHookCards,
   explodeThread,
   foldThread,
+  idPathSegment,
   isToolArgsBlobRef,
   refsOfLine,
   type FileToWrite,
@@ -729,6 +730,12 @@ test('isToolArgsBlobRef accepts the current and legacy spill names only', () => 
   const ref = (path: string): unknown => ({ ref: path, sha256: 'x' })
   ok(isToolArgsBlobRef(slot, ref('blobs/a1.tool-2.args.json')))
   ok(isToolArgsBlobRef(slot, ref('blobs/tc.args.json')))
+  ok(
+    isToolArgsBlobRef(
+      { ...slot, toolCallId: 'call\n1' },
+      ref(`blobs/${idPathSegment('call\n1')}.args.json`),
+    ),
+  )
   // A tool's own args that merely look like a ref stay inline args.
   strictEqual(isToolArgsBlobRef(slot, ref('blobs/a1.tool-1.args.json')), false)
   strictEqual(isToolArgsBlobRef(slot, ref('blobs/other.args.json')), false)
