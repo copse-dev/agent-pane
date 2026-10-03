@@ -440,7 +440,7 @@ async function finishActivate(
         id,
         gen,
         outgoingId,
-        new Error('Enable SSH workspaces in Settings → SSH before opening a remote folder.'),
+        new Error('Enable SSH workspaces in Settings → Machines before opening a remote folder.'),
       )
       return
     }
@@ -692,7 +692,7 @@ export async function addProjectFromRemotePath(
 ): Promise<void> {
   const enabled = await api.settings.get('sshWorkspaceEnabled')
   if (enabled !== true) {
-    throw new Error('Enable SSH workspaces in Settings → SSH before opening a remote folder.')
+    throw new Error('Enable SSH workspaces in Settings → Machines before opening a remote folder.')
   }
   const canonical = await api.sshWorkspace.registerRoot(hostId, path)
   const existing = findProjectByKey(store.getState().projects, hostId, canonical)

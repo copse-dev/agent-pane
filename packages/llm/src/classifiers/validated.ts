@@ -1,3 +1,4 @@
+import { ClassifierError } from './error.ts'
 import { classifyHttpValidated } from './http.ts'
 import { classifySemIfBatchValidated } from './semif.ts'
 import type {
@@ -19,6 +20,11 @@ export async function runValidatedClassifierBatch(
   options: ClassifierCallOptions = {},
 ): Promise<ClassifierResult[]> {
   if (requests.length === 0) return []
+  if (profile.connection.type === 'machine')
+    throw new ClassifierError(
+      'unsupported-capability',
+      'Paired machine calls require the Copse desktop classifier service.',
+    )
   if (profile.connection.type === 'semif') {
     return classifySemIfBatchValidated(profile, requests, options)
   }

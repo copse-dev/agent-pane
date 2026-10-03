@@ -1036,6 +1036,30 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe,
     },
+    machines: {
+      state: () =>
+        resolved({
+          featureEnabled: false,
+          machines: [],
+          addresses: [],
+          sharing: {
+            enabled: false,
+            address: '127.0.0.1',
+            port: 4319,
+            profileIds: [],
+            listening: false,
+            error: null,
+          },
+          shareableModels: [],
+          clients: [],
+          secureStorage: false,
+        }),
+      pair: unsupported,
+      remove: unsupported,
+      share: unsupported,
+      invitation: unsupported,
+      revoke: unsupported,
+    },
     classifiers: {
       list: emptyArray,
       save: unsupported,

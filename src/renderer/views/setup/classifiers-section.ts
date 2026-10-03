@@ -406,9 +406,9 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   function renderScreening(): void {
     clear(screening)
     screening.append(el('option', { value: '' }, 'Instruct / safety model'))
-    // SemIf starts its scorer per call, too slowly to screen; only HTTP connections are offered.
+    // SemIf starts its scorer per call, too slowly to screen; local HTTP and paired-machine connections are offered.
     for (const { profile } of profiles) {
-      if (profile.connection.type !== 'http') continue
+      if (profile.connection.type === 'semif') continue
       screening.append(el('option', { value: profile.id }, profile.label))
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId)
@@ -664,7 +664,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         el('label', {}, 'Authentication', auth),
         envField,
       )
-    } else {
+    } else if (profile.connection.type === 'semif') {
       const connection = profile.connection
       const backend = select('Backend', connection.backend, BACKEND_CHOICES)
       const gguf = el('label', {}, 'GGUF model path', input('Gguf', connection.gguf ?? ''))
@@ -683,6 +683,16 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
           'span',
           { class: 'field-hint' },
           'Uses your installed SemIf scorer and cached or local weights. Test does not install a runtime or download models.',
+        ),
+      )
+    }
+    if (profile.connection.type === 'machine') {
+      model.readOnly = true
+      form.append(
+        el(
+          'p',
+          { class: 'field-hint' },
+          'Calls use a paired Copse machine. Manage the machine and choose shared models in Settings → Machines.',
         ),
       )
     }
@@ -767,28 +777,30 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
                 auth: read('Auth') === 'none' ? 'none' : 'bearer',
                 ...(read('KeyEnv') ? { apiKeyEnv: read('KeyEnv') } : {}),
               }
-            : {
-                type: 'semif',
-                executable: read('Executable'),
-                ...(profile.connection.device ? { device: profile.connection.device } : {}),
-                ...(profile.connection.maxTokens
-                  ? { maxTokens: profile.connection.maxTokens }
-                  : {}),
-                backend:
-                  read('Backend') === 'mlx'
-                    ? 'mlx'
-                    : read('Backend') === 'llamacpp'
-                      ? 'llamacpp'
-                      : 'torch',
-                revision: read('Revision'),
-                mode:
-                  read('Mode') === 'serial'
-                    ? 'serial'
-                    : read('Mode') === 'shared'
-                      ? 'shared'
-                      : 'direct',
-                ...(read('Backend') === 'llamacpp' && read('Gguf') ? { gguf: read('Gguf') } : {}),
-              }
+            : profile.connection.type === 'machine'
+              ? profile.connection
+              : {
+                  type: 'semif',
+                  executable: read('Executable'),
+                  ...(profile.connection.device ? { device: profile.connection.device } : {}),
+                  ...(profile.connection.maxTokens
+                    ? { maxTokens: profile.connection.maxTokens }
+                    : {}),
+                  backend:
+                    read('Backend') === 'mlx'
+                      ? 'mlx'
+                      : read('Backend') === 'llamacpp'
+                        ? 'llamacpp'
+                        : 'torch',
+                  revision: read('Revision'),
+                  mode:
+                    read('Mode') === 'serial'
+                      ? 'serial'
+                      : read('Mode') === 'shared'
+                        ? 'shared'
+                        : 'direct',
+                  ...(read('Backend') === 'llamacpp' && read('Gguf') ? { gguf: read('Gguf') } : {}),
+                }
         const next: ClassifierProfile = {
           id: profile.id,
           label: read('Label'),

@@ -1,5 +1,6 @@
-import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
+import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -484,6 +485,12 @@ app
     // Watch the main event loop for stalls from here on. Startup is exactly when
     // a synchronous hang (migrations, sandbox init, indexing) is most likely and
     // most expensive to diagnose after the fact (issue #995).
+    void startMachineService().catch((error: unknown) => {
+      console.warn(
+        '[machines] Sharing could not start:',
+        error instanceof Error ? error.message : 'unavailable',
+      )
+    })
     startEventLoopWatchdog()
     recordStartupPhase('app-ready')
     perfMark('main:app-ready')
@@ -1238,6 +1245,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopWorkspaceIndexWatcher()
   await clearSshWorkspaceFsCache()
   shutdownBrowserSession()
+  await stopMachineService()
   await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB

@@ -1,3 +1,5 @@
+import { machineManager, syncMachineService } from '../services/machines/machine-service.ts'
+import { machineSharingSchema, REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
@@ -1345,6 +1347,33 @@ export function registerAllHandlers(
     }
   })
 
+  ipcMain.handle('machines:state', async (event) => {
+    assertMainFrameSender(event, win)
+    const manager = machineManager()
+    await manager.refresh()
+    return manager.snapshot()
+  })
+  ipcMain.handle('machines:pair', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().pair(parseIpcArgs(z.string().min(1).max(2048), [raw]))
+  })
+  ipcMain.handle('machines:remove', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().remove(parseIpcArgs(z.uuid(), [raw]))
+  })
+  ipcMain.handle('machines:share', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().share(parseIpcArgs(machineSharingSchema, [raw]))
+  })
+  ipcMain.handle('machines:invitation', (event) => {
+    assertMainFrameSender(event, win)
+    return machineManager().invitation()
+  })
+  ipcMain.handle('machines:revoke', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().revoke(parseIpcArgs(z.uuid(), [raw]))
+  })
+
   ipcMain.handle('classifiers:list', (event) => {
     assertMainFrameSender(event, win)
     return listClassifierProfiles()
@@ -1445,6 +1474,7 @@ export function registerAllHandlers(
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
+    if (k === REMOTE_SYSTEM_ONE_MODELS_SETTING) await syncMachineService()
     if (k === 'alertOnInteraction') refreshNeedsInputBadge()
     if (SKILLS_RELOAD_KEYS.has(k)) {
       await initSkillsRegistry()

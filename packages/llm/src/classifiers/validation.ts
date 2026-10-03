@@ -8,9 +8,10 @@ export interface ValidatedClassifierBatch {
 }
 
 function validateHttpLimits(profile: ClassifierProfile, request: ClassifierRequest): void {
-  if (profile.connection.type !== 'http')
+  if (profile.connection.type === 'semif')
     throw new ClassifierError('unsupported-capability', 'This adapter requires an HTTP classifier.')
-  const featherless = profile.connection.protocol === 'featherless'
+  const featherless =
+    profile.connection.type === 'http' && profile.connection.protocol === 'featherless'
   for (const question of Object.values(request.questions)) {
     if (
       question.type === 'choice' &&
@@ -58,7 +59,7 @@ export function parseClassifierRequests(
     if (!parsed.success) {
       throw new ClassifierError('invalid-request', 'Invalid classifier profile or request.')
     }
-    if (profile.connection.type === 'http') {
+    if (profile.connection.type !== 'semif') {
       validateHttpLimits(profile, parsed.data)
     }
     validated.push(parsed.data)

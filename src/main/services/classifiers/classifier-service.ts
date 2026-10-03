@@ -1,3 +1,5 @@
+import { callMachineClassifier } from '../machines/machine-classifier.ts'
+import { machineManager } from '../machines/machine-service.ts'
 import { runValidatedClassifierBatch } from '@copse/llm/classifiers/validated.ts'
 import { parseClassifierRequests } from '@copse/llm/classifiers/validation.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
@@ -55,10 +57,10 @@ function configuredProfiles(): ClassifierProfile[] {
 /**
  * SemIf starts its scorer, and loads weights, for every call: it cannot answer
  * inside the screening budget, and its token limit could cut a snapshot the
- * verdict must cover in full. Screening therefore uses HTTP connections only.
+ * verdict must cover in full. Screening uses HTTP connections directly or through a paired machine.
  */
 function canScreen(profile: ClassifierProfile): boolean {
-  return profile.connection.type === 'http'
+  return profile.connection.type !== 'semif'
 }
 
 /**
@@ -183,7 +185,14 @@ export async function setBackgroundClassifier(id: string | null): Promise<string
 export async function saveClassifierProfile(
   raw: ClassifierProfile,
 ): Promise<ClassifierProfileStatus[]> {
-  const profile = classifierProfileSchema.parse(raw)
+  let profile = classifierProfileSchema.parse(raw)
+  if (profile.connection.type === 'machine') {
+    const shared = machineManager().model(
+      profile.connection.machineId,
+      profile.connection.profileId,
+    )
+    profile = { ...profile, model: shared.model }
+  }
   assertEnvironmentKeyAllowed(profile)
   const credential = credentialForProfile(profile.id)
   if (profile.connection.type === 'http') {
@@ -230,6 +239,8 @@ export async function removeClassifierProfile(id: string): Promise<ClassifierPro
 
 function credentialScope(profile: ClassifierProfile): string {
   const connection = profile.connection
+  if (connection.type === 'machine')
+    return `machine:${connection.machineId}:${connection.profileId}`
   return connection.type === 'semif'
     ? 'semif'
     : JSON.stringify([
@@ -340,7 +351,9 @@ export interface ClassifierSession {
  */
 export function createClassifierSession(id: string): ClassifierSession {
   const profile = getClassifierProfile(id)
-  const remote = profile.connection.type === 'http' && !isLocalBaseUrl(profile.connection.baseUrl)
+  const remote =
+    profile.connection.type === 'machine' ||
+    (profile.connection.type === 'http' && !isLocalBaseUrl(profile.connection.baseUrl))
   if (profile.connection.type === 'http') assertApprovedProviderHost(profile.connection.baseUrl)
   const apiKey = profileKey(profile)
   const secrets = remote ? knownSecrets() : []
@@ -354,6 +367,12 @@ export function createClassifierSession(id: string): ClassifierSession {
       // processes retain their startup settings snapshot.
       if (profile.connection.type === 'http') assertApprovedProviderHost(profile.connection.baseUrl)
       if (remote) validated = validated.map((request) => redactRequest(request, secrets))
+      if (profile.connection.type === 'machine') {
+        const results: ClassifierResult[] = []
+        for (const request of validated)
+          results.push(await callMachineClassifier(profile, request, options))
+        return results
+      }
       return runValidatedClassifierBatch(profile, validated, {
         ...options,
         ...(apiKey ? { apiKey } : {}),
