@@ -550,6 +550,9 @@ dialog.activity-panel-overlay {
     overflow-y: auto;
   }
   .activity-home .activity-list {
+    /* The list scrolls itself, so its minimum track size is 0 and the detail's
+       content would take the whole card; the floor keeps a few rows visible. */
+    min-height: 120px;
     max-height: 200px;
     border-right: 0;
     border-bottom: 1px solid var(--border);

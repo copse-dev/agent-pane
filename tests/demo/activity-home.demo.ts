@@ -209,6 +209,21 @@ describe('browser-hosted Activity home', () => {
       return button.top >= frame.top && button.bottom <= frame.bottom + 1
     })
     expect(actionsVisible).toBe(true)
+    // The stacked list must keep room for its rows, not be squeezed to its padding.
+    const listVisible = await browser.execute(() => {
+      const body = document.querySelector('#activity-home .activity-panel-body')
+      const row = document.querySelector('#activity-home .activity-row')
+      const list = document.querySelector('#activity-home .activity-list')
+      if (!body || !row || !list) return false
+      const frame = body.getBoundingClientRect()
+      const box = row.getBoundingClientRect()
+      return (
+        list.getBoundingClientRect().height >= 100 &&
+        box.top >= frame.top &&
+        box.bottom <= frame.bottom
+      )
+    })
+    expect(listVisible).toBe(true)
     await saveAppScreenshot('activity-home-narrow.png')
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
   })
