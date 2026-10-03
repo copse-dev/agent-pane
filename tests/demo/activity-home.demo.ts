@@ -27,6 +27,7 @@ interface HomeProbe {
   composerFocused: boolean
   twoColumns: boolean
   panePaddingBottom: string
+  composerBorder: string
 }
 
 async function probeHome(): Promise<HomeProbe | null> {
@@ -36,7 +37,8 @@ async function probeHome(): Promise<HomeProbe | null> {
     const input = document.getElementById('input-bar')
     const caption = root?.querySelector('.activity-home-caption')
     const conversation = document.getElementById('conversation')
-    if (!root || !body || !input || !caption || !conversation) return null
+    const pane = document.getElementById('pane-chat')
+    if (!root || !body || !input || !caption || !conversation || !pane) return null
     const groups: Record<string, GroupProbe> = {}
     for (const group of root.querySelectorAll<HTMLElement>('.activity-group')) {
       groups[group.dataset['group'] ?? ''] = {
@@ -62,8 +64,8 @@ async function probeHome(): Promise<HomeProbe | null> {
       conversationDisplay: getComputedStyle(conversation).display,
       composerFocused: document.activeElement?.classList.contains('prompt-input') === true,
       twoColumns: columns === 2,
-      panePaddingBottom: getComputedStyle(document.getElementById('pane-chat') as Element)
-        .paddingBottom,
+      panePaddingBottom: getComputedStyle(pane).paddingBottom,
+      composerBorder: getComputedStyle(input).borderTopWidth,
     }
   })
 }
@@ -103,6 +105,8 @@ describe('browser-hosted Activity home', () => {
     expect(probe.captionBottom).toBeLessThanOrEqual(probe.inputTop + 1)
     expect(probe.inputTop - probe.bodyBottom).toBeLessThanOrEqual(56)
     expect(probe.panePaddingBottom).toBe('0px')
+    // Docked, the composer keeps its own 1px border (the idle, centred one has none).
+    expect(probe.composerBorder).toBe('1px')
     expect(probe.overflowsSideways).toBe(false)
     expect(probe.conversationDisplay).toBe('none')
     // Opening the screen must leave the caret in the composer, not in the list.
@@ -252,9 +256,51 @@ describe('browser-hosted Activity home', () => {
           inputTop: input?.getBoundingClientRect().top ?? 0,
         }
       })
+      await saveAppScreenshot('activity-home-short.png')
       expect(probe.approveBottom).toBeLessThanOrEqual(probe.inputTop + 1)
     } finally {
       await browser.setWindowSize(before.width, before.height)
+    }
+  })
+
+  it('keeps Approve reachable in a narrow pane that is also short', async () => {
+    const before = await browser.getWindowSize()
+    await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    await $('#pane-files').waitForDisplayed()
+    await browser.setWindowSize(1280, 560)
+    try {
+      await browser.waitUntil(async () => (await probeHome())?.twoColumns === false, {
+        timeout: 10_000,
+        timeoutMsg: 'the narrow pane must stack the list over the detail',
+      })
+      await saveAppScreenshot('activity-home-narrow-short.png')
+      // Approve stays beside the whole request: the card grows to its content and the
+      // home scrolls, so scrolled to the end the action bar clears the composer.
+      const probe = await browser.execute(() => {
+        const home = document.getElementById('activity-home')
+        const body = document.querySelector('#activity-home .activity-panel-body')
+        const actions = document.querySelector('#activity-home .activity-detail-actions')
+        const review = document.querySelector('#activity-home .activity-review')
+        if (home) home.scrollTop = home.scrollHeight
+        const approve = document.querySelector('#activity-home .activity-approve')
+        const input = document.getElementById('input-bar')
+        return {
+          bodyOverflow: body ? getComputedStyle(body).overflowY : '',
+          actionsPosition: actions ? getComputedStyle(actions).position : '',
+          reviewBottom: review?.getBoundingClientRect().bottom ?? 0,
+          approveTop: approve?.getBoundingClientRect().top ?? 0,
+          approveBottom: approve?.getBoundingClientRect().bottom ?? 0,
+          inputTop: input?.getBoundingClientRect().top ?? 0,
+        }
+      })
+      expect(probe.bodyOverflow).toBe('visible')
+      expect(probe.actionsPosition).toBe('static')
+      expect(probe.reviewBottom).toBeLessThanOrEqual(probe.approveTop)
+      expect(probe.approveBottom).toBeLessThanOrEqual(probe.inputTop + 1)
+      await saveAppScreenshot('activity-home-narrow-short-scrolled.png')
+    } finally {
+      await browser.setWindowSize(before.width, before.height)
+      await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     }
   })
 })

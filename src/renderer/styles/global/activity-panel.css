@@ -609,4 +609,18 @@ dialog.activity-panel-overlay {
     bottom: 0;
     background: var(--bg-elevated);
   }
+  /* Narrow and short: a sticky action bar over a card a couple of hundred pixels
+     tall would show Approve with the request scrolled out of sight. Let the card
+     grow to its content and the home scroll instead, so the actions sit after the
+     whole request. */
+  @media (max-height: 640px) {
+    .activity-home .activity-panel-body {
+      flex: none;
+      min-height: 0;
+      overflow: visible;
+    }
+    .activity-home .activity-detail-actions {
+      position: static;
+    }
+  }
 }

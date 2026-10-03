@@ -121,29 +121,37 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-gradient-empty.png')
   })
 
-  it('docks the composer with its own single border under the Activity home', async () => {
+  it('centres the composer, ringed by its shadow, when the Activity home has nothing to list', async () => {
     // Prior test already opened a blank thread; ensure we stay on that surface
-    // without a full remount (another navigation was the flake surface).
-    if (!(await $('.pane-chat.is-activity-home').isExisting())) {
+    // without a full remount (another navigation was the flake surface). This
+    // scenario has nothing running or waiting, so the home steps aside.
+    if (!(await $('.pane-chat.is-activity-idle').isExisting())) {
       await $('.project-new-thread-btn').click()
-      await $('.pane-chat.is-activity-home').waitForExist()
+      await $('.pane-chat.is-activity-idle').waitForExist()
     }
     const layout = await browser.execute(() => {
       const home = document.getElementById('activity-home')
-      const body = home?.querySelector('.activity-panel-body')
       const input = document.getElementById('input-bar')
-      if (!home || !body || !input) return null
+      const pane = document.getElementById('pane-chat')
+      if (!home || !input || !pane) return null
       const style = getComputedStyle(input)
+      const bar = input.getBoundingClientRect()
+      const frame = pane.getBoundingClientRect()
       return {
+        homeDisplay: getComputedStyle(home).display,
         borderTop: style.borderTopWidth,
-        bodyBottom: body.getBoundingClientRect().bottom,
-        inputTop: input.getBoundingClientRect().top,
+        boxShadow: style.boxShadow,
+        barMid: (bar.top + bar.bottom) / 2,
+        paneMid: (frame.top + frame.bottom) / 2,
       }
     })
     expect(layout).not.toBeNull()
     if (!layout) throw new Error('Missing Activity home or #input-bar')
-    expect(layout.borderTop).toBe('1px')
-    expect(layout.bodyBottom).toBeLessThanOrEqual(layout.inputTop + 1)
+    expect(layout.homeDisplay).toBe('none')
+    // Centred, its ring is the shadow, so the docked border is cleared.
+    expect(layout.borderTop).toBe('0px')
+    expect(layout.boxShadow).not.toBe('none')
+    expect(Math.abs(layout.barMid - layout.paneMid)).toBeLessThanOrEqual(2)
     await saveAppScreenshot('chat-layout-activity-home.png')
   })
 })
