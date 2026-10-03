@@ -324,6 +324,34 @@ describe('ACP package mutations and Socket Firewall bootstrap consent', () => {
   }
 
   for (const approved of [false, true]) {
+    it(`discloses every mixed bootstrap mutation and ${approved ? 'runs' : 'blocks'} the disclosed packages`, async () => {
+      const installed: string[] = []
+      setApprovalHandler(async (request) => {
+        assert.match(request.body, /claude-agent-acp/)
+        assert.match(request.body, /also update these installed adapters/)
+        assert.match(request.body, /codex-acp \(1\.1\.0 → 1\.1\.7\)/)
+        assert.match(request.body, /first install it globally/)
+        return { approved, remember: false }
+      })
+      const result = await installAcpPackageChanges(
+        [{ agent: claude, action: 'install' }, upgrade],
+        new AbortController().signal,
+        {
+          socketFirewallAvailable: () => false,
+          requestInstallApproval: requestAcpPackageInstallApproval,
+          resolveNpmBin: async () => undefined,
+          install: async (pkg) => {
+            installed.push(pkg)
+            return true
+          },
+        },
+      )
+      assert.deepEqual(installed, approved ? [claude.installPackage, codex.installPackage] : [])
+      assert.deepEqual(result.installed, approved ? ['claude-agent-acp'] : [])
+      assert.deepEqual(result.upgraded, approved ? ['codex'] : [])
+      assert.equal(result.failed.length, approved ? 0 : 2)
+    })
+
     it(`requests fresh SFW consent for an upgrade and ${approved ? 'runs' : 'blocks'} all global mutations`, async () => {
       const prompts: string[] = []
       const installed: string[] = []

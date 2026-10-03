@@ -3,13 +3,15 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
-async function requestFixture(scenario: 'install' | 'firewall-bootstrap'): Promise<void> {
+async function requestFixture(
+  scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap',
+): Promise<void> {
   await browser.execute((scenario) => {
     const bridge = (
       window as unknown as {
         __copseE2e?: {
           requestAcpPackageInstallApproval: (
-            scenario: 'install' | 'firewall-bootstrap',
+            scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap',
           ) => Promise<unknown>
         }
       }
@@ -86,5 +88,22 @@ describe('ACP adapter auto-install approval', () => {
     await dialog.$('.approval-reject').click()
     await expect(dialog).not.toBeDisplayed()
     await expect($('#settings-dialog')).toBeDisplayed()
+  })
+
+  it('discloses installed adapter updates alongside fresh installs when Socket Firewall is missing', async function () {
+    this.timeout(60_000)
+    await requestFixture('mixed-bootstrap')
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toContain('@agentclientprotocol/claude-agent-acp')
+    expect(body).toContain('also update these installed adapters')
+    expect(body).toContain('@agentclientprotocol/codex-acp (1.1.0 → 1.1.7)')
+    expect(body).toContain('first install it globally')
+    await expect(dialog.$('.approval-approve')).toBeDisplayed()
+    await expect(dialog.$('.approval-reject')).toBeDisplayed()
+    await saveAppScreenshot('acp-mixed-bootstrap-approval.png')
+    await dialog.$('.approval-reject').click()
+    await expect(dialog).not.toBeDisplayed()
   })
 })

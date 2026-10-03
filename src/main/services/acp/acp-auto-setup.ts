@@ -378,6 +378,23 @@ export function formatAcpPackageApproval(
   for (const change of installs) {
     if (change.agent.installPackage) lines.push(`• ${change.agent.installPackage}`)
   }
+  if (!socketFirewallAvailable) {
+    const upgrades = changes.filter((change) => change.action === 'upgrade')
+    if (upgrades.length) {
+      lines.push(
+        '',
+        'After installing Socket Firewall, Copse will also update these installed adapters:',
+      )
+      for (const change of upgrades) {
+        if (!change.agent.installPackage) continue
+        const versions =
+          change.fromVersion && change.toVersion
+            ? ` (${change.fromVersion} → ${change.toVersion})`
+            : ''
+        lines.push(`• ${change.agent.installPackage}${versions}`)
+      }
+    }
+  }
   lines.push('')
   lines.push(
     'If Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
