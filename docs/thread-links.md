@@ -1,6 +1,6 @@
 # Open a thread from GitHub
 
-Enable **Settings → Git → Thread links → Link commits and pull requests back to their Copse thread**. This is off by default and independent of co-author attribution.
+Enable **Settings → Agent → Thread links → Link commits and pull requests back to their Copse thread**. This is off by default and independent of co-author attribution.
 
 Commits made with Copse's `git_commit` tool and pull requests created by Copse include:
 
