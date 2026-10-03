@@ -36,7 +36,7 @@ describe('SSH remote project entry point', () => {
     await threadRow.moveTo()
 
     const actionCenters = await browser.execute(() =>
-      ['.projects-add-btn', '.project-new-thread-btn', '.chat-delete'].map((selector) => {
+      ['.projects-add-btn', '.project-new-thread-btn', '.chat-menu-btn'].map((selector) => {
         const action = document.querySelector<HTMLElement>(selector)
         if (!action) throw new Error(`Missing sidebar action: ${selector}`)
         const rect = action.getBoundingClientRect()

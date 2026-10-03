@@ -15,6 +15,7 @@ import {
   resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
+import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -86,6 +87,15 @@ class AsyncChunkQueue<T> implements AsyncIterableIterator<T> {
   private waiter: QueueWaiter<T> | null = null
   private ended = false
   private failure: Error | null = null
+  private readonly onEarlyExit: (() => void) | undefined
+
+  /**
+   * `onEarlyExit` runs when the consumer stops iterating before the producer
+   * has ended the queue (a `break` out of `for await`, or a generator `return`).
+   */
+  constructor(onEarlyExit?: () => void) {
+    this.onEarlyExit = onEarlyExit
+  }
 
   push(value: T): void {
     if (this.ended) return
@@ -128,6 +138,21 @@ class AsyncChunkQueue<T> implements AsyncIterableIterator<T> {
     return new Promise<IteratorResult<T>>((resolve, reject) => {
       this.waiter = { resolve, reject }
     })
+  }
+
+  /**
+   * Called by `for await`/`yield*` when the consumer stops early. Without it the
+   * SDK prediction behind the queue keeps generating on the server: the agent
+   * loop abandons a stream it cut for runaway reasoning, and LM Studio goes on
+   * predicting up to the output ceiling while the next request queues behind it.
+   */
+  return(): Promise<IteratorResult<T>> {
+    if (!this.ended) {
+      this.ended = true
+      this.values.length = 0
+      this.onEarlyExit?.()
+    }
+    return Promise.resolve({ value: undefined, done: true })
   }
 
   [Symbol.asyncIterator](): AsyncIterableIterator<T> {
@@ -180,8 +205,13 @@ export class LMStudioProvider implements LLMProvider {
     tools: LLMTool[],
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
-    const queue = new AsyncChunkQueue<ProviderStreamChunk>()
-    void this.produce(messages, tools, signal, queue)
+    // Own the prediction's abort controller here so the consumer walking away
+    // cancels it, not just the producer's own error paths.
+    const cancel = new AbortController()
+    const queue = new AsyncChunkQueue<ProviderStreamChunk>(() => {
+      cancel.abort(new Error('Prediction cancelled: the consumer stopped reading the stream.'))
+    })
+    void this.produce(messages, tools, signal, queue, cancel)
     yield* queue
   }
 
@@ -214,12 +244,14 @@ export class LMStudioProvider implements LLMProvider {
     tools: LLMTool[],
     signal: AbortSignal | undefined,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
+    cancel: AbortController,
   ): Promise<void> {
     // Failing the queue ends the stream for our consumer, but the server keeps
-    // predicting until it is told to stop. Own an abort controller for the
-    // prediction so those exits can cancel it instead of leaving a local model
-    // generating tokens nobody will read.
-    const cancel = new AbortController()
+    // predicting until it is told to stop. `cancel` lets those exits (and the
+    // consumer stopping early, see `AsyncChunkQueue.return`) stop the
+    // prediction instead of leaving a local model generating tokens nobody will
+    // read.
+    let predictedTokens = 0
     try {
       const [model, chat] = await Promise.all([
         this.client.model(this.modelName),
@@ -234,6 +266,7 @@ export class LMStudioProvider implements LLMProvider {
           queue.push({ type: 'prompt_progress', fraction: clampProgress(progress) })
         },
         onPredictionFragment: (fragment) => {
+          predictedTokens += fragment.tokensCount
           const chunk = chunkFromPredictionFragment(fragment)
           if (chunk) queue.push(chunk)
         },
@@ -241,9 +274,35 @@ export class LMStudioProvider implements LLMProvider {
           queue.push(toolCallChunk(toolCallRequest))
         },
         onToolCallRequestFailure: (_callId, error) => {
-          // The model emitted a tool call we cannot parse; nothing later in this
-          // prediction can be used, so stop it rather than paying for the rest.
-          queue.fail(error)
+          // The model emitted a tool call we cannot parse (typically one cut off
+          // at the output ceiling). End the stream with a typed outcome rather
+          // than throwing so the agent loop can ask for a smaller call: replaying
+          // the identical request would reproduce the same broken call, but the
+          // run should not die over it. Nothing later in this prediction can be
+          // used, so stop it rather than paying for the rest.
+          const ceiling = resolvedOutputCeiling(this.modelName, this.params)
+          // Cancellation discards final SDK stats. Keep the streamed output
+          // count and leave prompt usage unmeasured, rather than attributing
+          // this request to a prior prediction through the usage fallback.
+          this.lastUsage = { inputTokens: 0, outputTokens: predictedTokens }
+          queue.push({
+            type: 'usage',
+            model: this.modelName,
+            inputTokens: 0,
+            outputTokens: predictedTokens,
+          })
+          queue.push({
+            type: 'done',
+            stopReason: TOOL_CALL_MALFORMED_STOP_REASON,
+            malformedToolCall: {
+              message: error.message,
+              // Aborting discards the prediction's own stats, so the ceiling is
+              // judged from the tokens streamed so far (approximate).
+              hitOutputCeiling: ceiling !== undefined && predictedTokens >= ceiling * 0.95,
+              ...(predictedTokens > 0 ? { outputTokens: predictedTokens } : {}),
+            },
+          })
+          queue.end()
           cancel.abort(error)
         },
       })

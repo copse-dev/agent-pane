@@ -1,0 +1,1409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Model picker · Local, Plan & Paid</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #101610;
+        --surface: #171e17;
+        --raised: #202820;
+        --hover: #2a342a;
+        --text: #eef0e9;
+        --secondary: #bdc6b9;
+        --muted: #929e8e;
+        --border: #354032;
+        --accent: #ff93d0;
+        --selected: #3b2c37;
+        --shadow: 0 16px 48px #0006;
+        --paid: #d4c9af;
+        --paid-bg: #39372c;
+        --local: #a3c7a1;
+        --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: #f2f4ee;
+        --surface: #fbfcf8;
+        --raised: #fffefb;
+        --hover: #edf0e8;
+        --text: #243022;
+        --secondary: #505d4d;
+        --muted: #64715f;
+        --border: #d9dfd3;
+        --accent: #9d366e;
+        --selected: #f5e6ee;
+        --shadow: 0 16px 48px #23321f1c;
+        --paid: #655634;
+        --paid-bg: #efeadc;
+        --local: #456b43;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) {
+          color-scheme: light;
+          --bg: #f2f4ee;
+          --surface: #fbfcf8;
+          --raised: #fffefb;
+          --hover: #edf0e8;
+          --text: #243022;
+          --secondary: #505d4d;
+          --muted: #64715f;
+          --border: #d9dfd3;
+          --accent: #9d366e;
+          --selected: #f5e6ee;
+          --shadow: 0 16px 48px #23321f1c;
+          --paid: #655634;
+          --paid-bg: #efeadc;
+          --local: #456b43;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 var(--font);
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        color: inherit;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      button {
+        -webkit-tap-highlight-color: transparent;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      svg {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        vertical-align: middle;
+      }
+      button svg {
+        pointer-events: none;
+      }
+      .prototype-bar {
+        max-width: 1200px;
+        margin: auto;
+        padding: 27px 32px 22px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .eyebrow {
+        font-size: 10px;
+        font-weight: 650;
+        letter-spacing: 0.13em;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .prototype-bar strong {
+        font-size: 13px;
+        font-weight: 550;
+      }
+      .separator {
+        width: 1px;
+        height: 15px;
+        background: var(--border);
+      }
+      .theme {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--secondary);
+      }
+      .layout {
+        max-width: 1200px;
+        margin: auto;
+        padding: 0 32px 32px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 250px;
+        gap: 30px;
+        align-items: start;
+      }
+      .workbench {
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .window-bar {
+        height: 50px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .window-bar .project {
+        color: var(--secondary);
+      }
+      .window-bar .branch {
+        margin-left: auto;
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+      .chat {
+        height: 650px;
+        padding: 27px 26px 24px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+      .thread-title {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 550;
+        letter-spacing: -0.4px;
+      }
+      .thread-meta {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 5px;
+      }
+      .message {
+        align-self: flex-end;
+        margin-top: 29px;
+        padding: 12px 16px;
+        max-width: 83%;
+        background: var(--hover);
+        border-radius: 10px 10px 3px 10px;
+        font-size: 13px;
+        color: var(--secondary);
+      }
+      .composer-area {
+        margin-top: auto;
+      }
+      .composer {
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--raised);
+        padding: 14px 13px 10px;
+      }
+      textarea {
+        display: block;
+        width: 100%;
+        resize: none;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        outline: none;
+        min-height: 55px;
+        font-size: 13px;
+        line-height: 1.55;
+        padding: 0;
+      }
+      textarea::placeholder {
+        color: var(--muted);
+      }
+      textarea:focus-visible {
+        border-radius: 2px;
+        outline: 1px solid var(--accent);
+        outline-offset: 4px;
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        margin-top: 4px;
+        min-height: 28px;
+      }
+      .tool-icon {
+        color: var(--muted);
+        display: flex;
+      }
+      .mode {
+        font-size: 12px;
+        color: var(--secondary);
+        border-right: 1px solid var(--border);
+        padding-right: 11px;
+      }
+      .picker-anchor {
+        position: relative;
+        min-width: 0;
+      }
+      .trigger {
+        border: 0;
+        background: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        font-size: 12px;
+        color: var(--secondary);
+        max-width: 100%;
+      }
+      .trigger-label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .trigger:hover {
+        color: var(--text);
+      }
+      .dollar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: 600 11px var(--font);
+        width: 19px;
+        height: 19px;
+        border-radius: 4px;
+        background: var(--paid-bg);
+        color: var(--paid);
+        flex-shrink: 0;
+      }
+      .trigger .dollar {
+        width: 17px;
+        height: 17px;
+      }
+      .send {
+        margin-left: auto;
+        background: var(--hover);
+        color: var(--secondary);
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 50%;
+      }
+      .send:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .composer-note {
+        padding-top: 9px;
+        font-size: 11px;
+        color: var(--muted);
+        min-height: 26px;
+      }
+      .popover {
+        position: absolute;
+        bottom: calc(100% + 16px);
+        left: -87px;
+        width: 386px;
+        max-height: 490px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        background: var(--raised);
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        padding: 7px;
+      }
+      .popover[data-view='all'] {
+        height: 448px;
+      }
+      .popover[data-view='all'] .model-list {
+        flex: 1;
+        max-height: none;
+      }
+      .pop-header,
+      .filters,
+      .search-wrap,
+      .pop-foot,
+      .browse {
+        flex-shrink: 0;
+      }
+      .pop-header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 31px;
+        padding: 0 4px 4px;
+      }
+      .pop-title {
+        font-size: 12px;
+        font-weight: 600;
+        flex: 1;
+      }
+      .icon-button {
+        width: 25px;
+        height: 25px;
+        border: 0;
+        border-radius: 4px;
+        padding: 0;
+        background: none;
+        color: var(--secondary);
+        display: grid;
+        place-items: center;
+      }
+      .icon-button:hover {
+        background: var(--hover);
+      }
+      .filters {
+        display: flex;
+        padding: 3px;
+        gap: 3px;
+        background: var(--bg);
+        border-radius: 6px;
+        margin: 2px 3px 10px;
+        border: 1px solid var(--border);
+      }
+      .filter {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        padding: 5px 4px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--secondary);
+        white-space: nowrap;
+      }
+      .filter:hover {
+        background: var(--hover);
+      }
+      .filter[aria-pressed='true'] {
+        background: var(--selected);
+        color: var(--accent);
+        font-weight: 600;
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+      }
+      .count {
+        font-size: 10px;
+        opacity: 0.8;
+        font-variant-numeric: tabular-nums;
+      }
+      .search-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 3px 7px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--surface);
+        padding: 6px 8px;
+        color: var(--muted);
+      }
+      .search-wrap:focus-within {
+        border-color: var(--accent);
+      }
+      .search {
+        min-width: 0;
+        width: 100%;
+        background: none;
+        border: 0;
+        outline: none;
+        color: var(--text);
+        font-size: 12px;
+      }
+      .search::placeholder {
+        color: var(--muted);
+      }
+      .clear-search {
+        width: 18px;
+        height: 18px;
+      }
+      .model-list {
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+        min-height: 0;
+        max-height: 288px;
+        scroll-padding: 7px;
+      }
+      .group-label {
+        padding: 9px 9px 4px;
+        font-size: 10px;
+        font-weight: 550;
+        text-transform: uppercase;
+        letter-spacing: 0.055em;
+        color: var(--muted);
+      }
+      .model {
+        border: 0;
+        background: transparent;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 9px;
+        border-radius: 4px;
+        text-align: left;
+      }
+      .model:hover {
+        background: var(--hover);
+      }
+      .model:focus-visible {
+        outline: 1px solid var(--accent);
+        outline-offset: -2px;
+        background: var(--hover);
+      }
+      .model[aria-current='true'] {
+        background: var(--selected);
+      }
+      .model[aria-current='true'] .model-name {
+        font-weight: 600;
+      }
+      .model-copy {
+        min-width: 0;
+        flex: 1;
+      }
+      .model-name {
+        display: block;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .model-detail {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 1px;
+      }
+      .access {
+        font-size: 10px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .checkmark {
+        color: var(--accent);
+      }
+      .check-space {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        line-height: 0;
+      }
+      .check-space svg {
+        display: block;
+        width: 16px;
+        height: 16px;
+      }
+      .pop-foot {
+        margin: 7px 3px 0;
+        padding: 9px 4px 3px;
+        border-top: 1px solid var(--border);
+        font-size: 10px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 30px;
+      }
+      .browse {
+        border: 0;
+        border-top: 1px solid var(--border);
+        background: none;
+        margin: 6px 3px 0;
+        padding: 10px 6px 4px;
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .browse:hover {
+        color: var(--text);
+      }
+      .empty {
+        padding: 24px 14px;
+        text-align: center;
+      }
+      .empty strong {
+        font-size: 12px;
+        font-weight: 550;
+      }
+      .empty p {
+        color: var(--muted);
+        font-size: 11px;
+        margin: 4px 0 12px;
+      }
+      .text-button {
+        background: none;
+        border: 0;
+        color: var(--accent);
+        font-size: 12px;
+        padding: 3px;
+      }
+      aside {
+        padding-top: 11px;
+      }
+      aside h2 {
+        font-size: 20px;
+        letter-spacing: -0.5px;
+        line-height: 1.3;
+        font-weight: 550;
+        margin: 11px 0 10px;
+      }
+      aside p {
+        color: var(--secondary);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .selection {
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 0;
+        margin: 23px 0;
+      }
+      .selection-name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: 14px;
+        font-weight: 550;
+      }
+      .selection-route {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 3px 0 12px;
+      }
+      .selection-explanation {
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--secondary);
+      }
+      .settings-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--secondary);
+        cursor: pointer;
+      }
+      .settings-label .switch {
+        appearance: none;
+        width: 27px;
+        height: 16px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--hover);
+        position: relative;
+        margin: 0;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .settings-label .switch:before {
+        content: '';
+        width: 10px;
+        height: 10px;
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      .settings-label .switch[aria-checked='true'] {
+        background: var(--selected);
+        border-color: var(--accent);
+      }
+      .settings-label .switch[aria-checked='true']:before {
+        transform: translateX(11px);
+        background: var(--accent);
+      }
+      .settings-label .switch:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      .small-note {
+        font-size: 10px;
+        color: var(--muted);
+        line-height: 1.6;
+        margin-top: 8px;
+      }
+      .tip {
+        font-size: 11px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        margin-top: 22px;
+        padding-top: 16px;
+        line-height: 1.7;
+      }
+      kbd {
+        font: 10px var(--font);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 1px 4px;
+      }
+      .live {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: minmax(0, 1fr) 215px;
+          gap: 20px;
+          padding: 0 20px 20px;
+        }
+        .prototype-bar {
+          padding: 20px;
+        }
+        .chat {
+          padding: 22px 16px 18px;
+        }
+        .popover {
+          width: 350px;
+        }
+      }
+      @media (max-width: 730px) {
+        .layout {
+          grid-template-columns: 1fr;
+          padding: 0 14px 22px;
+          gap: 18px;
+        }
+        .prototype-bar {
+          padding: 16px 14px;
+        }
+        .prototype-bar strong {
+          font-size: 12px;
+        }
+        .chat {
+          height: 630px;
+        }
+        .popover {
+          max-width: calc(100vw - 64px);
+        }
+        aside {
+          padding: 4px 7px;
+        }
+        aside h2 {
+          font-size: 18px;
+        }
+        .selection {
+          margin: 18px 0;
+          padding: 15px 0;
+        }
+        .window-bar {
+          padding: 0 16px;
+        }
+      }
+      @media (max-width: 390px) {
+        .toolbar {
+          gap: 7px;
+        }
+        .mode {
+          padding-right: 7px;
+        }
+        .popover {
+          left: -75px;
+        }
+        .trigger-label {
+          max-width: 133px;
+        }
+        .window-bar .branch {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg
+      aria-hidden="true"
+      style="position: absolute; width: 0; height: 0; overflow: hidden"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path
+          d="m8 10 4 4 4-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-back" viewBox="0 0 24 24">
+        <path
+          d="m10 6-6 6 6 6M4 12h16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path
+          d="m7 7 10 10M7 17 17 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
+        <path d="m15 15 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path
+          d="m5 12 4 4L19 6"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path
+          d="M3 7V5h6l2 2h10v12H3Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path
+          d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path
+          d="M12 5v14M5 12h14"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-up" viewBox="0 0 24 24">
+        <path
+          d="m6 11 6-6 6 6m-6-6v14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+    </svg>
+    <header class="prototype-bar">
+      <span class="eyebrow">Prototype</span><span class="separator"></span
+      ><strong>Model picker / coverage</strong>
+      <button class="theme" id="theme" aria-label="Toggle light and dark theme">
+        <svg aria-hidden="true"><use href="#i-sun" /></svg><span id="theme-label">Theme</span>
+      </button>
+    </header>
+    <main class="layout">
+      <section class="workbench" aria-label="Copse conversation preview">
+        <div class="window-bar">
+          <svg aria-hidden="true"><use href="#i-folder" /></svg
+          ><span class="project">copse-panel</span><span>/</span><span>New thread</span
+          ><span class="branch">main</span>
+        </div>
+        <div class="chat">
+          <h1 class="thread-title">A model for the task</h1>
+          <div class="thread-meta">Choose how this conversation runs.</div>
+          <div class="message">Help me simplify the settings navigation.</div>
+          <div class="composer-area">
+            <div class="composer">
+              <textarea
+                id="prompt"
+                aria-label="Message"
+                placeholder="Ask a follow-up or give an instruction…"
+              ></textarea>
+              <div class="toolbar">
+                <span class="tool-icon" aria-hidden="true"
+                  ><svg><use href="#i-plus" /></svg
+                ></span>
+                <span class="mode">Agent</span>
+                <div class="picker-anchor" id="picker-anchor">
+                  <button
+                    class="trigger"
+                    id="trigger"
+                    aria-expanded="true"
+                    aria-controls="picker"
+                    aria-haspopup="dialog"
+                  >
+                    <span class="trigger-label" id="trigger-label">Claude Sonnet 4.6</span
+                    ><span class="dollar" id="trigger-cost" aria-label="Potential usage charge"
+                      >$</span
+                    ><svg aria-hidden="true"><use href="#i-chevron" /></svg>
+                  </button>
+                  <section
+                    class="popover"
+                    id="picker"
+                    data-view="all"
+                    role="dialog"
+                    aria-label="Choose model"
+                  >
+                    <div class="pop-header">
+                      <button class="icon-button" id="back" aria-label="Back to recent models">
+                        <svg aria-hidden="true"><use href="#i-back" /></svg>
+                      </button>
+                      <span class="pop-title" id="pop-title">All models</span>
+                      <button class="icon-button" id="close" aria-label="Close model picker">
+                        <svg aria-hidden="true"><use href="#i-close" /></svg>
+                      </button>
+                    </div>
+                    <div
+                      class="filters"
+                      id="filters"
+                      role="group"
+                      aria-label="Filter models by coverage"
+                    >
+                      <button class="filter" data-filter="all" aria-pressed="true">
+                        All <span class="count"></span>
+                      </button>
+                      <button class="filter" data-filter="local" aria-pressed="false">
+                        Local <span class="count"></span>
+                      </button>
+                      <button class="filter" data-filter="plan" aria-pressed="false">
+                        Plan <span class="count"></span>
+                      </button>
+                      <button class="filter" data-filter="paid" aria-pressed="false">
+                        Paid <span class="count"></span>
+                      </button>
+                    </div>
+                    <div class="search-wrap" id="search-wrap">
+                      <svg aria-hidden="true"><use href="#i-search" /></svg
+                      ><input
+                        class="search"
+                        id="search"
+                        type="search"
+                        placeholder="Search models…"
+                        aria-label="Search models"
+                        autocomplete="off"
+                      /><button
+                        class="icon-button clear-search"
+                        id="clear-search"
+                        aria-label="Clear search"
+                        hidden
+                      >
+                        <svg aria-hidden="true"><use href="#i-close" /></svg>
+                      </button>
+                    </div>
+                    <div
+                      class="model-list"
+                      id="model-list"
+                      role="group"
+                      aria-label="Available models"
+                    ></div>
+                    <button class="browse" id="browse" hidden>
+                      <span>All models</span><span aria-hidden="true">→</span>
+                    </button>
+                    <div class="pop-foot" id="pop-foot"></div>
+                  </section>
+                </div>
+                <button class="send" id="send" disabled aria-label="Send preview message">
+                  <svg aria-hidden="true"><use href="#i-up" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="composer-note" id="composer-note"></div>
+          </div>
+        </div>
+      </section>
+      <aside aria-label="Prototype details and controls">
+        <div class="eyebrow">A quicker way to choose</div>
+        <h2>Local, on your plan,<br />or paid by use.</h2>
+        <p>Filter the full catalogue in one click.</p>
+        <div class="selection">
+          <div class="eyebrow">Current selection</div>
+          <div class="selection-name">
+            <span id="selection-name"></span
+            ><span class="dollar" id="selection-dollar" aria-label="Potential usage charge">$</span>
+          </div>
+          <div class="selection-route" id="selection-route"></div>
+          <div class="selection-explanation" id="selection-explanation"></div>
+        </div>
+        <div class="eyebrow">Try a coverage change</div>
+        <div class="settings-label">
+          <span id="claude-label">Claude plan recognized</span
+          ><button
+            type="button"
+            class="switch"
+            role="switch"
+            id="claude-plan"
+            aria-labelledby="claude-label"
+            aria-checked="true"
+          ></button>
+        </div>
+        <div class="settings-label">
+          <span id="chatgpt-label">ChatGPT plan recognized</span
+          ><button
+            type="button"
+            class="switch"
+            role="switch"
+            id="chatgpt-plan"
+            aria-labelledby="chatgpt-label"
+            aria-checked="true"
+          ></button>
+        </div>
+        <div class="settings-label">
+          <span id="local-label">Local models available</span
+          ><button
+            type="button"
+            class="switch"
+            role="switch"
+            id="local-available"
+            aria-labelledby="local-label"
+            aria-checked="true"
+          ></button>
+        </div>
+        <div class="small-note">
+          Illustrative models and connections. These controls only change this prototype.
+        </div>
+        <div class="tip">
+          Try <strong>Plan → Claude Sonnet 4.6</strong>, then turn off the Claude plan. The same
+          selection gains a <strong>$</strong>.<br /><br /><kbd>↑</kbd> <kbd>↓</kbd> to browse ·
+          <kbd>Enter</kbd> to choose · <kbd>Esc</kbd> to close
+        </div>
+      </aside>
+    </main>
+    <div class="live" id="live" role="status" aria-live="polite"></div>
+    <script>
+      ;(() => {
+        const $ = (id) => document.getElementById(id)
+        const models = [
+          {
+            id: 'qwen-local',
+            name: 'Qwen3 Coder 30B',
+            route: 'LM Studio',
+            kind: 'local',
+            detail: 'Runs on this device',
+          },
+          {
+            id: 'gpt-oss-local',
+            name: 'GPT-OSS 20B',
+            route: 'LM Studio',
+            kind: 'local',
+            detail: 'Runs on this device',
+          },
+          {
+            id: 'sonnet-plan',
+            name: 'Claude Sonnet 4.6',
+            route: 'Claude Code',
+            kind: 'plan',
+            plan: 'claude',
+            detail: 'Claude plan',
+          },
+          {
+            id: 'opus-plan',
+            name: 'Claude Opus 4.6',
+            route: 'Claude Code',
+            kind: 'plan',
+            plan: 'claude',
+            detail: 'Claude plan',
+          },
+          {
+            id: 'gpt-plan',
+            name: 'GPT-5.4',
+            route: 'Codex',
+            kind: 'plan',
+            plan: 'chatgpt',
+            detail: 'ChatGPT plan',
+          },
+          {
+            id: 'codex-plan',
+            name: 'GPT-5.3 Codex',
+            route: 'Codex',
+            kind: 'plan',
+            plan: 'chatgpt',
+            detail: 'ChatGPT plan',
+          },
+          {
+            id: 'sonnet-api',
+            name: 'Claude Sonnet 4.6',
+            route: 'Anthropic API',
+            kind: 'paid',
+            detail: 'Billed separately from your plan',
+          },
+          {
+            id: 'gpt-api',
+            name: 'GPT-5.4',
+            route: 'OpenAI API',
+            kind: 'paid',
+            detail: 'Billed separately from your plan',
+          },
+          {
+            id: 'gemini-api',
+            name: 'Gemini 3.1 Pro',
+            route: 'OpenRouter',
+            kind: 'paid',
+            detail: 'Usage-based billing',
+          },
+          {
+            id: 'custom',
+            name: 'Custom model',
+            route: 'Team endpoint',
+            kind: 'unknown',
+            detail: 'Coverage unknown',
+          },
+        ]
+        const state = {
+          selected: 'sonnet-api',
+          filter: 'all',
+          view: 'all',
+          open: true,
+          claude: true,
+          chatgpt: true,
+          local: true,
+          recent: ['sonnet-api', 'gpt-plan', 'qwen-local', 'sonnet-plan'],
+        }
+        const icon = (name) => '<svg aria-hidden="true"><use href="#i-' + name + '"/></svg>'
+        function coverage(model) {
+          if (model.kind === 'local') return 'local'
+          if (model.kind === 'plan' && state[model.plan]) return 'plan'
+          return 'paid'
+        }
+        function available() {
+          return models.filter(
+            (model) => state.local || model.kind !== 'local' || model.id === state.selected,
+          )
+        }
+        function detail(model) {
+          if (model.kind === 'local' && !state.local) return 'Local server unavailable'
+          if (model.kind === 'plan' && !state[model.plan]) return 'Plan coverage not confirmed'
+          return model.detail
+        }
+        function selected() {
+          return models.find((model) => model.id === state.selected)
+        }
+        function visible() {
+          if (state.view === 'recent')
+            return state.recent
+              .map((id) => models.find((model) => model.id === id))
+              .filter((model) => available().includes(model))
+          const query = $('search').value.trim().toLowerCase()
+          return available().filter(
+            (model) =>
+              (state.filter === 'all' || coverage(model) === state.filter) &&
+              (model.name + ' ' + model.route + ' ' + detail(model)).toLowerCase().includes(query),
+          )
+        }
+        function syncSelection() {
+          const model = selected()
+          const type = coverage(model)
+          const paid = type === 'paid'
+          $('trigger-label').textContent = model.name
+          $('trigger-cost').hidden = !paid
+          $('trigger').title =
+            model.route +
+            (paid
+              ? ' · $'
+              : type === 'local'
+                ? ' · Local model'
+                : ' · Covered by your ' + model.detail)
+          $('trigger').setAttribute(
+            'aria-label',
+            'Choose model: ' +
+              model.name +
+              ', ' +
+              model.route +
+              (paid ? ', potential usage charge' : ', ' + type),
+          )
+          $('selection-name').textContent = model.name
+          $('selection-route').textContent = model.route
+          $('selection-dollar').hidden = !paid
+          let explanation
+          if (type === 'local')
+            explanation = state.local
+              ? 'Runs on this device. No per-token provider charge.'
+              : 'Still a local model, so no $. Reconnect the local server to use it.'
+          else if (type === 'plan')
+            explanation =
+              'Covered by your ' +
+              model.detail +
+              ' through ' +
+              model.route +
+              '. Plan limits still apply.'
+          else if (model.kind === 'plan' || model.kind === 'unknown') explanation = ''
+          else
+            explanation =
+              'This API route is billed by use. A subscription on another route does not cover it.'
+          $('selection-explanation').textContent = explanation
+          $('composer-note').textContent =
+            model.route +
+            (paid
+              ? ''
+              : ' · ' +
+                (type === 'local'
+                  ? state.local
+                    ? 'On this device'
+                    : 'Local server unavailable'
+                  : model.detail))
+          $('send').disabled = !$('prompt').value.trim() || (model.kind === 'local' && !state.local)
+        }
+        function render() {
+          $('picker').hidden = !state.open
+          $('picker').dataset.view = state.view
+          $('trigger').setAttribute('aria-expanded', String(state.open))
+          const all = state.view === 'all'
+          $('back').hidden = !all
+          $('filters').hidden = !all
+          $('search-wrap').hidden = !all
+          $('browse').hidden = all
+          $('pop-title').textContent = all ? 'All models' : 'Recent'
+          document.querySelectorAll('.filter').forEach((button) => {
+            const value = button.dataset.filter
+            button.setAttribute('aria-pressed', String(state.filter === value))
+            const count = available().filter(
+              (model) => value === 'all' || coverage(model) === value,
+            ).length
+            button.querySelector('.count').textContent = count
+            button.setAttribute(
+              'aria-label',
+              (value === 'all' ? 'All' : value[0].toUpperCase() + value.slice(1)) +
+                ' models, ' +
+                count,
+            )
+          })
+          $('clear-search').hidden = !$('search').value
+          const list = $('model-list')
+          const scroll = list.scrollTop
+          list.replaceChildren()
+          const items = visible()
+          let group = ''
+          items.forEach((model) => {
+            if (all && group !== model.route) {
+              group = model.route
+              const heading = document.createElement('div')
+              heading.className = 'group-label'
+              heading.textContent = group
+              list.append(heading)
+            }
+            const row = document.createElement('button')
+            row.className = 'model'
+            row.dataset.id = model.id
+            row.setAttribute('aria-current', String(model.id === state.selected))
+            const cost = coverage(model)
+            const copy = document.createElement('span')
+            copy.className = 'model-copy'
+            const name = document.createElement('span')
+            name.className = 'model-name'
+            name.textContent = model.name
+            const sub = document.createElement('span')
+            sub.className = 'model-detail'
+            sub.textContent = all ? detail(model) : model.route + ' · ' + detail(model)
+            copy.append(name, sub)
+            row.append(copy)
+            const badge = document.createElement('span')
+            badge.className = cost === 'paid' ? 'dollar' : 'access'
+            badge.textContent = cost === 'paid' ? '$' : cost === 'local' ? 'Local' : 'Plan'
+            if (cost === 'paid') badge.setAttribute('aria-label', 'Potential usage charge')
+            row.append(badge)
+            const check = document.createElement('span')
+            check.className = 'check-space'
+            if (model.id === state.selected) {
+              check.innerHTML = icon('check')
+              check.classList.add('checkmark')
+            }
+            row.append(check)
+            row.addEventListener('click', () => choose(model))
+            list.append(row)
+          })
+          if (!items.length) {
+            const empty = document.createElement('div')
+            empty.className = 'empty'
+            const title = document.createElement('strong')
+            title.textContent = $('search').value
+              ? 'No matching models'
+              : 'No ' + state.filter + ' models available'
+            const message = document.createElement('p')
+            message.textContent = $('search').value
+              ? 'Try another name or clear your search.'
+              : 'Try another filter, or change the prototype connections.'
+            const reset = document.createElement('button')
+            reset.className = 'text-button'
+            reset.textContent = $('search').value ? 'Clear search' : 'Show all models'
+            reset.addEventListener('click', () => {
+              if ($('search').value) $('search').value = ''
+              else state.filter = 'all'
+              render()
+              $('search').focus()
+            })
+            empty.append(title, message, reset)
+            list.append(empty)
+          }
+          list.scrollTop = scroll
+          const foot = $('pop-foot')
+          foot.hidden = !all || state.filter === 'all' || state.filter === 'paid'
+          foot.textContent = foot.hidden
+            ? ''
+            : state.filter === 'local'
+              ? 'Runs on your device · no per-token provider charge'
+              : 'Covered by a recognized plan · plan limits apply'
+          syncSelection()
+        }
+        function choose(model) {
+          state.selected = model.id
+          state.recent = [model.id, ...state.recent.filter((id) => id !== model.id)].slice(0, 5)
+          syncSelection()
+          close()
+          $('live').textContent =
+            model.name +
+            ' selected through ' +
+            model.route +
+            '. ' +
+            $('selection-explanation').textContent
+        }
+        function dismiss() {
+          state.open = false
+          $('picker').hidden = true
+          $('trigger').setAttribute('aria-expanded', 'false')
+        }
+        function close() {
+          dismiss()
+          $('trigger').focus({ preventScroll: true })
+        }
+        function open() {
+          state.open = true
+          state.view = 'recent'
+          $('search').value = ''
+          render()
+          $('model-list').querySelector('.model')?.focus()
+        }
+        $('trigger').addEventListener('click', () => (state.open ? close() : open()))
+        $('close').addEventListener('click', close)
+        $('back').addEventListener('click', () => {
+          state.view = 'recent'
+          $('search').value = ''
+          render()
+          $('browse').focus()
+        })
+        $('browse').addEventListener('click', () => {
+          state.view = 'all'
+          state.filter = 'all'
+          render()
+          $('search').focus()
+        })
+        document.querySelectorAll('.filter').forEach((button) =>
+          button.addEventListener('click', () => {
+            state.filter = button.dataset.filter
+            $('model-list').scrollTop = 0
+            render()
+            $('live').textContent = visible().length + ' ' + state.filter + ' models shown.'
+          }),
+        )
+        $('search').addEventListener('input', () => {
+          $('model-list').scrollTop = 0
+          render()
+          $('live').textContent = visible().length + ' matching models.'
+        })
+        $('clear-search').addEventListener('click', () => {
+          $('search').value = ''
+          render()
+          $('search').focus()
+        })
+        $('picker-anchor').addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            close()
+            return
+          }
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter'].includes(event.key)) return
+          const target = document.activeElement
+          if (target !== $('search') && !target.classList.contains('model')) return
+          const rows = [...$('model-list').querySelectorAll('.model')]
+          if (!rows.length) return
+          if (event.key === 'Enter') {
+            if (target === $('search')) {
+              event.preventDefault()
+              rows[0].click()
+            }
+            return
+          }
+          if (target === $('search') && ['Home', 'End'].includes(event.key)) return
+          event.preventDefault()
+          const index = rows.indexOf(target)
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? rows.length - 1
+                : event.key === 'ArrowDown'
+                  ? (index + 1) % rows.length
+                  : index <= 0
+                    ? rows.length - 1
+                    : index - 1
+          rows[next].focus()
+          rows[next].scrollIntoView({ block: 'nearest' })
+        })
+        function dismissFromOutside(event) {
+          if (
+            state.open &&
+            event.target instanceof Element &&
+            !$('picker-anchor').contains(event.target) &&
+            !event.target.closest('aside')
+          )
+            dismiss()
+        }
+        // Wait for focus to reach its destination, rather than dismissing during blur.
+        // Hiding the menu must also leave the pressed control intact until click fires.
+        document.addEventListener('pointerdown', dismissFromOutside)
+        document.addEventListener('focusin', dismissFromOutside)
+        for (const [id, key] of [
+          ['claude-plan', 'claude'],
+          ['chatgpt-plan', 'chatgpt'],
+          ['local-available', 'local'],
+        ]) {
+          $(id).addEventListener('click', () => {
+            state[key] = !state[key]
+            $(id).setAttribute('aria-checked', String(state[key]))
+            render()
+            $('live').textContent =
+              'Coverage updated. ' + selected().name + ': ' + $('selection-explanation').textContent
+          })
+        }
+        const themeQuery = window.matchMedia('(prefers-color-scheme: light)')
+        let theme = themeQuery.matches ? 'light' : 'dark'
+        function applyTheme() {
+          document.documentElement.dataset.theme = theme
+          $('theme-label').textContent = theme === 'dark' ? 'Light' : 'Dark'
+        }
+        $('theme').addEventListener('click', () => {
+          theme = theme === 'dark' ? 'light' : 'dark'
+          applyTheme()
+        })
+        $('prompt').addEventListener('input', syncSelection)
+        $('send').addEventListener('click', () => {
+          $('composer-note').textContent = 'Prototype only · no message sent and no model called.'
+          $('live').textContent = $('composer-note').textContent
+        })
+        render()
+        applyTheme()
+      })()
+    </script>
+  </body>
+</html>

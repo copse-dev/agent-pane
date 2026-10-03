@@ -17,6 +17,7 @@ export const DOCTRINE_RULE_IDS = [
   'scopeDiscipline',
   'noNarratingComments',
   'followExplicitConstraints',
+  'uiBehaviorVerification',
 ] as const
 
 export type DoctrineRuleId = (typeof DOCTRINE_RULE_IDS)[number]
@@ -101,6 +102,11 @@ const EXACT_COMMAND_REQUEST =
 
 const NARRATING_COMMENT =
   /^\s*(?:\/\/|#|--)\s*(?:fixed|changed|updated|modified|refactored|added|removed|hack|workaround|this (?:fixes|changes|updates))\b/im
+
+const RENDERER_VIEW_PATH = /^src\/renderer\/views\/.*\.[cm]?[jt]sx?$/
+const TEST_PATH = /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec|e2e)\.[cm]?[jt]sx?$/
+const APP_LAUNCH_COMMAND =
+  /(?:^|[;&|]\s*)(?:(?:pnpm|npm|yarn)\s+(?:run\s+)?(?:dev|start|test:e2e)(?:\s|$)|(?:npx\s+)?wdio\b|electron\b|make\s+run\b)/i
 
 /** Light intent heuristic used when fixtures omit an explicit label. */
 export function inferUserIntent(userMessage: string): UserIntent {
@@ -376,6 +382,64 @@ function scoreFollowExplicitConstraints(
   return { id, pass: true, detail: 'exact command issued without added preparation' }
 }
 
+/** `src/renderer/views/browser-pane.ts` -> `browser-pane`. */
+function fileStem(path: string): string {
+  const base = path.split('/').pop() ?? ''
+  const dot = base.indexOf('.')
+  return dot === -1 ? base : base.slice(0, dot)
+}
+
+/**
+ * A renderer behaviour change is not verified by an unrelated green suite.
+ * Engage only for production files under `src/renderer/views`: broader visual
+ * policy belongs to AGENTS.md, while this transcript heuristic stays narrow
+ * enough to avoid guessing whether styles, fixtures, or shared helpers are UI.
+ */
+function scoreUiBehaviorVerification(toolCalls: readonly DoctrineToolCall[]): DoctrineRuleResult {
+  const id = 'uiBehaviorVerification' as const
+  const paths = editedPaths([...toolCalls]).map((path) => path.replace(/\\/g, '/'))
+  const changedViews = paths.filter(
+    (path) => RENDERER_VIEW_PATH.test(path) && !TEST_PATH.test(path),
+  )
+  const changedRendererView = changedViews.length > 0
+  if (!changedRendererView) {
+    return { id, pass: true, detail: 'no renderer view behaviour changed — rule skipped' }
+  }
+
+  const viewStems = changedViews.map(fileStem)
+  const relevantTest = paths.some(
+    (path) =>
+      TEST_PATH.test(path) &&
+      viewStems.some((stem) => stem.length > 0 && path.split('/').pop()?.includes(stem)),
+  )
+  if (relevantTest) {
+    return { id, pass: true, detail: 'renderer view change includes a test for that view' }
+  }
+
+  const launchedApp = toolCalls.some((call) => {
+    if (!SHELL_TOOLS.has(call.name)) return false
+    if (
+      call.status === 'error' ||
+      call.status === 'failed' ||
+      (typeof call.result === 'string' && FAILURE_SIGNAL.test(call.result))
+    ) {
+      return false
+    }
+    const command = call.args?.['command']
+    return typeof command === 'string' && APP_LAUNCH_COMMAND.test(command)
+  })
+  if (launchedApp) {
+    return { id, pass: true, detail: 'renderer view change was exercised by an app launch' }
+  }
+
+  return {
+    id,
+    pass: false,
+    detail:
+      'renderer view changed without a test for that view or an app launch — unverified; add a focused test or launch the app via the run skill',
+  }
+}
+
 /** Score a transcript against the working-style doctrine. */
 export function scoreDoctrineCompliance(transcript: DoctrineTranscript): DoctrineComplianceReport {
   const intent = transcript.userIntent ?? inferUserIntent(transcript.userMessage)
@@ -387,6 +451,7 @@ export function scoreDoctrineCompliance(transcript: DoctrineTranscript): Doctrin
     scoreScopeDiscipline(transcript.inScopePaths, transcript.toolCalls),
     scoreNoNarratingComments(transcript.toolCalls),
     scoreFollowExplicitConstraints(transcript.userMessage, transcript.toolCalls),
+    scoreUiBehaviorVerification(transcript.toolCalls),
   ]
   const violations = results.filter((r) => !r.pass).map((r) => r.id)
   return { results, violations, pass: violations.length === 0 }

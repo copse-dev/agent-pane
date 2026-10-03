@@ -138,61 +138,13 @@ export function resolveThreadExecutionContext(
   return pending
 }
 
-/**
- * Resolve a terminal root through the ordinary strict path first. A detached
- * checkout gets one narrower fallback so the user can repair a rebase,
- * cherry-pick, or bisect that Git left in progress.
- */
+/** Resolve the same validated checkout for a terminal as for the rest of the thread. */
 export async function resolveThreadTerminalExecutionContext(
   projectId: string,
   threadId: string,
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
 ): Promise<ThreadExecutionContext> {
-  try {
-    return await resolveThreadExecutionContext(projectId, threadId, dependencies)
-  } catch (error) {
-    if (!(error instanceof ThreadWorktreeDetachedError)) throw error
-  }
-
-  const projectRoot = dependencies.getProjectRoot(projectId)
-  if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
-
-  const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
-  if (threadMeta == null) {
-    throw new Error(`Thread "${threadId}" is not persisted yet under project "${projectId}"`)
-  }
-  if (threadMeta.id !== threadId) {
-    throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
-  }
-  if (!threadMeta.worktree) {
-    throw new Error('Detached thread recovery requires a persisted worktree')
-  }
-
-  const restored =
-    threadMeta.worktree.retiredAt === undefined && !threadMeta.worktree.pullRequestUrl
-      ? threadMeta.worktree
-      : await (dependencies.restoreWorktree ?? restoreRetiredThreadWorktree)({
-          projectId,
-          threadId,
-          projectRoot,
-          worktree: threadMeta.worktree,
-        })
-  const validateRecovery = dependencies.validateWorktreeRecovery ?? validateThreadWorktreeRecovery
-  const worktree = await validateRecovery({
-    projectId,
-    threadId,
-    projectRoot,
-    worktree: restored,
-  })
-  return Object.freeze({
-    projectId,
-    threadId,
-    projectRoot,
-    root: worktree.root,
-    checkoutMode: 'worktree',
-    branch: null,
-    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
-  })
+  return resolveThreadExecutionContext(projectId, threadId, dependencies)
 }
 
 /**
@@ -264,17 +216,24 @@ async function resolveThreadExecutionContextUncached(
             projectRoot,
             worktree: threadMeta.worktree,
           })
+    const input = { projectId, threadId, projectRoot, worktree: restored }
     const validate = dependencies.validateWorktree ?? validateThreadWorktree
-    const worktree = await validate({
-      projectId,
-      threadId,
-      projectRoot,
-      worktree: restored,
-    })
+    let worktree: ValidatedThreadWorktree | ValidatedThreadWorktreeRecovery
+    try {
+      worktree = await validate(input)
+    } catch (error) {
+      if (!(error instanceof ThreadWorktreeDetachedError)) throw error
+      // Git detaches HEAD while replaying commits. Keep every thread surface
+      // usable only when the registered checkout has an active recovery marker.
+      const validateRecovery =
+        dependencies.validateWorktreeRecovery ?? validateThreadWorktreeRecovery
+      worktree = await validateRecovery(input)
+    }
     if (
-      restored !== threadMeta.worktree ||
-      worktree.branch !== threadMeta.worktree.branch ||
-      threadMeta.gitBranch !== worktree.branch
+      worktree.branch !== null &&
+      (restored !== threadMeta.worktree ||
+        worktree.branch !== threadMeta.worktree.branch ||
+        threadMeta.gitBranch !== worktree.branch)
     ) {
       const adopted: ThreadWorktree = {
         path: restored.path,

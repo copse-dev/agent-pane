@@ -112,4 +112,131 @@ describe('scoreDoctrineCompliance', () => {
     })
     assert.ok(report.violations.includes('scopeDiscipline'))
   })
+
+  it('marks an untested renderer view change unverified when the app never launched', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Make Cmd+L focus the browser address bar',
+      userIntent: 'request',
+      toolCalls: [
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/renderer/views/browser-pane.ts',
+            old_string: 'old handler',
+            new_string: 'new handler',
+          },
+        },
+        {
+          name: 'run_shell',
+          args: { command: 'pnpm test -- browser-pane' },
+          result: 'exit=0\nall tests passed',
+        },
+      ],
+      finalMessage: 'Cmd+L now focuses the browser address bar, and the existing tests pass.',
+    })
+
+    assert.ok(report.violations.includes('uiBehaviorVerification'))
+  })
+
+  it('accepts a renderer view change with a focused test change or app launch', () => {
+    for (const verification of [
+      {
+        name: 'str_replace',
+        args: {
+          path: 'src/renderer/views/browser-pane.test.ts',
+          old_string: 'old assertion',
+          new_string: 'new assertion',
+        },
+      },
+      {
+        name: 'run_shell',
+        args: { command: 'pnpm run test:e2e -- --spec tests/e2e/browser-display.e2e.ts' },
+        result: 'exit=0\n1 passing',
+      },
+    ]) {
+      const report = scoreDoctrineCompliance({
+        userMessage: 'Make Cmd+L focus the browser address bar',
+        userIntent: 'request',
+        toolCalls: [
+          {
+            name: 'str_replace',
+            args: {
+              path: 'src/renderer/views/browser-pane.ts',
+              old_string: 'old handler',
+              new_string: 'new handler',
+            },
+          },
+          verification,
+        ],
+        finalMessage: 'Cmd+L now focuses the browser address bar, with focused verification.',
+      })
+
+      assert.ok(!report.violations.includes('uiBehaviorVerification'))
+    }
+  })
+
+  it('does not count failed app-launch attempts as renderer verification', () => {
+    for (const launch of [
+      { status: 'error', result: 'could not spawn app' },
+      { status: 'failed', result: 'could not spawn app' },
+      { result: 'exit=1\nsh: pnpm: command not found' },
+    ]) {
+      const report = scoreDoctrineCompliance({
+        userMessage: 'Fix browser behavior',
+        userIntent: 'request',
+        toolCalls: [
+          { name: 'str_replace', args: { path: 'src/renderer/views/browser-pane.ts' } },
+          { name: 'run_shell', args: { command: 'pnpm run dev' }, ...launch },
+        ],
+        finalMessage: 'Changed browser behavior. The app failed to launch; it remains unverified.',
+      })
+      assert.ok(report.violations.includes('uiBehaviorVerification'))
+    }
+  })
+
+  it('accepts a successful app launch after a failed attempt', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Fix browser behavior',
+      userIntent: 'request',
+      toolCalls: [
+        { name: 'str_replace', args: { path: 'src/renderer/views/browser-pane.ts' } },
+        {
+          name: 'run_shell',
+          args: { command: 'pnpm run dev' },
+          result: 'exit=1\nERROR: startup failed',
+        },
+        { name: 'run_shell', args: { command: 'pnpm run dev' }, result: 'exit=0\napp started' },
+      ],
+      finalMessage: 'Changed browser behavior and verified the app after retrying startup.',
+    })
+    assert.ok(!report.violations.includes('uiBehaviorVerification'))
+  })
+
+  it('rejects a renderer view change accompanied only by an unrelated test edit', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Make Cmd+L focus the browser address bar',
+      userIntent: 'request',
+      toolCalls: [
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/renderer/views/browser-pane.ts',
+            old_string: 'old handler',
+            new_string: 'new handler',
+          },
+        },
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/shared/agent/unrelated.test.ts',
+            old_string: 'a',
+            new_string: 'b',
+          },
+        },
+      ],
+      finalMessage: 'Cmd+L now focuses the browser address bar.',
+    })
+
+    assert.ok(report.violations.includes('uiBehaviorVerification'))
+  })
 })

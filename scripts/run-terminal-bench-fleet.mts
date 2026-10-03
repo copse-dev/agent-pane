@@ -37,7 +37,7 @@ import {
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileIds,
+  parseRunnableTerminalBenchProfileIds,
   parseTerminalBenchProfileSelectionId,
   type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
@@ -175,8 +175,8 @@ export function runConfig(options: Options): RunConfig {
   const profiles = option(options, 'profiles')
   if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
   const parsedProfiles = profiles
-    ? parseTerminalBenchProfileIds(profiles)
-    : [parseTerminalBenchProfileSelectionId(profile)]
+    ? parseRunnableTerminalBenchProfileIds(profiles)
+    : parseRunnableTerminalBenchProfileIds(parseTerminalBenchProfileSelectionId(profile))
   const steeredRerun = !hasFlag(options, 'no-steered-rerun')
   if (parsedProfiles.length > 1 && steeredRerun) {
     throw new Error('multi-profile fleet runs require --no-steered-rerun')
@@ -238,7 +238,7 @@ function envLine(name: string, value: string): string {
   return `${name}=${value}`
 }
 
-function workerEnvironment(config: RunConfig, shardIndex: number): string {
+export function workerEnvironment(config: RunConfig, shardIndex: number): string {
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
   const objectRegion = nonEmptyStringOr(process.env['SCW_OBJECT_STORAGE_REGION']?.trim(), 'fr-par')
   const runId = nonEmptyStringOr(
@@ -307,6 +307,10 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
   const maxCommandTimeout = process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim()
   if (maxCommandTimeout) {
     values.push(['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC', maxCommandTimeout])
+  }
+  for (const name of ['COPSE_TERMINAL_MODEL_PARAMETERS', 'COPSE_TERMINAL_MAX_OUTPUT_TOKENS']) {
+    const value = process.env[name]?.trim()
+    if (value) values.push([name, value])
   }
   const analystModel = process.env['BENCH_ANALYST_MODEL']?.trim()
   if (analystModel) {

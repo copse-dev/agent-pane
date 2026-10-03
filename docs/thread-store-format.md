@@ -140,6 +140,30 @@ installs the profile and tracing environment first.
   or transcript exports. Corrupt, incomplete, and future-version bindings fail
   closed instead of guessing a replacement session.
 
+**Ids in file names.** `<messageId>`, `<toolCallId>` and `<subagentId>` above are
+the id as written only when it is 1–128 characters of `[A-Za-z0-9_-]` (UUIDs and
+the usual provider ids). Any other id is spelled by `idPathSegment`
+(`packages/thread-store/src/fold.ts`): a leading `~`, then the id's UTF-8 bytes (WTF-8 for lone UTF-16 surrogates, so distinct JavaScript ids do not become U+FFFD aliases)
+with every byte outside that set written as `~XX` (upper-case hex). An escaped
+name longer than 160 characters is replaced by `~h` plus a 16-hex-digit digest.
+When a subagent's directory name is escaped, its spine `subagent` entry also
+carries the original `id`. Threads written before this rule keep their old file
+names, since loading reads refs from the spine rather than recomputing them.
+
+**Ref containment.** Every spine ref is resolved against the directory its spine
+lives in and must land inside `messages/`, `blobs/`, `subagents/` or `plans/`.
+The store refuses to write any other path. On load, it treats a ref outside
+those directories as a missing file, so the thread is skipped. A thread id must
+name exactly one directory under its project. Existing symlink components below the
+configured workspace root are rejected for project/thread directories, content refs,
+and sidecars; on platforms supporting `O_NOFOLLOW`, file opens also refuse to
+follow a symlink leaf. The component checks apply independently of that flag. Loads skip unsafe
+content, hook inspectors report unavailable blobs, and writes reject unsafe paths.
+The configured root may itself be a trusted host alias (such as `/tmp` on macOS).
+These checks do not provide an OS capability boundary against concurrent directory
+replacement by another process running as the same user. Existing files and spine
+refs are not renamed or migrated by this validation.
+
 ## Spine line schema
 
 One line per finalized `Message`, written **after** its OKF/blob files (the
@@ -183,7 +207,8 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "result": { "ref": "blobs/<toolCallId>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",
-                    "summary": "…", "model": "…" }      // optional
+                    "summary": "…", "model": "…",
+                    "id": "<subagentId>" }  // optional; `id` only when the dir name is escaped
     }
   ]
 }
