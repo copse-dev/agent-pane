@@ -132,7 +132,10 @@ import {
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
-import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
+import {
+  isToolAllowedInReadonlyMode,
+  REQUEST_WRITE_ACCESS_TOOL,
+} from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
@@ -359,6 +362,18 @@ export const PARENT_DELEGATED_TOOLS = [
 /** Tools that only function as subagent entry points; hidden when subagents are off. */
 const SUBAGENT_ENTRY_TOOLS = new Set<string>(['explore', 'investigate_ci'])
 
+/**
+ * Only a thread still reading the user's checkout has write access to ask for,
+ * so `request_write_access` is offered to deferred threads alone. Shared with
+ * the composer's context estimate so it counts the same tools a turn sends.
+ */
+export function withoutUnofferedWriteAccess(
+  tools: LLMTool[],
+  deferredWorktree: boolean,
+): LLMTool[] {
+  return deferredWorktree ? tools : tools.filter((tool) => tool.name !== REQUEST_WRITE_ACCESS_TOOL)
+}
+
 function parentTools(
   registry: ToolRegistry,
   subagentsEnabled: boolean,
@@ -370,11 +385,11 @@ function parentTools(
   threadVideos: readonly VideoAttachmentRef[],
   threadArchives: readonly ArchiveAttachmentRef[],
 ): LLMTool[] {
-  let tools = registry.toLLMTools()
   const executionContext = getThreadExecutionContext()
-  tools = tools.filter((tool) =>
-    isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId),
-  )
+  let tools = withoutUnofferedWriteAccess(
+    registry.toLLMTools(),
+    executionContext?.deferredWorktree !== undefined,
+  ).filter((tool) => isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId))
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated

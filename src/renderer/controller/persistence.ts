@@ -280,7 +280,7 @@ export async function loadProjects(api: ApiClient): Promise<{
     const worktreeMode = value['worktreeMode']
     // `from-default-branch` predates cutting worktrees from the default branch
     // unconditionally; it now means the same thing as `always`.
-    if (worktreeMode === 'never' || worktreeMode === 'always') {
+    if (worktreeMode === 'never' || worktreeMode === 'always' || worktreeMode === 'on-write') {
       project.worktreeMode = worktreeMode
     } else if (worktreeMode === 'from-default-branch') {
       project.worktreeMode = 'always'

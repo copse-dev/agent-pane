@@ -36,6 +36,7 @@ import {
   attachBrowserGuestShareShortcut,
 } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
+import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
@@ -141,6 +142,7 @@ import { suggestNextStep } from './services/next-step-service.ts'
 import {
   clearAgentHistory,
   getProjectThread,
+  getThreadMeta,
   loadAgentHistory,
   saveAgentHistory,
 } from './services/thread-store.ts'
@@ -890,6 +892,7 @@ app
         }
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
+        const meta = await getThreadMeta(projectId, threadId)
         return estimateContextBreakdown(registry, {
           projectId,
           draftText,
@@ -897,6 +900,7 @@ app
           imageCount,
           priorMessages,
           ...(model !== undefined ? { model } : {}),
+          deferredWorktree: meta ? isWorktreeDeferralPending(meta) : false,
         })
       },
     )

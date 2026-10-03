@@ -83,6 +83,9 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   coordination_check: { running: 'Checking overlapping work', done: 'Checked overlapping work' },
   coordination_note: { running: 'Sending peer note', done: 'Sent peer note' },
   coordination_read: { running: 'Reading peer notes', done: 'Read peer notes' },
+  // Deliberately ungrouped: the switch from reading the user's checkout to the
+  // thread's own worktree should stand out in the transcript.
+  request_write_access: { running: 'Creating worktree', done: 'Created worktree' },
 }
 
 interface ToolGroupDef {

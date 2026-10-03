@@ -3,6 +3,8 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
+import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
@@ -108,6 +110,7 @@ async function runShellOnce(
   unsandboxed: boolean,
   env: NodeJS.ProcessEnv,
   readGrantTargets: readonly string[] = [],
+  readonlyCheckout = false,
 ): Promise<ShellRunResult> {
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
@@ -120,6 +123,7 @@ async function runShellOnce(
           signal,
           unsandboxed,
           readGrantTargets,
+          ...(readonlyCheckout ? { readonlyCheckout } : {}),
         })
       } catch (err) {
         // Wrapping the command in the sandbox failed (runner-side, not command
@@ -380,6 +384,8 @@ function formatShellFailure(result: ShellRunResult, advice: string | null): Erro
   return new Error(`Exited with code ${String(result.exitCode)}:\n${clean}${suffix}`)
 }
 
+const DEFERRED_CHECKOUT_SHELL_ADVICE = `This thread is still a read-only view of the user's checkout, so commands cannot write inside it. If this command needs to write (build output, caches, installs, test artifacts), call ${REQUEST_WRITE_ACCESS_TOOL} and rerun it in the thread's own worktree.`
+
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
@@ -422,6 +428,12 @@ export const runShellTool = defineTool({
   async execute({ command, timeout_ms, expects_sandbox_block }, signal) {
     const cwd = getAgentExecutionRoot()
     if (!cwd) return 'No workspace open.'
+    // A deferred-worktree thread reads the user's own checkout. The registry
+    // allocates a worktree before any command that could leave the sandbox, so
+    // one reaching here is contained; it runs with the checkout read-only and
+    // none of the escalation paths below, each of which would run it
+    // unsandboxed in that checkout.
+    const readonlyCheckout = isThreadCheckoutDeferred()
 
     const prepared = await prepareCommand(command, signal)
     if ('refused' in prepared) return prepared.refused
@@ -514,7 +526,9 @@ export const runShellTool = defineTool({
     // hint can never escalate a command whose real verdict is fully-contained.
     let suppressUnsandboxedRetry = false
     let skippedProbeViaCache = false
-    if (!outsideSandbox && (expects_sandbox_block === true || cachedAdvice !== null)) {
+    if (readonlyCheckout) {
+      suppressUnsandboxedRetry = true
+    } else if (!outsideSandbox && (expects_sandbox_block === true || cachedAdvice !== null)) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
         const reasons =
@@ -573,6 +587,7 @@ export const runShellTool = defineTool({
         outsideSandbox,
         childEnv,
         readGrantTargets ?? [],
+        readonlyCheckout,
       )
 
       // A pipeline whose only non-zero status is a SIGPIPE'd producer succeeded:
@@ -624,6 +639,7 @@ export const runShellTool = defineTool({
         }
       }
 
+      if (readonlyCheckout) throw formatShellFailure(result, DEFERRED_CHECKOUT_SHELL_ADVICE)
       throw formatShellFailure(
         result,
         sandboxDenialAdvice({

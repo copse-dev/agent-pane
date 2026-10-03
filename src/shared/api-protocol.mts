@@ -65,4 +65,7 @@
 // `none` security profile) on container runs.
 // v37 conservatively versions the optional `verbosity` field on turn model parameters.
 // v38 conservatively versions interrupted-turn recovery metadata.
-export const API_PROTOCOL_VERSION = 38 as const
+// v39 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
+// threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
+// agent chunk.
+export const API_PROTOCOL_VERSION = 39 as const

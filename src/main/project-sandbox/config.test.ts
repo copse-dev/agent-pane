@@ -722,7 +722,7 @@ describe('workspaceSandboxOverlay', () => {
     // points $TMPDIR at. It lives under the home dir, which is broadly denyRead,
     // so it must be re-allowed for read as well as write.
     const overlay = workspaceSandboxOverlay('/Users/me/project')
-    const tmpDir = workspaceTmpDir()
+    const tmpDir = ensureWorkspaceTmpDir()
     assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp')))
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     const allowRead = overlay.filesystem?.allowRead ?? []
@@ -730,6 +730,35 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowWrite.some((p) => p === `${tmpDir}/**`))
     assert.ok(allowRead.includes(tmpDir))
     assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
+  })
+
+  it('uses the canonical workspace tmp target when COPSE_DIR is a symlink', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-profile-link-')))
+    const target = join(root, 'profile')
+    const linked = join(root, 'linked-profile')
+    const previous = process.env['COPSE_DIR']
+    mkdirSync(target)
+    symlinkSync(target, linked, 'dir')
+    process.env['COPSE_DIR'] = linked
+    try {
+      const configured = workspaceTmpDir()
+      const canonical = ensureWorkspaceTmpDir()
+      assert.notEqual(configured, canonical)
+      assert.equal(canonical, realpathSync.native(configured))
+
+      const overlay = workspaceSandboxOverlay('/Users/me/project')
+      for (const entries of [overlay.filesystem?.allowRead, overlay.filesystem?.allowWrite]) {
+        assert.ok(entries)
+        assert.ok(entries.includes(canonical), `canonical ${canonical}`)
+        assert.ok(entries.includes(`${canonical}/**`), `canonical ${canonical}/**`)
+        assert.equal(entries.includes(configured), false, `configured ${configured}`)
+        assert.equal(entries.includes(`${configured}/**`), false, `configured ${configured}/**`)
+      }
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('allows only direct Darwin per-user temp children for Apple converter staging (sips)', () => {
@@ -784,7 +813,7 @@ describe('workspaceSandboxOverlay', () => {
 describe('ensureWorkspaceTmpDir', () => {
   it('creates the workspace tmp dir and returns its path', () => {
     const dir = ensureWorkspaceTmpDir()
-    assert.equal(dir, workspaceTmpDir())
+    assert.equal(dir, realpathSync.native(workspaceTmpDir()))
     // Best-effort creation: the dir should exist after the call in a normal home.
     accessSync(dir)
   })
@@ -989,8 +1018,8 @@ describe('gitBackupSandboxOverlay', () => {
       assert.ok(fs)
       assert.deepEqual(fs.denyWrite, [])
       assert.deepEqual(fs.allowWrite, [
-        workspaceTmpDir(),
-        `${workspaceTmpDir()}/**`,
+        ensureWorkspaceTmpDir(),
+        `${ensureWorkspaceTmpDir()}/**`,
         ...['objects', 'refs', 'logs'].flatMap((entry) => [
           join(root, '.git', entry),
           `${join(root, '.git', entry)}/**`,
