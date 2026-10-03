@@ -275,6 +275,16 @@ describe('browser-hosted Activity home', () => {
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
   })
 
+  it('caps the card height so a tall window does not stretch it', async () => {
+    const maxHeight = await browser.execute(
+      () =>
+        getComputedStyle(
+          document.querySelector('#activity-home .activity-panel-body') ?? document.body,
+        ).maxHeight,
+    )
+    expect(maxHeight).toBe('920px')
+  })
+
   it('shrinks the project tiles and keeps Approve above the composer in a short window', async () => {
     const before = await browser.getWindowSize()
     await browser.setWindowSize(1280, 560)

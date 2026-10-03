@@ -484,6 +484,8 @@ dialog.activity-panel-overlay {
   grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 260px;
+  /* The prototype's cap: on a tall window the card stops growing and the room goes below it. */
+  max-height: 920px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
