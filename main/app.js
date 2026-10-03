@@ -47669,7 +47669,7 @@ var init_gh_cli_section = __esm({
 
 // packages/llm/src/model-parameters.ts
 function isEmptyModelParameters(params) {
-  return params.reasoning === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
+  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
 }
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
@@ -47685,6 +47685,7 @@ function claudeSupport(modelId) {
       reasoningWire: "anthropic-effort",
       sampling: [],
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
   }
@@ -47694,6 +47695,7 @@ function claudeSupport(modelId) {
       reasoningWire: "anthropic-effort",
       sampling: ANTHROPIC_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
   }
@@ -47702,8 +47704,14 @@ function claudeSupport(modelId) {
     reasoningWire: "anthropic-budget",
     sampling: ANTHROPIC_SAMPLING,
     outputCap: false,
+    verbosity: [],
     temperatureMax: 1
   };
+}
+function openAiVerbosity(modelId) {
+  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
+  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
+  return VERBOSITY_LEVELS;
 }
 function openAiSupport(modelId) {
   if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
@@ -47712,6 +47720,7 @@ function openAiSupport(modelId) {
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2
     };
   }
@@ -47721,6 +47730,7 @@ function openAiSupport(modelId) {
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2
     };
   }
@@ -47729,6 +47739,7 @@ function openAiSupport(modelId) {
     reasoningWire: "none",
     sampling: OPENAI_SAMPLING,
     outputCap: false,
+    verbosity: openAiVerbosity(modelId),
     temperatureMax: 2
   };
 }
@@ -47755,6 +47766,7 @@ function modelParameterSupport(model) {
       reasoningWire: "none",
       sampling: UNIVERSAL_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 2
     };
   }
@@ -47763,6 +47775,9 @@ function modelParameterSupport(model) {
     reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
     sampling: OPENAI_COMPATIBLE_SAMPLING,
     outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
+    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
+    // aggregators reject or silently drop unknown body fields.
+    verbosity: [],
     temperatureMax: 2,
     upstreamDecides: true
   };
@@ -47784,6 +47799,9 @@ function sanitizeModelParameters(params, model, support = modelParameterSupport(
   const sanitized = {};
   if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
     sanitized.reasoning = params.reasoning;
+  }
+  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
+    sanitized.verbosity = params.verbosity;
   }
   if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
     sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
@@ -47821,6 +47839,7 @@ function decodeModelParameters(value) {
   const record2 = { ...value };
   const params = {};
   if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
+  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
   const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
   if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
   for (const field of SAMPLING_FIELDS) {
@@ -47839,7 +47858,7 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -47848,6 +47867,8 @@ var init_model_parameters = __esm({
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
     isReasoningLevel = memberOf(REASONING_LEVELS);
+    VERBOSITY_LEVELS = ["low", "medium", "high"];
+    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
     SAMPLING_FIELDS = [
       "temperature",
       "topP",
@@ -47861,6 +47882,7 @@ var init_model_parameters = __esm({
       reasoningWire: "none",
       sampling: [],
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
     OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
@@ -47916,6 +47938,8 @@ var init_model_parameters = __esm({
       "xhigh",
       "max"
     ];
+    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
+    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
     SAMPLING_BOUNDS = {
       temperature: { min: 0, max: 2 },
       topP: { min: 0, max: 1, neutral: 1 },
@@ -48278,6 +48302,10 @@ function createModelParametersSection(api2, options = {}) {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
   });
+  const verbositySelect = el("select", {
+    name: "modelVerbosity",
+    "data-testid": "model-parameter-verbosity"
+  });
   const maxOutputTokensInput = el("input", {
     type: "number",
     name: "modelMaxOutputTokens",
@@ -48439,6 +48467,26 @@ function createModelParametersSection(api2, options = {}) {
         })
       );
     }
+    if (support.verbosity.length > 0) {
+      verbositySelect.replaceChildren(
+        el(
+          "option",
+          { value: "" },
+          defaults.verbosity === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${VERBOSITY_LABELS[defaults.verbosity]})`
+        ),
+        ...support.verbosity.map(
+          (level) => el("option", { value: level }, VERBOSITY_LABELS[level])
+        )
+      );
+      verbositySelect.value = params.verbosity ?? "";
+      fields.append(
+        uiField({
+          label: "Verbosity",
+          control: verbositySelect,
+          hint: "How much the model writes in its replies, separate from how hard it thinks. Lower saves output tokens; changing it mid-thread misses the prompt cache once."
+        })
+      );
+    }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
       maxOutputTokensInput.placeholder = samplingPlaceholder(
@@ -48475,6 +48523,11 @@ function createModelParametersSection(api2, options = {}) {
     const value = reasoningSelect.value;
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
+  });
+  verbositySelect.addEventListener("change", () => {
+    const value = verbositySelect.value;
+    const { verbosity: _dropped, ...rest } = selected();
+    commit(isVerbosityLevel(value) ? { ...rest, verbosity: value } : rest);
   });
   resetBtn.addEventListener("click", () => {
     commit({});
@@ -48517,7 +48570,7 @@ function createModelParametersSection(api2, options = {}) {
   }
   return { root, refresh, setModel, save };
 }
-var REASONING_LABELS, DEFAULT_OPTION_LABEL, SAMPLING_CONTROLS;
+var REASONING_LABELS, VERBOSITY_LABELS, DEFAULT_OPTION_LABEL, SAMPLING_CONTROLS;
 var init_model_parameters_section = __esm({
   "src/renderer/views/setup/model-parameters-section.ts"() {
     init_helpers();
@@ -48532,6 +48585,11 @@ var init_model_parameters_section = __esm({
       high: "High",
       xhigh: "Extra high",
       max: "Max"
+    };
+    VERBOSITY_LABELS = {
+      low: "Low \u2014 terse answers",
+      medium: "Medium",
+      high: "High \u2014 thorough answers"
     };
     DEFAULT_OPTION_LABEL = "Model default (don't send)";
     SAMPLING_CONTROLS = {
