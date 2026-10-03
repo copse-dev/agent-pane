@@ -95,6 +95,10 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
+    const listText = await browser.execute(
+      () => document.querySelector('#git-changes-host')?.textContent ?? '',
+    )
+    expect(listText).not.toContain('Loading changes')
     // Group headers take the shared in-pane recipe from tokens.css (size,
     // tracking, weight), the same as roadmap categories and the Terminal rail
     // sections; the pane header sits on the shared header band.

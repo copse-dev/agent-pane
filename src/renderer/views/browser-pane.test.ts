@@ -1175,6 +1175,7 @@ describe('browser pane requested URLs', () => {
     const sharedPageIds: number[] = []
     const sharedScreenshotIds: number[] = []
     const exportedPdfIds: number[] = []
+    const exportedPageIds: number[] = []
     const exportedArtefacts: { title: string; mimeType: string; body: string }[] = []
     const attachedText: BrowserTextShare[] = []
     const attachedImages: BrowserImageShare[] = []
@@ -1192,6 +1193,10 @@ describe('browser pane requested URLs', () => {
       'browser.exportPdf': async (id: number): Promise<string | null> => {
         exportedPdfIds.push(id)
         // Cancelled export: the pane must not toast a path it never wrote.
+        return null
+      },
+      'browser.exportPage': async (id: number): Promise<string | null> => {
+        exportedPageIds.push(id)
         return null
       },
       'browser.exportArtefact': async (artefact: {
@@ -1271,11 +1276,11 @@ describe('browser pane requested URLs', () => {
       )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
-      assert.equal(downloadCanvasItem.textContent, 'Download canvas')
+      assert.equal(downloadCanvasItem.textContent, 'Download page')
       assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)
       assert.equal(shareScreenshotItem.disabled, false)
-      assert.equal(downloadCanvasItem.disabled, true, 'a regular page cannot download a canvas')
+      assert.equal(downloadCanvasItem.disabled, false, 'a regular page enables HTML download')
       assert.equal(exportPdfItem.disabled, false, 'a live guest enables PDF export')
       assert.equal(openExternalItem.disabled, false, 'a real page enables open-in-default-browser')
 
@@ -1303,6 +1308,10 @@ describe('browser pane requested URLs', () => {
         { dataUrl: 'data:image/png;base64,QUJD', mimeType: 'image/png' },
       ])
       assert.equal(composerFocused, true)
+
+      menuBtn.click()
+      downloadCanvasItem.click()
+      assert.deepEqual(exportedPageIds, [42])
 
       menuBtn.click()
       exportPdfItem.click()

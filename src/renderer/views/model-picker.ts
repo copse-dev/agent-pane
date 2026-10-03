@@ -2,6 +2,7 @@ import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
+import type { ModelCoverage } from './model-coverage.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 
 /**
@@ -55,6 +56,8 @@ export interface ModelPickerOptions {
    * selector like `auto:…`.
    */
   formatCurrentLabel?: (current: string) => string | undefined
+  /** Concrete route behind a dynamic selection, for coverage and selection chrome. */
+  getCurrentRoute?: (current: string) => string | undefined
 }
 
 /**
@@ -79,6 +82,12 @@ export interface ModelPicker {
 }
 
 const RECENT_MODEL_LIMIT = 5
+const COVERAGE_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'local', label: 'Local' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'paid', label: 'Paid' },
+] as const
 
 interface VerticalBounds {
   top: number
@@ -145,7 +154,17 @@ export function mountModelPicker(
     { class: 'model-picker-chevron', 'aria-hidden': 'true' },
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
-  trigger.append(labelEl, chevron)
+  const triggerCost = el(
+    'span',
+    {
+      class: 'model-picker-cost',
+      hidden: '',
+      'aria-label': 'Potential usage charge',
+      title: 'Potential usage charge',
+    },
+    '$',
+  )
+  trigger.append(labelEl, triggerCost, chevron)
   const menu = el('div', {
     class: 'model-picker-menu',
     hidden: '',
@@ -170,6 +189,35 @@ export function mountModelPicker(
     arrowLeftIcon('ui-icon ui-icon-sm'),
   )
   allHeader.append(backButton, el('span', { class: 'model-picker-view-title' }, 'All models'))
+  const coverageFilters = el('div', {
+    class: 'model-picker-coverage-filters',
+    role: 'group',
+    'aria-label': 'Filter models by coverage',
+    hidden: '',
+  })
+  const coverageButtons = COVERAGE_FILTERS.map(({ value, label }) => {
+    const count = el('span', { class: 'model-picker-coverage-count', 'aria-hidden': 'true' })
+    const button = el(
+      'button',
+      {
+        type: 'button',
+        class: 'model-picker-coverage-filter',
+        'data-coverage': value,
+        'aria-label': `${label} models`,
+        'aria-pressed': String(value === 'all'),
+      },
+      label,
+      count,
+    )
+    button.addEventListener('click', () => {
+      coverageFilter = value
+      activeValue = null
+      list.scrollTop = 0
+      renderMenu(cachedOptions)
+    })
+    coverageFilters.append(button)
+    return { value, button, count }
+  })
   const filter = el('input', {
     type: 'search',
     class: 'model-picker-filter',
@@ -206,13 +254,23 @@ export function mountModelPicker(
   )
   const groupTitle = el('span', { class: 'model-picker-view-title' })
   groupHeader.append(groupBack, groupTitle)
-  menu.append(recentHeader, allHeader, groupHeader, filter, list, groupsSection, browseButton)
+  menu.append(
+    recentHeader,
+    allHeader,
+    groupHeader,
+    coverageFilters,
+    filter,
+    list,
+    groupsSection,
+    browseButton,
+  )
   wrap.append(trigger, menu)
   root.append(wrap)
 
   const homeView = recentMode ? 'recent' : 'all'
   let open = false
   let view: 'recent' | 'all' | 'group' = homeView
+  let coverageFilter: 'all' | ModelCoverage = 'all'
   const cleanups: Array<() => void> = []
   let cachedOptions: ModelOption[] = []
   let valueGroups: PickerValueGroup[] = []
@@ -223,6 +281,11 @@ export function mountModelPicker(
 
   function activeGroup(): PickerValueGroup | undefined {
     return valueGroups.find((group) => group.id === activeGroupId)
+  }
+
+  function currentRoute(): string {
+    const current = getCurrent()
+    return pickerOpts.getCurrentRoute?.(current) ?? current
   }
 
   function focusActiveOption(): void {
@@ -290,6 +353,7 @@ export function mountModelPicker(
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     if (next) {
+      coverageFilter = 'all'
       menu.removeAttribute('hidden')
       setView(homeView)
       if (loadState === 'error') void refresh()
@@ -304,14 +368,17 @@ export function mountModelPicker(
 
   function matchingOptions(options: readonly ModelOption[]): ModelOption[] {
     const query = filter.value.trim().toLocaleLowerCase()
-    return query
-      ? options.filter((opt) => `${opt.label} ${opt.value}`.toLocaleLowerCase().includes(query))
-      : [...options]
+    return options.filter(
+      (opt) =>
+        (coverageFilter === 'all' || opt.coverage === coverageFilter) &&
+        (!query ||
+          `${opt.label} ${opt.value} ${opt.group ?? ''}`.toLocaleLowerCase().includes(query)),
+    )
   }
 
   function visibleOptions(options: readonly ModelOption[]): ModelOption[] {
     if (view === 'all') return matchingOptions(options)
-    const requested = [getCurrent(), ...(pickerOpts.getRecentValues?.() ?? [])]
+    const requested = [currentRoute(), ...(pickerOpts.getRecentValues?.() ?? [])]
     const seen = new Set<string>()
     const recent: ModelOption[] = []
     for (const value of requested) {
@@ -402,6 +469,16 @@ export function mountModelPicker(
   }
 
   function renderMenu(options: readonly ModelOption[]): void {
+    const hasCoverage = options.some((option) => option.coverage !== undefined)
+    coverageFilters.hidden = view !== 'all' || !hasCoverage
+    menu.classList.toggle('has-coverage-filters', !coverageFilters.hidden)
+    for (const { value, button, count } of coverageButtons) {
+      button.setAttribute('aria-pressed', String(coverageFilter === value))
+      count.textContent = String(
+        options.filter((option) => option.value && (value === 'all' || option.coverage === value))
+          .length,
+      )
+    }
     const group = activeGroup()
     if (view === 'group' && group) {
       renderGroupChoices(group)
@@ -425,7 +502,7 @@ export function mountModelPicker(
       )
       return
     }
-    const current = getCurrent()
+    const current = currentRoute()
     const matches = visibleOptions(options)
     const active =
       matches.find((opt) => opt.value === activeValue && !opt.disabled) ??
@@ -456,8 +533,35 @@ export function mountModelPicker(
           title: opt.label,
         },
         el('span', { class: 'model-picker-option-label' }, opt.label),
-        ...(recentMode && selected
-          ? [checkIcon('ui-icon ui-icon-sm model-picker-option-check')]
+        ...(opt.coverage
+          ? [
+              el(
+                'span',
+                {
+                  class:
+                    opt.coverage === 'paid' ? 'model-picker-cost' : 'model-picker-coverage-label',
+                  ...(opt.coverage === 'paid'
+                    ? { 'aria-label': 'Potential usage charge', title: 'Potential usage charge' }
+                    : {}),
+                },
+                opt.coverage === 'paid'
+                  ? '$'
+                  : opt.coverage === 'local'
+                    ? 'Local'
+                    : opt.coverage === 'free'
+                      ? 'Free'
+                      : 'Plan',
+              ),
+            ]
+          : []),
+        ...(recentMode || hasCoverage
+          ? [
+              el(
+                'span',
+                { class: 'model-picker-option-check-slot', 'aria-hidden': 'true' },
+                ...(selected ? [checkIcon('ui-icon ui-icon-sm model-picker-option-check')] : []),
+              ),
+            ]
           : []),
       )
       if (selected) item.classList.add('is-selected')
@@ -508,13 +612,15 @@ export function mountModelPicker(
 
   function updateTrigger(options: readonly ModelOption[]): void {
     const current = getCurrent()
-    const match = options.find((opt) => opt.value === current)
+    const route = currentRoute()
+    const match = options.find((opt) => opt.value === route)
     const label =
       (current ? pickerOpts.formatCurrentLabel?.(current) : undefined) ??
       match?.label ??
       (current ? modelDisplayLabel(current) : 'Select model')
     labelEl.textContent = label
     labelEl.title = current
+    triggerCost.hidden = match?.coverage !== 'paid'
   }
 
   async function refresh(): Promise<void> {

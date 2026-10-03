@@ -13,6 +13,12 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
 
 - `main-legacy@1` freezes the pre-migration prompt, single `run_shell` tool, result formatting,
   and recovery behavior.
+- `main-legacy@2` is `main-legacy@1` plus a bounded pre-flight: one read-only bridge command (cwd,
+  `ls -la /tests /app`, size-capped readable `/tests` files, python/pip locations, `/logs/verifier`
+  state) runs before the first model turn and its output (hard cap 8,000 characters, 30 s timeout)
+  is appended to the task message in an `<environment_preflight>` block. A missing or unreadable
+  `/tests` is stated explicitly; probe failure degrades to a short "unavailable" note. It is
+  opt-in (`--profile=main-legacy@2`); the unversioned `main-legacy` alias stays on `@1`.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
 - `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
@@ -449,6 +455,21 @@ Optional tuning variables:
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `client`; `client` sends the product's curated
+  per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
+  none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
+  two modes are not comparable. Each trial records the mode and values in
+  `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
+  read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
+  historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
+  fail sealing rather than substituting current defaults.
+- `COPSE_TERMINAL_MAX_OUTPUT_TOKENS` (unset by default; a positive integer that replaces the
+  per-request output ceiling in both parameter modes, e.g. `16384`). The loop's stream caps cannot
+  see a tool call's arguments growing, because the SDK transport delivers a tool call as one chunk
+  when it ends, so one runaway call can otherwise generate to the 81,920-token card ceiling, about
+  19 minutes at 70 tokens/s. Recorded as `outputCeiling` and `params.maxOutputTokens` in
+  `agent/model-parameters.json`)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)

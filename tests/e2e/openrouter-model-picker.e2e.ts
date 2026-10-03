@@ -160,7 +160,7 @@ describe('OpenRouter model picker', () => {
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
       ].map((el) => el.textContent?.trim())
       const optionLabels = [
-        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+        ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
       ].map((el) => el.textContent?.trim() ?? '')
       const title = document.querySelector<HTMLElement>('.model-picker-view-title')?.textContent
       return { groupLabels, optionLabels, title: title?.trim() }
@@ -170,18 +170,37 @@ describe('OpenRouter model picker', () => {
     assert.deepEqual(recent.groupLabels, [])
     assert.deepEqual(recent.optionLabels, ['Qwen3 235B A22B (free)', 'Claude Sonnet 3.5 (paid)'])
     assert.ok(!recent.optionLabels.includes('Gemini 2.5 Pro (paid)'))
+    assert.equal(
+      await $(
+        '.model-picker-option[data-value="openrouter:qwen/qwen3-235b-a22b:free"] .model-picker-coverage-label',
+      ).getText(),
+      'Free',
+    )
+    assert.equal(
+      await $(
+        '.model-picker-option[data-value="openrouter:qwen/qwen3-235b-a22b:free"] .model-picker-cost',
+      ).isExisting(),
+      false,
+    )
+    assert.equal(
+      await $(
+        '.model-picker-option[data-value="openrouter:anthropic/claude-3.5-sonnet"] .model-picker-cost',
+      ).getText(),
+      '$',
+    )
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
 
     await $('.model-picker-browse').click()
     await $('.model-picker-filter').waitForDisplayed()
+    assert.equal(await $('[data-coverage="paid"] .model-picker-coverage-count').getText(), '3')
 
     const picker = await browser.execute(() => {
       const groupLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
       ].map((el) => el.textContent?.trim())
       const optionLabels = [
-        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+        ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
       ].map((el) => el.textContent?.trim() ?? '')
       return { groupLabels, optionLabels }
     })
@@ -262,7 +281,7 @@ describe('OpenRouter model picker', () => {
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
       ].map((option) => ({
-        text: option.textContent?.trim() ?? '',
+        text: option.querySelector('.model-picker-option-label')?.textContent?.trim() ?? '',
         active: option.getAttribute('aria-selected'),
       })),
     )
@@ -280,7 +299,7 @@ describe('OpenRouter model picker', () => {
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
       ].map((option) => ({
-        text: option.textContent?.trim() ?? '',
+        text: option.querySelector('.model-picker-option-label')?.textContent?.trim() ?? '',
         active: option.getAttribute('aria-selected'),
         hasActiveClass: option.classList.contains('is-active'),
       })),
@@ -338,10 +357,11 @@ describe('OpenRouter model picker', () => {
 
     await filter.setValue('qwen')
     await browser.waitUntil(
-      async () => (await $$('.model-picker-option').map((option) => option.getText())).length === 2,
+      async () =>
+        (await $$('.model-picker-option-label').map((option) => option.getText())).length === 2,
       { timeout: 2_000, timeoutMsg: 'model picker did not filter after typing' },
     )
-    assert.deepEqual(await $$('.model-picker-option').map((option) => option.getText()), [
+    assert.deepEqual(await $$('.model-picker-option-label').map((option) => option.getText()), [
       'Qwen3 235B A22B (free)',
       'qwen/qwen3-vl',
     ])
