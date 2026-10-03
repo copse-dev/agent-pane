@@ -171,7 +171,7 @@ jobs:
             if (typeof github.graphql !== 'function') throw new Error('Missing GraphQL client');
             for (const [namespace, method] of [
               ['pulls', 'get'],
-              ['repos', 'compareCommits'],
+              ['repos', 'getCommit'],
               ['repos', 'listCommitStatusesForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
