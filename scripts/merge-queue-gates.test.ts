@@ -11,6 +11,19 @@ const input = {
   headSha: 'b'.repeat(40),
 }
 const prHead = 'c'.repeat(40)
+const tree = 'e'.repeat(40)
+async function mergeTree(base: string, head: string): Promise<string> {
+  assert.equal(base, input.baseSha)
+  assert.equal(head, prHead)
+  return tree
+}
+function commit(parents = [input.baseSha], candidateTree = tree): unknown {
+  return {
+    sha: input.headSha,
+    commit: { tree: { sha: candidateTree } },
+    parents: parents.map((sha) => ({ sha })),
+  }
+}
 function queue(pr = 1, head = prHead): unknown {
   return {
     repository: {
@@ -47,15 +60,17 @@ function fixture(
     queues?: unknown[]
     pulls?: unknown[]
     statuses?: unknown[][]
-    comparison?: unknown
+    commits?: unknown[]
     apiError?: boolean
   } = {},
 ): { github: QueueGateGitHub; writes: { context: string; state: string; sha: string }[] } {
   let queueRead = 0
   let pullRead = 0
   let statusRead = 0
+  let commitRead = 0
   const queues = options.queues ?? [queue()]
   const pulls = options.pulls ?? [pull()]
+  const commits = options.commits ?? [commit()]
   const statuses = options.statuses ?? [[status('CLA', 1), status('Screenshot review', 2)]]
   const writes: { context: string; state: string; sha: string }[] = []
   const github: QueueGateGitHub = {
@@ -66,16 +81,9 @@ function fixture(
     rest: {
       pulls: { get: async () => ({ data: pulls[Math.min(pullRead++, pulls.length - 1)] }) },
       repos: {
-        compareCommits: async ({ base, head }) => {
-          assert.equal(base, prHead)
-          assert.equal(head, input.headSha)
-          return {
-            data: options.comparison ?? {
-              status: 'ahead',
-              behind_by: 0,
-              merge_base_commit: { sha: prHead },
-            },
-          }
+        getCommit: async ({ ref }) => {
+          assert.equal(ref, input.headSha)
+          return { data: commits[Math.min(commitRead++, commits.length - 1)] }
         },
         listCommitStatusesForRef: async ({ ref }) => {
           assert.equal(ref, prHead)
@@ -92,7 +100,7 @@ function fixture(
 
 async function refuses(options: Parameters<typeof fixture>[0], message: RegExp): Promise<void> {
   const f = fixture(options)
-  await assert.rejects(evaluateMergeQueueGates(f.github, input), message)
+  await assert.rejects(evaluateMergeQueueGates(f.github, input, mergeTree), message)
   assert.equal(
     f.writes.some((write) => write.state === 'success'),
     false,
@@ -106,7 +114,7 @@ async function refuses(options: Parameters<typeof fixture>[0], message: RegExp):
 describe('merge queue decision bridge', () => {
   it('copies only verified current-head decisions onto the exact synthetic SHA', async () => {
     const f = fixture()
-    await evaluateMergeQueueGates(f.github, input)
+    await evaluateMergeQueueGates(f.github, input, mergeTree)
     assert.deepEqual(
       f.writes.map((write) => [write.context, write.state, write.sha]),
       [
@@ -181,22 +189,47 @@ describe('merge queue decision bridge', () => {
   it('refuses group members changed during validation', async () => {
     await refuses({ queues: [queue(), queue(2)] }, /membership changed/)
   })
-  it('refuses a current head changed before the first snapshot but absent from the synthetic commit', async () => {
+  it('accepts both squash and ordinary merge topology for the exact approved tree', async () => {
+    const f = fixture({ commits: [commit([input.baseSha, prHead])] })
+    await evaluateMergeQueueGates(f.github, input, mergeTree)
+    assert.equal(f.writes.at(-1)?.state, 'success')
+  })
+  it('refuses missing commits, wrong trees and unexpected parents', async () => {
+    for (const candidate of [
+      {},
+      { sha: prHead, commit: { tree: { sha: tree } }, parents: [{ sha: input.baseSha }] },
+      commit([], tree),
+      commit(['d'.repeat(40)], tree),
+      commit([input.baseSha, 'd'.repeat(40)], tree),
+      commit([input.baseSha, prHead, prHead], tree),
+      commit([input.baseSha], 'd'.repeat(40)),
+    ]) {
+      await refuses({ commits: [candidate] }, /Synthetic commit/)
+    }
+  })
+  it('refuses a changed candidate tree before publishing successful decisions', async () => {
     await refuses(
-      {
-        comparison: { status: 'diverged', behind_by: 1, merge_base_commit: { sha: input.baseSha } },
-      },
+      { commits: [commit(), commit([input.baseSha], 'd'.repeat(40))] },
       /Synthetic commit/,
     )
   })
-  it('refuses missing or divergent ancestry proof', async () => {
-    await refuses({ comparison: {} }, /Synthetic commit/)
-    await refuses(
-      {
-        comparison: { status: 'diverged', behind_by: 1, merge_base_commit: { sha: input.baseSha } },
+  it('refuses failed or malformed trusted merge calculations', async () => {
+    for (const calculate of [
+      async (): Promise<string> => {
+        throw new Error('Merge conflict')
       },
-      /Synthetic commit/,
-    )
+      async (): Promise<string> => 'invalid',
+    ]) {
+      const f = fixture()
+      await assert.rejects(
+        evaluateMergeQueueGates(f.github, input, calculate),
+        /Merge conflict|Invalid commit SHA/,
+      )
+      assert.deepEqual(
+        f.writes.slice(-2).map((write) => write.state),
+        ['error', 'error'],
+      )
+    }
   })
   for (const state of ['pending', 'error', 'failure']) {
     it(`refuses a ${state} source gate rather than an older successful decision`, async () => {
@@ -243,7 +276,10 @@ describe('merge queue decision bridge', () => {
     assert.match(workflow, /merge_group:\s+types: \[checks_requested\]/)
     assert.match(workflow, /ref: \$\{\{ github.event.merge_group.base_sha \}\}/)
     assert.match(workflow, /persist-credentials: false/)
-    assert.match(workflow, /sparse-checkout: scripts\/merge-queue-gates.mts/)
+    assert.match(
+      workflow,
+      /sparse-checkout: \|\s+scripts\/merge-queue-gates.mts\s+scripts\/merge-queue-tree.mts/,
+    )
     assert.doesNotMatch(workflow, /(?:pnpm|npm) (?:install|run)/)
     assert.match(workflow, /GROUP_HEAD_SHA: \$\{\{ github.event.merge_group.head_sha \}\}/)
   })

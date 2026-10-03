@@ -2,6 +2,8 @@
 // GitHub's PR-only legal and visual decisions must also gate the synthetic SHA.
 // Initial policy admits one entry per build; unknown membership fails closed.
 
+import { computeMergeTree } from './merge-queue-tree.mts'
+
 const CONTEXTS = ['CLA', 'Screenshot review'] as const
 const ACTIONS_BOT_ID = 41898282
 const SHA = /^[0-9a-f]{40}$/
@@ -31,12 +33,7 @@ export interface QueueGateGitHub {
       get(input: { owner: string; repo: string; pull_number: number }): Promise<{ data: unknown }>
     }
     repos: {
-      compareCommits(input: {
-        owner: string
-        repo: string
-        base: string
-        head: string
-      }): Promise<{ data: unknown }>
+      getCommit(input: { owner: string; repo: string; ref: string }): Promise<{ data: unknown }>
       listCommitStatusesForRef(input: {
         owner: string
         repo: string
@@ -157,23 +154,29 @@ async function verifyHead(github: QueueGateGitHub, input: Input, entry: Entry): 
   }
 }
 
-async function verifyCommit(github: QueueGateGitHub, input: Input, entry: Entry): Promise<void> {
-  const { data } = await github.rest.repos.compareCommits({
+async function verifyCommit(
+  github: QueueGateGitHub,
+  input: Input,
+  entry: Entry,
+  expectedTree: string,
+): Promise<void> {
+  const { data } = await github.rest.repos.getCommit({
     owner: input.owner,
     repo: input.repo,
-    base: entry.prHead,
-    head: input.headSha,
+    ref: input.headSha,
   })
-  // Bind the currently approved source head to the synthetic commit graph.
-  // This uses server-calculated ancestry, never commit messages, branch names,
-  // tree similarity or assumptions about the final squash merge method.
-  const comparison = field(data, 'status')
+  const parents = field(data, 'parents')
+  // Squash candidates have only the event base as parent. Bind their contents
+  // to the exact Git merge of the immutable base and approved source head.
+  // Ordinary merge candidates additionally name that source as second parent.
   if (
-    field(field(data, 'merge_base_commit'), 'sha') !== entry.prHead ||
-    field(data, 'behind_by') !== 0 ||
-    (comparison !== 'ahead' && comparison !== 'identical')
+    field(data, 'sha') !== input.headSha ||
+    field(field(field(data, 'commit'), 'tree'), 'sha') !== expectedTree ||
+    !Array.isArray(parents) ||
+    field(parents[0], 'sha') !== input.baseSha ||
+    (parents.length !== 1 && (parents.length !== 2 || field(parents[1], 'sha') !== entry.prHead))
   ) {
-    throw new Error('Synthetic commit does not contain exactly the current PR source head')
+    throw new Error('Synthetic commit does not match the exact approved source merge tree and base')
   }
 }
 
@@ -216,6 +219,7 @@ async function verifyStatuses(github: QueueGateGitHub, input: Input, entry: Entr
 export async function evaluateMergeQueueGates(
   github: QueueGateGitHub,
   input: Input,
+  mergeTree: (baseSha: string, prHead: string) => Promise<string> = computeMergeTree,
 ): Promise<void> {
   sha(input.headSha)
   sha(input.baseSha)
@@ -238,7 +242,8 @@ export async function evaluateMergeQueueGates(
     await write('pending', 'Validating current pull request decisions for merge queue')
     const entry = await member(github, input)
     await verifyHead(github, input, entry)
-    await verifyCommit(github, input, entry)
+    const expectedTree = sha(await mergeTree(input.baseSha, entry.prHead))
+    await verifyCommit(github, input, entry, expectedTree)
     await verifyStatuses(github, input, entry)
     const current = await member(github, input)
     if (
@@ -251,7 +256,7 @@ export async function evaluateMergeQueueGates(
       throw new Error('Queue membership changed during validation')
     }
     await verifyHead(github, input, entry)
-    await verifyCommit(github, input, entry)
+    await verifyCommit(github, input, entry, expectedTree)
     await verifyStatuses(github, input, entry)
     await write(
       'success',
