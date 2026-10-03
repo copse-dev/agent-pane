@@ -311,7 +311,52 @@ describe('terminal benchmark capsule sealing', () => {
     )
     assert.deepEqual(
       index.map((capsule) => [capsule['profile'], capsule['outcome']]),
-      [['product-aligned@3', 'invalid']],
+      [['product-aligned@5', 'invalid']],
     )
   })
+})
+
+it('seals both archived v4 tuples with separate identities and attempt counters', () => {
+  const root = fixture()
+  const first = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+  const second = join(root, 'bench-results', 'terminal-bench', 'job', 'trial-two')
+  cpSync(first, second, { recursive: true })
+  const hashes = [
+    '516606b6377201d949ad1d712056f68d6841f41a506499b0abbdfaf55dc8119c',
+    '252de9d8b6a79e859f62bd2355edf71ccf76673f27628a7f25d3fdb7c6f0dc7d',
+  ]
+  for (const [index, directory] of [first, second].entries()) {
+    const path = join(directory, 'result.json')
+    const result = expectRecord(JSON.parse(readFileSync(path, 'utf8')) as unknown)
+    const metadata = expectRecord(expectRecord(result['agent_result'])['metadata'])
+    metadata['profile'] = 'product-aligned@4'
+    metadata['profile_hash'] = hashes[index]
+    writeFileSync(path, JSON.stringify(result))
+  }
+  const sealed = runSeal(root)
+  assert.equal(sealed.status, 0, String(sealed.stderr))
+  const indexPath = join(root, 'bench-results', 'terminal-bench-capsules', 'index.json')
+  const index = expectRecord(JSON.parse(readFileSync(indexPath, 'utf8')) as unknown)
+  const profiles = index['profiles']
+  assert.ok(Array.isArray(profiles))
+  assert.equal(profiles.length, 2)
+  const capsules = readCapsulesIndex(indexPath)
+  assert.deepEqual(capsules.map((capsule) => capsule['profileHash']).sort(), hashes.sort())
+  assert.deepEqual(
+    capsules.map((capsule) => capsule['attemptIndex']),
+    [1, 1],
+  )
+})
+
+it('rejects an unrecorded identity rather than relabeling it as current defaults', () => {
+  const root = fixture()
+  const path = join(root, 'bench-results', 'terminal-bench', 'job', 'trial', 'result.json')
+  const result = expectRecord(JSON.parse(readFileSync(path, 'utf8')) as unknown)
+  const metadata = expectRecord(expectRecord(result['agent_result'])['metadata'])
+  delete metadata['profile']
+  delete metadata['profile_hash']
+  writeFileSync(path, JSON.stringify(result))
+  const sealed = runSeal(root)
+  assert.notEqual(sealed.status, 0)
+  assert.match(String(sealed.stderr), /Unrecorded profile identity/)
 })

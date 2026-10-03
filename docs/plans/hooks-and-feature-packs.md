@@ -1004,3 +1004,11 @@ when submitted at idle; they do not carry hook origin or consume the machine
 continuation budget. The phone API cannot call hooks, grant leases, or dispatch a
 machine continuation. Checkout preparation and permission prompts retain their
 existing desktop paths. See `mobile-web-experience.md`, revised decision 5.
+
+### Benchmark recovery compatibility foundation
+
+The benchmark profile host explicitly records and selects the supported `legacy-two-cut-v1`
+recovery strategy. This foundation preserves the existing two-cut in-loop give-up behavior;
+it introduces no new suppression ladder or soft reasoning budget, changes no continuation budget,
+and leaves the Electron product behavior unchanged. Literal compatibility policy metadata
+preserves the immutable profile identities before later experiments extend this boundary.
