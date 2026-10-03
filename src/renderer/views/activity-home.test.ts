@@ -362,6 +362,76 @@ describe('activity home project strip', () => {
     assert.equal(card(pane, 'all').getAttribute('aria-pressed'), 'true')
   })
 
+  it('restores project-card focus for supported ids containing selector syntax', () => {
+    const projectId = 'workspace"[]\\copse'
+    const { store, pane, home, setApprovals } = mount([thread('t1'), thread('t2')], {
+      approvals: [approval('a1', 't1')],
+    })
+    store.setState({
+      projects: [{ id: projectId, path: '/work', name: 'workspace' }],
+      activeProjectId: projectId,
+      expandedProjectId: projectId,
+    })
+    home.setShown(true)
+    const projectCard = (): HTMLButtonElement | undefined =>
+      [...pane.querySelectorAll<HTMLButtonElement>('.activity-strip-card')].find(
+        (node) => node.dataset['project'] === projectId,
+      )
+    const before = projectCard()
+    assert.ok(before)
+    before.focus()
+    setApprovals([approval('a1', 't1'), approval('a2', 't2')])
+    const after = projectCard()
+    assert.ok(after)
+    assert.notEqual(after, before, 'the changed count replaces the cached card')
+    assert.equal(document.activeElement, after, 'focus follows the exact project id')
+  })
+
+  it('distinguishes a supported project id of all from the aggregate filter', () => {
+    const { store, pane, home } = mount([thread('t1')], {
+      background: [{ projectId: 'p2', thread: thread('t2') }],
+      approvals: [approval('a1', 't1'), approval('a2', 't2')],
+    })
+    store.setState({
+      projects: [
+        { id: 'all', path: '/work', name: 'All workspace' },
+        { id: 'p2', path: '/docs', name: 'docs-site' },
+      ],
+      activeProjectId: 'all',
+      expandedProjectId: 'all',
+    })
+    home.setShown(true)
+    const cards = [...pane.querySelectorAll<HTMLButtonElement>('.activity-strip-card')]
+    const aggregate = cards.find((node) => node.textContent.startsWith('All projects'))
+    const project = cards.find((node) => node.textContent.startsWith('All workspace'))
+    assert.ok(aggregate)
+    assert.ok(project)
+    assert.notEqual(aggregate, project)
+    project.click()
+    assert.deepEqual(rows(pane), ['t1'], 'the real all project filters out another project')
+    const updatedCards = [...pane.querySelectorAll<HTMLButtonElement>('.activity-strip-card')]
+    const updatedProject = updatedCards.find(
+      (node) => node.dataset['projectKey'] === JSON.stringify('all'),
+    )
+    const updatedAggregate = updatedCards.find((node) => node.dataset['projectKey'] === 'null')
+    assert.ok(updatedProject)
+    assert.ok(updatedAggregate)
+    assert.equal(updatedProject.getAttribute('aria-pressed'), 'true')
+    assert.equal(updatedAggregate.getAttribute('aria-pressed'), 'false')
+    updatedAggregate.click()
+    assert.deepEqual(rows(pane).sort(), ['t1', 't2'])
+  })
+
+  it('counts orphan approvals in All projects even without a project association', () => {
+    const { pane, home } = mount([], {
+      approvals: [{ ...approval('orphan', 'missing'), threadId: undefined }],
+    })
+    home.setShown(true)
+    assert.equal(pane.querySelectorAll('.activity-row[data-state="needs-approval"]').length, 1)
+    assert.match(card(pane, 'all').textContent, /1 need you/)
+    assert.doesNotMatch(card(pane, 'all').textContent, /All clear/)
+  })
+
   it('narrows the list to a project and back', () => {
     const { pane, home } = mount([thread('t1', { status: 'running' }), thread('t2')], {
       background,

@@ -52,7 +52,7 @@ What is in:
   command is truncated — so it carries no answer at all. The detail pane shows the selected
   request exactly as the approval prompt presents it, rendered by the prompt's own
   `approvalRequestDetails`: full title, advice, the whole untruncated body (monospaced for
-  shell, wrapping and scrolling, never cut) and the footer. **Approve once** and **Reject**
+  shell, wrapping and scrolling, never cut) and the footer. **Approve** (a once-only response) and **Reject**
   exist only in that pane's action bar, beside **Open thread**, so a request cannot be
   approved from a view that shows less than the prompt would.
 - The approval dialog's clickjack guard carries over: Approve pauses for
@@ -67,7 +67,7 @@ What is in:
   the selection and focus stay on the same row (or its place in the list) across
   re-renders. The panel has a fixed height, so a new selection never resizes it.
 - Keyboard: arrows/Home/End move the selection (roving tab stop) and the detail follows,
-  Tab reaches the detail's Open thread / Reject / Approve once, Esc closes. Each list is
+  Tab reaches the detail's Open thread / Reject / Approve, Esc closes. Each list is
   labelled by its group heading and each row's accessible name leads with its state.
 - The empty state explains what the panel will show.
 
