@@ -457,6 +457,11 @@ weights unless the verifier requires them and there is no smaller route.
 
 Optional tuning variables:
 
+- `COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY` (default: the profile's immutable
+  `legacy-two-cut-v1`; `suppression-ladder-v1` explicitly opts into the bounded three-cut
+  recovery experiment). The runtime record and stream-cap overrides identify this experiment;
+  it does not change any existing profile's content hash or baseline behavior. The ladder's
+  second recovery stream uses the profile's recorded suppression protocol and 1024-token cap.
 - `COPSE_TERMINAL_MAX_STEPS` (default `80`)
 - `COPSE_TERMINAL_MAX_LLM_CALLS` (default: step limit plus `3` finalization calls)
 - `COPSE_TERMINAL_CONTEXT_TOKENS` (default `32768`)
@@ -468,11 +473,12 @@ Optional tuning variables:
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
-- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `client`; `client` sends the product's curated
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `server`, which sends no sampling so LM Studio's own
+  sampling applies, as in every run made before this switch; `client` sends the product's curated
   per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
-  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
-  none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
-  two modes are not comparable. Each trial records the mode and values in
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings, and is opt-in
+  because it has not been shown to improve outcomes). Results from the two modes are not
+  comparable. Each trial records the mode and values in
   `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
   read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
   historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
@@ -496,3 +502,5 @@ eligible as the default when any trial overrode a cap or predates this record.
 
 The launcher pins Harbor so the custom-agent API and result shape do not drift between
 runs. Change that pin deliberately and revalidate the adapter before comparing results.
+
+#3423's long-command hint experiment uses explicit `product-aligned@6` on the current checkpoint baseline. Historical @4 hashes remain archived; the default alias remains @5.

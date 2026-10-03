@@ -654,7 +654,7 @@ export function createAutomationPluginSettings(
     }
     for (const schedule of schedules) {
       const row = el('article', {
-        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}${schedule.lastWorktreeLimitAt === undefined ? '' : ' automation-row-blocked'}`,
+        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}${schedule.lastWorktreeLimitAt === undefined && schedule.lastProblem === undefined ? '' : ' automation-row-blocked'}`,
         'data-schedule-id': schedule.id,
       })
       const copy = el('div', { class: 'automation-row-copy' })
@@ -687,6 +687,15 @@ export function createAutomationPluginSettings(
             'div',
             { class: 'automation-row-blocked-message' },
             `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`,
+          ),
+        )
+      }
+      if (schedule.lastProblem !== undefined) {
+        copy.append(
+          el(
+            'div',
+            { class: 'automation-row-blocked-message automation-row-problem-message' },
+            `${schedule.lastProblem.kind === 'failed' ? 'Last attempt failed' : 'Last attempt skipped'} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`,
           ),
         )
       }

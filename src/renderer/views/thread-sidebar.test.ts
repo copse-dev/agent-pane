@@ -328,6 +328,14 @@ describe('default thread sidebar', () => {
     )
   })
 
+  it('keeps same-thread history editing under Fork', async () => {
+    mount()
+    await delay(80)
+    rightClick('[data-thread-id="finished"]')
+    chooseMenuItem('Fork')
+    assert.deepEqual(menuLabels(), ['Fork a copy', 'Edit thread history…'])
+  })
+
   it('offers to open another project before changing its threads', async () => {
     mount()
     await delay(80)

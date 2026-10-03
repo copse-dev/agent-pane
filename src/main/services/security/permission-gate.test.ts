@@ -1245,6 +1245,18 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     assert.deepEqual(remote.prompts, ['shell-no-containment'])
   })
 
+  it('keeps a file read after a heredoc contained without granting its SSH execution', async () => {
+    const command = `${OPAQUE_HEREDOC}\nwc -l src/a.ts`
+    assert.deepEqual(await runGate(command, 'local'), { permitted: true, prompts: [] })
+    assert.deepEqual(await runGate(command, 'ssh'), {
+      permitted: false,
+      prompts: ['shell-no-containment'],
+    })
+    const external = await runGate(`${command}\ncurl https://example.com`, 'local')
+    assert.equal(external.permitted, false)
+    assert.deepEqual(external.prompts, ['shell-sandbox-escalation'])
+  })
+
   it('applies the unsandboxed policy to a plain read on the SSH host', async () => {
     // Without an OS sandbox even a read can run repository-controlled code
     // (a configured pager, a wrapper script on PATH), so it prompts too.

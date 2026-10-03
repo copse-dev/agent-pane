@@ -9,6 +9,7 @@
 
 /** Slugs reserved by built-in providers; a custom slug must never collide. */
 export const RESERVED_PROVIDER_SLUGS: readonly string[] = [
+  'chatgpt-plan',
   'anthropic',
   'openai',
   'cursor',

@@ -14,6 +14,7 @@ import type { SidebarThread } from '../controller/sidebar-thread.ts'
 import { openAppRunDialog } from './app-run-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { showErrorToast, showToast } from './toast.ts'
 
 /** One schedule's run/setup actions, addressed the way the sidebar groups are. */
@@ -126,6 +127,8 @@ export function threadMenuEntries(
   options: {
     project: Project
     thread: SidebarThread
+    /** Where the menu opened, so Fork's choices open in the same place. */
+    at: { x: number; y: number }
     allowRename: boolean
     allowDelete?: boolean
     onRename: () => void
@@ -143,7 +146,25 @@ export function threadMenuEntries(
           {
             label: 'Fork',
             onSelect: (): void => {
-              forkProjectThread(store, api, project.id, thread.id)
+              // Same-thread history editing lives under Fork (#3314).
+              showContextMenu(options.at.x, options.at.y, [
+                { heading: 'Fork' },
+                {
+                  label: 'Fork a copy',
+                  onSelect: (): void => {
+                    forkProjectThread(store, api, project.id, thread.id)
+                  },
+                },
+                {
+                  label: 'Edit thread history…',
+                  onSelect: (): void => {
+                    openThreadHistoryEditor(store, api, {
+                      projectId: project.id,
+                      threadId: thread.id,
+                    })
+                  },
+                },
+              ])
             },
           },
           {

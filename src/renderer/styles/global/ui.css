@@ -194,3 +194,20 @@ copse-ui-field input[type='password'],
 .ui-badge-literal::first-letter {
   text-transform: none;
 }
+
+/* The plan-limit recovery link is the callout's primary action. */
+.markdown-alert-caution a[href='https://chatgpt.com/settings/usage'] {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.markdown-alert-caution a[href='https://chatgpt.com/settings/usage']:hover {
+  background: var(--accent-fill-hover);
+  color: var(--text-on-accent);
+}

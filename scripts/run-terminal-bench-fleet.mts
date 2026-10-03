@@ -308,7 +308,11 @@ export function workerEnvironment(config: RunConfig, shardIndex: number): string
   if (maxCommandTimeout) {
     values.push(['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC', maxCommandTimeout])
   }
-  for (const name of ['COPSE_TERMINAL_MODEL_PARAMETERS', 'COPSE_TERMINAL_MAX_OUTPUT_TOKENS']) {
+  for (const name of [
+    'COPSE_TERMINAL_MODEL_PARAMETERS',
+    'COPSE_TERMINAL_MAX_OUTPUT_TOKENS',
+    'COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY',
+  ]) {
     const value = process.env[name]?.trim()
     if (value) values.push([name, value])
   }

@@ -776,6 +776,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           threadMenuEntries(store, api, {
             project,
             thread,
+            at: { x, y },
             allowRename,
             allowDelete: true,
             onRename: () => {

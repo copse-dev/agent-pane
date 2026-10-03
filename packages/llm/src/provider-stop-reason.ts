@@ -43,9 +43,26 @@ export const REASONING_RUNAWAY_FORCE_ANSWER_NUDGE =
   'Stop reasoning now and give your best final answer directly and briefly.'
 
 /**
- * Surfaced when a model ignores {@link REASONING_RUNAWAY_FORCE_ANSWER_NUDGE} and
- * runs the per-stream cap again on reasoning alone — it is stuck looping, so the
- * run ends cleanly instead of re-priming until the wall-clock deadline fires.
+ * Rung 2 of the reasoning-runaway recovery ladder: sent with a reasoning-suppressed,
+ * tightly capped, tool-enabled recovery turn after the force-answer nudge was itself
+ * ignored. It asks for one bounded concrete step (a tool call) rather than an answer,
+ * because a model that cannot finish reasoning about a whole task can usually still
+ * emit its first command.
+ */
+export const REASONING_RUNAWAY_SUPPRESSED_NUDGE =
+  'Your reasoning was cut off twice with no action taken. Do not think any further. ' +
+  'Take exactly one concrete next step right now by calling a tool (for example, run the first ' +
+  'shell command or write the first file the task needs). Reply with the tool call only.'
+
+/** `done.stopReason` when the recovery ladder is exhausted and the run is abandoned. */
+export const REASONING_RUNAWAY_EXHAUSTED_STOP_REASON = 'reasoning_runaway_exhausted'
+
+/**
+ * Surfaced when every rung of the reasoning-runaway recovery ladder (force-answer
+ * nudge, then a reasoning-suppressed tool-enabled turn) still ended in a reasoning-only
+ * cut — the model is stuck looping, so the run ends with a terminal
+ * {@link REASONING_RUNAWAY_EXHAUSTED_STOP_REASON} instead of re-priming until the
+ * wall-clock deadline fires.
  */
 export const REASONING_RUNAWAY_GIVEUP_MESSAGE =
   'The model got stuck repeating its reasoning without producing an answer.'

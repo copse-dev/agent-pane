@@ -25,7 +25,10 @@ describe('unit test runner build contract', () => {
   })
 
   it('bounds file concurrency so subprocess-heavy suites keep their safety deadlines', () => {
-    assert.match(runner, /const TEST_FILE_CONCURRENCY = 4/)
+    assert.match(
+      runner,
+      /const TEST_FILE_CONCURRENCY = process\.env\['COPSE_THREAD_CONTAINER_E2E'\] === 'apple' \? 1 : 4/,
+    )
     assert.match(runner, /--test-concurrency=\$\{String\(TEST_FILE_CONCURRENCY\)\}/)
   })
 

@@ -866,6 +866,7 @@ export function mountThreadSidebar(
       const entries: ContextMenuEntry[] = threadMenuEntries(store, api, {
         project,
         thread,
+        at: { x: event.clientX, y: event.clientY },
         allowRename: true,
         allowDelete: true,
         onRename: () => {

@@ -999,4 +999,135 @@ describe('AutomationService', () => {
     assert.equal(outcome, 'done')
     assert.deepEqual(begun.sort(), ['a', 'b', 'c'])
   })
+
+  describe('trigger problems the user can see', () => {
+    function harness(): {
+      threads: Map<string, Thread>
+      service: ReturnType<typeof createAutomationService>
+      setNow: (value: number) => void
+      failNextCreate: (message: string) => void
+    } {
+      let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+      let failure: string | null = null
+      const threads = new Map<string, Thread>()
+      const service = createAutomationService({
+        now: () => now,
+        isPluginEnabled: () => true,
+        createProjectThread: (_projectId, thread) => {
+          if (failure !== null) {
+            const message = failure
+            failure = null
+            return Promise.reject(new Error(message))
+          }
+          threads.set(thread.id, thread)
+          return Promise.resolve()
+        },
+        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        releasePreviousRun: () => Promise.resolve(true),
+      })
+      return {
+        threads,
+        service,
+        setNow: (value: number): void => {
+          now = value
+        },
+        failNextCreate: (message: string): void => {
+          failure = message
+        },
+      }
+    }
+    const input = {
+      name: 'Project health',
+      cron: '* * * * *',
+      prompt: 'Check project health.',
+      model: 'gpt-5.4',
+      enabled: true,
+    }
+
+    it('keeps a failed start from blocking the next run', async () => {
+      const { threads, service, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const stuck = threads.get(first.threadId)
+      assert.ok(stuck?.automation)
+      // The renderer could not start it: the draft is kept, marked as failed.
+      threads.set(first.threadId, {
+        ...stuck,
+        automation: { ...stuck.automation, startFailedAt: 1 },
+      })
+
+      setNow(new Date(2026, 6, 27, 9, 1, 0).getTime())
+      const next = await service.runNow('project-a', schedule.id)
+
+      assert.equal(next.disposition, 'started')
+      assert.notEqual(next.threadId, first.threadId)
+      assert.equal(threads.size, 2)
+    })
+
+    it('records a skipped run behind an unstarted draft, and clears it once a run starts', async () => {
+      const { threads, service, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const triggeredAt = new Date(2026, 6, 27, 9, 1, 0).getTime()
+
+      setNow(triggeredAt)
+      const skipped = await service.runNow('project-a', schedule.id)
+      assert.equal(skipped.disposition, 'coalesced')
+      const problem = service.list('project-a')[0]?.lastProblem
+      assert.equal(problem?.kind, 'pending-start')
+      assert.equal(problem.at, triggeredAt)
+      assert.match(problem.message, /never started/)
+
+      const pending = threads.get(first.threadId)
+      assert.ok(pending)
+      threads.set(first.threadId, { ...pending, draftPrompt: '' })
+      setNow(new Date(2026, 6, 27, 9, 2, 0).getTime())
+      const started = await service.runNow('project-a', schedule.id)
+      assert.equal(started.disposition, 'started')
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+    })
+
+    it('does not report a run that is simply still going as a problem', async () => {
+      const { threads, service } = harness()
+      const schedule = await service.upsert('project-a', input)
+      const first = await service.runNow('project-a', schedule.id)
+      const pending = threads.get(first.threadId)
+      assert.ok(pending)
+      threads.set(first.threadId, { ...pending, status: 'running', draftPrompt: '' })
+
+      const overlap = await service.runNow('project-a', schedule.id)
+
+      assert.equal(overlap.disposition, 'coalesced')
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+    })
+
+    it('records a tick that failed to create its task, and clears it after a good run', async (context) => {
+      context.mock.method(console, 'error', () => {})
+      const { service, failNextCreate, setNow } = harness()
+      const schedule = await service.upsert('project-a', input)
+      failNextCreate('disk unavailable')
+
+      await service.tick()
+      const problem = service.list('project-a')[0]?.lastProblem
+      assert.equal(problem?.kind, 'failed')
+      assert.equal(problem.message, 'disk unavailable')
+
+      setNow(new Date(2026, 6, 27, 9, 1, 0).getTime())
+      await service.tick()
+      assert.equal(service.list('project-a')[0]?.lastProblem, undefined)
+      assert.equal(service.list('project-a')[0]?.id, schedule.id)
+    })
+
+    it('keeps the problem when the schedule is edited', async (context) => {
+      context.mock.method(console, 'error', () => {})
+      const { service, failNextCreate } = harness()
+      const schedule = await service.upsert('project-a', input)
+      failNextCreate('disk unavailable')
+      await service.tick()
+
+      await service.upsert('project-a', { ...input, id: schedule.id, name: 'Renamed' })
+
+      assert.equal(service.list('project-a')[0]?.lastProblem?.message, 'disk unavailable')
+    })
+  })
 })
