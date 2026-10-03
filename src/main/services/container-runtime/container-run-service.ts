@@ -143,6 +143,7 @@ export class ContainerRunService {
   private readonly engines = new Map<string, ThreadContainerEngine>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
+  private readonly imagePreparations = new Map<ThreadContainerEngine, Promise<void>>()
   /** The one start-up sweep; later windows share it rather than sweeping again. */
   private orphanSweep: Promise<OrphanSweep | null> | null = null
 
@@ -360,25 +361,10 @@ export class ContainerRunService {
         ? this.continuationOf(request.threadId, request.continueFrom, request.continueContext)
         : null
     const model = request.model
-    const plan = await resolveContainerProvider(model, {
-      useAgentLogin: request.useAgentLogin === true,
-    })
-    const credential: ContainerRunProgress['credential'] =
-      plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
-    // The registry and GitHub are reachable when the run installs (A9, A11);
-    // the guest's shell commands are off the network either way.
-    const install = request.installDependencies === true
-    const egressAllowlist = [
-      ...new Set([
-        ...plan.egress,
-        ...(install ? DEPENDENCY_INSTALL_ORIGINS : []),
-        ...(request.extraEgress ?? []),
-      ]),
-    ]
-    // Decided before any engine is touched: a host with neither engine up must
-    // fail here with a recovery path, not mid-build as a raw socket error.
-    // The answer is the engine for the whole run.
-    const engine = await this.deps.assertEngine()
+    let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
+    let credential: ContainerRunProgress['credential'] = 'none'
+    let egressAllowlist: string[] = []
+    let engine: ThreadContainerEngine
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -390,6 +376,10 @@ export class ContainerRunService {
       model,
       egressAllowlist,
       credential,
+      settings: {
+        budgets: { ...request.budgets },
+        installDependencies: request.installDependencies === true,
+      },
       log: [],
       warnings: [],
       checkout: null,
@@ -397,6 +387,10 @@ export class ContainerRunService {
       error: null,
       continuedFrom: continuation?.runtimeId ?? null,
     }
+    // A follow-up replaces the finished run it continues; keep that entry so a
+    // follow-up that fails before it starts does not erase the run it built on.
+    const previous = this.runs.get(request.threadId)
+    const previousStop = this.stopSignals.get(request.threadId)
     // Claim the thread's slot before the first await, so two clicks cannot both
     // pass the live-run check and start two containers on one checkout.
     this.runs.set(request.threadId, progress)
@@ -405,6 +399,22 @@ export class ContainerRunService {
 
     let checkout: ThreadExecutionContext
     try {
+      plan = await resolveContainerProvider(model, {
+        useAgentLogin: request.useAgentLogin === true,
+      })
+      credential =
+        plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
+      // Only provider resolution and the explicit install choice admit origins.
+      egressAllowlist = [
+        ...new Set([
+          ...plan.egress,
+          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
+        ]),
+      ]
+      Object.assign(progress, { credential, egressAllowlist })
+      // Check the host engine while the thread is reserved, then release the
+      // reservation through the same failure path if the daemon is unavailable.
+      engine = await this.deps.assertEngine()
       // The thread — not the project — owns the checkout the run must carry in:
       // a thread in an isolated worktree has its own branch and its own
       // uncommitted edits, and snapshotting the project root would silently run
@@ -416,8 +426,10 @@ export class ContainerRunService {
         checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',
       )
     } catch (error) {
-      this.runs.delete(request.threadId)
-      this.stopSignals.delete(request.threadId)
+      if (previous) this.runs.set(request.threadId, previous)
+      else this.runs.delete(request.threadId)
+      if (previousStop) this.stopSignals.set(request.threadId, previousStop)
+      else this.stopSignals.delete(request.threadId)
       throw error
     }
     this.update(progress, {
@@ -501,6 +513,18 @@ export class ContainerRunService {
     )
   }
 
+  /** Concurrent threads share preparation of the one worker image. */
+  private async ensureImage(engine: ThreadContainerEngine): Promise<void> {
+    const existing = this.imagePreparations.get(engine)
+    const preparation = existing ?? this.deps.ensureImage(engine)
+    if (existing === undefined) this.imagePreparations.set(engine, preparation)
+    try {
+      await preparation
+    } finally {
+      if (this.imagePreparations.get(engine) === preparation) this.imagePreparations.delete(engine)
+    }
+  }
+
   private async drive(
     request: ContainerRunRequest,
     plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
@@ -554,7 +578,7 @@ export class ContainerRunService {
         taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
-      await this.deps.ensureImage(engine)
+      await this.ensureImage(engine)
       if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
@@ -685,7 +709,13 @@ export function continuationPrompt(earlier: RunContinuation, followUp: string): 
 }
 
 function snapshot(progress: ContainerRunProgress): ContainerRunProgress {
-  return { ...progress, log: [...progress.log] }
+  return {
+    ...progress,
+    log: [...progress.log],
+    ...(progress.settings
+      ? { settings: { ...progress.settings, budgets: { ...progress.settings.budgets } } }
+      : {}),
+  }
 }
 
 /**
