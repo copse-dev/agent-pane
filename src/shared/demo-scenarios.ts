@@ -1,9 +1,9 @@
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
+import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
-import type { McpServerStatus } from './types/mcp.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
@@ -1585,6 +1585,56 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'mcp-sign-in',
+    label: 'MCP servers that sign in with OAuth',
+    project: project('demo-mcp-sign-in-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-mcp-sign-in-thread',
+        title: 'MCP sign-in',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    mcpServers: [
+      {
+        name: 'design-system',
+        transport: 'http',
+        state: 'error',
+        error: 'Sign-in required',
+        auth: 'required',
+        toolCount: 0,
+        tools: [],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
+      },
+      {
+        name: 'issues',
+        transport: 'http',
+        state: 'connected',
+        auth: 'signed-in',
+        toolCount: 3,
+        tools: ['list_issues', 'get_issue', 'create_issue'],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
       },
     ],
   },

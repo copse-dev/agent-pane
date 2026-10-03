@@ -516,6 +516,16 @@ export interface ApiClient {
     /** Plugin-declared servers nothing is running. See {@link DeclaredMcpServer}. */
     listDeclared: () => Promise<DeclaredMcpServer[]>
     setCuratedEnabled: (name: string, enabled: boolean) => Promise<CuratedMcpServerStatus[]>
+    /**
+     * Sign in to a remote server through the user's browser (OAuth). Resolves
+     * with fresh statuses once the server reconnects; rejects on failure,
+     * cancellation, or timeout.
+     */
+    signIn: (name: string) => Promise<McpServerStatus[]>
+    /** Abandon a pending {@link signIn} for this server. */
+    cancelSignIn: (name: string) => Promise<void>
+    /** Forget the stored sign-in for a remote server and reconnect it. */
+    signOut: (name: string) => Promise<McpServerStatus[]>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   toolPermissions: {
