@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { formatTerminalResult } from './lib/terminal-bench-protocol.mts'
+import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import {
   DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
   TERMINAL_BENCH_SYSTEM_PROMPT,
@@ -8,6 +8,7 @@ import {
   TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
   terminalCommandTimeoutParameter,
   terminalBenchLoopOptions,
+  terminalLongRunningCommandHint,
   terminalBenchProfileToolNames,
   terminalBenchRuntimeConfiguration,
   terminalBenchSystemPrompt,
@@ -341,5 +342,61 @@ describe('terminal benchmark bridge', () => {
     ]) {
       assert.equal(terminalBenchProfile(id).hintsLongRunningCommands, false)
     }
+  })
+  it('hints at background jobs for timed-out, slow, and install commands only', () => {
+    const result = (exitCode: number): TerminalToolResult => ({
+      type: 'tool_result' as const,
+      id: 'x',
+      exitCode,
+      stdout: '',
+      stderr: '',
+    })
+    assert.equal(terminalLongRunningCommandHint('ls', result(0), 2_000), null)
+    const timeout = terminalLongRunningCommandHint('make all', result(124), 120_000)
+    assert.match(timeout ?? '', /hit its timeout/)
+    assert.match(timeout ?? '', /nohup <command> > \/tmp\/job\.log 2>&1 &/)
+    assert.doesNotMatch(timeout ?? '', /package install/)
+    const slow = terminalLongRunningCommandHint('make all', result(0), 61_000)
+    assert.match(slow ?? '', /blocked for 61s/)
+    const install = terminalLongRunningCommandHint('pip3 install torch', result(124), 300_000)
+    assert.match(install ?? '', /package install/)
+    assert.match(
+      terminalLongRunningCommandHint(
+        'apt-get update && apt-get install -y python3',
+        result(0),
+        61_000,
+      ) ?? '',
+      /package install/,
+    )
+    assert.equal(
+      terminalLongRunningCommandHint(
+        'nohup pip3 install torch > /tmp/a.log 2>&1 &',
+        result(0),
+        61_000,
+      ),
+      null,
+    )
+    assert.equal(terminalLongRunningCommandHint('pip3 install torch &', result(0), 61_000), null)
+  })
+
+  it('still hints for foreground nohup and setsid commands', () => {
+    const result: TerminalToolResult = {
+      type: 'tool_result',
+      id: 'slow',
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }
+    for (const command of ['nohup make build', 'setsid make build', 'echo nohup; sleep 31']) {
+      assert.match(terminalLongRunningCommandHint(command, result, 31_000) ?? '', /blocked/)
+    }
+  })
+
+  it('enables the long-command arm only through a new explicit identity', () => {
+    const arm = terminalBenchProfile('product-aligned@6')
+    assert.equal(arm.hintsLongRunningCommands, true)
+    assert.equal(arm.retirement, null)
+    assert.match(arm.systemPrompt, /nohup <command>/)
+    assert.equal(terminalBenchProfile('product-aligned').versionedId, 'product-aligned@5')
   })
 })

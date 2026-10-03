@@ -244,6 +244,40 @@ export function terminalResultEvidenceWarning(result: TerminalToolResult): strin
   return null
 }
 
+export const TERMINAL_SLOW_COMMAND_HINT_SEC = 30
+
+const BACKGROUND_LAUNCH = /(?<!&)&\s*$/
+const PACKAGE_INSTALL =
+  /\b(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install\b|\bapt(?:-get)?\s+(?:-\S+\s+)*(?:install|update|upgrade)\b|\b(?:npm|pnpm|yarn)\s+(?:install|add|i)\b|\bcargo\s+(?:install|build)\b/
+
+/**
+ * Deterministic hint appended to a foreground run_shell result that timed out
+ * (exit 124) or ran slowly, steering the model to background jobs and polling.
+ */
+export function terminalLongRunningCommandHint(
+  command: string,
+  result: TerminalToolResult,
+  elapsedMs: number,
+): string | null {
+  if (BACKGROUND_LAUNCH.test(command.trimEnd())) return null
+  const timedOut = result.exitCode === 124
+  const slow = elapsedMs >= TERMINAL_SLOW_COMMAND_HINT_SEC * 1000
+  if (!timedOut && !slow) return null
+  const elapsed = `${String(Math.round(elapsedMs / 1000))}s`
+  const lines = [
+    timedOut
+      ? 'Long-running command hint: this command hit its timeout and was killed.'
+      : `Long-running command hint: this command blocked for ${elapsed}.`,
+    'Do not rerun it in the foreground. Start it in the background with a log, e.g. `nohup <command> > /tmp/job.log 2>&1 &`, then poll with short `tail -n 20 /tmp/job.log` or `pgrep -f <name>` calls and do other work between polls.',
+  ]
+  if (PACKAGE_INSTALL.test(command)) {
+    lines.push(
+      'This was a package install: first check whether the package or a lighter alternative is already available (e.g. `python3 -c "import X"`, `pip list`, `which X`) and use the task\'s local files before downloading.',
+    )
+  }
+  return lines.join('\n')
+}
+
 interface StartMessage {
   type: 'start'
   instruction: string
@@ -648,6 +682,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
           )
         }
         flushTraceEvents()
+        const requestStartedAt = Date.now()
         stepTiming.toolStarted(id, name)
         let toolFailed = true
         let response: unknown
@@ -671,7 +706,13 @@ export async function runTerminalBenchAgent(): Promise<void> {
         if (response.exitCode === 124) {
           usage.commandTimeouts += 1
         }
-        const formatted = formatTerminalResult(response)
+        const longRunningHint =
+          name === 'run_shell' && profile.hintsLongRunningCommands
+            ? terminalLongRunningCommandHint(command, response, Date.now() - requestStartedAt)
+            : null
+        const formatted = longRunningHint
+          ? `${formatTerminalResult(response)}\n\n${longRunningHint}`
+          : formatTerminalResult(response)
         if (terminalShellResultIsError(profile, response)) {
           throw new Error(formatted)
         }

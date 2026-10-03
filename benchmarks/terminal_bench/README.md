@@ -497,3 +497,5 @@ eligible as the default when any trial overrode a cap or predates this record.
 
 The launcher pins Harbor so the custom-agent API and result shape do not drift between
 runs. Change that pin deliberately and revalidate the adapter before comparing results.
+
+#3423's long-command hint experiment uses explicit `product-aligned@6` on the current checkpoint baseline. Historical @4 hashes remain archived; the default alias remains @5.
