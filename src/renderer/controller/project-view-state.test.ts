@@ -28,6 +28,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     filesPaneOpen: false,
     rightPanelMode: 'explorer',
     rightPanelMaximized: false,
+    projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
     theme: 'dark',
     themePreference: 'system',

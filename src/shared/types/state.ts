@@ -121,6 +121,10 @@ export interface AppState {
   // The open pane fills the window over chat. Session-only (never persisted):
   // a window that reopened with chat already covered would read as broken.
   rightPanelMaximized: boolean
+  // The projects sidebar on the left is showing. Session-only, like
+  // rightPanelMaximized: a window that reopened with its thread list hidden
+  // would read as broken.
+  projectsPaneOpen: boolean
   layout: LayoutState
   theme: Theme // Resolved effective theme (never `system`); what panes render.
   themePreference: ThemePreference // The user's choice; `system` tracks the OS.

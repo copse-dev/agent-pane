@@ -42,6 +42,11 @@ function clearMaximizedOnClose(store: AppStore): void {
   store.emit('right_panel_maximized_changed')
 }
 
+export function toggleProjectsPane(store: AppStore): void {
+  store.setState({ projectsPaneOpen: !store.getState().projectsPaneOpen })
+  store.emit('projects_pane_changed')
+}
+
 export function toggleFilesPane(store: AppStore): void {
   const open = !store.getState().filesPaneOpen
   store.setState({

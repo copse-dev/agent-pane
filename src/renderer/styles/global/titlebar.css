@@ -83,6 +83,16 @@
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+.titlebar-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  color: var(--text-secondary);
+}
+.titlebar-sidebar-btn[aria-pressed='true'] {
+  color: var(--text-primary);
+}
 .titlebar-settings-btn {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

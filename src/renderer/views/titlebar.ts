@@ -1,6 +1,7 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
 import { playIcon } from '../dom/icons.ts'
 import { el } from '../dom/helpers.ts'
+import { outlineIcon } from '../dom/outline-icon.ts'
 import { setTooltip } from '../dom/tooltip.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -8,6 +9,9 @@ import { mountOpenInEditor } from './open-in-editor.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
+import { toggleProjectsPane } from '../controller/panels.ts'
+
+const PROJECTS_COLLAPSED_CLASS = 'is-projects-collapsed'
 
 function basename(p: string): string {
   return p.split('/').pop() ?? p
@@ -23,7 +27,32 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
   const sshTarget = el('span', { class: 'workspace-ssh-target', hidden: true })
   const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
-  leftCluster.append(workspaceName, sshTarget, workspaceBranch)
+  // Hides or shows the projects sidebar (Cmd/Ctrl+B). Sits right after the
+  // traffic lights, where the sidebar's own edge used to be.
+  const sidebarBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost titlebar-sidebar-btn',
+      'aria-label': 'Toggle sidebar',
+    },
+    outlineIcon(
+      'sidebar',
+      ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+      'titlebar-btn-icon',
+    ),
+  )
+  sidebarBtn.addEventListener('click', () => {
+    toggleProjectsPane(store)
+  })
+  function syncSidebar(): void {
+    const open = store.getState().projectsPaneOpen
+    document.getElementById('body')?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open)
+    sidebarBtn.setAttribute('aria-pressed', String(open))
+    setTooltip(sidebarBtn, open ? 'Hide sidebar (⌘B)' : 'Show sidebar (⌘B)')
+  }
+  syncSidebar()
+  leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch)
 
   const dragRegion = el('div', { class: 'titlebar-drag' })
   // Opening projects lives in the projects panel; the titlebar only toggles the
@@ -155,6 +184,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   syncName()
   syncBranch()
   const unsubs = [
+    store.on('projects_pane_changed', syncSidebar),
     store.on('workspace_changed', () => {
       syncName()
       syncBranchNow()
