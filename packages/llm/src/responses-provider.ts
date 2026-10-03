@@ -232,11 +232,15 @@ export class ResponsesProvider implements LLMProvider {
           if (inputReplaysCompaction && identity === undefined) {
             // The endpoint refused compaction: resend without the replayed item, with
             // the turns it summarised, and let client-side trimming own the budget.
-            input = toResponsesInput(messages, self.reasoningByToolCall, undefined, self.chatGptPlan)
+            input = toResponsesInput(
+              messages,
+              self.reasoningByToolCall,
+              undefined,
+              self.chatGptPlan,
+            )
             inputReplaysCompaction = false
           }
-          const compactAt =
-            identity && !self.chatGptPlan ? options?.compactAtTokens : undefined
+          const compactAt = identity && !self.chatGptPlan ? options?.compactAtTokens : undefined
           try {
             const request: ResponseCreateParamsStreaming = {
               model: self.model,
