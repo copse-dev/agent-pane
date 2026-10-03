@@ -75,7 +75,7 @@ describe('edit thread history', function () {
     resetUserData()
   })
 
-  it('opens under Fork, reconstructs the same thread, and survives reload', async () => {
+  it('opens the dot-menu Fork submenu, reconstructs the same thread, and survives reload', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(async () => (await $$('.messages-list .msg')).length === 4, {
       timeout: 10_000,
@@ -83,11 +83,13 @@ describe('edit thread history', function () {
     })
 
     const row = await $('.chat-row.selected')
-    await row.click({ button: 'right' })
+    await row.$('.chat-menu-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Fork').click()
     const forkChoices = await $$('.context-menu-item').map((item) => item.getText())
     expect(forkChoices).toEqual(['Fork a copy', 'Edit thread history…'])
+    await expect(row).toHaveAttribute('data-thread-id', THREAD_ID)
+    await saveElementScreenshot('.context-menu', 'thread-history-dot-fork-menu.png')
     await $('.context-menu-item*=Edit thread history').click()
 
     const dialog = await $('#thread-history-editor')
