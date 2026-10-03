@@ -1111,6 +1111,8 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
+    getThreadClassifierUse: (projectId, threadId) =>
+      ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>

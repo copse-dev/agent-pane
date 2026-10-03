@@ -67,4 +67,6 @@
 // v38 conservatively versions interrupted-turn recovery metadata.
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
 // v40 versions the queued-message model snapshot in thread payloads.
-export const API_PROTOCOL_VERSION = 40 as const
+// v41 conservatively versions the optional classifier-call latency and token fields on
+// decision events, alongside the new `usage:get-thread-classifier-use` channel.
+export const API_PROTOCOL_VERSION = 41 as const

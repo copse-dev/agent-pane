@@ -1123,6 +1123,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           ledgerEventCount: 0,
         })
       },
+      getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
       getPlanWorthIt: () =>
         resolved({

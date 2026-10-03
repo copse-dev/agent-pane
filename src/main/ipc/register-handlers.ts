@@ -63,6 +63,7 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
@@ -1720,6 +1721,13 @@ export function registerAllHandlers(
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
+  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
+  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
+  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
+    return getThreadClassifierUse(projectId, threadId)
+  })
   ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
   ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
   ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {

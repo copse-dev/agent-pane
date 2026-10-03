@@ -310,9 +310,39 @@ describe('context wheel combined usage hover', () => {
     assert.equal(popover.querySelectorAll('.footer-usage-popover-divider').length, 0)
   })
 
+  it('shows classifier use beneath usage, and drops it when the thread has none', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const classifierUse = {
+      calls: 3,
+      rows: [
+        {
+          subject: 'shell-scope' as const,
+          engine: 'Kev 4B',
+          calls: 3,
+          verdicts: [{ label: 'sandbox', count: 3 }],
+          noVerdict: 0,
+          averageLatencyMs: 800,
+          inputTokens: 0,
+          outputTokens: 0,
+        },
+      ],
+    }
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage, classifierUse })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    const text = popover.textContent
+    assert.match(text, /Classifiers · 3 calls/)
+    assert.ok(text.indexOf('Usage ·') < text.indexOf('Classifiers ·'))
+
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    assert.doesNotMatch(popover.textContent, /Classifiers/)
+  })
+
   it('stays open across a re-render while the pointer is on it', () => {
     // The footer re-renders under an open hover — streaming, a usage change, the
-    // async context estimate landing. That must not close it.
+    // async context estimate landing, the classifier re-read the hover itself
+    // starts. That must not close it.
     const wheel = createContextWheel()
     document.body.append(wheel.root)
     wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })

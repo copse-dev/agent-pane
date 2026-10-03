@@ -29,6 +29,13 @@ released — rather than copying every published entry.
   80% of the context window and red from 95%; figures reported by ACP agents
   keep the same solid track. The footer now needs less width before it
   collapses into its compact layout.
+
+- The footer hover now reports what the classifiers did for the thread: for the
+  shell guard, the shell approval tier and the terminal-read screen, how many
+  checks ran on which model or classifier connection, what they decided, how
+  long they took on average, and the tokens they used. Calls that never reached
+  a classifier (screening off, a missing model) are not counted, and no command
+  text is stored.
 - The macOS disk image is now signed and notarized by Apple, as well as the
   app inside it, so macOS can check the download itself before you open it.
 - In the concise thread view, clicking the row for a running turn (for
