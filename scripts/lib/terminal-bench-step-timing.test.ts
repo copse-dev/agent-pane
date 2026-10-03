@@ -9,6 +9,7 @@ import {
   parseStepTimingLines,
   StepTimingRecorder,
   summarizeStepTiming,
+  stepTimingEndOffset,
   type StepTimingRecord,
 } from './terminal-bench-step-timing.mts'
 
@@ -119,6 +120,34 @@ describe('StepTimingRecorder', () => {
     const end = records.find((record) => record.type === 'tool_end')
     assert.ok(end?.type === 'tool_end')
     assert.equal(end.failed, true)
+  })
+})
+
+describe('stepTimingEndOffset', () => {
+  it('excludes startup time before the recorder from the trailing gap', () => {
+    const record: StepTimingRecord = {
+      schemaVersion: 1,
+      type: 'step_start',
+      step: 1,
+      tMs: 250,
+      at: new Date(5250).toISOString(),
+    }
+    const offset = stepTimingEndOffset([record], new Date(7000).toISOString())
+    assert.equal(offset, 2000)
+    assert.equal(summarizeStepTiming([record], offset).trailingMs, 1750)
+  })
+
+  it('does not invent a trailing gap without a valid wall-clock anchor', () => {
+    assert.equal(stepTimingEndOffset([], new Date(7000).toISOString()), undefined)
+    const record: StepTimingRecord = {
+      schemaVersion: 1,
+      type: 'step_start',
+      step: 1,
+      tMs: 0,
+      at: 'invalid',
+    }
+    assert.equal(stepTimingEndOffset([record], new Date(7000).toISOString()), undefined)
+    assert.equal(stepTimingEndOffset([record], 'invalid'), undefined)
   })
 })
 

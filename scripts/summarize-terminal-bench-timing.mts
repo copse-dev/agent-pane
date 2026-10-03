@@ -7,6 +7,7 @@ import {
   parseStepTimingLines,
   STEP_TIMING_FILE,
   summarizeStepTiming,
+  stepTimingEndOffset,
   type StepTimingRecord,
 } from './lib/terminal-bench-step-timing.mts'
 
@@ -44,12 +45,17 @@ function seconds(ms: number | null): string {
   return ms === null ? '-' : (ms / 1000).toFixed(1)
 }
 
-function agentDurationMs(trialDirectory: string): number | undefined {
+function agentExecution(
+  trialDirectory: string,
+): { durationMs: number; finishedAt: string } | undefined {
   const path = join(trialDirectory, 'result.json')
   if (!existsSync(path)) return undefined
   const execution = safeJsonParse(readFileSync(path, 'utf8'), decodeResult)?.agent_execution
   if (!execution?.finished_at) return undefined
-  return Date.parse(execution.finished_at) - Date.parse(execution.started_at)
+  const durationMs = Date.parse(execution.finished_at) - Date.parse(execution.started_at)
+  return Number.isFinite(durationMs) && durationMs >= 0
+    ? { durationMs, finishedAt: execution.finished_at }
+    : undefined
 }
 
 function reward(trialDirectory: string): string {
@@ -108,8 +114,10 @@ for (const entry of readdirSync(jobDirectory).sort()) {
   if (!existsSync(timingPath)) continue
   found += 1
   const records = parseStepTimingLines(readFileSync(timingPath, 'utf8'))
-  const agentMs = agentDurationMs(trialDirectory)
-  const summary = summarizeStepTiming(records, agentMs)
+  const execution = agentExecution(trialDirectory)
+  const agentMs = execution?.durationMs
+  const runEndMs = execution ? stepTimingEndOffset(records, execution.finishedAt) : undefined
+  const summary = summarizeStepTiming(records, runEndMs)
   const open =
     summary.openStep === null ? '' : `  [step ${String(summary.openStep)} never finished]`
   console.log(

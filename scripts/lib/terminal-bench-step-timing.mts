@@ -22,7 +22,7 @@ export const STEP_TIMING_FILE = 'step-timing.jsonl'
 
 interface TimingBase {
   schemaVersion: 1
-  /** Milliseconds since the recorder was created (agent run start). */
+  /** Milliseconds since the recorder was created, after agent startup setup. */
   tMs: number
   /** Wall-clock time of the event. */
   at: string
@@ -248,6 +248,19 @@ export interface StepTimingSummary {
  * attributes the time after the last event (a hung or killed run) to
  * `trailingMs` instead of losing it.
  */
+/** Align a wall-clock execution finish with this recorder's relative event clock. */
+export function stepTimingEndOffset(
+  records: readonly StepTimingRecord[],
+  finishedAt: string,
+): number | undefined {
+  const finish = Date.parse(finishedAt)
+  if (!Number.isFinite(finish)) return undefined
+  const anchor = records.find((record) => Number.isFinite(Date.parse(record.at)))
+  if (!anchor) return undefined
+  const origin = Date.parse(anchor.at) - anchor.tMs
+  return Math.max(0, finish - origin)
+}
+
 export function summarizeStepTiming(
   records: readonly StepTimingRecord[],
   runEndMs?: number,
