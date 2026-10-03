@@ -26144,14 +26144,11 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
-function handIcon(className = DEFAULT) {
+function shieldIcon(className = DEFAULT) {
   return outlineIcon(
-    "hand",
+    "shield",
     [
-      "M18 11V6a2 2 0 0 0-4 0v5",
-      "M14 10V4a2 2 0 0 0-4 0v7",
-      "M10 10.5V6a2 2 0 0 0-4 0v8",
-      "M6 14.5 4.5 13a2 2 0 0 0-3 3l5.8 5.8A7.5 7.5 0 0 0 12.6 24H14a8 8 0 0 0 8-8v-5a2 2 0 0 0-4 0Z"
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
     ],
     className
   );
@@ -64538,7 +64535,7 @@ var init_tool_permissions_panel = __esm({
     };
     POLICY_ICON = {
       allow: checkIcon,
-      ask: handIcon,
+      ask: shieldIcon,
       block: banIcon
     };
   }
@@ -70433,7 +70430,7 @@ function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
   switch (state) {
     case "needs-approval":
-      return handIcon(className);
+      return shieldIcon(className);
     case "needs-answer":
       return messageQuestionIcon(className);
     case "working":
@@ -139700,11 +139697,55 @@ function continuesSentence(prevText, text2) {
   return false;
 }
 function endsInsideMarkup(text2) {
+  let fence;
+  let lastLineClosesFence = false;
+  const inlineLines = [];
+  for (const line of text2.split("\n")) {
+    lastLineClosesFence = false;
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!match) {
+      if (!fence) inlineLines.push(line);
+      continue;
+    }
+    const marker = match[1] ?? "";
+    const rest = match[2] ?? "";
+    if (fence) {
+      if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
+        fence = void 0;
+        lastLineClosesFence = true;
+      }
+    } else if (marker[0] !== "`" || !rest.includes("`")) {
+      fence = { character: marker[0] ?? "", length: marker.length };
+    } else {
+      inlineLines.push(line);
+    }
+  }
+  if (fence) return true;
+  if (lastLineClosesFence) return false;
   if (/\n$/.test(text2)) return false;
-  if ((text2.match(/^ {0,3}(```|~~~)/gm) ?? []).length % 2 === 1) return true;
   const lastLine = text2.slice(text2.lastIndexOf("\n") + 1).trim();
   if (lastLine.startsWith("|") && !lastLine.endsWith("|")) return true;
-  return /(\*\*|__|~~|[*_`])$/.test(lastLine);
+  const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1];
+  if (!trailingMarker) return false;
+  let unmatched = false;
+  let inlineCodeLength;
+  const inlineText = inlineLines.join("\n");
+  for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
+    let precedingBackslashes = 0;
+    for (let index = match.index - 1; index >= 0 && inlineText[index] === "\\"; index -= 1) {
+      precedingBackslashes += 1;
+    }
+    if (precedingBackslashes % 2 !== 0 && inlineCodeLength === void 0) continue;
+    const marker = match[0];
+    if (marker.startsWith("`")) {
+      if (inlineCodeLength === void 0) inlineCodeLength = marker.length;
+      else if (marker.length === inlineCodeLength) inlineCodeLength = void 0;
+    } else if (inlineCodeLength === void 0 && marker === trailingMarker) {
+      unmatched = !unmatched;
+    }
+  }
+  if (trailingMarker.startsWith("`")) return inlineCodeLength !== void 0;
+  return unmatched;
 }
 function planAgentTextChunk(state, text2) {
   const isWhitespaceOnly = text2.length > 0 && !text2.trim();
