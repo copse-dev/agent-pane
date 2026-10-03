@@ -293,7 +293,7 @@ describe('ACP package install approval', () => {
     assert.equal(requests, 0)
   })
 
-  it('asks only for missing adapters when installs and upgrades coexist', async () => {
+  it('asks only for missing adapters when installs and upgrades coexist with SFW present', async () => {
     let body = ''
     setApprovalHandler(async (request) => {
       body = request.body
@@ -308,10 +308,10 @@ describe('ACP package install approval', () => {
         toVersion: '1.1.7',
       },
     ]
-    assert.equal(await requestAcpPackageInstallApproval(changes), false)
+    assert.equal(await requestAcpPackageInstallApproval(changes, true), false)
     assert.match(body, /claude-agent-acp/)
     assert.doesNotMatch(body, /codex-acp/)
-    assert.equal(formatAcpPackageApproval(changes).title, 'Install ACP adapters globally?')
+    assert.equal(formatAcpPackageApproval(changes, true).title, 'Install ACP adapters globally?')
   })
 })
 
