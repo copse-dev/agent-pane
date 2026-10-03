@@ -2685,12 +2685,26 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ? 'Looking for package directories…'
         : `Preparing cleanup for ${String(entries.length)} worktrees…`
 
-    const performCleanup = async (setConfirmProgress: (label: string) => void): Promise<void> => {
+    const cleanupState = { started: false }
+    const performCleanup = async (
+      setConfirmProgress: (label: string) => void,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      cleanupState.started = true
+      signal.addEventListener(
+        'abort',
+        () => {
+          setBulkLabel('Stopping…', true)
+          statusEl.textContent = 'Stopping cleanup after the current worktree finishes…'
+        },
+        { once: true },
+      )
       for (const entry of entries) setEntryPhase(entry, 'pending')
       let cleaned = 0
       let reclaimed = 0
       let truncated = false
       for (const [index, entry] of entries.entries()) {
+        if (signal.aborted) break
         setEntryPhase(entry, 'cleaning')
         const progress = `Cleaning ${String(index + 1)} of ${String(entries.length)}…`
         setBulkLabel(progress, true)
@@ -2737,9 +2751,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
       const summary =
         cleaned > 0
-          ? `Cleaned up ${String(cleaned)} directories (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`
-          : 'No ignored package-manager directories found.'
-      statusEl.textContent = [summary, ...problems].join('\n')
+          ? `Cleaned up ${String(cleaned)} director${cleaned === 1 ? 'y' : 'ies'} (${truncated ? 'at least ' : ''}${formatByteSize(reclaimed)}).`
+          : signal.aborted
+            ? 'No package directories were removed.'
+            : 'No ignored package-manager directories found.'
+      statusEl.textContent = [signal.aborted ? 'Cleanup stopped.' : '', summary, ...problems]
+        .filter(Boolean)
+        .join('\n')
     }
 
     try {
@@ -2783,15 +2801,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ...(preview.directories.length > shown.length
               ? [`\n…and ${String(preview.directories.length - shown.length)} more`]
               : []),
-            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.`,
+            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.` +
+              '\n\nCancel closes this dialog; the current worktree will finish cleaning.',
           ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true,
         })
         if (!confirmed) {
-          statusEl.textContent = 'Kept.'
+          if (!cleanupState.started) statusEl.textContent = 'Kept.'
           return
         }
       } else {
@@ -2805,15 +2825,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             ' and ',
             el('code', {}, '.venv'),
             '.\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.' +
-              '\n\nYour package manager can recreate these directories.',
+              '\n\nYour package manager can recreate these directories.' +
+              '\n\nCancel closes this dialog and stops after the current worktree finishes.',
           ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true,
         })
         if (!confirmed) {
-          statusEl.textContent = 'Kept.'
+          if (!cleanupState.started) statusEl.textContent = 'Kept.'
           return
         }
       }

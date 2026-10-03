@@ -24,6 +24,74 @@ describe('ask_user dialog', () => {
     resetUserData()
   })
 
+  it('defers a Claude sign-in question while Storage is open, then presents it after Escape', async () => {
+    const scenario = await installMockScenario({
+      title: 'Reconnect to Claude',
+      turns: [
+        {
+          user: 'Help me reconnect to Claude.',
+          responses: [
+            {
+              waitFor: 'before-sign-in-question',
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: {
+                    questions: [
+                      {
+                        question:
+                          'Claude’s saved sign-in has expired. Run `claude /login` in a terminal to sign in again?',
+                        options: ['Run `claude /login`', 'Not now'],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              text: 'You can sign in when you are ready.',
+              expectToolResults: [{ name: 'ask_user', includes: 'Not now' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Help me reconnect to Claude.')
+    await submitComposer()
+    await scenario.waitForHold('before-sign-in-question')
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="storage"]').click()
+    // Observe the real IPC event independently of whether its dialog opened.
+    await browser.execute(() => {
+      const unsubscribe = window.api.agent.onAskUserRequest(() => {
+        document.body.dataset['signInQuestionArrived'] = 'true'
+        unsubscribe()
+      })
+    })
+    await scenario.release('before-sign-in-question')
+    await browser.waitUntil(
+      () => browser.execute(() => document.body.dataset['signInQuestionArrived'] === 'true'),
+      { timeout: 15_000, timeoutMsg: 'expected the sign-in question to arrive during Storage' },
+    )
+    await expect($('#settings-dialog')).toBeDisplayed()
+    await expect($('#ask-user-dialog')).not.toBeDisplayed()
+    await saveElementScreenshot('#settings-dialog', 'claude-login-deferred-settings.png')
+    await browser.keys('Escape')
+    await expect($('#settings-dialog')).not.toBeDisplayed()
+    const question = $('#ask-user-dialog')
+    await question.waitForDisplayed({ timeout: 10_000 })
+    await expect(question.$('.ask-user-question')).toHaveText(
+      expect.stringContaining('saved sign-in has expired'),
+    )
+    await expect(question.$('.ask-user-question code')).toHaveText('claude /login')
+    await saveElementScreenshot('#ask-user-dialog', 'claude-login-after-settings.png')
+    await question.$('.ask-user-option=Not now').click()
+    await question.$('.ask-user-submit').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('You can sign in when you are ready.')
+    await scenario.assertComplete()
+  })
+
   it('shows the modal with options and returns the answer to the agent', async () => {
     const scenario = await installMockScenario({
       title: 'Sign in to Claude',

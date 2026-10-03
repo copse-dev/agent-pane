@@ -4,6 +4,7 @@ import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { isAnyDialogOpen } from './dialog-shell.ts'
 
 interface AskUserRequest {
   id: string
@@ -46,7 +47,8 @@ export interface AskUserRequests {
  * the first is open can't overwrite the active request's id and mis-route the
  * answer (the same hazard the approval dialog guards against). A question from a
  * thread the user isn't looking at stays queued and is surfaced as a sidebar
- * attention indicator rather than interrupting the focused thread.
+ * attention indicator rather than interrupting the focused thread. Questions
+ * also wait for foreground dialogs, including Settings and cleanup, to close.
  */
 export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequests {
   const form = el('form', { id: 'ask-user-form', method: 'dialog' })
@@ -57,6 +59,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   let active: AskUserRequest | null = null
   const changeListeners = new Set<() => void>()
   let arrivals = 0
+  let escapeHeld = false
+  let presentationTimer: number | undefined
   // One input per question of the active request, kept in question order so
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
@@ -163,7 +167,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   }
 
   function showNext(): void {
-    if (active) return
+    if (active || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return
     const idx = queue.findIndex(isShowable)
     if (idx === -1) {
       syncAttention()
@@ -174,6 +178,51 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     renderActive()
     syncAttention()
   }
+
+  function scheduleNext(): void {
+    if (presentationTimer !== undefined || active || queue.length === 0) return
+    presentationTimer = window.setTimeout(() => {
+      presentationTimer = undefined
+      showNext()
+    }, 0)
+  }
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') escapeHeld = true
+  }
+
+  function releaseEscape(): void {
+    escapeHeld = false
+    scheduleNext()
+  }
+
+  function onKeyUp(event: KeyboardEvent): void {
+    if (event.key === 'Escape') releaseEscape()
+  }
+
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('keyup', onKeyUp, true)
+  window.addEventListener('blur', releaseEscape)
+  // Native close(), Escape, and removing an overlay all change its DOM state.
+  // Resume on a later task so closing a modal cannot answer the queued prompt
+  // with the same key event. No polling or per-dialog registration is needed.
+  const observer = new MutationObserver(() => {
+    if (!dialog.isConnected) {
+      observer.disconnect()
+      if (presentationTimer !== undefined) window.clearTimeout(presentationTimer)
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', releaseEscape)
+      return
+    }
+    scheduleNext()
+  })
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['open'],
+    childList: true,
+    subtree: true,
+  })
 
   function respond(answers: string[]): void {
     const current = active
