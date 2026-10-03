@@ -372,7 +372,16 @@ describe('cron automation trigger', function () {
       'strong',
     )
     assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
-    await saveAppScreenshot('automation-active.png')
+    const restoreActiveRunTime = await pinTextForCapture(
+      '.automation-schedule-runs',
+      /^Latest · .+$/,
+      'Latest · Jan 1, 2026, 12:00 AM',
+    )
+    try {
+      await saveAppScreenshot('automation-active.png')
+    } finally {
+      await restoreActiveRunTime()
+    }
 
     await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
