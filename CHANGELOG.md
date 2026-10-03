@@ -8,6 +8,12 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Settings → About has an update channel. Beta gets new features first; switch
+  to Stable and Copse keeps installing betas until the next stable release,
+  then installs only stable releases. It never moves you back to an older
+  version. Copse remembers the channel you installed from, so beta testers stay
+  on beta after the first stable release unless they choose Stable.
+
 ## 0.1.0-beta.13
 
 - Copse reads another tool's sign-in to show plan usage only for providers you
