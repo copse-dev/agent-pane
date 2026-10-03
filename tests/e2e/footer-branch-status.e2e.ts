@@ -308,7 +308,11 @@ describe('footer branch status for a detached thread worktree', () => {
     await expect(button).toHaveAttribute('title', expect.stringContaining(picked.slice(0, 7)))
     await expectOnBranchLine(button)
 
-    await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
+    // Suggested follow-ups above the composer refresh independently and may
+    // have no Changes chip on this host. Capture the recovery footer itself
+    // so that optional row cannot change this shot's framing or block it.
+    await expect($('.toast')).not.toExist({ wait: 10_000 })
+    await saveElementScreenshot('.input-footer', 'footer-branch-uncommitted-pick.png')
 
     const signingKey = join(worktreeRoot, 'copse-e2e-signing-key')
     execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', signingKey], {
