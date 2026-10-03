@@ -415,6 +415,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     created: 'Created',
     title: 'Thread name',
   }
+  // The menu applies the choice at once; a save that fails would otherwise be lost
+  // silently and the order would revert on the next launch.
+  const saveSort = (
+    key: 'sidebarThreadSort' | 'sidebarThreadSortReverse',
+    value: ThreadSortMode | boolean,
+  ): void => {
+    void api.settings.set(key, value).catch((err: unknown) => {
+      showErrorToast('Could not save the thread order', err)
+    })
+  }
   sortBtn.addEventListener('click', () => {
     const rect = sortBtn.getBoundingClientRect()
     const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
@@ -425,7 +435,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         checked: mode === sidebarThreadSort,
         onSelect: (): void => {
           store.setState({ sidebarThreadSort: mode })
-          void api.settings.set('sidebarThreadSort', mode)
+          saveSort('sidebarThreadSort', mode)
           render()
         },
       })),
@@ -434,7 +444,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         checked: sidebarThreadSortReverse,
         onSelect: (): void => {
           store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
-          void api.settings.set('sidebarThreadSortReverse', !sidebarThreadSortReverse)
+          saveSort('sidebarThreadSortReverse', !sidebarThreadSortReverse)
           render()
         },
       },

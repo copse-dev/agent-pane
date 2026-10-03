@@ -19,7 +19,9 @@ export function orderSidebarThreads(
   if (mode === 'created') {
     ordered.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
   } else if (mode === 'title') {
-    ordered.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+    // An untitled thread shows as "New Thread", so it sorts as that.
+    const name = (thread: SidebarThread): string => thread.title || 'New Thread'
+    ordered.sort((a, b) => name(a).localeCompare(name(b), undefined, { sensitivity: 'base' }))
   }
   return reverse ? ordered.reverse() : ordered
 }

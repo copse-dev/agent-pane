@@ -25,6 +25,11 @@ describe('orderSidebarThreads', () => {
     assert.deepEqual(ids(orderSidebarThreads(storeOrder, 'title', false)), ['a', 'b', 'c'])
   })
 
+  it('sorts an untitled thread as "New Thread", the name its row shows', () => {
+    const threads = [thread('z', 'Zed', 1), thread('blank', '', 2), thread('a', 'alpha', 3)]
+    assert.deepEqual(ids(orderSidebarThreads(threads, 'title', false)), ['a', 'blank', 'z'])
+  })
+
   it('flips whichever order was chosen', () => {
     assert.deepEqual(ids(orderSidebarThreads(storeOrder, 'activity', true)), ['a', 'c', 'b'])
     assert.deepEqual(ids(orderSidebarThreads(storeOrder, 'title', true)), ['c', 'b', 'a'])
