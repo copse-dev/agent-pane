@@ -865,6 +865,7 @@ export interface ApiClient {
     onUiScaleZoomOut: (handler: () => void) => () => void
     onUiScaleReset: (handler: () => void) => () => void
   }
+  machines: import('@shared/machines.ts').MachinesClient
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
   settings: {

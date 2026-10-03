@@ -1207,6 +1207,48 @@
           1
         ]
       },
+      "machines:invitation": {
+        "api": "machines.invitation",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "machines:pair": {
+        "api": "machines.pair",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "machines:remove": {
+        "api": "machines.remove",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "machines:revoke": {
+        "api": "machines.revoke",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "machines:share": {
+        "api": "machines.share",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "machines:state": {
+        "api": "machines.state",
+        "args": [
+          0,
+          0
+        ]
+      },
       "main-window:get-browser-session": {
         "api": "windowState.getBrowserSession",
         "args": [
