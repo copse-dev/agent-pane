@@ -29,7 +29,12 @@ export function bindSelectionQuote(
   const status = el('div', { class: 'transcript-selection-status', role: 'status', hidden: true })
   const popup = el(
     'div',
-    { class: 'transcript-selection-quote', hidden: true, role: 'group', 'aria-label': 'Selection reply' },
+    {
+      class: 'transcript-selection-quote',
+      hidden: true,
+      role: 'group',
+      'aria-label': 'Selection reply',
+    },
     input,
     el('div', { class: 'transcript-selection-actions' }, sendButton),
     status,
@@ -79,7 +84,9 @@ export function bindSelectionQuote(
 
   const selectionBounds = () => {
     if (!selectedRange) return null
-    const rects = [...selectedRange.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
+    const rects = [...selectedRange.getClientRects()].filter(
+      (rect) => rect.width > 0 && rect.height > 0,
+    )
     if (rects.length === 0) return null
     return {
       top: Math.min(...rects.map((rect) => rect.top)),
@@ -136,7 +143,10 @@ export function bindSelectionQuote(
         top = selection.bottom + gap
       }
     }
-    const left = Math.max(bounds.left + gap, Math.min(selection.left, bounds.right - size.width - gap))
+    const left = Math.max(
+      bounds.left + gap,
+      Math.min(selection.left, bounds.right - size.width - gap),
+    )
     popup.style.left = `${Math.max(gap, Math.min(left, window.innerWidth - size.width - gap))}px`
     // Never clamp vertically into the selected lines.
     popup.style.top = `${top}px`
@@ -228,7 +238,9 @@ export function bindSelectionQuote(
     else addToPrompt()
   })
   // Sending keeps the textarea's focus and the captured selection.
-  sendButton.addEventListener('mousedown', (event) => event.preventDefault())
+  sendButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+  })
   sendButton.addEventListener('click', () => void sendReply())
 
   const onPointerDown = (event: PointerEvent): void => {

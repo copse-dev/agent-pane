@@ -390,7 +390,8 @@ describe('input bar selection replies', () => {
       '> Selected context\n\nKeep this reply.',
     )
     assert.equal(
-      getThreadById(store, 'thread-1')?.messages.filter((message) => message.role === 'user').length,
+      getThreadById(store, 'thread-1')?.messages.filter((message) => message.role === 'user')
+        .length,
       0,
     )
   })

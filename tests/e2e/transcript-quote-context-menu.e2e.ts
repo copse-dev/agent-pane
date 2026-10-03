@@ -54,7 +54,9 @@ async function rightClickSelectedText(text: string): Promise<void> {
 /** Reach the action through a real mouse drag, without dispatching a menu or selection event. */
 async function dragSelectText(text: string, expectedSelection = text): Promise<void> {
   const rect = await browser.execute((needle) => {
-    const container = document.querySelector('[data-message-id="msg-assistant-quote"] .message-body')
+    const container = document.querySelector(
+      '[data-message-id="msg-assistant-quote"] .message-body',
+    )
     if (!container) throw new Error('assistant message body not found')
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
     let node = walker.nextNode()
@@ -64,7 +66,9 @@ async function dragSelectText(text: string, expectedSelection = text): Promise<v
         const range = document.createRange()
         range.setStart(node, at)
         range.setEnd(node, at + needle.length)
-        const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
+        const rects = [...range.getClientRects()].filter(
+          (rect) => rect.width > 0 && rect.height > 0,
+        )
         const first = rects[0]
         const last = rects[rects.length - 1]
         if (!first || !last) throw new Error('selection phrase has no visible lines')
@@ -99,17 +103,18 @@ async function dragSelectText(text: string, expectedSelection = text): Promise<v
 
 async function expectReplyCaret(expectedText: string): Promise<void> {
   await browser.waitUntil(
-    async () => browser.execute((text) => {
-      const composer = document.querySelector('.prompt-input')
-      const selection = document.getSelection()
-      if (!composer || !selection || selection.rangeCount === 0) return false
-      const range = selection.getRangeAt(0)
-      if (!composer.contains(range.startContainer) || !selection.isCollapsed) return false
-      const before = document.createRange()
-      before.selectNodeContents(composer)
-      before.setEnd(range.startContainer, range.startOffset)
-      return document.activeElement === composer && before.toString() === text
-    }, expectedText),
+    async () =>
+      browser.execute((text) => {
+        const composer = document.querySelector('.prompt-input')
+        const selection = document.getSelection()
+        if (!composer || !selection || selection.rangeCount === 0) return false
+        const range = selection.getRangeAt(0)
+        if (!composer.contains(range.startContainer) || !selection.isCollapsed) return false
+        const before = document.createRange()
+        before.selectNodeContents(composer)
+        before.setEnd(range.startContainer, range.startOffset)
+        return document.activeElement === composer && before.toString() === text
+      }, expectedText),
     { timeout: 5_000, timeoutMsg: 'expected a focused caret after the quote and blank separator' },
   )
 }
@@ -178,10 +183,12 @@ describe('transcript selection: quote into the reply', () => {
       const selectionRect = range.getBoundingClientRect()
       return {
         visible: actionRect.left >= 0 && actionRect.right <= window.innerWidth,
-        nearSelection: actionRect.bottom <= selectionRect.top || actionRect.top >= selectionRect.bottom,
-        gap: actionRect.bottom <= selectionRect.top
-          ? selectionRect.top - actionRect.bottom
-          : actionRect.top - selectionRect.bottom,
+        nearSelection:
+          actionRect.bottom <= selectionRect.top || actionRect.top >= selectionRect.bottom,
+        gap:
+          actionRect.bottom <= selectionRect.top
+            ? selectionRect.top - actionRect.bottom
+            : actionRect.top - selectionRect.bottom,
       }
     })
     expect(geometry.visible).toBe(true)
@@ -191,17 +198,30 @@ describe('transcript selection: quote into the reply', () => {
     await saveAppScreenshot(SELECTION_SHOT)
 
     expect(await action.getText()).not.toContain(SELECTED_PHRASE)
-    expect(await browser.execute(() => document.querySelector('.transcript-selection-quote')?.querySelectorAll('button').length)).toBe(1)
+    expect(
+      await browser.execute(
+        () =>
+          document.querySelector('.transcript-selection-quote')?.querySelectorAll('button').length,
+      ),
+    ).toBe(1)
     expect(await $('.transcript-selection-send').getText()).toBe('Send')
     expect(await action.getText()).toBe('Send')
     const reply = $('.transcript-selection-reply')
-    expect(await browser.execute(() => document.activeElement === document.querySelector('.transcript-selection-reply'))).toBe(true)
+    expect(
+      await browser.execute(
+        () => document.activeElement === document.querySelector('.transcript-selection-reply'),
+      ),
+    ).toBe(true)
     await browser.keys('Ship these first.')
     expect(await reply.getValue()).toBe('Ship these first.')
-    expect(await browser.execute(() => CSS.highlights.get('transcript-reply-selection')?.size)).toBe(1)
+    expect(
+      await browser.execute(() => CSS.highlights.get('transcript-reply-selection')?.size),
+    ).toBe(1)
     await saveAppScreenshot('transcript-quote-selection-reply.png')
     await browser.keys('Enter')
-    expect(await browser.execute(() => CSS.highlights.has('transcript-reply-selection'))).toBe(false)
+    expect(await browser.execute(() => CSS.highlights.has('transcript-reply-selection'))).toBe(
+      false,
+    )
     const expected = `Existing draft.\n\n> ${SELECTED_PHRASE}\n\nShip these first.`
     await expectReplyCaret(expected)
     expect(await composerText()).toBe(expected)
@@ -234,11 +254,13 @@ describe('transcript selection: quote into the reply', () => {
     await dragSelectText('feature flag', SELECTED_PHRASE)
     expect(await popup.isDisplayed()).toBe(true)
     expect(await reply.getValue()).toBe('Keep this reply while I check the conversation.')
-    expect(await browser.execute(() =>
-      [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
-        .map((range) => (range instanceof Range ? range.toString() : ''))
-        .join(''),
-    )).toBe(SELECTED_PHRASE)
+    expect(
+      await browser.execute(() =>
+        [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
+          .map((range) => (range instanceof Range ? range.toString() : ''))
+          .join(''),
+      ),
+    ).toBe(SELECTED_PHRASE)
     await browser.execute(() => {
       document.querySelector('.messages-list')?.dispatchEvent(new Event('scroll'))
       window.dispatchEvent(new Event('blur'))
@@ -279,11 +301,13 @@ describe('transcript selection: quote into the reply', () => {
         const range = [...(CSS.highlights.get('transcript-reply-selection') ?? [])][0]
         if (!reply || !(range instanceof Range)) throw new Error('selection reply missing')
         const popupRect = reply.getBoundingClientRect()
-        const lines = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0)
+        const lines = [...range.getClientRects()].filter(
+          (rect) => rect.width > 0 && rect.height > 0,
+        )
         return {
           lineCount: lines.length,
-          clear: lines.every((line) =>
-            popupRect.bottom <= line.top || popupRect.top >= line.bottom,
+          clear: lines.every(
+            (line) => popupRect.bottom <= line.top || popupRect.top >= line.bottom,
           ),
           focused: document.activeElement === reply.querySelector('textarea'),
           buttons: reply.querySelectorAll('button').length,
@@ -300,9 +324,9 @@ describe('transcript selection: quote into the reply', () => {
       await expectReplyCaret(`> ${phrase}\n\nShip these together.`)
     } finally {
       await browser.execute(() => {
-        document.querySelector<HTMLElement>(
-          '[data-message-id="msg-assistant-quote"] .message-body',
-        )?.style.removeProperty('max-width')
+        document
+          .querySelector<HTMLElement>('[data-message-id="msg-assistant-quote"] .message-body')
+          ?.style.removeProperty('max-width')
       })
     }
   })

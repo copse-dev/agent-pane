@@ -7,7 +7,9 @@ const cleanups: (() => void)[] = []
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 afterEach(() => {
-  cleanups.splice(0).forEach((cleanup) => cleanup())
+  cleanups.splice(0).forEach((cleanup) => {
+    cleanup()
+  })
   document.getSelection()?.removeAllRanges()
   document.body.replaceChildren()
 })
@@ -27,7 +29,9 @@ function fixture(send = async (): Promise<boolean> => true): {
   const quotes: { text: string; reply: string }[] = []
   const sends: { text: string; reply: string }[] = []
   const binding = bindSelectionQuote(transcript, {
-    quote: (text, reply) => { quotes.push({ text, reply }) },
+    quote: (text, reply) => {
+      quotes.push({ text, reply })
+    },
     send: async (text, reply) => {
       sends.push({ text, reply })
       return send()
@@ -182,7 +186,11 @@ describe('transcript selection reply', () => {
   it('adds a bare quote on Enter and leaves Shift+Enter available for a newline', () => {
     const { transcript, input, quotes } = fixture()
     select(transcript, 0, 13)
-    const newline = new window.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, cancelable: true })
+    const newline = new window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      cancelable: true,
+    })
     input.dispatchEvent(newline)
     assert.equal(newline.defaultPrevented, false)
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
@@ -195,9 +203,13 @@ describe('transcript selection reply', () => {
       select(transcript, 0, 13)
       input.value = 'Send this.'
       input.dispatchEvent(new Event('input'))
-      input.dispatchEvent(new window.KeyboardEvent('keydown', {
-        key: 'Enter', [modifier]: true, cancelable: true,
-      }))
+      input.dispatchEvent(
+        new window.KeyboardEvent('keydown', {
+          key: 'Enter',
+          [modifier]: true,
+          cancelable: true,
+        }),
+      )
       await tick()
       assert.deepEqual(sends, [{ text: 'Selected text', reply: 'Send this.' }])
       assert.deepEqual(quotes, [])
@@ -207,7 +219,9 @@ describe('transcript selection reply', () => {
 
   it('prevents duplicate sends while pending and retains a reply on a failed handoff', async () => {
     let complete: (sent: boolean) => void = () => {}
-    const pending = new Promise<boolean>((resolve) => { complete = resolve })
+    const pending = new Promise<boolean>((resolve) => {
+      complete = resolve
+    })
     const { transcript, popup, input, sendButton, sends, quotes } = fixture(() => pending)
     select(transcript, 0, 13)
     input.value = 'Keep this reply.'
@@ -223,7 +237,10 @@ describe('transcript selection reply', () => {
     assert.equal(input.value, 'Keep this reply.')
 
     assert.equal(input.disabled, false)
-    assert.equal(popup.querySelector('[role="status"]')?.textContent, 'Reply not sent. Try again or press Enter to add it to the prompt.')
+    assert.equal(
+      popup.querySelector('[role="status"]')?.textContent,
+      'Reply not sent. Try again or press Enter to add it to the prompt.',
+    )
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     assert.deepEqual(quotes, [{ text: 'Selected text', reply: 'Keep this reply.' }])
   })
@@ -326,7 +343,9 @@ describe('transcript selection reply', () => {
 
   it('removes the popover and document listeners on teardown', () => {
     const { transcript, popup, input, quotes } = fixture()
-    cleanups.splice(0).forEach((cleanup) => cleanup())
+    cleanups.splice(0).forEach((cleanup) => {
+      cleanup()
+    })
     select(transcript, 0, 13)
     assert.equal(popup.isConnected, false)
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
