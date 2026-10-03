@@ -112,7 +112,11 @@ export interface RecoverableThreads {
 export function createRecoverableThreads(
   store: AppStore,
   api: ApiClient,
-  changed: () => void,
+  /**
+   * The list changed. `preserveScroll` is set when the reader removed a row
+   * in place (Dismiss), so the surrounding list should keep its position.
+   */
+  changed: (options?: { preserveScroll: boolean }) => void,
 ): RecoverableThreads {
   let orphans: OrphanProjectStore[] = []
   let knownProjectIds = new Set(store.getState().projects.map((project) => project.id))
@@ -198,7 +202,7 @@ export function createRecoverableThreads(
         void dismissOrphanProject(api, orphan.id)
           .then(() => {
             orphans = orphans.filter((entry) => entry.id !== orphan.id)
-            changed()
+            changed({ preserveScroll: true })
             showToast('Recoverable threads hidden. They remain on disk.')
           })
           .catch((err: unknown) => {

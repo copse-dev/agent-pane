@@ -12,10 +12,12 @@ import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
 import {
   isOutputCeilingRejectedError,
+  isStrictSchemaRejectedError,
   isOutputCeilingRejectedMessage,
   yieldStreamWithRetry,
 } from './stream-retry.ts'
 import { reasoningReplayFor, type ReplayableReasoning } from './reasoning-replay-store.ts'
+import { prepareStrictTools } from './strict-tool-schema.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type {
@@ -47,6 +49,13 @@ export class ResponsesProvider implements LLMProvider {
   private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly reasoningSummaries: boolean
   private readonly encryptedReasoning: boolean
+  /**
+   * Send `strict: true` on every tool whose schema qualifies. Off unless the
+   * endpoint is known to implement OpenAI's strict subset — a third-party
+   * Responses-compatible server may reject the field or mishandle the rewritten
+   * schema. Cleared for the rest of the run if OpenAI refuses a strict schema.
+   */
+  private strictTools: boolean
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
 
   get requestedServiceTier(): ServiceTier | undefined {
@@ -85,6 +94,8 @@ export class ResponsesProvider implements LLMProvider {
       reasoningSummaries?: boolean
       /** Ask for encrypted reasoning and replay it on later turns of the run. */
       encryptedReasoning?: boolean
+      /** First-party OpenAI only; see {@link ResponsesProvider.strictTools}. */
+      strictTools?: boolean
     },
   ) {
     this.model = model
@@ -103,6 +114,7 @@ export class ResponsesProvider implements LLMProvider {
     this.reasoningSummaries = opts.reasoningSummaries ?? false
     this.encryptedReasoning = opts.encryptedReasoning ?? false
     this.reasoningByToolCall = reasoningReplayFor(model, opts.promptCacheKey)
+    this.strictTools = opts.strictTools ?? false
     this.client = new OpenAI({
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       apiKey: opts.apiKey,
@@ -121,14 +133,24 @@ export class ResponsesProvider implements LLMProvider {
     const self = this
     return yieldStreamWithRetry(
       async function* () {
-        const localTools: FunctionTool[] = tools.map((tool) => ({
-          type: 'function',
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-          strict: false,
-        }))
-        const requestTools = [...self.serverTools, ...localTools]
+        const buildTools = (): {
+          requestTools: Tool[]
+          restoreArgs: (toolName: string, args: unknown) => unknown
+        } => {
+          const prepared = prepareStrictTools(tools, self.strictTools)
+          const localTools: FunctionTool[] = prepared.tools.map((tool) => ({
+            type: 'function',
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: tool.strict,
+          }))
+          return {
+            requestTools: [...self.serverTools, ...localTools],
+            restoreArgs: prepared.restoreArgs,
+          }
+        }
+        let { requestTools, restoreArgs } = buildTools()
         const input = toResponsesInput(messages, self.reasoningByToolCall)
         const reportCache = self.cacheDiagnostics.begin(
           input.find((item) => 'role' in item && item.role !== 'user') ?? null,
@@ -170,6 +192,11 @@ export class ResponsesProvider implements LLMProvider {
               { signal },
             )
           } catch (err) {
+            if (self.strictTools && isStrictSchemaRejectedError(err)) {
+              self.strictTools = false
+              ;({ requestTools, restoreArgs } = buildTools())
+              continue
+            }
             if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
               droppedCeiling = true
               ceiling = undefined
@@ -193,7 +220,13 @@ export class ResponsesProvider implements LLMProvider {
                 break
               }
             }
-            for (const chunk of streamEventChunks(event, self.model, self, turnReasoning)) {
+            for (const chunk of streamEventChunks(
+              event,
+              self.model,
+              self,
+              turnReasoning,
+              restoreArgs,
+            )) {
               yielded = true
               if (chunk.type === 'usage') {
                 usage = {
@@ -255,6 +288,7 @@ function* streamEventChunks(
   model: string,
   provider: ResponsesProvider,
   turnReasoning: ReasoningItem[],
+  restoreArgs: (toolName: string, args: unknown) => unknown,
 ): Generator<ProviderStreamChunk> {
   if (event.type === 'response.output_text.delta') {
     yield { type: 'text', text: event.delta }
@@ -290,7 +324,7 @@ function* streamEventChunks(
         // Responses-compatible endpoints (e.g. Perplexity) that may not.
         id: toolCallIdOrSynthesized(event.item.call_id),
         name: event.item.name,
-        args: parsed.args,
+        args: parsed.error ? parsed.args : restoreArgs(event.item.name, parsed.args),
         ...(parsed.error ? { argsError: parsed.error } : {}),
       },
     }

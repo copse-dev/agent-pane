@@ -680,7 +680,11 @@ export function mountThreadSidebar(
       return
     }
     renderedSignature = signature
+    // A live list should never jump: keep the reader's place across rebuilds,
+    // including a recoverable store dismissed in place (#3311).
+    const scrollTop = list.scrollTop
     list.replaceChildren(...nodes)
+    list.scrollTop = scrollTop
     prBackfill.observe(backfillRows)
     if (focusKey === 'work-toggle') workToggle.focus()
     else if (focusKey) {

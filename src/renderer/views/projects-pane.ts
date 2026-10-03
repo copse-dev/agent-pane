@@ -384,8 +384,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     render()
   })
   const prBackfill = createPrBackfill(api)
-  const recoverable = createRecoverableThreads(store, api, () => {
-    render()
+  const recoverable = createRecoverableThreads(store, api, (options) => {
+    render(options?.preserveScroll === true)
   })
 
   function beginThreadRename(threadId: string, currentTitle: string): void {
@@ -682,7 +682,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return entries
   }
 
-  function render(): void {
+  function render(preserveScroll = false): void {
+    // Rebuilding the list removes its children synchronously. In Chromium that
+    // clamps the scroll container to the top while the content is empty, so the
+    // dismiss action opts into keeping the reader's position.
+    const scrollTop = preserveScroll ? list.scrollTop : 0
     clear(list)
     const prBackfillRows: PrBackfillRow[] = []
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
@@ -691,6 +695,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (projects.length === 0 && projectGroups.length === 0 && recoverable.count === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
+      if (preserveScroll) list.scrollTop = scrollTop
       return
     }
 
@@ -1294,6 +1299,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     if (recoverableSection) list.append(recoverableSection)
 
     prBackfill.observe(prBackfillRows)
+    if (preserveScroll) list.scrollTop = scrollTop
   }
 
   const unsubs = [
@@ -1303,7 +1309,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('threads_changed', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
-    store.on('thread_status_changed', render),
+    store.on('thread_status_changed', () => {
+      render()
+    }),
     store.on('workspace_changed', () => {
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
