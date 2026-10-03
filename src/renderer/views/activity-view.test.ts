@@ -151,7 +151,7 @@ describe('activity view', () => {
     store.setState({ threads: [thread('t1'), thread('t2', { status: 'running' })] })
     store.emit('thread_status_changed', 't2', 'running')
     flush()
-    assert.equal(rowCount(view), 1, 'a hidden view must not redraw')
+    assert.equal(rowCount(view), 0, 'a hidden view must release rows and not redraw')
     assert.equal(view.status.textContent, '')
   })
 
@@ -235,6 +235,45 @@ describe('activity view', () => {
       t1.querySelector<HTMLButtonElement>('.activity-row-open')?.click()
       const after = rowNode(view, 'thread:t1')
       assert.notEqual(before, after.hasAttribute('data-selected'))
+    })
+
+    it('clears cached row descendants when a group empties but another remains', () => {
+      const { store, view, state, flush } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      state.clock = 1_002_000
+      store.setState({ threads: [thread('t1'), thread('t2')] })
+      store.emit('thread_status_changed', 't1', 'idle')
+      store.emit('thread_status_changed', 't2', 'idle')
+      flush()
+      assert.equal(view.body.contains(working), false)
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      assert.equal(rowCount(view), 2, 'finished runs remain in the recent group')
+    })
+
+    it('clears cached row descendants when every group empties', () => {
+      const { store, view, flush } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      store.setState({ threads: [] })
+      store.emit('threads_changed')
+      flush()
+      assert.equal(rowCount(view), 0)
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      assert.ok(view.body.querySelector('.activity-empty'))
+    })
+
+    it('clears cached row descendants on hide and rebuilds them on show', () => {
+      const { view, state } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      state.shown = false
+      view.hide()
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      state.shown = true
+      view.show()
+      assert.equal(rowCount(view), 2)
+      assert.equal(working.querySelectorAll('.activity-row').length, 2)
     })
 
     it('drops a row that leaves the list and forgets it', () => {
