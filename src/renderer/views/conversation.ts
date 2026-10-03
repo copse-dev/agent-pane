@@ -173,6 +173,7 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
+import { bindSelectionQuote } from '../dom/selection-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
 
@@ -2742,6 +2743,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     navigateToChange(store, path)
   })
 
+  const selectionQuote = bindSelectionQuote(list, {
+    quote: quoteTranscriptSelection,
+    send: (text, reply) =>
+      getPromptAttachmentHandlers()?.sendQuotedReply?.(text, reply) ?? Promise.resolve(false),
+  })
+
   // Right-click in the transcript: a non-empty text selection offers quoting
   // it into the reply, filing it on the roadmap, or searching the thread for
   // it; with no selection, right-clicking a message still offers to copy its
@@ -4502,6 +4509,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = 0
     }
     disclosureElements.clear()
+    if (!rebuildingSameThread) selectionQuote.dismiss()
     disposeInlineArtefacts(list)
     avatarMotion.setActive(null)
     clear(list)
@@ -4888,6 +4896,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   reviewerInput.sync()
   return () => {
     disposed = true
+    selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
@@ -4923,10 +4932,10 @@ function messageContentById(store: AppStore, msgId: string): string | undefined 
 }
 
 /** "Quote in reply": insert the transcript selection into the composer as a blockquote. */
-function quoteTranscriptSelection(text: string): void {
+function quoteTranscriptSelection(text: string, reply?: string): void {
   const handlers = getPromptAttachmentHandlers()
   if (!handlers) return
-  handlers.quoteText(text)
+  handlers.quoteText(text, reply)
   handlers.focusComposer?.()
 }
 

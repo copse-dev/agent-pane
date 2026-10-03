@@ -2443,12 +2443,23 @@ export function mountInputBar(
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content: string): void => {
+    quoteText: (content: string, reply = ''): void => {
       const quote = formatMarkdownQuote(content)
       const caret = composer.selectionStart
       const prevChar = caret > 0 ? composer.value[caret - 1] : undefined
       const needsLeadingBreak = prevChar !== undefined && prevChar !== '\n'
-      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n`)
+      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n${reply}`)
+      const quoteEnd = composer.selectionStart
+      composer.focus()
+      composer.setSelectionRange(quoteEnd, quoteEnd)
+      composer.el.scrollTop = composer.el.scrollHeight
+    },
+    sendQuotedReply: async (content: string, reply: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      attachmentHandlers.quoteText(content, reply)
+      await submit()
+      // The normal composer now owns any warning, retry or failed-send recovery.
+      return true
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
