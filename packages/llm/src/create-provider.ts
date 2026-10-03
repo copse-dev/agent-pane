@@ -191,6 +191,17 @@ export function createProvider(
   )
 }
 
+/**
+ * `verbosity` is OpenAI's own field; every other OpenAI-compatible route
+ * declares it unsupported, and its server may reject or ignore an unknown body
+ * field. Stored or stray values are dropped at the factory, not just hidden in
+ * the settings UI.
+ */
+function withoutVerbosity(params: ModelParameters): ModelParameters {
+  const { verbosity: _verbosity, ...rest } = params
+  return rest
+}
+
 // OpenAI-compatible local servers speak the same chat API, so we reuse
 // OpenAIProvider with a custom base URL. apiKey is whatever the local server
 // expects (many require any non-empty value, even when auth is disabled).
@@ -208,7 +219,7 @@ export function createLocalOpenAIProvider(
     baseURL,
     apiKey: apiKey || 'lm-studio',
     includeUsage: true,
-    params,
+    params: withoutVerbosity(params),
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
   })
 }
@@ -278,8 +289,11 @@ export function createOpenRouterProvider(
   // `reasoning_effort` alias, so it normalises across upstream vendors and can
   // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
   // reasoning level is dropped from `params` to avoid sending both spellings.
+  // `verbosity` is dropped too: it is OpenAI's own field, and an aggregator's
+  // upstream may reject it.
   const {
     reasoning: _reasoning,
+    verbosity: _verbosity,
     maxOutputTokens: _maxOutputTokens,
     ...sampling
   } = opts.params ?? {}
@@ -325,10 +339,11 @@ export function createExtraCloudProvider(
   model: string,
   apiKey: string,
   approvedHosts: readonly string[] = [],
-  params: ModelParameters = {},
+  requestedParams: ModelParameters = {},
   promptCacheKey?: string,
   urlOptions: CredentialUrlOptions = {},
 ): LLMProvider {
+  const params = withoutVerbosity(requestedParams)
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL', urlOptions)
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}

@@ -63,4 +63,5 @@
 // v35 conservatively versions optional malformed-tool-call metadata on streamed chunks.
 // v36 versions the Apple container attestation (engine, isolation, process limit, and the
 // `none` security profile) on container runs.
-export const API_PROTOCOL_VERSION = 36 as const
+// v37 conservatively versions the optional `verbosity` field on turn model parameters.
+export const API_PROTOCOL_VERSION = 37 as const

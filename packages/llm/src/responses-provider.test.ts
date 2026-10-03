@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@copse/std/array-utils.ts'
 import { ResponsesProvider, toResponsesInput } from './responses-provider.ts'
+import { createProvider } from './create-provider.ts'
 import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 interface CapturedRequest {
@@ -11,6 +12,8 @@ interface CapturedRequest {
   tools: Array<Record<string, unknown>>
   max_output_tokens?: number
   reasoning?: { summary?: string; effort?: string }
+  text?: { verbosity?: string }
+  parallel_tool_calls?: boolean
   include?: readonly string[]
   prompt_cache_key?: string
   store?: boolean
@@ -731,6 +734,64 @@ describe('ResponsesProvider reasoning', () => {
   })
 })
 
+describe('ResponsesProvider request body: verbosity and parallel_tool_calls', () => {
+  async function bodyFor(
+    opts: ConstructorParameters<typeof ResponsesProvider>[1],
+  ): Promise<CapturedRequest> {
+    const provider = new ResponsesProvider('gpt-5.6-sol', opts)
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+    await collect(provider)
+    assert.ok(request)
+    return request
+  }
+
+  it('sends text.verbosity when tuned', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.deepEqual(body.text, { verbosity: 'low' })
+    assert.equal(Object.hasOwn(body, 'verbosity'), false)
+  })
+
+  it('sends no text field at all by default', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test' })
+    assert.equal(Object.hasOwn(body, 'text'), false)
+  })
+
+  it('sends verbosity alongside reasoning effort', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'high', reasoning: 'medium' },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+    assert.equal(body.reasoning?.effort, 'medium')
+  })
+
+  it('lets extraBody override it, last', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'low' },
+      extraBody: { text: { verbosity: 'high' } },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+  })
+
+  it('never sends parallel_tool_calls: the API default (true) is what Copse handles', async () => {
+    // The agent loop executes a batch's calls in order and answers them in one
+    // tool message, and reasoning replay is keyed to the whole batch (see
+    // "replays one reasoning block once for a parallel batch"), so there is
+    // nothing for an explicit value to fix. Pinned so a future change has to
+    // argue with docs/plans rather than slip in.
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.equal(Object.hasOwn(body, 'parallel_tool_calls'), false)
+  })
+})
+
 describe('ResponsesProvider strict tools', () => {
   const tools: LLMTool[] = [
     {
@@ -888,4 +949,141 @@ describe('ResponsesProvider strict tools', () => {
     })
     await assert.rejects(run(provider), /Unsupported parameter/)
   })
+})
+
+describe('first-party strict tools with opt-in verbosity', () => {
+  for (const verbosity of [undefined, 'low'] as const) {
+    it(`preserves discriminator restoration and ambiguous-union fallback with verbosity ${verbosity ?? 'unset'}`, async () => {
+      const provider = createProvider('gpt-5.6-sol', { openAiApiKey: 'test-key' }, undefined, {
+        params: verbosity === undefined ? {} : { verbosity },
+      })
+      assert.ok(provider instanceof ResponsesProvider)
+      const tools: LLMTool[] = [
+        {
+          name: 'check',
+          description: 'Check a discriminated value',
+          parameters: {
+            type: 'object',
+            properties: {
+              check: {
+                oneOf: [
+                  {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: ['optional'] },
+                      note: { type: 'string' },
+                    },
+                    required: ['kind'],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: ['nullable'] },
+                      note: { type: ['string', 'null'] },
+                    },
+                    required: ['kind', 'note'],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            },
+            required: ['check'],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: 'ambiguous',
+          description: 'Preserve raw arguments when branches overlap',
+          parameters: {
+            type: 'object',
+            properties: {
+              check: {
+                anyOf: [
+                  { type: 'object', properties: { note: { type: 'string' } }, required: [] },
+                  {
+                    type: 'object',
+                    properties: { note: { type: ['string', 'null'] } },
+                    required: ['note'],
+                  },
+                ],
+              },
+            },
+            required: ['check'],
+          },
+        },
+      ]
+      let request: CapturedRequest | undefined
+      withFakeStream(
+        provider,
+        (body) => {
+          request = body
+        },
+        [
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'required-null',
+              name: 'check',
+              arguments: '{"check":{"kind":"nullable","note":null}}',
+            },
+          },
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'optional-null',
+              name: 'check',
+              arguments: '{"check":{"kind":"optional","note":null}}',
+            },
+          },
+          {
+            type: 'response.output_item.done',
+            item: {
+              type: 'function_call',
+              call_id: 'ambiguous-null',
+              name: 'ambiguous',
+              arguments: '{"check":{"note":null}}',
+            },
+          },
+        ],
+      )
+      const chunks: ProviderStreamChunk[] = []
+      for await (const chunk of provider.stream(
+        [{ role: 'user', content: 'Check both cases.' }],
+        tools,
+      ))
+        chunks.push(chunk)
+      assert.ok(request)
+      assert.deepEqual(request.text, verbosity === undefined ? undefined : { verbosity })
+      assert.equal(Object.hasOwn(request, 'parallel_tool_calls'), false)
+      assert.deepEqual(
+        request.tools.map((tool) => [tool['name'], tool['strict']]),
+        [
+          ['check', true],
+          ['ambiguous', false],
+        ],
+      )
+      assert.deepEqual(request.tools[1]?.['parameters'], tools[1]?.parameters)
+      assert.deepEqual(chunks, [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'required-null',
+            name: 'check',
+            args: { check: { kind: 'nullable', note: null } },
+          },
+        },
+        {
+          type: 'tool_call',
+          toolCall: { id: 'optional-null', name: 'check', args: { check: { kind: 'optional' } } },
+        },
+        {
+          type: 'tool_call',
+          toolCall: { id: 'ambiguous-null', name: 'ambiguous', args: { check: { note: null } } },
+        },
+      ])
+    })
+  }
 })
