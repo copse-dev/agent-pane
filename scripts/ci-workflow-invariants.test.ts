@@ -502,6 +502,20 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('runs the strict streaming motion eval once after the parallel browser suite', () => {
+    const build = jobBlock('build')
+    const commands = [...build.matchAll(/^ {6}- run: (npm run test:demo.*)$/gm)].map(
+      (match) => match[1],
+    )
+    assert.deepEqual(commands, [
+      'npm run test:demo -- --exclude tests/demo/streamed-reply-motion.demo.ts',
+      'npm run test:demo -- --spec tests/demo/streamed-reply-motion.demo.ts --maxInstances 1',
+    ])
+    const motion = readFileSync(resolve('tests/demo/streamed-reply-motion.demo.ts'), 'utf8')
+    assert.match(motion, /expect\(motion\.maxScrollStepPx\)\.toBeLessThanOrEqual\(24\)/)
+    assert.match(build, /needs: precheck/, 'keep static and build jobs parallel')
+  })
+
   it('publishes screenshot candidates without mutating the PR branch', () => {
     const job = jobBlock('screenshot-artifacts')
     assert.match(job, /permissions:\n {6}contents: read/)
