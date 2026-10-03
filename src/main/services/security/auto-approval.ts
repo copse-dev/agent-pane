@@ -42,11 +42,11 @@ import {
  *    auto-approval. A `deny` is never reachable from here, and a command the
  *    policy already allows never enters this path.
  *  - Its grants are **bounded and recoverable**: reads, local git operations
- *    whose effects survive in the reflog, and additive writes to a remote the
- *    user already configured in the repository. Arbitrary code execution is not
- *    a shape — interpreters, project scripts (`npm test`), ephemeral runners
- *    (`npx`), installs, and any command with substitution or an unrecognised
- *    binary all fall through to the prompt.
+ *    whose effects survive in the reflog,
+ *    and additive writes to a remote the user already configured in the repository.
+ *    Arbitrary code execution is not a shape — interpreters, project scripts
+ *    (`npm test`), ephemeral runners (`npx`), installs, and any command with
+ *    substitution or an unrecognised binary all fall through to the prompt.
  *
  * WHAT IT DOES NOT PROTECT AGAINST. Two shapes here can execute code the
  * repository supplies, and callers must understand that:

@@ -1003,6 +1003,15 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     )
   })
 
+  it('allows contained artifact downloads but prompts without a sandbox', async () => {
+    const command = 'gh run download 123 --dir .tmp/artifacts'
+    assert.deepEqual(await runGate(command, 'read', { sandboxEnabled: true }), {
+      permitted: true,
+      prompted: false,
+    })
+    assert.deepEqual(await runGate(command, 'read'), { permitted: false, prompted: true })
+  })
+
   it('prompts for a recognised read-tier command when the sandbox is not active', async () => {
     // No containment: policy prompts on the ambiguous fetch, and the classifier
     // would match — the sandbox gate is what keeps it from auto-running on the host.

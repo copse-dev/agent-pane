@@ -46,6 +46,18 @@ describe('resolveAutoApproval — sandbox gate', () => {
     })
   })
 
+  it('does not grant artifact downloads an unsandboxed retry even with an active session sandbox', () => {
+    withTrustedRepo((root) => {
+      for (const command of [
+        'gh run download 123',
+        'gh run download 123 --dir .tmp/artifacts',
+        'gh run download 123 --dir /tmp/outside-artifacts',
+      ]) {
+        assert.equal(resolveAutoApproval(command, root, true).action, 'prompt', command)
+      }
+    })
+  })
+
   it('fails closed when the caller omits sandboxEnabled', () => {
     withTrustedRepo((root) => {
       const blocked = resolveAutoApproval('git fetch origin main', root)

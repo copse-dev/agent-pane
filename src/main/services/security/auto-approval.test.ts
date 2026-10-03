@@ -212,6 +212,19 @@ describe('assessAutoApproval — gh', () => {
     assert.equal(approved('gh run list', 'read'), 'read')
   })
 
+  it('never grants artifact download an outside-sandbox auto-approval', () => {
+    for (const level of ['read', 'local-write', 'remote-write'] as const) {
+      for (const command of [
+        'gh run download',
+        'gh run download 123 --repo other/repo --dir .tmp/artifacts',
+        'gh run download 123 --dir /tmp/outside-artifacts',
+        'gh run download 123 --dir ../outside-artifacts',
+      ]) {
+        prompts(command, level)
+      }
+    }
+  })
+
   it('approves additive write subcommands at remote-write', () => {
     assert.equal(approved('gh issue comment 12 --body "hi"', 'remote-write'), 'remote-write')
     prompts('gh issue comment 12 --body "hi"', 'local-write')
