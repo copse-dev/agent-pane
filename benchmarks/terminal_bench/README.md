@@ -455,6 +455,12 @@ Optional tuning variables:
   none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
   two modes are not comparable. Each trial records the mode and values in
   `agent/model-parameters.json` and on every `provider-requests.jsonl` line)
+- `COPSE_TERMINAL_MAX_OUTPUT_TOKENS` (unset by default; a positive integer that replaces the
+  per-request output ceiling in both parameter modes, e.g. `16384`). The loop's stream caps cannot
+  see a tool call's arguments growing, because the SDK transport delivers a tool call as one chunk
+  when it ends, so one runaway call can otherwise generate to the 81,920-token card ceiling, about
+  19 minutes at 70 tokens/s. Recorded as `outputCeiling` and `params.maxOutputTokens` in
+  `agent/model-parameters.json`)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)
