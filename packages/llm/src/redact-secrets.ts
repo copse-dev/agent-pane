@@ -150,7 +150,7 @@ export function redactMessages(
   literalSecrets: readonly string[] = [],
 ): LLMMessage[] {
   return messages.map((m): LLMMessage => {
-    if (m.role === 'system' || m.role === 'developer') return m
+    if (m.role === 'system' || m.role === 'developer' || m.role === 'provider_state') return m
     if (m.role === 'user') {
       if (typeof m.content === 'string')
         return { role: 'user', content: redactSecrets(m.content, literalSecrets) }

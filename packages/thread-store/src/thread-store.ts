@@ -45,6 +45,7 @@ import {
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
+  type SpineContextCompactionLine,
   type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
@@ -324,18 +325,38 @@ function isAgentHistoryMessage(value: unknown): value is LLMMessage {
  * `v` fail closed to `null` (callers treat that as fresh provider history)
  * without touching the human transcript.
  */
+const providerStateMessageSchema = z.object({
+  role: z.literal('provider_state'),
+  state: z.object({
+    kind: z.literal('openai-responses-compaction'),
+    v: z.literal(1),
+    model: z.string().min(1),
+    endpoint: z.string(),
+    itemId: z.string().min(1),
+    encryptedContent: z.string().min(1),
+  }),
+})
+
 function parseAgentHistoryFile(raw: string): LLMMessage[] | null {
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null) return null
-    const record = parsed as { v?: unknown; messages?: unknown }
-    if (record.v !== AGENT_HISTORY_VERSION) return null
-    if (!Array.isArray(record.messages)) return null
-    if (!record.messages.every(isAgentHistoryMessage)) return null
-    return record.messages
-  } catch {
-    return null
+  const parsed = safeJsonParse(
+    raw,
+    decodeWithSchema(
+      z.object({ v: z.literal(AGENT_HISTORY_VERSION), messages: z.array(z.unknown()) }),
+    ),
+  )
+  if (!parsed) return null
+  const messages: LLMMessage[] = []
+  for (const message of parsed.messages) {
+    if (isRecord(message) && message['role'] === 'provider_state') {
+      // Invalid opaque state must not break the retained neutral fallback.
+      const decoded = providerStateMessageSchema.safeParse(message)
+      if (decoded.success) messages.push(decoded.data)
+    } else {
+      if (!isAgentHistoryMessage(message)) return null
+      messages.push(message)
+    }
   }
+  return messages
 }
 
 /** Every file under `dir`, as thread-relative posix paths (excludes directories). */
@@ -1814,6 +1835,18 @@ export function appendMachineContinuation(
   projectId: string,
   threadId: string,
   line: SpineMachineContinuationLine,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
+  })
+}
+
+/** Append the boundary of a server-side context compaction to the thread spine. */
+export function appendContextCompaction(
+  projectId: string,
+  threadId: string,
+  line: SpineContextCompactionLine,
 ): Promise<void> {
   return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)

@@ -40,6 +40,13 @@ export function withSecretRedaction(
       }
     },
   }
+  // Live, not copied: the inner provider withdraws it when the endpoint refuses
+  // compaction, and the trimmer must stop assuming the item is replayed.
+  Object.defineProperty(wrapped, 'compactionIdentity', {
+    get: () => inner.compactionIdentity,
+    enumerable: true,
+    configurable: true,
+  })
   Object.defineProperty(wrapped, 'lastUsage', {
     get: () => (hasLastUsage(inner) ? inner.lastUsage : undefined),
     enumerable: true,

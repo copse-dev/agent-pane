@@ -50,9 +50,9 @@
 //
 // Values are what the vendor documents for the family. A flag is only `true`
 // when something reviewed it; when in doubt leave it off — a missing capability
-// costs a feature, a wrong one is a 400. `supportsServerCompaction` is off for
-// every family: no code consumes it yet, and the thread that does should flip it
-// for the families it verifies, in the same PR.
+// costs a feature, a wrong one is a 400. `supportsServerCompaction` is on only for
+// the GPT-5 / GPT-6 reasoning families OpenAI documents it for, and off for the
+// o-series, where nothing reviewed it. `ResponsesProvider` consumes it.
 
 import { parseModelSelection, type ModelNamespace, type ModelSelection } from './model-selection.ts'
 
@@ -125,6 +125,10 @@ const GPT_REASONING_FEATURES: Partial<ModelFeatures> = {
   supportsStrictTools: true,
   supportsVerbosity: true,
   supportsParallelToolCallsControl: true,
+  // Documented for these families: OpenAI's Compaction guide shows server-side
+  // `context_management` on gpt-5.x and gpt-6-astra with `store: false`. If an
+  // endpoint refuses it anyway, `ResponsesProvider` falls back to client-side trim.
+  supportsServerCompaction: true,
   prefersApplyPatch: true,
   acceptsDeveloperRole: true,
 }

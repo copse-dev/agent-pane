@@ -83,6 +83,10 @@ function openAiResponsesProvider(
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    // First-party only (the flag is route-gated): the item is encrypted per model,
+    // and `store: false` (below) is what makes server-side compaction the
+    // stateless, replayable kind. Off for any family not reviewed in the table.
+    serverCompaction: modelCapabilities(model).supportsServerCompaction,
     // First-party OpenAI implements strict function tools; the extra
     // Responses-style providers below do not get the flag.
     strictTools: true,

@@ -7,6 +7,7 @@ import { promises as fsPromises } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
+import { toResponsesInput } from '@copse/llm/responses-provider.ts'
 import {
   loadProjectThreads,
   loadAllProjectThreads,
@@ -32,6 +33,7 @@ import {
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
+  appendContextCompaction,
   saveAgentTurnEpoch,
   clearAgentHistory,
   agentHistoryExists,
@@ -1516,6 +1518,86 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.equal(await agentHistoryExists('proj-1', 't1'), true)
     assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
     assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-history.json')))
+  })
+
+  it('keeps a compaction item in provider history and its boundary in the spine', async () => {
+    await createThread('proj-1', thread('t1'))
+    const history: LLMMessage[] = [
+      { role: 'user', content: 'ping' },
+      {
+        role: 'provider_state',
+        state: {
+          kind: 'openai-responses-compaction',
+          v: 1,
+          model: 'gpt-5.6-sol',
+          endpoint: '',
+          itemId: 'cmp_1',
+          encryptedContent: 'opaque',
+        },
+      },
+      { role: 'assistant', content: 'pong' },
+    ]
+    await saveAgentHistory('proj-1', 't1', history)
+    await appendContextCompaction('proj-1', 't1', {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'context_compaction',
+      id: 'line-1',
+      recordedAt: 170,
+      provider: 'openai-responses',
+      model: 'gpt-5.6-sol',
+      projectionVersion: 1,
+      itemId: 'cmp_1',
+    })
+
+    // Restart: the item comes back verbatim, in position.
+    assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
+    const events = readFileSync(join(root, 'proj-1', 't1', 'events.jsonl'), 'utf8')
+    const boundary = parseSpineEntries(events).find(
+      (entry) => entry.line?.type === 'context_compaction',
+    )
+    assert.equal(boundary?.line?.type, 'context_compaction')
+    // The canonical log records that it happened, never the opaque payload.
+    assert.equal(events.includes('opaque'), false)
+  })
+
+  it('drops malformed compaction state while preserving neutral resume history', async () => {
+    await createThread(
+      'proj-1',
+      thread('t1', { messages: [userMsg('m1', 'human transcript retained')] }),
+    )
+    const transcript = await loadProjectThreads('proj-1')
+    const path = join(root, 'proj-1', 't1', 'agent-history.json')
+    const validState = {
+      kind: 'openai-responses-compaction',
+      v: 1,
+      model: 'gpt-5.6-sol',
+      endpoint: '',
+      itemId: 'cmp_1',
+      encryptedContent: 'opaque',
+    }
+    const neutral: LLMMessage[] = [{ role: 'user', content: 'retained fallback' }]
+    for (const state of [
+      undefined,
+      null,
+      {},
+      { ...validState, v: 2 },
+      { ...validState, kind: 'other' },
+      { ...validState, model: 1 },
+      { ...validState, endpoint: null },
+      { ...validState, itemId: '' },
+      { ...validState, encryptedContent: '' },
+    ]) {
+      writeFileSync(
+        path,
+        JSON.stringify({ v: 1, messages: [...neutral, { role: 'provider_state', state }] }),
+      )
+      const loaded = await loadAgentHistory('proj-1', 't1')
+      assert.doesNotThrow(() =>
+        toResponsesInput(loaded, new Map(), { model: 'gpt-5.6-sol', endpoint: '' }),
+      )
+      assert.deepEqual(loaded, neutral)
+      assert.deepEqual(await loadProjectThreads('proj-1'), transcript)
+    }
   })
 
   it('round-trips and clears the durable machine-turn epoch', async () => {

@@ -435,6 +435,7 @@ const ROLE_LABEL: Record<LLMMessage['role'], string> = {
   user: 'User',
   assistant: 'Assistant',
   tool: 'Tool results',
+  provider_state: 'Provider state',
 }
 
 function userContentToText(content: UserContent): string {
@@ -476,6 +477,7 @@ export function buildAdvisorTranscript(
     sections.push(`## ${label}\n${text.trim()}`)
   }
   for (const message of messages) {
+    if (message.role === 'provider_state') continue
     if (message.role === 'tool') {
       const lines = message.toolResults.map((r) => `- ${r.toolCallId}: ${r.result}`)
       push(ROLE_LABEL.tool, lines.join('\n'))

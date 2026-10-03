@@ -566,6 +566,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // fall-through so the exhaustiveness check stays meaningful.
         break
       }
+      case 'provider_state':
+      case 'context_compacted': {
+        // Provider bookkeeping. The opaque item never reaches the renderer (the
+        // loop keeps it in provider history), and the boundary is recorded in the
+        // thread spine by main; nothing to show or store here.
+        break
+      }
       case 'todo_worker_start':
       case 'todo_worker_done': {
         activity(threadId)
