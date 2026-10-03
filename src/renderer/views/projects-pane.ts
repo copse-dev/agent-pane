@@ -3,8 +3,8 @@ import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
-  arrowUpDownIcon,
   bellIcon,
+  chevronDownIcon,
   chevronRightIcon,
   gitMergeIcon,
   gitPullRequestIcon,
@@ -77,6 +77,7 @@ import {
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
+import { foldAutomationRuns } from '../controller/automation-fold.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
@@ -268,31 +269,9 @@ function automationMenuEntries(
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
-  const title = el('span', {}, 'Projects')
-  // Toggles the thread filter row below. Filtering the sidebar's thread list is
-  // the local sibling to the Cmd/Ctrl+Shift+K command palette: this narrows the
-  // expanded project's threads in place, the palette jumps across everything.
-  const searchToggle = el(
-    'button',
-    {
-      class: 'projects-search-btn',
-      'aria-label': 'Search threads',
-      'data-tooltip': 'Search threads',
-    },
-    searchIcon('ui-icon ui-icon-sm'),
-  )
-  // How each project's threads are ordered. Persisted per profile; the store
-  // keeps its own newest-first order and this only re-sorts what is drawn.
-  const sortBtn = el(
-    'button',
-    {
-      class: 'projects-sort-btn',
-      'aria-label': 'Sort threads',
-      'aria-haspopup': 'menu',
-      'data-tooltip': 'Sort threads',
-    },
-    arrowUpDownIcon('ui-icon ui-icon-sm'),
-  )
+  // The sidebar's thread list is narrowed from two rows at its top, as in the prototype:
+  // the search field with the Activity bell and "+" beside it, then the project
+  // filter and the sort and grouping choice.
   // One "+" entry point for every way to add a project. The remote action is
   // included only while SSH workspaces are enabled.
   const addBtn = el(
@@ -333,15 +312,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
   syncActivityButton()
-  const header = el(
-    'div',
-    { class: 'pane-projects-header' },
-    title,
-    searchToggle,
-    sortBtn,
-    activityBtn,
-    addBtn,
-  )
 
   // Filter input for the expanded project's threads. It lives outside `list`
   // (which render() clears on every update) so its focus and value survive
@@ -363,31 +333,52 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const searchInput = el('input', {
     type: 'text',
     class: 'projects-search-input',
-    placeholder: 'Filter titles and requests…',
+    placeholder: 'Search threads…',
     'aria-label': 'Filter threads',
     spellcheck: 'false',
     autocomplete: 'off',
   })
-  const searchRow = el('div', { class: 'projects-search-row', hidden: true }, searchInput)
+  const searchBox = el(
+    'label',
+    { class: 'projects-search' },
+    searchIcon('ui-icon ui-icon-sm projects-search-icon'),
+    searchInput,
+  )
+  const header = el('div', { class: 'pane-projects-header' }, searchBox, activityBtn, addBtn)
 
   const closeThreadFilter = (): void => {
     contentFilter.cancel()
     searchInput.value = ''
     threadFilter = ''
-    searchRow.hidden = true
-    searchToggle.classList.remove('active')
   }
 
-  searchToggle.addEventListener('click', () => {
-    if (searchRow.hidden) {
-      searchRow.hidden = false
-      searchToggle.classList.add('active')
-      searchInput.focus()
-    } else {
-      closeThreadFilter()
-      render()
-    }
-  })
+  // Which project the list shows. Session-only: a fresh launch shows them all.
+  let projectFilterId: string | null = null
+  const filterLabel = el('span', { class: 'projects-filter-label' }, 'All projects')
+  const projectFilterBtn = el(
+    'button',
+    { type: 'button', class: 'projects-filter-btn', 'aria-haspopup': 'menu' },
+    filterLabel,
+    chevronDownIcon('ui-icon ui-icon-sm'),
+  )
+  // How the threads are ordered and grouped. Both persist per profile; the store
+  // keeps its own newest-first order and this only re-sorts what is drawn.
+  const sortDir = el('span', { class: 'projects-sort-dir' }, '↓')
+  const sortLabel = el('span', { class: 'projects-filter-label' }, 'Activity order')
+  const sortBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'projects-filter-btn projects-sort-btn',
+      'aria-haspopup': 'menu',
+      'aria-label': 'Group and sort threads',
+    },
+    sortDir,
+    sortLabel,
+    chevronDownIcon('ui-icon ui-icon-sm'),
+  )
+  const filtersRow = el('div', { class: 'projects-filters' }, projectFilterBtn, sortBtn)
+
   searchInput.addEventListener('input', () => {
     threadFilter = filterText(searchInput.value.trim())
     filteredProjectId = store.getState().activeProjectId
@@ -413,7 +404,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   root.append(
     header,
-    searchRow,
+    filtersRow,
     list,
     el('div', { class: 'projects-settings-actions' }, settingsBtn),
   )
@@ -440,6 +431,41 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       showErrorToast('Could not save the thread order', err)
     })
   }
+  /** The two filter buttons say what they currently do: which project, and the sort. */
+  function syncFilterControls(): void {
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+    const chosen = projects.find((project) => project.id === projectFilterId)
+    if (!chosen) projectFilterId = null
+    const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
+    filterLabel.textContent = projectName
+    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined)
+    projectFilterBtn.setAttribute('aria-label', `Show: ${projectName}`)
+    sortLabel.textContent = SORT_LABELS[sidebarThreadSort]
+    // The arrow points the way the list runs: newest, or A first, is down.
+    sortDir.textContent = sidebarThreadSortReverse ? '↑' : '↓'
+  }
+  projectFilterBtn.addEventListener('click', () => {
+    const rect = projectFilterBtn.getBoundingClientRect()
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { heading: 'Show' },
+      {
+        label: 'All projects',
+        checked: projectFilterId === null,
+        onSelect: (): void => {
+          projectFilterId = null
+          render()
+        },
+      },
+      ...store.getState().projects.map((project): ContextMenuEntry => ({
+        label: projectDisplayName(project),
+        checked: project.id === projectFilterId,
+        onSelect: (): void => {
+          projectFilterId = project.id
+          render()
+        },
+      })),
+    ])
+  })
   sortBtn.addEventListener('click', () => {
     const rect = sortBtn.getBoundingClientRect()
     const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store.getState()
@@ -543,6 +569,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // open on their own when the active thread is one of theirs).
   let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
+  // Schedules whose collated failed runs are opened out into rows. Session-only.
+  const expandedFailedSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
   // Project selection and expansion also emit `projects_changed`, but only a
   // change to the project ids can alter which thread stores are orphaned.
@@ -1167,8 +1195,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     prBackfillObserver = null
     clear(list)
     const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
+    syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
+    // The project filter narrows what is listed, not what exists: automations,
+    // orphans and every other store read still see all of them.
+    const visibleProjects =
+      projectFilterId === null
+        ? projects
+        : projects.filter((project) => project.id === projectFilterId)
     const expandedId = expandedProjectId ?? activeProjectId
 
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
@@ -1509,11 +1544,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
           const scheduleKey = `${project.id}\0${scheduleId}`
           const hasActiveRun = runs.some((thread) => thread.id === activeThreadId)
-          const attentionScheduleRuns = runs.filter((thread) =>
-            isThreadAwaitingAttention(thread.id),
-          )
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
-          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0
+          // Collapsed, a schedule keeps its live and failed runs in view and folds
+          // the finished ones into its heading's run count (see `foldAutomationRuns`).
+          const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention)
+          const scheduleRevealed = showingAllRuns || foldEntries.length > 0
           const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
           const scheduleGroup = el('div', {
             class: 'automation-schedule-group',
@@ -1581,8 +1616,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           })
           if (scheduleRevealed) {
             const runRows = el('div', { class: 'automation-schedule-runs' })
-            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns
-            for (const thread of visibleRuns) {
+            const runRow = (thread: SidebarThread): HTMLElement => {
               const index = runs.indexOf(thread)
               const timestamp = thread.automation?.triggeredAt
               const when = timestamp
@@ -1591,12 +1625,58 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     timeStyle: 'short',
                   })
                 : 'Unknown time'
-              runRows.append(
-                renderThreadRow(project, thread, {
-                  displayTitle: index === 0 ? `Latest · ${when}` : when,
-                  allowRename: false,
-                }),
-              )
+              return renderThreadRow(project, thread, {
+                displayTitle: index === 0 ? `Latest · ${when}` : when,
+                allowRename: false,
+              })
+            }
+            if (showingAllRuns) {
+              for (const thread of runs) runRows.append(runRow(thread))
+            } else {
+              for (const entry of foldEntries) {
+                if (entry.kind === 'run') {
+                  runRows.append(runRow(entry.run))
+                } else if (entry.kind === 'pending') {
+                  // Too many to list: one row that hands off to the Activity list,
+                  // where each can be approved or answered with its full request.
+                  const row = el(
+                    'button',
+                    { type: 'button', class: 'automation-fold-row needs-attention' },
+                    el(
+                      'span',
+                      { class: 'automation-fold-label' },
+                      `${String(entry.runs.length)} need you`,
+                    ),
+                    el('span', { class: 'chat-thread-owner' }, 'Open in Activity'),
+                  )
+                  row.addEventListener('click', () => {
+                    openActivityPanel()
+                  })
+                  runRows.append(row)
+                } else {
+                  const open = expandedFailedSchedules.has(scheduleKey)
+                  const row = el(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'automation-fold-row is-failed',
+                      'aria-expanded': open ? 'true' : 'false',
+                    },
+                    el(
+                      'span',
+                      { class: 'automation-fold-label' },
+                      `${String(entry.runs.length)} failed`,
+                    ),
+                  )
+                  row.addEventListener('click', () => {
+                    if (open) expandedFailedSchedules.delete(scheduleKey)
+                    else expandedFailedSchedules.add(scheduleKey)
+                    render()
+                  })
+                  runRows.append(row)
+                  if (open) for (const thread of entry.runs) runRows.append(runRow(thread))
+                }
+              }
             }
             scheduleGroup.append(runRows)
           }
@@ -1914,7 +1994,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     function renderThreadSections(mode: Exclude<ThreadGroupMode, 'project'>): HTMLElement[] {
       const owners = new Map<string, Project>()
       const rows: SidebarRow[] = []
-      for (const project of projects) {
+      for (const project of visibleProjects) {
         if (project.missing) continue
         owners.set(project.id, project)
         for (const thread of getSidebarThreads(store, project.id)) {
@@ -1978,7 +2058,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     if (groupMode !== 'project' && threadFilter.length === 0) {
       list.append(...renderThreadSections(groupMode))
     } else {
-      for (const node of buildProjectTree(projects, projectGroups)) {
+      for (const node of buildProjectTree(visibleProjects, projectGroups)) {
+        // A group with nothing of the chosen project in it has nothing to show.
+        if (node.kind === 'group' && projectFilterId !== null && node.projects.length === 0)
+          continue
         if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
         else list.append(renderProjectEntry(node.project))
       }
