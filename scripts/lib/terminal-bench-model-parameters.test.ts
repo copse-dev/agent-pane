@@ -72,10 +72,10 @@ describe('terminal bench model parameters', () => {
     return Object.fromEntries(SAMPLING_KEYS.map((key) => [key, body[key]]))
   }
 
-  it('defaults to the client recipe and rejects unknown modes', () => {
-    assert.equal(DEFAULT_TERMINAL_MODEL_PARAMETERS_MODE, 'client')
-    assert.equal(terminalModelParametersMode(undefined), 'client')
-    assert.equal(terminalModelParametersMode(' server '), 'server')
+  it('defaults to server sampling, accepts the client recipe, and rejects unknown modes', () => {
+    assert.equal(DEFAULT_TERMINAL_MODEL_PARAMETERS_MODE, 'server')
+    assert.equal(terminalModelParametersMode(undefined), 'server')
+    assert.equal(terminalModelParametersMode(' client '), 'client')
     assert.throws(() => terminalModelParametersMode('both'), /COPSE_TERMINAL_MODEL_PARAMETERS/)
   })
 

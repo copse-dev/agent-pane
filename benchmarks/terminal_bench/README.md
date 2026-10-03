@@ -455,11 +455,12 @@ Optional tuning variables:
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
 - `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
   model-requested timeout on an expected long build, training run, or verifier)
-- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `client`; `client` sends the product's curated
+- `COPSE_TERMINAL_MODEL_PARAMETERS` (default `server`, which sends no sampling so LM Studio's own
+  sampling applies, as in every run made before this switch; `client` sends the product's curated
   per-model sampling recipe, e.g. temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5 and the
-  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings; `server` sends
-  none, so LM Studio's own sampling applies, as in runs made before this switch). Results from the
-  two modes are not comparable. Each trial records the mode and values in
+  81,920 output ceiling for `qwen3.6-35b-a3b`, never anything from user settings, and is opt-in
+  because it has not been shown to improve outcomes). Results from the two modes are not
+  comparable. Each trial records the mode and values in
   `agent/model-parameters.json` and on every `provider-requests.jsonl` line. Sealed manifests
   read sampling mode and output ceiling from that trial artifact, ignoring the sealer's environment;
   historical trials without the artifact retain unknown settings (`null`), and malformed artifacts
