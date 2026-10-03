@@ -12,6 +12,34 @@ describe('project quarantine and orphan recovery', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     const now = Date.now()
+    const extraOrphanStores = Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => {
+        const suffix = String(index).padStart(2, '0')
+        const timestamp = now - index - 1
+        return [
+          `threads:orphan-store-${suffix}`,
+          [
+            {
+              id: `orphan-thread-${suffix}`,
+              title: `Recovered notes ${suffix}`,
+              status: 'idle',
+              messages: [
+                {
+                  id: `orphan-message-${suffix}`,
+                  role: 'user',
+                  content: 'Keep this thread recoverable.',
+                  toolCalls: [],
+                  createdAt: timestamp,
+                },
+              ],
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ],
+        ]
+      }),
+    )
     writeSeedConfig({
       projects: [
         { id: 'healthy', path: process.cwd(), name: 'Healthy project' },
@@ -43,6 +71,7 @@ describe('project quarantine and orphan recovery', () => {
           updatedAt: now,
         },
       ],
+      ...extraOrphanStores,
     })
     await browser.reloadSession()
   })
@@ -96,15 +125,37 @@ describe('project quarantine and orphan recovery', () => {
     await saveElementScreenshot('#pane-projects', 'project-quarantine-recovery.png')
   })
 
-  it('dismisses a recoverable orphan row from the sidebar', async () => {
+  it('dismisses a recoverable orphan row from the sidebar without jumping to the top', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const orphanSection = await $('.orphans-section')
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
-    await orphanSection.$('.orphan-dismiss-btn').click()
-    await browser.waitUntil(async () => !(await orphanSection.isExisting()), {
-      timeout: 10_000,
-      timeoutMsg: 'orphans section should leave after dismiss',
+
+    const scrollBefore = await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.projects-list')
+      if (!list) return -1
+      list.scrollTop = 80
+      return list.scrollTop
     })
+    assert.ok(scrollBefore > 0, 'the recoverable threads list should be scrollable')
+
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLButtonElement>(
+          '.orphan-row[data-orphan-id="orphan-store"] .orphan-dismiss-btn',
+        )
+        ?.click()
+    })
+    await browser.waitUntil(
+      async () => !(await $('.orphan-row[data-orphan-id="orphan-store"]').isExisting()),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'dismissed orphan row should leave the list',
+      },
+    )
+    const scrollAfter = await browser.execute(
+      () => document.querySelector<HTMLElement>('.projects-list')?.scrollTop ?? -1,
+    )
+    assert.equal(scrollAfter, scrollBefore, 'dismissing a row should preserve the scroll position')
     await expect($('.project-row*=Healthy project')).toBeDisplayed()
     await expect($('.project-row.missing')).toBeDisplayed()
     await saveElementScreenshot('.projects-list', 'project-quarantine-recovery-dismissed.png')
