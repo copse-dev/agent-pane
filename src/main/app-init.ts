@@ -39,6 +39,9 @@ if (userData.outcome === 'moved' || userData.outcome === 'copied') {
 }
 app.setPath('userData', userData.dir)
 
+// Profile ownership (launch-argument policy, single-instance lock, vault replay,
+// consistency checks) is claimed by `app-profile-owner.ts`, which only the
+// desktop entry imports.
 setElectronAppRuntime({
   userDataPath: app.getPath('userData'),
   version: app.getVersion(),

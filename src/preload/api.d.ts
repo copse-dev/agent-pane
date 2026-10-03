@@ -171,6 +171,8 @@ export interface ApiClient {
     ) => () => void
     reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) => Promise<void>
   }
+  /** Optional on shells without the native desktop vault service. */
+  profileVault?: import('@shared/types/profile-vault.ts').ProfileVaultApi
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (

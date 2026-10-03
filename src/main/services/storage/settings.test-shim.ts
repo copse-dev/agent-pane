@@ -3,6 +3,8 @@ import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
 import { runSerializedUpdate } from './write-queue.ts'
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
+import { unlessVaultLocked } from './vault-locked.ts'
 
 const settings = new Map<string, unknown>([
   // Unit tests must not wait on an optional LM Studio scope classifier. Suites
@@ -10,6 +12,12 @@ const settings = new Map<string, unknown>([
   ['safetyClassifierEnabled', false],
 ])
 const apiKeys = new Map<string, string>()
+let savedSecretsLocked = false
+
+/** Test control: stored keys behave like a locked saved-secret vault (reads throw). */
+export function setSavedSecretsLocked(locked: boolean): void {
+  savedSecretsLocked = locked
+}
 
 function schemaAccepts<T>(
   schema: NonNullable<ReturnType<typeof getSettingSchema>>,
@@ -40,6 +48,7 @@ const ENV_VARS: Record<string, string> = {
 export function getApiKey(provider: KeyProvider): string | null {
   const scoped = getExplicitSettingsProfile()
   if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null
+  if (savedSecretsLocked && apiKeys.has(provider)) throw new VaultError('locked')
   return apiKeys.get(provider) ?? null
 }
 
@@ -84,16 +93,23 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 
 export function isApiKeyReadable(provider: KeyProvider): boolean | null {
   if (!hasApiKey(provider)) return null
+  if (savedSecretsLocked) return false
   return getApiKey(provider) !== null
 }
 
 export function resolveApiKey(provider: KeyProvider): string | null {
   const scoped = getExplicitSettingsProfile()
   if (scoped) return firstNonEmptyString(scoped.apiKeys?.[provider]) ?? null
+  const envVar = ENV_VARS[provider]
+  const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
+  if (savedSecretsLocked && environmentKey) return environmentKey
   const stored = getApiKey(provider)
   if (stored) return stored
-  const envVar = ENV_VARS[provider]
-  return envVar ? (firstNonEmptyString(process.env[envVar]) ?? null) : null
+  return environmentKey ?? null
+}
+
+export function resolveApiKeyIfUnlocked(provider: KeyProvider): string | null {
+  return unlessVaultLocked(() => resolveApiKey(provider), null)
 }
 
 export function getLmStudioApiKey(): string {

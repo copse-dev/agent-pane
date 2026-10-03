@@ -8,6 +8,7 @@
  * available, the session cache remains the only remember option.
  */
 import { createHash } from 'node:crypto'
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getSecretCipher, isSecretEncryptionAvailable } from '../storage/secret-cipher.ts'
 import { openPersistentStore } from '../storage/persistent-store.ts'
@@ -50,6 +51,8 @@ function readCredentials(hostId: string): Map<string, StoredCredential> {
 }
 
 function writeCredentials(hostId: string, credentials: Map<string, StoredCredential>): void {
+  if (getSecretCipher()?.protection === 'device-vault' && !isSecretEncryptionAvailable())
+    throw new VaultError('locked')
   const hosts = readHosts()
   if (credentials.size === 0) {
     hosts.delete(hostId)
@@ -77,8 +80,12 @@ export function getStoredSshCredential(hostId: string, prompt: string): string |
   const cipher = getSecretCipher()
   if (!record || !cipher) return null
   try {
-    return cipher.decryptString(Buffer.from(record.enc, 'base64'))
-  } catch {
+    return cipher.decryptString(Buffer.from(record.enc, 'base64'), {
+      store: 'ssh',
+      record: JSON.stringify([hostId, promptKey(prompt)]),
+    })
+  } catch (error) {
+    if (error instanceof VaultError) throw error
     return null
   }
 }
@@ -94,7 +101,9 @@ export function setStoredSshCredential(hostId: string, prompt: string, value: st
     const credentials = readCredentials(hostId)
     credentials.set(promptKey(prompt), {
       v: 1,
-      enc: cipher.encryptString(value).toString('base64'),
+      enc: cipher
+        .encryptString(value, { store: 'ssh', record: JSON.stringify([hostId, promptKey(prompt)]) })
+        .toString('base64'),
     })
     writeCredentials(hostId, credentials)
     return true

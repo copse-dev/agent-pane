@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable } from '../services/node-worker-runtime.ts'
 /**
  * Long-lived seatbelt-wrapped fs worker.
  *
@@ -151,7 +152,7 @@ async function spawnWorkerProc(root: string): Promise<SpawnedWorkerProcess> {
   }
   const workerPath = sandboxFsWorkerPath()
   return {
-    proc: await spawnInProjectSandbox(process.execPath, [workerPath], {
+    proc: await spawnInProjectSandbox(nodeWorkerExecutable(), [workerPath], {
       cwd: root,
       // Electron must run as Node inside seatbelt; the server flag selects the stdin request loop.
       env: { ELECTRON_RUN_AS_NODE: '1', [SANDBOX_FS_SERVER_ENV]: '1' },
