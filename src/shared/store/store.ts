@@ -54,6 +54,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     message_done: new Set(),
     tool_call_started: new Set(),
     tool_call_updated: new Set(),
+    thread_model_resolved: new Set(),
     thread_status_changed: new Set(),
     agent_activity: new Set(),
     threads_changed: new Set(),

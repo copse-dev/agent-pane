@@ -8,10 +8,11 @@ import {
   setThreadDraftPrompt,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import type { Thread, ThreadCatalogHit } from '@shared/types'
+import type { Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { startAgentController } from '../controller/agent.ts'
 import { mountInputBar } from './input-bar.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { carryRunningThreads, adoptBackgroundThreads } from '../controller/background-threads.ts'
@@ -289,6 +290,64 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('input bar resolved model label', () => {
+  it('updates before the first token, replaces an older resolution, and ignores other threads', async () => {
+    const active = { ...thread(), model: 'auto:balanced', resolvedModel: 'gpt-5.6-sol' }
+    const other = { ...thread(), id: 'thread-2', model: 'auto:balanced' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, other],
+    })
+    let send: (threadId: string, chunk: StreamChunk) => void = () => {
+      throw new Error('chunk handler not installed')
+    }
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        onChunk: (handler) => {
+          send = handler
+          return () => {}
+        },
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const bar = mountInputBar(host, store, api)
+    const stop = startAgentController(store, api)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const label = host.querySelector('.model-picker-label')
+      assert.ok(label)
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
+      send(active.id, {
+        type: 'turn_parameters',
+        model: 'claude-sonnet-4-6',
+        parameters: {},
+        requestedModel: 'auto:balanced',
+      })
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
+      assert.equal(getThreadById(store, active.id)?.resolvedModel, 'claude-sonnet-4-6')
+      assert.equal(getThreadById(store, active.id)?.model, 'auto:balanced')
+      assert.equal(getThreadById(store, active.id)?.messages.length, 0)
+      send(other.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
+      assert.equal(label.textContent, 'Claude Sonnet 4.6')
+      send(active.id, { type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} })
+      assert.equal(label.textContent, 'GPT-5.6 Sol')
+      assert.equal(store.getState().activeThreadId, active.id)
+      send(active.id, { type: 'text', text: 'Hello' })
+      assert.equal(getThreadById(store, active.id)?.messages[0]?.model, 'gpt-5.6-sol')
+    } finally {
+      stop()
+      bar.unmount()
+    }
+  })
 })
 
 describe('input bar running attribution', () => {
