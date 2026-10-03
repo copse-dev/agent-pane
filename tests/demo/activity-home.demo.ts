@@ -213,3 +213,38 @@ describe('browser-hosted Activity home', () => {
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
   })
 })
+
+describe('browser-hosted Activity home with nothing to list', () => {
+  before(async () => {
+    await browser.url('about:blank')
+    await browser.url('/?scenario=activity-home-empty')
+    await $('.pane-chat.is-activity-home').waitForExist({ timeout: 30_000 })
+  })
+
+  it('keeps the composer docked and the card inside the pane', async () => {
+    const probe = await browser.execute(() => {
+      const root = document.getElementById('activity-home')
+      const input = document.getElementById('input-bar')
+      const pane = document.getElementById('pane-chat')
+      if (!root || !input || !pane) return null
+      const body = root.querySelector('.activity-panel-body')
+      if (!body) return null
+      const card = body.getBoundingClientRect()
+      const bar = input.getBoundingClientRect()
+      const frame = pane.getBoundingClientRect()
+      return {
+        cardBottom: card.bottom,
+        inputTop: bar.top,
+        inputBottom: bar.bottom,
+        paneBottom: frame.bottom,
+        overflowsSideways: root.scrollWidth > root.clientWidth + 1,
+      }
+    })
+    await saveAppScreenshot('activity-home-empty.png')
+    expect(probe).not.toBeNull()
+    if (!probe) return
+    expect(probe.cardBottom).toBeLessThanOrEqual(probe.inputTop + 1)
+    expect(probe.inputBottom).toBeLessThanOrEqual(probe.paneBottom + 1)
+    expect(probe.overflowsSideways).toBe(false)
+  })
+})
