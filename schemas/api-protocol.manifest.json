@@ -1354,6 +1354,20 @@
           0
         ]
       },
+      "models:invalidations": {
+        "api": "models.invalidations",
+        "args": [
+          0,
+          2
+        ]
+      },
+      "models:recover-setting": {
+        "api": "models.recoverSetting",
+        "args": [
+          3,
+          3
+        ]
+      },
       "models:resolve-dynamic": {
         "api": "models.resolveDynamic",
         "args": [

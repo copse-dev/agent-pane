@@ -1,101 +1,148 @@
-import { extraProviderSlugFromModel } from '@copse/llm/extra-providers.ts'
-import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
+import type { ModelInvalidation, ModelSettingsTarget } from '@shared/model-invalidation.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ConfirmDialogRequest } from '../views/confirm-dialog.ts'
 import { commitThreadModelSelection } from './model-selection.ts'
 
 type InvalidationApi = {
-  settings: Pick<ApiClient['settings'], 'extraProviders'>
-  lmStudio: Pick<ApiClient['lmStudio'], 'modelInfo'>
+  models: Pick<ApiClient['models'], 'invalidations' | 'recoverSetting'>
   threads: Pick<ApiClient['threads'], 'recordModelSelection'>
 }
-
 interface InvalidationUi {
   warn: (request: ConfirmDialogRequest) => Promise<boolean>
-  openSettings: () => void
+  openSettings: (target: ModelSettingsTarget) => void
   isActive?: () => boolean
 }
 
-/** Only a missing effective provider is conclusive; a failed probe is not. */
+function settingsTarget(invalid: ModelInvalidation): ModelSettingsTarget {
+  switch (invalid.target) {
+    case 'thread':
+      return 'model'
+    case 'role:coder':
+      return 'localDefaultModel'
+    case 'role:research':
+      return 'subagentModel'
+    case 'role:small-tasks':
+      return 'smallTasksModel'
+    default:
+      return invalid.target
+  }
+}
+function acknowledgement(
+  store: AppStore,
+  invalid: Pick<ModelInvalidation, 'target' | 'model'>,
+): string {
+  const thread = getActiveThread(store)
+  // Startup creates a blank chat from the saved default after settings load.
+  // The default warning already covers that inherited, unedited selection.
+  if (
+    invalid.target === 'thread' &&
+    thread?.messages.length === 0 &&
+    !thread.modelSelections?.length &&
+    store.getState().settings?.model === invalid.model
+  )
+    return JSON.stringify(['model', invalid.model])
+  return JSON.stringify(
+    invalid.target === 'thread'
+      ? [store.getState().activeProjectId, getActiveThread(store)?.id, invalid.model]
+      : [invalid.target, invalid.model],
+  )
+}
+
+/** Main owns provider/auth evidence and atomic saved-field recovery. */
 export async function checkProviderInvalidation(
   store: AppStore,
   api: InvalidationApi,
   ui: InvalidationUi,
-): Promise<string | null> {
+  acknowledged: Set<string> = new Set(),
+): Promise<string[]> {
   const thread = getActiveThread(store)
-  if (!thread || thread.status !== 'idle') return null
-  const route = thread.model ?? store.getState().settings?.model
-  if (typeof route !== 'string') return null
-  const slug = extraProviderSlugFromModel(route)
-  if (!slug) return null
-
-  let missing: boolean
-  try {
-    missing = !(await api.settings.extraProviders()).some((provider) => provider.id === slug)
-  } catch {
-    return null
-  }
-  if (!missing) return null
-
-  function stillSelected(): boolean {
+  const project = store.getState().activeProjectId
+  const route =
+    thread?.status === 'idle' ? (thread.model ?? store.getState().settings?.model) : undefined
+  const alive = (): boolean => ui.isActive?.() ?? true
+  const stillSelected = (): boolean => {
     const current = getActiveThread(store)
     return (
-      (ui.isActive?.() ?? true) &&
+      alive() &&
+      store.getState().activeProjectId === project &&
       current?.id === thread?.id &&
       current?.status === 'idle' &&
       (current.model ?? store.getState().settings?.model) === route
     )
   }
-  if (!stillSelected()) return null
-  const models = await api.lmStudio.modelInfo().catch(() => [])
-  const local = models.find(
-    (model) =>
-      model.local === true &&
-      model.embedding !== true &&
-      getLocalModelCapability(model.id)?.bestForRoles.includes('coder'),
-  )
-  if (!stillSelected()) return null
-  const openSettings = await ui.warn({
-    message: 'Your selected model provider was removed',
-    detail: `${route} is no longer configured. ${
-      local
-        ? `Dismiss to use ${local.id} on this device, or open Settings to choose another provider.`
-        : 'Open Settings to configure a provider or choose another model. No suitable local coding model is available.'
-    }`,
+  const report = await api.models.invalidations(route).catch(() => null)
+  if (!report?.evaluated || !alive() || (route && !stillSelected())) return []
+  const invalid = report.invalidations
+  const selected = new Set(report.selections.map((choice) => acknowledgement(store, choice)))
+  const verified = new Set(report.verifiedChoices.map((choice) => acknowledgement(store, choice)))
+  for (const key of acknowledged) {
+    const parts = safeJsonParse(key, decodeWithSchema(z.array(z.string())))
+    if (!parts) continue
+    const evaluatedSaved = parts.length === 2
+    const evaluatedThread =
+      route !== undefined && parts.length === 3 && parts[0] === project && parts[1] === thread?.id
+    if ((evaluatedSaved || evaluatedThread) && (!selected.has(key) || verified.has(key)))
+      acknowledged.delete(key)
+  }
+  const pending = invalid.filter((entry) => !acknowledged.has(acknowledgement(store, entry)))
+  if (!pending.length) return []
+  const keys = pending.map((entry) => acknowledgement(store, entry))
+  const first = pending[0]
+  if (!first) return []
+  const hasFallback = pending.some((entry) => entry.fallback)
+  const open = await ui.warn({
+    message: 'Model settings need attention',
+    detail: pending
+      .map(
+        (entry) =>
+          `${entry.label}: ${entry.model}. ${entry.reason} ${
+            entry.fallback
+              ? `Dismiss to use ${entry.fallback.replace(/^lmstudio:/, '')} on this device.`
+              : 'No suitable on-device model is available; this choice will be preserved.'
+          }`,
+      )
+      .join('\n\n'),
     confirmLabel: 'Open Settings',
-    cancelLabel: local ? 'Use local model' : 'Dismiss',
+    cancelLabel: hasFallback ? 'Use local models' : 'Dismiss',
   })
-  if (openSettings) {
-    if (stillSelected()) ui.openSettings()
-    return route
+  if (!alive()) return keys
+  if (open) {
+    if (first.target !== 'thread' || stillSelected()) ui.openSettings(settingsTarget(first))
+    return keys
   }
-  if (!local || !stillSelected()) return route
-
-  // Revalidate after the dialog: the provider or local server may have changed
-  // while the user considered the warning. Never substitute another cloud route.
-  try {
-    const [providers, latestModels] = await Promise.all([
-      api.settings.extraProviders(),
-      api.lmStudio.modelInfo(),
-    ])
-    if (
-      providers.some((provider) => provider.id === slug) ||
-      !latestModels.some(
-        (model) => model.id === local.id && model.local === true && model.embedding !== true,
-      ) ||
-      !stillSelected()
-    )
-      return route
-  } catch {
-    return route
+  for (const entry of pending) {
+    if (!alive() || !entry.fallback) continue
+    if (entry.target === 'thread') {
+      if (!thread || !stillSelected()) continue
+      const latest = await api.models.invalidations(route, true).catch(() => null)
+      if (
+        !stillSelected() ||
+        !latest?.invalidations.some(
+          (item) =>
+            item.target === 'thread' && item.model === route && item.fallback === entry.fallback,
+        )
+      )
+        continue
+      commitThreadModelSelection(store, api, thread.id, 'auto', route, entry.fallback)
+    } else {
+      const replaced = await api.models
+        .recoverSetting(entry.target, entry.model, entry.fallback)
+        .catch(() => false)
+      if (!replaced || !alive()) continue
+      if (entry.target === 'model' && store.getState().settings?.model === entry.model) {
+        store.setState({ settings: { ...store.getState().settings, model: entry.fallback } })
+      }
+      store.emit('settings_changed')
+    }
   }
-  commitThreadModelSelection(store, api, thread.id, 'auto', route, `lmstudio:${local.id}`)
-  return route
+  return keys
 }
 
-/** Main-window ownership prevents duplicate prompts from detached panes. */
+/** Main-window ownership, coalesced rechecks and per-value acknowledgement. */
 export function attachProviderInvalidationWarning(
   store: AppStore,
   api: InvalidationApi,
@@ -106,19 +153,15 @@ export function attachProviderInvalidationWarning(
   let pending = false
   let disposed = false
   const check = (): void => {
-    const thread = getActiveThread(store)
-    const route = thread?.model ?? store.getState().settings?.model
-    if (disposed || typeof route !== 'string') return
+    if (disposed) return
     if (checking) {
       pending = true
       return
     }
-    const key = JSON.stringify([store.getState().activeProjectId, thread?.id, route])
-    if (acknowledged.has(key)) return
     checking = true
-    void checkProviderInvalidation(store, api, { ...ui, isActive: () => !disposed })
-      .then((invalid) => {
-        if (invalid) acknowledged.add(key)
+    void checkProviderInvalidation(store, api, { ...ui, isActive: () => !disposed }, acknowledged)
+      .then((keys) => {
+        keys.forEach((key) => acknowledged.add(key))
       })
       .catch((error: unknown) => {
         console.error('[models] could not check provider configuration', error)
@@ -134,10 +177,7 @@ export function attachProviderInvalidationWarning(
   const unsubscribe = [
     store.on('workspace_changed', check),
     store.on('threads_changed', check),
-    store.on('settings_changed', () => {
-      acknowledged.clear()
-      check()
-    }),
+    store.on('settings_changed', check),
     store.on('thread_status_changed', check),
   ]
   check()

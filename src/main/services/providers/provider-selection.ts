@@ -93,7 +93,9 @@ export function normalizeRoleModelSelection(model: string): string {
     isDynamicModel(value) ||
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
-    extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
+    // Preserve stale provider routes so the missing-provider guard can explain
+    // them instead of reinterpreting the route as a bare local model id.
+    isExtraProviderModel(value) ||
     firstPartyProviderOf(value) !== null ||
     parseChatGptPlanModel(value) !== null
   ) {

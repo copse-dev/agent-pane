@@ -190,6 +190,7 @@ describe('subagent local model routing', () => {
     )
     assert.equal(normalizeRoleModelSelection('claude-haiku-4-5'), 'claude-haiku-4-5')
     assert.equal(normalizeRoleModelSelection('gpt-5-mini'), 'gpt-5-mini')
+    assert.equal(normalizeRoleModelSelection('removed-provider:model'), 'removed-provider:model')
   })
 })
 

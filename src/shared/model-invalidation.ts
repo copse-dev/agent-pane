@@ -22,3 +22,17 @@ export interface ModelInvalidation {
   /** A discovered, role-capable on-device model. Missing means preserve the choice. */
   fallback?: string
 }
+
+export interface ModelSavedChoice {
+  target: ModelSettingsTarget | 'thread'
+  model: string
+}
+export interface ModelInvalidationReport {
+  /** False when configuration changed during a probe; no scopes were evaluated. */
+  evaluated: boolean
+  invalidations: ModelInvalidation[]
+  /** Effective saved choices and the active thread only when it was queried. */
+  selections: ModelSavedChoice[]
+  /** Positive provider/catalogue evidence, never an outage or unknown state. */
+  verifiedChoices: ModelSavedChoice[]
+}

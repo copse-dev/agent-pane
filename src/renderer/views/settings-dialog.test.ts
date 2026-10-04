@@ -109,7 +109,7 @@ describe('settings dialog (native <dialog>)', () => {
   it('reveals and focuses model recovery when Settings is already open on another section', () => {
     openSettingsDialog()
     qsRequired(dialog, '.settings-nav-btn[data-section="appearance"]').click()
-    const models = qsRequired(dialog, '#settings-models-section')
+    const models = qsRequired(dialog, '[data-model-setting-target="model"]')
     let scrolled = false
     Object.defineProperty(models, 'scrollIntoView', {
       value: (): void => {
@@ -121,6 +121,22 @@ describe('settings dialog (native <dialog>)', () => {
     assert.ok(dialog.querySelector('.settings-section.active[data-section="general"]'))
     assert.equal(document.activeElement, models)
     assert.ok(scrolled)
+  })
+
+  it('opens folded exact role/security fields instead of only the Models heading', () => {
+    openSettingsDialog()
+    openModelSettings('safetyModel')
+    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'safetyModel')
+    assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-advanced')?.open, true)
+    openModelSettings('role:docs')
+    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'role:docs')
+    assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-additional-roles')?.open, true)
+    openModelSettings('orchestrationWorkerModel')
+    assert.ok(dialog.querySelector('.settings-section.active[data-section="experimental"]'))
+    assert.equal(
+      document.activeElement?.getAttribute('data-model-setting-target'),
+      'orchestrationWorkerModel',
+    )
   })
 
   it('moves Mobile Companion management into Experimental settings', async () => {

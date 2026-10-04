@@ -712,6 +712,17 @@ export interface ApiClient {
     >
   }
   models: {
+    /** Conclusive invalidations of explicit saved model fields and an optional active chat route. */
+    invalidations: (
+      threadModel?: string,
+      freshLocal?: boolean,
+    ) => Promise<import('@shared/model-invalidation.ts').ModelInvalidationReport>
+    /** Revalidate and compare the exact saved value before using a discovered on-device model. */
+    recoverSetting: (
+      target: import('@shared/model-invalidation.ts').ModelSettingsTarget,
+      expected: string,
+      fallback: string,
+    ) => Promise<boolean>
     /**
      * Concrete model id for the plan/price Pareto best-value default
      * (`auto:best-value` setting expands to this on new chats / agent runs).

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { AGENT_ROLES } from '@copse/llm/agent-roles.ts'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { $, browser, expect } from '@wdio/globals'
@@ -96,7 +97,7 @@ describe('settings model routing placement', function () {
     assert.equal(
       await $('#settings-models-section').$$('.model-picker-field-host').length,
       // Includes Model parameters' own "Model to tune" picker.
-      7,
+      18,
       'every model control in the Settings model section should use the shared picker',
     )
     await scrollSettingsToLegend('Models')
@@ -181,6 +182,9 @@ describe('settings model routing placement', function () {
       'subagentModel',
       'safetyModel',
       'reviewModel',
+      ...AGENT_ROLES.filter((role) => !['coder', 'research', 'small-tasks'].includes(role.id)).map(
+        (role) => `role:${role.id}`,
+      ),
     ])
     assert.deepEqual(placement.standaloneModelLegends, [])
     assert.equal(placement.routingHostCount, 1)
@@ -189,6 +193,9 @@ describe('settings model routing placement', function () {
       'Research',
       'Instruct / safety model',
       'Post-turn review model',
+      ...AGENT_ROLES.filter((role) => !['coder', 'research', 'small-tasks'].includes(role.id)).map(
+        (role) => role.label,
+      ),
     ])
 
     const coder = $('select[name="localDefaultModel"]')
