@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('conversation visual hierarchy', () => {
   before(async () => {
@@ -34,6 +34,7 @@ describe('conversation visual hierarchy', () => {
       const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
       const pane = rect('#pane-chat')
       const messagesList = document.querySelector<HTMLElement>('.messages-list')
+      const conversationScroll = document.querySelector<HTMLElement>('.conversation-scroll')
       const user = rect('[data-message-id="msg-user-hierarchy"]')
       const trace = rect('[data-message-id="msg-assistant-check"]')
       const todoPanel = rect('.conversation-todos-host .plugin-panel')
@@ -58,6 +59,7 @@ describe('conversation visual hierarchy', () => {
       if (
         !pane ||
         !messagesList ||
+        !conversationScroll ||
         !user ||
         !trace ||
         !todoPanel ||
@@ -87,9 +89,13 @@ describe('conversation visual hierarchy', () => {
       const baseLineHeight = getComputedStyle(document.body).lineHeight
       const messagesListRect = messagesList.getBoundingClientRect()
       const messagesListContentCenter = messagesListRect.left + messagesList.clientWidth / 2
+      const topFadeStyle = getComputedStyle(conversationScroll, '::before')
       return {
         paneWidth: pane.width,
         messagesListScrollbarGutter: messagesList.offsetWidth - messagesList.clientWidth,
+        topFadeHeight: topFadeStyle.height,
+        topFadeBackground: topFadeStyle.backgroundImage,
+        topFadePointerEvents: topFadeStyle.pointerEvents,
         userWidth: user.width,
         traceWidth: trace.width,
         todoWidth: todoPanel.width,
@@ -152,6 +158,9 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonCenterDelta).toBeLessThanOrEqual(1)
     expect(layout.composerBottomGap).toBeGreaterThanOrEqual(11)
     expect(layout.composerBottomGap).toBeLessThanOrEqual(13)
+    expect(layout.topFadeHeight).toBe('28px')
+    expect(layout.topFadeBackground).toContain('linear-gradient')
+    expect(layout.topFadePointerEvents).toBe('none')
     expect(layout.reasoningBorderWidth).toBe('0px')
     expect(layout.doneToolHeight).toBeLessThan(36)
     expect(layout.answerFontSize).toBe('16px')
@@ -195,5 +204,18 @@ describe('conversation visual hierarchy', () => {
     expect(wideLayout.userWidth).toBeLessThan(wideLayout.traceWidth)
     expect(wideLayout.userWidth).toBeLessThanOrEqual(842)
     await saveAppScreenshot('conversation-visual-hierarchy.png')
+
+    // The compact trace fits the default frame almost completely. Use a shorter
+    // real app viewport so this reference proves text crossing the fade edge.
+    const scrolledFrame = { width: 1280, height: 600 }
+    await prepareE2eScreenshot(scrolledFrame)
+    const scrollTop = await browser.execute(() => {
+      const messagesList = document.querySelector<HTMLElement>('.messages-list')
+      messagesList?.scrollTo({ top: 180, behavior: 'instant' })
+      return messagesList?.scrollTop ?? 0
+    })
+    expect(scrollTop).toBeGreaterThanOrEqual(150)
+    await browser.pause(100)
+    await saveAppScreenshot('conversation-top-fade-scrolled.png', scrolledFrame)
   })
 })

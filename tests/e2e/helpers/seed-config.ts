@@ -5255,6 +5255,22 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
     activeThreadId: 'e2e-pr-open-thread',
     [`threads:${projectId}`]: [
       {
+        id: 'e2e-pr-conflict-thread',
+        title: 'Conflicting PR thread',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-conflict-pr',
+            role: 'assistant',
+            content: 'Review https://github.com/copse-dev/copse-panel/pull/100.',
+            createdAt: now - 4000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 4000,
+        updatedAt: now - 4000,
+      },
+      {
         id: 'e2e-pr-open-thread',
         title: openThreadTitle,
         status: 'idle',

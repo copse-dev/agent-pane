@@ -827,7 +827,11 @@ export function mountThreadSidebar(
     if (prRollup) {
       row.classList.add('has-pr-status')
       titleLine.append(
-        chatPrStatus(prRollup, prRollup.kind === 'open' && prStatus.ciFailing(thread)),
+        chatPrStatus(
+          prRollup,
+          prRollup.kind === 'open' && prStatus.ciFailing(thread),
+          prRollup.kind === 'open' && prStatus.conflicts(thread),
+        ),
       )
     }
     titleLine.append(age)

@@ -126,7 +126,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await saveElementScreenshot('#pane-files', 'pr-actions-ready.png')
 
     // Auto-merge is a setting, not a status: it keeps the neutral badge, while
-    // the CI dots take the status tokens rather than their own hues.
+    // the lifecycle glyph and failing CI marker use the status tokens.
     const automerge = await browser.execute(() => {
       const badge = document.querySelector('.pr-badge-automerge')
       if (!badge) return null
@@ -136,33 +136,20 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     assert.ok(automerge, 'expected the Auto-merge badge')
     assert.equal(automerge.color, await tokenColour('--text-secondary'))
     assert.equal(automerge.border, await tokenColour('--border', 'border-top-color'))
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          () =>
-            document.querySelector('.pr-list-ci-success') !== null &&
-            document.querySelector('.pr-list-ci-failure') !== null,
-        ),
-      { timeout: 15_000, timeoutMsg: 'expected passing and failing CI dots in the PR list' },
-    )
-    const ciTokens: [string, string][] = [
-      ['success', '--success'],
-      ['failure', '--error'],
-      ['pending', '--warning'],
-    ]
-    for (const [state, token] of ciTokens) {
-      const dots = await browser.execute(
-        (selector) =>
-          Array.from(
-            document.querySelectorAll(selector),
-            (dot) => getComputedStyle(dot).backgroundColor,
-          ),
-        `.pr-list-ci-${state}`,
-      )
-      const expected = await tokenColour(token, 'background-color')
-      for (const painted of dots)
-        assert.equal(painted, expected, `CI ${state} dot must be ${token}`)
-    }
+    await expect(await $('.pr-list-status[aria-label="PR #42 open; CI passing"]')).toBeDisplayed()
+    await expect(await $('.pr-list-status[aria-label="PR #88 open; CI failing"]')).toBeDisplayed()
+    const statusColours = await browser.execute(() => {
+      const open = document.querySelector('.pr-list-status.is-open')
+      const failure = document.querySelector('.pr-list-status.has-ci-failure svg path:nth-child(2)')
+      if (!open || !failure) return null
+      return {
+        lifecycle: getComputedStyle(open).color,
+        failure: getComputedStyle(failure).fill,
+      }
+    })
+    assert.ok(statusColours, 'expected lifecycle glyph and failing CI marker')
+    assert.equal(statusColours.lifecycle, await tokenColour('--accent'))
+    assert.equal(statusColours.failure, await tokenColour('--pr-closed'))
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
     await $('.pr-list-title*=Tidy up workspace status polling').click()

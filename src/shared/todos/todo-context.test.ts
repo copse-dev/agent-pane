@@ -178,6 +178,96 @@ describe('compactAtTodoBoundary', () => {
     assert.equal(sysText.match(/Active plan/g)?.length, 1, 'exactly one plan block, not stacked')
   })
 
+  it('leaves the prompt prefix byte-identical when a todo completes without compaction', () => {
+    // Regression: the gated path used to append an "Active plan (pinned)" block
+    // to messages[0] on every completion. The system message is the front of
+    // every provider's cache key, so the next request re-sent the whole
+    // conversation uncached; recorded runs showed 43% of post-completion calls
+    // missing the cache against ~4% for other calls.
+    const todos: TodoItem[] = [
+      { id: '1', content: 'Old step', status: 'completed' },
+      { id: '2', content: 'Next step', status: 'in_progress' },
+    ]
+    const system: LLMMessage = { role: 'system', content: 'You are helpful.' }
+    const messages: LLMMessage[] = [
+      system,
+      { role: 'user', content: 'Do the refactor' },
+      { role: 'assistant', content: [{ id: 'tc1', name: 'read_file', args: { path: 'a.ts' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc1', result: 'file contents' }] },
+      { role: 'assistant', content: [{ id: 'tc2', name: 'update_todos', args: { todos } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'tc2', result: 'Plan updated (1/2 done).' }] },
+    ]
+    const before = JSON.stringify(messages)
+
+    const changed = compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1, fillRatio: 0.1 })
+
+    assert.equal(changed, false)
+    assert.equal(messages[0], system, 'the system message is not replaced')
+    assert.equal(JSON.stringify(messages), before)
+  })
+
+  it('keeps every earlier request a byte prefix of the next across a run of todo updates', () => {
+    const plan = (done: number): TodoItem[] =>
+      ['One', 'Two', 'Three'].map((content, i) => ({
+        id: String(i + 1),
+        content,
+        status: i < done ? 'completed' : i === done ? 'in_progress' : 'pending',
+      }))
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+    ]
+    let previousRequest: string[] = messages.map((m) => JSON.stringify(m))
+    for (let done = 1; done <= 3; done++) {
+      const todos = plan(done)
+      messages.push(
+        {
+          role: 'assistant',
+          content: [{ id: `r${String(done)}`, name: 'read_file', args: { path: 'a.ts' } }],
+        },
+        {
+          role: 'tool',
+          toolResults: [{ toolCallId: `r${String(done)}`, result: 'file contents' }],
+        },
+        {
+          role: 'assistant',
+          content: [{ id: `u${String(done)}`, name: 'update_todos', args: { todos } }],
+        },
+        {
+          role: 'tool',
+          toolResults: [{ toolCallId: `u${String(done)}`, result: 'Plan updated.' }],
+        },
+      )
+      compactAtTodoBoundary(messages, todos, { fillRatio: 0.2 })
+
+      const request = messages.map((m) => JSON.stringify(m))
+      assert.deepEqual(
+        request.slice(0, previousRequest.length),
+        previousRequest,
+        `completion ${String(done)} rewrote bytes the previous request already sent`,
+      )
+      previousRequest = request
+    }
+  })
+
+  it('pins nothing when the compaction path finds no history it can drop', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
+    const system: LLMMessage = { role: 'system', content: 'You are helpful.' }
+    const messages: LLMMessage[] = [
+      system,
+      { role: 'user', content: 'one' },
+      { role: 'user', content: 'two' },
+      { role: 'user', content: 'three' },
+      { role: 'user', content: 'four' },
+    ]
+
+    assert.equal(
+      compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1, fillRatio: 0.9 }),
+      false,
+    )
+    assert.equal(messages[0], system)
+  })
+
   it('still compacts once the conversation is genuinely under pressure', () => {
     const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
     const messages: LLMMessage[] = [

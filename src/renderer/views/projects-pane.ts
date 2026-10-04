@@ -872,7 +872,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === 'open' && prStatus.ciFailing(thread)),
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === 'open' && prStatus.ciFailing(thread),
+            prRollup.kind === 'open' && prStatus.conflicts(thread),
+          ),
         )
       }
 

@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import { gitMergeIcon, gitPullRequestIcon } from '../dom/icons.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhPrChecksState } from '@shared/types/git.ts'
@@ -15,17 +16,29 @@ import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.
 /** Re-fetch PR lifecycle when a cache entry is older than this. */
 const PR_STATUS_CACHE_TTL_MS = 60_000
 
-/** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-export function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
-  const label = ciFailing
+/**
+ * Single GitHub PR icon on a thread row; color encodes open / merged / closed.
+ * An open PR with merge conflicts takes the conflict glyph, which outranks a
+ * failing-checks mark (#3477).
+ */
+export function chatPrStatus(
+  rollup: ThreadPrRollup,
+  ciFailing: boolean,
+  conflicts: boolean,
+): HTMLElement {
+  const statusLabel = ciFailing
     ? `${describeThreadPrStatus(rollup)}; checks are failing`
     : describeThreadPrStatus(rollup)
-  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
+  const label = conflicts ? `${statusLabel}; merge conflicts` : statusLabel
+  const icon =
+    rollup.kind === 'merged'
+      ? gitMergeIcon('ui-icon ui-icon-sm')
+      : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? ' has-conflicts' : ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -39,6 +52,8 @@ export interface PrStatusTracker {
   rollup: (thread: SidebarThread) => ThreadPrRollup | null
   /** Whether any open PR on the row has failing checks (cached from the lifecycle fetch). */
   ciFailing: (thread: SidebarThread) => boolean
+  /** Whether any open PR on the row has merge conflicts (cached from the lifecycle fetch). */
+  conflicts: (thread: SidebarThread) => boolean
   /** Forget cached lifecycles, e.g. when the workspace changes. */
   reset: () => void
 }
@@ -51,7 +66,7 @@ export interface PrStatusTracker {
 export function createPrStatusTracker(api: ApiClient, changed: () => void): PrStatusTracker {
   const cache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
   >()
   const inFlight = new Set<string>()
   let generation = 0
@@ -78,10 +93,12 @@ export function createPrStatusTracker(api: ApiClient, changed: () => void): PrSt
           if (current !== generation) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
           const previous = cache.get(key)
-          lifecycleChanged = previous?.state !== state
-          // CI only matters while the PR is open; the dot is the one extra cue.
+          const conflicts = state === 'open' && details !== null && prHasMergeConflicts(details)
+          lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts
+          // CI and merge conflicts only affect open PRs.
           cache.set(key, {
             state,
+            conflicts,
             ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
             fetchedAt: Date.now(),
           })
@@ -96,7 +113,12 @@ export function createPrStatusTracker(api: ApiClient, changed: () => void): PrSt
         })
         .catch(() => {
           if (current !== generation) return
-          cache.set(key, { state: cache.get(key)?.state ?? 'unknown', fetchedAt: Date.now() })
+          const cached = cache.get(key)
+          cache.set(key, {
+            state: cached?.state ?? 'unknown',
+            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
+            fetchedAt: Date.now(),
+          })
         })
         .finally(() => {
           if (current !== generation) return
@@ -118,6 +140,11 @@ export function createPrStatusTracker(api: ApiClient, changed: () => void): PrSt
       sidebarPrRefs(thread).some((ref) => {
         const entry = cache.get(githubPrKey(ref))
         return entry?.state === 'open' && entry.checks === 'failure'
+      }),
+    conflicts: (thread: SidebarThread): boolean =>
+      sidebarPrRefs(thread).some((ref) => {
+        const entry = cache.get(githubPrKey(ref))
+        return entry?.state === 'open' && entry.conflicts === true
       }),
     reset: (): void => {
       generation += 1

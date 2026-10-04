@@ -124,4 +124,87 @@ describe('thread GitHub PR status icon', () => {
 
     await saveElementScreenshot('#pane-projects', 'thread-pr-status-icon.png')
   })
+
+  it('uses the same lifecycle glyph and colours in the PR panel', async function () {
+    this.timeout(90_000)
+    await $('.thread-project-manager .chat-row[data-thread-id="e2e-pr-merged-thread"]').click()
+    const pane = await $('#pane-files')
+    if (!(await pane.isDisplayed())) {
+      await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
+      await pane.waitForDisplayed({ timeout: 10_000 })
+    }
+    await $('[aria-label="Open pull requests"]').click()
+    const merged = await $('.pr-list-row[data-pr-section="linked"] .pr-list-status.is-merged')
+    await merged.waitForDisplayed({ timeout: 15_000 })
+    await expect(merged.$('svg[data-icon="git-merge"]')).toExist()
+    await expect(merged).toHaveAttribute('aria-label', expect.stringMatching(/#99 merged/i))
+    await expect($('.pr-list-status.is-open.has-ci-failure')).toBeDisplayed()
+    await expect($('.pr-list-ci')).not.toBeExisting()
+
+    const status = await browser.execute(() => {
+      const sidebar = document.querySelector(
+        '.thread-project-manager .chat-row.selected .chat-pr-status',
+      )
+      const paneIcon = document.querySelector('.pr-list-status.is-merged')
+      const failing = document.querySelector('.pr-list-status.has-ci-failure svg path:nth-child(2)')
+      const sidebarFailing = document.querySelector(
+        '.chats-list .has-ci-failure svg path:nth-child(2)',
+      )
+      const title = document.querySelector('.pr-list-row[data-pr-section="linked"] .pr-list-title')
+      return {
+        sidebarColour: sidebar ? getComputedStyle(sidebar).color : null,
+        paneColour: paneIcon ? getComputedStyle(paneIcon).color : null,
+        failureFill: failing ? getComputedStyle(failing).fill : null,
+        sidebarFailureFill: sidebarFailing ? getComputedStyle(sidebarFailing).fill : null,
+        iconWidth: paneIcon?.getBoundingClientRect().width ?? 0,
+        sidebarIconWidth: sidebar?.getBoundingClientRect().width ?? 0,
+        overlapsTitle:
+          (title?.getBoundingClientRect().right ?? 0) >
+          (paneIcon?.getBoundingClientRect().left ?? 0),
+      }
+    })
+    expect(status.paneColour).not.toBeNull()
+    expect(status.paneColour).toBe(status.sidebarColour)
+    expect(status.failureFill).not.toBeNull()
+    expect(status.failureFill).toBe(status.sidebarFailureFill)
+    expect(status.iconWidth).toBeGreaterThan(0)
+    expect(status.iconWidth).toBe(status.sidebarIconWidth)
+    expect(status.overlapsTitle).toBe(false)
+    await saveElementScreenshot('#pane-files', 'pr-panel-status-icons.png')
+  })
+
+  it('shows a red conflict X in both panels when details establish conflicts', async function () {
+    this.timeout(90_000)
+    await $('.thread-project-manager .chat-row[data-thread-id="e2e-pr-conflict-thread"]').click()
+    const linked = await $('.pr-list-row[data-pr-section="linked"]')
+    await expect(linked.$('.pr-list-number')).toHaveText('#100')
+    await linked.click()
+    await expect($('.pr-viewer-title')).toHaveText('Resolve conflicting changes')
+    const sidebar = await $(
+      '.thread-project-manager .chat-row.selected .chat-pr-status.has-conflicts',
+    )
+    const row = await $('.pr-list-row[data-pr-section="linked"] .pr-list-status.has-conflicts')
+    await sidebar.waitForDisplayed({ timeout: 15_000 })
+    await row.waitForDisplayed({ timeout: 15_000 })
+    await expect(sidebar).toHaveAttribute('aria-label', expect.stringMatching(/merge conflicts/i))
+    await expect(row).toHaveAttribute('aria-label', expect.stringMatching(/merge conflicts/i))
+    await expect(row).not.toHaveElementClass('has-ci-failure')
+    await expect(row.$('svg path:nth-child(2)')).toHaveAttribute('d', 'M3 3l6 6m0-6L3 9')
+    const styles = await browser.execute(() => {
+      const mark = document.querySelector('.pr-list-status.has-conflicts svg path:nth-child(2)')
+      const sidebarMark = document.querySelector(
+        '.thread-project-manager .chat-row.selected .has-conflicts svg path:nth-child(2)',
+      )
+      return {
+        fill: mark ? getComputedStyle(mark).fill : null,
+        stroke: mark ? getComputedStyle(mark).stroke : null,
+        sidebarStroke: sidebarMark ? getComputedStyle(sidebarMark).stroke : null,
+      }
+    })
+    expect(styles.fill).toBe('none')
+    expect(styles.stroke).not.toBeNull()
+    expect(styles.stroke).toBe(styles.sidebarStroke)
+    await saveElementScreenshot('#pane-projects', 'thread-pr-conflict-icon.png')
+    await saveElementScreenshot('#pane-files', 'pr-panel-conflict-icon.png')
+  })
 })
