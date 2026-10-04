@@ -68044,8 +68044,8 @@ function createDemoApi(scenario, options = {}) {
     agents: { list: () => resolved2({ agents: [], skipped: [], shadowed: [] }) },
     skills: {
       list: emptyArray,
-      sources: async () => ({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
-      setRoots: async (extraRoots) => ({
+      sources: () => resolved2({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
+      setRoots: (extraRoots) => resolved2({
         skills: [],
         diagnostics: [],
         extraRoots,
