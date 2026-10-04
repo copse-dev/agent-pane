@@ -221,8 +221,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     installPackage: '@qwen-code/qwen-code',
     autoInstall: true,
     sandbox: {
-      // No provider endpoint was observed in the unauthenticated reference
-      // probe. Keep network access closed until the user adds their endpoint.
+      // Reference traces observed only loopback calls to the local provider
+      // fixture. Keep external access closed until the user adds their endpoint.
       allowedDomains: [],
       homeDirs: ['.qwen'],
     },
