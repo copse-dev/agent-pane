@@ -312,12 +312,12 @@ describe('provider warning ownership', () => {
     f.store.setState({
       threads: f.store.getState().threads.map((thread) => ({ ...thread, status: 'running' })),
     })
-    f.store.emit('thread_status_changed')
+    f.store.emit('thread_status_changed', f.id, 'running')
     await tick()
     f.store.setState({
       threads: f.store.getState().threads.map((thread) => ({ ...thread, status: 'idle' })),
     })
-    f.store.emit('thread_status_changed')
+    f.store.emit('thread_status_changed', f.id, 'idle')
     await tick()
     assert.equal(f.warnings(), 1)
     stop()
