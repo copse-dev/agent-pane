@@ -82,6 +82,12 @@ export interface WorkerProfile {
    * did not build must be probed, because the loop trusts this declaration.
    */
   toolAvailability(): ExplicitToolAvailability
+  /**
+   * Token cap for the one recovery stream after a reasoning circle is cut. Omitted
+   * keeps the product cap; an entry that runs hard, long-reasoning tasks may state
+   * a larger one in code.
+   */
+  reasoningRecoveryMaxTokens?: number
 }
 
 /**
@@ -614,12 +620,19 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
           },
           stagedDiff: () => Promise.resolve(true),
         },
-        ...(spec.maxSteps !== null
+        ...(spec.maxSteps !== null || profile.reasoningRecoveryMaxTokens !== undefined
           ? {
               limits: {
-                maxSteps: spec.maxSteps,
-                maxLlmCalls: spec.maxSteps,
-                adaptiveExtensions: false,
+                ...(spec.maxSteps !== null
+                  ? {
+                      maxSteps: spec.maxSteps,
+                      maxLlmCalls: spec.maxSteps,
+                      adaptiveExtensions: false,
+                    }
+                  : {}),
+                ...(profile.reasoningRecoveryMaxTokens !== undefined
+                  ? { reasoningRecoveryMaxTokens: profile.reasoningRecoveryMaxTokens }
+                  : {}),
               },
             }
           : {}),
