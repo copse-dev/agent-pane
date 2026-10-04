@@ -271,13 +271,22 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     setFillState(ratio)
-    const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
+    // The title and aria-label quote the same figures as the hover beside the
+    // ring: when a part-by-part breakdown is shown it counts the whole window,
+    // while the snapshot counts the conversation budget, and quoting one in
+    // the label and the other in the hover made one control disagree with itself.
+    const shownBreakdown = options?.breakdown
+    const labelled =
+      shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0
+        ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow }
+        : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget }
+    const contextLine = `Context: ${formatTokenCount(labelled.tokens)} / ${formatTokenCount(labelled.budget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
     root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
     const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
-      `Context ${String(pct)}% used, ${formatTokenCount(snapshot.conversationTokens)} of ${formatTokenCount(snapshot.conversationBudget)} tokens${ariaUsage}`,
+      `Context ${String(pct)}% used, ${formatTokenCount(labelled.tokens)} of ${formatTokenCount(labelled.budget)} tokens${ariaUsage}`,
     )
 
     // Existing (already-run) chats keep the measured live-fill ring, but still

@@ -157,17 +157,28 @@ export function buildFooterUsageTooltip(
   // tokens beside it sum only the runs that reported usage, and a run that has
   // not reported yet is listed as running rather than silently left out.
   const allRuns = estimated ? [] : listSubagentRuns(opts.messages)
+  // Runs still going and runs that ended without reporting usage are different
+  // things: the first will report, the second never will, and calling both "no
+  // usage yet" read as a stalled total next to a run already marked done.
+  const runningRuns = allRuns.filter((run) => run.status === 'running').length
+  const unreportedRuns = allRuns.length - subagents.runs
+  const subagentRunNotes: string[] = []
+  if (subagents.runs > 0) {
+    subagentRunNotes.push(
+      `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(subagents.outputTokens)} out`,
+    )
+  }
+  if (runningRuns > 0) subagentRunNotes.push(`${String(runningRuns)} running`)
+  else if (unreportedRuns > 0) {
+    subagentRunNotes.push(
+      subagents.runs > 0 ? `${String(unreportedRuns)} without usage` : 'no usage reported',
+    )
+  }
   const subagentRow: FooterUsageTooltipRow | null =
     allRuns.length > 0
       ? {
           label: 'Subagents',
-          value: `${String(allRuns.length)} ${allRuns.length === 1 ? 'run' : 'runs'} · ${
-            subagents.runs > 0
-              ? `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(
-                  subagents.outputTokens,
-                )} out`
-              : 'no usage yet'
-          }`,
+          value: `${String(allRuns.length)} ${allRuns.length === 1 ? 'run' : 'runs'} · ${subagentRunNotes.join(' · ')}`,
         }
       : null
   const subagentRuns: FooterUsageTooltipRun[] = allRuns
