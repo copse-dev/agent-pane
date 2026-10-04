@@ -2,156 +2,79 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { globSync, readFileSync } from 'node:fs'
 import {
-  folderNameMatchesSkill,
   parseSkillFrontmatter,
-  splitSkillMarkdown,
   validateSkillFrontmatter,
+  splitSkillMarkdown,
+  folderNameMatchesSkill,
+  toSkillMetadata,
 } from './parse-skill-frontmatter.ts'
+import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 
-describe('parseSkillFrontmatter', () => {
-  it('parses inline frontmatter fields', () => {
-    const yaml = `name: demo-skill
-description: Short demo description
-disable-model-invocation: true`
-    assert.deepEqual(parseSkillFrontmatter(yaml), {
-      name: 'demo-skill',
-      description: 'Short demo description',
-      disableModelInvocation: true,
+const header = (extra = '') => `name: demo-skill\ndescription: Demo\n${extra}`
+
+describe('Agent Skills frontmatter conformance', () => {
+  it('loads the standard metadata fixture and round-trips descriptive values', () => {
+    const result = validateSkillFrontmatter(
+      `name: pdf-processing\ndescription: Process PDF files.\nlicense: Apache-2.0\ncompatibility: Requires Python 3.11\nmetadata:\n  author: Example\n  version: "1.0"\nallowed-tools: Bash(python:*) Read\nuser-invocable: false\ndisable-model-invocation: false`,
+    )
+    assert.ok(result.skill)
+    assert.deepEqual(toSkillMetadata(result.skill, '/skills/pdf-processing/SKILL.md', 'project'), {
+      name: 'pdf-processing',
+      description: 'Process PDF files.',
+      license: 'Apache-2.0',
+      compatibility: 'Requires Python 3.11',
+      metadata: { author: 'Example', version: '1.0' },
+      allowedTools: 'Bash(python:*) Read',
+      userInvocable: false,
+      disableModelInvocation: false,
       paths: [],
+      source: 'project',
+      skillPath: '/skills/pdf-processing/SKILL.md',
+      skillRoot: '/skills/pdf-processing',
+      externalLinks: [],
+      missingReferences: [],
     })
+    assert.deepEqual(result.warnings, [])
   })
 
-  it('parses block scalar descriptions', () => {
-    const yaml = `name: hf-cli
-description: >
-  Hugging Face Hub CLI for downloading and uploading models.
-disable-model-invocation: false`
-    const parsed = parseSkillFrontmatter(yaml)
-    assert.equal(parsed?.name, 'hf-cli')
-    assert.match(parsed.description, /Hugging Face Hub CLI/)
-  })
-
-  it('splits markdown frontmatter from body', () => {
-    const raw = `---
-name: demo-skill
-description: Demo
----
-
-# Body`
-    const split = splitSkillMarkdown(raw)
-    assert.ok(split)
-    assert.match(split.body, /^# Body/)
-  })
-
-  it('does not end frontmatter at a --- inside a body code fence', () => {
-    const raw = `---
-name: demo-skill
-description: A real description
----
-
-# Body
-
-\`\`\`
-some code
----
-more code after a horizontal rule
-\`\`\`
-`
-    const split = splitSkillMarkdown(raw)
-    assert.ok(split)
-    // The whole frontmatter must be captured, not just up to the in-body ---.
-    assert.match(split.frontmatter, /description: A real description/)
-    assert.match(split.body, /some code/)
-    const parsed = parseSkillFrontmatter(split.frontmatter)
-    assert.equal(parsed?.description, 'A real description')
-  })
-
-  it('treats only a standalone --- line as the closing fence (not ----)', () => {
-    const raw = `---
-name: demo-skill
-description: Demo
-----
-not a real close
----
-# Body`
-    const split = splitSkillMarkdown(raw)
-    assert.ok(split)
-    assert.match(split.frontmatter, /not a real close/)
-    assert.match(split.body, /^# Body/)
-  })
-
-  it('handles CRLF line endings', () => {
-    const raw = '---\r\nname: demo-skill\r\ndescription: Demo\r\n---\r\n\r\n# Body'
-    const split = splitSkillMarkdown(raw)
-    assert.ok(split)
-    const parsed = parseSkillFrontmatter(split.frontmatter)
-    assert.equal(parsed?.name, 'demo-skill')
-    assert.match(split.body, /^# Body/)
-  })
-
-  it('strips nested/doubled quotes from scalars', () => {
-    const yaml = `name: "'demo-skill'"
-description: "\\"Quoted desc\\""`
-    const parsed = parseSkillFrontmatter(yaml)
-    assert.equal(parsed?.name, 'demo-skill')
-    assert.equal(parsed.description, 'Quoted desc')
-  })
-
-  it('strips trailing comments only from unquoted scalars', () => {
-    const yaml = `name: demo-skill
-description: A clean description`
-    const parsed = parseSkillFrontmatter(yaml)
-    assert.equal(parsed?.name, 'demo-skill')
-    assert.equal(parsed.description, 'A clean description')
-  })
-
-  it('parses single-quoted scalars with doubled-quote escapes', () => {
-    const yaml = `name: demo-skill
-description: 'it''s a skill'`
-    const parsed = parseSkillFrontmatter(yaml)
-    assert.equal(parsed?.description, "it's a skill")
-  })
-
-  it('parses a literal block scalar description', () => {
-    const yaml = `name: demo-skill
-description: |
-  Line one
-  line two`
-    const parsed = parseSkillFrontmatter(yaml)
-    assert.match(parsed?.description ?? '', /Line one line two/)
-  })
-
-  it('parses inline and list paths', () => {
-    const listYaml = `name: demo-skill
-description: Demo
-paths:
-  - src/**
-  - "test/**"`
-    assert.deepEqual(parseSkillFrontmatter(listYaml)?.paths, ['src/**', 'test/**'])
-
-    const inlineYaml = `name: demo-skill
-description: Demo
-paths: src/**, test/**`
-    assert.deepEqual(parseSkillFrontmatter(inlineYaml)?.paths, ['src/**', 'test/**'])
-  })
-
-  it('returns null when required fields are missing', () => {
-    assert.equal(parseSkillFrontmatter('name: only-name'), null)
-  })
-
-  it('accepts the inclusive name length limit and preserves long descriptions', () => {
-    const name = 'a'.repeat(64)
-    const description = 'x'.repeat(1024)
-    assert.equal(parseSkillFrontmatter(`name: ${name}\ndescription: ${description}`)?.name, name)
-    // The 1024-character description cap is deferred: the pinned Cursor SDK
-    // skill exceeds it, and changing vendor bytes would break its provenance.
+  it('decodes YAML comments, quoted strings, folded/literal blocks and flow maps', () => {
     assert.equal(
-      parseSkillFrontmatter(`name: emoji\ndescription: ${'🔧'.repeat(1024)}`)?.description.length,
-      2048,
+      parseSkillFrontmatter('name: demo-skill # comment\ndescription: "A # literal"')?.description,
+      'A # literal',
+    )
+    assert.equal(
+      parseSkillFrontmatter('name: demo-skill\ndescription: >\n  One\n  two')?.description,
+      'One two',
+    )
+    assert.equal(
+      parseSkillFrontmatter('name: demo-skill\ndescription: |\n  One\n  two')?.description,
+      'One\ntwo',
+    )
+    assert.deepEqual(
+      parseSkillFrontmatter(header('metadata: {author: "Example", version: "1"}'))?.metadata,
+      { author: 'Example', version: '1' },
+    )
+    assert.equal(
+      parseSkillFrontmatter("name: demo-skill\ndescription: 'it''s a skill'")?.description,
+      "it's a skill",
     )
   })
 
-  it('rejects names outside the Agent Skills grammar with a stable reason', () => {
+  it('enforces inclusive field limits with character rather than UTF-16 counting', () => {
+    assert.ok(
+      parseSkillFrontmatter(
+        `name: ${'a'.repeat(64)}\ndescription: ${'🔧'.repeat(1024)}\ncompatibility: ${'a'.repeat(500)}`,
+      ),
+    )
+    for (const yaml of [
+      `name: ${'a'.repeat(65)}\ndescription: Demo`,
+      `name: demo\ndescription: ${'🔧'.repeat(1025)}`,
+      header(`compatibility: ${'a'.repeat(501)}`),
+    ])
+      assert.equal(parseSkillFrontmatter(yaml), null)
+  })
+
+  it('rejects invalid names, absent/blank descriptions and malformed optional values', () => {
     for (const name of [
       'Uppercase',
       '-leading',
@@ -159,59 +82,124 @@ paths: src/**, test/**`
       'double--hyphen',
       'has_space',
       'two words',
+    ])
+      assert.equal(parseSkillFrontmatter(`name: ${name}\ndescription: Demo`), null, name)
+    for (const yaml of [
+      'description: Demo',
+      'name: demo',
+      'name: ""\ndescription: Demo',
+      'name: demo\ndescription: " "',
+      'name: demo\ndescription: |\n',
+    ])
+      assert.equal(parseSkillFrontmatter(yaml), null, yaml)
+    for (const extra of [
+      'metadata: []',
+      'metadata: {version: 1}',
+      'license: 42',
+      'compatibility: false',
+      'allowed-tools: [Read, Write]',
+      'user-invocable: "false"',
+      'disable-model-invocation: yes',
+      'paths: [42]',
     ]) {
-      const result = validateSkillFrontmatter(`name: ${name}\ndescription: Demo`)
-      assert.equal(result.skill, null, name)
-      assert.equal(
-        result.reason,
-        'frontmatter `name` must contain lowercase letters, digits, and single hyphens between words',
-      )
+      const result = validateSkillFrontmatter(header(extra))
+      assert.equal(result.skill, null, extra)
+      assert.ok(result.reason?.startsWith('frontmatter '), extra)
+      assert.deepEqual(validateSkillFrontmatter(header(extra)), result, 'diagnostics are stable')
     }
-    assert.ok(parseSkillFrontmatter('name: pdf-2-text\ndescription: Demo'))
   })
 
-  it('reports missing, blank, and over-limit fields deterministically', () => {
-    for (const name of ['', '""', "' '"]) {
-      assert.equal(
-        validateSkillFrontmatter(`name: ${name}\ndescription: Demo`).reason,
-        'frontmatter requires a non-empty `name` field',
-      )
-    }
-    assert.equal(
-      validateSkillFrontmatter(`name: ${'a'.repeat(65)}\ndescription: Demo`).reason,
-      'frontmatter `name` must be at most 64 characters',
+  it('rejects duplicate keys, aliases, executable tags, deep maps and oversized headers', () => {
+    for (const extra of [
+      'name: other',
+      'metadata: &ref {a: "value"}\nlicense: *ref',
+      'license: !!js/function "function() {}"',
+      `metadata: ${'{a: '.repeat(12)}"x"${'}'.repeat(12)}`,
+      `license: ${'x'.repeat(65536)}`,
+    ])
+      assert.equal(parseSkillFrontmatter(header(extra)), null, extra.slice(0, 80))
+  })
+
+  it('preserves prototype-shaped metadata as inert own strings without pollution', () => {
+    const result = parseSkillFrontmatter(
+      header('metadata:\n  __proto__: inert\n  constructor: descriptive\n  prototype: text'),
     )
-    for (const description of ['', '""', "' '"]) {
-      assert.equal(
-        validateSkillFrontmatter(`name: demo\ndescription: ${description}`).reason,
-        'frontmatter requires a non-empty `description` field',
-      )
-    }
-    assert.ok(parseSkillFrontmatter(`name: demo\ndescription: ${'x'.repeat(1045)}`))
+    assert.ok(result?.metadata)
+    assert.equal(Object.hasOwn(result.metadata, '__proto__'), true)
+    assert.equal(result.metadata['__proto__'], 'inert')
+    assert.equal(result.metadata['constructor'], 'descriptive')
+    assert.equal(Object.getPrototypeOf(result.metadata), Object.prototype)
+    assert.equal(Object.hasOwn({}, 'inert'), false)
+  })
+
+  it('reports ignored unsupported fields and preserves existing paths extension', () => {
+    const result = validateSkillFrontmatter(
+      header('unknown: value\npermissions: {shell: true}\npaths: src/**, references'),
+    )
+    assert.ok(result.skill)
+    assert.deepEqual(result.skill.paths, ['src/**', 'references'])
+    assert.deepEqual(result.warnings, [
+      'Unsupported field "permissions" is ignored',
+      'Unsupported field "unknown" is ignored',
+    ])
+    assert.deepEqual(parseSkillFrontmatter(header('paths:\n  - src/**\n  - "test/**"'))?.paths, [
+      'src/**',
+      'test/**',
+    ])
+  })
+
+  it('splits CRLF markdown only at standalone frontmatter fences', () => {
+    const result = splitSkillMarkdown(
+      '---\r\nname: demo-skill\r\ndescription: Demo\r\n---\r\n\r\n```\r\n---\r\n```',
+    )
+    assert.ok(result)
+    assert.ok(parseSkillFrontmatter(result.frontmatter))
+    assert.equal(result.body, '```\n---\n```')
+    assert.equal(splitSkillMarkdown('# No header'), null)
   })
 
   it('checks the immediate parent directory across path separators', () => {
-    assert.equal(folderNameMatchesSkill('/skills/pdf-processing/SKILL.md', 'pdf-processing'), true)
-    assert.equal(
-      folderNameMatchesSkill('C:\\skills\\pdf-processing\\SKILL.md', 'pdf-processing'),
-      true,
-    )
-    assert.equal(folderNameMatchesSkill('/skills/renamed/SKILL.md', 'pdf-processing'), false)
+    assert.equal(folderNameMatchesSkill('/skills/demo-skill/SKILL.md', 'demo-skill'), true)
+    assert.equal(folderNameMatchesSkill('C:\\skills\\demo-skill\\SKILL.md', 'demo-skill'), true)
+    assert.equal(folderNameMatchesSkill('/skills/renamed/SKILL.md', 'demo-skill'), false)
   })
 
-  it('continues to load every checked-in bundled and development skill', () => {
+  it('loads every immutable bundled skill through exact-byte compatibility adapters', () => {
     const files = globSync([
       'assets/skills/**/SKILL.md',
       'vendor/bundled-cursor-skills/**/SKILL.md',
       '.cursor/skills/**/SKILL.md',
     ])
     assert.ok(files.length > 0)
+    let adapted = 0
     for (const file of files.sort()) {
-      const split = splitSkillMarkdown(readFileSync(file, 'utf8'))
+      const raw = readFileSync(file, 'utf8')
+      const normalized = adaptBundledSkill(raw)
+      if (normalized.reason) {
+        adapted++
+        assert.equal(
+          parseSkillFrontmatter(splitSkillMarkdown(raw)?.frontmatter ?? ''),
+          null,
+          'strict input rejects the original nonconforming header',
+        )
+        assert.equal(
+          adaptBundledSkill(`${raw}\n`).reason,
+          undefined,
+          'adapter accepts only the reviewed immutable bytes',
+        )
+        assert.equal(
+          splitSkillMarkdown(normalized.raw)?.body,
+          splitSkillMarkdown(raw)?.body,
+          'instruction bodies stay intact',
+        )
+      }
+      const split = splitSkillMarkdown(normalized.raw)
       assert.ok(split, file)
       const result = validateSkillFrontmatter(split.frontmatter)
       assert.ok(result.skill, `${file}: ${result.reason ?? ''}`)
       assert.equal(folderNameMatchesSkill(file, result.skill.name), true, file)
+      assert.ok(Array.from(result.skill.description).length <= 1024)
     }
+    assert.equal(adapted, 2)
   })
 })

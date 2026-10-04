@@ -1900,6 +1900,20 @@
           0
         ]
       },
+      "skills:set-roots": {
+        "api": "skills.setRoots",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "skills:sources": {
+        "api": "skills.sources",
+        "args": [
+          0,
+          0
+        ]
+      },
       "ssh-prompt:respond": {
         "api": "sshPrompt.respond",
         "args": [

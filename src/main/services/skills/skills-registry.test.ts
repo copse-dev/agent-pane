@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
   listSkills,
+  listSkillSources,
   listModelInvocableSkills,
   readSkill,
   getSkill,
@@ -146,13 +147,144 @@ description: Installed by the Codex CLI
   })
 
   it('lists user skill roots in container precedence order, including ~/.codex', () => {
-    assert.deepEqual(SKILL_CONTAINER_DIRS, ['.cursor', '.agents', '.claude', '.codex'])
+    assert.deepEqual(SKILL_CONTAINER_DIRS, ['.cursor', '.agents', '.claude', '.codex', '.github'])
     assert.deepEqual(userSkillRoots('/home/copse'), [
       '/home/copse/.cursor/skills',
       '/home/copse/.agents/skills',
       '/home/copse/.claude/skills',
       '/home/copse/.codex/skills',
+      '/home/copse/.copilot/skills',
     ])
+  })
+
+  it('discovers GitHub/Copilot skills and preserves standard metadata without authorization', async () => {
+    const github = join(tempRoot, '.github', 'skills', 'github-skill')
+    const copilot = join(tempRoot, 'home', '.copilot', 'skills', 'copilot-skill')
+    await mkdir(github, { recursive: true })
+    await mkdir(copilot, { recursive: true })
+    const optional =
+      '\nlicense: MIT\ncompatibility: Requires Python\nmetadata: {author: Example, version: "1"}\nallowed-tools: Bash(*) Read\n'
+    await writeFile(
+      join(github, 'SKILL.md'),
+      `---\nname: github-skill\ndescription: GitHub\n${optional}---\nInstructions`,
+    )
+    await writeFile(
+      join(copilot, 'SKILL.md'),
+      '---\nname: copilot-skill\ndescription: Copilot\n---\nInstructions',
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('github-skill')?.source, 'project')
+    assert.equal(getSkill('copilot-skill')?.source, 'user')
+    const meta = getSkill('github-skill')
+    assert.deepEqual(meta?.metadata, { author: 'Example', version: '1' })
+    assert.equal(meta?.license, 'MIT')
+    assert.equal(meta?.compatibility, 'Requires Python')
+    assert.equal(meta?.allowedTools, 'Bash(*) Read')
+    assert.deepEqual(meta?.paths, [], 'allowed-tools never turns into read roots')
+    assert.ok((await readSkill('github-skill')).body.includes('allowed-tools: Bash(*) Read'))
+  })
+
+  it('keeps manual and model invocation eligibility independent and Sources lists both', async () => {
+    for (const [name, flags] of [
+      ['model-only', 'user-invocable: false'],
+      ['manual-only', 'disable-model-invocation: true'],
+      ['neither', 'user-invocable: false\ndisable-model-invocation: true'],
+    ]) {
+      assert.ok(name && flags)
+      const root = join(tempRoot, '.agents', 'skills', name)
+      await mkdir(root, { recursive: true })
+      await writeFile(
+        join(root, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: Eligibility\n${flags}\n---\nBody`,
+      )
+    }
+    await refreshSkillsRegistry()
+    const manual = listSkills().map((skill) => skill.name)
+    const model = listModelInvocableSkills().map((skill) => skill.name)
+    assert.ok(
+      manual.includes('manual-only') &&
+        !manual.includes('model-only') &&
+        !manual.includes('neither'),
+    )
+    assert.ok(
+      model.includes('model-only') && !model.includes('manual-only') && !model.includes('neither'),
+    )
+    assert.ok(listSkillSources().skills.some((skill) => skill.name === 'neither'))
+  })
+
+  it('reports deterministic duplicate/invalid/unsupported diagnostics and extra-root reload', async () => {
+    const extra = join(tempRoot, 'extra-skills')
+    const duplicate = join(extra, 'demo-skill')
+    const invalid = join(extra, 'invalid')
+    const good = join(extra, 'extra-only')
+    for (const path of [duplicate, invalid, good]) await mkdir(path, { recursive: true })
+    await writeFile(
+      join(duplicate, 'SKILL.md'),
+      '---\nname: demo-skill\ndescription: Loser\n---\nBody',
+    )
+    await writeFile(
+      join(invalid, 'SKILL.md'),
+      `---\nname: invalid\ndescription: ${'x'.repeat(1025)}\n---\nBody`,
+    )
+    await writeFile(
+      join(good, 'SKILL.md'),
+      '---\nname: extra-only\ndescription: Before\nfuture-field: ignored\n---\nBody',
+    )
+    setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing')])
+    await refreshSkillsRegistry()
+    const before = listSkillSources()
+    assert.equal(before.reload, 'manual')
+    assert.deepEqual(before.extraRoots, [extra, join(tempRoot, 'missing')])
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.kind === 'shadowed' &&
+          diagnostic.shadowedBy === getSkill('demo-skill')?.skillPath,
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.kind === 'invalid' &&
+          diagnostic.name === 'invalid' &&
+          diagnostic.reason.includes('1024'),
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) => diagnostic.kind === 'unsupported' && diagnostic.name === 'extra-only',
+      ),
+    )
+    assert.ok(
+      before.diagnostics.some((diagnostic) => diagnostic.reason.includes('missing or unreadable')),
+    )
+    await refreshSkillsRegistry()
+    assert.deepEqual(listSkillSources().diagnostics, before.diagnostics)
+    await writeFile(join(good, 'SKILL.md'), '---\nname: extra-only\ndescription: After\n---\nBody')
+    assert.equal(
+      getSkill('extra-only')?.description,
+      'Before',
+      'disk edits wait for explicit refresh',
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('extra-only')?.description, 'After')
+  })
+
+  it('skips symlink skill files with a visible reason', async () => {
+    const root = join(tempRoot, '.github', 'skills', 'symlink-skill')
+    await mkdir(root, { recursive: true })
+    await symlink(
+      join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
+      join(root, 'SKILL.md'),
+    )
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('symlink-skill'), null)
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) =>
+          diagnostic.name === 'symlink-skill' && diagnostic.reason.includes('symlink'),
+      ),
+    )
   })
 
   it('does not descend into a nested repository (git worktree or clone)', async () => {
@@ -692,13 +824,13 @@ description: Broken — folder was renamed after install
         folder: 'missing-description',
         name: 'missing-description',
         description: '',
-        reason: /requires a non-empty `description` field/,
+        reason: /requires a non-empty description/,
       },
       {
         folder: 'long-name',
         name: 'x'.repeat(65),
         description: 'Demo',
-        reason: /`name` must be at most 64 characters/,
+        reason: /name: must be at most 64 characters/,
       },
     ]
     for (const fixture of cases) {
