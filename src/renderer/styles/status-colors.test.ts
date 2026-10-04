@@ -99,7 +99,9 @@ function assertNoStatusFill(css: string, selector: string): void {
  *    light-contrast.test.ts, which has no token equivalent.
  *  - video-expand.css: the black letterbox behind a video.
  *  - settings.css: two `#000` stops in a `mask-image` gradient, where only the
- *    alpha channel is read, so no hue is being chosen.
+ *    alpha channel is read, so no hue is being chosen. The existing ChatGPT
+ *    sign-in button also preserves its provider brand: black/white with a
+ *    #202020 hover. The selector-level test below pins that exception.
  */
 const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
   'markdown.css': [
@@ -113,7 +115,7 @@ const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
     '#1f1f1f',
   ],
   'video-expand.css': ['#000'],
-  'settings.css': ['#000', '#000'],
+  'settings.css': ['#000', '#000', '#000', '#202020', '#fff', '#fff', '#fff'],
 }
 
 function assertApprovedRawHex(file: string, css: string): void {
@@ -141,6 +143,37 @@ describe('status colours come from tokens (#3065)', () => {
     const markdown = stylesheets().find((sheet) => sheet.file === 'markdown.css')?.css ?? ''
     assert.throws(() => {
       assertApprovedRawHex('markdown.css', markdown.replace('#007000', '#ff0000'))
+    }, /reviewed raw hex palette/)
+  })
+
+  it('keeps the provider palette confined to the existing ChatGPT sign-in button', () => {
+    const settings = stylesheets().find((sheet) => sheet.file === 'settings.css')?.css ?? ''
+    function assertProviderSelectors(css: string): void {
+      const selectors = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter((match) => /#[0-9a-fA-F]{3,8}\b/.test(match[2] ?? ''))
+        .filter((match) => match[1]?.includes('.chatgpt-sign-in'))
+        .map((match) => match[1]?.trim())
+      assert.deepEqual(selectors, ['.chatgpt-sign-in', '.chatgpt-sign-in:hover:not(:disabled)'])
+    }
+    assertProviderSelectors(settings)
+    const base = bodiesOf(settings, '.chatgpt-sign-in').join('\n')
+    assert.deepEqual((base.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).sort(), [
+      '#000',
+      '#202020',
+      '#fff',
+      '#fff',
+      '#fff',
+    ])
+    for (const selector of ['.chatgpt-sign-in', '.chatgpt-sign-in:hover:not(:disabled)']) {
+      assert.throws(() => {
+        assertProviderSelectors(settings.replace(`${selector} {`, `${selector}, .unrelated {`))
+      })
+    }
+    assert.throws(() => {
+      assertApprovedRawHex('settings.css', settings.replace('#202020', '#202021'))
+    }, /reviewed raw hex palette/)
+    assert.throws(() => {
+      assertApprovedRawHex('settings.css', `${settings}\n.unrelated { color: #fff; }`)
     }, /reviewed raw hex palette/)
   })
 

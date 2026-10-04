@@ -60,6 +60,9 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   - That includes the small stuff (see "Change marks and status dots" below for which token each
     mark takes). `status-colors.test.ts` keeps raw hex out of component stylesheets, with a
     shrink-only allowlist for the measured light syntax palette and a few glyph colours (#3065).
+    The existing ChatGPT sign-in button preserves its provider branding: black with white text
+    and border, and a `#202020` hover. This exact selector-bound palette is a deliberate
+    provider-brand exception; other Settings controls still use app tokens.
   - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
     button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
     same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
