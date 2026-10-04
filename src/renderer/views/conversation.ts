@@ -4355,9 +4355,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // review cards) so the right-aligned blue family joins the transcript inline
   // rather than nesting inside the (also-blue) user bubble. Rebuilt on every sync
   // + live `hook_card_added`, so late cards from the same turn append in order.
+  let hookCardsVisible = store.getState().developerMode
+
+  /** Developer mode flipped: rebuild (or drop) every card host in the active thread. */
+  function syncHookCardVisibility(): void {
+    const visible = store.getState().developerMode
+    if (visible === hookCardsVisible) return
+    hookCardsVisible = visible
+    const thread = getActiveThread(store)
+    if (!thread) return
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id)
+    }
+  }
+
   function renderMessageHookCards(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove()
+    // Hook cards are a developer surface (same gate as the Hooks settings).
+    if (!store.getState().developerMode) return
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     const cards = msg?.hookCards ?? []
@@ -4913,6 +4929,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       scrollToBottom()
     }),
     store.on('settings_changed', () => {
+      syncHookCardVisibility()
       // Developer mode gates the collapsed transport-note disclosure; resync
       // without rebuilding markdown so streaming renderers stay intact.
       const thread = getActiveThread(store)
