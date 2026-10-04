@@ -14,6 +14,7 @@ import {
   isStaticPreviewUrl,
   setPreviewStaleSink,
   shutdownStaticPreviewServers,
+  staticPreviewEntryUrl,
   staticPreviewUrl,
   workspacePreviewFileUrl,
 } from './static-preview-server.ts'
@@ -180,6 +181,20 @@ describe('static browser preview server', () => {
       workspacePreviewFileUrl(root, linkedFile),
       /must stay inside the workspace preview root/,
     )
+  })
+
+  it('refuses an entry page the server would answer with a 404', async () => {
+    const root = await temporaryRoot('copse-static-preview-entry-')
+    await mkdir(join(root, 'dist', 'demo'), { recursive: true })
+    await writeFile(join(root, 'dist', 'demo', 'index.html'), '<p>demo</p>')
+
+    const url = await staticPreviewEntryUrl(root, 'dist/demo/index.html?scenario=a&autoplay=0')
+    assert.match(url, /^http:\/\/localhost:\d+\/dist\/demo\/index\.html\?scenario=a&autoplay=0$/)
+    assert.match(await staticPreviewEntryUrl(root, 'dist/demo/'), /\/dist\/demo\/$/)
+
+    // A build that has not written its output yet: fail instead of opening "Not found".
+    await assert.rejects(staticPreviewEntryUrl(root, 'dist/other/index.html'), /Nothing to preview/)
+    await assert.rejects(staticPreviewEntryUrl(root), /Nothing to preview/)
   })
 
   it('builds only workspace-relative entry URLs', () => {
