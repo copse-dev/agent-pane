@@ -67647,7 +67647,7 @@ function createDemoApi(scenario, options = {}) {
     },
     openRouter: { models: emptyArray },
     models: {
-      invalidations: async () => ({
+      invalidations: () => resolved2({
         evaluated: true,
         invalidations: [],
         selections: [],
