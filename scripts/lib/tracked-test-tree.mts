@@ -32,6 +32,7 @@ async function worktreeContent(root: string, path: string, gitlink: boolean): Pr
       const tree = await captureTrackedTestTree(file)
       return JSON.stringify([git(file, ['rev-parse', 'HEAD']), [...tree]])
     }
+    if (!details.isFile()) return `special:${String(details.mode & 0o170000)}`
     const hash = createHash('sha256')
       .update(await readFile(file))
       .digest('hex')

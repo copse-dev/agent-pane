@@ -105,6 +105,22 @@ describe('tracked test tree invariant', () => {
     })
   })
 
+  it(
+    'detects a tracked file replaced by a FIFO without opening a blocking read',
+    { skip: process.platform === 'win32' },
+    async () => {
+      await fixture(async (root) => {
+        const before = await captureTrackedTestTree(root)
+        await rm(join(root, 'generated.ts'))
+        const result = spawnSync('mkfifo', [join(root, 'generated.ts')], { encoding: 'utf8' })
+        assert.equal(result.status, 0, result.stderr)
+        assert.deepEqual(changedTrackedTestFiles(before, await captureTrackedTestTree(root)), [
+          '"generated.ts" (worktree)',
+        ])
+      })
+    },
+  )
+
   it('covers nested gitlink content and distinguishes an uninitialized submodule directory', async () => {
     await fixture(async (root) => {
       const nested = join(root, 'nested')
@@ -165,6 +181,18 @@ describe('tracked test tree invariant', () => {
       assert.deepEqual(
         [...intentionalTestUpdates({ UPDATE_HOOK_PAYLOAD_SNAPSHOTS: '1' })],
         ['src/main/services/hooks/__snapshots__/wire-payloads.json'],
+      )
+      const staged = await captureTrackedTestTree(root)
+      await rm(join(root, snapshot))
+      assert.deepEqual(
+        changedTrackedTestFiles(staged, await captureTrackedTestTree(root), allowed),
+        ['"benchmarks/escalation-review/testset/gate-replay.jsonl" (worktree)'],
+      )
+      await writeFile(join(root, snapshot), 'new\n')
+      await chmod(join(root, snapshot), 0o755)
+      assert.deepEqual(
+        changedTrackedTestFiles(staged, await captureTrackedTestTree(root), allowed),
+        ['"benchmarks/escalation-review/testset/gate-replay.jsonl" (worktree)'],
       )
     })
   })
