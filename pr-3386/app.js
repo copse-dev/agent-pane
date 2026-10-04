@@ -23071,7 +23071,8 @@ function acpModelDisplayLabel(model, agents) {
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent = agents.find((candidate) => canonicalAcpAgentId(candidate.id) === selectedId);
   const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId);
-  const title = agent?.title ?? retired?.title ?? selection2.id;
+  const known = findAcpCatalogEntry(selectedId);
+  const title = agent?.title ?? retired?.title ?? known?.title ?? selection2.id;
   if (!selection2.model) return title;
   const choice = agent?.availableModels?.find((m2) => m2.value === selection2.model);
   return `${title} \u2014 ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection2.model)}`;
@@ -23292,6 +23293,7 @@ var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
     init_service_tier();
+    init_model_selection();
   }
 });
 
@@ -34321,12 +34323,12 @@ function gitBranchIcon(className = DEFAULT) {
     className
   );
 }
-function gitPullRequestIcon(className = DEFAULT) {
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
   return outlineIcon(
     "git-pull-request",
     [
       "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
       "M13 6h3a2 2 0 0 1 2 2v7",
       "M6 9v12"
     ],
@@ -73395,15 +73397,26 @@ var init_projects_drag = __esm({
   }
 });
 
+// src/renderer/dom/pr-status.ts
+function prHasMergeConflicts(pr2) {
+  const status = pr2.mergeStateStatus?.toUpperCase();
+  return pr2.mergeable === "CONFLICTING" || status === "DIRTY" || status === "CONFLICTING";
+}
+var init_pr_status = __esm({
+  "src/renderer/dom/pr-status.ts"() {
+  }
+});
+
 // src/renderer/views/thread-pr-chips.ts
-function chatPrStatus(rollup, ciFailing) {
-  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
-  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing, conflicts) {
+  const statusLabel4 = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const label = conflicts ? `${statusLabel4}; merge conflicts` : statusLabel4;
+  const icon = rollup.kind === "merged" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts);
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? " has-conflicts" : ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -73434,9 +73447,11 @@ function createPrStatusTracker(api2, changed) {
         if (current !== generation) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
         const previous = cache.get(key);
-        lifecycleChanged = previous?.state !== state;
+        const conflicts = state === "open" && details !== null && prHasMergeConflicts(details);
+        lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts;
         cache.set(key, {
           state,
+          conflicts,
           ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
           fetchedAt: Date.now()
         });
@@ -73450,7 +73465,12 @@ function createPrStatusTracker(api2, changed) {
         });
       }).catch(() => {
         if (current !== generation) return;
-        cache.set(key, { state: cache.get(key)?.state ?? "unknown", fetchedAt: Date.now() });
+        const cached2 = cache.get(key);
+        cache.set(key, {
+          state: cached2?.state ?? "unknown",
+          ...cached2?.conflicts !== void 0 ? { conflicts: cached2.conflicts } : {},
+          fetchedAt: Date.now()
+        });
       }).finally(() => {
         if (current !== generation) return;
         inFlight4.delete(key);
@@ -73469,6 +73489,10 @@ function createPrStatusTracker(api2, changed) {
     ciFailing: (thread) => sidebarPrRefs(thread).some((ref) => {
       const entry = cache.get(githubPrKey(ref));
       return entry?.state === "open" && entry.checks === "failure";
+    }),
+    conflicts: (thread) => sidebarPrRefs(thread).some((ref) => {
+      const entry = cache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.conflicts === true;
     }),
     reset: () => {
       generation += 1;
@@ -73559,6 +73583,7 @@ var PR_STATUS_CACHE_TTL_MS;
 var init_thread_pr_chips = __esm({
   "src/renderer/views/thread-pr-chips.ts"() {
     init_helpers();
+    init_pr_status();
     init_icons();
     init_github_pr_url2();
     init_thread_pr_status2();
@@ -75001,7 +75026,11 @@ function mountProjectsPane(root, store2, api2) {
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === "open" && prStatus.ciFailing(thread))
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === "open" && prStatus.ciFailing(thread),
+            prRollup.kind === "open" && prStatus.conflicts(thread)
+          )
         );
       }
       if (thread.prRefs === void 0) {
@@ -76123,7 +76152,11 @@ function mountThreadSidebar(root, store2, api2, sources3) {
     if (prRollup) {
       row2.classList.add("has-pr-status");
       titleLine.append(
-        chatPrStatus(prRollup, prRollup.kind === "open" && prStatus.ciFailing(thread))
+        chatPrStatus(
+          prRollup,
+          prRollup.kind === "open" && prStatus.ciFailing(thread),
+          prRollup.kind === "open" && prStatus.conflicts(thread)
+        )
       );
     }
     titleLine.append(age);
@@ -81013,14 +81046,18 @@ var init_file_links = __esm({
 function cachedPrTitle(ref) {
   return titles.get(githubPrKey(ref));
 }
-function rememberPrTitle(ref, title, isDraft) {
+function rememberPrTitle(ref, title, isDraft, state, conflicts) {
   const trimmed2 = title.trim();
   if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
   const key = githubPrKey(ref);
   const previous = titles.get(key);
+  const lifecycle = state ?? previous?.state;
+  const mergeConflicts = conflicts ?? previous?.conflicts;
   titles.delete(key);
   titles.set(key, {
     title: trimmed2,
+    ...lifecycle !== void 0 ? { state: lifecycle } : {},
+    ...mergeConflicts !== void 0 ? { conflicts: mergeConflicts } : {},
     ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
   });
   if (titles.size > MAX_TITLES) {
@@ -81030,13 +81067,19 @@ function rememberPrTitle(ref, title, isDraft) {
 }
 function loadPrTitle(ref, gh) {
   const cached2 = cachedPrTitle(ref);
-  if (cached2) return Promise.resolve(cached2);
+  if (cached2?.conflicts !== void 0) return Promise.resolve(cached2);
   const key = githubPrKey(ref);
   const pending = inFlight3.get(key);
   if (pending) return pending;
   const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
     if (!details) return null;
-    rememberPrTitle(ref, details.title, details.isDraft);
+    rememberPrTitle(
+      ref,
+      details.title,
+      details.isDraft,
+      details.state,
+      prHasMergeConflicts(details)
+    );
     return cachedPrTitle(ref) ?? null;
   }).finally(() => {
     inFlight3.delete(key);
@@ -81048,6 +81091,7 @@ var MAX_TITLES, titles, inFlight3;
 var init_pr_title_cache = __esm({
   "src/renderer/markdown/pr-title-cache.ts"() {
     init_github_pr_url2();
+    init_pr_status();
     MAX_TITLES = 128;
     titles = /* @__PURE__ */ new Map();
     inFlight3 = /* @__PURE__ */ new Map();
@@ -119191,9 +119235,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function knownChecks(pr2) {
     return pr2.checks ?? checksCache.get(githubPrKey(pr2));
   }
-  function applyCiClass(node2, state) {
-    node2.className = `pr-list-ci pr-list-ci-${state}`;
-    setTooltip(node2, CI_LABEL[state]);
+  function applyPrStatus(node2, pr2, checks) {
+    const lifecycle = cachedPrTitle(pr2)?.state ?? (isPlaceholderPr(pr2) ? "UNKNOWN" : pr2.state);
+    const kind = lifecycle === "OPEN" ? "open" : lifecycle === "MERGED" ? "merged" : lifecycle === "CLOSED" ? "closed" : "unknown";
+    const failing = lifecycle === "OPEN" && checks === "failure";
+    const conflicts = lifecycle === "OPEN" && cachedPrTitle(pr2)?.conflicts === true;
+    node2.className = `chat-pr-status pr-list-status is-${kind}${conflicts ? " has-conflicts" : failing ? " has-ci-failure" : ""}`;
+    const label = `PR #${String(pr2.number)} ${kind}${conflicts ? "; merge conflicts" : ""}; ${CI_LABEL[checks]}`;
+    node2.setAttribute("role", "img");
+    node2.setAttribute("aria-label", label);
+    setTooltip(node2, label);
+    node2.replaceChildren(
+      lifecycle === "MERGED" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts)
+    );
   }
   function ensureCheck(pr2) {
     const key = githubPrKey(pr2);
@@ -119209,7 +119263,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       checksInFlight.delete(key);
       if (gen !== ciGen) return;
       const node2 = ciEls.get(key);
-      if (node2) applyCiClass(node2, checksCache.get(key) ?? "no_checks");
+      if (node2) applyPrStatus(node2, pr2, checksCache.get(key) ?? "no_checks");
     });
   }
   function ensureDiffEditor() {
@@ -119256,7 +119310,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const isSelected = selectedPr?.owner === pr2.owner && selectedPr.repo === pr2.repo && selectedPr.number === pr2.number;
     const ci2 = el("span", {});
     const state = knownChecks(pr2);
-    applyCiClass(ci2, state ?? "loading");
+    applyPrStatus(ci2, pr2, state ?? "loading");
     ciEls.set(githubPrKey(pr2), ci2);
     const agent = agentLinks.get(githubPrKey(pr2));
     const agentBadge = agent ? el(
@@ -119291,11 +119345,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       const cached2 = cachedPrTitle(pr2);
       if (cached2) {
         if (pr2.title !== cached2.title) pr2.title = cached2.title;
-        continue;
+        if (cached2.conflicts !== void 0) continue;
       }
-      if (!isPlaceholderPr(pr2)) {
-        rememberPrTitle(pr2, pr2.title);
-        continue;
+      if (!cached2 && !isPlaceholderPr(pr2)) {
+        rememberPrTitle(pr2, pr2.title, void 0, pr2.state);
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
@@ -119360,6 +119413,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       listBody.append(section);
     }
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      ensureTitles(repoPrs);
       const firstRepoPr = at(repoPrs, 0);
       const slug2 = `${firstRepoPr.owner}/${firstRepoPr.repo}`;
       const section = el("div", { class: "git-changes-section" });
@@ -119396,6 +119450,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         if (otherLoading) {
           section.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
         } else if (otherPrs.length > 0) {
+          ensureTitles(otherPrs);
           for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
         } else {
           section.append(
@@ -119449,7 +119504,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       fresh = null;
     }
     if (!isStillSelected(ref)) return;
-    if (fresh) prDetails = fresh;
+    if (fresh) {
+      prDetails = fresh;
+      rememberPrTitle(fresh, fresh.title, fresh.isDraft, fresh.state, prHasMergeConflicts(fresh));
+      const row2 = prList.find((pr2) => githubPrKey(pr2) === githubPrKey(fresh));
+      if (row2) {
+        row2.title = fresh.title;
+        row2.state = fresh.state;
+      }
+      renderList();
+    }
     renderMeta();
     renderSections();
   }
@@ -119846,10 +119910,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        rememberPrTitle(details, details.title, details.isDraft);
+        rememberPrTitle(
+          details,
+          details.title,
+          details.isDraft,
+          details.state,
+          prHasMergeConflicts(details)
+        );
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
-        if (row2 && row2.title !== details.title) {
+        if (row2) {
           row2.title = details.title;
+          row2.state = details.state;
           scheduleTitleRepaint();
         }
       }
@@ -120096,6 +120167,7 @@ var init_pr_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_tooltip();
+    init_pr_status();
     init_inline_status();
     init_pane_loading();
     init_pane_popout_button();
