@@ -1627,6 +1627,10 @@ copse-ui-field input[type=password],
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .pane-chat.is-activity-home .conversation {
+  flex: 0 0 auto;
+  padding-bottom: 0;
+}
+.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
   display: none;
 }
 .conversation {
