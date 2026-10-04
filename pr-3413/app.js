@@ -21171,12 +21171,14 @@ var init_auto_approval = __esm({
 });
 
 // src/shared/types/state.ts
-var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
+var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
 var init_state = __esm({
   "src/shared/types/state.ts"() {
     init_member_of2();
     RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
+    THREAD_SORT_MODES = ["activity", "created", "title"];
+    isThreadSortMode = memberOf(THREAD_SORT_MODES);
     THEME_PREFERENCES = ["system", "light", "dark"];
     DEFAULT_THEME_PREFERENCE = "dark";
     isThemePreference = memberOf(THEME_PREFERENCES);
@@ -34127,6 +34129,13 @@ function arrowRightIcon(className = DEFAULT) {
 function arrowDownIcon(className = DEFAULT) {
   return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
 }
+function arrowUpDownIcon(className = DEFAULT) {
+  return outlineIcon(
+    "arrow-up-down",
+    ["m21 16-4 4-4-4", "M17 20V4", "m3 8 4-4 4 4", "M7 4v16"],
+    className
+  );
+}
 function refreshIcon(className = DEFAULT) {
   return outlineIcon(
     "refresh",
@@ -42453,6 +42462,17 @@ var init_inline_status = __esm({
   }
 });
 
+// src/shared/acp-retention.ts
+var ACP_RETENTION_NOTICE;
+var init_acp_retention = __esm({
+  "src/shared/acp-retention.ts"() {
+    ACP_RETENTION_NOTICE = {
+      label: "ZDR not verified",
+      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
+    };
+  }
+});
+
 // packages/llm/src/chatgpt-plan.ts
 function chatGptPlanModelValue(clientId, model) {
   return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
@@ -42911,13 +42931,19 @@ function acpAgentOptions(agents) {
         const versioned = acpModelVersionName(model.description);
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
         options.push({
+          retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} \u2014 ${hint}` : label,
           group
         });
       }
     } else {
-      options.push({ value: acpModelValue(agent.id), label: agent.title, group });
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE
+      });
     }
   }
   return options;
@@ -43195,6 +43221,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
       const configuredButUnlisted = configuredAgent?.enabled === true;
       const staleModel = selection2?.model ? canonicalModelLabel(selection2.model) : "agent default";
       const stale = {
+        retention: ACP_RETENTION_NOTICE,
         value: current,
         label: sshWorkspace ? `${modelDisplayLabel(current)} (unavailable on SSH)` : configuredButUnlisted ? `${configuredAgent.title} \u2014 ${staleModel} (not currently advertised)` : configuredAgent ? `${configuredAgent.title} (disabled)` : `${modelDisplayLabel(current)} (not configured)`,
         group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP
@@ -43310,6 +43337,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_acp_retention();
     init_chatgpt_plan();
     init_model_catalog();
     init_local_model_catalog();
@@ -43481,7 +43509,8 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     },
     "$"
   );
-  trigger.append(labelEl, triggerCost, chevron);
+  const triggerRetention = el("span", { class: "ui-badge model-picker-retention", hidden: true });
+  trigger.append(labelEl, triggerRetention, triggerCost, chevron);
   const menu = el("div", {
     class: "model-picker-menu",
     hidden: "",
@@ -43808,6 +43837,13 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
           title: opt.label
         },
         el("span", { class: "model-picker-option-label" }, opt.label),
+        ...opt.retention ? [
+          el(
+            "span",
+            { class: "ui-badge model-picker-retention", title: opt.retention.detail },
+            opt.retention.label
+          )
+        ] : [],
         ...opt.coverage ? [
           el(
             "span",
@@ -43872,6 +43908,9 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     labelEl.textContent = label;
     labelEl.title = current;
     triggerCost.hidden = match?.coverage !== "paid";
+    triggerRetention.hidden = !match?.retention;
+    triggerRetention.textContent = match?.retention?.label ?? "";
+    triggerRetention.title = match?.retention?.detail ?? "";
   }
   async function refresh() {
     const generation = ++refreshGeneration;
@@ -45401,6 +45440,27 @@ var init_custom_providers_section = __esm({
 });
 
 // src/renderer/views/setup/acp-agents-section.ts
+function retentionNotice(agent) {
+  const known = agent ? findAcpCatalogEntry(agent.id) : void 0;
+  const source = agent && known && launchesAcpCatalogEntry(agent, known) ? AGENT_DATA_POLICY_URLS[known.id] : void 0;
+  return el(
+    "div",
+    { class: "acp-retention-notice" },
+    el("span", { class: "ui-badge provider-privacy-badge unknown" }, ACP_RETENTION_NOTICE.label),
+    el("p", { class: "field-hint" }, ACP_RETENTION_NOTICE.detail),
+    ...source ? [
+      el(
+        "p",
+        { class: "field-hint" },
+        el(
+          "a",
+          { href: source, target: "_blank", rel: "noopener noreferrer" },
+          "Agent data policy"
+        )
+      )
+    ] : []
+  );
+}
 function parseEnvText(text2) {
   const env = {};
   for (const line of text2.split("\n")) {
@@ -45652,15 +45712,20 @@ function createAcpAgentsSection(api2, opts = {}) {
     const modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: (current) => {
         const pickerOptions = [
-          { value: "", label: DEFAULT_MODEL_LABEL },
+          { value: "", label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
           ...detectedModels.map((choice) => ({
             value: choice.value,
             label: acpModelChoiceLabel(choice),
-            group: "Detected models"
+            group: "Detected models",
+            retention: ACP_RETENTION_NOTICE
           }))
         ];
         if (current && !detectedModels.some((choice) => choice.value === current)) {
-          pickerOptions.push({ value: current, label: `${current} (saved)` });
+          pickerOptions.push({
+            value: current,
+            label: `${current} (saved)`,
+            retention: ACP_RETENTION_NOTICE
+          });
         }
         return Promise.resolve(pickerOptions);
       },
@@ -45747,6 +45812,7 @@ function createAcpAgentsSection(api2, opts = {}) {
     const fields = el(
       "div",
       { class: "acp-agent-fields" },
+      retentionNotice(options.initial),
       el("label", {}, "Id", idInput),
       el("label", {}, "Title", titleInput),
       el("label", {}, "Command", commandInput),
@@ -45797,6 +45863,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         )
       );
     }
+    form.append(retentionNotice(known));
     const add2 = el("button", { type: "button", class: "provider-save" }, "Add to my agents");
     add2.addEventListener("click", () => {
       selected = known.id;
@@ -45932,15 +45999,22 @@ function createAcpAgentsSection(api2, opts = {}) {
   }
   return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select };
 }
-var ID_RE;
+var AGENT_DATA_POLICY_URLS, ID_RE;
 var init_acp_agents_section = __esm({
   "src/renderer/views/setup/acp-agents-section.ts"() {
+    init_acp_retention();
     init_acp();
     init_acp_known_agents();
     init_helpers();
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    AGENT_DATA_POLICY_URLS = {
+      "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      gemini: "https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md",
+      "qwen-code": "https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md"
+    };
     ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });
@@ -51963,6 +52037,44 @@ var init_usage_section = __esm({
   }
 });
 
+// src/shared/release-channel.mts
+function getReleaseChannel(version2) {
+  if (stableVersion.test(version2)) return "stable";
+  if (betaVersion.test(version2)) return "beta";
+  throw new Error(
+    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
+  );
+}
+var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
+var init_release_channel = __esm({
+  "src/shared/release-channel.mts"() {
+    RELEASE_CHANNELS = ["stable", "beta"];
+    numericIdentifier = "(?:0|[1-9]\\d*)";
+    stableVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
+    );
+    betaVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
+    );
+  }
+});
+
+// src/shared/update-channel-choice.ts
+function chosenUpdateChannel(saved, installedVersion) {
+  if (typeof saved === "string" && isReleaseChannel(saved)) {
+    return { channel: saved, remember: false };
+  }
+  return { channel: getReleaseChannel(installedVersion), remember: true };
+}
+var isReleaseChannel;
+var init_update_channel_choice = __esm({
+  "src/shared/update-channel-choice.ts"() {
+    init_member_of2();
+    init_release_channel();
+    isReleaseChannel = memberOf(RELEASE_CHANNELS);
+  }
+});
+
 // src/renderer/views/setup/about-section.ts
 function describeInclusion(component) {
   if (component.partOf) return `Compiled into ${component.partOf}`;
@@ -52037,6 +52149,67 @@ function createAboutSection(api2) {
     ),
     uiActions(openButton("View licence", "copse"), { align: "start" })
   );
+  const channelSelect = el(
+    "select",
+    { name: "updateChannel" },
+    el("option", { value: "beta" }, "Beta"),
+    el("option", { value: "stable" }, "Stable")
+  );
+  const channelStatus = el("p", {
+    class: "about-update-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  const updates = el(
+    "fieldset",
+    { class: "about-updates" },
+    el("legend", {}, "Updates"),
+    el(
+      "label",
+      { class: "about-update-channel" },
+      "Update channel",
+      channelSelect,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
+      )
+    ),
+    channelStatus
+  );
+  let savedChannel = "beta";
+  let installedChannel = "beta";
+  channelSelect.addEventListener("change", () => {
+    const value = channelSelect.value;
+    if (!isReleaseChannel(value)) return;
+    channelSelect.disabled = true;
+    void api2.settings.set("updateChannel", value).then(
+      () => {
+        savedChannel = value;
+        setInlineStatus(
+          channelStatus,
+          "ok",
+          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
+        );
+      },
+      (err2) => {
+        channelSelect.value = savedChannel;
+        setInlineStatus(channelStatus, "error", errorMessage(err2));
+      }
+    ).finally(() => {
+      channelSelect.disabled = false;
+    });
+  });
+  const showChannel = async (version2) => {
+    let channel = "beta";
+    try {
+      installedChannel = getReleaseChannel(version2);
+      channel = chosenUpdateChannel(await api2.settings.get("updateChannel"), version2).channel;
+    } catch {
+    }
+    savedChannel = channel;
+    channelSelect.value = channel;
+  };
   const countEl = el("span", {}, "the open-source components");
   const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
   const thirdParty = el(
@@ -52094,6 +52267,7 @@ function createAboutSection(api2) {
     loaded ??= api2.about.getInfo().then(
       (info) => {
         versionEl.textContent = info.version;
+        void showChannel(info.version);
         if (info.report) {
           render(info.report);
         } else {
@@ -52109,14 +52283,17 @@ function createAboutSection(api2) {
     );
     return loaded;
   };
-  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
   return { root, refresh };
 }
 var SHIPPED_AS_LABEL;
 var init_about_section = __esm({
   "src/renderer/views/setup/about-section.ts"() {
     init_errors4();
+    init_update_channel_choice();
+    init_release_channel();
     init_helpers();
+    init_inline_status();
     init_ui();
     SHIPPED_AS_LABEL = {
       bundled: "compiled into Copse",
@@ -58270,6 +58447,7 @@ function compactSidebarThread(thread) {
   return {
     id: thread.id,
     title: thread.title,
+    ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
@@ -63807,6 +63985,10 @@ function clearMaximizedOnClose(store2) {
   store2.setState({ rightPanelMaximized: false });
   store2.emit("right_panel_maximized_changed");
 }
+function toggleProjectsPane(store2) {
+  store2.setState({ projectsPaneOpen: !store2.getState().projectsPaneOpen });
+  store2.emit("projects_pane_changed");
+}
 function toggleFilesPane(store2) {
   const open2 = !store2.getState().filesPaneOpen;
   store2.setState({
@@ -66981,6 +67163,59 @@ var init_demo_scenarios = __esm({
         }
       },
       {
+        id: "sidebar-thread-sort",
+        label: "Sidebar thread sort",
+        project: project("demo-sidebar-sort-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Newest-prompted first, as the store keeps them: neither creation nor title order.
+        threads: [
+          {
+            id: "demo-sidebar-sort-b",
+            title: "Fix the flaky sandbox test",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-sort-c",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-sort-a",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-sort-d",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -67720,6 +67955,7 @@ function createDemoApi(scenario, options = {}) {
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,
@@ -68734,6 +68970,7 @@ function createStore(initial) {
     filesPaneOpen: false,
     rightPanelMode: "explorer",
     rightPanelMaximized: false,
+    projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
     theme: "dark",
     themePreference: DEFAULT_THEME_PREFERENCE,
@@ -68743,6 +68980,8 @@ function createStore(initial) {
     conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial
@@ -68772,6 +69011,7 @@ function createStore(initial) {
     files_pane_changed: /* @__PURE__ */ new Set(),
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
+    projects_pane_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     browser_url_requested: /* @__PURE__ */ new Set(),
@@ -70380,6 +70620,124 @@ var init_titlebar_compact = __esm({
   }
 });
 
+// src/renderer/views/keyboard-shortcuts-dialog.ts
+function isMacPlatform() {
+  const platform = navigator.platform || navigator.userAgent || "";
+  return /mac/i.test(platform);
+}
+function keyLabel(token, isMac2) {
+  switch (token) {
+    case "Mod":
+      return isMac2 ? "\u2318" : "Ctrl";
+    case "Shift":
+      return isMac2 ? "\u21E7" : "Shift";
+    case "Alt":
+      return isMac2 ? "\u2325" : "Alt";
+    default:
+      return token;
+  }
+}
+function openKeyboardShortcutsDialog() {
+  if (!dialogEl3 || dialogEl3.open) return;
+  dialogEl3.showModal();
+}
+function closeKeyboardShortcutsDialog() {
+  if (dialogEl3?.open) dialogEl3.close();
+}
+function isKeyboardShortcutsDialogOpen() {
+  return !!dialogEl3?.open;
+}
+function mountKeyboardShortcutsDialog() {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = "keyboard-shortcuts-dialog";
+  dialog2.className = "keyboard-shortcuts-overlay";
+  const isMac2 = isMacPlatform();
+  const grid = el("div", { class: "keyboard-shortcuts-grid" });
+  for (const section of SECTIONS) {
+    const group = el("div", { class: "keyboard-shortcuts-group" });
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
+    for (const shortcut of section.shortcuts) {
+      const keys = el("span", { class: "keyboard-shortcuts-keys" });
+      shortcut.keys.forEach((token) => {
+        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
+      });
+      group.append(
+        el(
+          "div",
+          { class: "keyboard-shortcuts-row" },
+          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
+          keys
+        )
+      );
+    }
+    grid.append(group);
+  }
+  const shell3 = el(
+    "div",
+    { class: "keyboard-shortcuts-shell" },
+    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
+    grid
+  );
+  clear(dialog2);
+  dialog2.append(shell3);
+  document.body.append(dialog2);
+  dialogEl3 = dialog2;
+  dialog2.addEventListener("mousedown", (e3) => {
+    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
+  });
+}
+var SECTIONS, dialogEl3;
+var init_keyboard_shortcuts_dialog = __esm({
+  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
+    init_helpers();
+    SECTIONS = [
+      {
+        title: "General",
+        shortcuts: [
+          { label: "New thread", keys: ["Mod", "N"] },
+          { label: "Open folder\u2026", keys: ["Mod", "O"] },
+          { label: "Settings", keys: ["Mod", ","] },
+          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
+          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
+          { label: "Zoom interface in", keys: ["Mod", "="] },
+          { label: "Zoom interface out", keys: ["Mod", "-"] },
+          { label: "Reset interface zoom", keys: ["Mod", "0"] },
+          { label: "Stop agent / close overlay", keys: ["Esc"] }
+        ]
+      },
+      {
+        title: "Navigation",
+        shortcuts: [
+          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
+          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
+          { label: "Find in conversation", keys: ["Mod", "F"] },
+          { label: "Next thread", keys: ["Ctrl", "Tab"] },
+          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
+          { label: "Close thread", keys: ["Mod", "W"] }
+        ]
+      },
+      {
+        title: "Panels",
+        shortcuts: [
+          { label: "Toggle sidebar", keys: ["Mod", "B"] },
+          { label: "Toggle panel", keys: ["Mod", "J"] },
+          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
+          { label: "Terminal", keys: ["Mod", "`"] },
+          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Browser", keys: ["Mod", "Shift", "B"] },
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
+        ]
+      }
+    ];
+    dialogEl3 = null;
+  }
+});
+
 // src/renderer/views/titlebar.ts
 function basename2(p2) {
   return p2.split("/").pop() ?? p2;
@@ -70390,7 +70748,31 @@ function mountTitlebar(root, store2, api2) {
   const workspaceName = el("span", { class: "workspace-name" }, "No folder");
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
-  leftCluster.append(workspaceName, sshTarget, workspaceBranch);
+  const sidebarBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost titlebar-sidebar-btn",
+      "aria-label": "Toggle sidebar"
+    },
+    outlineIcon(
+      "sidebar",
+      ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z", "M9 4v16"],
+      "titlebar-btn-icon"
+    )
+  );
+  sidebarBtn.addEventListener("click", () => {
+    toggleProjectsPane(store2);
+  });
+  function syncSidebar() {
+    const open2 = store2.getState().projectsPaneOpen;
+    document.getElementById("body")?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open2);
+    sidebarBtn.setAttribute("aria-pressed", String(open2));
+    const chord = isMacPlatform() ? "\u2318B" : "Ctrl+B";
+    setTooltip(sidebarBtn, `${open2 ? "Hide" : "Show"} sidebar (${chord})`);
+  }
+  syncSidebar();
+  leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
   const dragRegion = el("div", { class: "titlebar-drag" });
   const panelControls = mountPanelModeControls(store2, api2, {
     alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"])
@@ -70498,6 +70880,7 @@ function mountTitlebar(root, store2, api2) {
   syncName();
   syncBranch();
   const unsubs = [
+    store2.on("projects_pane_changed", syncSidebar),
     store2.on("workspace_changed", () => {
       syncName();
       syncBranchNow();
@@ -70531,16 +70914,21 @@ function mountTitlebar(root, store2, api2) {
     });
   };
 }
+var PROJECTS_COLLAPSED_CLASS;
 var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
     init_helpers();
+    init_outline_icon();
     init_tooltip();
     init_open_in_editor();
     init_panel_mode_controls();
     init_active_thread_owner();
     init_titlebar_compact();
+    init_panels();
+    init_keyboard_shortcuts_dialog();
+    PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
 
@@ -70965,6 +71353,22 @@ var init_thread_filter = __esm({
     SCAN_DELAY_MS = 200;
     PROMPT_INDEX_MAX_CHARS = 8e6;
     filterableContentCache = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/renderer/controller/thread-order.ts
+function orderSidebarThreads(threads, mode, reverse) {
+  const ordered = [...threads];
+  if (mode === "created") {
+    ordered.sort((a3, b4) => (b4.createdAt ?? 0) - (a3.createdAt ?? 0));
+  } else if (mode === "title") {
+    const name = (thread) => thread.title || "New Thread";
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+var init_thread_order = __esm({
+  "src/renderer/controller/thread-order.ts"() {
   }
 });
 
@@ -73334,6 +73738,16 @@ function mountProjectsPane(root, store2, api2) {
     },
     searchIcon("ui-icon ui-icon-sm")
   );
+  const sortBtn = el(
+    "button",
+    {
+      class: "projects-sort-btn",
+      "aria-label": "Sort threads",
+      "aria-haspopup": "menu",
+      "data-tooltip": "Sort threads"
+    },
+    arrowUpDownIcon("ui-icon ui-icon-sm")
+  );
   const addBtn = el(
     "button",
     {
@@ -73373,6 +73787,7 @@ function mountProjectsPane(root, store2, api2) {
     { class: "pane-projects-header" },
     title,
     searchToggle,
+    sortBtn,
     activityBtn,
     addBtn
   );
@@ -73442,6 +73857,41 @@ function mountProjectsPane(root, store2, api2) {
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
   let sshWorkspaceEnabled = false;
+  const SORT_LABELS = {
+    activity: "Activity order",
+    created: "Created",
+    title: "Thread name"
+  };
+  const saveSort = (key, value) => {
+    void api2.settings.set(key, value).catch((err2) => {
+      showErrorToast("Could not save the thread order", err2);
+    });
+  };
+  sortBtn.addEventListener("click", () => {
+    const rect = sortBtn.getBoundingClientRect();
+    const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: "Sort by" },
+      ...THREAD_SORT_MODES.map((mode) => ({
+        label: SORT_LABELS[mode],
+        checked: mode === sidebarThreadSort,
+        onSelect: () => {
+          store2.setState({ sidebarThreadSort: mode });
+          saveSort("sidebarThreadSort", mode);
+          render();
+        }
+      })),
+      {
+        label: "Reverse order",
+        checked: sidebarThreadSortReverse,
+        onSelect: () => {
+          store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
+          saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
+          render();
+        }
+      }
+    ]);
+  });
   addBtn.addEventListener("click", () => {
     const rect = addBtn.getBoundingClientRect();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
@@ -74541,8 +74991,11 @@ function mountProjectsPane(root, store2, api2) {
       const matchingThreads = isFiltering ? sidebarThreads.filter(
         (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
-      const conversationThreads = matchingThreads.filter(
-        (thread) => thread.automation === void 0
+      const conversationThreads = orderSidebarThreads(
+        matchingThreads.filter((thread) => thread.automation === void 0),
+        // A filter's matches stay newest first; the chosen order is for the browse list.
+        isFiltering ? "activity" : store2.getState().sidebarThreadSort,
+        !isFiltering && store2.getState().sidebarThreadSortReverse
       );
       const visibleLimit = visibleThreadCounts.get(project2.id) ?? SIDEBAR_THREADS_PAGE_SIZE;
       const activeId = project2.id === activeProjectId ? activeThreadId : null;
@@ -74752,6 +75205,8 @@ var init_projects_pane = __esm({
     init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
+    init_thread_order();
+    init_state();
     init_sidebar_thread();
     init_attention();
     init_activity_panel();
@@ -101222,10 +101677,10 @@ var init_changes_stat = __esm({
 
 // src/renderer/views/create-pr-dialog.ts
 function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openCreatePrDialog(opts) {
   const dialog2 = ensureDialog4();
@@ -101249,17 +101704,16 @@ function openCreatePrDialog(opts) {
   bodyInput.addEventListener("input", () => {
     bodyIsUsers = true;
   });
-  if (opts.bodyPromise) {
+  let bodyPending = !!opts.bodyPromise;
+  const bodyReady = opts.bodyPromise?.catch(() => null).then((suggested) => {
+    bodyPending = false;
+    bodyInput.classList.remove("is-pending");
+    bodyInput.placeholder = "Optional";
+    if (!bodyIsUsers && suggested) bodyInput.value = suggested;
+    return suggested;
+  });
+  if (bodyReady) {
     bodyInput.classList.add("is-pending");
-    void opts.bodyPromise.then((suggested) => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-      if (bodyIsUsers || !suggested) return;
-      bodyInput.value = suggested;
-    }).catch(() => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-    });
   }
   const draftInput = el("input", {
     type: "checkbox",
@@ -101289,8 +101743,9 @@ function openCreatePrDialog(opts) {
   };
   syncCreateLabel();
   draftInput.addEventListener("change", syncCreateLabel);
+  let submitting = false;
   const syncCreateEnabled = () => {
-    createBtn.disabled = titleInput.value.trim().length === 0;
+    createBtn.disabled = submitting || titleInput.value.trim().length === 0;
   };
   syncCreateEnabled();
   titleInput.addEventListener("input", syncCreateEnabled);
@@ -101354,8 +101809,21 @@ function openCreatePrDialog(opts) {
     });
     createBtn.addEventListener("click", () => {
       const title = titleInput.value.trim();
-      if (!title) return;
-      finish({ title, body: bodyInput.value.trim(), draft: draftInput.checked });
+      if (!title || submitting || settled) return;
+      const choice = { title, body: bodyInput.value.trim(), draft: draftInput.checked };
+      if (!bodyPending || bodyIsUsers) {
+        finish(choice);
+        return;
+      }
+      submitting = true;
+      syncCreateEnabled();
+      titleInput.disabled = true;
+      bodyInput.disabled = true;
+      draftInput.disabled = true;
+      createBtn.textContent = "Waiting for description\u2026";
+      void bodyReady?.then((suggested) => {
+        finish({ ...choice, body: suggested?.trim() ?? "" });
+      });
     });
     titleInput.addEventListener("keydown", (e3) => {
       if (e3.key !== "Enter") return;
@@ -101367,11 +101835,11 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
     init_helpers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -140664,10 +141132,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -140687,7 +141155,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -140837,7 +141305,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -140848,125 +141316,8 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
-    openImpl2 = null;
-  }
-});
-
-// src/renderer/views/keyboard-shortcuts-dialog.ts
-function isMacPlatform() {
-  const platform = navigator.platform || navigator.userAgent || "";
-  return /mac/i.test(platform);
-}
-function keyLabel(token, isMac2) {
-  switch (token) {
-    case "Mod":
-      return isMac2 ? "\u2318" : "Ctrl";
-    case "Shift":
-      return isMac2 ? "\u21E7" : "Shift";
-    case "Alt":
-      return isMac2 ? "\u2325" : "Alt";
-    default:
-      return token;
-  }
-}
-function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
-}
-function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
-}
-function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
-}
-function mountKeyboardShortcutsDialog() {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = "keyboard-shortcuts-dialog";
-  dialog2.className = "keyboard-shortcuts-overlay";
-  const isMac2 = isMacPlatform();
-  const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
-    const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
-      const keys = el("span", { class: "keyboard-shortcuts-keys" });
-      shortcut.keys.forEach((token) => {
-        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
-      });
-      group.append(
-        el(
-          "div",
-          { class: "keyboard-shortcuts-row" },
-          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
-          keys
-        )
-      );
-    }
-    grid.append(group);
-  }
-  const shell3 = el(
-    "div",
-    { class: "keyboard-shortcuts-shell" },
-    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
-    grid
-  );
-  clear(dialog2);
-  dialog2.append(shell3);
-  document.body.append(dialog2);
-  dialogEl5 = dialog2;
-  dialog2.addEventListener("mousedown", (e3) => {
-    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
-  });
-}
-var SECTIONS, dialogEl5;
-var init_keyboard_shortcuts_dialog = __esm({
-  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
-    init_helpers();
-    SECTIONS = [
-      {
-        title: "General",
-        shortcuts: [
-          { label: "New thread", keys: ["Mod", "N"] },
-          { label: "Open folder\u2026", keys: ["Mod", "O"] },
-          { label: "Settings", keys: ["Mod", ","] },
-          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
-          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
-          { label: "Zoom interface in", keys: ["Mod", "="] },
-          { label: "Zoom interface out", keys: ["Mod", "-"] },
-          { label: "Reset interface zoom", keys: ["Mod", "0"] },
-          { label: "Stop agent / close overlay", keys: ["Esc"] }
-        ]
-      },
-      {
-        title: "Navigation",
-        shortcuts: [
-          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
-          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
-          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
-          { label: "Find in conversation", keys: ["Mod", "F"] },
-          { label: "Next thread", keys: ["Ctrl", "Tab"] },
-          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
-          { label: "Close thread", keys: ["Mod", "W"] }
-        ]
-      },
-      {
-        title: "Panels",
-        shortcuts: [
-          { label: "Toggle side panel", keys: ["Mod", "B"] },
-          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
-          { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
-          { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] },
-          // Same physical key as above: while the browser page itself has focus,
-          // Mod+L shares its selection (or a screenshot) instead of focusing the
-          // address bar — see attachBrowserGuestShareShortcut.
-          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
-        ]
-      }
-    ];
     dialogEl5 = null;
+    openImpl2 = null;
   }
 });
 
@@ -143515,6 +143866,8 @@ async function loadStartupSettings(settings) {
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -143531,6 +143884,8 @@ async function loadStartupSettings(settings) {
     settings.get("layout"),
     settings.get("autoPortraitRightPanel"),
     settings.get("rightPanelPosition"),
+    settings.get("sidebarThreadSort"),
+    settings.get("sidebarThreadSortReverse"),
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
@@ -143548,6 +143903,8 @@ async function loadStartupSettings(settings) {
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -144122,7 +144479,7 @@ function matchActivityPanelShortcut(e3) {
 function matchPanelShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
   if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "togglePanel";
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
   if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
   if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
   if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
@@ -144131,6 +144488,10 @@ function matchPanelShortcut(e3) {
   return null;
 }
 function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
   if (action === "togglePanel") {
     toggleFilesPaneWithWorkspace(store2, api2);
     return;
@@ -153174,6 +153535,7 @@ async function boot() {
   const savedLayout = startupSettings.layout;
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel;
   const savedRightPanelPosition = startupSettings.rightPanelPosition;
+  const savedSidebarThreadSort = startupSettings.sidebarThreadSort;
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser;
   const savedDeveloperMode = startupSettings.developerMode;
   const savedTheme = startupSettings.theme;
@@ -153210,6 +153572,8 @@ async function boot() {
     conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
+    sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort) ? savedSidebarThreadSort : "activity",
+    sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === "boolean" ? savedDeveloperMode : false
   });
@@ -153249,6 +153613,10 @@ async function boot() {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
     openNewThread(store);
+  });
+  api.menu.onToggleSidebar(() => {
+    ensureLayout();
+    toggleProjectsPane(store);
   });
   api.menu.onTogglePanel(() => {
     ensureLayout();
