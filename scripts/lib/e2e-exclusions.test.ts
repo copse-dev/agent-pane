@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { quarantineScopeDigest } from './e2e-release-policy.mts'
 import {
   collectE2eExclusions,
   exclusionRegistrySchema,
@@ -265,6 +266,33 @@ describe('validateExclusionRegistry', () => {
     assert.ok(result.errors.includes(`Duplicate registry entry: ${spec}`))
     assert.ok(result.errors.includes(`Missing spec: ${spec}`))
     assert.ok(result.errors.includes(`Review date precedes inventory date: ${spec}`))
+  })
+
+  it('fails ordinary CI when an existing waiver expires or its evidence changes', () => {
+    const valid = registry()
+    const entry = valid.entries[0]
+    assert.ok(entry?.accountability)
+    entry.accountability.owner = 'maintainer'
+    entry.accountability.waiver = {
+      reviewedBy: 'maintainer',
+      reviewedOn: '2026-10-04',
+      expiresOn: '2026-10-11',
+      decisionUrl: 'https://github.com/copse-dev/agent-pane/issues/2719#issuecomment-123',
+      reason: 'Bounded owner review',
+      scopeDigest: quarantineScopeDigest(entry),
+    }
+    const actual = [{ spec, marker }]
+    const sources = new Set([spec])
+    assert.deepEqual(validateExclusionRegistry(valid, actual, sources, '2026-10-10').errors, [])
+    assert.match(
+      validateExclusionRegistry(valid, actual, sources, '2026-10-11').errors.join('\n'),
+      /expired/,
+    )
+    entry.coverage = 'Changed replacement evidence'
+    assert.match(
+      validateExclusionRegistry(valid, actual, sources, '2026-10-10').errors.join('\n'),
+      /current exclusion/,
+    )
   })
 
   it('rejects incomplete metadata, invalid dates, and unknown fields in the registry', () => {
