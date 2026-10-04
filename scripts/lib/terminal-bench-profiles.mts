@@ -5,6 +5,7 @@ import type {
 } from '@copse/agent/reasoning-circle-detector.ts'
 import { keyOf } from '@copse/std/member-of.ts'
 import { z } from 'zod'
+import type { ReasoningSoftBudget } from '@copse/agent/reasoning-budget.ts'
 
 export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-aligned'] as const
 
@@ -76,7 +77,16 @@ export const TERMINAL_BENCH_RUNTIME_CONFIGURATION_SCHEMA = z
       .enum(['legacy-two-cut-v1', 'suppression-ladder-v1'])
       .default('legacy-two-cut-v1'),
     suppressedOutputTokens: positiveInteger.default(1024),
-    softReasoningBudget: z.null().default(null),
+    softReasoningBudget: z
+      .object({
+        tokens: positiveInteger,
+        carryChars: positiveInteger,
+        maxCutsPerRun: positiveInteger,
+        maxConsecutiveCuts: positiveInteger,
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   .strict()
 
@@ -87,7 +97,7 @@ export type TerminalBenchRuntimeConfiguration = z.infer<
 export interface TerminalBenchStreamCapOverrides {
   recoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   suppressedOutputTokens?: number
-  softReasoningBudget?: null
+  softReasoningBudget?: ReasoningSoftBudget | null
   maxStreamOutputTokens?: number
   reasoningRunawayRecoveryOutputTokens?: number
 }

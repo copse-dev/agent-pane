@@ -1,5 +1,5 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
-import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -455,6 +455,7 @@ if (!gotSingleInstanceLock) {
 app
   .whenReady()
   .then(async () => {
+    await appRuntimeReady
     // Ahead of the mode branches below: every mode, headless included, should
     // stop when its terminal does. See `installSignalHandlers` for why this
     // cannot be done at module scope.

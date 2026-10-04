@@ -31,9 +31,9 @@ describe('approval cancellation settle guard', function () {
     const requests = [
       {
         id: 'read-access',
-        title: 'Allow read access outside of the project?',
+        title: 'Read outside the project?',
         body: 'ls -la ~/.copse',
-        bodyAdvice: 'The agent wants to read outside the project: ~/.copse',
+        bodyAdvice: 'The agent wants to read ~/.copse.',
         type: 'shell',
         collapseDetails: true,
         approveOnceLabel: 'Approve this command',

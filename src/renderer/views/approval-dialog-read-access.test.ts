@@ -35,9 +35,9 @@ const SETTLE_MS = 500
 
 const READ_ACCESS: EmitReq = {
   id: 'read',
-  title: 'Allow read access outside of the project?',
+  title: 'Read outside the project?',
   body: 'ls -la ~/.copse',
-  bodyAdvice: 'The agent wants to read outside the project: ~/.copse',
+  bodyAdvice: 'The agent wants to read ~/.copse.',
   collapseDetails: true,
   approveOnceLabel: 'Approve this command',
 }
@@ -143,7 +143,7 @@ describe('approval dialog — read-access prompt', () => {
 
     assert.equal(
       dialog.querySelector('.approval-heading')?.textContent,
-      'Allow read access outside of the project?',
+      'Read outside the project?',
     )
     assert.match(dialog.querySelector('.approval-advice')?.textContent ?? '', /~\/\.copse/)
     // The command is present for assistive tech and instant reveal, but hidden.

@@ -7,7 +7,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-// Visual eval for the opt-in "Detected settings" scan control in
+// Visual eval for the opt-in "Detected API keys" scan control in
 // Settings → General. The e2e harness blanks every provider env var (see
 // wdio.conf.ts), so the in-app scan runs end-to-end through the real IPC and
 // deterministically reports an empty result on CI. The detected-rows / import
@@ -43,7 +43,7 @@ describe('environment API-key detection (Settings → General)', () => {
     const host = $('#settings-env-detect-host')
     // #1448 renamed this legend as part of rewriting Settings' copy; the section
     // itself is unchanged.
-    await expect(host.$('legend=Detected settings')).toBeDisplayed()
+    await expect(host.$('legend=Detected API keys')).toBeDisplayed()
 
     const scanBtn = host.$('button=Scan environment')
     await expect(scanBtn).toBeDisplayed()

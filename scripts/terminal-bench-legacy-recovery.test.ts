@@ -28,7 +28,10 @@ for (const id of [
       },
     }
     const profile = terminalBenchProfile(id)
-    const runtime = terminalBenchRuntimeConfiguration(profile, {})
+    // Pin the immutable profile baseline, without the reported soft-budget override.
+    const runtime = terminalBenchRuntimeConfiguration(profile, {
+      COPSE_TERMINAL_REASONING_SOFT_BUDGET_TOKENS: '0',
+    })
     const options = terminalBenchLoopOptions(profile, runtime, 'inspect the source')
     assert.equal(options.reasoningRunawayRecoveryStrategy, 'legacy-two-cut-v1')
     const chunks: AgentStreamChunk[] = []

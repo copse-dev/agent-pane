@@ -137,6 +137,52 @@ first run of this set found gaps in both gates, and this change fixes them:
   Most wrong-sandbox cases are package scripts and `$TMPDIR`, which the shell-scope rubric calls
   external and the product contains in the OS sandbox on purpose.
 
+## Gate replay
+
+`gates.mjs` pins each analyser on its own. The gate replay pins what they add up to: it runs every
+command through the real permission gate, `ensureShellCommandPermitted`, and records whether the
+user is asked, which question they see, and whether an unasked command runs inside or outside the
+sandbox.
+
+```bash
+pnpm test -- shell-gate-replay
+UPDATE_GATE_REPLAY=1 pnpm test -- shell-gate-replay
+```
+
+The test is `src/main/services/security/shell-gate-replay.test.ts`, and `gate-replay.jsonl` holds
+the pinned outcomes. Each row is one command with one outcome per situation. The situations are the
+cells of the platform matrix in [`docs/shell-permissions.md`](../../../docs/shell-permissions.md#platform-matrix):
+
+| Situation              | What it models                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `sandbox`              | macOS or Linux with the project sandbox active, auto-approval at its default (`read`)     |
+| `sandbox-remote-write` | the same, with the auto-approval level raised to `remote-write` and a configured `origin` |
+| `no-sandbox`           | Windows, or a sandbox that failed to start                                                |
+| `auto-run-off`         | sandbox active, "auto-run sandbox commands" turned off                                    |
+| `yolo-sandbox`         | Guarded YOLO with the sandbox active                                                      |
+| `yolo-no-sandbox`      | Guarded YOLO with no sandbox                                                              |
+
+An outcome is `allow:contained`, `allow:outside` (with the source that let it through, when it was
+not Guarded YOLO), `prompt:<cause>` with the question's cause, or `deny`.
+
+Two invariants hold whatever the snapshot says. Without a sandbox, or with auto-run off, nothing
+runs without a question. No command labelled `ask` leaves the sandbox unasked. A change to either
+the gate or a classifier shows up as a changed row, so review the diff the way you would a
+`gates.mjs` diff and update the snapshot with the change that caused it.
+
+Things to know when reading it:
+
+- It skips the 13 cases that carry `files`. The gate reads script contents from the real
+  filesystem, so those cases need fixtures this test does not create.
+- The anonymised machine (`/Users/dev`) is moved under a scratch directory inside the repository,
+  and each command is rewritten to match, so that the gate can read a real `.git/config`. Results
+  do not depend on where the repository is checked out.
+- A decline answers every prompt, so each row is the gate's first decision. Follow-ups such as the
+  unsandboxed retry after a verified block are not replayed.
+- `allow:contained` on a command labelled `ask` is not a leak: the labels judge a command running
+  outside the sandbox, and in standard mode the sandbox is what contains it. The replay lists these
+  so that the reliance on containment is visible and reviewed rather than implicit.
+
 ## Inference
 
 ```bash

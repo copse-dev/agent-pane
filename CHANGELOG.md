@@ -28,6 +28,13 @@ released — rather than copying every published entry.
   Copse version and Mac platform already filled in. Nothing about your
   projects, threads, or settings is included, and nothing is filed until you
   submit the form.
+- The footer's context ring and token counter are now one control. The ring is
+  the only thing left in the footer: the percentage and the `N tokens` text are
+  gone, and one hover shows the context breakdown, token usage, cache and cost,
+  and each subagent run with its status and tokens. The ring turns amber from
+  80% of the context window and red from 95%; figures reported by ACP agents
+  keep the same solid track. The footer now needs less width before it
+  collapses into its compact layout.
 - The macOS disk image is now signed and notarized by Apple, as well as the
   app inside it, so macOS can check the download itself before you open it.
 - In the concise thread view, clicking the row for a running turn (for

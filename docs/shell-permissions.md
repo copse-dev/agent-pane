@@ -227,9 +227,16 @@ guest.
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
-“Allow read access outside of the project?” question. Its primary action grants that proven read
+“Read outside the project?” question. Its primary action grants that proven read
 shape for the remainder of the thread, in memory only. An expanded “Approve this command” action
 approves one invocation without a grant.
+
+Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
+skip the question: the seatbelt already lets every command read there, so the gate records a
+`user-temp-read` decision and allows the command. A leading `NAME=/literal/path;` assignment is
+folded into later `$NAME` references before analysis (shell-behaviour variables such as `PATH` are
+never folded), and a `<` input redirect counts as a read of its target, so `tr … < "$L"` is
+classified by the file it opens.
 
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
@@ -607,4 +614,6 @@ the registry still fails contained and offers to run outside.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.
+`shell-gate-replay.test.ts` replays the public command test set through the real gate under each
+platform situation and pins every outcome (`benchmarks/escalation-review/testset/gate-replay.jsonl`).
 Update this document and those tests with any intentional contract change.

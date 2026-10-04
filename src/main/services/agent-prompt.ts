@@ -4,6 +4,7 @@ import {
   type PromptSectionId,
   type PromptSectionVars,
 } from './agent-prompt-sections.ts'
+import type { PromptProfile } from './agent-prompt-profile.ts'
 import { AGENT_EXECUTION_GUIDANCE } from './agent-execution-guidance.ts'
 
 export {
@@ -91,8 +92,8 @@ function toSectionVars(v: BasePromptVars): PromptSectionVars {
   }
 }
 
-function buildBasePrompt(v: BasePromptVars): string {
-  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)))
+function buildBasePrompt(v: BasePromptVars, profile: PromptProfile = 'default'): string {
+  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)), [], profile)
 }
 
 /**
@@ -161,6 +162,45 @@ export const BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI = buildBasePrompt({
   tools: EXPLORE_MODE_VARS.tools.replace(`${INVESTIGATE_CI_TOOL_LINE}\n`, ''),
 })
 export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt(DIRECT_READS_MODE_VARS)
+
+const WITHOUT_INVESTIGATE_CI_VARS: BasePromptVars = {
+  ...EXPLORE_MODE_VARS,
+  tools: EXPLORE_MODE_VARS.tools.replace(`${INVESTIGATE_CI_TOOL_LINE}\n`, ''),
+}
+
+export const BASE_PROMPT_VARIANTS = [
+  'explore',
+  'exploreWithoutInvestigateCi',
+  'directReads',
+] as const
+export type BasePromptVariant = (typeof BASE_PROMPT_VARIANTS)[number]
+
+const VARIANT_VARS: Readonly<Record<BasePromptVariant, BasePromptVars>> = {
+  explore: EXPLORE_MODE_VARS,
+  exploreWithoutInvestigateCi: WITHOUT_INVESTIGATE_CI_VARS,
+  directReads: DIRECT_READS_MODE_VARS,
+}
+
+const PROFILE_BASE_PROMPTS = new Map<string, string>()
+
+/**
+ * Base prompt for a variant under a profile. The `default` profile is exactly
+ * the shipping `BASE_SYSTEM_PROMPT*` constants; other profiles are built once and
+ * reused, so a thread's prompt prefix is identical on every turn.
+ */
+export function baseSystemPromptFor(variant: BasePromptVariant, profile: PromptProfile): string {
+  if (profile === 'default') {
+    if (variant === 'explore') return BASE_SYSTEM_PROMPT
+    if (variant === 'exploreWithoutInvestigateCi') return BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI
+    return BASE_SYSTEM_PROMPT_DIRECT_READS
+  }
+  const key = `${profile}:${variant}`
+  const cached = PROFILE_BASE_PROMPTS.get(key)
+  if (cached !== undefined) return cached
+  const prompt = buildBasePrompt(VARIANT_VARS[variant], profile)
+  PROFILE_BASE_PROMPTS.set(key, prompt)
+  return prompt
+}
 
 /** Vars for the explore-mode base prompt — ablation evals pin against these. */
 export const EXPLORE_BASE_PROMPT_VARS = EXPLORE_MODE_VARS

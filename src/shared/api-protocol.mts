@@ -66,4 +66,6 @@
 // v37 conservatively versions the optional `verbosity` field on turn model parameters.
 // v38 conservatively versions interrupted-turn recovery metadata.
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
-export const API_PROTOCOL_VERSION = 39 as const
+// v40 versions the queued-message model snapshot in thread payloads.
+// v41 versions container-run consent fields and terminal state.
+export const API_PROTOCOL_VERSION = 41 as const
