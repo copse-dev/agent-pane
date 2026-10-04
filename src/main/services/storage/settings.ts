@@ -4,7 +4,7 @@ import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
-import { runSerialized, runSerializedUpdate } from './write-queue.ts'
+import { SETTINGS_WRITE_QUEUE, runSerialized, runSerializedUpdate } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import {
   expectString,
@@ -25,10 +25,6 @@ import { ALLOW_PLAINTEXT_SECRETS_ENV, resolveSecretWritePolicy } from './secret-
 // observe another process's write to a key it has already read. In-process
 // writers stay coherent via write-through + the shared settings write queue.
 const cached = openPersistentStore({ name: 'settings' })
-
-// Distinct write-queue namespace so settings keys can't collide with the shared
-// electron-store keys serialized elsewhere.
-const SETTINGS_WRITE_QUEUE = 'settings:transaction'
 
 interface StoredKey {
   v: 1

@@ -2,7 +2,7 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
-import { runSerialized, runSerializedUpdate } from './write-queue.ts'
+import { SETTINGS_WRITE_QUEUE, runSerialized, runSerializedUpdate } from './write-queue.ts'
 
 const settings = new Map<string, unknown>([
   // Unit tests must not wait on an optional LM Studio scope classifier. Suites
@@ -140,7 +140,7 @@ export function setSettings(
     if (!schema) throw new Error(`Unregistered setting: ${key}`)
     parsed[key] = schema.parse(value)
   }
-  return runSerialized('settings:transaction', () => {
+  return runSerialized(SETTINGS_WRITE_QUEUE, () => {
     if (roleAssignments)
       parsed['roleModels'] = getSettingSchema('roleModels')?.parse({
         ...getSetting('roleModels', {}),
@@ -156,7 +156,7 @@ export function updateSetting<T>(key: string, fallback: T, update: (current: T) 
   }
   const schema = getSettingSchema(key)
   return runSerializedUpdate(
-    'settings:transaction',
+    SETTINGS_WRITE_QUEUE,
     () => getSetting(key, fallback),
     update,
     (next) => {

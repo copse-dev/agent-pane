@@ -2,3 +2,6 @@
 // heaviest user and must share one queue with every other writer of the same
 // paths). Re-exported so `drainWriteQueue` and `runSerialized` keep their import.
 export * from '@copse/thread-store/write-queue.ts'
+
+// Every ordinary batch and read-modify-write shares one settings-store queue.
+export const SETTINGS_WRITE_QUEUE = 'settings:transaction'
