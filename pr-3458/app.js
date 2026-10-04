@@ -21232,12 +21232,13 @@ var init_openrouter = __esm({
 });
 
 // packages/llm/src/reserved-prefixes.ts
-var REMOTE_AGENT_MODEL_PREFIX, LMSTUDIO_MODEL_PREFIX, ACP_MODEL_PREFIX, PLUGIN_MODEL_PREFIX, AUTO_MODEL_PREFIX, AGENT_MODEL_SEP;
+var REMOTE_AGENT_MODEL_PREFIX, LMSTUDIO_MODEL_PREFIX, ACP_MODEL_PREFIX, CHATGPT_PLAN_MODEL_PREFIX, PLUGIN_MODEL_PREFIX, AUTO_MODEL_PREFIX, AGENT_MODEL_SEP;
 var init_reserved_prefixes = __esm({
   "packages/llm/src/reserved-prefixes.ts"() {
     REMOTE_AGENT_MODEL_PREFIX = "remote-agent:";
     LMSTUDIO_MODEL_PREFIX = "lmstudio:";
     ACP_MODEL_PREFIX = "acp:";
+    CHATGPT_PLAN_MODEL_PREFIX = "chatgpt-plan:";
     PLUGIN_MODEL_PREFIX = "plugin-model:";
     AUTO_MODEL_PREFIX = "auto:";
     AGENT_MODEL_SEP = "#";
@@ -21284,6 +21285,7 @@ var init_model_selection = __esm({
     AGENT_SHAPED = [
       ["remote-agent", REMOTE_AGENT_MODEL_PREFIX, AGENT_MODEL_SEP],
       ["acp", ACP_MODEL_PREFIX, AGENT_MODEL_SEP],
+      ["chatgpt-plan", CHATGPT_PLAN_MODEL_PREFIX, AGENT_MODEL_SEP],
       // A plugin route separates its two halves with `:` rather than `#`; both are
       // URI-encoded, so an encoded separator cannot be mistaken for the real one.
       ["plugin-model", PLUGIN_MODEL_PREFIX, ":"]
@@ -22065,6 +22067,8 @@ function nonFirstPartyTransport(namespace) {
       return "host-routed";
     case "cloud":
       return "unknown";
+    case "chatgpt-plan":
+      return "openai-responses";
   }
 }
 function routeGated(features, firstParty) {
@@ -22096,7 +22100,7 @@ function resolveModelFamily(model) {
     return {
       ...routeGated(withFeatures(entry.features), direct),
       namespace,
-      transport: direct ? entry.transport : "openai-compatible",
+      transport: namespace === "chatgpt-plan" ? "openai-responses" : direct ? entry.transport : "openai-compatible",
       provider: direct ? entry.provider : null,
       family: entry.match,
       known: true
@@ -22118,7 +22122,7 @@ function resolveModelFamily(model) {
   return {
     ...NO_FEATURES,
     namespace,
-    transport: direct ? "unknown" : "openai-compatible",
+    transport: namespace === "chatgpt-plan" ? "openai-responses" : direct ? "unknown" : "openai-compatible",
     provider: null,
     family: null,
     known: false
@@ -22230,7 +22234,12 @@ var init_model_families = __esm({
       { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
     ];
     BOUNDARY = /^[-.:@]/;
-    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+    CLOUD_ROUTED = /* @__PURE__ */ new Set([
+      "cloud",
+      "openrouter",
+      "extra-provider",
+      "chatgpt-plan"
+    ]);
   }
 });
 
@@ -33536,6 +33545,8 @@ function displayModelLabel(model, context) {
       return `${modelDisplayName(selection2.id)}${LOCAL_MODEL_SUFFIX}`;
     case "acp":
       return acpModelDisplayLabel(model, context?.acpAgents ?? []);
+    case "chatgpt-plan":
+      return `${cloudModelDisplayLabel(selection2.id)} \xB7 ChatGPT plan`;
     case "remote-agent":
       return remoteAgentDisplayLabel(model, context?.remoteCatalog ?? []);
     case "plugin-model":
@@ -42332,6 +42343,23 @@ var init_inline_status = __esm({
   }
 });
 
+// packages/llm/src/chatgpt-plan.ts
+function chatGptPlanModelValue(clientId, model) {
+  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
+}
+function parseChatGptPlanModel(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "chatgpt-plan") return null;
+  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
+  return { clientId: selection2.agent, model: selection2.id };
+}
+var init_chatgpt_plan = __esm({
+  "packages/llm/src/chatgpt-plan.ts"() {
+    init_model_selection();
+    init_reserved_prefixes();
+  }
+});
+
 // packages/llm/src/composite-intellect.ts
 function compositeIntellect(model) {
   if (model.benchmarks["aa-intelligence"]) return null;
@@ -42964,6 +42992,19 @@ async function fetchModelOptions(api2, current, opts = {}) {
   }
   const isAvailable = (provider) => available[provider] ?? false;
   const cloudGroup = "Cloud models";
+  try {
+    const catalog = await api2.chatGptPlan?.models();
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} \xB7 ChatGPT plan`,
+          group: "ChatGPT plan"
+        });
+      }
+    }
+  } catch {
+  }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue;
     if (value === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
@@ -43050,6 +43091,13 @@ async function fetchModelOptions(api2, current, opts = {}) {
       };
       if (sshWorkspace) stale.disabled = true;
       options.push(stale);
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: "ChatGPT plan",
+        disabled: true
+      });
     } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,
@@ -43152,6 +43200,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_chatgpt_plan();
     init_model_catalog();
     init_local_model_catalog();
     init_intellect_hints();
@@ -44274,6 +44323,55 @@ var init_disclosure_summary = __esm({
   }
 });
 
+// src/renderer/views/setup/local-detection.ts
+function localServerTargets() {
+  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
+    id: p2.id,
+    label: p2.label,
+    baseUrl: p2.baseUrl
+  }));
+  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
+}
+async function detectLocalServers(api2) {
+  return Promise.all(
+    localServerTargets().map(async (target) => {
+      try {
+        const res = await api2.lmStudio.test(target.baseUrl);
+        return {
+          ...target,
+          reachable: res.ok,
+          models: res.models ?? [],
+          ...res.error ? { error: res.error } : {}
+        };
+      } catch (err2) {
+        return {
+          ...target,
+          reachable: false,
+          models: [],
+          error: err2 instanceof Error ? err2.message : "probe failed"
+        };
+      }
+    })
+  );
+}
+async function importDetectedPreset(api2, result) {
+  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
+  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
+  const existingModels = existing?.models ?? [];
+  const seen = new Set(existingModels.map((m2) => m2.id));
+  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
+  await api2.settings.saveExtraProvider({
+    slug: result.id,
+    models: [...existingModels, ...added]
+  });
+}
+var init_local_detection = __esm({
+  "src/renderer/views/setup/local-detection.ts"() {
+    init_extra_providers();
+    init_lm_studio_defaults();
+  }
+});
+
 // src/renderer/views/setup/custom-providers-section.ts
 function apiStyleSelect(current = "chat-completions") {
   const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
@@ -44452,6 +44550,7 @@ function createCustomProvidersSection(api2, opts = {}) {
   );
   const pendingKeys = /* @__PURE__ */ new Map();
   const configured = /* @__PURE__ */ new Set();
+  const reachable = /* @__PURE__ */ new Set();
   let providers = [];
   let selected = embedded ? "" : defaultSelected;
   let openRouterModelValue = "";
@@ -44493,6 +44592,8 @@ function createCustomProvidersSection(api2, opts = {}) {
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
+      } else if (reachable.has(key)) {
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Server running" }));
       }
       chip2.addEventListener("click", () => {
         selected = key;
@@ -45041,6 +45142,14 @@ function createCustomProvidersSection(api2, opts = {}) {
     renderChips();
     renderForm();
     opts.onChanged?.();
+    if (isLocal) void probeLocalServers();
+  }
+  async function probeLocalServers() {
+    const results = await detectLocalServers(api2);
+    reachable.clear();
+    for (const r2 of results) if (r2.reachable) reachable.add(r2.id);
+    renderChips();
+    opts.onStatusChanged?.();
   }
   async function confirmPlaintextStorage(label) {
     return showConfirmDialog({
@@ -45112,7 +45221,7 @@ function createCustomProvidersSection(api2, opts = {}) {
     return providerIds().includes(id) ? chipLabel(id) : null;
   }
   function isConfigured(id) {
-    if (configured.has(id)) return true;
+    if (configured.has(id) || reachable.has(id)) return true;
     const provider = providers.find((p2) => p2.id === id);
     return provider ? !provider.builtin : false;
   }
@@ -45133,6 +45242,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_api_keys_section();
+    init_local_detection();
     init_confirm_dialog();
     init_unknown_value3();
     FIXED_PROVIDERS = [
@@ -45725,6 +45835,216 @@ var init_acp_agents_section = __esm({
   }
 });
 
+// src/renderer/views/setup/chatgpt-plan-section.ts
+function createChatGptPlanSection(api2, onChanged) {
+  const root = el("div", { "data-testid": "chatgpt-plan-section" });
+  let status = { accounts: [], activeClientId: null };
+  let busy = false;
+  let message2 = "";
+  let signingIn = false;
+  let accountOptionsOpen = false;
+  let welcomeShowing = false;
+  async function act(work, isSignIn = false) {
+    signingIn = isSignIn;
+    busy = true;
+    message2 = "";
+    render();
+    try {
+      await work();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+    } finally {
+      busy = false;
+      render();
+      onChanged();
+      if (isSignIn) await welcome();
+    }
+  }
+  function render() {
+    accountOptionsOpen = root.querySelector("details")?.open ?? accountOptionsOpen;
+    clear(root);
+    const active2 = status.accounts.find((account) => account.clientId === status.activeClientId);
+    if (status.accounts.length) {
+      const picker = el("select", { "aria-label": "ChatGPT account", disabled: busy });
+      picker.append(el("option", { value: "" }, "Choose a ChatGPT account"));
+      for (const [index, account] of status.accounts.entries()) {
+        picker.append(
+          el(
+            "option",
+            { value: account.clientId },
+            `${account.label} \xB7 connection ${String(index + 1)}${account.connected ? "" : " (signed out)"}`
+          )
+        );
+      }
+      picker.value = status.activeClientId ?? "";
+      picker.addEventListener("change", () => {
+        if (picker.value)
+          void act(async () => {
+            status = await api2.chatGptPlan.selectAccount(picker.value);
+          });
+      });
+      root.append(el("label", {}, "ChatGPT account", picker));
+    }
+    if (active2?.connected) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          active2.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
+        )
+      );
+    }
+    const actions = el("div", { class: "provider-actions" });
+    const connect = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn chatgpt-sign-in",
+        disabled: busy,
+        "data-testid": "chatgpt-plan-connect"
+      },
+      el("img", {
+        src: "./chatgpt-logo-white.svg",
+        alt: "",
+        width: "21",
+        height: "21",
+        "aria-hidden": "true"
+      }),
+      "Continue with ChatGPT"
+    );
+    connect.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn(active2?.clientId);
+      }, true);
+    });
+    if (!active2?.connected || !active2.planEnabled) actions.append(connect);
+    const accountActions = el("div", { class: "provider-actions" });
+    if (busy) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          signingIn ? "Finish signing in in your browser." : "Updating connection\u2026"
+        )
+      );
+      const cancel = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Cancel sign-in"
+      );
+      cancel.addEventListener("click", () => {
+        void api2.chatGptPlan.cancelSignIn();
+      });
+      if (signingIn) actions.append(cancel);
+    }
+    if (active2?.connected) {
+      const disconnect = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Sign out"
+      );
+      disconnect.addEventListener("click", () => {
+        void act(async () => {
+          const result = await api2.chatGptPlan.signOut(active2.clientId);
+          status = result.status;
+          if (!result.revoked)
+            message2 = "Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.";
+        });
+      });
+      const renew = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Refresh connection"
+      );
+      renew.addEventListener("click", () => {
+        void act(async () => {
+          status = await api2.chatGptPlan.refreshAccount(active2.clientId);
+          message2 = "Connection refreshed.";
+        });
+      });
+      accountActions.append(renew, disconnect);
+    }
+    const add2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+      "Add another account"
+    );
+    add2.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn();
+      }, true);
+    });
+    if (status.accounts.length) accountActions.append(add2);
+    const usage = el(
+      "button",
+      {
+        type: "button",
+        class: active2?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
+      },
+      "Manage usage"
+    );
+    usage.addEventListener("click", () => {
+      void api2.shell.openExternal(USAGE_URL);
+    });
+    actions.append(usage);
+    root.append(actions);
+    if (status.accounts.length) {
+      const options = el("details", {}, el("summary", {}, "Account options"), accountActions);
+      options.open = accountOptionsOpen;
+      root.append(options);
+    }
+    if (message2)
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint", "data-testid": "chatgpt-plan-message" },
+          message2
+        )
+      );
+  }
+  async function welcome() {
+    if (welcomeShowing || !status.accounts.some((account) => account.connected && account.planEnabled))
+      return;
+    welcomeShowing = true;
+    try {
+      if (await api2.settings.get("chatGptPlanWelcomeSeen") === true) return;
+      await showConfirmDialog({
+        message: "You\u2019re using your ChatGPT plan",
+        detail: "Copse uses your ChatGPT plan or available credits for ChatGPT plan models. Manage Copse\u2019s allowance and credit usage in ChatGPT Settings \u2192 Usage.",
+        confirmLabel: "Got it",
+        cancelLabel: "Close"
+      });
+      await api2.settings.set("chatGptPlanWelcomeSeen", true);
+    } catch {
+    } finally {
+      welcomeShowing = false;
+    }
+  }
+  async function refresh() {
+    try {
+      status = await api2.chatGptPlan.status();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+    }
+    render();
+    await welcome();
+  }
+  render();
+  return {
+    root,
+    refresh,
+    configured: () => status.accounts.some((account) => account.planEnabled && account.connected)
+  };
+}
+var USAGE_URL;
+var init_chatgpt_plan_section = __esm({
+  "src/renderer/views/setup/chatgpt-plan-section.ts"() {
+    init_confirm_dialog();
+    init_helpers();
+    USAGE_URL = "https://chatgpt.com/settings/usage";
+  }
+});
+
 // src/renderer/views/setup/providers-section.ts
 function createProvidersPanel(api2, opts = {}) {
   const cloudAgents = opts.cloudAgents ?? [];
@@ -45739,10 +46059,15 @@ function createProvidersPanel(api2, opts = {}) {
     embedded: true,
     onChanged: rebuild
   });
+  const chatGptPlan = createChatGptPlanSection(api2, () => {
+    renderChips();
+    if (selected === "openai") renderForm();
+  });
   const localPanel = createCustomProvidersSection(api2, {
     variant: "local",
     embedded: true,
     onChanged: rebuild,
+    onStatusChanged: renderChips,
     ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
   });
   const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
@@ -45766,6 +46091,7 @@ function createProvidersPanel(api2, opts = {}) {
   let selected = "";
   let selectedAgentId = "";
   let selectedAddKind = "api";
+  const expandedConnections = /* @__PURE__ */ new Set();
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
@@ -45834,7 +46160,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -45889,6 +46215,7 @@ function createProvidersPanel(api2, opts = {}) {
     return list;
   }
   function isConfigured(vendor) {
+    if (vendor.id === "openai" && chatGptPlan.configured()) return true;
     const caps = resolve(vendor);
     if (caps.api.some((id) => apiPanel.isConfigured(id))) return true;
     if (caps.local.some((id) => localPanel.isConfigured(id))) return true;
@@ -45976,6 +46303,72 @@ function createProvidersPanel(api2, opts = {}) {
       host
     );
   }
+  function connectionDetails(id, label, ...children) {
+    const details = el("details", { "data-testid": id }, el("summary", {}, label), ...children);
+    details.open = expandedConnections.has(id);
+    details.addEventListener("toggle", () => {
+      if (details.open) expandedConnections.add(id);
+      else expandedConnections.delete(id);
+    });
+    return details;
+  }
+  function openAiCards(agentIds) {
+    const cards = el("div", { class: "provider-vendor openai-connections" });
+    apiPanel.select("openai");
+    const apiDetails = connectionDetails(
+      "openai-api-details",
+      "Configure API access",
+      apiPanel.root,
+      ...opts.showOpenAiServiceTier ? [openAiTierBlock()] : []
+    );
+    const entries2 = [
+      {
+        title: "ChatGPT plan",
+        configured: chatGptPlan.configured(),
+        description: "Copse\u2019s agent and tools, using your ChatGPT plan or available credits.",
+        content: chatGptPlan.root,
+        id: "chatgpt"
+      },
+      {
+        title: "OpenAI API",
+        configured: apiPanel.isConfigured("openai"),
+        description: "Copse\u2019s agent and tools, billed to your OpenAI API account.",
+        content: apiDetails,
+        id: "api"
+      }
+    ];
+    if (agentIds.length) {
+      entries2.push({
+        title: "Codex ACP",
+        configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
+        description: "Codex\u2019s agent, running on this machine through ACP.",
+        content: connectionDetails(
+          "openai-codex-details",
+          "Configure Codex ACP",
+          agentBlock(agentIds)
+        ),
+        id: "codex"
+      });
+    }
+    entries2.sort((a3, b4) => Number(b4.configured) - Number(a3.configured));
+    for (const entry of entries2) {
+      cards.append(
+        el(
+          "section",
+          { class: "openai-connection-card", "data-connection": entry.id },
+          el(
+            "div",
+            { class: "openai-connection-heading" },
+            el("h4", {}, entry.title),
+            el("span", { class: "field-hint" }, entry.configured ? "Set up" : "Not set up")
+          ),
+          el("p", { class: "field-hint" }, entry.description),
+          entry.content
+        )
+      );
+    }
+    return cards;
+  }
   function renderForm() {
     clear(formHost);
     if (cloudAgentOptions) cloudAgentOptions.hidden = true;
@@ -45987,6 +46380,10 @@ function createProvidersPanel(api2, opts = {}) {
     const vendor = vendors().find((entry) => entry.id === selected);
     if (!vendor) return;
     const caps = resolve(vendor);
+    if (vendor.id === "openai") {
+      formHost.append(openAiCards(caps.agents));
+      return;
+    }
     const body = el("div", { class: "provider-vendor" });
     if (caps.api.length) {
       const [first] = caps.api;
@@ -45994,9 +46391,6 @@ function createProvidersPanel(api2, opts = {}) {
         apiPanel.select(first);
         body.append(block("API key", apiPanel.root));
       }
-    }
-    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
-      body.append(openAiTierBlock());
     }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
@@ -46030,6 +46424,7 @@ function createProvidersPanel(api2, opts = {}) {
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
     await refreshOpenAiTier();
+    await chatGptPlan.refresh();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -46055,6 +46450,7 @@ var init_providers_section = __esm({
     init_acp_agents_section();
     init_service_tier();
     init_ui();
+    init_chatgpt_plan_section();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -47669,7 +48065,7 @@ var init_gh_cli_section = __esm({
 
 // packages/llm/src/model-parameters.ts
 function isEmptyModelParameters(params) {
-  return params.reasoning === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
+  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
 }
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
@@ -47685,6 +48081,7 @@ function claudeSupport(modelId) {
       reasoningWire: "anthropic-effort",
       sampling: [],
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
   }
@@ -47694,6 +48091,7 @@ function claudeSupport(modelId) {
       reasoningWire: "anthropic-effort",
       sampling: ANTHROPIC_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
   }
@@ -47702,8 +48100,14 @@ function claudeSupport(modelId) {
     reasoningWire: "anthropic-budget",
     sampling: ANTHROPIC_SAMPLING,
     outputCap: false,
+    verbosity: [],
     temperatureMax: 1
   };
+}
+function openAiVerbosity(modelId) {
+  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
+  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
+  return VERBOSITY_LEVELS;
 }
 function openAiSupport(modelId) {
   if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
@@ -47712,6 +48116,7 @@ function openAiSupport(modelId) {
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2
     };
   }
@@ -47721,6 +48126,7 @@ function openAiSupport(modelId) {
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2
     };
   }
@@ -47729,11 +48135,15 @@ function openAiSupport(modelId) {
     reasoningWire: "none",
     sampling: OPENAI_SAMPLING,
     outputCap: false,
+    verbosity: openAiVerbosity(modelId),
     temperatureMax: 2
   };
 }
 function modelParameterSupport(model) {
   const selection2 = parseModelSelection(model);
+  if (selection2.namespace === "chatgpt-plan") {
+    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
+  }
   if (AGENT_NAMESPACES.has(selection2.namespace)) {
     return {
       ...NO_PARAMETERS,
@@ -47755,6 +48165,7 @@ function modelParameterSupport(model) {
       reasoningWire: "none",
       sampling: UNIVERSAL_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 2
     };
   }
@@ -47763,6 +48174,9 @@ function modelParameterSupport(model) {
     reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
     sampling: OPENAI_COMPATIBLE_SAMPLING,
     outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
+    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
+    // aggregators reject or silently drop unknown body fields.
+    verbosity: [],
     temperatureMax: 2,
     upstreamDecides: true
   };
@@ -47784,6 +48198,9 @@ function sanitizeModelParameters(params, model, support = modelParameterSupport(
   const sanitized = {};
   if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
     sanitized.reasoning = params.reasoning;
+  }
+  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
+    sanitized.verbosity = params.verbosity;
   }
   if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
     sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
@@ -47821,6 +48238,7 @@ function decodeModelParameters(value) {
   const record2 = { ...value };
   const params = {};
   if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
+  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
   const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
   if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
   for (const field of SAMPLING_FIELDS) {
@@ -47839,7 +48257,7 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -47848,6 +48266,8 @@ var init_model_parameters = __esm({
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
     isReasoningLevel = memberOf(REASONING_LEVELS);
+    VERBOSITY_LEVELS = ["low", "medium", "high"];
+    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
     SAMPLING_FIELDS = [
       "temperature",
       "topP",
@@ -47861,6 +48281,7 @@ var init_model_parameters = __esm({
       reasoningWire: "none",
       sampling: [],
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1
     };
     OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
@@ -47916,6 +48337,8 @@ var init_model_parameters = __esm({
       "xhigh",
       "max"
     ];
+    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
+    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
     SAMPLING_BOUNDS = {
       temperature: { min: 0, max: 2 },
       topP: { min: 0, max: 1, neutral: 1 },
@@ -48278,6 +48701,10 @@ function createModelParametersSection(api2, options = {}) {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
   });
+  const verbositySelect = el("select", {
+    name: "modelVerbosity",
+    "data-testid": "model-parameter-verbosity"
+  });
   const maxOutputTokensInput = el("input", {
     type: "number",
     name: "modelMaxOutputTokens",
@@ -48439,6 +48866,26 @@ function createModelParametersSection(api2, options = {}) {
         })
       );
     }
+    if (support.verbosity.length > 0) {
+      verbositySelect.replaceChildren(
+        el(
+          "option",
+          { value: "" },
+          defaults.verbosity === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${VERBOSITY_LABELS[defaults.verbosity]})`
+        ),
+        ...support.verbosity.map(
+          (level) => el("option", { value: level }, VERBOSITY_LABELS[level])
+        )
+      );
+      verbositySelect.value = params.verbosity ?? "";
+      fields.append(
+        uiField({
+          label: "Verbosity",
+          control: verbositySelect,
+          hint: "How much the model writes in its replies, separate from how hard it thinks. Lower saves output tokens; changing it mid-thread misses the prompt cache once."
+        })
+      );
+    }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
       maxOutputTokensInput.placeholder = samplingPlaceholder(
@@ -48475,6 +48922,11 @@ function createModelParametersSection(api2, options = {}) {
     const value = reasoningSelect.value;
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
+  });
+  verbositySelect.addEventListener("change", () => {
+    const value = verbositySelect.value;
+    const { verbosity: _dropped, ...rest } = selected();
+    commit(isVerbosityLevel(value) ? { ...rest, verbosity: value } : rest);
   });
   resetBtn.addEventListener("click", () => {
     commit({});
@@ -48517,7 +48969,7 @@ function createModelParametersSection(api2, options = {}) {
   }
   return { root, refresh, setModel, save };
 }
-var REASONING_LABELS, DEFAULT_OPTION_LABEL, SAMPLING_CONTROLS;
+var REASONING_LABELS, VERBOSITY_LABELS, DEFAULT_OPTION_LABEL, SAMPLING_CONTROLS;
 var init_model_parameters_section = __esm({
   "src/renderer/views/setup/model-parameters-section.ts"() {
     init_helpers();
@@ -48532,6 +48984,11 @@ var init_model_parameters_section = __esm({
       high: "High",
       xhigh: "Extra high",
       max: "Max"
+    };
+    VERBOSITY_LABELS = {
+      low: "Low \u2014 terse answers",
+      medium: "Medium",
+      high: "High \u2014 thorough answers"
     };
     DEFAULT_OPTION_LABEL = "Model default (don't send)";
     SAMPLING_CONTROLS = {
@@ -51043,7 +51500,7 @@ function renderPlanWorthItSection(host, payload, error62, opts) {
   card.append(actions);
   host.append(card);
 }
-function renderModelTable(host, title, rows, emptyText) {
+function renderModelTable(host, title, rows, emptyText, accounts = []) {
   const section = document.createElement("div");
   section.className = "usage-model-group";
   const heading = document.createElement("h4");
@@ -51082,14 +51539,27 @@ function renderModelTable(host, title, rows, emptyText) {
   `;
   const tbody = table.querySelector("tbody");
   if (!tbody) throw new Error("usage table is missing its tbody");
+  const registrations = [
+    ...new Set(
+      rows.flatMap((row2) => {
+        const plan = parseModelSelection(row2.model);
+        return plan.namespace === "chatgpt-plan" && plan.agent ? [plan.agent] : [];
+      })
+    )
+  ];
   for (const row2 of rows) {
     const tr2 = document.createElement("tr");
     const approx = row2.estimatedTokens ? "~" : "";
-    const model = escapeHtml(row2.model);
+    const model = escapeHtml(
+      row2.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel(row2.model) : row2.model
+    );
     const modelLabel2 = row2.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const plan = parseModelSelection(row2.model);
+    const accountIndex = plan.namespace === "chatgpt-plan" ? accounts.findIndex((account) => account.clientId === plan.agent) : -1;
+    const accountLabel = plan.namespace === "chatgpt-plan" && plan.agent && registrations.length > 1 ? accountIndex >= 0 ? `Connection ${String(accountIndex + 1)}` : `Saved connection ${String(registrations.indexOf(plan.agent) + 1)}` : "";
     const costLabel = row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : `${row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}${row2.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
     tr2.innerHTML = `
-      <td><code>${modelLabel2}</code></td>
+      <td><code>${modelLabel2}</code>${accountLabel ? `<br><span class="field-hint">${accountLabel}</span>` : ""}</td>
       <td>${approx}${formatTokenCount(row2.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
@@ -51101,7 +51571,7 @@ function renderModelTable(host, title, rows, emptyText) {
   section.append(table);
   host.append(section);
 }
-function renderPeriodSummary(host, summary, period, meta3) {
+function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   host.replaceChildren();
   const headline = document.createElement("p");
   headline.className = "usage-headline";
@@ -51118,11 +51588,22 @@ function renderPeriodSummary(host, summary, period, meta3) {
     note.textContent = `Ledger: ${String(meta3.ledgerEventCount)} event(s) tracked (since ${trackedSince}). Time windows include cloud and local models recorded on each agent turn. All-time totals come from saved threads and may include older usage.`;
     host.append(note);
   }
+  if (summary.cloudModels.some((row2) => row2.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX))) {
+    const usage = document.createElement("button");
+    usage.type = "button";
+    usage.className = "ui-btn ui-btn-primary";
+    usage.textContent = "Manage ChatGPT usage";
+    usage.addEventListener("click", () => {
+      void api2.shell.openExternal("https://chatgpt.com/settings/usage");
+    });
+    host.append(usage);
+  }
   renderModelTable(
     host,
     "Cloud models",
     summary.cloudModels,
-    "No cloud model usage in this period."
+    "No cloud model usage in this period.",
+    accounts
   );
   renderModelTable(
     host,
@@ -51189,6 +51670,7 @@ function createUsageSection(api2, store2, onRequestClose) {
   const labelEl = qsRequired(root, "#usage-period-label");
   const tabBtns = root.querySelectorAll(".usage-period-btn");
   let activePeriod = "day";
+  let cachedAccounts = [];
   let cachedSummary = null;
   let cachedPlanSnapshot = null;
   let ledgerRefreshTimer;
@@ -51236,10 +51718,17 @@ function createUsageSection(api2, store2, onRequestClose) {
     });
     labelEl.textContent = PERIOD_LABELS[period];
     if (cachedSummary) {
-      renderPeriodSummary(bodyEl2, cachedSummary[period], period, {
-        ledgerEventCount: cachedSummary.ledgerEventCount,
-        trackingStartedAt: cachedSummary.trackingStartedAt
-      });
+      renderPeriodSummary(
+        bodyEl2,
+        cachedSummary[period],
+        period,
+        {
+          ledgerEventCount: cachedSummary.ledgerEventCount,
+          trackingStartedAt: cachedSummary.trackingStartedAt
+        },
+        cachedAccounts,
+        api2
+      );
     }
   }
   tabBtns.forEach((btn) => {
@@ -51295,6 +51784,11 @@ function createUsageSection(api2, store2, onRequestClose) {
     }, LEDGER_REFRESH_DEBOUNCE_MS);
   }
   async function refresh() {
+    try {
+      cachedAccounts = (await api2.chatGptPlan.status()).accounts;
+    } catch {
+      cachedAccounts = [];
+    }
     if (!cachedSummary) {
       bodyEl2.textContent = "Loading usage\u2026";
     }
@@ -51333,6 +51827,9 @@ var init_usage_section = __esm({
     init_intellect_frontier_panel();
     init_model_options();
     init_acp();
+    init_model_display();
+    init_model_selection();
+    init_reserved_prefixes();
     PERIOD_LABELS = {
       day: "Last 24 hours",
       month: "Last 30 days",
@@ -53039,7 +53536,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 && schedule.lastProblem === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -53070,6 +53567,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             "div",
             { class: "automation-row-blocked-message" },
             `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
+      if (schedule.lastProblem !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message automation-row-problem-message" },
+            `${schedule.lastProblem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`
           )
         );
       }
@@ -54669,6 +55175,31 @@ function collectSubagentUsage(toolCalls, totals) {
     }
   }
 }
+function subagentRunLabel(session) {
+  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
+  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine) return kind;
+  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  return `${kind} \xB7 ${prompt}`;
+}
+function collectSubagentRuns(toolCalls, runs) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session || session.kind === "container") continue;
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
+    });
+    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
+  }
+}
+function listSubagentRuns(messages) {
+  const runs = [];
+  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
+  return runs;
+}
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
@@ -54762,11 +55293,20 @@ function formatFooterUsageDetail(display, opts) {
   const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
   return `Usage: ${parts.join(" \xB7 ")}`;
 }
+var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
+    SUBAGENT_KIND_LABEL = {
+      explore: "Explore",
+      investigate_ci: "Investigate CI",
+      delegate: "Delegate",
+      custom: "Custom agent",
+      container: "Container run"
+    };
+    RUN_PROMPT_MAX_CHARS = 36;
   }
 });
 
@@ -55065,6 +55605,17 @@ function setThreadDraftPrompt(store2, threadId, draftPrompt) {
     });
   }
   store2.emit("thread_draft_changed", threadId);
+}
+function markAutomationStartFailed(store2, threadId) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, startFailedAt: Date.now() },
+      updatedAt: Date.now()
+    } : t2
+  );
 }
 function messageLocations(store2) {
   const { threads, backgroundThreads } = store2.getState();
@@ -56957,18 +57508,19 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
+  const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    // Send the per-thread model so the run uses the picker's selection rather
-    // than the global default. Read at dispatch time so a change made while the
-    // message was queued still takes effect. Absent → main uses the global default.
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
+    // A queued human prompt carries its own model snapshot; hook-authored
+    // prompts without one follow the live thread selection. Absent → main uses
+    // the global default.
+    ...selectedModel !== void 0 ? { model: selectedModel } : {},
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
@@ -56998,6 +57550,11 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const { activeProjectId, backgroundThreads } = store2.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
   if (!projectId) throw new Error("Cannot run thread without an owning project");
+  patchThreadAnywhere(store2, threadId, (thread) => {
+    if (thread.interruptedTurnAt === void 0) return thread;
+    const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread;
+    return rest;
+  });
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
@@ -57006,7 +57563,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
   );
   if (!queued) {
     void run2;
@@ -57034,12 +57591,28 @@ function requeueBusyMessage(store2, api2, threadId, item) {
   if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
+  const queued = item.model !== void 0 || isMachineContinuation(item) ? item : {
+    ...item,
+    model: getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+  };
   patchThreadAnywhere(store2, threadId, (t2) => ({
     ...t2,
-    pendingMessages: [...t2.pendingMessages ?? [], item],
+    pendingMessages: [...t2.pendingMessages ?? [], queued],
     updatedAt: Date.now()
   }));
-  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("message_queued", threadId, queued.messageId);
+  store2.emit("threads_changed");
+}
+function updateQueuedMessageModel(store2, threadId, messageId, model) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: (t2.pendingMessages ?? []).map(
+      (item) => item.messageId === messageId ? { ...item, model } : item
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
@@ -57103,15 +57676,22 @@ async function runningThreadIdsOrNone(api2) {
   try {
     return await api2.agent.runningThreadIds();
   } catch {
-    return [];
+    return null;
   }
 }
 async function resumePendingQueues(store2, api2) {
-  const reallyRunning = new Set(await runningThreadIdsOrNone(api2));
+  const runningThreadIds = await runningThreadIdsOrNone(api2);
+  const reallyRunning = new Set(runningThreadIds ?? []);
   for (const thread of store2.getState().threads) {
     if (thread.queuePaused) setQueuePaused(store2, thread.id, false);
     let status = thread.status;
     if (status === "running" && !reallyRunning.has(thread.id)) {
+      if (runningThreadIds !== null) {
+        patchThreadAnywhere(store2, thread.id, (current) => ({
+          ...current,
+          interruptedTurnAt: Date.now()
+        }));
+      }
       setThreadStatus(store2, thread.id, "idle");
       status = "idle";
     }
@@ -57262,6 +57842,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
 var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
+    init_lm_studio_defaults();
     init_thread_helpers();
     init_review_reports();
     init_agent_activity();
@@ -60088,7 +60669,7 @@ function mountSettingsDialog(store2, api2) {
   });
   qsRequired(overlay, "#settings-ssh-workspace-host").append(sshWorkspaceSection.root);
   const envKeyDetectSection = createEnvKeyDetectSection(api2, {
-    legend: "Detected settings",
+    legend: "Detected API keys",
     onImported: () => {
       void cursorKeySection.refreshKeyStatus();
       void providersPanel.refresh();
@@ -65240,6 +65821,10 @@ var init_demo_scenarios = __esm({
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
           credential: "key",
+          settings: {
+            budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
+            installDependencies: false
+          },
           warnings: [],
           checkout: {
             root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
@@ -66366,6 +66951,43 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-settings",
+        label: "ChatGPT plan onboarding and account options",
+        project: project("demo-chatgpt-plan-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        threads: [
+          {
+            id: "demo-chatgpt-plan-thread",
+            title: "ChatGPT plan",
+            model: "chatgpt-plan:demo-plan-account#gpt-5.6-luna",
+            status: "idle",
+            messages: [
+              {
+                id: "plan-limit",
+                role: "assistant",
+                toolCalls: [],
+                content: "> [!CAUTION]\n> ChatGPT plan usage limit reached. Review your plan or Copse\u2019s allowance.\n>\n> [Manage usage](https://chatgpt.com/settings/usage)",
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS
     ];
@@ -66577,7 +67199,11 @@ function createDemoApi(scenario, options = {}) {
         prompt: request.prompt,
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
-        credential: "key",
+        credential: request.useAgentLogin ? "login" : "key",
+        settings: {
+          budgets: { ...request.budgets },
+          installDependencies: request.installDependencies === true
+        },
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
         warnings: [],
         checkout: { root: "/repo", mode: "shared", branch: "main" },
@@ -66882,6 +67508,9 @@ function createDemoApi(scenario, options = {}) {
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved2({ source: "empty", messageCount: 0 }),
+      historySnapshot: unsupported,
+      editHistory: unsupported,
+      undoHistoryEdit: unsupported,
       catalog: () => resolved2(
         threads.map((thread) => ({
           id: thread.id,
@@ -66988,6 +67617,18 @@ function createDemoApi(scenario, options = {}) {
       start: unsupported,
       stop: unsupported,
       connect: unsupported
+    },
+    chatGptPlan: {
+      status: () => resolved2(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      refreshAccount: () => scenario.chatGptPlan ? resolved2(scenario.chatGptPlan) : unsupported(),
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () => resolved2({
+        clientId: scenario.chatGptPlan?.activeClientId ?? null,
+        models: scenario.chatGptPlan?.activeClientId ? [{ slug: "gpt-5.6-luna", displayName: "GPT-5.6-Luna" }] : []
+      })
     },
     settings: {
       get: (key) => resolved2(settings.get(key)),
@@ -71647,6 +72288,291 @@ var init_activity_panel = __esm({
   }
 });
 
+// src/renderer/views/thread-history-editor.ts
+function replaceThread(store2, projectId, thread) {
+  const state = store2.getState();
+  if (state.activeProjectId !== projectId) return;
+  if (!state.threads.some((candidate) => candidate.id === thread.id)) return;
+  store2.setState({
+    threads: state.threads.map(
+      (candidate) => candidate.id === thread.id ? { ...thread, messagesLoaded: true } : candidate
+    )
+  });
+  store2.emit("threads_changed");
+}
+function errorText(error62) {
+  return error62 instanceof Error ? error62.message : String(error62);
+}
+function openThreadHistoryEditor(store2, api2, options) {
+  document.querySelector("#thread-history-editor")?.close();
+  const overlay = createOverlayDialog({
+    id: "thread-history-editor",
+    className: "history-editor-overlay"
+  });
+  const title = el("h2", { class: "history-editor-title" }, "Edit thread history");
+  const subtitle = el(
+    "p",
+    { class: "history-editor-subtitle" },
+    "Revise what Copse and the model remember from this thread."
+  );
+  const close = el(
+    "button",
+    {
+      class: "ui-btn ui-btn-ghost history-editor-close",
+      type: "button",
+      "aria-label": "Close history editor"
+    },
+    closeIcon("ui-icon")
+  );
+  const body = el("div", { class: "history-editor-body" });
+  const footer = el("div", { class: "history-editor-footer" });
+  const shell3 = el(
+    "section",
+    { class: "history-editor-shell", "aria-labelledby": "history-editor-heading" },
+    el("header", { class: "history-editor-header" }, el("div", {}, title, subtitle), close),
+    body,
+    footer
+  );
+  title.id = "history-editor-heading";
+  overlay.dialog.append(shell3);
+  const closeEditor = () => {
+    overlay.close();
+  };
+  close.addEventListener("click", closeEditor);
+  overlay.dialog.addEventListener(
+    "close",
+    () => {
+      overlay.dialog.remove();
+    },
+    { once: true }
+  );
+  overlay.dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeEditor();
+  });
+  const renderLoading = () => {
+    clear(body);
+    clear(footer);
+    body.append(el("div", { class: "history-editor-loading" }, "Loading thread history\u2026"));
+  };
+  const renderEditor = (source) => {
+    let revision = source.revision;
+    const drafts = source.messages.map((message2) => ({ ...message2 }));
+    let saving = false;
+    const summary = el("span", { class: "history-editor-summary" });
+    const apply3 = el("button", { class: "ui-btn ui-btn-primary", type: "button" }, "Apply changes");
+    const cancel = el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Cancel");
+    const undo = el(
+      "button",
+      { class: "ui-btn ui-btn-secondary history-editor-undo", type: "button" },
+      "Undo last edit"
+    );
+    undo.hidden = !source.canUndo;
+    cancel.addEventListener("click", closeEditor);
+    const updateControls = () => {
+      const included = drafts.filter((message2) => message2.included).length;
+      const changed = drafts.some((message2, index) => {
+        const original = source.messages[index];
+        return original?.content !== message2.content || !message2.included;
+      });
+      const retainsUnrecoverableContext = drafts.some(
+        (message2) => message2.included && message2.reconstructionWarning !== void 0
+      );
+      summary.textContent = `${String(included)} of ${String(drafts.length)} messages kept`;
+      apply3.disabled = saving || !changed || included === 0 || retainsUnrecoverableContext;
+      undo.disabled = saving;
+      cancel.disabled = saving;
+    };
+    const list = el("div", { class: "history-editor-list" });
+    for (const draft of drafts) {
+      const included = el("input", {
+        class: "history-editor-include",
+        type: "checkbox",
+        "aria-label": `Include ${draft.role} message`
+      });
+      included.checked = draft.included;
+      const role = el(
+        "span",
+        { class: `history-editor-role history-editor-role-${draft.role}` },
+        draft.role === "user" ? "You" : draft.role === "assistant" ? "Copse" : "Error"
+      );
+      const textarea = el("textarea", {
+        class: "history-editor-message-input",
+        rows: String(Math.min(8, Math.max(2, draft.content.split("\n").length))),
+        spellcheck: "true",
+        "aria-label": `Edit ${draft.role} message`
+      });
+      textarea.value = draft.content;
+      const row2 = el(
+        "article",
+        {
+          class: "history-editor-message",
+          "data-message-id": draft.id
+        },
+        el(
+          "div",
+          { class: "history-editor-message-head" },
+          el("label", { class: "history-editor-toggle" }, included, role, "Include"),
+          ...draft.reconstructionWarning ? [
+            el(
+              "span",
+              { class: "history-editor-tool-note history-editor-message-warning" },
+              "Exclude this message to reconstruct safely"
+            )
+          ] : draft.hasToolCalls ? [
+            el(
+              "span",
+              { class: "history-editor-tool-note" },
+              "Tool activity stays with this message"
+            )
+          ] : []
+        ),
+        textarea
+      );
+      const syncIncluded = () => {
+        draft.included = included.checked;
+        textarea.disabled = !draft.included;
+        row2.classList.toggle("is-excluded", !draft.included);
+        updateControls();
+      };
+      included.addEventListener("change", syncIncluded);
+      textarea.addEventListener("input", () => {
+        draft.content = textarea.value;
+        updateControls();
+      });
+      syncIncluded();
+      list.append(row2);
+    }
+    clear(body);
+    if (source.blockedReason) {
+      body.append(
+        el(
+          "div",
+          { class: "history-editor-warning", role: "alert" },
+          el("strong", {}, "Some message context cannot be reconstructed."),
+          el("span", {}, `${source.blockedReason} Exclude the marked message to continue.`)
+        )
+      );
+    } else {
+      body.append(
+        el(
+          "div",
+          { class: "history-editor-notice" },
+          "Applying replaces this thread\u2019s visible transcript and future model context. Tool calls remain attached to included messages."
+        )
+      );
+    }
+    body.append(list);
+    clear(footer);
+    footer.append(summary, el("div", { class: "history-editor-actions" }, undo, cancel, apply3));
+    updateControls();
+    const applyChanges = async () => {
+      if (apply3.disabled) return;
+      saving = true;
+      apply3.textContent = "Applying\u2026";
+      updateControls();
+      try {
+        const result = await api2.threads.editHistory(options.projectId, options.threadId, {
+          expectedRevision: revision,
+          messages: drafts.map(({ id, content, included }) => ({ id, content, included }))
+        });
+        replaceThread(store2, options.projectId, result.thread);
+        revision = result.revision;
+        showToast("Thread history updated");
+        renderEditor({
+          revision: result.revision,
+          title: result.thread.title,
+          messages: result.thread.messages.map((message2) => ({
+            id: message2.id,
+            role: message2.role,
+            content: message2.content,
+            included: true,
+            hasToolCalls: message2.toolCalls.length > 0
+          })),
+          canUndo: result.canUndo
+        });
+      } catch (error62) {
+        saving = false;
+        apply3.textContent = "Apply changes";
+        updateControls();
+        showErrorToast("Could not update thread history", error62);
+      }
+    };
+    apply3.addEventListener("click", () => {
+      void applyChanges();
+    });
+    const undoChanges = async () => {
+      saving = true;
+      undo.textContent = "Undoing\u2026";
+      updateControls();
+      try {
+        const result = await api2.threads.undoHistoryEdit(
+          options.projectId,
+          options.threadId,
+          revision
+        );
+        replaceThread(store2, options.projectId, result.thread);
+        showToast("History edit undone");
+        renderEditor({
+          revision: result.revision,
+          title: result.thread.title,
+          messages: result.thread.messages.map((message2) => ({
+            id: message2.id,
+            role: message2.role,
+            content: message2.content,
+            included: true,
+            hasToolCalls: message2.toolCalls.length > 0
+          })),
+          canUndo: false
+        });
+      } catch (error62) {
+        saving = false;
+        undo.textContent = "Undo last edit";
+        updateControls();
+        showErrorToast("Could not undo history edit", errorText(error62));
+      }
+    };
+    undo.addEventListener("click", () => {
+      void undoChanges();
+    });
+    if (options.focusMessageId) {
+      requestAnimationFrame(() => {
+        const focused = list.querySelector(
+          `[data-message-id="${CSS.escape(options.focusMessageId ?? "")}"]`
+        );
+        focused?.classList.add("is-focused");
+        focused?.scrollIntoView({ block: "center" });
+        focused?.querySelector("textarea")?.focus();
+      });
+    }
+  };
+  renderLoading();
+  overlay.open();
+  void awaitPendingThreadPersistence().then(() => api2.threads.historySnapshot(options.projectId, options.threadId)).then(renderEditor).catch((error62) => {
+    clear(body);
+    clear(footer);
+    body.append(
+      el(
+        "div",
+        { class: "history-editor-load-error", role: "alert" },
+        "Could not load this thread\u2019s history.",
+        el("span", {}, errorText(error62))
+      )
+    );
+    footer.append(el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Close"));
+    footer.querySelector("button")?.addEventListener("click", closeEditor);
+  });
+}
+var init_thread_history_editor = __esm({
+  "src/renderer/views/thread-history-editor.ts"() {
+    init_helpers();
+    init_icons();
+    init_persistence();
+    init_dialog_shell();
+    init_toast();
+  }
+});
+
 // packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
@@ -73009,7 +73935,24 @@ function mountProjectsPane(root, store2, api2) {
             {
               label: "Fork",
               onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
+                showContextMenu(x2, y2, [
+                  { heading: "Fork" },
+                  {
+                    label: "Fork a copy",
+                    onSelect: () => {
+                      forkProjectThread(project2.id, thread.id);
+                    }
+                  },
+                  {
+                    label: "Edit thread history\u2026",
+                    onSelect: () => {
+                      openThreadHistoryEditor(store2, api2, {
+                        projectId: project2.id,
+                        threadId: thread.id
+                      });
+                    }
+                  }
+                ]);
               }
             },
             {
@@ -73681,6 +74624,7 @@ var init_projects_pane = __esm({
     init_sidebar_thread();
     init_attention();
     init_activity_panel();
+    init_thread_history_editor();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_project_tree();
@@ -77065,6 +78009,99 @@ var init_inline_artefact = __esm({
   }
 });
 
+// src/shared/container-run-schema.ts
+var containerRunRequestSchema, containerRunSettingsSchema, threadContainerResultSchema, containerRuntimeAttestationSchema;
+var init_container_run_schema = __esm({
+  "src/shared/container-run-schema.ts"() {
+    init_zod();
+    containerRunRequestSchema = external_exports.object({
+      projectId: external_exports.string().min(1).max(256),
+      threadId: external_exports.string().min(1).max(256),
+      prompt: external_exports.string().min(1).max(2e5),
+      model: external_exports.string().min(1).max(256),
+      budgets: external_exports.object({
+        wallClockMs: external_exports.number().int().min(6e4).max(24 * 60 * 6e4),
+        tokenCeiling: external_exports.number().int().min(1e3).max(1e8)
+      }),
+      useAgentLogin: external_exports.boolean().optional(),
+      installDependencies: external_exports.boolean().optional(),
+      continueFrom: external_exports.string().regex(/^[a-z0-9-]{1,128}$/i).optional(),
+      continueContext: external_exports.object({
+        prompt: external_exports.string().max(2e5),
+        report: external_exports.string().max(2e5),
+        ref: external_exports.string().regex(/^refs\/copse\/runs\/[a-z0-9-]{1,128}$/i).nullable()
+      }).optional()
+    });
+    containerRunSettingsSchema = containerRunRequestSchema.pick({
+      budgets: true,
+      installDependencies: true
+    });
+    threadContainerResultSchema = external_exports.object({
+      threadId: external_exports.string(),
+      stopReason: external_exports.enum(["completed", "budget:wall-clock", "budget:tokens", "aborted", "error"]),
+      error: external_exports.string().optional(),
+      usage: external_exports.object({ inputTokens: external_exports.number(), outputTokens: external_exports.number() }),
+      harness: external_exports.union([external_exports.literal("copse"), external_exports.object({ acp: external_exports.string() })]),
+      promptsAttempted: external_exports.number(),
+      deferrals: external_exports.array(
+        external_exports.object({
+          id: external_exports.string(),
+          title: external_exports.string(),
+          subject: external_exports.string(),
+          reasons: external_exports.array(external_exports.string()).optional()
+        })
+      ),
+      denials: external_exports.array(external_exports.object({ subject: external_exports.string(), reasons: external_exports.array(external_exports.string()) })),
+      commits: external_exports.array(external_exports.string()),
+      containment: external_exports.object({
+        declared: external_exports.boolean(),
+        declineReason: external_exports.string().nullable(),
+        projectSandbox: external_exports.boolean()
+      }),
+      toolNames: external_exports.array(external_exports.string()),
+      finalText: external_exports.string()
+    });
+    containerRuntimeAttestationSchema = external_exports.object({
+      runtimeId: external_exports.string().min(1),
+      image: external_exports.string().min(1),
+      imageDigest: external_exports.string().min(1).optional(),
+      user: external_exports.number().int().positive(),
+      readOnlyRootfs: external_exports.boolean(),
+      capDropAll: external_exports.boolean(),
+      noNewPrivileges: external_exports.boolean(),
+      pidsLimit: external_exports.number().int().positive(),
+      memoryLimit: external_exports.string().min(1),
+      network: external_exports.enum(["none", "brokered"]),
+      egressAllowlist: external_exports.array(external_exports.string().min(1)),
+      hostMounts: external_exports.array(external_exports.string().min(1)),
+      /**
+       * `none` is an engine with no seccomp or AppArmor at all — Apple container,
+       * whose boundary is a VM of its own instead (`isolation: 'vm'`).
+       */
+      securityProfiles: external_exports.enum(["default", "unconfined", "none"]).optional(),
+      perCommandNetwork: external_exports.enum(["token-gated", "none"]).optional(),
+      /**
+       * The engine that started the guest. Absent on records written before a
+       * second engine existed, which were all Docker.
+       */
+      engine: external_exports.enum(["docker", "apple"]).optional(),
+      /**
+       * What separates the guest from the host: namespaces on the host's own
+       * kernel (Docker), or a lightweight VM with a kernel of its own per
+       * container (Apple container). Absent means Docker's, as for `engine`.
+       */
+      isolation: external_exports.enum(["shared-kernel", "vm"]).optional(),
+      /**
+       * How `pidsLimit` is enforced: a cgroup `pids.max` over the container
+       * (Docker's `--pids-limit`), or `RLIMIT_NPROC` on the worker uid inside a
+       * guest kernel that runs nothing else as that uid (Apple container's
+       * `--ulimit nproc`). Absent means Docker's.
+       */
+      processLimit: external_exports.enum(["cgroup-pids", "rlimit-nproc"]).optional()
+    });
+  }
+});
+
 // src/shared/store/container-run-card.ts
 function argsOf(toolCall) {
   const record2 = toolCall.args;
@@ -77077,6 +78114,7 @@ function argsOf(toolCall) {
   const credential = record2["credential"];
   const continuedFrom = record2["continuedFrom"];
   const report = record2["report"];
+  const settings = containerRunSettingsSchema.safeParse(record2["settings"]);
   return {
     task,
     model,
@@ -77084,7 +78122,8 @@ function argsOf(toolCall) {
     ref: typeof ref === "string" ? ref : null,
     credential: credential === "key" || credential === "login" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
-    report: typeof report === "string" ? report : null
+    report: typeof report === "string" ? report : null,
+    ...settings.success ? { settings: settings.data } : {}
   };
 }
 function latestContainerRun(thread) {
@@ -77103,6 +78142,7 @@ function latestContainerRun(thread) {
       report: args.report,
       model: args.model,
       credential: args.credential,
+      ...args.settings ? { settings: args.settings } : {},
       ref: args.ref,
       status: toolCall.status,
       isLastTurn: index === thread.messages.length - 1
@@ -77204,6 +78244,7 @@ function containerRunToolCall(progress) {
     runtimeId: progress.runtimeId,
     ref: progress.record?.carryOut.ref ?? null,
     credential: progress.credential,
+    ...progress.settings ? { settings: progress.settings } : {},
     continuedFrom: progress.continuedFrom,
     report: progress.record?.result?.finalText ?? null
   };
@@ -77262,6 +78303,7 @@ ${note}` : note
 var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
 var init_container_run_card = __esm({
   "src/shared/store/container-run-card.ts"() {
+    init_container_run_schema();
     init_unknown_value3();
     init_thread_helpers();
     CONTAINER_RUN_TOOL = "container_run";
@@ -82639,9 +83681,11 @@ function turnRecoveryForMessage(thread, failedMessageId) {
   if ((thread.pendingMessages?.length ?? 0) > 0) return null;
   const failedIndex = thread.messages.length - 1;
   const failed = thread.messages[failedIndex];
-  if (!failed || failed.id !== failedMessageId || failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") {
-    return null;
+  if (!failed || failed.id !== failedMessageId) return null;
+  if (thread.interruptedTurnAt !== void 0 && failed.createdAt <= thread.interruptedTurnAt && (failed.role === "user" || failed.role === "assistant") && failed.turnOutcome === void 0) {
+    return { interruptedByRestart: true };
   }
+  if (failed.role !== "assistant" || failed.turnOutcome?.status !== "failed") return null;
   if (failed.turnOutcome.source !== "provider") return {};
   for (let index = failedIndex - 1; index >= 0; index -= 1) {
     const candidate = thread.messages[index];
@@ -82717,7 +83761,7 @@ function createTurnRecoveryCard(options) {
     el(
       "div",
       { class: "turn-recovery-detail" },
-      "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
+      options.interruptedByRestart ? "Copse closed before this turn finished. Retry from the saved history; check the current state before repeating any action." : "Continue from the saved progress. Completed tool calls stay in the history and are not replayed automatically."
     )
   );
   if (options.lastKnownGoodLabel !== void 0) {
@@ -84910,6 +85954,46 @@ function mountConversation(root, store2, api2) {
     const threadId = store2.getState().activeThreadId;
     if (threadId) releaseHeldMessage(store2, api2, threadId, messageId);
   }
+  function queuedModelValue(threadId, messageId) {
+    const thread = getThreadById(store2, threadId);
+    const raw = thread?.pendingMessages?.find((item) => item.messageId === messageId)?.model ?? thread?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+    return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+  }
+  function queuedRecentModels() {
+    const { threads, settings } = store2.getState();
+    return threads.slice().sort((a3, b4) => b4.updatedAt - a3.updatedAt).map((thread) => {
+      const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+      return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+    });
+  }
+  function queuedWorkspaceIsSsh() {
+    const { activeProjectId, projects } = store2.getState();
+    return Boolean(projects.find((project2) => project2.id === activeProjectId)?.sshHost);
+  }
+  function buildQueuedModelPicker(messageId) {
+    const threadId = store2.getState().activeThreadId;
+    const host = el("div", { class: "message-queued-model" });
+    const pickerHost = el("div", { class: "message-queued-model-picker" });
+    if (!threadId) return host;
+    mountModelPicker(
+      pickerHost,
+      () => queuedModelValue(threadId, messageId),
+      (model) => {
+        updateQueuedMessageModel(store2, threadId, messageId, model);
+      },
+      (current) => fetchModelOptions(api2, current, {
+        sshWorkspace: queuedWorkspaceIsSsh()
+      }),
+      {
+        variant: "compact",
+        enableShortcut: false,
+        ariaLabel: "Model for queued prompt",
+        getRecentValues: queuedRecentModels
+      }
+    );
+    host.append(el("span", { class: "message-queued-model-label" }, "Run with"), pickerHost);
+    return host;
+  }
   function buildHeldActions(messageId) {
     const releaseBtn = el(
       "button",
@@ -84934,7 +86018,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, releaseBtn, editBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        releaseBtn,
+        editBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedActions(messageId) {
@@ -84962,7 +86053,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, editBtn, sendNowBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        editBtn,
+        sendNowBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedEditor(messageId) {
@@ -85685,8 +86783,25 @@ function mountConversation(root, store2, api2) {
       "Fork from here"
     );
     fork.addEventListener("click", () => {
-      fork.disabled = true;
-      void runFork(threadId, msgId).finally(() => fork.disabled = false);
+      const rect = fork.getBoundingClientRect();
+      showContextMenu(rect.left, rect.bottom + 4, [
+        { heading: "Fork from here" },
+        {
+          label: "Fork a copy",
+          onSelect: () => {
+            fork.disabled = true;
+            void runFork(threadId, msgId).finally(() => fork.disabled = false);
+          }
+        },
+        {
+          label: "Edit thread history\u2026",
+          onSelect: () => {
+            const projectId = store2.getState().activeProjectId;
+            if (!projectId) return;
+            openThreadHistoryEditor(store2, api2, { projectId, threadId, focusMessageId: msgId });
+          }
+        }
+      ]);
     });
     const resend = el(
       "button",
@@ -85856,9 +86971,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -85921,6 +87048,7 @@ function mountConversation(root, store2, api2) {
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
     const card = createTurnRecoveryCard({
+      ...recovery.interruptedByRestart ? { interruptedByRestart: true } : {},
       ...fallback !== void 0 ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {},
       onRetry: () => recoverFailedTurn(store2, api2, projectId, threadId, messageId, "current-model"),
       ...fallback !== void 0 ? {
@@ -86294,6 +87422,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
@@ -86323,7 +87452,7 @@ function mountConversation(root, store2, api2) {
           setReasoningDisclosureTitle(details, false);
         });
         const last = getThreadById(store2, tid)?.messages.at(-1);
-        if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
+        if (last) renderMessageTurnRecovery(tid, last.id);
       }
       syncAvatarMotion();
     }),
@@ -86428,6 +87557,9 @@ var init_conversation = __esm({
     init_inline_visualization();
     init_message_model();
     init_model_display();
+    init_lm_studio_defaults();
+    init_model_picker();
+    init_model_options();
     init_attachment_icons();
     init_image_expand();
     init_acp_resource_previews();
@@ -86470,6 +87602,7 @@ var init_conversation = __esm({
     init_context_menu();
     init_prompt_attachments();
     init_conversation_search();
+    init_thread_history_editor();
     init_markdown_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
@@ -98260,11 +99393,28 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       console.error("[acp] failed to save option selection:", err2);
     });
   }
+  const usage = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost footer-plan-usage",
+      "aria-label": "Manage ChatGPT usage",
+      title: "Manage your ChatGPT plan and Copse\u2019s allowance"
+    },
+    "Manage usage"
+  );
+  usage.addEventListener("click", () => {
+    void api2.shell.openExternal("https://chatgpt.com/settings/usage");
+  });
+  function updateUsage2() {
+    usage.hidden = !getCurrent().startsWith(CHATGPT_PLAN_MODEL_PREFIX);
+  }
   const picker = mountModelPicker(
     root,
     getCurrent,
     (model) => {
       onSelect(model);
+      updateUsage2();
       void picker.refresh();
     },
     (current) => fetchModelOptions(api2, pickerOpts.getCurrentRoute?.(current) ?? current, {
@@ -98298,22 +99448,32 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       ...pickerOpts.getCurrentRoute ? { getCurrentRoute: pickerOpts.getCurrentRoute } : {}
     }
   );
+  root.append(usage);
+  updateUsage2();
   picker.root.querySelector(".model-picker-trigger")?.addEventListener("click", () => {
     void picker.refresh();
   });
   return {
-    refresh: () => void picker.refresh(),
+    refresh: () => {
+      updateUsage2();
+      void picker.refresh();
+    },
     // Same pairing as an explicit trigger click: refresh live plugin/provider
     // state, then show the menu.
     openMenu: () => {
       void picker.refresh();
       picker.openMenu();
     },
-    destroy: picker.destroy
+    destroy: () => {
+      usage.remove();
+      picker.destroy();
+    }
   };
 }
 var init_footer_model_picker = __esm({
   "src/renderer/views/footer-model-picker.ts"() {
+    init_reserved_prefixes();
+    init_helpers();
     init_model_options();
     init_model_picker();
     init_acp_config_options();
@@ -98408,13 +99568,39 @@ function mountFooterBranchStatus(host, store2, api2) {
   let refreshToken = 0;
   let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
+  const footer = host.closest(".input-footer");
+  let popupFrame = 0;
+  function schedulePopupBoundary() {
+    if (!footer) return;
+    cancelAnimationFrame(popupFrame);
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0;
+      if (!open2) return;
+      const boundary = footer.getBoundingClientRect();
+      const anchor2 = trigger.getBoundingClientRect();
+      const width = menu.getBoundingClientRect().width;
+      menu.classList.toggle("is-footer-clamped", anchor2.left + width > boundary.right);
+    });
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null;
+  if (footer) {
+    popupObserver?.observe(footer);
+    popupObserver?.observe(trigger);
+    popupObserver?.observe(menu);
+  }
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function startBranch(thread) {
+    if (!isBlankThread(thread)) return void 0;
+    const picked = baseBranchByThread.get(thread.id);
+    if (picked) return picked;
+    if (thread.id !== store2.getState().activeThreadId) return void 0;
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
   function activeBaseBranch() {
     const thread = getActiveThread2();
-    if (!thread || !isBlankThread(thread)) return void 0;
-    return baseBranchByThread.get(thread.id);
+    return thread ? startBranch(thread) : void 0;
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -98437,6 +99623,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
     filterInput.setAttribute("aria-expanded", String(next));
+    schedulePopupBoundary();
     if (next) {
       menu.removeAttribute("hidden");
     } else {
@@ -98723,6 +99910,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const active2 = list.querySelector(".branch-picker-option.is-active");
     if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
+    schedulePopupBoundary();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -98924,9 +100112,21 @@ function mountFooterBranchStatus(host, store2, api2) {
   void refresh();
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId, threadId) => {
+      const thread = getThreadById(store2, threadId);
+      if (!thread || !isBlankThread(thread)) return void 0;
+      const picked = baseBranchByThread.get(threadId);
+      if (picked) return picked;
+      const [listed, defaultName] = await Promise.all([
+        api2.git.listBranches(projectId, threadId),
+        api2.git.getDefaultBranch(projectId, threadId)
+      ]);
+      return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
+    },
     destroy: () => {
       refreshToken += 1;
+      cancelAnimationFrame(popupFrame);
+      popupObserver?.disconnect();
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u2) => {
         u2();
@@ -98948,6 +100148,75 @@ var init_footer_branch_status = __esm({
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     nextPickerId = 0;
+  }
+});
+
+// src/renderer/views/footer-usage-popover.ts
+function row(entry, className) {
+  return el(
+    "div",
+    { class: className },
+    el("span", { class: "footer-usage-popover-name" }, entry.label),
+    el("span", { class: "footer-usage-popover-value" }, entry.value)
+  );
+}
+function runRow(run2) {
+  return el(
+    "div",
+    { class: "footer-usage-popover-row is-run" },
+    el("span", { class: `footer-usage-popover-dot is-${run2.status}` }),
+    el(
+      "span",
+      { class: "footer-usage-popover-run" },
+      el("span", { class: "footer-usage-popover-name" }, run2.label),
+      el("span", { class: "footer-usage-popover-meta" }, run2.detail)
+    ),
+    el("span", { class: "footer-usage-popover-value" }, run2.value)
+  );
+}
+function appendUsageSections(parent, model) {
+  parent.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+  if (model.conversationLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+  }
+  for (const entry of model.rows) parent.append(row(entry, "footer-usage-popover-row"));
+  if (model.threadLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+  } else {
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+    if (model.subagentRow || model.modelRows.length > 0) {
+      parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    }
+  }
+  if (model.subagentRow) {
+    parent.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
+    for (const run2 of model.subagentRuns) parent.append(runRow(run2));
+    if (model.subagentRunsOverflow > 0) {
+      parent.append(
+        el(
+          "div",
+          { class: "footer-usage-popover-meta" },
+          `+${String(model.subagentRunsOverflow)} more`
+        )
+      );
+    }
+  }
+  if (model.subagentRuns.length > 0 && model.modelRows.length > 0) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+  }
+  for (const entry of model.modelRows) {
+    parent.append(row(entry, "footer-usage-popover-row is-model"));
+  }
+  if (model.note) parent.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+  if (model.freeNote) {
+    parent.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+  }
+}
+var init_footer_usage_popover = __esm({
+  "src/renderer/views/footer-usage-popover.ts"() {
+    init_helpers();
   }
 });
 
@@ -98986,19 +100255,24 @@ function createContextWheel() {
   fill.setAttribute("stroke-width", "2");
   fill.setAttribute("transform", "rotate(-90 8 8)");
   fill.classList.add("context-wheel-fill");
-  const label = document.createElement("span");
-  label.className = "context-wheel-label";
   const popover = document.createElement("div");
   popover.className = "context-wheel-popover";
   popover.hidden = true;
   svg2.append(track, segGroup, fill);
-  root.append(svg2, label, popover);
+  root.append(svg2, popover);
   let popoverActive = false;
+  let currentUsage = null;
+  let engaged = false;
   function showPopover() {
+    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
+    engaged = false;
     popover.hidden = true;
+  }
+  function restoreEngagedPopover() {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
   }
   root.addEventListener("mouseenter", showPopover);
   root.addEventListener("mouseleave", hidePopover);
@@ -99010,7 +100284,6 @@ function createContextWheel() {
   function renderPopover(breakdown) {
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(totalTokens)} / ${formatTokenCount2(
@@ -99035,6 +100308,17 @@ function createContextWheel() {
       popover.append(row2);
     }
   }
+  function composePopover(drawContext) {
+    clearPopover();
+    drawContext?.();
+    if (!currentUsage) return;
+    if (drawContext) {
+      const divider = document.createElement("div");
+      divider.className = "footer-usage-popover-divider";
+      popover.append(divider);
+    }
+    appendUsageSections(popover, currentUsage);
+  }
   function renderBreakdown(breakdown) {
     popoverActive = true;
     root.hidden = false;
@@ -99043,7 +100327,6 @@ function createContextWheel() {
     fill.style.display = "none";
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    label.textContent = `${String(pct)}%`;
     const denom = Math.max(contextWindow, totalTokens, 1);
     clearSegments();
     let offset = 0;
@@ -99062,7 +100345,9 @@ function createContextWheel() {
       segGroup.append(arc);
       offset += len;
     }
-    renderPopover(breakdown);
+    composePopover(() => {
+      renderPopover(breakdown);
+    });
     const lines = segments.map(
       (s16) => `${s16.label}: ${formatTokenCount2(s16.tokens)} (${String(pctOf(s16.tokens, contextWindow))}%)`
     );
@@ -99082,7 +100367,7 @@ function createContextWheel() {
   }
   function resetToSnapshotMode() {
     popoverActive = false;
-    hidePopover();
+    popover.hidden = true;
     root.classList.remove("has-breakdown");
     root.removeAttribute("tabindex");
     fill.style.display = "";
@@ -99090,7 +100375,6 @@ function createContextWheel() {
   }
   function renderSnapshotPopover(snapshot, source) {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(
@@ -99103,17 +100387,21 @@ function createContextWheel() {
     note.textContent = source;
     popover.append(note);
   }
+  function setFillState(ratio) {
+    fill.classList.toggle("is-danger", ratio >= CONTEXT_DANGER_RATIO);
+    fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
+  }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
     const pct = Math.round(ratio * 100);
-    const visible = running || ratio > 0.01;
+    const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
     fill.setAttribute(
       "stroke-dasharray",
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`
     );
-    label.textContent = `${String(pct)}%`;
+    setFillState(ratio);
     const contextLine = `Context: ${formatTokenCount2(snapshot.conversationTokens)} / ${formatTokenCount2(snapshot.conversationBudget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
@@ -99127,32 +100415,56 @@ ${usageLine}` : contextLine;
     root.tabIndex = 0;
     const breakdown = options?.breakdown;
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      renderPopover(breakdown);
+      composePopover(() => {
+        renderPopover(breakdown);
+      });
       return;
     }
-    renderSnapshotPopover(snapshot, options?.snapshotSource);
+    composePopover(() => {
+      renderSnapshotPopover(snapshot, options?.snapshotSource);
+    });
+  }
+  function renderUsageOnly(usage, options) {
+    root.hidden = false;
+    fill.setAttribute("stroke-dasharray", `0 ${String(CIRCUMFERENCE)}`);
+    setFillState(0);
+    popoverActive = true;
+    root.tabIndex = 0;
+    const usageLine = options?.usageLine?.trim() ?? usage.header;
+    root.title = usageLine;
+    root.setAttribute("aria-label", usageLine);
+    composePopover(null);
   }
   function update(snapshot, running, options) {
+    currentUsage = options?.usage ?? null;
     const breakdown = options?.breakdown;
     if (!running && options?.breakdownRing && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
       renderBreakdown(breakdown);
+      root.classList.add("is-interactive");
+      restoreEngagedPopover();
       return;
     }
     resetToSnapshotMode();
     if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true;
-      return;
+      if (currentUsage) renderUsageOnly(currentUsage, options);
+      else root.hidden = true;
+    } else {
+      renderSnapshot(snapshot, running, options);
     }
-    renderSnapshot(snapshot, running, options);
+    root.classList.toggle("is-interactive", popoverActive && !root.hidden);
+    restoreEngagedPopover();
   }
   return { root, update };
 }
-var RADIUS, CIRCUMFERENCE, SVG_NS6, SEGMENT_COLORS;
+var RADIUS, CIRCUMFERENCE, SVG_NS6, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
     SVG_NS6 = "http://www.w3.org/2000/svg";
+    CONTEXT_WARN_RATIO = 0.8;
+    CONTEXT_DANGER_RATIO = 0.95;
     SEGMENT_COLORS = {
       system: "#6aa3ff",
       tools: "#4fd1c5",
@@ -99168,24 +100480,13 @@ var init_context_wheel = __esm({
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
   const previousFlex = [...items].map((el3) => el3.style.flex);
-  const usage = footer.querySelector(".footer-usage");
-  const previousUsageDisplay = usage?.style.display;
-  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) {
-    if (previousUsageDisplay) {
-      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
-    } else {
-      usage.style.removeProperty("display");
-    }
-  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -99593,14 +100894,25 @@ function buildFooterUsageTooltip(display, opts) {
   });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
-  const subagentRow = subagents.runs > 0 ? {
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages);
+  const subagentRow = allRuns.length > 0 ? {
     label: "Subagents",
-    value: `${String(subagents.runs)} ${subagents.runs === 1 ? "run" : "runs"} \xB7 ${formatTokenCount(
-      subagents.inputTokens
-    )} in / ${formatTokenCount(subagents.outputTokens)} out`
+    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagents.runs > 0 ? `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(
+      subagents.outputTokens
+    )} out` : "no usage yet"}`
   } : null;
-  const conversationLabel = subagentRow ? "Excluding subagents" : null;
-  const threadLabel2 = subagentRow ? "Whole thread" : null;
+  const subagentRuns = allRuns.slice(0, MAX_LISTED_SUBAGENT_RUNS).map((run2) => ({
+    label: run2.label,
+    detail: [
+      run2.model,
+      run2.status === "done" ? "done" : run2.status === "error" ? "failed" : "running"
+    ].filter((part) => part !== void 0).join(" \xB7 "),
+    value: run2.usage ? `${formatTokenCount(run2.usage.inputTokens)} in / ${formatTokenCount(run2.usage.outputTokens)} out` : "",
+    status: run2.status
+  }));
+  const hasReportedRuns = subagents.runs > 0;
+  const conversationLabel = hasReportedRuns ? "Excluding subagents" : null;
+  const threadLabel2 = hasReportedRuns ? "Whole thread" : null;
   const modelRows = [];
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
@@ -99618,78 +100930,21 @@ function buildFooterUsageTooltip(display, opts) {
     threadLabel: threadLabel2,
     threadRows,
     subagentRow,
+    subagentRuns,
+    subagentRunsOverflow: Math.max(0, allRuns.length - subagentRuns.length),
     modelRows,
     note,
     freeNote
   };
 }
+var MAX_LISTED_SUBAGENT_RUNS;
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
     init_footer_usage_summary();
     init_format_usage_summary();
     init_footer_usage_summary();
-  }
-});
-
-// src/renderer/views/footer-usage-popover.ts
-function row(entry, className) {
-  return el(
-    "div",
-    { class: className },
-    el("span", { class: "footer-usage-popover-name" }, entry.label),
-    el("span", { class: "footer-usage-popover-value" }, entry.value)
-  );
-}
-function createFooterUsagePopover() {
-  const root = el("div", { class: "footer-usage-popover", role: "tooltip", hidden: true });
-  let hasContent = false;
-  return {
-    root,
-    render(model) {
-      clear(root);
-      hasContent = model !== null;
-      if (!model) {
-        root.hidden = true;
-        return;
-      }
-      root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
-      if (model.conversationLabel) {
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
-      }
-      for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.threadLabel) {
-        root.append(el("div", { class: "footer-usage-popover-divider" }));
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-      } else {
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-        if (model.subagentRow || model.modelRows.length > 0) {
-          root.append(el("div", { class: "footer-usage-popover-divider" }));
-        }
-      }
-      if (model.subagentRow) {
-        root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
-      }
-      for (const entry of model.modelRows) {
-        root.append(row(entry, "footer-usage-popover-row is-model"));
-      }
-      if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
-      if (model.freeNote) {
-        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
-      }
-    },
-    show() {
-      if (hasContent) root.hidden = false;
-    },
-    hide() {
-      root.hidden = true;
-    }
-  };
-}
-var init_footer_usage_popover = __esm({
-  "src/renderer/views/footer-usage-popover.ts"() {
-    init_helpers();
+    MAX_LISTED_SUBAGENT_RUNS = 5;
   }
 });
 
@@ -100588,6 +101843,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   let refreshSequence = 0;
   let overlay = null;
   let lastPrompt = "";
+  let pendingContinuation = null;
   let modelPicker = null;
   const text2 = el("span", { class: "container-run-text" });
   const details = el(
@@ -100651,7 +101907,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         id: "container-run-dialog",
         className: "container-run-dialog"
       });
-      overlay.dialog.addEventListener("close", stopElapsedClock);
+      overlay.dialog.addEventListener("close", () => {
+        stopElapsedClock();
+        pendingContinuation = null;
+      });
     }
     return overlay;
   }
@@ -100674,7 +101933,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   }
   function renderDialog() {
     if (!overlay?.isOpen()) return;
-    const run2 = activeRun();
+    if (pendingContinuation && (pendingContinuation.threadId !== context.getActiveThreadId() || pendingContinuation.projectId !== context.getActiveProjectId())) {
+      pendingContinuation = null;
+      overlay.close();
+      return;
+    }
+    if (isLive2(activeRun())) pendingContinuation = null;
+    const run2 = pendingContinuation ? null : activeRun();
     modelPicker?.destroy();
     modelPicker = null;
     clear(overlay.dialog);
@@ -100683,7 +101948,9 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     else stopElapsedClock();
   }
   function armForm() {
-    const draft = context.getDraft().trim();
+    const continuation = pendingContinuation;
+    const previousSettings = continuation?.previous.settings;
+    const draft = continuation?.prompt ?? context.getDraft().trim();
     const quotesDraft = draft.length > 0;
     const task = el("textarea", {
       class: "container-run-prompt",
@@ -100699,7 +101966,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       class: "container-run-model",
       name: "containerRunModel"
     });
-    let chosenModel = context.getModel();
+    let chosenModel = continuation?.previous.model ?? context.getModel();
     modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
     modelSelect.value = chosenModel;
     modelSelect.addEventListener("change", () => {
@@ -100748,14 +102015,16 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       max: "1440",
       step: "1"
     });
-    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    minutes2.value = String(
+      previousSettings ? Math.max(1, Math.round(previousSettings.budgets.wallClockMs / 6e4)) : DEFAULT_WALL_CLOCK_MINUTES
+    );
     const tokens = el("input", {
       type: "number",
       class: "container-run-tokens",
       min: "1000",
       step: "1000"
     });
-    tokens.value = String(DEFAULT_TOKEN_CEILING);
+    tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
       egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
@@ -100801,6 +102070,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       name: "containerRunInstall",
       checked: ""
     });
+    installOptIn.checked = previousSettings?.installDependencies ?? continuation === null;
     const installField = el(
       "div",
       { class: "container-run-install-field" },
@@ -100819,7 +102089,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const start = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
-      "Start unattended run"
+      continuation ? "Start follow-up run" : "Start unattended run"
     );
     const cancel = el(
       "button",
@@ -100844,6 +102114,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       const threadId = context.getActiveThreadId();
       const projectId = context.getActiveProjectId();
       if (!threadId || !projectId) return;
+      if (continuation && (continuation.threadId !== threadId || continuation.projectId !== projectId)) {
+        overlay?.close();
+        return;
+      }
       const prompt = task.value.trim();
       if (!prompt) return;
       lastPrompt = prompt;
@@ -100857,7 +102131,15 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         model: chosenModel,
         budgets: { wallClockMs, tokenCeiling },
         ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
-        installDependencies: installOptIn.checked
+        installDependencies: installOptIn.checked,
+        ...continuation ? {
+          continueFrom: continuation.runtimeId,
+          continueContext: {
+            prompt: continuation.previous.task,
+            report: continuation.previous.report ?? "",
+            ref: continuation.previous.ref
+          }
+        } : {}
       }).then((started) => {
         if (!started) start.disabled = false;
       });
@@ -100865,7 +102147,11 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     return el(
       "div",
       { class: "container-run-form" },
-      el("h2", { class: "container-run-title" }, "Run this thread unattended in a container"),
+      el(
+        "h2",
+        { class: "container-run-title" },
+        continuation ? "Review the container follow-up" : "Run this thread unattended in a container"
+      ),
       el(
         "p",
         { class: "container-run-intro" },
@@ -101153,10 +102439,6 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       return false;
     }
   }
-  const DEFAULT_BUDGETS = {
-    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
-    tokenCeiling: DEFAULT_TOKEN_CEILING
-  };
   function latestOnActiveThread() {
     const threadId = context.getActiveThreadId();
     const thread = threadId ? getThreadById(context.store, threadId) : void 0;
@@ -101175,32 +102457,32 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
     };
   }
-  async function followUp(prompt) {
+  function followUp(prompt) {
     const threadId = context.getActiveThreadId();
     const projectId = context.getActiveProjectId();
-    if (!threadId || !projectId) return false;
+    if (!threadId || !projectId) return Promise.resolve(false);
     if (isLive2(activeRun())) {
       showToast("The container is still busy with the previous run; wait for it or stop it.", {
         variant: "error"
       });
-      return false;
+      return Promise.resolve(false);
     }
     const latest = latestOnActiveThread();
     if (!latest || latest.runtimeId === null) {
       showToast("This thread has no container run to continue.", { variant: "error" });
-      return false;
+      return Promise.resolve(false);
     }
-    return startRun({
+    pendingContinuation = {
       projectId,
       threadId,
       prompt,
-      model: latest.model,
-      budgets: DEFAULT_BUDGETS,
-      ...latest.credential === "login" ? { useAgentLogin: true } : {},
-      installDependencies: true,
-      continueFrom: latest.runtimeId,
-      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
-    });
+      runtimeId: latest.runtimeId,
+      previous: latest
+    };
+    const dialog2 = ensureDialog5();
+    dialog2.open();
+    renderDialog();
+    return Promise.resolve(false);
   }
   const usageFolded = /* @__PURE__ */ new Set();
   function settle2(progress) {
@@ -101569,18 +102851,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn);
   checkoutHost.append(checkoutBtn, checkoutMenu);
   const branchHost = el("div", { class: "footer-branch-host" });
-  const usageBtn = el("span", {
-    class: "footer-usage",
-    tabindex: "0",
-    role: "note",
-    "aria-label": "Token usage"
-  });
-  const usagePopover = createFooterUsagePopover();
   const usageGroup = el("div", { class: "footer-usage-group" });
   const queueIndicator = el("span", { class: "footer-queue", hidden: "", "aria-live": "polite" });
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root);
+  usageGroup.append(contextWheel.root, queueIndicator);
   footer.append(modelHost, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -101755,10 +103030,6 @@ function mountInputBar(root, store2, api2, opts = {}) {
       showErrorToast("Debug trace failed", error62);
     });
   }
-  usageBtn.addEventListener("mouseenter", usagePopover.show);
-  usageBtn.addEventListener("mouseleave", usagePopover.hide);
-  usageBtn.addEventListener("focus", usagePopover.show);
-  usageBtn.addEventListener("blur", usagePopover.hide);
   const checkoutErrorText = el("span", {
     class: "composer-checkout-error-text composer-banner-text"
   });
@@ -102364,7 +103635,6 @@ ${description}
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
     const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages });
     return {
-      label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
       tooltip
     };
@@ -102388,30 +103658,18 @@ ${description}
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
     const usage = usageViews();
-    const compact = footerCompact.isCompact();
     const snapshot = thread?.contextSnapshot;
-    const snapshotVisible = !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01);
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
     const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible;
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usage?.detail ?? null : null,
+      usageLine: usage?.detail ?? null,
+      usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
     });
-    contextWheel.root.classList.toggle("is-interactive", tuckUsageIntoWheel);
-    if (!usage) {
-      usageBtn.hidden = true;
-      usagePopover.render(null);
-    } else {
-      usageBtn.hidden = tuckUsageIntoWheel;
-      usageBtn.textContent = usage.label;
-      usageBtn.setAttribute("aria-label", usage.detail);
-      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip);
-    }
     footerOverflow?.update();
     updateContextFitWarning();
     updateCheckoutControl();
@@ -102654,13 +103912,14 @@ ${description}
     if (!projectId || !thread) return;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
-    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
+    const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
     const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
     if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
@@ -102669,7 +103928,6 @@ ${description}
         return;
       }
     }
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -102766,6 +104024,9 @@ ${description}
       checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
+        if (branchDecision?.status === "rejected") throw branchDecision.reason;
+        const baseBranch = branchDecision?.status === "fulfilled" ? branchDecision.value : void 0;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           id,
@@ -102858,7 +104119,14 @@ ${description}
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
     recordThreadVideos(store2, id, attachedVideos2);
     recordThreadArchives(store2, id, attachedArchives2);
-    const queued = { messageId, payload, createdAt: Date.now() };
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      // Snapshot the selection with the prompt. A later model change while this
+      // item waits in the pinned queue should affect the next prompt, not this one.
+      model: model ?? DEFAULT_APP_CHAT_MODEL
+    };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
     } else {
@@ -103402,7 +104670,6 @@ var init_input_bar = __esm({
     init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
-    init_footer_usage_popover();
     init_lm_studio_defaults();
     init_dynamic_model();
     init_follow_up_suggestions();
@@ -138045,55 +139312,6 @@ var init_vnc_pane = __esm({
   }
 });
 
-// src/renderer/views/setup/local-detection.ts
-function localServerTargets() {
-  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
-    id: p2.id,
-    label: p2.label,
-    baseUrl: p2.baseUrl
-  }));
-  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
-}
-async function detectLocalServers(api2) {
-  return Promise.all(
-    localServerTargets().map(async (target) => {
-      try {
-        const res = await api2.lmStudio.test(target.baseUrl);
-        return {
-          ...target,
-          reachable: res.ok,
-          models: res.models ?? [],
-          ...res.error ? { error: res.error } : {}
-        };
-      } catch (err2) {
-        return {
-          ...target,
-          reachable: false,
-          models: [],
-          error: err2 instanceof Error ? err2.message : "probe failed"
-        };
-      }
-    })
-  );
-}
-async function importDetectedPreset(api2, result) {
-  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
-  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
-  const existingModels = existing?.models ?? [];
-  const seen = new Set(existingModels.map((m2) => m2.id));
-  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
-  await api2.settings.saveExtraProvider({
-    slug: result.id,
-    models: [...existingModels, ...added]
-  });
-}
-var init_local_detection = __esm({
-  "src/renderer/views/setup/local-detection.ts"() {
-    init_extra_providers();
-    init_lm_studio_defaults();
-  }
-});
-
 // src/renderer/views/setup/onboarding-scan.ts
 function message(err2) {
   return err2 instanceof Error ? err2.message : "probe failed";
@@ -141241,7 +142459,7 @@ function startFailureDetail(error62) {
   return ipcErrorMessage(error62, "the checkout could not be prepared");
 }
 function isPendingAutomation(thread) {
-  return thread.automation !== void 0 && thread.status === "idle" && Boolean(thread.draftPrompt?.trim());
+  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
@@ -141348,13 +142566,14 @@ function attachAutomationController(store2, api2) {
     } catch (error62) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
+        markAutomationStartFailed(store2, threadId);
         addMessage(
           store2,
           threadId,
           "error",
           `This scheduled run could not start: ${startFailureDetail(error62)}
 
-Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved, or leave it for the next run.`
+Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
         );
       }
     } finally {
