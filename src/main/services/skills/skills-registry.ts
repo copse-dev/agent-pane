@@ -18,7 +18,7 @@ import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
   folderNameMatchesSkill,
-  parseSkillFrontmatter,
+  validateSkillFrontmatter,
   splitSkillMarkdown,
   toSkillMetadata,
 } from './parse-skill-frontmatter.ts'
@@ -185,16 +185,17 @@ async function loadSkillFromFile(
     return
   }
 
-  const parsed = parseSkillFrontmatter(split.frontmatter)
-  if (!parsed) {
-    console.warn(`[skills] Skipping ${skillPath}: invalid frontmatter`)
+  const result = validateSkillFrontmatter(split.frontmatter)
+  if (!result.skill) {
+    console.warn(`[skills] Skipping ${skillPath}: ${result.reason}`)
     failures.push({
-      attemptedNames: [folderName],
+      attemptedNames: [...new Set([folderName, ...(result.name ? [result.name] : [])])],
       skillPath,
-      reason: 'frontmatter is missing the required `name` or `description` field',
+      reason: result.reason,
     })
     return
   }
+  const parsed = result.skill
 
   if (!folderNameMatchesSkill(skillPath, parsed.name)) {
     console.warn(

@@ -680,6 +680,57 @@ description: Broken — folder was renamed after install
     }
   })
 
+  it('excludes invalid required fields and explains the constraint for either attempted name', async () => {
+    const cases = [
+      {
+        folder: 'bad-name',
+        name: 'Bad-Name',
+        description: 'Demo',
+        reason: /lowercase letters, digits, and single hyphens/,
+      },
+      {
+        folder: 'missing-description',
+        name: 'missing-description',
+        description: '',
+        reason: /requires a non-empty `description` field/,
+      },
+      {
+        folder: 'long-name',
+        name: 'x'.repeat(65),
+        description: 'Demo',
+        reason: /`name` must be at most 64 characters/,
+      },
+    ]
+    for (const fixture of cases) {
+      const root = join(tempRoot, '.agents', 'skills', fixture.folder)
+      await mkdir(root, { recursive: true })
+      await writeFile(
+        join(root, 'SKILL.md'),
+        `---\nname: ${fixture.name}\ndescription: ${fixture.description}\n---\nDo the task.`,
+      )
+    }
+    await refreshSkillsRegistry()
+    assert.ok(getSkill('demo-skill'), 'valid skills remain available alongside invalid entries')
+    for (const fixture of cases) {
+      assert.equal(getSkill(fixture.name), null)
+      assert.equal(
+        listModelInvocableSkills().some((skill) => skill.name === fixture.name),
+        false,
+      )
+      for (const name of new Set([fixture.name, fixture.folder])) {
+        await assert.rejects(
+          () => readSkill(name),
+          (error) => {
+            assert.ok(error instanceof Error)
+            assert.match(error.message, /installed but failed to load/)
+            assert.match(error.message, fixture.reason)
+            return true
+          },
+        )
+      }
+    }
+  })
+
   it('flags a skill whose SKILL.md references a missing bundle file', async () => {
     const skillRoot = join(tempRoot, '.cursor', 'skills', 'linky-refs')
     await mkdir(join(skillRoot, 'references'), { recursive: true })

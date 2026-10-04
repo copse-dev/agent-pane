@@ -21,16 +21,36 @@ export interface ParsedSkillFile {
  */
 export const splitSkillMarkdown = splitMarkdownFrontmatter
 
-export function parseSkillFrontmatter(yaml: string): ParsedSkillFile | null {
+export type SkillFrontmatterResult =
+  | { skill: ParsedSkillFile; reason: null }
+  | { skill: null; reason: string; name: string | undefined }
+
+/** Name constraints and required fields, without changing the shared scalar dialect. */
+export function validateSkillFrontmatter(yaml: string): SkillFrontmatterResult {
   const name = parseScalarBlock(yaml, 'name')
   const description = parseScalarBlock(yaml, 'description')
-  if (!name || !description) return null
-  return {
-    name,
-    description,
-    disableModelInvocation: parseYamlBoolean(yaml, 'disable-model-invocation'),
-    paths: parseYamlList(yaml, 'paths'),
+  const invalid = (reason: string): SkillFrontmatterResult => ({ skill: null, reason, name })
+  if (!name) return invalid('frontmatter requires a non-empty `name` field')
+  if (name.length > 64) return invalid('frontmatter `name` must be at most 64 characters')
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    return invalid(
+      'frontmatter `name` must contain lowercase letters, digits, and single hyphens between words',
+    )
   }
+  if (!description) return invalid('frontmatter requires a non-empty `description` field')
+  return {
+    skill: {
+      name,
+      description,
+      disableModelInvocation: parseYamlBoolean(yaml, 'disable-model-invocation'),
+      paths: parseYamlList(yaml, 'paths'),
+    },
+    reason: null,
+  }
+}
+
+export function parseSkillFrontmatter(yaml: string): ParsedSkillFile | null {
+  return validateSkillFrontmatter(yaml).skill
 }
 
 export function folderNameMatchesSkill(skillPath: string, name: string): boolean {

@@ -129,15 +129,30 @@ in the catalog, models derived it from `fullPath` and asked for `pstack`.
 
 ```yaml
 ---
-name: reconcile-worktrees # must match the folder name
+# Must match the folder name.
+name: reconcile-worktrees
 description: One line the model sees in the catalog
-disable-model-invocation: true # optional: user-only, hidden from the model
-paths: # optional: extra read-only entries, relative to this directory
+# Optional: user-only, hidden from the model.
+disable-model-invocation: true
+# Optional: extra read-only entries, relative to this directory.
+paths:
   - data
   - references/schema.json
 ---
 ```
 
+- `name` is required, at most 64 characters, and contains lowercase ASCII
+  letters, digits, and single hyphens between words. Leading, trailing, and
+  consecutive hyphens are invalid. `description` must contain non-whitespace
+  text. Invalid entries are skipped; `read_skill` explains the exact constraint
+  when asked for the declared name or its folder name.
+- This is partial [Agent Skills format](https://agentskills.io/specification)
+  conformance (#1352), retaining Copse's existing scalar reader. The 1024-character
+  description cap remains deferred: the pinned bundled `cursor-sdk` skill has a
+  1045-character description, and its source snapshot is immutable. Optional
+  standard metadata (`license`, `compatibility`, `metadata`, `allowed-tools`),
+  `user-invocable`, extra ecosystem roots, and Sources validation diagnostics
+  remain follow-ups. Skill declarations never authorize tool use.
 - `disable-model-invocation` keeps a skill out of the model's catalog; the
   user can still invoke it with `/name`.
 - `paths` declares extra read-only entries for `run_shell`. When a skill is
