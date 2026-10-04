@@ -16,13 +16,18 @@ export interface SourcesSectionOptions {
   onHeadingsChanged: () => void
 }
 
+export interface SourcesSection {
+  refresh: () => Promise<void>
+  invalidate: () => void
+}
+
 /** Sources owns discovery, trust disclosures and hook dry-runs. */
 export function createSourcesSection({
   root,
   api,
   onTrusted,
   onHeadingsChanged,
-}: SourcesSectionOptions) {
+}: SourcesSectionOptions): SourcesSection {
   let generation = 0
   /**
    * Rows for Settings → Sources → Agents: what Copse found, what it skipped, and
@@ -498,7 +503,7 @@ export function createSourcesSection({
   })
   return {
     refresh: refreshSources,
-    invalidate: () => {
+    invalidate: (): void => {
       generation += 1
     },
   }
