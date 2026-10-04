@@ -10,6 +10,13 @@ export interface SkillSummary {
 }
 
 export interface SkillMetadata extends SkillSummary {
+  /** Absence in legacy snapshots means manually invocable. */
+  userInvocable?: boolean
+  license?: string
+  compatibility?: string
+  metadata?: Record<string, string>
+  /** Compatibility information only. Never authorizes or auto-approves tools. */
+  allowedTools?: string
   skillRoot: string
   disableModelInvocation: boolean
   paths: string[]
@@ -27,6 +34,23 @@ export interface SkillMetadata extends SkillSummary {
    * model hits the missing file mid-run.
    */
   missingReferences: string[]
+}
+
+export interface SkillDiagnostic {
+  kind: 'invalid' | 'shadowed' | 'compatibility' | 'unsupported'
+  skillPath: string
+  source: SkillSource
+  name: string
+  reason: string
+  shadowedBy?: string
+}
+
+export interface SkillsSourcesResult {
+  skills: SkillMetadata[]
+  diagnostics: SkillDiagnostic[]
+  /** User-configured extra roots, in effective precedence order. */
+  extraRoots: string[]
+  reload: 'manual'
 }
 
 export interface SkillReadResult {
