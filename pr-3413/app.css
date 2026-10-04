@@ -1459,6 +1459,10 @@ copse-ui-field input[type=password],
   fill: var(--pr-closed);
   stroke: var(--pr-closed);
 }
+.chat-pr-status.has-conflicts svg path:nth-child(2) {
+  fill: none;
+  stroke: var(--pr-closed);
+}
 .chat-pr-status.is-merged {
   color: var(--pr-merged);
 }
@@ -2141,29 +2145,6 @@ copse-ui-field input[type=password],
 }
 .pr-list-title {
   flex: 1;
-}
-.pr-list-ci {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  margin-left: var(--spacing-xs);
-  border-radius: 50%;
-  background: transparent;
-}
-.pr-list-ci-success {
-  background: var(--success);
-}
-.pr-list-ci-failure {
-  background: var(--error);
-}
-.pr-list-ci-pending {
-  background: var(--warning);
-}
-.pr-list-ci-loading {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-  opacity: 0.5;
 }
 .pr-list-agent-badge {
   flex-shrink: 0;
@@ -3925,6 +3906,20 @@ label {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+.conversation-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(var(--spacing-lg) + var(--spacing-md));
+  pointer-events: none;
+  z-index: 4;
+  background:
+    linear-gradient(
+      180deg,
+      var(--chat-gradient-top) 0%,
+      color-mix(in srgb, var(--chat-gradient-top) 82%, transparent) 42%,
+      transparent 100%);
 }
 .scroll-to-bottom {
   position: absolute;
