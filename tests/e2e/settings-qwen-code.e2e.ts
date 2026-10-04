@@ -51,7 +51,7 @@ describe('Qwen Code setup guidance', () => {
       await expect(approval).not.toBeDisplayed()
     }
     await expect(form.$('.provider-form-title')).toHaveText(expect.stringContaining('Qwen Code'))
-    const rows = await form.$$('.acp-cmd-row')
+    const rows = await form.$$('.acp-cmd-row').getElements()
     assert.deepEqual(await rows.map((row) => row.$('.acp-cmd-label').getText()), [
       'Install',
       'Sign in',
