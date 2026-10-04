@@ -204,6 +204,18 @@ export const rememberTool = defineTool({
  */
 export const RECALL_ALL_MAX_CHARS = 20_000
 
+/** Separator `recall` places between the header, each memory and the footer. */
+const RECALL_SEPARATOR = '\n\n'
+
+/**
+ * Characters a page keeps back for its header (`Found N memories (showing
+ * a–b):`), its next-cursor footer and the separators around them, so the whole
+ * page — not just its memories — stays within {@link RECALL_ALL_MAX_CHARS}.
+ * Both lines are fixed text plus at most three counts; even 16-digit counts
+ * need under 150 characters.
+ */
+const RECALL_PAGE_FRAMING_RESERVE = 200
+
 /**
  * Longest title and longest combined list (tags, sources, applies-to) a
  * clipped memory keeps, so its heading has a fixed ceiling and the body — the
@@ -254,9 +266,11 @@ function clipMemory(note: KnowledgeNote, maxChars: number): string {
     id: note.id.slice(0, CLIPPED_LIST_MAX_CHARS),
     fields,
   }
+  const notice = `${RECALL_SEPARATOR}(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
   const header = formatMemory({ ...clipped, body: '' })
-  const body = note.body.slice(0, Math.max(0, maxChars - header.length))
-  return `${formatMemory({ ...clipped, body })}\n\n(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
+  // The notice counts against the budget too, so the clipped memory fits it whole.
+  const body = note.body.slice(0, Math.max(0, maxChars - header.length - notice.length))
+  return `${formatMemory({ ...clipped, body })}${notice}`
 }
 
 interface ShownMemory {
@@ -270,16 +284,18 @@ interface ShownMemory {
  * returned whole, so one oversized note cannot defeat the cap.
  */
 function capPage(page: readonly KnowledgeNote[]): ShownMemory[] {
+  const budget = RECALL_ALL_MAX_CHARS - RECALL_PAGE_FRAMING_RESERVE
   const shown: ShownMemory[] = []
   let chars = 0
   for (const note of page) {
     const text = formatMemory(note)
-    if (chars + text.length > RECALL_ALL_MAX_CHARS) {
-      if (shown.length === 0) shown.push({ note, text: clipMemory(note, RECALL_ALL_MAX_CHARS) })
+    const cost = (shown.length > 0 ? RECALL_SEPARATOR.length : 0) + text.length
+    if (chars + cost > budget) {
+      if (shown.length === 0) shown.push({ note, text: clipMemory(note, budget) })
       break
     }
     shown.push({ note, text })
-    chars += text.length
+    chars += cost
   }
   return shown
 }
@@ -333,6 +349,6 @@ export const recallTool = defineTool({
     }:`
     const next = offset + shown.length
     const footer = next < total ? [`More memories available. Next cursor: m:${String(next)}`] : []
-    return [header, ...shown.map(({ text }) => text), ...footer].join('\n\n')
+    return [header, ...shown.map(({ text }) => text), ...footer].join(RECALL_SEPARATOR)
   },
 })

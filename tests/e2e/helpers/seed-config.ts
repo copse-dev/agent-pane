@@ -896,12 +896,6 @@ export function seedMemoryNotes(
   return knowledgeDir
 }
 
-/**
- * A completed unfiltered memory recall whose result carries the truncation
- * guidance shown for a long-lived project. Unit coverage exercises the real
- * cap; this persisted transcript keeps the visual proof small and focused on
- * the copy a user sees in the ordinary tool card.
- */
 /** Where the app keeps project-keyed knowledge (OKF memories) under this run's profile. */
 export function e2eKnowledgeDir(): string {
   return join(copseDataRoot(), 'knowledge')
@@ -938,6 +932,12 @@ export function seedTwoProjectStoresFixture(input: {
   })
 }
 
+/**
+ * A completed unfiltered memory recall whose result is a size-capped page: a
+ * memory clipped to the character cap and the cursor for the next page. Unit
+ * coverage exercises the real cap; this persisted transcript keeps the visual
+ * proof small and focused on the copy a user sees in the ordinary tool card.
+ */
 export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
   const projectId = 'e2e-memory-recall-truncation-project'
   const threadId = 'e2e-memory-recall-truncation-thread'

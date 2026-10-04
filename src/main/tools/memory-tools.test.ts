@@ -178,7 +178,7 @@ describe('memory-tools', () => {
 
     const first = await run(recallTool, {})
 
-    assert.ok(first.length < RECALL_ALL_MAX_CHARS + 1_000, String(first.length))
+    assert.ok(first.length <= RECALL_ALL_MAX_CHARS, String(first.length))
     assert.match(first, /Found 3 memories \(showing 1–1\):/)
     assert.match(first, /^## One(?: |$)/m)
     assert.doesNotMatch(first, /^## Two(?: |$)/m)
@@ -187,6 +187,18 @@ describe('memory-tools', () => {
     const second = await run(recallTool, { cursor: 'm:1' })
     assert.match(second, /^## Two(?: |$)/m)
     assert.match(second, /Next cursor: m:2/)
+  })
+
+  it('keeps a whole page, framing included, within the cap when many memories nearly fill it', async () => {
+    // Bodies sized so the page fills right up to its budget before stopping.
+    for (let i = 0; i < 40; i++) {
+      addKnowledgeNote({ type: MEMORY_TYPE, title: `Note ${String(i)}`, body: 'z'.repeat(990) })
+    }
+
+    const page = await run(recallTool, { limit: 50 })
+
+    assert.ok(page.length <= RECALL_ALL_MAX_CHARS, String(page.length))
+    assert.match(page, /Next cursor: m:\d+/)
   })
 
   it('does not size-cap a query, so a query reads a long memory in full', async () => {
@@ -211,7 +223,7 @@ describe('memory-tools', () => {
 
     const all = await run(recallTool, {})
 
-    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.ok(all.length <= RECALL_ALL_MAX_CHARS, String(all.length))
     assert.match(all, /## Huge/)
     assert.match(all, /Memory truncated at 20,000 characters/)
     assert.match(all, /recall with a query/)
@@ -227,7 +239,7 @@ describe('memory-tools', () => {
 
     const all = await run(recallTool, {})
 
-    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.ok(all.length <= RECALL_ALL_MAX_CHARS, String(all.length))
     assert.match(all, /ingested external content/)
     assert.match(all, /Memory truncated/)
   })
@@ -243,7 +255,7 @@ describe('memory-tools', () => {
 
     const all = await run(recallTool, {})
 
-    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.ok(all.length <= RECALL_ALL_MAX_CHARS, String(all.length))
     assert.match(all, /## Tagged/)
     assert.match(all, /ingested external content/)
   })
@@ -276,7 +288,7 @@ describe('memory-tools', () => {
 
     const all = await run(recallTool, {})
 
-    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.ok(all.length <= RECALL_ALL_MAX_CHARS, String(all.length))
     assert.match(all, /## Sourced/)
     assert.match(all, /ingested external content/)
     assert.match(all, /Memory truncated/)
