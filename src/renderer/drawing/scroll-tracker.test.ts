@@ -7,6 +7,7 @@ import type { GuestScrollPosition } from '@shared/browser-guest-scroll.ts'
 interface FakeTimer extends ScrollTimer {
   fireInterval: (ms?: number) => void
   runTimeouts: () => void
+  activeIntervalCount: () => number
 }
 
 /**
@@ -41,6 +42,7 @@ function fakeTimer(): FakeTimer {
     runTimeouts: (): void => {
       for (const fn of timeouts.splice(0)) fn()
     },
+    activeIntervalCount: (): number => intervals.size,
   }
 }
 
@@ -357,6 +359,35 @@ describe('SCROLL_TRACK_INTERVAL_MS', () => {
     assert.equal(SCROLL_TRACK_INTERVAL_MS, 80)
   })
 
+  it('keeps a recent burst and an active stroke alive when guest focus leaves', () => {
+    const timers = fakeTimer()
+    const { target } = wheelTarget()
+    const tracker = trackGuestScroll({
+      wheelTarget: target,
+      fetchPosition: () => Promise.resolve({ x: 0, y: 0 }),
+      onScroll: () => {},
+      timer: timers,
+    })
+    try {
+      tracker.setGuestFocused(true)
+      tracker.setGuestFocused(false)
+      assert.equal(timers.activeIntervalCount(), 1, 'recent focus burst remains active')
+      timers.runTimeouts()
+      assert.equal(timers.activeIntervalCount(), 0, 'burst settles at the normal idle stop')
+
+      tracker.setGuestFocused(true)
+      target.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+      timers.runTimeouts()
+      tracker.setGuestFocused(false)
+      assert.equal(timers.activeIntervalCount(), 1, 'active stroke retains its polling timer')
+      window.dispatchEvent(new window.Event('pointerup'))
+      assert.equal(timers.activeIntervalCount(), 0, 'stroke release stops idle polling')
+    } finally {
+      tracker.dispose()
+      target.remove()
+    }
+  })
+
   it('keeps polling past the idle stop while the guest is focused, for guest-only scrolling', async () => {
     const timers = fakeTimer()
     const { target } = wheelTarget()
@@ -390,6 +421,7 @@ describe('SCROLL_TRACK_INTERVAL_MS', () => {
       // Once focus leaves and the idle stop fires, the tracker goes quiet again.
       tracker.setGuestFocused(false)
       timers.runTimeouts()
+      assert.equal(timers.activeIntervalCount(), 0, 'unfocused idle tracker clears its timer')
       const settled = calls
       current = { x: 0, y: 900 }
       timers.fireInterval()
