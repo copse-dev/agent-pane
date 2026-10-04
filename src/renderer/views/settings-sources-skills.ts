@@ -154,6 +154,11 @@ export function mountSkillsSources({
   return {
     invalidate(): void {
       generation++
+      // Navigation invalidates pending replies. A failed owner-wide discovery
+      // must still leave these independent controls available for retry.
+      save.disabled = false
+      reload.disabled = false
+      status.textContent = ''
     },
     refresh(result): void {
       // A newer owner snapshot supersedes any pending subsection request.

@@ -50,6 +50,7 @@ const snapshot: SkillsSourcesResult = {
 function mount(api = createFakeApi()): {
   root: HTMLElement
   refresh: (result: SkillsSourcesResult) => void
+  invalidate: () => void
 } {
   const root = document.createElement('div')
   root.innerHTML = skillsSourcesMarkup
@@ -136,5 +137,41 @@ describe('skill Sources controls', () => {
     )
     assert.match(root.querySelector('#sources-skills-list')?.textContent ?? '', /model-only/)
     assert.equal(root.querySelector<HTMLButtonElement>('#sources-skills-reload')?.disabled, false)
+  })
+
+  it('allows retry after navigation invalidates a pending reload without an owner refresh', async () => {
+    const base = createFakeApi()
+    let complete: ((result: SkillsSourcesResult) => void) | undefined
+    const { root, refresh, invalidate } = mount({
+      ...base,
+      skills: {
+        ...base.skills,
+        sources: () =>
+          new Promise((resolve) => {
+            complete = resolve
+          }),
+      },
+    })
+    refresh(snapshot)
+    const reload = root.querySelector<HTMLButtonElement>('#sources-skills-reload')
+    const save = root.querySelector<HTMLButtonElement>('#sources-skill-roots-save')
+    const status = root.querySelector('#sources-skills-status')
+    assert.ok(reload && save && status)
+    reload.click()
+    assert.equal(reload.disabled, true)
+    invalidate()
+    assert.equal(reload.disabled, false)
+    assert.equal(save.disabled, false)
+    assert.equal(status.textContent, '')
+    // The unrelated owner discovery fails and never renders a replacement.
+    complete?.({ ...snapshot, extraRoots: ['/stale'] })
+    await tick()
+    assert.equal(root.querySelector<HTMLTextAreaElement>('textarea')?.value, '/extra/skills')
+    reload.click()
+    complete?.({ ...snapshot, extraRoots: ['/retried'] })
+    await tick()
+    assert.equal(root.querySelector<HTMLTextAreaElement>('textarea')?.value, '/retried')
+    assert.equal(status.textContent, 'Skills reloaded.')
+    assert.equal(reload.disabled, false)
   })
 })
