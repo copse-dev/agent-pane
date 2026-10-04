@@ -76267,6 +76267,7 @@ function trackGuestScroll(options) {
       if (disposed || focused === guestFocused) return;
       guestFocused = focused;
       if (focused) wake();
+      else if (!polling && strokeDepth === 0) stopPolling();
     },
     dispose() {
       if (enabled) stop();
