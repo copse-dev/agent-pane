@@ -1,3 +1,4 @@
+import { deferred } from '../../../../tests/deferred.ts'
 import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
@@ -8,6 +9,7 @@ import type {
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierOverview, LocalClassifierStatus } from '@shared/local-classifiers.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 import { createClassifiersSection } from './classifiers-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import {
@@ -687,5 +689,54 @@ describe('classifier connections settings', () => {
     assert.equal(field(section.root, 'Model').value, 'jev-latest')
     assert.equal(state.keys.length, 0)
     assert.equal(state.saves.length, 0)
+  })
+})
+
+describe('Classifier refresh visit isolation', () => {
+  it('ignores a nested profile reload from a closed visit', async () => {
+    document.body.innerHTML = ''
+    const base = createFakeApi()
+    const stale = deferred<ClassifierProfileStatus[]>()
+    let calls = 0
+    const oldProfile: ClassifierProfileStatus = {
+      profile: HTTP_PROFILE,
+      hasKey: false,
+      encrypted: null,
+    }
+    const freshProfile: ClassifierProfileStatus = {
+      ...oldProfile,
+      profile: { ...HTTP_PROFILE, id: 'fresh', label: 'Fresh classifier' },
+    }
+    const section = createClassifiersSection({
+      ...base,
+      classifiers: {
+        ...base.classifiers,
+        list: async () => {
+          calls += 1
+          if (calls === 2) return stale.promise
+          return calls === 1 ? [oldProfile] : [freshProfile]
+        },
+      },
+      localClassifiers: {
+        ...base.localClassifiers,
+        status: async () => ({
+          servers: [{ ...WINNOW_SERVER, saved: true, phase: 'running' }],
+          hosted: [],
+        }),
+      },
+    })
+    document.body.append(section.root)
+    const oldVisit = new AbortController()
+    await section.refresh(oldVisit.signal)
+    await setImmediate()
+    assert.equal(calls, 2)
+    oldVisit.abort()
+    await section.refresh(new AbortController().signal)
+    const chips = qsRequired(section.root, '[aria-label="Classifier profiles"]')
+    assert.match(chips.textContent, /Fresh classifier/)
+    stale.resolve([oldProfile])
+    await setImmediate()
+    assert.match(chips.textContent, /Fresh classifier/)
+    assert.doesNotMatch(chips.textContent, /Fixture classifier/)
   })
 })

@@ -31,7 +31,7 @@ interface ClassifiersSectionApi {
 
 export interface ClassifiersSection {
   root: HTMLFieldSetElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
 }
 
 function classifierErrorMessage(error: unknown): string {
@@ -218,6 +218,8 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   }
 
   let overview: LocalClassifierOverview = { servers: [], hosted: [] }
+  let currentSignal: AbortSignal | undefined
+  let refreshGeneration = 0
   let poll: ReturnType<typeof setInterval> | undefined
   let localBusy = false
 
@@ -234,7 +236,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     if (active && poll === undefined) {
       poll = setInterval(() => {
         // A closed settings dialog stops watching; reopening Classifiers restarts it.
-        if (root.closest('dialog')?.open === false) {
+        if (currentSignal?.aborted || root.closest('dialog')?.open === false) {
           stopPolling()
           return
         }
@@ -243,21 +245,32 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     } else if (!active) stopPolling()
   }
 
-  async function reloadProfiles(): Promise<void> {
-    profiles = await api.classifiers.list()
+  async function reloadProfiles(
+    signal: AbortSignal | undefined,
+    request: number,
+  ): Promise<boolean> {
+    const loaded = await api.classifiers.list()
+    if (signal?.aborted || request !== refreshGeneration) return false
+    profiles = loaded
     renderScreening()
     renderBackground()
     renderChips()
+    return true
   }
 
-  async function applyLocal(next: LocalClassifierOverview): Promise<void> {
+  async function applyLocal(
+    next: LocalClassifierOverview,
+    signal: AbortSignal | undefined,
+    request: number,
+  ): Promise<void> {
+    if (signal?.aborted || request !== refreshGeneration) return
     const savedBefore = overview.servers.filter((server) => server.saved).length
     overview = next
     renderLocal()
     syncPolling()
     // A finished install saves its connection; show it without a reopen.
     if (next.servers.filter((server) => server.saved).length !== savedBefore) {
-      await reloadProfiles()
+      if (!(await reloadProfiles(signal, request))) return
       // Land on the connection that was just added rather than the empty form.
       if (selectedId === null && profiles.length > 0) {
         captureDraft?.()
@@ -267,11 +280,15 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     }
   }
 
-  async function refreshLocal(): Promise<void> {
+  async function refreshLocal(signal: AbortSignal | undefined = currentSignal): Promise<void> {
+    if (signal?.aborted) return
     if (localBusy) return
+    const request = refreshGeneration
     try {
-      await applyLocal(await api.localClassifiers.status())
+      const next = await api.localClassifiers.status()
+      await applyLocal(next, signal, request)
     } catch (error) {
+      if (signal?.aborted || request !== refreshGeneration) return
       stopPolling()
       setInlineStatus(status, 'error', classifierErrorMessage(error))
     }
@@ -280,9 +297,12 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   async function localAction(action: () => Promise<LocalClassifierOverview>): Promise<void> {
     if (localBusy) return
     localBusy = true
+    const signal = currentSignal
+    const request = refreshGeneration
     try {
-      await applyLocal(await action())
+      await applyLocal(await action(), signal, request)
     } catch (error) {
+      if (signal?.aborted || request !== refreshGeneration) return
       setInlineStatus(status, 'error', classifierErrorMessage(error))
     } finally {
       localBusy = false
@@ -885,17 +905,23 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     })
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
+    currentSignal = signal
+    const request = ++refreshGeneration
+    signal?.addEventListener('abort', stopPolling, { once: true })
     if (busy) return
     captureDraft?.()
     try {
-      ;[profiles, screeningId, backgroundId] = await Promise.all([
+      const loaded = await Promise.all([
         api.classifiers.list(),
         api.classifiers.screening(),
         api.classifiers.background(),
       ])
+      if (signal?.aborted || request !== refreshGeneration) return
+      ;[profiles, screeningId, backgroundId] = loaded
       selectedId ??= profiles[0]?.profile.id ?? null
-      void refreshLocal()
+      void refreshLocal(signal)
       if (
         selectedId !== null &&
         !drafts.has(selectedId) &&
@@ -904,6 +930,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         selectedId = null
       render()
     } catch (error) {
+      if (signal?.aborted || request !== refreshGeneration) return
       setInlineStatus(status, 'error', classifierErrorMessage(error))
     }
   }

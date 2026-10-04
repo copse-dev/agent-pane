@@ -39,7 +39,7 @@ export interface AcpAgentsSection {
    * Config-only refresh. Re-reads the saved agents and repaints without the
    * device scan, so a host can paint its chips before paying for a PATH walk.
    */
-  reload: () => Promise<void>
+  reload: (signal?: AbortSignal) => Promise<void>
   /**
    * Device scan only: refreshes the installed / running badges without the
    * auto-setup pass, which may install adapters. For a host that wants correct
@@ -709,9 +709,12 @@ export function createAcpAgentsSection(
     opts.onChanged?.()
   }
 
-  async function reloadAgents(): Promise<void> {
+  async function reloadAgents(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     try {
-      agents = parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents'))
+      const values = await api.settings.get('registeredAcpAgents')
+      if (signal?.aborted) return
+      agents = parseAcpAgentConfigs(values)
     } catch {
       agents = []
     }
@@ -778,9 +781,9 @@ export function createAcpAgentsSection(
     renderForm()
   }
 
-  async function reload(): Promise<void> {
-    await reloadAgents()
-    render()
+  async function reload(signal?: AbortSignal): Promise<void> {
+    await reloadAgents(signal)
+    if (!signal?.aborted) render()
   }
 
   return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select }

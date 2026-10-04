@@ -13,7 +13,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 import type { PluginInstallRecord } from '@shared/types/plugin-installs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
@@ -35,6 +35,7 @@ function stubApi(
   let current = initial
   let installs: PluginInstallRecord[] = []
   return createPendingApi({
+    'settings.getSnapshot': () => Promise.resolve({}),
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.sources': () =>
@@ -267,6 +268,7 @@ async function openPlugins(
   document.body.innerHTML = ''
   mountConfirmDialog()
   mountSettingsDialog(store, stubApi(initial, spy))
+  openSettingsDialog('customise')
   const btn = document.querySelector<HTMLButtonElement>(
     `.settings-nav-btn[data-section="${section}"]`,
   )
@@ -311,9 +313,9 @@ it('ignores a pre-toggle plugin refresh that completes after the updated list', 
   })
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), api)
-  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  openSettingsDialog('customise')
   await new Promise((resolve) => setTimeout(resolve, 0))
-  document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="customise"]')?.click()
+  document.querySelector<HTMLButtonElement>('#plugins-reload-btn')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   const toggle = document.querySelector<HTMLInputElement>('#plugins-list .plugin-toggle-input')
   assert.ok(toggle)
@@ -620,12 +622,12 @@ describe('settings → plugins list', () => {
     // Capitalising every word turned `copse.pii-redaction` into "Pii redaction"
     // and `copse.ci-investigator` into "Ci investigator" — the id transformation
     // showing through as user-facing copy. Only the lead word is capitalised,
-    // known acronyms stay whole, prose compounds keep their hyphen, and a
+    // known acronyms stay whole, pack-name dashes become spaces, and a
     // Markdown instruction-file slug reads as the file it names.
     const cases: readonly (readonly [string, string])[] = [
       ['copse.todos', 'Todos'],
-      ['copse.long-horizon-tasks', 'Long-horizon tasks'],
-      ['copse.post-turn-review', 'Post-turn review'],
+      ['copse.long-horizon-tasks', 'Long horizon tasks'],
+      ['copse.post-turn-review', 'Post turn review'],
       ['copse.pii-redaction', 'PII redaction'],
       ['copse.ci-investigator', 'CI investigator'],
       ['copse.okf-memories', 'OKF memories'],

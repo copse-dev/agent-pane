@@ -1,3 +1,4 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../preload/api.d.ts'
 import { providerSlugFromBaseUrl } from '@copse/llm/provider-slug.ts'
 import {
@@ -26,7 +27,9 @@ import { expectRecord } from '@shared/unknown-value.ts'
 
 export interface ProvidersSection {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (snapshot?: SettingsSnapshot, signal?: AbortSignal) => Promise<void>
+  reset: () => void
+  readUpdate: () => SettingsUpdate
   /** Persist any keys typed into the per-provider key fields (called on dialog save). */
   saveKeys: () => Promise<boolean>
   /** Ids this panel can render a form for, excluding the add-a-provider form. */
@@ -317,6 +320,7 @@ export function createCustomProvidersSection(
   api: ApiClient,
   opts: {
     variant?: 'cloud' | 'local'
+    deferOrdinaryWrites?: boolean | undefined
     nativeProviders?: readonly NativeProvider[]
     /**
      * Render only the form for the currently selected provider, with no legend,
@@ -1009,13 +1013,20 @@ export function createCustomProvidersSection(
     if (provider) formHost.append(extraForm(provider))
   }
 
-  async function refresh(): Promise<void> {
+  let refreshGeneration = 0
+  let activeSignal: AbortSignal | undefined
+  async function refresh(snapshot?: SettingsSnapshot, signal?: AbortSignal): Promise<void> {
+    const mine = ++refreshGeneration
+    activeSignal = signal
+    if (signal?.aborted) return
     try {
       const all = await api.settings.extraProviders()
+      if (mine !== refreshGeneration || signal?.aborted) return
       // Each provider belongs to exactly one panel: local servers here, hosted
       // providers in the cloud panel.
       providers = all.filter((p) => (isLocal ? p.local : !p.local))
     } catch {
+      if (mine !== refreshGeneration || signal?.aborted) return
       providers = []
     }
     // Embedded panels take their selection from the host, which may name a
@@ -1034,13 +1045,17 @@ export function createCustomProvidersSection(
     // reflects the stored value; unsaved edits (pending) still take precedence.
     if (!isLocal) {
       try {
-        const saved = await api.settings.get('openRouterModel')
+        const saved = snapshot
+          ? snapshot.openRouterModel
+          : await api.settings.get('openRouterModel')
         openRouterModelValue = typeof saved === 'string' ? saved : ''
       } catch {
         openRouterModelValue = ''
       }
       try {
-        const zdr = await api.settings.get('openRouterZdrOnly')
+        const zdr = snapshot
+          ? snapshot.openRouterZdrOnly
+          : await api.settings.get('openRouterZdrOnly')
         // Default ON: only an explicit stored `false` turns ZDR-only routing off.
         openRouterZdrValue = zdr !== false
       } catch {
@@ -1048,41 +1063,55 @@ export function createCustomProvidersSection(
       }
       try {
         // Default OFF: only an explicit stored `true` admits may-train providers.
-        openRouterAllowTrainingValue = (await api.settings.get('openRouterAllowTraining')) === true
+        openRouterAllowTrainingValue =
+          (snapshot
+            ? snapshot.openRouterAllowTraining
+            : await api.settings.get('openRouterAllowTraining')) === true
       } catch {
         openRouterAllowTrainingValue = false
       }
       try {
-        openRouterFreeModeValue = (await api.settings.get('openRouterFreeMode')) === true
+        openRouterFreeModeValue =
+          (snapshot
+            ? snapshot.openRouterFreeMode
+            : await api.settings.get('openRouterFreeMode')) === true
       } catch {
         openRouterFreeModeValue = false
       }
     }
+    if (mine !== refreshGeneration || signal?.aborted) return
     // Let native providers (LM Studio) re-run their own detection.
-    await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
+    if (!embedded) await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
+    if (mine !== refreshGeneration || signal?.aborted) return
     // Refresh the configured-key indicators for the chips.
     configured.clear()
     const slugs = [...fixedProviders.map((p) => p.id), ...providers.map((p) => p.id)]
     await Promise.all(
       slugs.map(async (slug) => {
         try {
-          if (await api.settings.getKey(slug)) configured.add(slug)
+          const hasKey = await api.settings.getKey(slug)
+          if (mine === refreshGeneration && !signal?.aborted && hasKey) configured.add(slug)
         } catch {
           /* ignore */
         }
       }),
     )
+    if (mine !== refreshGeneration || signal?.aborted) return
     renderChips()
     renderForm()
     opts.onChanged?.()
-    if (isLocal) void probeLocalServers()
+    if (isLocal && (!embedded || selected)) void probeLocalServers()
   }
 
   // Probe the default local endpoints without blocking the refresh (a dead port can
   // take a while to time out). Read-only: nothing is imported or saved. Repaints
   // the chips once results land.
   async function probeLocalServers(): Promise<void> {
+    const mine = refreshGeneration
+    const signal = activeSignal
+    if (signal?.aborted) return
     const results = await detectLocalServers(api)
+    if (mine !== refreshGeneration || signal?.aborted) return
     reachable.clear()
     for (const r of results) if (r.reachable) reachable.add(r.id)
     renderChips()
@@ -1157,6 +1186,7 @@ export function createCustomProvidersSection(
         status.className = 'key-status err'
       }
     }
+    if (opts.deferOrdinaryWrites) return failures.length === 0
     // Persist the OpenRouter custom model id only if it was touched, so leaving
     // the field alone never clobbers a previously saved value.
     if (pendingOpenRouterModel !== null) {
@@ -1201,9 +1231,49 @@ export function createCustomProvidersSection(
   }
 
   function select(id: string): void {
+    const changed = selected !== id
     selected = id
     renderForm()
+    if (changed) {
+      void nativeById.get(id)?.refresh?.()
+      if (isLocal && id) void probeLocalServers()
+    }
   }
 
-  return { root, refresh, saveKeys, providerIds, labelFor, isConfigured, select }
+  function readUpdate(): SettingsUpdate {
+    return {
+      ...(pendingOpenRouterModel === null
+        ? {}
+        : { openRouterModel: pendingOpenRouterModel.trim() }),
+      ...(pendingOpenRouterZdr === null ? {} : { openRouterZdrOnly: pendingOpenRouterZdr }),
+      ...(pendingOpenRouterAllowTraining === null
+        ? {}
+        : { openRouterAllowTraining: pendingOpenRouterAllowTraining }),
+      ...(pendingOpenRouterFreeMode === null
+        ? {}
+        : { openRouterFreeMode: pendingOpenRouterFreeMode }),
+    }
+  }
+  return {
+    root,
+    refresh,
+    saveKeys,
+    readUpdate,
+    providerIds,
+    labelFor,
+    isConfigured,
+    select,
+    reset: (): void => {
+      refreshGeneration += 1
+      activeSignal = undefined
+      pendingKeys.clear()
+      pendingOpenRouterModel = null
+      pendingOpenRouterZdr = null
+      pendingOpenRouterAllowTraining = null
+      pendingOpenRouterFreeMode = null
+      selected = embedded ? '' : defaultSelected
+      renderChips()
+      renderForm()
+    },
+  }
 }

@@ -1,8 +1,9 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { createCustomProvidersSection, type NativeProvider } from './custom-providers-section.ts'
 import { createAcpAgentsSection } from './acp-agents-section.ts'
-import { SERVICE_TIER_CHOICES } from '@copse/llm/service-tier.ts'
+import { SERVICE_TIER_CHOICES, isServiceTier } from '@copse/llm/service-tier.ts'
 import { uiField } from '../../ui/index.ts'
 import { createChatGptPlanSection } from './chatgpt-plan-section.ts'
 
@@ -67,7 +68,9 @@ const ADD_KINDS: readonly { kind: AddKind; label: string }[] = [
 
 export interface ProvidersPanel {
   root: HTMLFieldSetElement
-  refresh: () => Promise<void>
+  refresh: (snapshot?: SettingsSnapshot, signal?: AbortSignal) => Promise<void>
+  reset: () => void
+  readUpdate: () => SettingsUpdate
   /** Persist keys typed into any provider form (called on dialog save). */
   /** False leaves the host dialog open with an inline key-storage error. */
   saveKeys: () => Promise<boolean>
@@ -83,6 +86,7 @@ export function createProvidersPanel(
     cloudAgentOptions?: HTMLElement
     /** Settings-only global request tier for first-party OpenAI API models. */
     showOpenAiServiceTier?: boolean
+    deferOrdinaryWrites?: boolean
     /**
      * Whether picking a provider may run ACP auto-setup (which can install
      * adapter packages). Defaults to true (Settings). Onboarding mounts with
@@ -104,6 +108,7 @@ export function createProvidersPanel(
 
   const apiPanel = createCustomProvidersSection(api, {
     variant: 'cloud',
+    deferOrdinaryWrites: opts.deferOrdinaryWrites,
     embedded: true,
     onChanged: rebuild,
   })
@@ -113,6 +118,7 @@ export function createProvidersPanel(
   })
   const localPanel = createCustomProvidersSection(api, {
     variant: 'local',
+    deferOrdinaryWrites: opts.deferOrdinaryWrites,
     embedded: true,
     onChanged: rebuild,
     onStatusChanged: renderChips,
@@ -181,9 +187,9 @@ export function createProvidersPanel(
   }
 
   function retainedOpenAiTierLabel(value: string): string {
-    if (value === 'scale') return 'Scale — current advanced value'
+    if (value === 'scale') return 'Scale (current advanced value)'
     const visible = value.length > 80 ? `${value.slice(0, 79)}…` : value
-    return `Current advanced value — ${visible || '(empty)'}`
+    return `Current advanced value: ${visible || '(empty)'}`
   }
 
   function openAiTierDescription(value: string): string {
@@ -195,9 +201,17 @@ export function createProvidersPanel(
     return 'This value is not offered by this version. It remains selected until you choose another tier.'
   }
 
-  async function refreshOpenAiTier(): Promise<void> {
-    if (!opts.showOpenAiServiceTier) return
-    const raw = await api.settings.get('openAiServiceTier')
+  function hasOpenAiTierDraft(): boolean {
+    return openAiTierDirty
+  }
+  async function refreshOpenAiTier(
+    snapshot: SettingsSnapshot | undefined,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!opts.showOpenAiServiceTier || hasOpenAiTierDraft()) return
+    const raw = snapshot ? snapshot.openAiServiceTier : await api.settings.get('openAiServiceTier')
+    if (hasOpenAiTierDraft() || generation !== refreshGeneration || signal?.aborted) return
     const stored = typeof raw === 'string' ? raw : ''
     initialOpenAiTierChoice = openAiTierChoiceForStored(stored)
     pendingOpenAiTierChoice = initialOpenAiTierChoice
@@ -330,6 +344,7 @@ export function createProvidersPanel(
         chip.append(el('span', { class: 'provider-chip-dot', title: 'Set up' }))
       }
       chip.addEventListener('click', () => {
+        if (vendor.id === 'openai' && selected !== 'openai') void chatGptPlan.refresh()
         selected = vendor.id
         selectedAgentId = ''
         // Picking a provider is the signal that a device scan is worth its cost.
@@ -529,16 +544,25 @@ export function createProvidersPanel(
     )
   }
 
-  async function refresh(): Promise<void> {
+  let refreshGeneration = 0
+  async function refresh(snapshot?: SettingsSnapshot, signal?: AbortSignal): Promise<void> {
+    const mine = ++refreshGeneration
+    if (signal?.aborted) return
+    await refreshOpenAiTier(snapshot, mine, signal)
+    if (mine !== refreshGeneration || signal?.aborted) return
     // Each panel's own refresh fires `onChanged`, which repaints the chip row as
     // its data lands; the final rebuild below settles the selection once all
     // three have reported in.
-    await apiPanel.refresh()
-    await localPanel.refresh()
-    await agentsPanel.reload()
+    await apiPanel.refresh(snapshot, signal)
+    if (mine !== refreshGeneration || signal?.aborted) return
+    await localPanel.refresh(snapshot, signal)
+    if (mine !== refreshGeneration || signal?.aborted) return
+    await agentsPanel.reload(signal)
+    if (mine !== refreshGeneration || signal?.aborted) return
     await refreshCloudAgentKeys()
-    await refreshOpenAiTier()
-    await chatGptPlan.refresh()
+    if (mine !== refreshGeneration || signal?.aborted) return
+    if (selected === 'openai') await chatGptPlan.refresh()
+    if (mine !== refreshGeneration || signal?.aborted) return
     // A provider that has gone away closes back to the list rather than
     // handing the selection to an unrelated one.
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
@@ -550,7 +574,7 @@ export function createProvidersPanel(
   async function saveKeys(): Promise<boolean> {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()])
     if (!apiSaved || !localSaved) return false
-    if (openAiTierDirty) {
+    if (openAiTierDirty && !opts.deferOrdinaryWrites) {
       await api.settings.set('openAiServiceTier', pendingOpenAiTierChoice)
       initialOpenAiTierChoice = pendingOpenAiTierChoice
       openAiTierDirty = false
@@ -558,5 +582,24 @@ export function createProvidersPanel(
     return true
   }
 
-  return { root: fieldset, refresh, saveKeys }
+  return {
+    root: fieldset,
+    refresh,
+    saveKeys,
+    reset: (): void => {
+      refreshGeneration += 1
+      apiPanel.reset()
+      localPanel.reset()
+      openAiTierDirty = false
+      selected = ''
+      rebuild()
+    },
+    readUpdate: () => ({
+      ...apiPanel.readUpdate(),
+      ...localPanel.readUpdate(),
+      ...(openAiTierDirty && isServiceTier(pendingOpenAiTierChoice)
+        ? { openAiServiceTier: pendingOpenAiTierChoice }
+        : {}),
+    }),
+  }
 }

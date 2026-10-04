@@ -6,7 +6,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 function stubApi(skills: SkillSummary[]): ApiClient {
   const base = createFakeApi()
@@ -58,6 +58,7 @@ const PROJECT_SKILL: SkillSummary = {
 async function openSkillsList(skills: SkillSummary[]): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore(), stubApi(skills))
+  openSettingsDialog('customise')
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )

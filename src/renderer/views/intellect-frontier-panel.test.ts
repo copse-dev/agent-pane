@@ -72,7 +72,7 @@ describe('renderFrontierSvg', () => {
     const opus = titleTexts.find((t) => /claude-opus-4-8/.test(t))
     assert.ok(opus)
     assert.ok(
-      opus.includes(`measured: ${String(currentIntellect('claude-opus-4-8'))} on index v4.1`),
+      opus.includes(`Measured ${String(currentIntellect('claude-opus-4-8'))} on index v4.1`),
       opus,
     )
     // One frontier polyline, no dual axes: exactly one rotated y-axis label.
@@ -277,7 +277,8 @@ describe('local candidates and the composite strip', () => {
     assert.equal(svg.querySelectorAll('circle.composite-point').length, 1)
     const title = svg.querySelector('circle.composite-point > title')
     assert.ok(title)
-    assert.match(title.textContent, /own scale, not the canonical index/)
+    assert.match(title.textContent, /separate scale \(not comparable with the main chart\)/)
+    assert.doesNotMatch(title.textContent, /copse-intellect|canonical/)
     assert.match(title.textContent, /weighted mean of 3\//)
     assert.match(title.textContent, /free \(runs on-device\)/)
   })
@@ -383,7 +384,7 @@ describe('createIntellectFrontierPanel', () => {
     // revealed by the toggle.
     assert.match(
       panel.root.textContent,
-      new RegExp(`verified against ${String(LIVE_ANCHOR_IDS.length)} curated anchors`),
+      new RegExp(`checked against ${String(LIVE_ANCHOR_IDS.length)} reviewed measurements`),
     )
     assert.match(panel.root.textContent, /Artificial Analysis/)
     panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
@@ -405,16 +406,16 @@ describe('createIntellectFrontierPanel', () => {
     )
     await renormed.refresh()
     assert.ok(!renormed.root.querySelector('svg')?.textContent.includes('brand-new-model'))
-    // The refusal is a calm disclosure, not raw markdown: a <details> with the
-    // diagnosis and the maintainer command in a real <code> element.
+    // Explain measurement differences without asking users to run development commands.
     const details = renormed.root.querySelector('.frontier-live-notes details')
     assert.ok(details)
-    assert.match(details.textContent, /scale check failed/)
-    assert.match(details.textContent, /Diverging anchors/)
-    assert.ok(details.querySelector('code'))
+    assert.match(details.textContent, /cannot be compared/)
+    assert.match(details.textContent, /Measurements that differ/)
+    assert.equal(details.querySelector('code'), null)
+    assert.doesNotMatch(details.textContent, /pnpm|sync:intellect|maintainer/)
   })
 
-  it('keeps stale curated values behind a maintainer disclosure on a verified feed', async () => {
+  it('explains stale reviewed measurements without development commands', async () => {
     // Enough agreeing canonical anchors that one diverging value is a minority
     // the gate reports as stale rather than a renormalised feed it refuses.
     const anchors = listIntellectScoredModelIds()
@@ -432,15 +433,15 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     const notes = panel.root.querySelector('.frontier-live-notes')
     assert.ok(notes)
-    assert.match(notes.textContent, /verified against/)
+    assert.match(notes.textContent, /checked against/)
     const details = notes.querySelector('details.frontier-stale-anchors')
     assert.ok(details, notes.textContent)
-    assert.match(details.querySelector('summary')?.textContent ?? '', /1 curated value looks stale/)
-    assert.equal(
-      details.querySelector('code')?.textContent,
-      'pnpm run sync:intellect -- --from-api',
+    assert.match(
+      details.querySelector('summary')?.textContent ?? '',
+      /1 reviewed measurement differs/,
     )
-    // The maintainer command is never part of the always-visible headline.
+    assert.equal(details.querySelector('code'), null)
+    assert.doesNotMatch(details.textContent, /pnpm|sync:intellect|maintainer/)
     const headline = [...notes.childNodes]
       .filter((node) => node !== details)
       .map((node) => node.textContent)
@@ -620,7 +621,7 @@ describe('createIntellectFrontierPanel', () => {
     // Verified-feed attribution still present.
     assert.match(
       panel.root.textContent,
-      new RegExp(`verified against ${String(LIVE_ANCHOR_IDS.length)} curated anchors`),
+      new RegExp(`checked against ${String(LIVE_ANCHOR_IDS.length)} reviewed measurements`),
     )
   })
 
@@ -714,6 +715,7 @@ describe('createIntellectFrontierPanel', () => {
   })
 
   it('shows plan badge and AA cost-per-task in the tooltip', async () => {
+    const container = document.createElement('div')
     const svg = renderFrontierSvg(
       [
         {
@@ -727,19 +729,14 @@ describe('createIntellectFrontierPanel', () => {
       ],
       {},
       {},
-      {
-        show(content) {
-          document.body.append(content)
-        },
-        hide() {},
-      },
+      createTooltipLayer(container),
     )
     // Plan badge ring is drawn.
     assert.ok(svg.querySelector('circle.frontier-plan-badge'))
     const hit = svg.querySelector('circle.frontier-hit')
     assert.ok(hit)
     hit.dispatchEvent(new window.MouseEvent('mouseenter'))
-    const card = document.body.querySelector('.frontier-tooltip-content')
+    const card = container.querySelector('.frontier-tooltip-content')
     assert.ok(card)
     assert.match(card.textContent, /included in your plan/)
     assert.match(card.textContent, /Claude Max/)
@@ -923,7 +920,7 @@ describe('createIntellectFrontierPanel', () => {
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
     assert.equal(svg.getAttribute('data-cost-axis'), 'perTask')
-    assert.match(svg.textContent || '', /AA cost per Intelligence Index task/)
+    assert.match(svg.textContent || '', /AA cost per intelligence index task/)
     assert.equal(taskBtn.classList.contains('active'), true)
     blendedBtn.click()
     svg = panel.root.querySelector('.frontier-chart svg')
@@ -1179,6 +1176,15 @@ describe('plan coverage on the map', () => {
       rows.every((row) => !/^(measured|equated):/i.test(row)),
       rows.join(' | '),
     )
+    for (const model of listIntellectScoredModelIds()) {
+      const details = pointTooltipContent({
+        id: model,
+        intellect: currentIntellect(model),
+        costPerMTok: 1,
+        onFrontier: true,
+      })
+      assert.doesNotMatch(details.textContent, /—|\(canonical\)/, model)
+    }
   })
 
   it('tooltip shows plan headroom + off-plan price when covered', () => {

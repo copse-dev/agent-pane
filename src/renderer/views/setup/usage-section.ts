@@ -361,7 +361,7 @@ export function renderPlanWorthItSection(
 
   const reason = document.createElement('p')
   reason.className = 'usage-worth-reason field-hint'
-  reason.textContent = worthIt.reason
+  reason.textContent = worthIt.reason.replaceAll('—', '·')
   card.append(reason)
 
   const feeRow = document.createElement('div')
@@ -779,6 +779,7 @@ export function createUsageSection(
     } catch (err) {
       if (signal?.aborted) return
       const message = err instanceof Error ? err.message : 'Failed to load plan worth-it.'
+      frontierPanel.setWindowExhaustion(new Map())
       renderPlanWorthItSection(worthEl, null, message, {
         onFeeChange: () => undefined,
         onShowInference: () => undefined,
@@ -824,6 +825,7 @@ export function createUsageSection(
     // Plan fetch samples window history; worth-it must run after that sample lands.
     const planThenWorth = refreshPlan(signal).then(() => {
       if (!signal?.aborted) return refreshWorthIt(signal)
+      return undefined
     })
     const frontierPromise = frontierPanel.refresh(signal)
     try {

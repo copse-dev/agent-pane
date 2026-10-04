@@ -27,7 +27,7 @@ const POLICY_ICON = {
 
 export interface ToolPermissionsPanel {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
   focusSearch: () => void
 }
 
@@ -132,6 +132,7 @@ export function createToolPermissionsPanel(
 
   let catalog: ToolPermissionCatalog | null = null
   let loading = false
+  let refreshGeneration = 0
   let pendingToolIds = new Set<string>()
   let policyFocus: { toolId: string; policy: ToolPermissionPolicy } | null = null
   const groupOpenState = new Map<string, boolean>()
@@ -435,21 +436,27 @@ export function createToolPermissionsPanel(
     }
   }
 
-  async function refresh(): Promise<void> {
-    if (loading) return
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
+    const request = ++refreshGeneration
     loading = true
     status.classList.remove('is-error')
     status.textContent = 'Loading…'
     setBusy(false)
     try {
-      catalog = await api.list()
+      const loaded = await api.list()
+      if (signal?.aborted || request !== refreshGeneration) return
+      catalog = loaded
       status.textContent = ''
     } catch (error) {
+      if (signal?.aborted || request !== refreshGeneration) return
       status.textContent = 'Could not load tool permissions: ' + errorMessage(error)
       status.classList.add('is-error')
     } finally {
-      loading = false
-      render()
+      if (request === refreshGeneration) {
+        loading = false
+        if (!signal?.aborted) render()
+      }
     }
   }
 

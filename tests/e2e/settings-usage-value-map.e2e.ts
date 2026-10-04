@@ -101,7 +101,7 @@ describe('settings usage model value map cost axis', () => {
       '$/task pill width must not change when selected',
     )
     const taskChartText = await chart.getText()
-    assert.match(taskChartText, /AA cost per Intelligence Index task/)
+    assert.match(taskChartText, /AA cost per intelligence index task/)
     // Subscription-backed Codex models remain plan routes on the task axis.
     assert.match(taskChartText, /GPT-6 Astra \(~\) · plan/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
@@ -112,7 +112,7 @@ describe('settings usage model value map cost axis', () => {
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
-    const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
+    const discoverLabels = await discoverBtn.$$('.frontier-discover-label').getElements()
     assert.equal(discoverLabels.length, 2)
     const inactiveDiscoverLabel = discoverLabels[0]
     const activeDiscoverLabel = discoverLabels[1]

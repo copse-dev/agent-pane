@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
 import {
@@ -30,7 +31,8 @@ export interface LmStudioSection {
   root: HTMLElement
   getUrl: () => string
   getApiKey: () => string
-  refreshDetection: () => Promise<void>
+  refreshDetection: (signal?: AbortSignal) => Promise<void>
+  load: (snapshot: SettingsSnapshot) => void
   saveApiKey: () => Promise<void>
   saveConnection: (opts?: { safetyModel?: string }) => Promise<void>
   destroy: () => void
@@ -50,7 +52,7 @@ function formatDownloadEta(gb: number): string {
 
 export function createLmStudioSection(
   api: ApiClient,
-  opts: { showInstallGuide?: boolean } = {},
+  opts: { showInstallGuide?: boolean; loadOnMount?: boolean } = {},
 ): LmStudioSection {
   const showInstallGuide = opts.showInstallGuide ?? true
 
@@ -328,10 +330,12 @@ export function createLmStudioSection(
     contextAdvisory.hidden = false
   }
 
-  async function refreshDetection(): Promise<void> {
+  async function refreshDetection(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     setInlineStatus(detectionStatus, 'pending', 'Checking local server…')
     detectionStatus.className = 'setup-detection-status'
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
+    if (signal?.aborted) return
     renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
       setInlineStatus(detectionStatus, 'ok', `LM Studio server reachable at ${detection.serverUrl}`)
@@ -406,16 +410,20 @@ export function createLmStudioSection(
     keyInput.value = ''
   }
 
-  void (async (): Promise<void> => {
-    const lmUrl = optionalString(await api.settings.get('localServerUrl'))
-    urlInput.value = lmUrl ?? DEFAULT_LM_STUDIO_URL
-    const lmSet = await api.settings.getKey('lmstudio')
-    setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
-    await refreshDetection()
-  })()
+  if (opts.loadOnMount !== false)
+    void (async (): Promise<void> => {
+      const lmUrl = optionalString(await api.settings.get('localServerUrl'))
+      urlInput.value = lmUrl ?? DEFAULT_LM_STUDIO_URL
+      const lmSet = await api.settings.getKey('lmstudio')
+      setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
+      await refreshDetection()
+    })()
 
   return {
     root,
+    load: (snapshot): void => {
+      urlInput.value = snapshot.localServerUrl ?? DEFAULT_LM_STUDIO_URL
+    },
     getUrl: () => urlInput.value.trim(),
     getApiKey: () => keyInput.value.trim(),
     refreshDetection,

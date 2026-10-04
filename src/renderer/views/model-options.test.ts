@@ -17,7 +17,27 @@ import {
 } from './model-options.ts'
 import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { mountModelSelectPicker } from './model-picker.ts'
 import type { ModelCoverage } from './model-coverage.ts'
+
+it('renders authored Settings model descriptions without em-dash separators', async () => {
+  const select = document.createElement('select')
+  select.name = 'model'
+  document.body.append(select)
+  const picker = mountModelSelectPicker(select, {
+    loadOnMount: false,
+    loadOptions: (current) => fetchModelOptions(mockApi(), current, { includeBestValue: true }),
+  })
+  await picker.refresh('auto:best-value')
+  assert.match(
+    picker.root.querySelector('.model-picker-label')?.textContent ?? '',
+    /: auto from plan/,
+  )
+  assert.doesNotMatch(picker.root.textContent, /—/)
+  assert.equal(select.value, 'auto:best-value')
+  picker.destroy()
+  select.remove()
+})
 
 describe('native ChatGPT plan picker', () => {
   it('offers subscription models without an API key and preserves their registration', async () => {
@@ -91,7 +111,7 @@ const ALL_UNCONFIGURED = {
 
 function intellectSuffix(modelId: string): string {
   const score = getIntellectScore(modelId)
-  return score ? ` — intellect ${score.estimated ? '~' : ''}${String(score.value)}` : ''
+  return score ? `: intellect ${score.estimated ? '~' : ''}${String(score.value)}` : ''
 }
 
 function currentCloudIntellectHint(modelId: string): string {
@@ -298,7 +318,7 @@ describe('fetchModelOptions visibility', () => {
     )
     assert.deepEqual(
       configured
-        .filter((option) => option.group === 'Perplexity — retention varies by provider')
+        .filter((option) => option.group === 'Perplexity: retention varies by provider')
         .map((option) => option.value),
       ['perplexity:openai/gpt-live'],
     )
@@ -338,7 +358,7 @@ describe('fetchModelOptions visibility', () => {
     // Mistral (configured) + local model are present; no global empty message.
     // Mistral's group heading carries the data-policy annotation (it trains on
     // free/Pro-plan inputs by default — see @copse/llm/data-policies.ts).
-    assert.ok(options.some((o) => o.group === 'Mistral — may train on your data'))
+    assert.ok(options.some((o) => o.group === 'Mistral: may train on your data'))
     assert.ok(options.some((o) => o.value === 'lmstudio:local-x'))
     assert.ok(!labels.some((l) => /No models available/.test(l)))
   })
@@ -363,7 +383,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    assert.ok(zdrOff.some((o) => o.group === 'OpenRouter — retention varies by provider'))
+    assert.ok(zdrOff.some((o) => o.group === 'OpenRouter: retention varies by provider'))
 
     // Both relaxed → the heading carries the may-train warning.
     const training = await fetchModelOptions(
@@ -375,7 +395,7 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    assert.ok(training.some((o) => o.group === 'OpenRouter — may train on your data'))
+    assert.ok(training.some((o) => o.group === 'OpenRouter: may train on your data'))
   })
 
   it('flags Hugging Face as partner-dependent in its group heading', async () => {
@@ -386,7 +406,7 @@ describe('fetchModelOptions visibility', () => {
       mockApi({ available: { huggingface: true }, extraProviders: providers }),
       '',
     )
-    assert.ok(options.some((o) => o.group === 'Hugging Face — retention varies by provider'))
+    assert.ok(options.some((o) => o.group === 'Hugging Face: retention varies by provider'))
   })
 
   it('hides each remote agent until its own provider key is configured', async () => {
@@ -407,7 +427,7 @@ describe('fetchModelOptions visibility', () => {
       (o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6',
     )
     assert.ok(sonnetRemote)
-    assert.match(sonnetRemote.label, /^Claude Sonnet 4\.6 — intellect /)
+    assert.match(sonnetRemote.label, /^Claude Sonnet 4\.6: intellect /)
     assert.ok(!anthropicOnly.some((o) => o.value.startsWith('remote-agent:cursor')))
 
     // A Cursor key surfaces Default + live catalog under its own heading.
@@ -691,7 +711,7 @@ describe('fetchModelOptions visibility', () => {
         // Claude Code labels its models bare, so the picker folds the version
         // from the description back in — and resolves the hint through it (the
         // agent's own `sonnet` value aliases to nothing).
-        `Default (recommended) — Claude Opus 5${intellectSuffix('claude-opus-5')}`,
+        `Default (recommended): Claude Opus 5${intellectSuffix('claude-opus-5')}`,
         `Claude Opus 5 (1M context)${intellectSuffix('claude-opus-5')}`,
         `Claude Sonnet 5${intellectSuffix('claude-sonnet-5')}`,
       ],
@@ -755,7 +775,7 @@ describe('fetchModelOptions visibility', () => {
     const current = options.find((option) => option.value === staleValue)
     assert.deepEqual(current, {
       value: staleValue,
-      label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
+      label: 'Cursor: composer-2.5[fast=true] (not currently advertised)',
       retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
@@ -784,7 +804,7 @@ describe('fetchModelOptions visibility', () => {
     const current = options.find((option) => option.value === staleValue)
     assert.deepEqual(current, {
       value: staleValue,
-      label: 'Cursor — agent default (not currently advertised)',
+      label: 'Cursor: agent default (not currently advertised)',
       retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
@@ -954,7 +974,7 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(known)
     // A catalog-known weight shows its curated name, so the only dash in the
     // row is the one introducing the app's own hints.
-    assert.match(known.label, /^Qwen2\.5-Coder 32B — coder/)
+    assert.match(known.label, /^Qwen2\.5-Coder 32B: coder/)
     // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
     // running quant rather than the composite fallback.
     assert.match(known.label, /intellect ~[\d.]+/)
@@ -974,17 +994,17 @@ describe('fetchModelOptions visibility', () => {
     // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
     const opus5 = options.find((o) => o.value === 'claude-opus-5')
     assert.ok(opus5)
-    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
+    assert.equal(opus5.label, `Claude Opus 5: ${currentCloudIntellectHint('claude-opus-5')}`)
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
-    assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
+    assert.equal(opus.label, `Claude Opus 4.8: ${currentCloudIntellectHint('claude-opus-4-8')}`)
     assert.doesNotMatch(opus.label, /frontier/)
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
-    assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)
+    assert.equal(haiku.label, `Claude Haiku 4.5: ${currentCloudIntellectHint('claude-haiku-4-5')}`)
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
-    assert.equal(gpt4o.label, `GPT-4o — ${currentCloudIntellectHint('gpt-4o')}`)
+    assert.equal(gpt4o.label, `GPT-4o: ${currentCloudIntellectHint('gpt-4o')}`)
   })
 
   it('only shows GPT-6 Astra when the OpenAI account advertises it', async () => {
@@ -1193,3 +1213,4 @@ it('preserves OpenAI cloud current selections with retention and without duplica
     }
   }
 })
+import '../../../tests/setup-dom.ts'
