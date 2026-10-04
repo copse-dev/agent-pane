@@ -686,19 +686,19 @@ describe('model-info server locality for automatic recovery', () => {
   let oldEvalUrl: string | undefined
   let oldBaseUrl: string | undefined
   beforeEach(() => {
-    oldEvalUrl = process.env.COPSE_EVAL_LM_STUDIO_URL
-    oldBaseUrl = process.env.LM_STUDIO_BASE_URL
-    delete process.env.COPSE_EVAL_LM_STUDIO_URL
-    delete process.env.LM_STUDIO_BASE_URL
+    oldEvalUrl = process.env['COPSE_EVAL_LM_STUDIO_URL']
+    oldBaseUrl = process.env['LM_STUDIO_BASE_URL']
+    delete process.env['COPSE_EVAL_LM_STUDIO_URL']
+    delete process.env['LM_STUDIO_BASE_URL']
     invalidateLmStudioModelsCache()
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'qwen/qwen3.6-35b-a3b' }] }))
   })
   afterEach(() => {
     restoreFetch?.()
-    if (oldEvalUrl === undefined) delete process.env.COPSE_EVAL_LM_STUDIO_URL
-    else process.env.COPSE_EVAL_LM_STUDIO_URL = oldEvalUrl
-    if (oldBaseUrl === undefined) delete process.env.LM_STUDIO_BASE_URL
-    else process.env.LM_STUDIO_BASE_URL = oldBaseUrl
+    if (oldEvalUrl === undefined) delete process.env['COPSE_EVAL_LM_STUDIO_URL']
+    else process.env['COPSE_EVAL_LM_STUDIO_URL'] = oldEvalUrl
+    if (oldBaseUrl === undefined) delete process.env['LM_STUDIO_BASE_URL']
+    else process.env['LM_STUDIO_BASE_URL'] = oldBaseUrl
     setSetting('localServerUrl', '')
     invalidateLmStudioModelsCache()
   })
@@ -716,9 +716,9 @@ describe('model-info server locality for automatic recovery', () => {
   })
   it('uses the actual environment override rather than the stored localhost URL', async () => {
     setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
-    process.env.LM_STUDIO_BASE_URL = 'https://inference.example/v1'
+    process.env['LM_STUDIO_BASE_URL'] = 'https://inference.example/v1'
     assert.equal((await listLmStudioModelInfo())[0]?.local, false)
-    process.env.COPSE_EVAL_LM_STUDIO_URL = 'http://localhost:4321/v1'
+    process.env['COPSE_EVAL_LM_STUDIO_URL'] = 'http://localhost:4321/v1'
     assert.equal((await listLmStudioModelInfo())[0]?.local, true)
   })
   it('preserves advertised embedding metadata so recovery cannot choose it as chat', async () => {
