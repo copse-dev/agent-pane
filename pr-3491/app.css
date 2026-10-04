@@ -189,6 +189,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --chat-user-max: 840px;
   --settings-content-max: 720px;
   --traffic-light-inset: 78px;
+  --titlebar-sidebar-btn-width: 28px;
+  --titlebar-title-inset: calc( var(--traffic-light-inset) + var(--titlebar-sidebar-btn-width) + var(--spacing-sm) );
   --titlebar-height: calc(40px * var(--ui-scale));
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
@@ -903,6 +905,16 @@ copse-ui-field input[type=password],
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+.three-pane.is-projects-collapsed .pane-projects,
+.three-pane.is-projects-collapsed #resizer-projects {
+  display: none;
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal .pane-chat {
+  grid-column: 1;
+}
 .three-pane {
   display: flex;
   flex: 1;
@@ -986,6 +998,17 @@ copse-ui-field input[type=password],
 }
 .projects-search-btn.active {
   color: var(--accent);
+}
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 .projects-activity-btn {
   display: inline-flex;
@@ -1712,6 +1735,9 @@ copse-ui-field input[type=password],
   grid-column: 1 / -1;
   grid-row: 1 / -1;
   background: var(--bg-base);
+}
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
 }
 .pane-files-body {
   flex: 1;
@@ -3105,6 +3131,19 @@ copse-ui-field input[type=password],
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+.titlebar-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--titlebar-sidebar-btn-width);
+  padding: 3px 0;
+  color: var(--text-secondary);
+}
+.titlebar-sidebar-btn[aria-pressed=true] {
+  color: var(--text-primary);
+}
 .titlebar-settings-btn {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -3770,6 +3809,10 @@ label {
     min-width: 100%;
   }
 }
+.model-picker-retention {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
 
 /* src/renderer/styles/global/conversation.css */
 .thread-roadmap-origin {
@@ -3882,6 +3925,20 @@ label {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+.conversation-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(var(--spacing-lg) + var(--spacing-md));
+  pointer-events: none;
+  z-index: 4;
+  background:
+    linear-gradient(
+      180deg,
+      var(--chat-gradient-top) 0%,
+      color-mix(in srgb, var(--chat-gradient-top) 82%, transparent) 42%,
+      transparent 100%);
 }
 .scroll-to-bottom {
   position: absolute;
@@ -6913,9 +6970,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position: static;
   flex-shrink: 0;
 }
-.input-footer.is-compact .footer-usage {
-  display: none;
-}
 .footer-overflow-trigger {
   display: inline-flex;
   align-items: center;
@@ -6965,7 +7019,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position: relative;
 }
 .context-wheel-popover {
-  --footer-popup-min-width: 210px;
+  --footer-popup-min-width: 280px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -6990,10 +7044,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .context-wheel {
   --footer-popup-anchor: --footer-context-trigger;
 }
-.footer-usage,
-.footer-usage-popover {
-  --footer-popup-anchor: --footer-usage-trigger;
-}
 .footer-model-host .model-picker,
 .footer-checkout-host,
 .footer-branch-host .branch-picker,
@@ -7005,7 +7055,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .footer-checkout-btn,
 .footer-branch-host .branch-picker-trigger,
 .footer-overflow-trigger,
-.footer-usage,
 .context-wheel {
   anchor-name: var(--footer-popup-anchor);
 }
@@ -7021,7 +7070,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .footer-checkout-menu,
 .footer-branch-host .branch-picker-menu,
 .footer-overflow-menu,
-.footer-usage-popover,
 .context-wheel-popover {
   position: absolute;
   z-index: 100;
@@ -7040,7 +7088,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   position-try-fallbacks: --footer-popup-clamp-right;
 }
 .footer-overflow-menu,
-.footer-usage-popover,
 .context-wheel-popover {
   left: auto;
   right: anchor(right);
@@ -7058,9 +7105,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   left: auto;
   right: 0;
   position-try-fallbacks: none;
-}
-.input-footer.is-compact .footer-usage-popover {
-  display: none;
 }
 .footer-model-host .model-picker-menu {
   --footer-popup-min-width: 220px;
@@ -7080,8 +7124,13 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   --footer-popup-min-width: 180px;
 }
 .footer-branch-host .branch-picker-filter {
-  min-width: min(180px, 100%);
+  min-width: 0;
   box-sizing: border-box;
+}
+.input-footer:not(.is-compact) .footer-branch-host .branch-picker-menu.is-footer-clamped {
+  left: auto;
+  right: 0;
+  position-try-fallbacks: none;
 }
 .context-wheel-popover[hidden] {
   display: none;
@@ -7121,49 +7170,19 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .context-wheel-fill {
   stroke: var(--text-secondary);
-  transition: stroke-dasharray 0.2s ease;
+  transition: stroke-dasharray 0.2s ease, stroke 0.2s ease;
 }
-.context-wheel-label {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  min-width: 2.5ch;
+.context-wheel-fill.is-warn {
+  stroke: var(--warning);
+}
+.context-wheel-fill.is-danger {
+  stroke: var(--danger);
 }
 .context-wheel.is-interactive {
   cursor: help;
 }
 .context-wheel.has-breakdown {
   cursor: pointer;
-}
-.context-wheel.is-interactive:hover .context-wheel-label,
-.context-wheel.has-breakdown:hover .context-wheel-label {
-  color: var(--text-secondary);
-}
-.footer-usage {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-  padding: 0;
-  flex-shrink: 0;
-  cursor: help;
-}
-.footer-usage:hover,
-.footer-usage:focus-visible {
-  color: var(--text-secondary);
-}
-.footer-usage-popover {
-  --footer-popup-min-width: 210px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm) var(--spacing-md);
-  box-shadow: var(--shadow-md);
-  font-size: var(--font-size-xs);
-  color: var(--text-primary);
-  pointer-events: none;
-}
-.footer-usage-popover[hidden] {
-  display: none;
 }
 .footer-usage-popover-header {
   font-weight: 600;
@@ -7189,6 +7208,36 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .footer-usage-popover-name {
   flex: 1;
+}
+.footer-usage-popover-row.is-run {
+  align-items: flex-start;
+}
+.footer-usage-popover-run {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.footer-usage-popover-meta {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+.footer-usage-popover-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.footer-usage-popover-dot.is-done {
+  background: var(--success);
+}
+.footer-usage-popover-dot.is-running {
+  background: var(--accent);
+}
+.footer-usage-popover-dot.is-error {
+  background: var(--danger);
 }
 .footer-usage-popover-value {
   color: var(--text-muted);
@@ -7303,7 +7352,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   .footer-checkout-menu,
   .footer-branch-host .branch-picker-menu,
   .footer-overflow-menu,
-  .footer-usage-popover,
   .context-wheel-popover {
     bottom: calc(100% + var(--spacing-xs));
     top: auto;
@@ -7315,7 +7363,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
     right: auto;
   }
   .footer-overflow-menu,
-  .footer-usage-popover,
   .context-wheel-popover {
     left: auto;
     right: var(--spacing-md);
@@ -7517,7 +7564,7 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   justify-content: space-between;
   height: calc(var(--titlebar-height) + 1px);
-  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  padding: 0 var(--spacing-lg) 0 var(--titlebar-title-inset);
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
