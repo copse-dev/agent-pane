@@ -1668,7 +1668,7 @@ describe('input bar model recents', () => {
     trigger.click()
 
     const recentLabels = [...host.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
     assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
   })

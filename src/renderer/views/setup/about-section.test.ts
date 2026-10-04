@@ -178,7 +178,7 @@ describe('Settings → About', () => {
     await section.refresh()
     assert.match(
       section.root.querySelector('.about-licenses-status')?.textContent ?? '',
-      /no licence report/,
+      /Licence information is unavailable for this installation\./,
     )
     assert.equal(rows(section.root).length, 0)
   })

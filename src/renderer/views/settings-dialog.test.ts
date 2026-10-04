@@ -108,8 +108,20 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(isSettingsDialogOpen(), true)
   })
 
-  it('reveals and focuses model recovery when Settings is already open on another section', () => {
+  function prepareRecoveryDialog(): void {
+    document.body.innerHTML = ''
+    mountSettingsDialog(createStore(), createFakeApi())
+    dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    spy = shimModal(dialog)
+  }
+  async function settleRecovery(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('reveals and focuses model recovery when Settings is already open on another section', async () => {
+    prepareRecoveryDialog()
     openSettingsDialog()
+    await settleRecovery()
     qsRequired(dialog, '.settings-nav-btn[data-section="appearance"]').click()
     const models = qsRequired(dialog, '[data-model-setting-target="model"]')
     let scrolled = false
@@ -119,21 +131,27 @@ describe('settings dialog (native <dialog>)', () => {
       },
     })
     openModelSettings()
+    await settleRecovery()
     assert.equal(spy.showModalCalls, 1)
     assert.ok(dialog.querySelector('.settings-section.active[data-section="general"]'))
-    assert.equal(document.activeElement, models)
+    assert.equal(document.activeElement === models, true)
     assert.ok(scrolled)
   })
 
-  it('opens folded exact role/security fields instead of only the Models heading', () => {
+  it('opens folded exact role/security fields instead of only the Models heading', async () => {
+    prepareRecoveryDialog()
     openSettingsDialog()
+    await settleRecovery()
     openModelSettings('safetyModel')
+    await settleRecovery()
     assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'safetyModel')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-advanced')?.open, true)
     openModelSettings('role:docs')
+    await settleRecovery()
     assert.equal(document.activeElement.getAttribute('data-model-setting-target'), 'role:docs')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-additional-roles')?.open, true)
     openModelSettings('orchestrationWorkerModel')
+    await settleRecovery()
     assert.ok(dialog.querySelector('.settings-section.active[data-section="experimental"]'))
     assert.equal(
       document.activeElement.getAttribute('data-model-setting-target'),
@@ -443,22 +461,27 @@ describe('settings search (cross-section block filter)', () => {
 })
 
 describe('model-role cancellation before async Settings refresh', () => {
-  it('does not persist a cancelled role draft when reopening Appearance and saving before reads settle', async () => {
+  it('does not persist a cancelled role draft when reopening Appearance and saving before catalogue reads settle', async () => {
     document.body.innerHTML = ''
     const updates: SettingsUpdate[] = []
-    const written: string[] = []
-    const api = createPendingApi({
-      'settings.update': async (changes: SettingsUpdate): Promise<void> => {
-        updates.push(changes)
+    const base = createFakeApi()
+    const catalogue = deferred<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>()
+    const api: ApiClient = {
+      ...base,
+      lmStudio: { ...base.lmStudio, modelInfo: async () => catalogue.promise },
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({}),
+        update: async (changes) => {
+          updates.push(changes)
+        },
       },
-      'settings.set': async (key: string): Promise<void> => {
-        written.push(key)
-      },
-    })
+    }
     mountSettingsDialog(createStore(), api)
     const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     shimModal(dialog)
     openSettingsDialog()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const docs = qsRequired<HTMLSelectElement>(dialog, 'select[name="role:docs"]')
     const option = document.createElement('option')
     option.value = 'missing-provider:docs'
@@ -466,16 +489,19 @@ describe('model-role cancellation before async Settings refresh', () => {
     docs.value = option.value
     docs.dispatchEvent(new Event('change', { bubbles: true }))
     closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
     openSettingsDialog('appearance')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const theme = qsRequired<HTMLSelectElement>(dialog, 'select[name="theme"]')
     theme.value = 'light'
     theme.dispatchEvent(new Event('change', { bubbles: true }))
     qsRequired(dialog, 'form').dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
     )
-    await new Promise<void>((resolve) => setTimeout(resolve, 20))
-    assert.ok(written.includes('theme'), 'the fresh Appearance edit must reach Save')
-    assert.deepEqual(updates, [], 'the cancelled role must not enter the atomic role patch')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(updates, [{ theme: 'light' }], 'only the fresh Appearance edit reaches Save')
+    catalogue.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
   })
 })
 
