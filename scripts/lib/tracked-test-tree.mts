@@ -26,8 +26,8 @@ async function worktreeContent(root: string, path: string, gitlink: boolean): Pr
     if (details.isSymbolicLink()) return `symlink:${await readlink(file)}`
     if (details.isDirectory()) {
       if (!gitlink) return 'directory'
-      if (git(file, ['rev-parse', '--show-toplevel']).trim() !== (await realpath(file)))
-        return 'uninitialized-gitlink'
+      const nestedRoot = git(file, ['rev-parse', '--show-toplevel']).trim()
+      if ((await realpath(nestedRoot)) !== (await realpath(file))) return 'uninitialized-gitlink'
       // Gitlinks are nested checkouts: cover their tracked content as well as HEAD.
       const tree = await captureTrackedTestTree(file)
       return JSON.stringify([git(file, ['rev-parse', 'HEAD']), [...tree]])

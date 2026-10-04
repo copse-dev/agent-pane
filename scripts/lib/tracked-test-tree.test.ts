@@ -140,6 +140,9 @@ describe('tracked test tree invariant', () => {
       )
       git(root, 'add', 'nested')
       const before = await captureTrackedTestTree(root)
+      const alias = join(root, 'checkout-alias')
+      await symlink(root, alias, 'dir')
+      assert.deepEqual(await captureTrackedTestTree(alias), before)
       await writeFile(join(nested, 'source.ts'), 'modified\n')
       assert.deepEqual(changedTrackedTestFiles(before, await captureTrackedTestTree(root)), [
         '"nested" (worktree)',
