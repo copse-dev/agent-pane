@@ -1,0 +1,118 @@
+GitHub panel layout study
+2026-10-03
+Base revision: d08fdd0ef8dfe1a9c69a0ea623b5905967682c5c
+
+Task brief
+Review the GitHub panel screenshots and provide concrete layout mocks, especially
+for comment formatting. Acceptance: reviewable Overview, Comments, Checks and
+Files layouts; richer Markdown examples; narrow and expanded layouts; prototype
+navigation that sends no GitHub mutations. Scope is design artifacts only; no
+Electron renderer, runtime, dependencies, permissions or persisted data changes.
+
+Sources reviewed
+tests/e2e/screenshots/pr-panel-linked-list.png
+tests/e2e/screenshots/pr-panel-viewer.png
+tests/e2e/screenshots/pr-activity-overview.png
+tests/e2e/screenshots/pr-activity-comments.png
+tests/e2e/screenshots/pr-activity-checks.png
+src/renderer/views/pr-pane-activity.ts
+docs/ui-taste.md
+docs/plans/pr-panel-github-parity.md
+
+Recommendations, in implementation order
+1. Reduce the detail header. Keep repository, title, branch and chat navigation;
+   move secondary actions into a menu. The mock header occupies about 150 CSS px,
+   versus about 223 CSS px in the existing 2x comments screenshot. Title wrapping
+   can increase this in narrower layouts.
+2. Give each comment a quiet author header and contained body. Show review outcome
+   as a semantic badge, keep timestamps secondary, and place timestamps on their
+   own row when narrow. Markdown already renders in the current implementation;
+   improve its typography and spacing rather than replacing the parser. Mocks
+   exercise bold, italics, links, quotes, inline code, fenced code and task lists.
+3. Use two-line PR rows, with PR number/repository and a labelled CI state beneath
+   the title. This improves title visibility and removes color-only CI indicators.
+4. Group checks by Failed, Running, Passed and Other. Keep failure and running
+   groups visible together, with collapsible passed/skipped/cancelled groups.
+5. Give existing file diffs a dedicated Files tab instead of a footer disclosure.
+
+Proposal boundaries
+Sample Markdown is expanded to demonstrate formatting. PR detail content is
+illustrative; checks change with the selected sample PR, while description,
+conversation and files reuse the same fixture. Files navigation, action menus,
+latest-review summary and request-changes action are proposals. Check durations
+and failure excerpts would need additional data. Inline code threads remain a
+GitHub link, matching current coverage. Controls are local previews only.
+
+Open the prototype
+Serve the repository root with: python3 -m http.server 8765 --bind 0.0.0.0
+Then visit: http://localhost:8765/prototypes/github-panels/
+Available URL parameters: view=overview|comments|checks|files,
+pr=42|88|17, width=wide|split|panel.
+Use the theme button and layout selector for other presentations. Fonts, colors
+and theme foundations are loaded from the repository; no external assets.
+
+Completion evidence
+Chromium + Playwright browser probe passed all of the following:
+- Rendered seven screenshots in mocks/, using the real bundled Pliant font.
+- No horizontal content overflow at expanded (1040px), split (640px) and
+  detail-only (400px) widths; page stays within the 390px mobile viewport.
+- Tab switching, latest-review jump and sample PR switching.
+- Failed and running checks coexist; failed check is displayed first.
+- Filtering, no-match state and selection.
+- Action menu opening and Escape dismissal with focus restoration.
+- Mock actions explicitly report that no GitHub action was sent.
+- Dark/light theme and width switching.
+- No JavaScript errors or failed asset responses.
+node --check prototypes/github-panels/prototype.js: passed.
+node_modules/.bin/oxfmt --check prototypes/github-panels: passed.
+Visually inspected Overview, Comments, Checks, Files, split and light renders;
+fixed narrow timestamp overflow before the final successful browser probe.
+Screenshots are standalone browser mocks, not new Electron screenshots. No app
+implementation or Electron/full-repository test result is claimed.
+
+Implementation brief (2026-10-03)
+Branch: copse/github-panel-layout, based on #3477 commit 224bc0c1.
+Acceptance: reuse shared PR lifecycle/conflict icons; compact header while keeping
+existing confirmed actions; two-line PR titles; formatted Markdown comments with
+readable author/review/time metadata; failed and running checks visible together;
+Files tab reaches existing text and image diffs; refresh preserves chosen section.
+No new GitHub API, permission, persisted-data or dependency changes. Verify with
+focused component tests, Electron PR activity/actions/diff/icon specs, existing
+Markdown visual suite, and repository static/unit gates.
+
+Implementation completion evidence
+- Reuses the shared lifecycle/conflict icon factories from #3477 unchanged.
+- Compact detail header and two-line PR rows; secondary confirmed actions remain
+  reachable from the keyboard-accessible disclosure, including Escape dismissal.
+- Comments use the existing Markdown renderer, with review badges, responsive
+  timestamps and code-copy controls. No code execution controls are added.
+- Checks keep failure and pending groups visible together. Successful and other
+  results can collapse; neutral results do not imply success.
+- Files tab opens the existing text and image diffs; refresh retains the section.
+- Build passed. Focused PR/component/style tests: 109 passed.
+- Ten Electron spec files passed (13 tests): four PR layout/action/diff/icon specs
+  and all six Markdown regression specs. After the final CSS cleanup, build and
+  the four PR specs passed again (six tests).
+- Visually inspected real Electron comments, formatted Markdown, checks, Files,
+  action menu and lifecycle/conflict screenshots in tests/e2e/screenshots/.
+- Full static gate passed, including types, lint, format and repository checks.
+- Full check attempted: 12,689 unit tests passed, 12 failed, nine cancelled and
+  17 skipped. Failures are in unchanged sandbox/toolchain/process-cleanup areas:
+  missing socat/Cargo, restricted home paths and process cleanup assertions. The
+  SemIf cleanup failure also reproduces in isolation. A Python preparation test
+  worker stalled beyond its configured timeout and was terminated to let the
+  runner complete. The full unit gate is not green; no baseline pass is claimed.
+
+Number indicator follow-up acceptance
+Keep every visible tab count circular, including multi-digit counts. Hide count
+badges at detail widths of 380px or less so tab labels retain the space. Verify
+expanded and narrow Electron layouts with geometry assertions and screenshots;
+apply the same rule to mocks.
+
+Number indicator follow-up evidence
+Build, the static gate and 91 focused component/style tests passed. The Electron
+activity spec passed: expanded count badges have equal width and height, a
+temporary 100+ count fits and stays round, and narrow badges disappear while
+navigation fits. Visually inspected the expanded and narrow screenshots. Mock
+browser navigation/overflow probes and wide/mobile badge geometry also passed.
+The earlier full-unit-gate limitations remain; the broad unit suite was not rerun.

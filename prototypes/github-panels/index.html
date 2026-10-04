@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — GitHub panel layout study</title>
+    <link rel="stylesheet" href="../../src/renderer/styles/tokens.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/themes.css" />
+    <link rel="stylesheet" href="prototype.css" />
+    <script src="prototype.js" defer></script>
+  </head>
+  <body>
+    <div class="study">
+      <header class="study-header">
+        <div>
+          <span class="eyebrow">Copse · GitHub panel study</span>
+          <h1>More room for the review.</h1>
+        </div>
+        <button id="theme" class="button">Light theme</button>
+      </header>
+      <div class="study-controls">
+        <p id="view-note">Rich comments, quiet metadata, and clear review outcomes.</p>
+        <label
+          >Layout
+          <select id="width">
+            <option value="wide">Expanded · 1040px</option>
+            <option value="split">Split · 640px</option>
+            <option value="panel">Detail only · 400px</option>
+          </select></label
+        >
+      </div>
+      <div class="workbench" data-width="wide">
+        <aside class="pr-list" aria-label="Pull requests">
+          <header class="list-header">
+            <strong>Pull requests</strong
+            ><button id="refresh" class="icon-button" aria-label="Refresh mock pull requests">
+              ↻
+            </button>
+          </header>
+          <div class="search-wrap">
+            <span aria-hidden="true">⌕</span
+            ><input
+              id="filter"
+              aria-label="Filter pull requests"
+              placeholder="Filter pull requests…"
+            />
+          </div>
+          <div class="list-group-label">From chat <span>1</span></div>
+          <button class="pr-row selected" data-pr="42" aria-pressed="true">
+            <span class="pr-row-title">Add GitHub PR panel tab</span
+            ><span class="pr-row-meta"
+              ><span>#42 · copse-panel</span><span class="status success">✓ Passing</span></span
+            >
+          </button>
+          <div class="list-group-label">copse-dev / copse-panel <span>1</span></div>
+          <button class="pr-row" data-pr="88" aria-pressed="false">
+            <span class="pr-row-title">Tidy up workspace status polling</span
+            ><span class="pr-row-meta"
+              ><span>#88 · copse-panel</span><span class="status error">× Failed</span></span
+            >
+          </button>
+          <details class="other-prs">
+            <summary>Your other open PRs <span>1</span></summary>
+            <button class="pr-row" data-pr="17" aria-pressed="false">
+              <span class="pr-row-title">Polish footer branch status</span
+              ><span class="pr-row-meta"
+                ><span>#17 · copse-panel</span><span class="status warning">◷ Running</span></span
+              >
+            </button>
+          </details>
+          <p id="filter-empty" hidden>No matching pull requests.</p>
+          <footer class="list-footer">3 open pull requests</footer>
+        </aside>
+        <section class="detail" aria-label="Pull request detail">
+          <header class="pr-header">
+            <div class="repo-line">
+              <span>copse-dev / copse-panel</span
+              ><a
+                id="github"
+                href="https://github.com/copse-dev/copse-panel/pull/42"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open pull request on GitHub"
+                >GitHub ↗</a
+              >
+            </div>
+            <div class="title-row">
+              <h2 id="pr-title">Add GitHub PR panel tab</h2>
+              <span id="pr-number">#42</span>
+            </div>
+            <div class="branch-line">
+              <span class="badge success">⑂ Open</span><code id="branch">feature/pr-panel</code
+              ><span aria-hidden="true">→</span><code>main</code>
+            </div>
+            <div class="header-actions">
+              <button id="thread" class="button">Open chat ↗</button>
+              <div class="action-right">
+                <button
+                  id="review"
+                  class="button primary"
+                  aria-expanded="false"
+                  aria-controls="review-menu"
+                >
+                  Review ▾</button
+                ><button
+                  id="more"
+                  class="icon-button bordered"
+                  aria-label="More pull request actions"
+                  aria-expanded="false"
+                  aria-controls="more-menu"
+                >
+                  ···
+                </button>
+              </div>
+            </div>
+            <div id="review-menu" class="action-menu" hidden>
+              <button data-action="Approve">Approve</button
+              ><button data-action="Request changes">
+                Request changes <small>Proposed action</small>
+              </button>
+            </div>
+            <div id="more-menu" class="action-menu" hidden>
+              <button data-action="New thread">New thread</button
+              ><button data-action="Rerun CI">Rerun CI</button
+              ><button data-action="Enable auto-merge">Enable auto-merge</button>
+            </div>
+          </header>
+          <nav class="tabs" aria-label="Pull request sections">
+            <button data-view="overview" aria-pressed="false">Overview</button
+            ><button data-view="comments" aria-pressed="true">Comments <span>3</span></button
+            ><button data-view="checks" aria-pressed="false">
+              Checks <span id="check-count">2</span></button
+            ><button data-view="files" aria-pressed="false">Files <span>4</span></button>
+          </nav>
+          <div class="view-body" tabindex="0" aria-label="Scrollable pull request content">
+            <section id="overview-view" class="view" hidden>
+              <div class="section-heading">
+                <strong>Description</strong
+                ><span
+                  >4 files · <span class="success">+12</span> <span class="error">−3</span></span
+                >
+              </div>
+              <div class="prose description">
+                <h3>Summary</h3>
+                <p>
+                  Adds a <strong>PRs</strong> tab to the right panel so chat-linked pull requests
+                  open in-app.
+                </p>
+                <ul>
+                  <li>Linked PRs from chat appear under <em>From chat</em>.</li>
+                  <li>Uses the existing Changes diff viewer.</li>
+                  <li>
+                    Adds separate <strong>Comments</strong> and <strong>Checks</strong> views.
+                  </li>
+                </ul>
+                <h4>Validation</h4>
+                <ul class="task-list">
+                  <li>
+                    <input
+                      type="checkbox"
+                      checked
+                      disabled
+                      aria-label="Parser and renderer tests passed"
+                    />
+                    Parser and renderer tests
+                  </li>
+                  <li>
+                    <input
+                      type="checkbox"
+                      checked
+                      disabled
+                      aria-label="Focused Electron screenshots captured"
+                    />
+                    Focused Electron screenshots
+                  </li>
+                </ul>
+              </div>
+              <div class="overview-feedback">
+                <span class="eyebrow">Latest review</span>
+                <div>
+                  <span class="avatar">RV</span>
+                  <div>
+                    <strong>@reviewer</strong><span class="badge error">Changes requested</span>
+                    <p>Keep failed checks visible while other jobs are still running.</p>
+                    <button class="text-button" id="jump-comments">Read review →</button>
+                  </div>
+                </div>
+              </div>
+              <p class="capability-note">
+                Latest-review summary is proposed. It uses the existing review data.
+              </p>
+            </section>
+            <section id="comments-view" class="view">
+              <div class="section-heading">
+                <strong>Conversation <span class="muted">· 3 entries</span></strong
+                ><span class="muted">Oldest first</span>
+              </div>
+              <p class="scope-note">
+                Conversation comments and reviews.
+                <a
+                  href="https://github.com/copse-dev/copse-panel/pull/42/files"
+                  target="_blank"
+                  rel="noreferrer"
+                  >Inline code threads on GitHub ↗</a
+                >
+              </p>
+              <article class="comment">
+                <header class="comment-header">
+                  <span class="avatar">OD</span>
+                  <div class="author-line">
+                    <strong>@octo-dev</strong><span class="comment-kind">Commented</span>
+                  </div>
+                  <time datetime="2026-09-09T09:00:00Z" title="9 September 2026, 10:00 BST"
+                    >9 Sep · 10:00</time
+                  >
+                </header>
+                <div class="prose comment-body">
+                  <p>
+                    The <strong>PRs tab</strong> is useful. Can we also see individual CI checks and
+                    reviewer feedback here?
+                  </p>
+                  <blockquote>
+                    <p>Linked PRs from chat appear under <em>From chat</em>.</p>
+                  </blockquote>
+                  <p>That makes it much easier to follow up without leaving the chat.</p>
+                </div>
+              </article>
+              <article class="comment">
+                <header class="comment-header">
+                  <span class="avatar reviewer">RV</span>
+                  <div class="author-line">
+                    <strong>@reviewer</strong><span class="badge error">Changes requested</span>
+                  </div>
+                  <time datetime="2026-09-09T09:15:00Z" title="9 September 2026, 10:15 BST"
+                    >9 Sep · 10:15</time
+                  >
+                </header>
+                <div class="prose comment-body">
+                  <p>
+                    Please keep <strong>failed checks visible</strong> while other jobs are still
+                    running.
+                  </p>
+                  <ul>
+                    <li>Show the check name and status.</li>
+                    <li>
+                      Link to the
+                      <a
+                        href="https://github.com/copse-dev/copse-panel/pull/42/checks"
+                        target="_blank"
+                        rel="noreferrer"
+                        >full log on GitHub ↗</a
+                      >.
+                    </li>
+                  </ul>
+                  <p>
+                    For example, <code>failure</code> should take priority over
+                    <code>in_progress</code>:
+                  </p>
+                  <div class="code-block">
+                    <div class="code-header">
+                      <span>TypeScript</span
+                      ><button class="copy-code" aria-label="Copy example TypeScript">Copy</button>
+                    </div>
+                    <pre><code><span class="syntax-keyword">if</span> (checks.some(check =&gt; check.state === <span class="syntax-string">'FAILURE'</span>)) {
+  <span class="syntax-keyword">return</span> <span class="syntax-string">'failure'</span>;
+}</code></pre>
+                  </div>
+                </div>
+              </article>
+              <article class="comment">
+                <header class="comment-header">
+                  <span class="avatar">MU</span>
+                  <div class="author-line">
+                    <strong>@mock-user</strong><span class="badge">Author</span>
+                  </div>
+                  <time datetime="2026-09-09T09:30:00Z" title="9 September 2026, 10:30 BST"
+                    >9 Sep · 10:30</time
+                  >
+                </header>
+                <div class="prose comment-body">
+                  <p>
+                    Added separate <strong>Comments</strong> and <strong>Checks</strong> views. The
+                    existing file diff is still available.
+                  </p>
+                  <ul class="task-list">
+                    <li>
+                      <input
+                        type="checkbox"
+                        checked
+                        disabled
+                        aria-label="Named CI results complete"
+                      />
+                      Named CI results
+                    </li>
+                    <li>
+                      <input
+                        type="checkbox"
+                        checked
+                        disabled
+                        aria-label="Review outcomes complete"
+                      />
+                      Review outcomes
+                    </li>
+                    <li>
+                      <input
+                        type="checkbox"
+                        disabled
+                        aria-label="Inline discussion threads planned"
+                      />
+                      Inline discussion threads
+                    </li>
+                  </ul>
+                </div>
+              </article>
+            </section>
+            <section id="checks-view" class="view" hidden>
+              <div class="section-heading">
+                <strong id="checks-heading">All checks passed</strong
+                ><span>Head <code id="sha">a4e9c82</code></span>
+              </div>
+              <p class="scope-note" id="checks-note">2 passed · Results for this commit</p>
+              <div id="checks-content"></div>
+              <p class="capability-note">
+                Durations and failure excerpts are proposed additions. Check names, states, and
+                detail links already exist.
+              </p>
+            </section>
+            <section id="files-view" class="view" hidden>
+              <div class="section-heading">
+                <strong>Changed files <span class="muted">· 4</span></strong
+                ><span><span class="success">+12</span> <span class="error">−3</span></span>
+              </div>
+              <p class="scope-note">
+                A dedicated Files tab gives the existing diff viewer the full panel height.
+              </p>
+              <details class="file-entry" open>
+                <summary>
+                  <span class="success">M</span><code>src/renderer/views/pr-pane.ts</code
+                  ><span class="success">+8</span><span class="error">−2</span>
+                </summary>
+                <div class="diff-heading">Illustrative diff · pr-pane.ts</div>
+                <pre
+                  class="diff"
+                ><code><span>  41   const sections = [</span><span>  42     'overview',</span><span class="diff-added">+ 43     'comments',</span><span class="diff-added">+ 44     'checks',</span><span>  45   ];</span></code></pre>
+              </details>
+              <details class="file-entry">
+                <summary>
+                  <span class="success">M</span><code>src/renderer/styles/global/layout.css</code
+                  ><span class="success">+2</span><span class="error">−1</span>
+                </summary>
+                <p class="scope-note">
+                  Illustrative file. The full diff would use the existing viewer.
+                </p>
+              </details>
+              <details class="file-entry">
+                <summary>
+                  <span class="success">A</span><code>src/renderer/views/pr-pane-activity.ts</code
+                  ><span class="success">+1</span>
+                </summary>
+                <p class="scope-note">
+                  Illustrative file. The full diff would use the existing viewer.
+                </p>
+              </details>
+              <details class="file-entry">
+                <summary>
+                  <span class="success">A</span><code>tests/e2e/pr-panel-activity.e2e.ts</code
+                  ><span class="success">+1</span>
+                </summary>
+                <p class="scope-note">
+                  Illustrative file. The full diff would use the existing viewer.
+                </p>
+              </details>
+            </section>
+          </div>
+          <footer class="detail-footer">
+            <span id="footer-status">Illustrative content · no live actions</span
+            ><span>Updated just now</span>
+          </footer>
+        </section>
+      </div>
+      <div class="design-notes">
+        <div>
+          <span>01</span><strong>Compress the chrome</strong>
+          <p>Keep identity and actions in a short header. Give the content the height it needs.</p>
+        </div>
+        <div>
+          <span>02</span><strong>Give comments a rhythm</strong>
+          <p>
+            Author first, review outcome second. Render Markdown with clear spacing and contained
+            code.
+          </p>
+        </div>
+        <div>
+          <span>03</span><strong>Make status readable</strong>
+          <p>Pair color with words. Put failures first, and keep running checks visible.</p>
+        </div>
+      </div>
+      <p class="study-footnote">
+        Layout mocks based on the repository screenshots. Expanded sample Markdown is illustrative.
+        Files navigation, action menus, and latest-review summary are design proposals.
+      </p>
+    </div>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>

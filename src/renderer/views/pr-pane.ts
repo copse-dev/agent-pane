@@ -4,6 +4,8 @@ import {
   externalLinkIcon,
   gitMergeIcon,
   gitPullRequestIcon,
+  moreHorizontalIcon,
+  arrowRightIcon,
   refreshIcon,
 } from '../dom/icons.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
@@ -38,6 +40,7 @@ import {
 import { startPrDiscussThread } from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
+import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { cachedPrTitle, loadPrTitle, rememberPrTitle } from '../markdown/pr-title-cache.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -206,9 +209,6 @@ export function mountPrPane(
   let selectedPr: PrRef | null = null
   let prDetails: GhPrDetails | null = null
   let selectedFile: string | null = null
-  // Changed-files list starts collapsed so the PR description gets the full
-  // column until the user actually wants to browse files.
-  let filesExpanded = false
   let diffEditor: GitDiffEditor | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
@@ -284,6 +284,11 @@ export function mountPrPane(
     node.setAttribute('role', 'img')
     node.setAttribute('aria-label', label)
     setTooltip(node, label)
+    const checksLabel = node.parentElement?.querySelector('.pr-list-checks-label')
+    if (checksLabel) {
+      checksLabel.textContent = CI_LABEL[checks]
+      checksLabel.setAttribute('data-state', checks)
+    }
     node.replaceChildren(
       lifecycle === 'MERGED'
         ? gitMergeIcon('ui-icon ui-icon-sm')
@@ -400,11 +405,22 @@ export function mountPrPane(
         type: 'button',
         class: `git-change-row pr-list-row${isSelected ? ' is-selected' : ''}`,
         'data-pr-section': section,
+        'aria-pressed': String(isSelected),
       },
-      el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
       el('span', { class: 'git-change-path pr-list-title', title: titleText }, titleText),
-      ...(agentBadge ? [agentBadge] : []),
-      ci,
+      el(
+        'span',
+        { class: 'pr-list-meta' },
+        el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
+        el('span', { class: 'pr-list-repo', title: `${pr.owner}/${pr.repo}` }, pr.repo),
+        ...(agentBadge ? [agentBadge] : []),
+        ci,
+        el(
+          'span',
+          { class: 'pr-list-checks-label', 'data-state': state ?? 'loading' },
+          CI_LABEL[state ?? 'loading'],
+        ),
+      ),
     )
     row.addEventListener('click', () => void selectPr(pr))
     if (!state) ensureCheck(pr)
@@ -653,6 +669,8 @@ export function mountPrPane(
     btn.addEventListener('click', () => {
       const ref = selectedPr
       if (!ref) return
+      const menu = btn.closest('details')
+      if (menu) menu.open = false
       void (async (): Promise<void> => {
         if (!(await showConfirmDialog({ message: confirmMessage, confirmLabel: label }))) return
         for (const other of metaHost.querySelectorAll<HTMLButtonElement>('.pr-action-btn')) {
@@ -685,7 +703,7 @@ export function mountPrPane(
         class: 'ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn',
         'data-tooltip': 'Open this pull request on GitHub',
       },
-      el('span', {}, 'Open on GitHub'),
+      el('span', {}, 'GitHub'),
       externalLinkIcon('ui-icon ui-icon-sm'),
     )
     const prUrl = prDetails.url
@@ -711,9 +729,7 @@ export function mountPrPane(
           el(
             'span',
             {},
-            agent
-              ? `Open ${agentProviderLabel(agent.provider)} agent thread`
-              : 'Open producing thread',
+            agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : 'Open chat',
           ),
         )
       : null
@@ -740,14 +756,26 @@ export function mountPrPane(
       getPromptAttachmentHandlers()?.focusComposer?.()
     })
 
-    const stats: string[] = []
-    if (typeof prDetails.changedFiles === 'number')
-      stats.push(`${String(prDetails.changedFiles)} files`)
-    if (typeof prDetails.additions === 'number' || typeof prDetails.deletions === 'number') {
-      stats.push(`+${String(prDetails.additions ?? 0)} -${String(prDetails.deletions ?? 0)}`)
-    }
+    const branch = el('div', { class: 'pr-viewer-subtitle' })
+    const lifecycleIcon = el('span', {})
+    applyPrStatus(lifecycleIcon, prDetails, knownChecks(prDetails) ?? 'no_checks')
+    lifecycleIcon.classList.remove('pr-list-status')
+    lifecycleIcon.classList.add('pr-viewer-status')
+    const lifecycle =
+      prDetails.state === 'OPEN'
+        ? 'Open'
+        : prDetails.state === 'MERGED'
+          ? 'Merged'
+          : prDetails.state === 'CLOSED'
+            ? 'Closed'
+            : 'Unknown'
+    branch.append(el('span', { class: 'pr-lifecycle' }, lifecycleIcon, el('span', {}, lifecycle)))
     if (prDetails.headRefName && prDetails.baseRefName) {
-      stats.push(`${prDetails.headRefName} → ${prDetails.baseRefName}`)
+      branch.append(
+        el('code', {}, prDetails.headRefName),
+        arrowRightIcon('ui-icon ui-icon-sm'),
+        el('code', {}, prDetails.baseRefName),
+      )
     }
 
     const badges = el('span', { class: 'pr-viewer-badges' })
@@ -785,44 +813,60 @@ export function mountPrPane(
       )
     }
 
-    const actions = el(
-      'div',
-      { class: 'pr-viewer-actions' },
-      openBtn,
-      ...(openThreadBtn ? [openThreadBtn] : []),
-      newThreadBtn,
+    const overflow = el('details', { class: 'pr-more-actions' })
+    const summary = el(
+      'summary',
+      {
+        class: 'ui-btn ui-btn-secondary ui-btn-compact pr-more-toggle',
+        'aria-label': 'More pull request actions',
+        'data-tooltip': 'More pull request actions',
+      },
+      moreHorizontalIcon('ui-icon ui-icon-sm'),
     )
+    const menu = el('div', { class: 'pr-actions-menu' })
+    overflow.append(summary, menu)
+    const actions = el('div', { class: 'pr-viewer-actions' }, openThreadBtn ?? newThreadBtn)
+    if (openThreadBtn) menu.append(newThreadBtn)
     if (prDetails.state === 'OPEN') {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number }
-      actions.append(
+      const approve = actionButton('Approve', `Approve pull request #${String(ref.number)}?`, (r) =>
+        api.gh.approvePr(r.owner, r.repo, r.number),
+      )
+      actions.append(approve)
+      menu.append(
         actionButton('Rerun CI', `Re-run the failed CI runs for #${String(ref.number)}?`, (r) =>
           api.gh.rerunFailedRuns(r.owner, r.repo, r.number).then((result) => {
             if (result.ok) return result
-            // Suppress "no failed runs" messages — the user already knows.
             return { ...result, message: '', ok: true }
           }),
         ),
-        actionButton('Approve', `Approve pull request #${String(ref.number)}?`, (r) =>
-          api.gh.approvePr(r.owner, r.repo, r.number),
-        ),
       )
-      if (prDetails.isDraft) {
-        actions.append(
+      if (prDetails.isDraft)
+        menu.append(
           actionButton('Mark ready', `Mark #${String(ref.number)} ready for review?`, (r) =>
             api.gh.markPrReady(r.owner, r.repo, r.number),
           ),
         )
-      }
-      if (!prDetails.autoMergeEnabled) {
-        actions.append(
+      if (!prDetails.autoMergeEnabled)
+        menu.append(
           actionButton(
             'Enable auto-merge',
             `Enable merge-when-ready for #${String(ref.number)}?`,
             (r) => api.gh.enableAutoMerge(r.owner, r.repo, r.number),
           ),
         )
-      }
     }
+    if (menu.childElementCount) actions.append(overflow)
+    newThreadBtn.addEventListener('click', () => {
+      overflow.open = false
+    })
+    overflow.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !overflow.open) return
+      event.preventDefault()
+      event.stopPropagation()
+      overflow.open = false
+      summary.focus()
+    })
 
     const statusLine = el(
       'div',
@@ -834,16 +878,18 @@ export function mountPrPane(
     metaHost.append(
       el(
         'div',
-        { class: 'pr-viewer-title-row' },
-        el('h4', { class: 'pr-viewer-title' }, prDetails.title),
-        badges,
+        { class: 'pr-viewer-repo-line' },
+        el('span', {}, `${prDetails.owner}/${prDetails.repo}`),
+        openBtn,
       ),
       el(
         'div',
-        { class: 'pr-viewer-subtitle' },
-        `#${String(prDetails.number)} · ${prDetails.owner}/${prDetails.repo}`,
-        stats.length > 0 ? ` · ${stats.join(' · ')}` : '',
+        { class: 'pr-viewer-title-row' },
+        el('h4', { class: 'pr-viewer-title' }, prDetails.title),
+        el('span', { class: 'pr-viewer-number' }, `#${String(prDetails.number)}`),
       ),
+      branch,
+      badges,
       actions,
       statusLine,
     )
@@ -855,8 +901,17 @@ export function mountPrPane(
       descriptionHost.hidden = true
       return
     }
-    descriptionHost.hidden = false
+    descriptionHost.hidden = activeSection !== 'overview'
     descriptionHost.innerHTML = renderMarkdown(prDetails.body)
+    attachCodeBlockCopyButtons(descriptionHost)
+    const stats = el(
+      'div',
+      { class: 'pr-description-meta' },
+      el('span', {}, `${String(prDetails.changedFiles ?? prDetails.files.length)} files`),
+      el('span', { class: 'pr-additions' }, `+${String(prDetails.additions ?? 0)}`),
+      el('span', { class: 'pr-deletions' }, `−${String(prDetails.deletions ?? 0)}`),
+    )
+    descriptionHost.prepend(stats)
   }
 
   function renderSections(): void {
@@ -867,6 +922,7 @@ export function mountPrPane(
       { key: 'overview', label: 'Overview' },
       { key: 'comments', label: 'Comments' },
       { key: 'checks', label: 'Checks' },
+      { key: 'files', label: 'Files' },
     ]
     for (const section of sections) {
       const button = el(
@@ -877,8 +933,30 @@ export function mountPrPane(
           'data-section': section.key,
           'aria-pressed': String(activeSection === section.key),
         },
-        section.label,
+        el('span', {}, section.label),
       )
+      const activity = prDetails.activity
+      const count =
+        section.key === 'files'
+          ? prDetails.files.length
+          : activity && !activity.error
+            ? section.key === 'comments'
+              ? activity.comments.length
+              : section.key === 'checks'
+                ? activity.checks.length
+                : undefined
+            : undefined
+      if (count !== undefined) {
+        const truncated =
+          section.key === 'comments'
+            ? activity?.commentsTruncated
+            : section.key === 'checks'
+              ? activity?.checksTruncated
+              : false
+        button.append(
+          el('span', { class: 'pr-section-count' }, `${String(count)}${truncated ? '+' : ''}`),
+        )
+      }
       button.addEventListener('click', () => {
         activeSection = section.key
         clearDiff()
@@ -888,7 +966,9 @@ export function mountPrPane(
       })
       sectionsHost.append(button)
     }
-    if (activeSection !== 'overview') {
+    descriptionHost.hidden = activeSection !== 'overview' || !prDetails.body.trim()
+    filesHost.hidden = activeSection !== 'files'
+    if (activeSection === 'comments' || activeSection === 'checks') {
       descriptionHost.hidden = true
       filesHost.hidden = true
       diffWrap.hidden = true
@@ -902,31 +982,15 @@ export function mountPrPane(
 
   function renderFiles(): void {
     clear(filesHost)
-    if (!prDetails) {
+    filesHost.classList.toggle('pr-viewer-files-fill', selectedFile === null)
+    if (!prDetails || activeSection !== 'files') {
       filesHost.hidden = true
       return
     }
     filesHost.hidden = false
-    const header = el(
-      'button',
-      {
-        type: 'button',
-        class: 'pr-files-header',
-        'aria-expanded': String(filesExpanded),
-      },
-      el(
-        'span',
-        { class: `pr-other-chevron${filesExpanded ? ' expanded' : ''}` },
-        chevronRightIcon('ui-icon ui-icon-sm'),
-      ),
-      el('span', {}, `Changed files (${String(prDetails.files.length)})`),
+    filesHost.append(
+      el('div', { class: 'pr-files-header' }, `Changed files (${String(prDetails.files.length)})`),
     )
-    header.addEventListener('click', () => {
-      filesExpanded = !filesExpanded
-      renderFiles()
-    })
-    filesHost.append(header)
-    if (!filesExpanded) return
     const list = el('div', { class: 'pr-files-list' })
     for (const file of prDetails.files) {
       const isSelected = selectedFile === file.path
@@ -941,7 +1005,13 @@ export function mountPrPane(
           { class: `git-change-status git-change-status-${file.status}` },
           STATUS_LABEL[file.status] ?? 'M',
         ),
-        el('span', { class: 'git-change-path' }, file.path),
+        el('span', { class: 'git-change-path', title: file.path }, file.path),
+        el(
+          'span',
+          { class: 'pr-file-stats' },
+          el('span', { class: 'pr-additions' }, `+${String(file.additions)}`),
+          el('span', { class: 'pr-deletions' }, `−${String(file.deletions)}`),
+        ),
       )
       row.addEventListener('click', () => void selectFile(file.path))
       list.append(row)
@@ -957,14 +1027,25 @@ export function mountPrPane(
     clear(imageWrap)
     // With no file selected the diff area is dead space: let the description
     // take the full column instead of showing a "Select a changed file" prompt.
-    const descriptionFills = Boolean(prDetails?.body.trim())
+    const descriptionFills = activeSection === 'overview' && Boolean(prDetails?.body.trim())
     descriptionHost.classList.toggle('pr-viewer-description-fill', descriptionFills)
-    emptyState.hidden = descriptionFills
+    emptyState.hidden =
+      descriptionFills ||
+      Boolean(
+        prDetails &&
+        (activeSection === 'comments' ||
+          activeSection === 'checks' ||
+          (activeSection === 'files' && prDetails.files.length > 0)),
+      )
     if (!ghStatus && !prDetails) {
       // Nothing to select yet — the PR list itself is still loading.
       setInlineStatus(emptyState, 'pending', 'Loading pull requests…')
     } else {
-      emptyState.textContent = prDetails ? 'Select a changed file' : 'Select a pull request'
+      emptyState.textContent = prDetails
+        ? activeSection === 'files'
+          ? 'No changed files'
+          : 'No description provided'
+        : 'Select a pull request'
     }
     if (diffEditor) disposeDiffModels(diffEditor)
   }
@@ -1028,7 +1109,6 @@ export function mountPrPane(
     // (after an action) keeps it so the message survives the details reload.
     if (!sameAsCurrent) {
       lastActionMessage = null
-      filesExpanded = false
       activeSection = 'overview'
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
@@ -1254,6 +1334,11 @@ export function mountPrPane(
     filterInput.focus()
   })
 
+  const dismissActions = (event: PointerEvent): void => {
+    const menu = metaHost.querySelector<HTMLDetailsElement>('.pr-more-actions[open]')
+    if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false
+  }
+  document.addEventListener('pointerdown', dismissActions)
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store, api)
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store, api)
@@ -1352,6 +1437,7 @@ export function mountPrPane(
 
   return () => {
     disposed = true
+    document.removeEventListener('pointerdown', dismissActions)
     titleGen++
     if (titleRepaintTimer != null) {
       clearTimeout(titleRepaintTimer)
