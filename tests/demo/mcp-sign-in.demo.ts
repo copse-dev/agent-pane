@@ -63,4 +63,16 @@ describe('browser-hosted MCP server sign-in', () => {
       "Sign in to use this server's tools.",
     )
   })
+
+  it('signs out of a server and offers Sign in again', async () => {
+    await (await row('issues')).$('.mcp-auth-btn').click()
+    await browser.waitUntil(
+      async () => (await (await row('issues')).$('.mcp-auth-btn').getText()) === 'Sign in',
+    )
+    await expect((await row('issues')).$('.mcp-server-summary')).toHaveText(
+      expect.stringContaining('sign-in required'),
+    )
+    // Signing out of one server leaves the others listed.
+    await expect(await row('design-system')).toBeDisplayed()
+  })
 })

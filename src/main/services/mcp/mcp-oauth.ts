@@ -26,7 +26,12 @@ import { randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { auth, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
+import {
+  auth,
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from '@modelcontextprotocol/sdk/client/auth.js'
+import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
@@ -64,6 +69,31 @@ export class McpSignInRequiredError extends Error {
   }
 }
 
+/**
+ * The server wants (another) sign-in: a refused refresh, an unauthorized
+ * response the SDK could not recover from, or a bare 401 with no provider.
+ */
+export function isMcpSignInRequiredError(error: unknown): boolean {
+  return (
+    error instanceof McpSignInRequiredError ||
+    error instanceof UnauthorizedError ||
+    (error instanceof StreamableHTTPError && error.code === 401)
+  )
+}
+
+// Bumped whenever a URL's sign-in is replaced or removed. A provider built from
+// the previous credentials may still be refreshing; its late write must not
+// resurrect a sign-out or overwrite the newer sign-in.
+const credentialGenerations = new Map<string, number>()
+
+function credentialGeneration(identity: string): number {
+  return credentialGenerations.get(identity) ?? 0
+}
+
+function supersedeCredentials(identity: string): void {
+  credentialGenerations.set(identity, credentialGeneration(identity) + 1)
+}
+
 function clientMetadata(redirectUrl: string): OAuthClientMetadata {
   // The MCP spec requires native clients to say so when they register; the
   // SDK's type has no `application_type`, but it sends this object as-is.
@@ -98,11 +128,14 @@ export function storedMcpOAuthProvider(
 ): OAuthClientProvider | undefined {
   const initial = readMcpOAuthRecord(serverUrl, store)
   if (!initial?.tokens) return undefined
+  const identity = initial.serverUrl
+  const generation = credentialGeneration(identity)
   let record: McpOAuthRecord = initial
   // Once the server rejects the client itself, only an interactive sign-in may
   // register a new one; a background connect must not.
   let clientRevoked = false
   const persist = async (next: McpOAuthRecord): Promise<void> => {
+    if (credentialGeneration(identity) !== generation) throw new McpSignInRequiredError()
     record = next
     await writeMcpOAuthRecord(next, store)
   }
@@ -140,6 +173,8 @@ export function storedMcpOAuthProvider(
     invalidateCredentials: async (scope): Promise<void> => {
       if (scope === 'all' || scope === 'client') {
         clientRevoked = true
+        if (credentialGeneration(identity) !== generation) return
+        supersedeCredentials(identity)
         await deleteMcpOAuthRecord(serverUrl, store)
         return
       }
@@ -289,31 +324,28 @@ async function clientMetadataDocumentPorts(
   }
 }
 
-function waitForCode(callback: LoopbackCallback, signal: AbortSignal | undefined): Promise<string> {
+function waitForCode(
+  callback: LoopbackCallback,
+  attempt: AbortSignal,
+  abortError: () => Error,
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const finish = (outcome: { ok: true; code: string } | { ok: false; error: Error }): void => {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-      if (outcome.ok) resolve(outcome.code)
-      else reject(outcome.error)
-    }
     const onAbort = (): void => {
-      finish({ ok: false, error: new Error('Sign-in cancelled.') })
+      reject(abortError())
     }
-    const timer = setTimeout(() => {
-      finish({ ok: false, error: new Error('Sign-in timed out. Start it again from Copse.') })
-    }, SIGN_IN_TIMEOUT_MS)
-    if (signal?.aborted) {
+    if (attempt.aborted) {
       onAbort()
       return
     }
-    signal?.addEventListener('abort', onAbort, { once: true })
+    attempt.addEventListener('abort', onAbort, { once: true })
     callback.code.then(
       (code) => {
-        finish({ ok: true, code })
+        attempt.removeEventListener('abort', onAbort)
+        resolve(code)
       },
       (error: unknown) => {
-        finish({ ok: false, error: error instanceof Error ? error : new Error(String(error)) })
+        attempt.removeEventListener('abort', onAbort)
+        reject(error instanceof Error ? error : new Error(String(error)))
       },
     )
   })
@@ -327,6 +359,8 @@ export interface McpSignInDependencies {
   signal?: AbortSignal
   /** Where Copse's Client ID Metadata Document is published. */
   clientMetadataUrl?: string
+  /** How long the whole attempt may take, browser included. */
+  timeoutMs?: number
 }
 
 /**
@@ -406,12 +440,18 @@ export async function signInMcpServer(
         return codeVerifier
       },
     }
-    // Cancelling aborts whichever request is in flight, including the token
-    // exchange after the browser has already returned.
-    const fetchFn: FetchLike = (url, init) =>
-      baseFetch(url, signal === undefined ? init : { ...init, signal })
+    // One deadline covers the whole attempt — discovery, registration, the
+    // browser and the token exchange — so a server that never answers cannot
+    // leave the sign-in, or this listener, open. Cancelling aborts the same way.
+    const deadline = AbortSignal.timeout(dependencies.timeoutMs ?? SIGN_IN_TIMEOUT_MS)
+    const attempt = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+    const abortError = (): Error =>
+      signal?.aborted
+        ? new Error('Sign-in cancelled.')
+        : new Error('Sign-in timed out. Start it again from Copse.')
+    const fetchFn: FetchLike = (url, init) => baseFetch(url, { ...init, signal: attempt })
     const throwIfCancelled = (): void => {
-      if (signal?.aborted) throw new Error('Sign-in cancelled.')
+      if (attempt.aborted) throw abortError()
     }
     const run = async (authorizationCode?: string): Promise<string> => {
       try {
@@ -427,7 +467,7 @@ export async function signInMcpServer(
     }
     const started = await run()
     if (started !== 'AUTHORIZED') {
-      const authorizationCode = await waitForCode(callback, signal)
+      const authorizationCode = await waitForCode(callback, attempt, abortError)
       phase = 'token'
       await run(authorizationCode)
     }
@@ -436,6 +476,7 @@ export async function signInMcpServer(
     if (!clientInformation || !tokens || authorizationServer === undefined) {
       throw new Error('The server did not issue a sign-in.')
     }
+    supersedeCredentials(identity)
     await writeMcpOAuthRecord(
       {
         serverUrl: identity,
@@ -456,6 +497,7 @@ export function signOutMcpServer(
   serverUrl: string,
   store?: McpOAuthStoreDependencies,
 ): Promise<void> {
+  supersedeCredentials(mcpOAuthServerIdentity(serverUrl))
   return deleteMcpOAuthRecord(serverUrl, store)
 }
 

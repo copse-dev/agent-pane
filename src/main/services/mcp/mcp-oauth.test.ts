@@ -15,6 +15,7 @@ import { asProtocolTransport } from './streamable-http-transport.ts'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   COPSE_CLIENT_METADATA_URL,
+  isMcpSignInRequiredError,
   McpSignInRequiredError,
   signInMcpServer,
   signOutMcpServer,
@@ -102,6 +103,8 @@ interface FakeAuthServer {
   /** Access tokens the MCP endpoint currently accepts. */
   validTokens: Set<string>
   registrationStatus: number
+  /** Never answer registration, as a server that has stopped responding. */
+  hangRegistration: boolean
   /** The `application_type` each registration request declared. */
   registeredApplicationTypes: unknown[]
   refreshAccepted: boolean
@@ -150,6 +153,7 @@ async function startFakeAuthServer(): Promise<FakeAuthServer> {
     registrations: 0,
     validTokens: new Set(),
     registrationStatus: 201,
+    hangRegistration: false,
     registeredApplicationTypes: [],
     refreshAccepted: true,
     metadataDocumentSupported: false,
@@ -191,6 +195,7 @@ async function startFakeAuthServer(): Promise<FakeAuthServer> {
         return
       }
       if (url.pathname === '/register') {
+        if (state.hangRegistration) return
         state.registrations += 1
         if (state.registrationStatus !== 201) {
           response.writeHead(state.registrationStatus).end('Forbidden')
@@ -649,6 +654,94 @@ describe('MCP OAuth sign-in', () => {
     assert.equal(document.token_endpoint_auth_method, 'none')
     for (const uri of document.redirect_uris) {
       assert.match(uri, /^http:\/\/127\.0\.0\.1:\d+\/callback$/)
+    }
+  })
+  it('keeps a sign-out when a refresh that was already in flight completes', async () => {
+    const { store } = memoryStore()
+    await signInMcpServer(server.mcpUrl, {
+      ...offline(server),
+      store,
+      openExternal: browserThatApproves,
+    })
+    // A provider from before the sign-out, mid-refresh when it happens.
+    const provider = storedMcpOAuthProvider(server.mcpUrl, store)
+    assert.ok(provider)
+    await signOutMcpServer(server.mcpUrl, store)
+    await assert.rejects(
+      Promise.resolve(provider.saveTokens({ access_token: 'late', token_type: 'Bearer' })),
+      McpSignInRequiredError,
+    )
+    assert.equal(readMcpOAuthRecord(server.mcpUrl, store), null)
+  })
+
+  it('does not let an older provider overwrite a newer sign-in', async () => {
+    const { store } = memoryStore()
+    const signIn = (): Promise<void> =>
+      signInMcpServer(server.mcpUrl, {
+        ...offline(server),
+        store,
+        openExternal: browserThatApproves,
+      })
+    await signIn()
+    const stale = storedMcpOAuthProvider(server.mcpUrl, store)
+    assert.ok(stale)
+    await signIn()
+    await assert.rejects(
+      Promise.resolve(stale.saveTokens({ access_token: 'stale', token_type: 'Bearer' })),
+      McpSignInRequiredError,
+    )
+    assert.equal(readMcpOAuthRecord(server.mcpUrl, store)?.tokens?.access_token, 'access-2')
+  })
+
+  it('times out the whole attempt when the server stops answering', async () => {
+    const { store } = memoryStore()
+    server.hangRegistration = true
+    const started = Date.now()
+    await assert.rejects(
+      signInMcpServer(server.mcpUrl, {
+        ...offline(server),
+        store,
+        timeoutMs: 200,
+        openExternal: () => assert.fail('must not open the browser'),
+      }),
+      /Sign-in timed out\./,
+    )
+    assert.ok(Date.now() - started < 5_000, 'gave up at the attempt deadline')
+    assert.equal(readMcpOAuthRecord(server.mcpUrl, store), null)
+  })
+
+  it('has no stored sign-in for a URL that does not parse', () => {
+    const { store } = memoryStore()
+    assert.equal(readMcpOAuthRecord('${env:MISSING_URL}', store), null)
+    assert.equal(storedMcpOAuthProvider('not a url', store), undefined)
+  })
+
+  it('reports sign-in required when a refresh is refused during a live request', async () => {
+    const { store } = memoryStore()
+    await signInMcpServer(server.mcpUrl, {
+      ...offline(server),
+      store,
+      openExternal: browserThatApproves,
+    })
+    const authProvider = storedMcpOAuthProvider(server.mcpUrl, store)
+    assert.ok(authProvider)
+    const client = new Client({ name: 'test', version: '0' }, { capabilities: {} })
+    await client.connect(
+      asProtocolTransport(
+        new StreamableHTTPClientTransport(new URL(server.mcpUrl), { authProvider }),
+      ),
+    )
+    try {
+      // Connected and working; then the token expires and refresh is refused.
+      server.validTokens.clear()
+      server.refreshAccepted = false
+      const failure = await client.callTool({ name: 'whoami', arguments: {} }).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      assert.ok(isMcpSignInRequiredError(failure), String(failure))
+    } finally {
+      await client.close()
     }
   })
 })

@@ -389,6 +389,7 @@ import { signInMcpServer, signOutMcpServer } from '../services/mcp/mcp-oauth.ts'
 import {
   getMcpServerStatuses,
   getMcpSignInTarget,
+  onMcpStatusesChanged,
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
@@ -3233,6 +3234,11 @@ export function registerAllHandlers(
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status-changed', statuses)
     return statuses
+  })
+  // Status changes the registry makes on its own (a sign-in refused while a
+  // server was connected) reach Settings the same way a reload's do.
+  onMcpStatusesChanged((statuses) => {
+    if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
   })
   // One browser sign-in per server at a time; starting another cancels the first.
   const mcpSignIns = new Map<string, AbortController>()

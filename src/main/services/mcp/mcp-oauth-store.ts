@@ -77,6 +77,8 @@ export function readMcpOAuthRecord(
   serverUrl: string,
   dependencies: McpOAuthStoreDependencies = defaultDependencies,
 ): McpOAuthRecord | null {
+  // A config can name a URL that does not parse; it simply has no sign-in.
+  if (!URL.canParse(serverUrl)) return null
   const stored = storedSecretSchema.safeParse(dependencies.read(settingKey(serverUrl)))
   if (!stored.success) return null
   const cipher = dependencies.getCipher()

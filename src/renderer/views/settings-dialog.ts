@@ -4600,6 +4600,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  // Servers change state outside this dialog's own actions — they finish
+  // connecting after boot, or a sign-in is refused mid-session — so the list
+  // follows the main process rather than only the results of its own calls.
+  api.mcp.onStatusChanged((statuses) => {
+    renderMcpServers(statuses)
+  })
+
   async function refreshMcpServers(): Promise<void> {
     try {
       renderMcpServers(await api.mcp.list())

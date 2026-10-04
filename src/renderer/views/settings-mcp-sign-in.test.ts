@@ -36,17 +36,24 @@ interface SignInCalls {
   signOut: string[]
   /** Settle the pending `signIn` call. */
   finish: (result: McpServerStatus[] | Error) => void
+  /** Push statuses as the main process does on `mcp:status-changed`. */
+  pushStatuses: (statuses: McpServerStatus[]) => void
 }
 
 function stubApi(servers: McpServerStatus[]): { api: ApiClient; calls: SignInCalls } {
   const base = createFakeApi()
   let current = servers
   let settle: ((result: McpServerStatus[] | Error) => void) | undefined
+  const statusHandlers: ((statuses: McpServerStatus[]) => void)[] = []
   const calls: SignInCalls = {
     signIn: [],
     cancel: [],
     signOut: [],
     finish: (result) => settle?.(result),
+    pushStatuses: (statuses) => {
+      current = statuses
+      for (const handler of statusHandlers) handler(statuses)
+    },
   }
   const api: ApiClient = {
     ...base,
@@ -55,6 +62,10 @@ function stubApi(servers: McpServerStatus[]): { api: ApiClient; calls: SignInCal
       list: () => Promise.resolve(current),
       listCurated: () => Promise.resolve([]),
       listDeclared: () => Promise.resolve([]),
+      onStatusChanged: (handler) => {
+        statusHandlers.push(handler)
+        return () => undefined
+      },
       signIn: (name): Promise<McpServerStatus[]> => {
         calls.signIn.push(name)
         return new Promise((resolve, reject) => {
@@ -182,5 +193,12 @@ describe('settings → MCP server sign-in', () => {
   it('offers no sign-in control for servers that do not use OAuth', async () => {
     await openMcp([{ ...remote, transport: 'stdio' }])
     assert.equal(row().querySelector('.mcp-auth-btn'), null)
+  })
+  it('offers Sign in when the main process reports a refused sign-in mid-session', async () => {
+    const calls = await openMcp([signedIn])
+    assert.equal(authButton().textContent, 'Sign out')
+    calls.pushStatuses([needsSignIn])
+    assert.equal(authButton().textContent, 'Sign in')
+    assert.match(row().querySelector('.mcp-server-summary')?.textContent ?? '', /sign-in required/)
   })
 })
