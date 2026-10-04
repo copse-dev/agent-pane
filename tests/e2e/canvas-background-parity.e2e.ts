@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   E2E_SCREENSHOT_DIR,
@@ -332,7 +332,7 @@ describe('canvas background parity', () => {
     process.env.OPENAI_API_KEY = ''
 
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       model: 'claude-sonnet-4-6',
       mcpUiCanvasEnabled: true,
       theme: 'dark',
