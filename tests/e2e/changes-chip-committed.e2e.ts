@@ -8,15 +8,18 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('Changes chip includes committed branch work', () => {
   let root = ''
+  let previousMockBranch: string | undefined
 
   function git(...args: string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   }
 
   before(async () => {
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
     resetUserData()
     root = mkdtempSync(join(tmpdir(), 'copse-committed-chip-'))
     git('init', '-q', '-b', 'main')
@@ -35,16 +38,27 @@ describe('Changes chip includes committed branch work', () => {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
     resetUserData()
     if (root) rmSync(root, { recursive: true, force: true })
   })
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    // This turn reviews existing feature work; choose its base through the real picker.
+    await $('.branch-picker-trigger').click()
+    await $('.branch-picker-filter').setValue('feature')
+    const feature = $('.branch-picker-option')
+    await feature.waitForDisplayed({ timeout: 10_000 })
+    await expect(feature.$('.branch-picker-option-label')).toHaveText('feature')
+    await feature.click()
+    await expect($('.branch-picker-label')).toHaveText('feature')
+    assert.equal(git('branch', '--show-current'), 'feature')
     await prepareMockTurn('Review the committed change.', [
       { text: 'The committed change replaces one line with two in example.txt.' },
     ])

@@ -2,7 +2,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
 import { assertNoErrorToasts, collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
-import { resetUserData } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -13,7 +13,7 @@ describe('checkup skill', () => {
     // onboardingCompleted:false (or missing settings) cannot leave the wizard
     // overlay intercepting the composer submit click.
     resetUserData()
-    await seedProjectConfig(process.cwd(), {
+    await seedProjectConfig(seedStableWorkspace(), {
       projectId: 'checkup-skill-project',
       threadId: 'checkup-skill-thread',
       title: 'Run Copse checkup',

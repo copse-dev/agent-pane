@@ -1,7 +1,7 @@
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -10,7 +10,7 @@ const PROMPT = 'Inspect the workspace root using the available file tools.'
 describe('DeepSeek DSML text tool-call recovery', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-deepseek-dsml-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-deepseek-dsml-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

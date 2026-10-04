@@ -1824,7 +1824,6 @@ export function mountInputBar(
     if (!projectId || !thread) return
     const choice = checkoutChoice(id)
     const model = thread.model ?? store.getState().settings?.model
-    const baseBranch = branchControl.pendingBaseBranch(id)
     // A follow-up to the container (A14): a continuation run, not a turn of
     // the thread's own agent. Prose only — the guest gets no attachments.
     if (!targetSelect.hidden && targetSelect.value === 'container') {
@@ -1833,6 +1832,13 @@ export function mountInputBar(
       if (started) updateState()
       return
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
+    // The footer refresh is supplementary and may still be loading. Capture this
+    // owner's branch decision now and observe errors even on early-return paths;
+    // checkout awaits it before moving HEAD or creating a worktree.
+    const baseBranchResult = requiresCheckoutPreparation
+      ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)])
+      : null
     // Start workspace-scoped lookups while this submission still owns the
     // visible project. allSettled also observes failures on early-return paths.
     const invocationSources = Promise.allSettled([api.skills.list(), api.agents.list()])
@@ -1849,7 +1855,6 @@ export function mountInputBar(
     // carry gitBranch: validate that contract, but still read prompt state after
     // checkout because the transaction can move HEAD. Established threads cannot
     // move checkout here, so start their two independent Git reads together.
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
     const prefetchedGitState = requiresCheckoutPreparation
       ? null
       : await Promise.allSettled([
@@ -2011,6 +2016,9 @@ export function mountInputBar(
       checkoutPreparations.add(id)
       updateCheckoutControl()
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : undefined
+        if (branchDecision?.status === 'rejected') throw branchDecision.reason
+        const baseBranch = branchDecision?.status === 'fulfilled' ? branchDecision.value : undefined
         const prepared = await api.agent.prepareCheckout(
           projectId,
           id,
