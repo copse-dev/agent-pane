@@ -19,12 +19,12 @@ export const settingsUpdateSchema = z
 export function getSettingsSnapshot(): SettingsSnapshot {
   // The schema registry is the readable allowlist; never enumerate the store,
   // which contains encrypted credentials and other private host state.
-  const values = Object.fromEntries(
-    registeredSettingKeys()
-      .filter((key) => !isSecretSettingKey(key))
-      .map((key) => [key, getSetting(key, null)])
-      .filter(([, value]) => value !== null),
-  )
+  const values: Record<string, unknown> = {}
+  for (const key of registeredSettingKeys()) {
+    if (isSecretSettingKey(key)) continue
+    const value = getSetting(key, null)
+    if (value !== null) values[key] = value
+  }
   return settingsSnapshotSchema.parse(values)
 }
 

@@ -120,9 +120,11 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
-  return runSerialized('settings:transaction', () => {
-    settings.set(key, value)
-  })
+  // Legacy fixture setup seeds synchronously, including callers that do not
+  // await this resolved promise. Read-modify-write operations and batches below
+  // still share a queue to exercise their composition.
+  settings.set(key, value)
+  return Promise.resolve()
 }
 
 export function setSettings(
@@ -132,13 +134,12 @@ export function setSettings(
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
-  const parsed: Record<string, unknown> = Object.fromEntries(
-    Object.entries(values).map(([key, value]) => {
-      const schema = getSettingSchema(key)
-      if (!schema) throw new Error(`Unregistered setting: ${key}`)
-      return [key, schema.parse(value)]
-    }),
-  )
+  const parsed: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const schema = getSettingSchema(key)
+    if (!schema) throw new Error(`Unregistered setting: ${key}`)
+    parsed[key] = schema.parse(value)
+  }
   return runSerialized('settings:transaction', () => {
     if (roleAssignments)
       parsed['roleModels'] = getSettingSchema('roleModels')?.parse({

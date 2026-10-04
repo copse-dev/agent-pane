@@ -381,13 +381,12 @@ export function setSettings(
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
-  const parsed: Record<string, unknown> = Object.fromEntries(
-    Object.entries(values).map(([key, value]) => {
-      const schema = getSettingSchema(key)
-      if (!schema) throw new Error(`Unregistered setting: ${key}`)
-      return [key, schema.parse(value)]
-    }),
-  )
+  const parsed: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const schema = getSettingSchema(key)
+    if (!schema) throw new Error(`Unregistered setting: ${key}`)
+    parsed[key] = schema.parse(value)
+  }
   return runSerialized(SETTINGS_WRITE_QUEUE, () => {
     if (roleAssignments) {
       const current = getSettingSchema('roleModels')?.parse(getSetting('roleModels', {}))
