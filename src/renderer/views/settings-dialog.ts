@@ -1978,7 +1978,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const list = document.createElement('div')
     list.className = 'settings-nav-subheadings'
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue
+      // A hidden ancestor counts too: the cloud-agent auth cards are parked in a
+      // hidden template until the Providers panel moves them under a provider.
+      if (block.closest('[hidden]')) continue
       const label = block.querySelector('legend')?.textContent.trim()
       if (!label) continue
       const btn = document.createElement('button')

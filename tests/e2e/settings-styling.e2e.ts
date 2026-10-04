@@ -122,6 +122,14 @@ describe('settings styling', function () {
     assert.equal(detectBlurb.className, 'settings-fieldset-desc')
     assert.deepEqual(detectBlurb, providersBlurb, 'adjacent group blurbs share one style')
 
+    // The cloud-agent auth cards are parked in a hidden template until a provider
+    // chip adopts them, so they are not General groups of their own.
+    const generalSubheadings = await $$('.settings-nav-subheading').map((btn) => btn.getText())
+    assert.ok(generalSubheadings.includes('Providers'), 'General lists its Providers group')
+    for (const parked of ['Cursor authentication', 'Claude authentication']) {
+      assert.ok(!generalSubheadings.includes(parked), `${parked} is not a General group`)
+    }
+
     await saveElementScreenshot('#settings-dialog', 'settings-styling-general.png')
   })
 
