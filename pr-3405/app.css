@@ -7067,8 +7067,13 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   --footer-popup-min-width: 180px;
 }
 .footer-branch-host .branch-picker-filter {
-  min-width: min(180px, 100%);
+  min-width: 0;
   box-sizing: border-box;
+}
+.input-footer:not(.is-compact) .footer-branch-host .branch-picker-menu.is-footer-clamped {
+  left: auto;
+  right: 0;
+  position-try-fallbacks: none;
 }
 .context-wheel-popover[hidden] {
   display: none;
