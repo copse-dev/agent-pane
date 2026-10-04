@@ -44,7 +44,7 @@ on:
   # up the drafts the push path skips.
   #
   # `pull_request_target` — not `pull_request` — for the same two reasons as
-  # review-trigger.yml: it resolves this workflow from the default branch, and
+  # review-trigger.yml: it selects reviewer workflow code from the default branch, and
   # its token can write a check run where a fork's `pull_request` token cannot.
   # As there, this workflow NEVER checks out or executes pull request code. Its
   # only privileged operation is publishing a check run whose entire content is

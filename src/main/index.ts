@@ -1,5 +1,6 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -574,6 +575,7 @@ app
     const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
+    startStorageMaintenance()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
     // `syncReviewTools` reads it — otherwise the fallback fresh

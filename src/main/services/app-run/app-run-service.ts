@@ -1,3 +1,4 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { z } from 'zod'
@@ -44,6 +45,7 @@ interface ResolvedApp {
   driver: AppRunDriver
 }
 interface LiveOperation {
+  releaseStorage?: () => Promise<void>
   operation: AppRunOperation
   root: string
   driver: AppRunDriver
@@ -52,6 +54,7 @@ interface LiveOperation {
   deviceKey: string | null
 }
 export interface AppRunServiceDependencies {
+  holdStorage?: () => Promise<() => Promise<void>>
   drivers?: Record<AppRunPlatform, AppRunDriver>
   resolveRoot?: (owner: AppRunOwner) => Promise<string>
   present?: (id: string, owner: AppRunOwner) => Promise<void>
@@ -66,6 +69,7 @@ async function resolveRoot(owner: AppRunOwner): Promise<string> {
   return realpath(root)
 }
 export class AppRunService {
+  private readonly holdStorage: () => Promise<() => Promise<void>>
   private readonly drivers: Record<AppRunPlatform, AppRunDriver>
   private readonly resolveRoot: (owner: AppRunOwner) => Promise<string>
   private readonly present: (id: string, owner: AppRunOwner) => Promise<void>
@@ -73,6 +77,9 @@ export class AppRunService {
   private readonly discoveryControllers = new Map<string, AbortController>()
   private readonly live = new Map<string, LiveOperation>()
   constructor(dependencies: AppRunServiceDependencies = {}) {
+    this.holdStorage =
+      dependencies.holdStorage ??
+      ((): Promise<() => Promise<void>> => storageCleanup().hold('builds'))
     this.drivers = dependencies.drivers ?? {
       apple: new AppleAppDriver(),
       android: new AndroidAppDriver(),
@@ -306,6 +313,8 @@ export class AppRunService {
   }
   private async perform(entry: LiveOperation, run: () => Promise<void>): Promise<void> {
     try {
+      entry.releaseStorage ??= await this.holdStorage()
+      entry.controller.signal.throwIfAborted()
       await run()
     } catch (error) {
       entry.operation.stage = entry.controller.signal.aborted ? 'cancelled' : 'failed'
@@ -313,7 +322,10 @@ export class AppRunService {
     } finally {
       entry.operation.updatedAt = Date.now()
       await this.save(entry.operation).catch(() => {})
-      if (entry.operation.stage !== 'running') this.live.delete(entry.operation.id)
+      if (entry.operation.stage !== 'running') {
+        await entry.releaseStorage?.()
+        this.live.delete(entry.operation.id)
+      }
     }
   }
   async cancel(owner: AppRunOwner, id: string): Promise<void> {
@@ -336,6 +348,8 @@ export class AppRunService {
     )
       throw new Error('No running app with that ID belongs to this context.')
     await entry.driver.stop(root, entry.operation.appSessionId, AbortSignal.timeout(20_000))
+    await entry.releaseStorage?.()
+    delete entry.releaseStorage
     entry.operation.stage = 'stopped'
     entry.operation.appSessionId = null
     entry.operation.updatedAt = Date.now()

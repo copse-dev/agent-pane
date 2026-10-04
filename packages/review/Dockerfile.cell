@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # the host's read-only, exact-lockfile pnpm store; the runtime itself has no
 # network interface. Keep the toolchain broad enough for Copse's focused unit
 # tests without carrying an agent, provider credential, or forge client.
-RUN apt-get update \
+RUN --mount=type=secret,id=proxy_ca apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates \
       cargo \
@@ -21,6 +21,7 @@ RUN apt-get update \
       ripgrep \
       socat \
     && rm -rf /var/lib/apt/lists/* \
+    && if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
     && npm install -g --no-audit --no-fund "pnpm@${PNPM_VERSION}" \
     && npm cache clean --force
 

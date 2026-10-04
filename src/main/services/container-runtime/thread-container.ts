@@ -1,3 +1,4 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import type { ThreadContainerRunSpec } from './run-spec.ts'
 import {
   containerBuildCommand,
@@ -1830,6 +1831,16 @@ const STOPPED_BEFORE_START = 'Stopped by you before the container started'
 
 /** Provision → carry in → run → carry out → record → tear down. */
 export async function runThreadInContainer(
+  request: ThreadContainerRequest,
+  options: RunThreadOptions = {},
+  dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },
+): Promise<ThreadContainerRecord> {
+  return storageCleanup().use('runs', () =>
+    runThreadInContainerLeased(request, options, dependencies),
+  )
+}
+
+async function runThreadInContainerLeased(
   request: ThreadContainerRequest,
   options: RunThreadOptions = {},
   dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },

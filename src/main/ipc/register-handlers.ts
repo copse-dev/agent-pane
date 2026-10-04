@@ -1,3 +1,6 @@
+import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { storageCleanup } from '../services/storage-cleanup.ts'
+import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
@@ -1757,6 +1760,18 @@ export function registerAllHandlers(
     const resolved = projectId ?? getActiveProjectId()
     if (!resolved) throw new Error('No project to export decisions for.')
     return exportDecisionLog(resolved)
+  })
+  ipcMain.handle('storage:maintenance', (event) => {
+    assertMainFrameSender(event, win)
+    return inspectStorageMaintenance()
+  })
+  ipcMain.handle('storage:cleanup', (event, area: unknown) => {
+    assertMainFrameSender(event, win)
+    return storageCleanup().clean(parseIpcArgs(storageAreaSchema, [area]))
+  })
+  ipcMain.handle('storage:retention', (event, policy: unknown) => {
+    assertMainFrameSender(event, win)
+    saveStorageRetention(parseIpcArgs(storageRetentionSchema, [policy]))
   })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)

@@ -859,6 +859,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      maintenance: () =>
+        resolved({
+          retention: { enabled: true, days: 30 },
+          areas: [
+            { area: 'runs', bytes: 0, entries: 0, busy: false },
+            { area: 'builds', bytes: 0, entries: 0, busy: false },
+          ],
+        }),
+      cleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
         storage.set(key, value)
