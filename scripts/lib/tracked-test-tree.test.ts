@@ -80,6 +80,54 @@ describe('tracked test tree invariant', () => {
     })
   })
 
+  for (const committed of [false, true]) {
+    for (const content of ['', 'content\n']) {
+      it(`detects intent-to-add transitions with ${committed ? 'committed' : 'unborn'} HEAD and ${content ? 'nonempty' : 'empty'} content`, async () => {
+        await fixture(async (root) => {
+          const path = 'intent\nwith-tab\t.ts'
+          await writeFile(join(root, path), content)
+          git(root, 'add', path)
+          if (committed)
+            git(
+              root,
+              '-c',
+              'user.name=Test',
+              '-c',
+              'user.email=test@example.com',
+              '-c',
+              'commit.gpgsign=false',
+              'commit',
+              '-qm',
+              'fixture',
+            )
+          const before = await captureTrackedTestTree(root)
+          git(root, 'rm', '--cached', path)
+          git(root, 'add', '-N', path)
+          const intent = await captureTrackedTestTree(root)
+          const expected = [`${JSON.stringify(path)} (index)`]
+          assert.deepEqual(changedTrackedTestFiles(before, intent), expected)
+          assert.deepEqual(changedTrackedTestFiles(intent, await captureTrackedTestTree(root)), [])
+          assert.deepEqual(changedTrackedTestFiles(before, intent, new Set([path])), expected)
+          for (const flag of ['assume-unchanged', 'skip-worktree']) {
+            git(root, 'update-index', `--${flag}`, path)
+            const flagged = await captureTrackedTestTree(root)
+            assert.deepEqual(changedTrackedTestFiles(intent, flagged), expected)
+            assert.deepEqual(
+              changedTrackedTestFiles(flagged, await captureTrackedTestTree(root)),
+              [],
+            )
+            git(root, 'update-index', `--no-${flag}`, path)
+          }
+          git(root, 'add', path)
+          assert.deepEqual(
+            changedTrackedTestFiles(intent, await captureTrackedTestTree(root)),
+            expected,
+          )
+        })
+      })
+    }
+  }
+
   for (const flag of ['assume-unchanged', 'skip-worktree']) {
     it(`detects setting and clearing ${flag} while preserving unchanged pre-existing flags`, async () => {
       await fixture(async (root) => {

@@ -46,6 +46,56 @@ function track(root: string): void {
 }
 
 describe('unit runner tracked tree enforcement', () => {
+  for (const failing of [false, true]) {
+    it(`fails an intent-to-add mutation while retaining ${failing ? 'failing' : 'passing'} test evidence`, async () => {
+      await fixture(async (root) => {
+        await writeFile(join(root, 'generated.ts'), '')
+        await writeFile(
+          join(root, 'src/mutate.test.ts'),
+          `import { spawnSync } from 'node:child_process';
+import { it } from 'node:test';
+import assert from 'node:assert/strict';
+it('intent mutation evidence', () => {
+  assert.equal(spawnSync('git', ['rm', '--cached', 'generated.ts']).status, 0);
+  assert.equal(spawnSync('git', ['add', '-N', 'generated.ts']).status, 0);
+  ${failing ? "assert.fail('original failure evidence');" : ''}
+});\n`,
+        )
+        track(root)
+        const committed = spawnSync(
+          'git',
+          [
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.com',
+            '-c',
+            'commit.gpgsign=false',
+            'commit',
+            '-qm',
+            'fixture',
+          ],
+          { cwd: root, encoding: 'utf8' },
+        )
+        assert.equal(committed.status, 0, committed.stderr)
+        const result = invoke(root)
+        assert.equal(result.status, 1, result.stdout + result.stderr)
+        assert.match(result.stderr, /"generated\.ts" \(index\)/)
+        assert.equal(await readFile(join(root, 'generated.ts'), 'utf8'), '')
+        const tap = await readFile(join(root, 'unit-tests.tap'), 'utf8')
+        assert.match(tap, failing ? /# fail 1/ : /# pass 1/)
+        if (failing) assert.match(tap, /original failure evidence/)
+        const intent = spawnSync(
+          'git',
+          ['diff', '--cached', '--name-only', '--ita-invisible-in-index'],
+          { cwd: root, encoding: 'utf8' },
+        )
+        assert.equal(intent.status, 0, intent.stderr)
+        assert.match(intent.stdout, /generated\.ts/)
+      })
+    })
+  }
+
   for (const flag of ['assume-unchanged', 'skip-worktree']) {
     it(`fails a passing test that sets ${flag} without changing tracked content`, async () => {
       await fixture(async (root) => {

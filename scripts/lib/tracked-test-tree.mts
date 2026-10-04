@@ -19,6 +19,42 @@ function git(root: string, args: string[]): string {
   return result.stdout
 }
 
+/** Git's stage listing omits intent-to-add, including for empty blobs. */
+function intentToAddPaths(root: string): Set<string> {
+  function cachedDiff(visibility: string): Map<string, string> {
+    const fields = git(root, [
+      'diff',
+      '--cached',
+      '--raw',
+      '--no-abbrev',
+      '--no-renames',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-relative',
+      '-z',
+      visibility,
+    ]).split('\0')
+    const records = new Map<string, string>()
+    for (let offset = 0; offset < fields.length - 1; offset += 2) {
+      const record = fields[offset]
+      const path = fields[offset + 1]
+      if (!record?.startsWith(':') || !path)
+        throw new Error('[run-tests] malformed Git cached diff entry')
+      records.set(path, record)
+    }
+    return records
+  }
+  // Only intent-to-add entries differ between these views. Compare raw records,
+  // since a nonempty committed path appears in both views with different state.
+  const visible = cachedDiff('--ita-visible-in-index')
+  const invisible = cachedDiff('--ita-invisible-in-index')
+  return new Set(
+    [...new Set([...visible.keys(), ...invisible.keys()])].filter(
+      (path) => visible.get(path) !== invisible.get(path),
+    ),
+  )
+}
+
 async function worktreeContent(root: string, path: string, gitlink: boolean): Promise<string> {
   try {
     const file = join(root, path)
@@ -57,6 +93,7 @@ export async function captureTrackedTestTree(root: string): Promise<TrackedTestT
     stages.push(entry.slice(0, separator))
     indexed.set(path, stages)
   }
+  const intent = intentToAddPaths(root)
   const snapshot: TrackedTestTree = new Map()
   const entries = [...indexed]
   // Bound reads while retaining deterministic Git index order. Serial reads
@@ -75,7 +112,10 @@ export async function captureTrackedTestTree(root: string): Promise<TrackedTestT
     for (const [index, [path, stages]] of batch.entries()) {
       const worktree = contents[index]
       if (worktree === undefined) throw new Error('[run-tests] incomplete tracked-file capture')
-      snapshot.set(path, { index: stages.join('\n'), worktree })
+      snapshot.set(path, {
+        index: `${stages.join('\n')}${intent.has(path) ? '\nintent-to-add' : ''}`,
+        worktree,
+      })
     }
   }
   return snapshot
