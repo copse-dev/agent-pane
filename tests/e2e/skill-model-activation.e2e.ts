@@ -27,7 +27,9 @@ describe('model-selected skill activation', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('loads a selected skill without a slash command and visibly attributes and deduplicates it', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -62,7 +64,7 @@ describe('model-selected skill activation', () => {
     const rollup = $('.tool-card-rollup')
     await rollup.waitForDisplayed({ timeout: 10_000 })
     if (!(await rollup.getProperty('open'))) await rollup.$('summary.tool-card-header').click()
-    const cards = await $$('.tool-card[data-tool-id]')
+    const cards = await $$('.tool-card[data-tool-id]').getElements()
     const first = cards[0]
     if (!first) throw new Error('No activation card rendered')
     await expect(first.$('.tool-name')).toHaveText('Activated skill style-guide')
@@ -74,8 +76,10 @@ describe('model-selected skill activation', () => {
     await expect(first).toHaveText('Context estimate: approximately', { containing: true })
     await expect(first).not.toHaveText('UNRELATED SKILL BODY', { containing: true })
     await expect(first).not.toHaveText('MANUAL ONLY BODY', { containing: true })
+    const toolId = await first.getAttribute('data-tool-id')
+    if (!toolId) throw new Error('Activation card is missing its tool id')
     await saveElementScreenshot(
-      `.tool-card[data-tool-id="${await first.getAttribute('data-tool-id')}"]`,
+      `.tool-card[data-tool-id="${toolId}"]`,
       'skill-model-activation.png',
     )
   })
