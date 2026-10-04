@@ -161,6 +161,29 @@ export function mountFooterBranchStatus(
    */
   const baseBranchByThread = new Map<string, string>()
 
+  const footer = host.closest<HTMLElement>('.input-footer')
+  let popupFrame = 0
+  function schedulePopupBoundary(): void {
+    if (!footer) return
+    cancelAnimationFrame(popupFrame)
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0
+      if (!open) return
+      const boundary = footer.getBoundingClientRect()
+      const anchor = trigger.getBoundingClientRect()
+      const width = menu.getBoundingClientRect().width
+      // Measure the preferred position, never the already-clamped menu's left:
+      // otherwise moving it back inside would immediately toggle the clamp off.
+      menu.classList.toggle('is-footer-clamped', anchor.left + width > boundary.right)
+    })
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null
+  if (footer) {
+    popupObserver?.observe(footer)
+    popupObserver?.observe(trigger)
+    popupObserver?.observe(menu)
+  }
+
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
   }
@@ -226,6 +249,7 @@ export function mountFooterBranchStatus(
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     filterInput.setAttribute('aria-expanded', String(next))
+    schedulePopupBoundary()
     if (next) {
       menu.removeAttribute('hidden')
     } else {
@@ -566,6 +590,7 @@ export function mountFooterBranchStatus(
     const active = list.querySelector<HTMLElement>('.branch-picker-option.is-active')
     if (open && active) filterInput.setAttribute('aria-activedescendant', active.id)
     scrollActiveRowIntoView()
+    schedulePopupBoundary()
   }
 
   /**
@@ -821,6 +846,8 @@ export function mountFooterBranchStatus(
     },
     destroy: (): void => {
       refreshToken += 1
+      cancelAnimationFrame(popupFrame)
+      popupObserver?.disconnect()
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubs.forEach((u) => {
         u()

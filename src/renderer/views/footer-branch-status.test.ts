@@ -1181,3 +1181,113 @@ describe('footer branch status', () => {
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/external')
   })
 })
+
+it('clamps the preferred popup to the footer without oscillating and releases observers', async () => {
+  const originalResizeObserver = globalThis.ResizeObserver
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+  const frames = new Map<number, FrameRequestCallback>()
+  const observers: TestResizeObserver[] = []
+  let nextFrame = 0
+  class TestResizeObserver {
+    disconnected = false
+    readonly callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback
+      observers.push(this)
+    }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {
+      this.disconnected = true
+    }
+    resize(): void {
+      this.callback([], this)
+    }
+  }
+  globalThis.ResizeObserver = TestResizeObserver
+  globalThis.requestAnimationFrame = (callback): number => {
+    const id = ++nextFrame
+    frames.set(id, callback)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id): void => {
+    frames.delete(id)
+  }
+  const flush = (): void => {
+    const pending = [...frames.values()]
+    frames.clear()
+    pending.forEach((callback) => {
+      callback(0)
+    })
+  }
+  const footer = document.createElement('div')
+  footer.className = 'input-footer'
+  const host = document.createElement('div')
+  host.className = 'footer-branch-host'
+  footer.append(host)
+  document.body.append(footer)
+  const store = createStore({
+    workspaceRoot: '/repo',
+    activeProjectId: 'project-1',
+    activeThreadId: 'thread-1',
+    threads: [thread()],
+  })
+  let binding: ReturnType<typeof mountFooterBranchStatus> | undefined
+  try {
+    binding = mountFooterBranchStatus(host, store, createApi({ currentBranch: 'work', pr: null }))
+    const menu = qsRequired(host, '.branch-picker-menu')
+    const trigger = qsRequired(host, '.branch-picker-trigger')
+    let footerRight = 500
+    let menuWidth = 180
+    let menuLeft = 320
+    Object.defineProperty(footer, 'getBoundingClientRect', {
+      value: () => ({ left: 0, right: footerRight }),
+    })
+    Object.defineProperty(trigger, 'getBoundingClientRect', { value: () => ({ left: 320 }) })
+    Object.defineProperty(menu, 'getBoundingClientRect', {
+      value: () => ({ left: menuLeft, width: menuWidth }),
+    })
+    await settle()
+    await openBranchMenu(host)
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), false)
+    menuWidth = 300
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    // Moving the popup inside must not undo the clamp on the next measurement.
+    menuLeft = 200
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    menuWidth = 100
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), false)
+    footerRight = 360
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    binding.destroy()
+    binding = undefined
+    assert.equal(frames.size, 0)
+    assert.ok(observers.every((observer) => observer.disconnected))
+  } finally {
+    binding?.destroy()
+    globalThis.ResizeObserver = originalResizeObserver
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+  }
+})
