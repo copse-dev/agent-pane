@@ -87,7 +87,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 6px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--titlebar-sidebar-btn-width);
+  padding: 3px 0;
   color: var(--text-secondary);
 }
 .titlebar-sidebar-btn[aria-pressed='true'] {

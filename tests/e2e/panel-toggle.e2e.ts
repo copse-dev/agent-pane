@@ -215,7 +215,7 @@ describe('right panel toggle and shortcuts', () => {
     await pressPanelChord({ ctrl: true, key: 'j' }, 'composer')
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
       timeout: 2_000,
-      timeoutMsg: 'expected pane-files to stay hidden when Ctrl+B is pressed in composer',
+      timeoutMsg: 'expected pane-files to stay hidden when Ctrl+J is pressed in composer',
     })
   })
 })

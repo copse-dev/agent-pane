@@ -10,6 +10,7 @@ import { mountPanelModeControls } from './panel-mode-controls.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { bindTitlebarCompactLayout } from './titlebar-compact.ts'
 import { toggleProjectsPane } from '../controller/panels.ts'
+import { isMacPlatform } from './keyboard-shortcuts-dialog.ts'
 
 const PROJECTS_COLLAPSED_CLASS = 'is-projects-collapsed'
 
@@ -49,7 +50,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     const open = store.getState().projectsPaneOpen
     document.getElementById('body')?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open)
     sidebarBtn.setAttribute('aria-pressed', String(open))
-    setTooltip(sidebarBtn, open ? 'Hide sidebar (⌘B)' : 'Show sidebar (⌘B)')
+    const chord = isMacPlatform() ? '⌘B' : 'Ctrl+B'
+    setTooltip(sidebarBtn, `${open ? 'Hide' : 'Show'} sidebar (${chord})`)
   }
   syncSidebar()
   leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch)
