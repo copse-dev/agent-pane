@@ -3,6 +3,7 @@ import type {
   ContextBreakdown,
   ContextSnapshot,
   Message,
+  SubagentSession,
   ThreadUsage,
   ToolCall,
 } from '@shared/types'
@@ -52,6 +53,63 @@ function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals
       collectSubagentUsage(message.toolCalls, totals)
     }
   }
+}
+
+export interface SubagentRunSummary {
+  /** "Explore · find call sites" — the kind (or custom agent name) plus the prompt's first line. */
+  label: string
+  /** Model the run used, when recorded. */
+  model: string | undefined
+  status: SubagentSession['status']
+  /** Absent while the run has not reported usage yet. */
+  usage: { inputTokens: number; outputTokens: number } | undefined
+}
+
+const SUBAGENT_KIND_LABEL: Record<SubagentSession['kind'], string> = {
+  explore: 'Explore',
+  investigate_ci: 'Investigate CI',
+  delegate: 'Delegate',
+  custom: 'Custom agent',
+  container: 'Container run',
+}
+const RUN_PROMPT_MAX_CHARS = 36
+
+function subagentRunLabel(session: SubagentSession): string {
+  const kind =
+    session.kind === 'custom' && session.agentName
+      ? session.agentName
+      : SUBAGENT_KIND_LABEL[session.kind]
+  const firstLine = session.prompt.trim().split('\n')[0] ?? ''
+  if (!firstLine) return kind
+  const prompt =
+    firstLine.length > RUN_PROMPT_MAX_CHARS
+      ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}…`
+      : firstLine
+  return `${kind} · ${prompt}`
+}
+
+function collectSubagentRuns(toolCalls: ToolCall[], runs: SubagentRunSummary[]): void {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent
+    // Container runs are the thread's own turn, not delegated work (see collectSubagentUsage).
+    if (!session || session.kind === 'container') continue
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage
+        ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens }
+        : undefined,
+    })
+    for (const message of session.messages) collectSubagentRuns(message.toolCalls, runs)
+  }
+}
+
+/** Every delegated run in a thread, in transcript order and at every nesting depth. */
+export function listSubagentRuns(messages: Message[]): SubagentRunSummary[] {
+  const runs: SubagentRunSummary[] = []
+  for (const message of messages) collectSubagentRuns(message.toolCalls, runs)
+  return runs
 }
 
 /**

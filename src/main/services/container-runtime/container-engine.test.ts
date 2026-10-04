@@ -1,11 +1,19 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
   containerBuildCommand,
+  containerEngineInvocation,
+  runLockedContainerBuild,
   dockerDaemonReachable,
   engineCommand,
   reachableThreadContainerEngines,
   resolveThreadContainerEngine,
+  runContainerImageBuild,
   type CommandProbeResult,
   type ContainerEngineProbe,
 } from './container-engine.ts'
@@ -13,6 +21,145 @@ import {
 const DOCKER = 'docker info --format {{.ServerVersion}}'
 const APPLE_VERSION = 'container --version'
 const APPLE_STATUS = 'container system status'
+
+describe('container image build concurrency', () => {
+  it('locks only Apple builds, keeping one per-user inode and bounding the wait', () => {
+    const args = ['build', '--tag', 'worker:test', '/context']
+    const invocation = containerEngineInvocation('apple', args)
+    assert.equal(invocation.command, '/usr/bin/lockf')
+    assert.deepEqual(invocation.args.slice(0, 3), ['-k', '-t', '900'])
+    assert.match(
+      invocation.args[3] ?? '',
+      /^\/private\/tmp\/copse-apple-builder-(?:\d+|unknown)\.lock$/,
+    )
+    assert.deepEqual(invocation.args.slice(4), ['container', ...args])
+    assert.deepEqual(containerEngineInvocation('docker', args), { command: 'docker', args })
+    assert.deepEqual(containerEngineInvocation('apple', ['start', 'worker']), {
+      command: 'container',
+      args: ['start', 'worker'],
+    })
+  })
+
+  it(
+    'serializes separate macOS processes and releases a failed command’s lock',
+    {
+      skip: process.platform !== 'darwin',
+      timeout: 10_000,
+    },
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'copse-build-lock-test-'))
+      const lock = join(directory, 'builder.lock')
+      const events = join(directory, 'events.txt')
+      const invocation = containerEngineInvocation('apple', ['build'])
+      const execute = promisify(execFile)
+      // Inject the native command and lock-file fixtures at the subprocess
+      // boundary. Each call is its own process, with no JS queue protecting it.
+      const run = (name: string): Promise<{ stdout: string; stderr: string }> =>
+        execute(invocation.command, [
+          ...invocation.args.slice(0, 3),
+          lock,
+          process.execPath,
+          '-e',
+          `const fs = require('node:fs');
+         fs.appendFileSync(process.argv[1], 'start:' + process.argv[2] + '\\n');
+         if (process.argv[2] === 'fail') process.exit(42);
+         setTimeout(() => fs.appendFileSync(process.argv[1], 'end:' + process.argv[2] + '\\n'), 50);`,
+          events,
+          name,
+        ])
+      try {
+        await assert.rejects(run('fail'), { code: 42 })
+        await Promise.all([run('a'), run('b')])
+        const rows = readFileSync(events, 'utf8').trim().split('\n')
+        assert.equal(rows[0], 'start:fail')
+        assert.equal(rows.length, 5)
+        assert.equal(rows[2], rows[1]?.replace('start:', 'end:'))
+        assert.equal(rows[4], rows[3]?.replace('start:', 'end:'))
+        assert.notEqual(rows[1], rows[3])
+        assert.equal(existsSync(lock), true)
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it(
+    'kills the locked build child at its deadline before a new caller acquires the lock',
+    { skip: process.platform !== 'darwin', timeout: 10_000 },
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'copse-build-deadline-test-'))
+      const lock = join(directory, 'builder.lock')
+      const events = join(directory, 'events.txt')
+      const invocation = containerEngineInvocation('apple', ['build'])
+      try {
+        await assert.rejects(
+          runLockedContainerBuild(
+            {
+              command: invocation.command,
+              args: [
+                ...invocation.args.slice(0, 3),
+                lock,
+                process.execPath,
+                '-e',
+                `const fs = require('node:fs');
+                 fs.appendFileSync(process.argv[1], 'start\\n');
+                 setTimeout(() => fs.appendFileSync(process.argv[1], 'orphan-completed\\n'), 1800);`,
+                events,
+              ],
+            },
+            { timeoutMs: 1200 },
+          ),
+          /exceeded its deadline/,
+        )
+        await runLockedContainerBuild(
+          {
+            command: invocation.command,
+            args: [
+              ...invocation.args.slice(0, 3),
+              lock,
+              process.execPath,
+              '-e',
+              `require('node:fs').appendFileSync(process.argv[1], 'second\\n')`,
+              events,
+            ],
+          },
+          { timeoutMs: 1200 },
+        )
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        assert.deepEqual(readFileSync(events, 'utf8').trim().split('\n'), ['start', 'second'])
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('queues Apple builds, allows Docker through, and releases the queue after failure', async () => {
+    const events: string[] = []
+    let release = (): void => {}
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const first = runContainerImageBuild('apple', async () => {
+      events.push('first')
+      await blocked
+      throw new Error('first build failed')
+    })
+    // Attach the rejection handler before releasing the failed build.
+    const failed = assert.rejects(first, /first build failed/)
+    const second = runContainerImageBuild('apple', async () => {
+      events.push('second')
+      return 'built'
+    })
+    await runContainerImageBuild('docker', async () => {
+      events.push('docker')
+    })
+    assert.deepEqual(events, ['docker', 'first'])
+    release()
+    await failed
+    assert.equal(await second, 'built')
+    assert.deepEqual(events, ['docker', 'first', 'second'])
+  })
+})
 
 function probeMap(map: Record<string, boolean | string>): ContainerEngineProbe & {
   asked: string[]

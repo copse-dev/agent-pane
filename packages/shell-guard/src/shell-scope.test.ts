@@ -336,6 +336,28 @@ describe('analyzeShellCommand', () => {
     assert.ok(result.reasons.includes('heredoc script fed to an interpreter'))
   })
 
+  it('does not treat a read after a heredoc as the interpreter script operand', () => {
+    const heredoc = "python3 - <<'PY'\nopen('a.txt', 'w').write('x')\nPY"
+    for (const read of ['wc -l src/a.ts', 'sed -n 1,3p src/a.ts', 'cat src/a.mts']) {
+      const result = analyzeShellCommand(`${heredoc}\n${read}`, root)
+      assert.equal(result.verdict, 'ambiguous', read)
+      assert.deepEqual(result.reasons, ['heredoc script fed to an interpreter'], read)
+    }
+  })
+
+  it('still inspects commands and quoted arguments after a heredoc', () => {
+    const heredoc = "python3 - <<'PY'\nprint('safe')\nPY"
+    for (const command of [
+      'node ./build.js',
+      'node -e "console.log(1)"',
+      'curl https://example.com',
+      'cat /etc/passwd',
+      'printf "%s" "line one\nline two"; node ./build.js',
+    ]) {
+      assert.equal(analyzeShellCommand(`${heredoc}\n${command}`, root).verdict, 'external', command)
+    }
+  })
+
   it('analyzes the shell around a heredoc without treating source code as shell', () => {
     assert.equal(
       analyzeShellCommand("python3 <<'PY'\nprint('curl https://example.com ~/secret')\nPY", root)

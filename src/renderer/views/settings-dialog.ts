@@ -1654,7 +1654,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Detected settings',
+    legend: 'Detected API keys',
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
       void providersPanel.refresh()
@@ -1978,7 +1978,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const list = document.createElement('div')
     list.className = 'settings-nav-subheadings'
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue
+      // A hidden ancestor counts too: the cloud-agent auth cards are parked in a
+      // hidden template until the Providers panel moves them under a provider.
+      if (block.closest('[hidden]')) continue
       const label = block.querySelector('legend')?.textContent.trim()
       if (!label) continue
       const btn = document.createElement('button')

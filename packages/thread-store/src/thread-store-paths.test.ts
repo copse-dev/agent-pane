@@ -232,7 +232,7 @@ describe('thread-store paths', () => {
     assert.deepEqual(loaded?.messages, messages)
   })
 
-  it('writes plain ids to the same file names as before', async () => {
+  it('keeps plain message and subagent paths stable while tool blobs use their message slot', async () => {
     await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'a1-tc', 'sub1')]))
     const files = filesUnder(join(workspace, 'proj', 't1')).sort()
     for (const expected of [
@@ -241,10 +241,10 @@ describe('thread-store paths', () => {
       join('blobs', 'a1.acp-content.json'),
       join('blobs', 'a1-img-0.dataurl'),
       join('blobs', 'a1-attachment-0.txt'),
-      join('blobs', 'a1-tc.result.txt'),
-      join('blobs', 'a1-tc.args.json'),
-      join('blobs', 'a1-tc-img-0.dataurl'),
-      join('blobs', 'a1-tc.acp-content.json'),
+      join('blobs', 'a1.tool-0.result.txt'),
+      join('blobs', 'a1.tool-0.args.json'),
+      join('blobs', 'a1.tool-0-img-0.dataurl'),
+      join('blobs', 'a1.tool-0.acp-content.json'),
       join('subagents', 'sub1', 'events.jsonl'),
       join('subagents', 'sub1', 'messages', 'a1.md'),
     ]) {
@@ -262,20 +262,34 @@ describe('thread-store paths', () => {
     // Rewrite to the shape an older build left for a newline-bearing id.
     for (const suffix of ['.result.txt', '.args.json', '-img-0.dataurl', '.acp-content.json']) {
       renameSync(
-        join(dir, 'blobs', `legacyid${suffix}`),
+        join(dir, 'blobs', `a1.tool-0${suffix}`),
         join(dir, 'blobs', `${legacyId}${suffix}`),
       )
     }
     const spinePath = join(dir, 'events.jsonl')
     writeFileSync(
       spinePath,
-      readFileSync(spinePath, 'utf8').replaceAll('legacyid', JSON.stringify(legacyId).slice(1, -1)),
+      readFileSync(spinePath, 'utf8')
+        .replaceAll('a1.tool-0', JSON.stringify(legacyId).slice(1, -1))
+        .replaceAll('legacyid', JSON.stringify(legacyId).slice(1, -1)),
     )
     const [loaded] = await loadProjectThreads('proj')
     const toolCall = loaded?.messages[0]?.toolCalls[0]
     assert.ok(toolCall)
     assert.equal(toolCall.id, legacyId)
     assert.deepEqual(toolCall.args, { prompt: 'p'.repeat(4096) })
+  })
+
+  it('refuses a tool-result leaf symlink even when its external bytes match the spine hash', async () => {
+    await saveProjectThread('proj', thread('t1', [messageWithIds('a1', 'tc', 'sub1')]))
+    const blob = join(workspace, 'proj', 't1', 'blobs', 'a1.tool-0.result.txt')
+    const external = join(outside, 'private.txt')
+    const body = readFileSync(blob, 'utf8')
+    writeFileSync(external, body)
+    rmSync(blob)
+    symlinkSync(external, blob)
+    assert.deepEqual(await loadProjectThreads('proj'), [])
+    assert.equal(readFileSync(external, 'utf8'), body)
   })
 
   /** Save a one-message thread whose spine points the message body at `ref`. */

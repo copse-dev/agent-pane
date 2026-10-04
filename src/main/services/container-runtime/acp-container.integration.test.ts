@@ -75,17 +75,22 @@ describe(
 async function acpEndToEnd(engine: ThreadContainerEngine): Promise<void> {
   const baseImage = process.env['COPSE_WORKER_BASE_IMAGE']
   const buildNetwork = process.env['COPSE_WORKER_BUILD_NETWORK']
-  const workerBundle = await bundleThreadContainerWorker(
-    join(tmpdir(), 'copse-thread-container-worker.e2e.cjs'),
-  )
-  await buildWorkerImage({
-    engine,
-    image: IMAGE,
-    workerBundle,
-    acpAgents: [],
-    ...(baseImage ? { baseImage } : {}),
-    ...(buildNetwork ? { buildNetwork } : {}),
-  })
+  // Each test process owns its bundle: another esbuild writer must not
+  // replace it while buildWorkerImage fingerprints and copies it.
+  const bundleDir = mkdtempSync(join(tmpdir(), 'copse-acp-worker-e2e-'))
+  try {
+    const workerBundle = await bundleThreadContainerWorker(join(bundleDir, 'worker.cjs'))
+    await buildWorkerImage({
+      engine,
+      image: IMAGE,
+      workerBundle,
+      acpAgents: [],
+      ...(baseImage ? { baseImage } : {}),
+      ...(buildNetwork ? { buildNetwork } : {}),
+    })
+  } finally {
+    rmSync(bundleDir, { recursive: true, force: true })
+  }
 
   const repo = seedRepo()
   const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-acp-runtimes-'))

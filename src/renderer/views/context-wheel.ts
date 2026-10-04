@@ -1,8 +1,15 @@
 import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
+import type { FooterUsageTooltipModel } from '@shared/usage/footer-usage-tooltip.ts'
+import { appendUsageSections } from './footer-usage-popover.ts'
 
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** Fill ratio at which the ring turns amber: compaction is close. */
+export const CONTEXT_WARN_RATIO = 0.8
+/** Fill ratio at which the ring turns red: the next send may overflow the window. */
+export const CONTEXT_DANGER_RATIO = 0.95
 
 /** Distinct ring/swatch colour per context part. */
 const SEGMENT_COLORS: Record<ContextSegmentKey, string> = {
@@ -29,6 +36,12 @@ export interface ContextWheelOptions {
   breakdown?: ContextBreakdown | null
   /** Label shown when the live snapshot came from an external agent. */
   snapshotSource?: string | null
+  /**
+   * Token usage, cache, cost and subagent rows, shown beneath the context
+   * section of the same hover. With no context figures to draw, the wheel
+   * stays visible as an empty ring so usage still has an anchor.
+   */
+  usage?: FooterUsageTooltipModel | null
   /**
    * When true the multi-arc breakdown ring replaces the live snapshot fill
    * (pre-send / fresh threads). When false the measured snapshot ring stays,
@@ -78,23 +91,33 @@ export function createContextWheel(): {
   fill.setAttribute('transform', 'rotate(-90 8 8)')
   fill.classList.add('context-wheel-fill')
 
-  const label = document.createElement('span')
-  label.className = 'context-wheel-label'
-
   const popover = document.createElement('div')
   popover.className = 'context-wheel-popover'
   popover.hidden = true
 
   svg.append(track, segGroup, fill)
-  root.append(svg, label, popover)
+  root.append(svg, popover)
 
   let popoverActive = false
+  let currentUsage: FooterUsageTooltipModel | null = null
+
+  // Whether the pointer or focus is on the wheel. A re-render hides the popover
+  // while it rebuilds, so this is what puts it back: without it, anything that
+  // updates the footer while the hover is open — including the re-read the hover
+  // itself triggers — would close it under the user.
+  let engaged = false
 
   function showPopover(): void {
+    engaged = true
     if (popoverActive) popover.hidden = false
   }
   function hidePopover(): void {
+    engaged = false
     popover.hidden = true
+  }
+  /** Reopen after a re-render, if the pointer never left and there is still something to show. */
+  function restoreEngagedPopover(): void {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false
   }
   root.addEventListener('mouseenter', showPopover)
   root.addEventListener('mouseleave', hidePopover)
@@ -109,7 +132,6 @@ export function createContextWheel(): {
   function renderPopover(breakdown: ContextBreakdown): void {
     const { totalTokens, contextWindow, segments } = breakdown
     const pct = pctOf(totalTokens, contextWindow)
-    clearPopover()
     const header = document.createElement('div')
     header.className = 'context-wheel-popover-header'
     header.textContent = `Context · ${formatTokenCount(totalTokens)} / ${formatTokenCount(
@@ -135,6 +157,19 @@ export function createContextWheel(): {
     }
   }
 
+  /** Rebuild the popover: the context section (when there is one), then usage. */
+  function composePopover(drawContext: (() => void) | null): void {
+    clearPopover()
+    drawContext?.()
+    if (!currentUsage) return
+    if (drawContext) {
+      const divider = document.createElement('div')
+      divider.className = 'footer-usage-popover-divider'
+      popover.append(divider)
+    }
+    appendUsageSections(popover, currentUsage)
+  }
+
   function renderBreakdown(breakdown: ContextBreakdown): void {
     popoverActive = true
     root.hidden = false
@@ -144,7 +179,6 @@ export function createContextWheel(): {
 
     const { totalTokens, contextWindow, segments } = breakdown
     const pct = pctOf(totalTokens, contextWindow)
-    label.textContent = `${String(pct)}%`
 
     // When the draft already exceeds the window, fill the whole ring proportionally.
     const denom = Math.max(contextWindow, totalTokens, 1)
@@ -166,7 +200,9 @@ export function createContextWheel(): {
       offset += len
     }
 
-    renderPopover(breakdown)
+    composePopover(() => {
+      renderPopover(breakdown)
+    })
 
     const lines = segments.map(
       (s) =>
@@ -190,7 +226,7 @@ export function createContextWheel(): {
 
   function resetToSnapshotMode(): void {
     popoverActive = false
-    hidePopover()
+    popover.hidden = true
     root.classList.remove('has-breakdown')
     root.removeAttribute('tabindex')
     fill.style.display = ''
@@ -200,7 +236,6 @@ export function createContextWheel(): {
   /** Build an aggregate-only popover from a live snapshot, with an optional source note. */
   function renderSnapshotPopover(snapshot: ContextSnapshot, source?: string | null): void {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget)
-    clearPopover()
     const header = document.createElement('div')
     header.className = 'context-wheel-popover-header'
     header.textContent = `Context · ${formatTokenCount(
@@ -214,6 +249,12 @@ export function createContextWheel(): {
     popover.append(note)
   }
 
+  /** Colour the live fill as the window runs out: grey, amber, then red. */
+  function setFillState(ratio: number): void {
+    fill.classList.toggle('is-danger', ratio >= CONTEXT_DANGER_RATIO)
+    fill.classList.toggle('is-warn', ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO)
+  }
+
   function renderSnapshot(
     snapshot: ContextSnapshot,
     running: boolean,
@@ -221,7 +262,7 @@ export function createContextWheel(): {
   ): void {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio))
     const pct = Math.round(ratio * 100)
-    const visible = running || ratio > 0.01
+    const visible = running || ratio > 0.01 || currentUsage !== null
     root.hidden = !visible
     if (!visible) return
 
@@ -229,7 +270,7 @@ export function createContextWheel(): {
       'stroke-dasharray',
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
-    label.textContent = `${String(pct)}%`
+    setFillState(ratio)
     const contextLine = `Context: ${formatTokenCount(snapshot.conversationTokens)} / ${formatTokenCount(snapshot.conversationBudget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
     root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
@@ -245,7 +286,9 @@ export function createContextWheel(): {
     root.tabIndex = 0
     const breakdown = options?.breakdown
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      renderPopover(breakdown)
+      composePopover(() => {
+        renderPopover(breakdown)
+      })
       return
     }
     // No breakdown to show: the caller suppresses the pre-send estimate while a
@@ -254,7 +297,22 @@ export function createContextWheel(): {
     // ring is already drawing rather than leaving the wheel inert on hover — it
     // reads state we already hold, so it costs no estimate and no IPC. ACP
     // snapshots additionally name their source.
-    renderSnapshotPopover(snapshot, options?.snapshotSource)
+    composePopover(() => {
+      renderSnapshotPopover(snapshot, options?.snapshotSource)
+    })
+  }
+
+  /** No context figures yet, but usage exists: an empty ring anchors the usage hover. */
+  function renderUsageOnly(usage: FooterUsageTooltipModel, options?: ContextWheelOptions): void {
+    root.hidden = false
+    fill.setAttribute('stroke-dasharray', `0 ${String(CIRCUMFERENCE)}`)
+    setFillState(0)
+    popoverActive = true
+    root.tabIndex = 0
+    const usageLine = options?.usageLine?.trim() ?? usage.header
+    root.title = usageLine
+    root.setAttribute('aria-label', usageLine)
+    composePopover(null)
   }
 
   function update(
@@ -262,6 +320,7 @@ export function createContextWheel(): {
     running: boolean,
     options?: ContextWheelOptions,
   ): void {
+    currentUsage = options?.usage ?? null
     const breakdown = options?.breakdown
     if (
       !running &&
@@ -271,15 +330,20 @@ export function createContextWheel(): {
       breakdown.contextWindow > 0
     ) {
       renderBreakdown(breakdown)
+      root.classList.add('is-interactive')
+      restoreEngagedPopover()
       return
     }
 
     resetToSnapshotMode()
     if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true
-      return
+      if (currentUsage) renderUsageOnly(currentUsage, options)
+      else root.hidden = true
+    } else {
+      renderSnapshot(snapshot, running, options)
     }
-    renderSnapshot(snapshot, running, options)
+    root.classList.toggle('is-interactive', popoverActive && !root.hidden)
+    restoreEngagedPopover()
   }
 
   return { root, update }

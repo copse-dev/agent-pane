@@ -114,6 +114,10 @@ export interface DoctrineEvalArmSummary {
   solveRate: number
   doctrinePassRate: number
   tokensPerSolve: number | null
+  /** Mean model-issued tool calls per attempt (all attempts, solved or not). */
+  meanToolCalls: number
+  /** Mean output tokens per attempt; estimated when `tokensEstimated`. */
+  meanOutputTokens: number
   tokensEstimated: boolean
   inputTokens: number
   outputTokens: number
@@ -642,6 +646,10 @@ function rate(numerator: number, denominator: number): number {
   return denominator === 0 ? 0 : numerator / denominator
 }
 
+function mean(total: number, count: number): number {
+  return count === 0 ? 0 : Math.round((total / count) * 10) / 10
+}
+
 function withoutDeltas(
   arm: DoctrineEvalArm,
   attempts: readonly DoctrineEvalAttempt[],
@@ -674,6 +682,11 @@ function withoutDeltas(
     solveRate: rate(solved, selected.length),
     doctrinePassRate: rate(doctrinePassed, selected.length),
     tokensPerSolve: solved === 0 ? null : Math.round((inputTokens + outputTokens) / solved),
+    meanToolCalls: mean(
+      selected.reduce((sum, attempt) => sum + attempt.toolCalls.length, 0),
+      selected.length,
+    ),
+    meanOutputTokens: mean(outputTokens, selected.length),
     tokensEstimated: selected.some((attempt) => attempt.usageEstimated),
     inputTokens,
     outputTokens,
@@ -716,12 +729,12 @@ export function renderDoctrineEvalMarkdown(report: DoctrineEvalReport): string {
     `- Repeats: ${String(report.repeats)}`,
     `- Generated: ${report.generatedAt}`,
     '',
-    '| Arm | Solved | Doctrine pass | Tokens / solve | Δ solve | Δ doctrine | Δ tokens |',
-    '| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Arm | Solved | Doctrine pass | Tokens / solve | Tool calls / attempt | Output tokens / attempt | Δ solve | Δ doctrine | Δ tokens |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
   for (const arm of report.arms) {
     lines.push(
-      `| ${arm.armId} | ${String(arm.solved)}/${String(arm.total)} (${percent(arm.solveRate)}) | ${String(arm.doctrinePassed)}/${String(arm.total)} (${percent(arm.doctrinePassRate)}) | ${arm.tokensPerSolve === null ? '—' : `${arm.tokensEstimated ? '~' : ''}${String(arm.tokensPerSolve)}`} | ${signedPercent(arm.solveRateDeltaVsFull)} | ${signedPercent(arm.doctrinePassRateDeltaVsFull)} | ${arm.tokensPerSolveDeltaVsFull === null ? '—' : `${arm.tokensPerSolveDeltaVsFull >= 0 ? '+' : ''}${String(arm.tokensPerSolveDeltaVsFull)}`} |`,
+      `| ${arm.armId} | ${String(arm.solved)}/${String(arm.total)} (${percent(arm.solveRate)}) | ${String(arm.doctrinePassed)}/${String(arm.total)} (${percent(arm.doctrinePassRate)}) | ${arm.tokensPerSolve === null ? '—' : `${arm.tokensEstimated ? '~' : ''}${String(arm.tokensPerSolve)}`} | ${String(arm.meanToolCalls)} | ${arm.tokensEstimated ? '~' : ''}${String(arm.meanOutputTokens)} | ${signedPercent(arm.solveRateDeltaVsFull)} | ${signedPercent(arm.doctrinePassRateDeltaVsFull)} | ${arm.tokensPerSolveDeltaVsFull === null ? '—' : `${arm.tokensPerSolveDeltaVsFull >= 0 ? '+' : ''}${String(arm.tokensPerSolveDeltaVsFull)}`} |`,
     )
   }
   lines.push('', '## Per-rule pass rates', '')

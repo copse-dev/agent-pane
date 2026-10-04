@@ -1,11 +1,13 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import assert from 'node:assert/strict'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 const QUEUED_TEXT = 'Which unit tests should cover the parser refactor?'
 const FIRST_PROMPT = 'Suggest a safe refactor for the JSON parser error paths.'
@@ -13,14 +15,20 @@ const ROW_SELECTOR = '.conversation-queued .message-queued-actions'
 
 describe('queued message delete', function () {
   this.timeout(90_000)
+  let previousMockBranch: string | undefined
 
   afterEach(() => {
     resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
   })
 
   it('removes a queued follow-up from the pinned panel', async function () {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-queued-delete', {
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // Later queue submissions must observe the branch the real checkout committed.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
+    // First-send checkout needs real local refs, independent of the CI source checkout.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-queued-delete', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -57,7 +65,48 @@ describe('queued message delete', function () {
     await $('.conversation-queued .msg-queued').waitForExist({ timeout: 5_000 })
     await expect($('.conversation-queued .message-text')).toHaveText(QUEUED_TEXT)
     await expect($('.queued-delete')).toExist()
+    await expect($('.message-queued-model')).toBeDisplayed()
+    await expect($('.message-queued-model-label')).toHaveText('Run with')
+    const queuedControls = await browser.execute(() => {
+      const picker = document.querySelector<HTMLElement>(
+        '.message-queued-actions > .message-queued-model',
+      )
+      const trigger = picker?.querySelector<HTMLElement>('.model-picker-trigger')
+      const action = document.querySelector<HTMLElement>('.message-queued-actions .queued-action')
+      if (!picker || !trigger || !action) return null
+      const pickerRect = picker.getBoundingClientRect()
+      const actionRect = action.getBoundingClientRect()
+      return {
+        sameLine: Math.abs(pickerRect.top - actionRect.top) <= 2,
+        pickerBackground: getComputedStyle(trigger).backgroundColor,
+        actionBackground: getComputedStyle(action).backgroundColor,
+      }
+    })
+    assert.ok(queuedControls?.sameLine, 'model picker and actions should share one row')
+    assert.equal(queuedControls.pickerBackground, 'rgba(0, 0, 0, 0)')
+    assert.notEqual(queuedControls.actionBackground, queuedControls.pickerBackground)
+    await saveElementScreenshot('.conversation-queued .msg-queued', 'queued-model-picker.png')
 
+    const queuedModelTrigger = $('.message-queued-model .model-picker-trigger')
+    await queuedModelTrigger.click()
+    await expect($('.message-queued-model .model-picker-menu')).toBeDisplayed()
+    const menuIsUnclipped = await browser.execute(() => {
+      const menu = document.querySelector<HTMLElement>('.message-queued-model .model-picker-menu')
+      if (!menu) return false
+      const rect = menu.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      return [rect.top + 2, rect.bottom - 2].every((y) => {
+        const hit = document.elementFromPoint(x, y)
+        return hit === menu || (hit !== null && menu.contains(hit))
+      })
+    })
+    assert.ok(menuIsUnclipped, 'queued model menu should escape the pinned queue overflow')
+    await saveElementScreenshot(
+      '.message-queued-model .model-picker-menu',
+      'queued-model-picker-menu.png',
+    )
+    await queuedModelTrigger.click()
+    await expect($('.message-queued-model .model-picker-menu')).not.toBeDisplayed()
     await saveAppScreenshot('queued-message-delete-before.png')
 
     // The outlined chips carry almost no fill contrast, so the border is the only

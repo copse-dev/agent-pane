@@ -42,7 +42,11 @@ describe('browser-hosted footer geometry', () => {
     await setChatPaneWidth(720)
 
     await expect($('.footer-overflow')).toBeDisplayed()
-    await expect($('.footer-usage')).toHaveText(FOOTER_COMPACT_EXPECTATIONS.tokenLabel)
+    await expect($('.footer-usage')).not.toExist()
+    await $('.context-wheel').moveTo()
+    await expect($('.context-wheel-popover .footer-usage-popover-header')).toHaveText(
+      `Usage · ${FOOTER_COMPACT_EXPECTATIONS.tokenLabel}`,
+    )
 
     await $('.footer-overflow-trigger').click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
@@ -67,7 +71,7 @@ describe('browser-hosted footer geometry', () => {
     )
 
     await expect($('.footer-overflow')).toBeDisplayed()
-    await expect($('.footer-usage')).not.toBeDisplayed()
+    await expect($('.footer-usage')).not.toExist()
 
     for (let index = 0; index < 12; index += 1) {
       await browser.pause(25)

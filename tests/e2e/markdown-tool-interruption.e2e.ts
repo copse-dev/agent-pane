@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -10,10 +10,14 @@ describe('markdown interrupted by real tool rounds', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-markdown-interruption', {
-      subagentsEnabled: false,
-      model: 'claude-sonnet-4-6',
-    })
+    seedEmptyProject(
+      seedStableWorkspace({ files: { 'src/renderer/index.ts': 'export {}\n' } }),
+      'e2e-markdown-interruption',
+      {
+        subagentsEnabled: false,
+        model: 'claude-sonnet-4-6',
+      },
+    )
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })

@@ -116,9 +116,9 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   worker collects exactly that value from the host over the container's stdio link before
   it spawns anything, and consumes it into the provider client (A17: it is never in the
   container's configuration or any process's initial environment). Git remotes, GitHub
-  tokens and the host's environment never enter. A secret canary exported on the host is
-  checked against every host-owned surface of the run and against the guest's reported
-  environment key names.
+  tokens and the host's environment never enter. A per-run secret canary, placed only in
+  the environment of the Docker client that creates the container, is checked against every
+  host-owned surface of the run and against the guest's reported environment key names.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
@@ -221,11 +221,10 @@ dispatch, gate, deferral queue and carry-out):
 
 **Not proven, and required before this is a product:**
 
-- **A real model.** The scripted server proves the plumbing; a real provider behind the
-  broker (`--allow api.openai.com:443` with `--api-key-env`) has been designed but not run
-  here — this sandbox has no provider credential. The broker forwards raw TCP so TLS is
-  end-to-end, and since A-1 the guest reaches any port through its loopback proxy, so no
-  privileged bind and no sysctl is involved.
+- **Sustained real-model qualification.** Real Codex runs and their fixes are recorded
+  under A7–A15 below. The scripted tests remain plumbing and policy evidence; they do not
+  establish reliability across vendors or measure prompts removed on long workloads. T1's
+  repeatable long-run measurement remains outstanding.
 - **Replaying a deferral from the dialog.** The record lists what is waiting, but approving
   it (the host-side push) still needs deferred-approvals D2.
 - **Attaching from the desktop.** The run is fire-and-collect. The assessment's route —
@@ -237,9 +236,9 @@ dispatch, gate, deferral queue and carry-out):
   by design and needs that surface.
 - **Canonical spine events.** The record is a JSON file per run, not `runtime_state` /
   `network_access` events on the thread spine as `execution-runtime-security.md` wants.
-- **Orphan reconciliation at app start.** The sweep exists (`--list`, `--teardown`) and is
-  tested, but nothing runs it on startup; there is no TTL label on the container yet, so a
-  crashed host leaves a stopped container until the sweep is invoked.
+- **Artifact retention.** Startup reconciliation already removes stopped managed containers
+  and orphaned workspace volumes, while leaving live runs alone. Saved run directories and
+  result refs still need an explicit retention or user-controlled cleanup policy.
 - **Image freshness and dependency bake.** The image carries the toolchain only; the
   project's dependencies install inside the guest on each run. The lockhash-gated bake from
   `remote-e2e` is the obvious next step and changes what "long-horizon" costs on macOS.
@@ -475,6 +474,11 @@ guarantee, and the record must say so.
   the secret canary exists to catch precisely that. Decision 3 stays "narrowed": exactly
   one credential, by value, for the run — now held by a third-party process, which is the
   material change and the reason for A3.
+  The pinned Codex ACP adapter also receives its supported
+  `DEFAULT_AUTH_REQUEST={"methodId":"api-key"}` when a key is supplied: its login
+  method reads that same environment key, whereas the variable alone does not
+  authenticate a fresh guest. The request carries no secret and is absent from
+  sign-in runs, which continue to use the explicitly carried login files.
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed
@@ -838,6 +842,33 @@ guarantee, and the record must say so.
   container against the argv before starting it, and the guest checks what it can see of
   itself before declaring. The engine is chosen once per run (Docker first). The shared
   pnpm store stays Docker-only, because an Apple volume attaches to one container at a time.
+  On Apple container 1.5.0, overlapping image builds intermittently fail context transfer
+  with `archive/tar: invalid tar header`, even with separate immutable contexts; the same
+  builds pass serially. Copse queues Apple image builds within its process, releasing the
+  queue on failure. Builds additionally run under macOS `/usr/bin/lockf`, using a stable
+  per-user file in `/private/tmp` shared across profiles and temp-directory overrides.
+  The kernel lock covers independent Copse processes and releases on process exit;
+  `-k` retains the inode so waiting callers never lock different files. Waiting is bounded
+  to 15 minutes and failure to acquire the lock never runs the build. A build deadline
+  kills the wrapper and its child process group together before another build can start.
+  External callers
+  invoking Apple's CLI directly do not participate in this lock. The opt-in Apple
+  integration runner also uses one test-file process at a time. Every integration test
+  owns and cleans its worker bundle directory.
+- **A19 — each new run owns its preparation and consent.** The service claims a thread
+  before awaiting provider resolution and releases it if preparation fails. Concurrent threads
+  share one worker-image preparation per engine. Renderer requests cannot add egress origins; only the
+  resolved provider and the explicit dependency-install choice determine the allowlist.
+  Staging rolls back partial credential copies, and the runner's cleanup covers preparation as
+  well as execution. Engine commands have a 45-second deadline (image builds have 15 minutes),
+  so teardown cannot wait forever before credential deletion and recording. The secret canary
+  is placed only in the engine child's environment, without mutating the host process.
+  A container follow-up opens the arming form before starting. New run cards retain budgets and
+  the installation choice, which prefill that form; desktop sign-in is always unchecked and
+  requires fresh consent. Historical cards without settings show the normal budget defaults
+  and leave installation off for review. Cancelling leaves the draft intact and starts nothing.
+  These changes do not prune saved run directories or result refs. Retention needs a separate
+  user-facing cleanup policy so saved work is never deleted by an implicit age cutoff.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

@@ -11,7 +11,7 @@ the diagnosis below.
 
 The read-access feature (this branch) is a **permission-gate** improvement: a
 command that only reads accountable paths outside the project gets a narrower
-"Allow read access outside of the project?" prompt and a thread-scoped in-memory
+"Read outside the project?" prompt and a thread-scoped in-memory
 grant (`read-outside-project.ts` → `read-outside-grant.ts`). But with the project
 sandbox active, the approval has a side effect that undercuts its own wording:
 

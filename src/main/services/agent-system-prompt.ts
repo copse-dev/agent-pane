@@ -19,9 +19,8 @@ import {
 } from './skills/skill-prompt.ts'
 import { extractContextPathsFromText, type CursorRuleContext } from './skills/cursor-rules.ts'
 import {
-  BASE_SYSTEM_PROMPT,
-  BASE_SYSTEM_PROMPT_DIRECT_READS,
-  BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI,
+  baseSystemPromptFor,
+  type BasePromptVariant,
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
   EXTERNAL_CONTENT_BLOCK,
@@ -32,6 +31,7 @@ import {
   READ_TERMINAL_BLOCK,
   WORKTREE_PREPARATION_BLOCK,
 } from './agent-prompt.ts'
+import { resolvePromptProfile } from './agent-prompt-profile.ts'
 import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -106,7 +106,7 @@ export interface BuildSystemPromptOptions {
   /** Current user turn — drives Auto-Attached / Manual Cursor rule selection (#636). */
   userPrompt?: UserContent
   /**
-   * Model the turn will run on. Only gates the Opus 5 conciseness steering;
+   * Model the turn will run on. Gates the Opus 5 conciseness steering and selects the prompt profile;
    * omit it (headless smoke checks, composer estimates without a pinned model)
    * and the prompt stays model-agnostic.
    */
@@ -155,11 +155,12 @@ export async function buildSystemPromptWithMetadata(
   const investigateCiOffered =
     isInvestigateCiOffered(subagentsEnabled) &&
     (opts.availableToolNames?.includes(INVESTIGATE_CI_TOOL_NAME) ?? true)
-  const basePrompt = !subagentsEnabled
-    ? BASE_SYSTEM_PROMPT_DIRECT_READS
+  const variant: BasePromptVariant = !subagentsEnabled
+    ? 'directReads'
     : investigateCiOffered
-      ? BASE_SYSTEM_PROMPT
-      : BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI
+      ? 'explore'
+      : 'exploreWithoutInvestigateCi'
+  const basePrompt = baseSystemPromptFor(variant, resolvePromptProfile(opts.model))
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
   const browserToolsEnabled = getSetting<boolean>(
     BROWSER_TOOLS_ENABLED_SETTING,

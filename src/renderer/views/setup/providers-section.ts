@@ -4,6 +4,7 @@ import { createCustomProvidersSection, type NativeProvider } from './custom-prov
 import { createAcpAgentsSection } from './acp-agents-section.ts'
 import { SERVICE_TIER_CHOICES } from '@copse/llm/service-tier.ts'
 import { uiField } from '../../ui/index.ts'
+import { createChatGptPlanSection } from './chatgpt-plan-section.ts'
 
 // The one "Providers" panel in Settings > General. A provider is a company, not
 // a wiring mechanism: picking Cursor shows everything Cursor can do here (its
@@ -106,10 +107,15 @@ export function createProvidersPanel(
     embedded: true,
     onChanged: rebuild,
   })
+  const chatGptPlan = createChatGptPlanSection(api, () => {
+    renderChips()
+    if (selected === 'openai') renderForm()
+  })
   const localPanel = createCustomProvidersSection(api, {
     variant: 'local',
     embedded: true,
     onChanged: rebuild,
+    onStatusChanged: renderChips,
     ...(opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}),
   })
   const agentsPanel = createAcpAgentsSection(api, { embedded: true, onChanged: rebuild })
@@ -148,6 +154,7 @@ export function createProvidersPanel(
   // (Anthropic ships two agent builds, for instance).
   let selectedAgentId = ''
   let selectedAddKind: AddKind = 'api'
+  const expandedConnections = new Set<string>()
   // Two costs, gated separately. Scanning the device for installed agents walks
   // PATH and the process list: cheap enough to run as soon as an agent is on
   // screen, so its installed / running badge is honest. Auto-setup can install
@@ -231,7 +238,7 @@ export function createProvidersPanel(
       el(
         'p',
         { class: 'field-hint openai-service-tier-scope' },
-        'Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
+        'Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
       ),
     )
     tierBlock.dataset['testid'] = 'openai-service-tier-block'
@@ -301,6 +308,7 @@ export function createProvidersPanel(
   }
 
   function isConfigured(vendor: VendorSpec): boolean {
+    if (vendor.id === 'openai' && chatGptPlan.configured()) return true
     const caps = resolve(vendor)
     if (caps.api.some((id) => apiPanel.isConfigured(id))) return true
     if (caps.local.some((id) => localPanel.isConfigured(id))) return true
@@ -397,6 +405,78 @@ export function createProvidersPanel(
     )
   }
 
+  function connectionDetails(
+    id: string,
+    label: string,
+    ...children: HTMLElement[]
+  ): HTMLDetailsElement {
+    const details = el('details', { 'data-testid': id }, el('summary', {}, label), ...children)
+    details.open = expandedConnections.has(id)
+    details.addEventListener('toggle', () => {
+      if (details.open) expandedConnections.add(id)
+      else expandedConnections.delete(id)
+    })
+    return details
+  }
+
+  function openAiCards(agentIds: string[]): HTMLElement {
+    const cards = el('div', { class: 'provider-vendor openai-connections' })
+    apiPanel.select('openai')
+    const apiDetails = connectionDetails(
+      'openai-api-details',
+      'Configure API access',
+      apiPanel.root,
+      ...(opts.showOpenAiServiceTier ? [openAiTierBlock()] : []),
+    )
+    const entries = [
+      {
+        title: 'ChatGPT plan',
+        configured: chatGptPlan.configured(),
+        description: 'Copse’s agent and tools, using your ChatGPT plan or available credits.',
+        content: chatGptPlan.root,
+        id: 'chatgpt',
+      },
+      {
+        title: 'OpenAI API',
+        configured: apiPanel.isConfigured('openai'),
+        description: 'Copse’s agent and tools, billed to your OpenAI API account.',
+        content: apiDetails,
+        id: 'api',
+      },
+    ]
+    if (agentIds.length) {
+      entries.push({
+        title: 'Codex ACP',
+        configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
+        description: 'Codex’s agent, running on this machine through ACP.',
+        content: connectionDetails(
+          'openai-codex-details',
+          'Configure Codex ACP',
+          agentBlock(agentIds),
+        ),
+        id: 'codex',
+      })
+    }
+    entries.sort((a, b) => Number(b.configured) - Number(a.configured))
+    for (const entry of entries) {
+      cards.append(
+        el(
+          'section',
+          { class: 'openai-connection-card', 'data-connection': entry.id },
+          el(
+            'div',
+            { class: 'openai-connection-heading' },
+            el('h4', {}, entry.title),
+            el('span', { class: 'field-hint' }, entry.configured ? 'Set up' : 'Not set up'),
+          ),
+          el('p', { class: 'field-hint' }, entry.description),
+          entry.content,
+        ),
+      )
+    }
+    return cards
+  }
+
   function renderForm(): void {
     clear(formHost)
     if (cloudAgentOptions) cloudAgentOptions.hidden = true
@@ -408,6 +488,10 @@ export function createProvidersPanel(
     const vendor = vendors().find((entry) => entry.id === selected)
     if (!vendor) return
     const caps = resolve(vendor)
+    if (vendor.id === 'openai') {
+      formHost.append(openAiCards(caps.agents))
+      return
+    }
     const body = el('div', { class: 'provider-vendor' })
     if (caps.api.length) {
       const [first] = caps.api
@@ -415,9 +499,6 @@ export function createProvidersPanel(
         apiPanel.select(first)
         body.append(block('API key', apiPanel.root))
       }
-    }
-    if (vendor.id === 'openai' && opts.showOpenAiServiceTier) {
-      body.append(openAiTierBlock())
     }
     if (caps.cloud) {
       body.append(block('Cloud agent', caps.cloud.element))
@@ -457,6 +538,7 @@ export function createProvidersPanel(
     await agentsPanel.reload()
     await refreshCloudAgentKeys()
     await refreshOpenAiTier()
+    await chatGptPlan.refresh()
     // A provider that has gone away closes back to the list rather than
     // handing the selection to an unrelated one.
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {

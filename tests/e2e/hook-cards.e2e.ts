@@ -20,6 +20,19 @@ describe('hook cards in the transcript', function () {
     resetUserData()
   })
 
+  it('hides hook cards when developer mode is off', async function () {
+    resetUserData()
+    seedHookCardsFixture(process.cwd(), { developerMode: false })
+    await browser.reloadSession()
+
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('[data-message-id="msg-assistant-hook"]').waitForExist({ timeout: 10_000 })
+    await expect($$('.hook-card')).toBeElementsArrayOfSize(0)
+    await expect($('[data-hook-cards-for="msg-assistant-hook"]')).not.toBeExisting()
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-cards-developer-mode-off.png'))
+  })
+
   it('renders the right-aligned blue hook-card family + origin marker', async function () {
     resetUserData()
     seedHookCardsFixture(process.cwd())
