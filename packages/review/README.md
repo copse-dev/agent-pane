@@ -244,51 +244,42 @@ and the challenger over the checkouts, no `run_command`) and says so with exit `
 For adoption on a separate repository, see [the reusable Actions workflow](ACTIONS.md).
 Its first consumer is `copse-dev/streaming-markdown`; the workflow runs on the
 adopter's runners, with separate isolated grounding and review jobs. No Copse
-service is required. The existing dogfood workflows below remain unchanged.
+service is required. Copse calls this same workflow with its reviewed pnpm preparation policy.
 
-The plan's job A and job B (`.github/workflows/review-ground.yml` and
-`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) review every ready (non-draft)
-owner pull request from this repository when it is opened, reopened or marked ready for review.
-The `copse-review` label reviews a draft or re-reviews a newer head, and `copse-review-skip` opts a
-pull request out; pushes alone do not re-review. On GitHub,
-`review-trigger.yml` receives those `pull_request_target` events so an older pull request still
-selects trusted default-branch workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
-out and executes nothing; it resolves current PR metadata and dispatches the separate ground
-workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
-the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
-default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
-after checkout credentials have been removed. Pull-request code runs as a dedicated user with no
-sudo and no access to the runner's home (`ci/ground-as-cell-user.sh`), so it cannot rewrite the
-actions and command files that later steps execute with the job's Actions runtime token, a token
-`permissions: {}` does not remove. Before entering the cell, the secret-free job copies
-only the exact head's `pnpm-lock.yaml` and patch data into runner scratch and runs `pnpm fetch`;
-that primes Stage 0's read-only offline store without loading a contributor manifest or lifecycle
-script on the host.
-A fresh successor job checks out and downloads nothing, receives only `actions: write`, and
-explicitly dispatches the findings workflow after grounding succeeds. This uses the documented
-`workflow_dispatch` exception because GitHub suppresses an implicit `workflow_run` event after a
-run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the successful ground
-run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
-than trusting the artefact or a dynamic run association; it rechecks that the pull request is ready
-or labelled and not `copse-review-skip`. Add (or remove and re-add) the label to review a newer
-head.
-Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
-requires the same PR head and merge-base, all four checks completed successfully, and
-unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
-API, and the report remains untrusted data subject to validation. The lookup runs in a
-separate read-only job that never executes PR code. Any miss runs the usual secret-free
-grounding job; dispatch with `fresh=true` to force that path. Normal PR CI's merge-commit
-checks are not substituted for checks of the reviewed head.
-Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
-by default and refuses a report for another commit). Before any model or App credential is
-put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
-store from lockfile data with scripts disabled, and fetches the reviewed refs. The model
-process then attaches that image explicitly with `--backend container`: read/search/diff
-ordinary source tools remain host-side while `read_dependency_file`, `run_command` and Stage 4 reproducers are brokered into the
-read-only-root, capability-free, network-disabled cell. The cell receives only the
-allowlisted environment, never provider, Scaleway, workflow, or GitHub App credentials.
-`--backend ephemeral-runner` is rejected with imported Stage 0, so the secret-bearing host
-cannot be mislabeled as the cell. The run posts one advisory review
+`review-trigger.yml` calls `reviewer.yml` locally, so both the workflow and reviewer
+source come from the same trusted default-branch revision. It retains owner-only,
+same-repository paid reviews: ready PRs opened, reopened or marked ready are reviewed;
+`copse-review` opts a draft in or requests a rerun; `copse-review-skip` opts out. Pushes
+only dispatch the separate description-summary workflow. Maintainers can also dispatch
+the caller manually with a PR number. Nightly sampling and real-model benchmarks remain
+independent workflows.
+
+The shared workflow resolves current PR metadata and separates grounding from findings
+with a fresh runner for each. Grounding has `permissions: {}` and no referenced model or
+App secrets. Both grounding and focused verification use network-disabled containers;
+contributor code cannot reach the runner's Actions runtime token or command files.
+Artifacts belong to the same run and attempt, and the CLI validates the exact reviewed
+head and merge-base. Every new run grounds afresh; the previous 24-hour grounding lookup
+and cross-workflow handoff have been removed. Normal PR CI's merge-commit checks are not
+substituted for checks of the reviewed head.
+
+The `copse-pnpm` preparation profile is restricted to Copse's own repository. The host
+validates the head and merge-base lockfiles, permits integrity-pinned registry packages
+and the reviewed `packages/extract-zip` directory dependency, and copies patch blobs at
+validated paths. `pnpm fetch` runs in caller-owned scratch with manifests and hooks absent.
+It skips local dependencies. The cell installs offline with lifecycle scripts disabled,
+copies the immutable seed into a checkout-private writable store, then runs only the
+reviewed node-pty build through `scripts/prepare-review-stage0.mts`.
+
+The protected `copse-findings` job rechecks the owner/caller/rerun context before entering
+`copse-review-models`, keeps its workflow token read-only, and calls the same findings
+Action as portable consumers. Model credentials enter only the review step; its App token
+is minted after source/cache/image preparation. Imported Stage 0 uses `--backend container`
+for focused verification and refuses a report for another commit. Source reads remain on
+the trusted host; project commands and reproducers receive a scrubbed environment inside
+network-disabled, capability-free containers with a read-only root.
+
+The run posts one advisory review
 (`--post-review github --repo owner/name --pr n`), having read the pull request's
 description, discussion, reviews and images first (`--read-pr github`); the default lenses
 are `correctness,visual`, and `visual` runs only when there is an image to look at.

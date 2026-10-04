@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { load as loadYaml } from 'js-yaml'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import type { FetchLike } from '../src/forge-review.ts'
 
@@ -98,4 +99,45 @@ export function actionPublishingFetch(
     }
     return fetchImpl(url, init)
   }
+}
+
+const pnpmLockSchema = z.object({
+  lockfileVersion: z.literal('9.0'),
+  packages: z.record(
+    z.string(),
+    z.object({
+      resolution: z.union([
+        z.object({ integrity: z.string().regex(/^sha512-[A-Za-z0-9+/]+=*$/) }).strict(),
+        z
+          .object({ directory: z.literal('packages/extract-zip'), type: z.literal('directory') })
+          .strict(),
+      ]),
+    }),
+  ),
+  patchedDependencies: z
+    .record(
+      z.string(),
+      z.object({
+        hash: z.string().regex(/^[0-9a-f]{64}$/),
+        path: z.string().regex(/^patches\/[^/]+\.patch$/),
+      }),
+    )
+    .optional(),
+})
+
+/** Copse's one reviewed directory dependency stays in the cell; the host only fetches registry data. */
+export function copsePnpmPatches(text: string): Record<string, string> {
+  const lock = pnpmLockSchema.parse(loadYaml(text))
+  for (const [name, entry] of Object.entries(lock.packages)) {
+    if (Object.hasOwn(entry.resolution, 'directory')) {
+      if (name !== 'extract-zip@file:packages/extract-zip') {
+        throw new Error('Only the reviewed Copse extract-zip directory dependency is supported')
+      }
+    } else if (!/^(?:@[^/\s]+\/)?[^@/:\s]+@[^/:\s]+$/.test(name)) {
+      throw new Error('Copse Actions requires registry package versions')
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(lock.patchedDependencies ?? {}).map(([name, patch]) => [name, patch.path]),
+  )
 }

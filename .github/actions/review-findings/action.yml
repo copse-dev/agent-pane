@@ -1,12 +1,15 @@
 name: Copse review findings
 description: Review validated grounding and publish advisory findings with isolated verification
 inputs:
+  preparation:
+    description: Trusted preparation profile
+    default: npm
   request:
     description: The same authorized JSON request used for grounding
     required: true
   model-api-key:
     description: Model provider API key
-    required: true
+    required: false
   provider:
     description: Copse model provider
     default: openrouter
@@ -26,6 +29,25 @@ inputs:
     description: Optional GitHub App ID, paired with app-private-key
   app-private-key:
     description: Optional GitHub App private key
+  profile:
+    description: portable, openrouter-luna or configured
+    default: portable
+  base-url:
+    description: Optional configured provider endpoint
+  openrouter-api-key:
+    description: Dedicated Luna key for the protected Copse profile
+  openrouter-provider:
+    description: Optional OpenRouter routing preference
+  scaleway-project-id:
+    description: Explicit billing project for the configured Scaleway profile
+  verify-concurrency:
+    description: Maximum concurrent finding verification
+    default: '2'
+  feedback-label:
+    description: Optional label for a review with findings
+  post-summary:
+    description: Rewrite the description summary with review evidence
+    default: 'false'
   github-token:
     description: Caller workflow token for PR reads and fallback publishing
     required: true
@@ -48,6 +70,7 @@ runs:
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+        COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
       run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
     - uses: actions/download-artifact@v8
       with:
@@ -65,6 +88,16 @@ runs:
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+        REVIEW_PROFILE: ${{ inputs.profile }}
+        REVIEW_BASE_URL: ${{ inputs.base-url }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        COPSE_REVIEW_OPENROUTER_PROVIDER: ${{ inputs.openrouter-provider }}
+        SCW_DEFAULT_PROJECT_ID: ${{ inputs.scaleway-project-id }}
+        REVIEW_VERIFY_CONCURRENCY: ${{ inputs.verify-concurrency }}
+        REVIEW_FEEDBACK_LABEL: ${{ inputs.feedback-label }}
+        REVIEW_POST_SUMMARY: ${{ inputs.post-summary }}
+        COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
+        COPSE_REVIEW_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         COPSE_REVIEW_API_KEY: ${{ inputs.model-api-key }}
         COPSE_REVIEW_READ_TOKEN: ${{ inputs.github-token }}
         COPSE_REVIEW_FORGE_TOKEN: ${{ steps.app-token.outputs.token || inputs.github-token }}
@@ -75,6 +108,42 @@ runs:
         REVIEW_MAX_VERIFY: ${{ inputs.max-verify }}
       run: |
         set -euo pipefail
+        if test "$COPSE_REVIEW_PREPARATION" = copse-pnpm && test -z "$COPSE_REVIEW_APP_TOKEN"; then
+          echo '::error::The protected Copse profile requires its App publishing token'
+          exit 1
+        fi
+        case "$REVIEW_PROFILE" in
+          portable) unset OPENROUTER_API_KEY SCW_DEFAULT_PROJECT_ID ;;
+          configured) unset OPENROUTER_API_KEY ;;
+          openrouter-luna)
+            unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID
+            if test -z "$OPENROUTER_API_KEY"; then
+              echo '::error::Set COPSE_REVIEW_OPENROUTER_API_KEY in the protected copse-review-models environment'
+              exit 1
+            fi
+            REVIEW_PROVIDER=openrouter
+            REVIEW_MODEL=openai/gpt-6-luna
+            REVIEW_BASE_URL=https://openrouter.ai/api/v1
+            ;;
+          *) echo '::error::Unknown PR reviewer profile'; exit 1 ;;
+        esac
+        review_base_url="${REVIEW_BASE_URL%/}"
+        if test "$review_base_url" = https://api.scaleway.ai/v1; then
+          if test -z "$SCW_DEFAULT_PROJECT_ID"; then
+            echo '::error::SCW_DEFAULT_PROJECT_ID is required for explicit Scaleway billing attribution'
+            exit 1
+          fi
+          if [[ ! "$SCW_DEFAULT_PROJECT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo '::error::SCW_DEFAULT_PROJECT_ID is not a lowercase UUID'
+            exit 1
+          fi
+          review_base_url="https://api.scaleway.ai/${SCW_DEFAULT_PROJECT_ID}/v1"
+          echo '::notice::Copse Reviewer is using an explicit Scaleway project endpoint'
+        fi
+        review_args=()
+        if test -n "$review_base_url"; then review_args+=(--base-url "$review_base_url"); fi
+        if test -n "$REVIEW_FEEDBACK_LABEL"; then review_args+=(--feedback-label "$REVIEW_FEEDBACK_LABEL"); fi
+        if test "$REVIEW_POST_SUMMARY" = true; then review_args+=(--post-summary github); fi
         cd "$COPSE_REVIEW_TARGET"
         base_sha=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).base)')
         pr_number=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).pr)')
@@ -85,9 +154,10 @@ runs:
           --stage0-json "$RUNNER_TEMP/copse-review-ground/report.json" \
           --backend container --image "$COPSE_REVIEW_CELL_IMAGE" \
           --scratch-parent "$RUNNER_TEMP" --store "$COPSE_REVIEW_STORE" \
-          --trusted-prepare "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-npm-checkout.mts" \
+          --trusted-prepare "$COPSE_REVIEW_PREPARE" \
           --provider "$REVIEW_PROVIDER" --model "$REVIEW_MODEL" --lenses "$REVIEW_LENSES" \
           --max-steps "$REVIEW_MAX_STEPS" --max-verify "$REVIEW_MAX_VERIFY" \
+          --verify-concurrency "$REVIEW_VERIFY_CONCURRENCY" "${review_args[@]}" \
           --read-pr github --post-review github --repo "$review_repo" --pr "$pr_number" \
           --json "$RUNNER_TEMP/copse-review-findings/report.json" \
           --sarif "$RUNNER_TEMP/copse-review-findings/report.sarif" \

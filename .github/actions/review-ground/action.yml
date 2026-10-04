@@ -1,6 +1,9 @@
 name: Copse review ground
 description: Ground a pinned PR in credential-free, network-disabled validation containers
 inputs:
+  preparation:
+    description: Trusted preparation profile
+    default: npm
   request:
     description: Authorized JSON request containing repository, pr, head and base SHA
     required: true
@@ -23,6 +26,7 @@ runs:
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+        COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
       run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
     - name: Run isolated build and test grounding
       shell: bash
@@ -37,7 +41,7 @@ runs:
           --foreign --head refs/remotes/copse/head --base "$base_sha" \
           --backend container --image "$COPSE_REVIEW_CELL_IMAGE" \
           --scratch-parent "$RUNNER_TEMP" --store "$COPSE_REVIEW_STORE" \
-          --trusted-prepare "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-npm-checkout.mts" \
+          --trusted-prepare "$COPSE_REVIEW_PREPARE" \
           --no-model --json "$RUNNER_TEMP/copse-review-ground/report.json"
     - uses: actions/upload-artifact@v7
       with:

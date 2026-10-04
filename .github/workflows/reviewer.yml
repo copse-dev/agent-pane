@@ -1,6 +1,6 @@
 name: Copse reusable reviewer
 
-# Public npm/TypeScript pilot. Both actions come from an explicit trusted Copse
+# Public npm/TypeScript adoption and Copse pnpm dogfooding. Both actions use trusted Copse
 # commit; the caller's PR contributes data and commands that execute only in cells.
 on:
   workflow_call:
@@ -8,6 +8,10 @@ on:
       reviewer-ref:
         description: Full trusted agent-pane commit SHA (pin the workflow to this SHA too)
         required: true
+        type: string
+      preparation:
+        description: Trusted dependency preparation (npm or copse-pnpm)
+        default: npm
         type: string
       pr:
         description: PR number for a manual workflow_dispatch caller
@@ -29,8 +33,16 @@ on:
         default: 3
         type: number
     secrets:
+      COPSE_REVIEW_API_KEY:
+        required: false
+      COPSE_REVIEW_OPENROUTER_API_KEY:
+        required: false
+      SCW_GENERATIVE_API_KEY:
+        required: false
+      SCW_DEFAULT_PROJECT_ID:
+        required: false
       model-api-key:
-        required: true
+        required: false
       app-id:
         required: false
       app-private-key:
@@ -55,6 +67,8 @@ jobs:
       - uses: actions/github-script@v9
         id: authorize
         env:
+          PREPARATION: ${{ inputs.preparation }}
+          COPSE_CALLER_ALLOWED: ${{ github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
           REVIEWER_REF: ${{ inputs.reviewer-ref }}
           MANUAL_PR: ${{ inputs.pr }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
@@ -65,13 +79,18 @@ jobs:
           HAS_APP_KEY: ${{ secrets.app-private-key != '' }}
         with:
           script: |
-            if (process.env.HAS_MODEL_KEY !== 'true') {
+            const copse = process.env.PREPARATION === 'copse-pnpm';
+            if (!['npm', 'copse-pnpm'].includes(process.env.PREPARATION)) {
+              throw new Error('Unknown trusted preparation profile');
+            }
+            if (copse && process.env.COPSE_CALLER_ALLOWED !== 'true') return;
+            if (!copse && process.env.HAS_MODEL_KEY !== 'true') {
               throw new Error('Configure a model API key in the caller repository/org and pass it as model-api-key');
             }
             if (!/^[0-9a-f]{40}$/.test(process.env.REVIEWER_REF)) {
               throw new Error('reviewer-ref must pin a trusted full Copse commit SHA');
             }
-            if (process.env.HAS_APP_ID !== process.env.HAS_APP_KEY) {
+            if (!copse && process.env.HAS_APP_ID !== process.env.HAS_APP_KEY) {
               throw new Error('Supply both app-id and app-private-key, or neither');
             }
             if (!/^[1-9][0-9]*$/.test(process.env.MAX_STEPS) || Number(process.env.MAX_STEPS) > 100 ||
@@ -102,6 +121,8 @@ jobs:
               ? Number(process.env.MANUAL_PR) : context.payload.pull_request?.number;
             if (!Number.isSafeInteger(number) || number < 1) throw new Error('A valid PR number is required');
             const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (copse && (repository.id !== 1274237362 || pull.user?.id !== 338988 ||
+                pull.head.repo?.id !== 1274237362)) return;
             const labels = pull.labels.map(label => label.name);
             if (pull.state !== 'open' || pull.base.repo.id !== repository.id ||
                 pull.base.ref !== repository.default_branch || labels.includes('copse-review-skip') ||
@@ -136,8 +157,10 @@ jobs:
       - uses: ./.copse-reviewer/.github/actions/review-ground
         with:
           request: ${{ needs.authorize.outputs.request }}
+          preparation: ${{ inputs.preparation }}
 
   findings:
+    if: ${{ inputs.preparation == 'npm' }}
     needs: [authorize, ground]
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -159,12 +182,56 @@ jobs:
       - uses: ./.copse-reviewer/.github/actions/review-findings
         with:
           request: ${{ needs.authorize.outputs.request }}
+          preparation: ${{ inputs.preparation }}
           model-api-key: ${{ secrets.model-api-key }}
           provider: ${{ inputs.provider }}
           model: ${{ inputs.model }}
           lenses: ${{ inputs.lenses }}
           max-steps: ${{ inputs.max-steps }}
           max-verify: ${{ inputs.max-verify }}
+          app-id: ${{ secrets.app-id }}
+          app-private-key: ${{ secrets.app-private-key }}
+          github-token: ${{ github.token }}
+
+  copse-findings:
+    if: ${{ inputs.preparation == 'copse-pnpm' && github.repository_id == '1274237362' && github.actor_id == '338988' && github.triggering_actor == 'jonathanKingston' && github.ref == 'refs/heads/main' && github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-trigger.yml@refs/heads/main' }}
+    needs: [authorize, ground]
+    environment: copse-review-models
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: copse-dev/agent-pane
+          ref: ${{ inputs.reviewer-ref }}
+          path: .copse-reviewer
+          persist-credentials: false
+      - name: Select the pinned reviewer Node version
+        run: cp .copse-reviewer/.nvmrc .nvmrc
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: ./.copse-reviewer/.github/actions/review-findings
+        with:
+          request: ${{ needs.authorize.outputs.request }}
+          preparation: copse-pnpm
+          profile: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
+          model-api-key: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
+          openrouter-api-key: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
+          openrouter-provider: ${{ vars.COPSE_REVIEW_OPENROUTER_PROVIDER || 'openai' }}
+          scaleway-project-id: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          provider: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}
+          model: ${{ vars.COPSE_REVIEW_MODEL || 'qwen3.8-27b' }}
+          base-url: ${{ vars.COPSE_REVIEW_BASE_URL || vars.SCW_GENERATIVE_API_URL || 'https://api.scaleway.ai/v1' }}
+          lenses: ${{ vars.COPSE_REVIEW_LENSES || 'correctness,visual' }}
+          max-steps: ${{ vars.COPSE_REVIEW_MAX_STEPS || '12' }}
+          max-verify: ${{ vars.COPSE_REVIEW_MAX_VERIFY || '3' }}
+          verify-concurrency: ${{ vars.COPSE_REVIEW_VERIFY_CONCURRENCY || '2' }}
+          feedback-label: ${{ vars.COPSE_REVIEW_FEEDBACK_LABEL || 'review-has-feedback' }}
+          post-summary: 'true'
           app-id: ${{ secrets.app-id }}
           app-private-key: ${{ secrets.app-private-key }}
           github-token: ${{ github.token }}
