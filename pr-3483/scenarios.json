@@ -112,6 +112,10 @@
     "label": "Apple Development test profile"
   },
   {
+    "id": "sidebar-thread-sort",
+    "label": "Sidebar thread sort"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   },
