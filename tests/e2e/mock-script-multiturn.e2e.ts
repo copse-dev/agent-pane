@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -8,7 +8,11 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 describe('mock script multi-turn', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-mock-script-project', {
+    // Real local refs keep first-send checkout independent of the CI source checkout.
+    const workspace = seedStableWorkspace({
+      files: { 'src/renderer/index.ts': "export const fixtureTitle = 'Mock script workspace'\n" },
+    })
+    seedEmptyProject(workspace, 'e2e-mock-script-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

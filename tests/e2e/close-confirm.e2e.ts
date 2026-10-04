@@ -2,7 +2,7 @@ import { submitComposer } from './helpers/composer.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // Visual eval for the close guard: quitting disposes every live agent session
@@ -86,7 +86,7 @@ describe('close confirmation while a thread is working', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     process.env.COPSE_PANEL_MOCK_LLM = '1'
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-close-confirm-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-close-confirm-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       windowBounds: { width: 1280, height: 800 },

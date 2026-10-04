@@ -1104,8 +1104,16 @@
   --footer-popup-min-width: 180px;
 }
 .footer-branch-host .branch-picker-filter {
-  min-width: min(180px, 100%);
+  /* The popup owns its minimum width; the field must also leave room for its margins. */
+  min-width: 0;
   box-sizing: border-box;
+}
+/* Native fallback fitting can leave this anchored popup inside the viewport but
+   outside the footer. Clamp long menus when the preferred position crosses it. */
+.input-footer:not(.is-compact) .footer-branch-host .branch-picker-menu.is-footer-clamped {
+  left: auto;
+  right: 0;
+  position-try-fallbacks: none;
 }
 .context-wheel-popover[hidden] {
   display: none;

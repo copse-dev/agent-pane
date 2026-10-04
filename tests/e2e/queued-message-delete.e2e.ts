@@ -1,12 +1,13 @@
 import { $, browser, expect } from '@wdio/globals'
 import assert from 'node:assert/strict'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 const QUEUED_TEXT = 'Which unit tests should cover the parser refactor?'
 const FIRST_PROMPT = 'Suggest a safe refactor for the JSON parser error paths.'
@@ -14,14 +15,20 @@ const ROW_SELECTOR = '.conversation-queued .message-queued-actions'
 
 describe('queued message delete', function () {
   this.timeout(90_000)
+  let previousMockBranch: string | undefined
 
   afterEach(() => {
     resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
   })
 
   it('removes a queued follow-up from the pinned panel', async function () {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-queued-delete', {
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // Later queue submissions must observe the branch the real checkout committed.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
+    // First-send checkout needs real local refs, independent of the CI source checkout.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-queued-delete', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

@@ -1016,6 +1016,15 @@ regression eval is
 trigger/menu anchor pair, checks normal trigger alignment plus narrow-footer containment, and owns
 the model-selector, normal overflow, and constrained overflow reference screenshots.
 
+The branch picker also measures its preferred trigger-aligned left plus popup width against the
+footer's right edge. In this anchored footer, native fallback fitting can keep a popup that fits the
+viewport while crossing the narrower footer. A branch-local resize observer toggles `is-footer-clamped` to
+use the existing footer-right alignment for that case; it measures the preferred position rather
+than the clamped position to avoid toggling back and forth. Compact footers retain their left snap.
+Keep the filter's own minimum width at zero: the popup owns its 180px minimum, and the field needs
+room for its horizontal margins and focus outline. The owning branch-picker visual eval checks
+normal, filtered, long-name and compact layouts, including the final screenshot frame.
+
 ## Context menus (right-click)
 
 App-chrome right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
