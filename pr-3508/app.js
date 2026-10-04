@@ -48564,12 +48564,76 @@ function createModelRoutingSection(api2, options = {}) {
       loadOnMount: false
     })
   };
-  async function refresh() {
-    const localModel = optionalString(await api2.settings.get("localDefaultModel"));
-    const subagent = optionalString(await api2.settings.get("subagentModel"));
-    const safety = optionalString(await api2.settings.get("safetyModel"));
-    const review = optionalString(await api2.settings.get("reviewModel"));
-    const roleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
+  const fieldTargets = {
+    coder: "localDefaultModel",
+    research: "subagentModel",
+    safety: "safetyModel",
+    review: "reviewModel"
+  };
+  for (const [key, picker] of Object.entries(modelPickers)) {
+    const target = fieldTargets[key];
+    if (target)
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        target
+      );
+  }
+  let pendingRoles = {};
+  const additionalRoles = modelScope === "all" ? AGENT_ROLES.filter((role) => !["coder", "research", "small-tasks"].includes(role.id)).map(
+    (role) => {
+      const select = el("select", { name: `role:${role.id}` });
+      const field = routingField(
+        role.label,
+        select,
+        `${role.description}. An empty choice inherits the automatic role default.`
+      );
+      select.addEventListener("change", () => {
+        pendingRoles[role.id] = select.value;
+      });
+      const picker = mountModelSelectPicker(select, {
+        loadOptions: (current) => fetchRoleModelOptions(api2, current, "(automatic role default)"),
+        ariaLabel: `${role.label} role model`,
+        loadOnMount: false
+      });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `role:${role.id}`
+      );
+      return { role, field, picker };
+    }
+  ) : [];
+  if (additionalRoles.length) {
+    fields.append(
+      el(
+        "details",
+        { class: "routing-additional-roles" },
+        disclosureSummary("Additional model roles"),
+        el(
+          "p",
+          { class: "settings-fieldset-desc" },
+          "These assignments are used by \u201CBy role\u201D model rules. The dedicated safety and post-turn review routes above remain separate."
+        ),
+        ...additionalRoles.map((entry) => entry.field)
+      )
+    );
+  }
+  async function refresh(snapshot) {
+    const localModel = optionalString(
+      snapshot ? snapshot.localDefaultModel : await api2.settings.get("localDefaultModel")
+    );
+    const subagent = optionalString(
+      snapshot ? snapshot.subagentModel : await api2.settings.get("subagentModel")
+    );
+    const safety = optionalString(
+      snapshot ? snapshot.safetyModel : await api2.settings.get("safetyModel")
+    );
+    const review = optionalString(
+      snapshot ? snapshot.reviewModel : await api2.settings.get("reviewModel")
+    );
+    const roleModels = stringRecordOrEmpty(
+      snapshot ? snapshot.roleModels : await api2.settings.get("roleModels")
+    );
+    pendingRoles = {};
     if (modelScope === "all") {
       const coder = roleModels["coder"] ?? localModel;
       const research = roleModels["research"] ?? subagent;
@@ -48581,7 +48645,10 @@ function createModelRoutingSection(api2, options = {}) {
         // Unset means the *rule*, not the model we recommend downloading —
         // showing a concrete local id here would misreport what actually runs.
         modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
-        modelPickers.review.refresh(canonicalRoleSelection(review ?? ""))
+        modelPickers.review.refresh(canonicalRoleSelection(review ?? "")),
+        ...additionalRoles.map(
+          (entry) => entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? ""))
+        )
       ]);
       return;
     }
@@ -48609,7 +48676,12 @@ function createModelRoutingSection(api2, options = {}) {
       reviewModel: reviewModel.value.trim()
     };
   }
-  return { root, refresh, readValues };
+  return {
+    root,
+    refresh,
+    readValues,
+    readRoleModels: () => Object.keys(pendingRoles).length ? { ...pendingRoles } : void 0
+  };
 }
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
@@ -48631,6 +48703,8 @@ var init_model_routing_section = __esm({
     init_disclosure_summary();
     init_unknown_value3();
     init_ui();
+    init_agent_roles();
+    init_helpers();
   }
 });
 
@@ -59537,21 +59611,29 @@ function openSettingsDialog(section) {
   overlayEl.showModal();
   overlayEl.dispatchEvent(new Event("settings-open"));
 }
-function openModelSettings() {
+function openModelSettings(target = "model") {
   if (!overlayEl) return;
+  const pluginTarget = target.startsWith("plugin:") || target === "advisorModel";
+  const section = pluginTarget ? "customise" : target === "orchestrationWorkerModel" ? "experimental" : "general";
   if (overlayEl.open) {
-    qsRequired(overlayEl, '.settings-nav-btn[data-section="general"]').click();
-    focusModelSettings(overlayEl);
+    qsRequired(overlayEl, `.settings-nav-btn[data-section="${section}"]`).click();
+    if (pluginTarget) void revealPluginModel?.(target);
+    else focusModelSettings(overlayEl, target);
     return;
   }
-  pendingModelFocus = true;
-  openSettingsDialog("general");
+  pendingModelFocus = target;
+  openSettingsDialog(section);
 }
-function focusModelSettings(overlay) {
-  const models = qsRequired(overlay, "#settings-models-section");
-  models.setAttribute("tabindex", "-1");
-  models.scrollIntoView({ block: "start" });
-  models.focus({ preventScroll: true });
+function focusModelSettings(overlay, target) {
+  const control = [...overlay.querySelectorAll("[data-model-setting-target]")].find(
+    (element) => element.dataset["modelSettingTarget"] === target
+  );
+  if (!control) return;
+  for (let ancestor = control.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor.tagName === "DETAILS") ancestor.setAttribute("open", "");
+  }
+  control.scrollIntoView({ block: "center" });
+  control.focus({ preventScroll: true });
 }
 function openAutomationSettings(scheduleId) {
   if (!overlayEl || overlayEl.open) return;
@@ -60794,6 +60876,12 @@ function mountSettingsDialog(store2, api2) {
       }
     )
   };
+  for (const [target, picker] of Object.entries(settingsModelPickers)) {
+    qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+      "data-model-setting-target",
+      target
+    );
+  }
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
   const aboutSection = createAboutSection(api2);
@@ -60935,7 +61023,7 @@ function mountSettingsDialog(store2, api2) {
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue;
+      if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
       const btn = document.createElement("button");
@@ -62345,6 +62433,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         ariaLabel: field.title,
         loadOnMount: false
       });
+      qsRequired(picker.root, ".model-picker-trigger").setAttribute(
+        "data-model-setting-target",
+        `plugin:${pluginId}:${field.id}`
+      );
       modelFieldPopulated.set(modelSelectInput, picker.refresh(modelFieldCurrent ?? ""));
     }
     if (field.description) {
@@ -62680,6 +62772,14 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
   }
+  revealPluginModel = async (target) => {
+    const resolved3 = target === "advisorModel" ? `plugin:${ADVISOR_STRATEGY_PLUGIN_ID}:${ADVISOR_MODEL_SETTING_ID}` : target;
+    const pluginId = resolved3.split(":")[1];
+    if (!pluginId) return;
+    await revealPluginDetail({ pluginId });
+    if (overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === "customise")
+      focusModelSettings(overlay, resolved3);
+  };
   function renderMcpServers(allStatuses) {
     const listEl = qsRequired(overlay, "#mcp-server-list");
     const statuses = allStatuses.filter((s16) => !s16.curated);
@@ -63002,6 +63102,8 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     applySearch("");
     storageProjectId = null;
     const openedSection = pendingSection ?? "general";
+    const modelFocus = pendingModelFocus;
+    pendingModelFocus = null;
     showSection(openedSection);
     pendingSection = null;
     pluginDetail = pendingPluginDetail;
@@ -63014,13 +63116,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "experimental") void refreshPlugins();
     if (openedSection === "customise") {
       void refreshSources();
-      void revealPluginDetail();
+      if (modelFocus) void revealPluginModel?.(modelFocus);
+      else void revealPluginDetail();
     }
     if (openedSection === "storage") void refreshWorktrees("", true);
-    if (pendingModelFocus) {
-      pendingModelFocus = false;
-      focusModelSettings(overlay);
-    } else {
+    if (!modelFocus) {
       searchInput.focus();
     }
     void (async () => {
@@ -63111,6 +63211,8 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         if (iconRadio) iconRadio.checked = true;
       });
       await refreshStage("local-models", () => refreshLocalModelSelects());
+      if (modelFocus && openedSection !== "customise" && overlay.open && overlay.querySelector(".settings-section.active")?.getAttribute("data-section") === openedSection)
+        focusModelSettings(overlay, modelFocus);
       await refreshStage("gh-cli", () => ghCliSection.refreshStatus());
       await refreshStage("mcp-servers", async () => {
         await refreshMcpServers();
@@ -63223,19 +63325,14 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           })()
         );
       }
-      if (dirtyFieldNames.has("localDefaultModel") || dirtyFieldNames.has("subagentModel") || dirtyFieldNames.has("smallTasksModel")) {
-        writes.push(
-          (async () => {
-            const savedRoleModels = stringRecordOrEmpty(await api2.settings.get("roleModels"));
-            await api2.settings.set("roleModels", {
-              ...savedRoleModels,
-              coder: routingValues.localDefaultModel,
-              research: routingValues.subagentModel,
-              "small-tasks": formDataString(data, "smallTasksModel").trim()
-            });
-          })()
-        );
-      }
+      const roleAssignments = modelRoutingSection.readRoleModels() ?? {};
+      if (dirtyFieldNames.has("localDefaultModel"))
+        roleAssignments["coder"] = routingValues.localDefaultModel;
+      if (dirtyFieldNames.has("subagentModel"))
+        roleAssignments["research"] = routingValues.subagentModel;
+      if (dirtyFieldNames.has("smallTasksModel"))
+        roleAssignments["small-tasks"] = formDataString(data, "smallTasksModel").trim();
+      if (Object.keys(roleAssignments).length) writes.push(api2.settings.update({ roleAssignments }));
       const securityFieldNames = [
         "localServerUrl",
         "safetyModel",
@@ -63319,7 +63416,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
   qsRequired(overlay, "#settings-close").addEventListener("click", closeSettingsDialog);
 }
-var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingModelFocus, pendingPluginDetail;
+var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingModelFocus, revealPluginModel, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_errors4();
@@ -63477,7 +63574,8 @@ var init_settings_dialog = __esm({
     ];
     overlayEl = null;
     pendingSection = null;
-    pendingModelFocus = false;
+    pendingModelFocus = null;
+    revealPluginModel = null;
     pendingPluginDetail = null;
   }
 });
@@ -67549,6 +67647,13 @@ function createDemoApi(scenario, options = {}) {
     },
     openRouter: { models: emptyArray },
     models: {
+      invalidations: async () => ({
+        evaluated: true,
+        invalidations: [],
+        selections: [],
+        verifiedChoices: []
+      }),
+      recoverSetting: () => resolved2(false),
       bestValueDefault: () => resolved2("lmstudio:qwen/qwen3.6-35b-a3b"),
       resolveDynamic: (value) => resolved2(value.startsWith("auto:") ? "lmstudio:qwen/qwen3.6-35b-a3b" : value)
     },
@@ -67653,6 +67758,24 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     settings: {
+      getSnapshot: () => {
+        const values = Object.fromEntries(settings);
+        const snapshot = values;
+        return resolved2(snapshot);
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes;
+        const next = new Map(settings);
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value);
+        if (roleAssignments)
+          next.set("roleModels", {
+            ...stringRecordOrEmpty(settings.get("roleModels")),
+            ...roleAssignments
+          });
+        settings.clear();
+        for (const [key, value] of next) settings.set(key, value);
+        return resolvedVoid();
+      },
       get: (key) => resolved2(settings.get(key)),
       set: (key, value) => {
         settings.set(key, value);
@@ -86921,9 +87044,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -87360,6 +87495,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
@@ -142601,55 +142737,89 @@ var init_best_value_default = __esm({
 });
 
 // src/renderer/controller/provider-invalidation.ts
-async function checkProviderInvalidation(store2, api2, ui2) {
+function settingsTarget(invalid) {
+  switch (invalid.target) {
+    case "thread":
+      return "model";
+    case "role:coder":
+      return "localDefaultModel";
+    case "role:research":
+      return "subagentModel";
+    case "role:small-tasks":
+      return "smallTasksModel";
+    default:
+      return invalid.target;
+  }
+}
+function acknowledgement(store2, invalid) {
   const thread = getActiveThread(store2);
-  if (!thread || thread.status !== "idle") return null;
-  const route = thread.model ?? store2.getState().settings?.model;
-  if (typeof route !== "string") return null;
-  const slug2 = extraProviderSlugFromModel(route);
-  if (!slug2) return null;
-  let missing;
-  try {
-    missing = !(await api2.settings.extraProviders()).some((provider) => provider.id === slug2);
-  } catch {
-    return null;
-  }
-  if (!missing) return null;
-  function stillSelected() {
-    const current = getActiveThread(store2);
-    return (ui2.isActive?.() ?? true) && current?.id === thread?.id && current?.status === "idle" && (current.model ?? store2.getState().settings?.model) === route;
-  }
-  if (!stillSelected()) return null;
-  const models = await api2.lmStudio.modelInfo().catch(() => []);
-  const local = models.find(
-    (model) => model.local === true && model.embedding !== true && getLocalModelCapability(model.id)?.bestForRoles.includes("coder")
+  if (invalid.target === "thread" && thread?.messages.length === 0 && !thread.modelSelections?.length && store2.getState().settings?.model === invalid.model)
+    return JSON.stringify(["model", invalid.model]);
+  return JSON.stringify(
+    invalid.target === "thread" ? [store2.getState().activeProjectId, getActiveThread(store2)?.id, invalid.model] : [invalid.target, invalid.model]
   );
-  if (!stillSelected()) return null;
-  const openSettings = await ui2.warn({
-    message: "Your selected model provider was removed",
-    detail: `${route} is no longer configured. ${local ? `Dismiss to use ${local.id} on this device, or open Settings to choose another provider.` : "Open Settings to configure a provider or choose another model. No suitable local coding model is available."}`,
+}
+async function checkProviderInvalidation(store2, api2, ui2, acknowledged = /* @__PURE__ */ new Set()) {
+  const thread = getActiveThread(store2);
+  const project2 = store2.getState().activeProjectId;
+  const route = thread?.status === "idle" ? thread.model ?? store2.getState().settings?.model : void 0;
+  const alive = () => ui2.isActive?.() ?? true;
+  const stillSelected = () => {
+    const current = getActiveThread(store2);
+    return alive() && store2.getState().activeProjectId === project2 && current?.id === thread?.id && current?.status === "idle" && (current.model ?? store2.getState().settings?.model) === route;
+  };
+  const report = await api2.models.invalidations(route).catch(() => null);
+  if (!report?.evaluated || !alive() || route && !stillSelected()) return [];
+  const invalid = report.invalidations;
+  const selected = new Set(report.selections.map((choice) => acknowledgement(store2, choice)));
+  const verified = new Set(report.verifiedChoices.map((choice) => acknowledgement(store2, choice)));
+  for (const key of acknowledged) {
+    const parts = safeJsonParse(key, decodeWithSchema(external_exports.array(external_exports.string())));
+    if (!parts) continue;
+    const evaluatedSaved = parts.length === 2;
+    const evaluatedThread = route !== void 0 && parts.length === 3 && parts[0] === project2 && parts[1] === thread?.id;
+    if ((evaluatedSaved || evaluatedThread) && (!selected.has(key) || verified.has(key)))
+      acknowledged.delete(key);
+  }
+  const pending = invalid.filter((entry) => !acknowledged.has(acknowledgement(store2, entry)));
+  if (!pending.length) return [];
+  const keys = pending.map((entry) => acknowledgement(store2, entry));
+  const first = pending[0];
+  if (!first) return [];
+  const hasFallback = pending.some((entry) => entry.fallback);
+  const open2 = await ui2.warn({
+    message: "Model settings need attention",
+    detail: pending.map(
+      (entry) => `${entry.label}: ${entry.model}. ${entry.reason} ${entry.fallback ? `Dismiss to use ${entry.fallback.replace(/^lmstudio:/, "")} on this device.` : "No suitable on-device model is available; this choice will be preserved."}`
+    ).join("\n\n"),
     confirmLabel: "Open Settings",
-    cancelLabel: local ? "Use local model" : "Dismiss"
+    cancelLabel: hasFallback ? "Use local models" : "Dismiss"
   });
-  if (openSettings) {
-    if (stillSelected()) ui2.openSettings();
-    return route;
+  if (!alive()) return keys;
+  if (open2) {
+    if (first.target !== "thread" || stillSelected()) ui2.openSettings(settingsTarget(first));
+    return keys;
   }
-  if (!local || !stillSelected()) return route;
-  try {
-    const [providers, latestModels] = await Promise.all([
-      api2.settings.extraProviders(),
-      api2.lmStudio.modelInfo()
-    ]);
-    if (providers.some((provider) => provider.id === slug2) || !latestModels.some(
-      (model) => model.id === local.id && model.local === true && model.embedding !== true
-    ) || !stillSelected())
-      return route;
-  } catch {
-    return route;
+  for (const entry of pending) {
+    if (!alive() || !entry.fallback) continue;
+    if (entry.target === "thread") {
+      if (!thread || !stillSelected()) continue;
+      const latest = await api2.models.invalidations(route, true).catch(() => null);
+      if (!stillSelected() || !latest?.invalidations.some(
+        (item) => item.target === "thread" && item.model === route && item.fallback === entry.fallback
+      ))
+        continue;
+      commitThreadModelSelection(store2, api2, thread.id, "auto", route, entry.fallback);
+    } else {
+      const replaced = await api2.models.recoverSetting(entry.target, entry.model, entry.fallback).catch(() => false);
+      if (!replaced || !alive()) continue;
+      if (entry.target === "model" && store2.getState().settings?.model === entry.model) {
+        store2.setState({ settings: { ...store2.getState().settings, model: entry.fallback } });
+      }
+      store2.emit("settings_changed");
+    }
   }
-  commitThreadModelSelection(store2, api2, thread.id, "auto", route, `lmstudio:${local.id}`);
-  return route;
+  return keys;
 }
 function attachProviderInvalidationWarning(store2, api2, ui2) {
   const acknowledged = /* @__PURE__ */ new Set();
@@ -142657,18 +142827,14 @@ function attachProviderInvalidationWarning(store2, api2, ui2) {
   let pending = false;
   let disposed = false;
   const check2 = () => {
-    const thread = getActiveThread(store2);
-    const route = thread?.model ?? store2.getState().settings?.model;
-    if (disposed || typeof route !== "string") return;
+    if (disposed) return;
     if (checking) {
       pending = true;
       return;
     }
-    const key = JSON.stringify([store2.getState().activeProjectId, thread?.id, route]);
-    if (acknowledged.has(key)) return;
     checking = true;
-    void checkProviderInvalidation(store2, api2, { ...ui2, isActive: () => !disposed }).then((invalid) => {
-      if (invalid) acknowledged.add(key);
+    void checkProviderInvalidation(store2, api2, { ...ui2, isActive: () => !disposed }, acknowledged).then((keys) => {
+      keys.forEach((key) => acknowledged.add(key));
     }).catch((error62) => {
       console.error("[models] could not check provider configuration", error62);
     }).finally(() => {
@@ -142682,10 +142848,7 @@ function attachProviderInvalidationWarning(store2, api2, ui2) {
   const unsubscribe = [
     store2.on("workspace_changed", check2),
     store2.on("threads_changed", check2),
-    store2.on("settings_changed", () => {
-      acknowledged.clear();
-      check2();
-    }),
+    store2.on("settings_changed", check2),
     store2.on("thread_status_changed", check2)
   ];
   check2();
@@ -142698,8 +142861,8 @@ function attachProviderInvalidationWarning(store2, api2, ui2) {
 }
 var init_provider_invalidation = __esm({
   "src/renderer/controller/provider-invalidation.ts"() {
-    init_extra_providers();
-    init_local_model_catalog();
+    init_zod();
+    init_safe_json2();
     init_thread_helpers();
     init_model_selection2();
   }
