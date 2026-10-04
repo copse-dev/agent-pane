@@ -189,6 +189,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --chat-user-max: 840px;
   --settings-content-max: 720px;
   --traffic-light-inset: 78px;
+  --titlebar-sidebar-btn-width: 28px;
+  --titlebar-title-inset: calc( var(--traffic-light-inset) + var(--titlebar-sidebar-btn-width) + var(--spacing-sm) );
   --titlebar-height: calc(40px * var(--ui-scale));
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
@@ -903,6 +905,16 @@ copse-ui-field input[type=password],
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+.three-pane.is-projects-collapsed .pane-projects,
+.three-pane.is-projects-collapsed #resizer-projects {
+  display: none;
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal .pane-chat {
+  grid-column: 1;
+}
 .three-pane {
   display: flex;
   flex: 1;
@@ -986,6 +998,17 @@ copse-ui-field input[type=password],
 }
 .projects-search-btn.active {
   color: var(--accent);
+}
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 .projects-activity-btn {
   display: inline-flex;
@@ -1712,6 +1735,9 @@ copse-ui-field input[type=password],
   grid-column: 1 / -1;
   grid-row: 1 / -1;
   background: var(--bg-base);
+}
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
 }
 .pane-files-body {
   flex: 1;
@@ -3105,6 +3131,19 @@ copse-ui-field input[type=password],
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+.titlebar-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--titlebar-sidebar-btn-width);
+  padding: 3px 0;
+  color: var(--text-secondary);
+}
+.titlebar-sidebar-btn[aria-pressed=true] {
+  color: var(--text-primary);
+}
 .titlebar-settings-btn {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -3769,6 +3808,10 @@ label {
     right: auto;
     min-width: 100%;
   }
+}
+.model-picker-retention {
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 /* src/renderer/styles/global/conversation.css */
@@ -7507,7 +7550,7 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   justify-content: space-between;
   height: calc(var(--titlebar-height) + 1px);
-  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  padding: 0 var(--spacing-lg) 0 var(--titlebar-title-inset);
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
