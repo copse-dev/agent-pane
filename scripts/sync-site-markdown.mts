@@ -42,6 +42,7 @@
  * the relationship table. Still one source of truth, still the page's own data.
  */
 
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -464,7 +465,7 @@ async function main(): Promise<void> {
   console.log(`[sync-site-markdown] wrote ${String(generated.length)} files to ${outDir}/`)
 }
 
-const invokedDirectly = process.argv[1]?.endsWith('sync-site-markdown.mts') === true
+const invokedDirectly = isDirectExecution(import.meta.url, 'sync-site-markdown')
 if (invokedDirectly) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err))

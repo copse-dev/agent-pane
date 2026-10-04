@@ -1,8 +1,8 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 const XCODE_SELECT = '/usr/bin/xcode-select'
 const XCRUN = '/usr/bin/xcrun'
@@ -207,7 +207,7 @@ function main(): void {
   checkMacosNativeToolchain()
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isDirectExecution(import.meta.url, 'check-macos-native-toolchain')) {
   try {
     main()
   } catch (error) {

@@ -783,10 +783,22 @@ describe('workspaceSandboxOverlay', () => {
 
 describe('ensureWorkspaceTmpDir', () => {
   it('creates the workspace tmp dir and returns its path', () => {
-    const dir = ensureWorkspaceTmpDir()
-    assert.equal(dir, workspaceTmpDir())
-    // Best-effort creation: the dir should exist after the call in a normal home.
-    accessSync(dir)
+    // Exercise the supported workspace override rather than creating app data
+    // in the developer's real home (which may be read-only on a test runner).
+    const workspace = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-workspace-tmp-')))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = workspace
+    try {
+      const dir = ensureWorkspaceTmpDir()
+      assert.equal(dir, join(workspace, 'tmp'))
+      assert.equal(dir, workspaceTmpDir())
+      accessSync(dir)
+      assert.equal(ensureWorkspaceTmpDir(), dir, 'creation is idempotent')
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(workspace, { recursive: true, force: true })
+    }
   })
 })
 

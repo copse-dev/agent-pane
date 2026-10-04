@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
@@ -409,8 +410,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 }
 
 if (
-  process.argv[1]?.endsWith('thread-title-eval-lib.mts') ||
-  process.argv[1]?.endsWith('thread-title-eval-lib.cjs')
+  isDirectExecution(
+    import.meta.url,
+    'thread-title-eval-lib',
+    typeof __filename === 'string' ? __filename : undefined,
+  )
 ) {
   main().catch((error: unknown) => {
     console.error(`eval:thread-titles: ${error instanceof Error ? error.message : String(error)}`)

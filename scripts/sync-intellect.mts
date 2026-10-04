@@ -40,6 +40,7 @@
 // <vX.Y> to override, e.g. after AA renormalises. Attribution is required by
 // AA's free tier and is carried in the JSON + generated output.
 
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
@@ -616,7 +617,7 @@ async function main(): Promise<void> {
 //
 // Same guard idiom as `copy-monaco-workers.mts`, which is also both a module
 // and a CLI.
-if (process.argv[1]?.endsWith('sync-intellect.mts')) {
+if (isDirectExecution(import.meta.url, 'sync-intellect')) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err))
     process.exit(1)
