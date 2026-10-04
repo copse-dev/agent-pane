@@ -359,14 +359,12 @@ describe('VNC viewer', function () {
     await desktopButton.waitForDisplayed({ timeout: 20_000 })
     await desktopButton.click()
     const portInput = $('.vnc-port-input')
-    await portInput.waitForExist({ timeout: 20_000 })
     assert.equal(await $$('.vnc-tab').length, 1)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'Desktop 1')
     assert.equal(await $('.vnc-tabs-new-btn').getAttribute('aria-label'), 'New desktop tab')
+    assert.equal(await portInput.isExisting(), false)
     const advanced = $('.vnc-advanced')
     const advancedSummary = $('.vnc-advanced summary')
-    assert.equal(await advanced.getAttribute('open'), null)
-    assert.equal(await portInput.isDisplayed(), false)
     await $('.vnc-machine-select option[value="network:nearby:0"]').waitForExist({
       timeout: 20_000,
     })
@@ -376,7 +374,6 @@ describe('VNC viewer', function () {
       ),
     )
     assert.deepEqual(machineOptions, [
-      'This machine',
       'Studio Mac · studio.local:5900',
       'Other address…',
       'studio-mac-mini · alexandra-morgan@localhost',
@@ -392,19 +389,13 @@ describe('VNC viewer', function () {
     )
     assert.deepEqual(
       deviceSummaries.map(({ name }) => name),
-      ['This machine', 'Studio Mac', 'Add device', 'studio-mac-mini'],
+      ['Studio Mac', 'Add device', 'studio-mac-mini'],
     )
-    assert.equal(deviceSummaries.length, 4)
-    assert.equal(await $('.vnc-device.is-selected .vnc-device-name').getText(), 'This machine')
-    assert.equal(
-      await $('.vnc-device.is-selected .vnc-device-header').getAttribute('aria-expanded'),
-      'true',
-    )
-    assert.equal(await $('.vnc-setup-username-field').isDisplayed(), true)
-    assert.equal(await $('.vnc-setup-password-field').isDisplayed(), true)
-    assert.equal(await $('.vnc-connect-btn').getText(), 'Sign in & connect')
-    assert.match(deviceSummaries[1]?.meta ?? '', /Nearby.*studio\.local:5900/i)
-    assert.match(deviceSummaries[3]?.meta ?? '', /Saved SSH.*alexandra-morgan@localhost/i)
+    assert.equal(deviceSummaries.length, 3)
+    assert.equal(await $$('.vnc-device.is-selected').length, 0)
+    assert.equal(await $('.vnc-discovery-status').isDisplayed(), false)
+    assert.match(deviceSummaries[0]?.meta ?? '', /Nearby.*studio\.local:5900/i)
+    assert.match(deviceSummaries[2]?.meta ?? '', /Saved SSH.*alexandra-morgan@localhost/i)
 
     const previousFilesWidth = await browser.execute(() => {
       const body = document.getElementById('body')
@@ -421,9 +412,17 @@ describe('VNC viewer', function () {
       window.dispatchEvent(new Event('resize'))
     }, previousFilesWidth)
     await $('.vnc-device-header[data-machine="network:manual"]').click()
+    await portInput.waitForExist()
+    assert.equal(await advanced.getAttribute('open'), null)
+    assert.equal(await portInput.isDisplayed(), false)
     const addressInput = $('.vnc-address-input')
     await addressInput.waitForDisplayed()
     assert.equal(await $('.vnc-device.is-selected .vnc-device-name').getText(), 'Add device')
+    assert.equal(
+      await $('.vnc-device.is-selected .vnc-device-header').getAttribute('aria-expanded'),
+      'true',
+    )
+    assert.equal(await $('.vnc-network-warning').isDisplayed(), false)
     assert.equal(await $('.vnc-setup-username-field').isDisplayed(), true)
     assert.equal(await $('.vnc-setup-password-field').isDisplayed(), true)
     assert.equal(await $('.vnc-connect-btn').getText(), 'Sign in & connect')
@@ -437,32 +436,9 @@ describe('VNC viewer', function () {
     assert.match(await $('.confirm-dialog-message').getText(), /192\.168\.1\.20:5901/)
     assert.match(await $('.confirm-dialog-detail').getText(), /does not encrypt/i)
     await $('.confirm-dialog-cancel').click()
-    await $('.vnc-device-header[data-machine="local"]').click()
-
-    // macOS Screen Sharing often yields exactly one local RFB; Linux CI has none.
-    // Wait for discovery to leave the in-flight copy, then only pin the one-port
-    // chrome when that is what this host actually found.
-    await browser.waitUntil(
-      async () => {
-        const text = await $('.vnc-discovery-status').getText()
-        return text.length > 0 && !text.startsWith('Checking this machine')
-      },
-      {
-        timeout: 20_000,
-        timeoutMsg: 'expected local screen sharing discovery to complete',
-      },
-    )
-    // `data-kind` is the settled outcome: `ok` once discovery returned at least
-    // one listener, `idle` when it found none, `error` when the probe failed.
-    // Read it from the attribute rather than the sentence, which is prose.
-    const discoveryStatus = $('.vnc-discovery-status')
-    const discoveredLocalPort = (await discoveryStatus.getAttribute('data-kind')) === 'ok'
-    const discoveryText = await discoveryStatus.getText()
-    if (discoveryText === 'Screen sharing is available.') {
-      assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
-      assert.equal(await $$('.vnc-discovered-port').length, 0)
-      assert.equal(await $('.vnc-discover-btn').isDisplayed(), false)
-    }
+    await addressInput.setValue('localhost')
+    assert.equal(await $('.vnc-network-warning').isDisplayed(), false)
+    assert.equal(await $('.vnc-discovery-status').isDisplayed(), false)
     authenticationPort = await listenOnVncPort(authenticationServer)
     const rememberedUsername = await browser.execute(
       (targetPort) =>
@@ -471,27 +447,7 @@ describe('VNC viewer', function () {
     )
     await advancedSummary.click()
     await portInput.waitForDisplayed()
-    // The 5900 default only survives when discovery found nothing:
-    // `renderDiscoveredPorts` pins `ports[0]` into this input for any non-empty
-    // result. This spec runs its own fake RFB server on a conventional VNC port
-    // (5900-5999, which `isPlausibleVncListener` accepts), so on a host whose
-    // image ships `ss`/`lsof` the feature under test discovers the spec's own
-    // server and legitimately shows that port instead.
-    const selectedPort = await portInput.getValue()
-    if (!discoveredLocalPort) {
-      assert.equal(selectedPort, '5900')
-    } else if (discoveryText === 'Screen sharing is available.') {
-      // Exactly one listener was found. The fixture's RFB server is the only
-      // conventional VNC listener guaranteed by the spec.
-      assert.equal(selectedPort, String(port))
-    } else {
-      // Multiple listeners render as buttons. Pin the input to the button the
-      // product selected and prove the fixture server is among the results.
-      const selected = $('.vnc-discovered-port.selected')
-      await selected.waitForExist()
-      assert.equal(selectedPort, await selected.getAttribute('data-port'))
-      assert.equal(await $(`.vnc-discovered-port[data-port="${String(port)}"]`).isExisting(), true)
-    }
+    assert.equal(await portInput.getValue(), '5900')
     await portInput.setValue(String(authenticationPort))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
@@ -571,7 +527,10 @@ describe('VNC viewer', function () {
       }
     })
     const normalizeFamily = (value: string): string =>
-      value.replace(/["']/g, '').replace(/\s*,\s*/g, ',')
+      value
+        .replace(/["']/g, '')
+        .replace(/\s*,\s*/g, ',')
+        .replace(/-apple-system,(?:BlinkMacSystemFont|system-ui)/g, '-apple-system,system-ui')
     assert.equal(normalizeFamily(fieldFonts.username), normalizeFamily(fieldFonts.interface))
     for (const text of [fieldFonts.usernameLabel, fieldFonts.setupUsername]) {
       assert.equal(normalizeFamily(text), normalizeFamily(fieldFonts.username))
@@ -672,7 +631,7 @@ describe('VNC viewer', function () {
     await canvas.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await canvas.getAttribute('width'), String(WIDTH))
     assert.equal(await canvas.getAttribute('height'), String(HEIGHT))
-    assert.equal(await $('.vnc-status-title').getText(), 'Connected to this machine')
+    assert.equal(await $('.vnc-status-title').getText(), 'Connected to localhost')
     assert.match(
       await $('.vnc-status-detail').getText(),
       /View only.*keyboard and mouse control are off/i,
@@ -686,7 +645,7 @@ describe('VNC viewer', function () {
     assert.equal(await controlButton.getText(), 'Control desktop')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
     assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
-    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
 
     if (secureCredentialStorage) {
       const target = { kind: 'loopback', port } as const
@@ -726,7 +685,7 @@ describe('VNC viewer', function () {
     assert.match(await $('.vnc-status-detail').getText(), /mouse and keyboard control are on/i)
     assert.equal(
       await $('.vnc-tab.is-active').getAttribute('aria-label'),
-      'This machine, mouse and keyboard control on',
+      'localhost, mouse and keyboard control on',
     )
     assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen is-controlling')
     assert.match(
@@ -815,9 +774,13 @@ describe('VNC viewer', function () {
     assert.equal(await $('.vnc-viewer-panel:not([hidden]) .vnc-screen canvas').isExisting(), false)
 
     const secondControls = '.vnc-controls-panel:not([hidden])'
+    await $(`${secondControls} .vnc-device-header[data-machine="network:manual"]`).click()
     const secondPortInput = $(`${secondControls} .vnc-port-input`)
     const secondAdvancedSummary = $(`${secondControls} .vnc-advanced summary`)
     await secondPortInput.waitForExist({ timeout: 20_000 })
+    const secondAddressInput = $(`${secondControls} .vnc-address-input`)
+    await secondAddressInput.waitForDisplayed()
+    await secondAddressInput.setValue('localhost')
     await secondAdvancedSummary.click()
     await secondPortInput.waitForDisplayed()
     await secondPortInput.setValue(String(port))
@@ -832,8 +795,8 @@ describe('VNC viewer', function () {
     )
 
     assert.deepEqual(await $$('.vnc-tab-label').map((label) => label.getText()), [
-      'This machine 1',
-      'This machine 2',
+      'localhost 1',
+      'localhost 2',
     ])
     assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 2)
     assert.equal(await $('.vnc-viewer-panel:not([hidden]) .vnc-screen canvas').isDisplayed(), true)
@@ -842,19 +805,19 @@ describe('VNC viewer', function () {
     await saveElementScreenshot('#pane-files', 'vnc-viewer-tabs.png')
 
     await $$('.vnc-tab')[0].click()
-    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine 1')
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost 1')
     assert.equal(
       await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
-      'Connected to this machine',
+      'Connected to localhost',
     )
     await $$('.vnc-tab')[1].click()
     await $('.vnc-tab.is-active .vnc-tab-close').click()
     assert.equal(await $$('.vnc-tab').length, 1)
-    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
+    assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'localhost')
     assert.equal(await $$('.vnc-viewer-panel .vnc-screen canvas').length, 1)
     assert.equal(
       await $('.vnc-controls-panel:not([hidden]) .vnc-status-title').getText(),
-      'Connected to this machine',
+      'Connected to localhost',
     )
 
     await browser.execute(async () => {
@@ -876,22 +839,10 @@ describe('VNC viewer', function () {
     assert.equal(await nearbyRetry.isDisplayed(), true)
     assert.equal(await nearbyRetry.getText(), 'Try again')
     assert.equal(await nearbyRetry.getAttribute('aria-label'), 'Look for nearby devices again')
-    await browser.waitUntil(
-      async () => {
-        const kind = await $(`${retryControls} .vnc-discovery-status`).getAttribute('data-kind')
-        return kind === 'ok' || kind === 'idle'
-      },
-      {
-        timeout: 20_000,
-        timeoutMsg: 'expected automatic screen sharing discovery to complete in the retry state',
-      },
-    )
-    const discoveryKind = await $(`${retryControls} .vnc-discovery-status`).getAttribute(
-      'data-kind',
-    )
+    assert.equal(await $(`${retryControls} .vnc-discovery-status`).isDisplayed(), false)
     assert.equal(
-      await $(`${retryControls} .vnc-discover-btn`).isDisplayed(),
-      discoveryKind === 'idle',
+      await $(`${retryControls} .vnc-device-header[data-machine="local"]`).isExisting(),
+      false,
     )
     await saveElementScreenshot('#pane-files', 'vnc-viewer-discovery-retry.png')
     await nearbyRetry.click()
