@@ -37,8 +37,27 @@ interface Harness {
   bodyRequests: string[]
 }
 
+function deferredBody(): {
+  promise: Promise<string | null>
+  resolve: (body: string | null) => void
+  reject: (error: Error) => void
+} {
+  let resolve: (body: string | null) => void = () => {}
+  let reject: (error: Error) => void = () => {}
+  const promise = new Promise<string | null>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function fakeApi(
-  opts: { body?: string | null; result?: PrCreateResult; createThrows?: boolean } = {},
+  opts: {
+    body?: string | null
+    bodyPromise?: Promise<string | null>
+    result?: PrCreateResult
+    createThrows?: boolean
+  } = {},
 ): Harness {
   const base = createFakeApi()
   const creates: Harness['creates'] = []
@@ -50,7 +69,7 @@ function fakeApi(
       suggestFollowUps: () => Promise.resolve([CREATE_PR]),
       suggestPrBody: (_projectId: string, _threadId: string, contextJson: string) => {
         bodyRequests.push(contextJson)
-        return Promise.resolve(opts.body ?? null)
+        return opts.bodyPromise ?? Promise.resolve(opts.body ?? null)
       },
     },
     gh: {
@@ -223,6 +242,102 @@ describe('the "Create PR" follow-up bubble', () => {
     await flush()
 
     assert.equal(body.value, 'my own words')
+  })
+
+  it('queues early confirmation until the same description is ready', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const { promise, resolve } = deferredBody()
+    const { api, creates, bodyRequests } = fakeApi({ bodyPromise: promise })
+    const dialog = await openBubble(store, threadId, api)
+    const title = qsRequired<HTMLInputElement>(dialog, '.create-pr-dialog-title-input')
+    const draft = qsRequired<HTMLInputElement>(dialog, '.create-pr-dialog-draft-input')
+    const create = qsRequired<HTMLButtonElement>(dialog, '.create-pr-dialog-create')
+    title.value = '  My title  '
+    draft.checked = true
+
+    assert.equal(create.disabled, false)
+    create.click()
+    create.dispatchEvent(new Event('click'))
+    await flush()
+    assert.equal(creates.length, 0)
+    assert.equal(dialog.open, true)
+    assert.equal(create.disabled, true)
+    assert.equal(title.disabled, true)
+    assert.equal(draft.disabled, true)
+    assert.equal(
+      qsRequired<HTMLTextAreaElement>(dialog, '.create-pr-dialog-body-input').disabled,
+      true,
+    )
+    assert.match(create.textContent, /Waiting for description/)
+
+    resolve('  Generated description.  ')
+    await flush()
+    assert.equal(creates.length, 1)
+    assert.deepEqual(creates[0]?.request, {
+      title: 'My title',
+      body: 'Generated description.',
+      draft: true,
+    })
+    assert.equal(bodyRequests.length, 1)
+    assert.equal(dialog.open, false)
+  })
+
+  for (const body of ['my own words', '']) {
+    it(`submits an edited body ${JSON.stringify(body)} without waiting`, async () => {
+      const { store, threadId } = storeWithFinishedTurn()
+      const { promise, resolve } = deferredBody()
+      const { api, creates } = fakeApi({ bodyPromise: promise })
+      const dialog = await openBubble(store, threadId, api)
+      const input = qsRequired<HTMLTextAreaElement>(dialog, '.create-pr-dialog-body-input')
+      input.value = body
+      input.dispatchEvent(new Event('input'))
+      qsRequired(dialog, '.create-pr-dialog-create').click()
+      await flush()
+      assert.equal(creates.length, 1)
+      assert.equal(creates[0]?.request.body, body)
+      resolve('Late proposal')
+      await flush()
+      assert.equal(creates.length, 1)
+      assert.equal(input.value, body)
+    })
+  }
+
+  for (const fails of [false, true]) {
+    it(`continues early confirmation with an empty body on ${fails ? 'rejection' : 'null'}`, async () => {
+      const { store, threadId } = storeWithFinishedTurn()
+      const { promise, resolve, reject } = deferredBody()
+      const { api, creates } = fakeApi({ bodyPromise: promise })
+      const dialog = await openBubble(store, threadId, api)
+      qsRequired(dialog, '.create-pr-dialog-create').click()
+      if (fails) reject(new Error('model unavailable'))
+      else resolve(null)
+      await flush()
+      assert.equal(creates.length, 1)
+      assert.equal(creates[0]?.request.body, '')
+      assert.equal(dialog.open, false)
+    })
+  }
+
+  it('can cancel queued confirmation without publishing or closing a later dialog', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const { promise, resolve } = deferredBody()
+    const { api, creates } = fakeApi({ bodyPromise: promise })
+    const dialog = await openBubble(store, threadId, api)
+    qsRequired(dialog, '.create-pr-dialog-create').click()
+    qsRequired(dialog, '.create-pr-dialog-cancel').click()
+    await flush()
+    assert.equal(dialog.open, false)
+
+    const reopened = await openBubble(store, threadId, fakeApi({ body: 'New proposal' }).api)
+    resolve('Cancelled proposal')
+    await flush()
+    assert.equal(creates.length, 0)
+    assert.equal(reopened.open, true)
+    assert.equal(
+      qsRequired<HTMLTextAreaElement>(reopened, '.create-pr-dialog-body-input').value,
+      'New proposal',
+    )
+    qsRequired(reopened, '.create-pr-dialog-cancel').click()
   })
 
   it('creates with the title, body and draft flag, and no further inference', async () => {
