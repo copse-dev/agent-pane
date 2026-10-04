@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { getSkill, readSkill } from './skills-registry.ts'
 import { buildModelActivatedSkillBlock, modelInvocableSkillsForTools } from './skill-prompt.ts'
-import { parseSkillFrontmatter, splitSkillMarkdown } from './parse-skill-frontmatter.ts'
+import { decodeSkillDefinition } from './parse-skill-frontmatter.ts'
 
 export const MAX_MODEL_ACTIVATED_SKILLS = 4
 export const MAX_MODEL_SKILL_CONTEXT_BYTES = 128 * 1024
@@ -86,8 +86,7 @@ export function createSkillActivationTurn(
       try {
         const file = await readSkill(name)
         signal.throwIfAborted()
-        const split = splitSkillMarkdown(file.body)
-        const current = split ? parseSkillFrontmatter(split.frontmatter) : null
+        const current = decodeSkillDefinition(meta, file.body).validation.skill
         if (!current || current.name !== meta.name || current.disableModelInvocation) {
           throw new Error(
             `Skill "${meta.name}" is no longer eligible for model activation. Reload skill discovery after correcting its definition.`,

@@ -37,6 +37,8 @@ The transcript records each automatic activation as a `read_skill` tool call wit
 resolved skill name, source path, trust framing and instruction context estimate in its
 result. The four-character token estimate is approximate; UTF-8 bytes enforce the actual
 instruction budget. Context management also counts tool results in the conversation.
+Fresh instruction reads use the same strict, origin-aware definition decoder as discovery;
+exact shipped vendor compatibility adapters do not apply to arbitrary project copies.
 Unrelated skills are never eagerly loaded, disabled model-invocation skills are rejected
-at execution as well as excluded from the catalog, and manual-only eligibility is
+at execution as well as excluded from the catalog, and model eligibility is
 independent of manual picker visibility.

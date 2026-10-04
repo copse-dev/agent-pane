@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createSkillActivationTurn } from './skill-activation.ts'
@@ -224,6 +224,14 @@ describe('model skill activation', () => {
       assert.match(result, /Skill activated by the model: cursor-sdk/)
       assert.match(result, /Source: bundled/)
       assert.match(result, /<skill_content name="cursor-sdk" trust="trusted" activation="model">/)
+
+      // Exact vendor bytes must not weaken fresh validation for arbitrary project definitions.
+      const copied = await skill('cursor-sdk')
+      await writeFile(copied.skillPath, await readFile(sdk.skillPath, 'utf8'))
+      await assert.rejects(
+        createSkillActivationTurn([], ['read_skill']).read(copied.name, undefined, signal),
+        /no longer eligible/,
+      )
     } finally {
       restore()
       setUserSkillsHomeForTest(null)
