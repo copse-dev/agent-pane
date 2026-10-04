@@ -14,6 +14,7 @@ import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
+  openModelSettings,
   closeSettingsDialog,
   isSettingsDialogOpen,
   applyUiAccent,
@@ -103,6 +104,23 @@ describe('settings dialog (native <dialog>)', () => {
     openSettingsDialog()
     assert.equal(spy.showModalCalls, 1)
     assert.equal(isSettingsDialogOpen(), true)
+  })
+
+  it('reveals and focuses model recovery when Settings is already open on another section', () => {
+    openSettingsDialog()
+    qsRequired(dialog, '.settings-nav-btn[data-section="appearance"]').click()
+    const models = qsRequired(dialog, '#settings-models-section')
+    let scrolled = false
+    Object.defineProperty(models, 'scrollIntoView', {
+      value: (): void => {
+        scrolled = true
+      },
+    })
+    openModelSettings()
+    assert.equal(spy.showModalCalls, 1)
+    assert.ok(dialog.querySelector('.settings-section.active[data-section="general"]'))
+    assert.equal(document.activeElement, models)
+    assert.ok(scrolled)
   })
 
   it('moves Mobile Companion management into Experimental settings', async () => {

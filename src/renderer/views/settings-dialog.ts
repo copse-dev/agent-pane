@@ -485,6 +485,7 @@ let overlayEl: HTMLDialogElement | null = null
 // Section to reveal on the next open (e.g. a deep-link from the low-context
 // warning). Read and cleared by the `settings-open` handler; null → General.
 let pendingSection: SettingsSection | null = null
+let pendingModelFocus = false
 // Plugin detail to reveal on the next open. Same lifecycle as `pendingSection`.
 let pendingPluginDetail: PluginDetailTarget | null = null
 
@@ -496,6 +497,25 @@ export function openSettingsDialog(section?: SettingsSection): void {
   // hand-rolled overlay + manual `hidden` toggle.
   overlayEl.showModal()
   overlayEl.dispatchEvent(new Event('settings-open'))
+}
+
+/** Recovery from a removed provider: reveal the chat-model setting to repair. */
+export function openModelSettings(): void {
+  if (!overlayEl) return
+  if (overlayEl.open) {
+    qsRequired(overlayEl, '.settings-nav-btn[data-section="general"]').click()
+    focusModelSettings(overlayEl)
+    return
+  }
+  pendingModelFocus = true
+  openSettingsDialog('general')
+}
+
+function focusModelSettings(overlay: HTMLElement): void {
+  const models = qsRequired(overlay, '#settings-models-section')
+  models.setAttribute('tabindex', '-1')
+  models.scrollIntoView({ block: 'start' })
+  models.focus({ preventScroll: true })
 }
 
 /**
@@ -4694,7 +4714,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void refreshWorktrees('', true)
       void storageMaintenance.refresh()
     }
-    searchInput.focus()
+    if (pendingModelFocus) {
+      pendingModelFocus = false
+      focusModelSettings(overlay)
+    } else {
+      searchInput.focus()
+    }
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this
       // `void (async …)()`. A rejection anywhere aborted every later step, and

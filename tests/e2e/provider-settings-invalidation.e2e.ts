@@ -4,7 +4,11 @@ import { $, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-provider-settings-invalidation'
@@ -45,6 +49,19 @@ describe('stale custom-provider model selection', () => {
 
   it('shows actionable guidance without starting a provider turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('#confirm-dialog').waitForDisplayed({ timeout: 20_000 })
+    await expect($('.confirm-dialog-message')).toHaveText(
+      'Your selected model provider was removed',
+    )
+    await expect($('.confirm-dialog-detail')).toHaveText(expect.stringContaining(STALE_ROUTE))
+    await saveElementScreenshot('#confirm-dialog', 'provider-settings-proactive-warning.png')
+    await $('.confirm-dialog-confirm').click()
+    await $('#settings-dialog').waitForDisplayed()
+    assert.equal(await browser.execute(() => document.activeElement?.id), 'settings-models-section')
+    const modelHeading = await $('#settings-models-section > legend').getLocation()
+    assert.ok(modelHeading.y >= 0 && modelHeading.y < 200, 'the model setting should be in view')
+    await saveAppScreenshot('provider-settings-recovery.png')
+    await $('#settings-close').click()
     await setComposerValue('Continue with the removed provider route.')
     await submitComposer()
 
