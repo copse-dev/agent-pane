@@ -59,7 +59,9 @@ describe('cached-store (storage read-complexity contract)', () => {
     })
     assert.equal(store.get('first'), 'old')
     assert.equal(store.get('second'), 'old')
-    assert.throws(() => store.setMany({ first: 'new', second: 'new' }), /disk full/)
+    assert.throws(() => {
+      store.setMany({ first: 'new', second: 'new' })
+    }, /disk full/)
     assert.equal(store.get('first'), 'old')
     assert.equal(store.get('second'), 'old')
     assert.deepEqual([...data.values()], ['old', 'old'])
@@ -73,7 +75,9 @@ describe('cached-store (storage read-complexity contract)', () => {
   it('refuses to emulate an atomic batch through separate per-key writes', () => {
     const { backing, data, writes } = countingBacking({ first: 'old' })
     const store = createCachedStore(backing)
-    assert.throws(() => store.setMany({ first: 'new', second: 'new' }), /atomic updates/)
+    assert.throws(() => {
+      store.setMany({ first: 'new', second: 'new' })
+    }, /atomic updates/)
     assert.equal(writes(), 0)
     assert.equal(data.get('first'), 'old')
   })
