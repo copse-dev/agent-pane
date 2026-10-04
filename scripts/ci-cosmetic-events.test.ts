@@ -38,13 +38,15 @@ type EventContext = {
   base_ref: string
   event: {
     action: string
-    changes: Record<string, unknown>
+    changes?: Record<string, unknown>
     label: { name: string }
     pull_request: { number: number; head: { repo: { full_name: string } } }
   }
 }
 
-function context(action: string, changes: Record<string, unknown> = {}, label = ''): EventContext {
+// `changes` is passed through as GitHub sends it: absent keys stay absent,
+// because the edit predicate compares the serialised object, key for key.
+function context(action: string, changes?: Record<string, unknown>, label = ''): EventContext {
   return {
     event_name: 'pull_request',
     run_id: 123,
@@ -53,7 +55,7 @@ function context(action: string, changes: Record<string, unknown> = {}, label = 
     base_ref: 'main',
     event: {
       action,
-      changes: { title: null, body: null, base: null, ...changes },
+      ...(changes ? { changes } : {}),
       label: { name: label },
       pull_request: { number: 42, head: { repo: { full_name: 'copse-dev/agent-pane' } } },
     },
@@ -61,15 +63,23 @@ function context(action: string, changes: Record<string, unknown> = {}, label = 
 }
 
 // These routing expressions use only GitHub equality, short-circuit boolean
-// operators, null comparisons, and format with scalar arguments. Fixtures fill
-// missing fields with null, matching Actions' missing-property semantics.
+// operators, null comparisons, format, toJSON and fromJSON. Actions reads a
+// property of a missing object as null; optional chaining reads it as
+// undefined, which `==`/`!=` treat alike and toJSON maps to `null`.
 function evaluate(expression: string, github: EventContext): unknown {
-  const source = expression.trim().startsWith('${{') ? expression.trim().slice(3, -2) : expression
+  const source = (
+    expression.trim().startsWith('${{') ? expression.trim().slice(3, -2) : expression
+  ).replace(/\bgithub(?:\.[\w-]+)+/g, (path) => path.replaceAll('.', '?.'))
   const result: unknown = runInNewContext(source, {
     github,
     always: () => true,
     success: () => true,
-    format: (pattern: string, value: string | number) => pattern.replace('{0}', String(value)),
+    format: (pattern: string, ...values: unknown[]) =>
+      pattern.replace(/\{\{|\}\}|\{(\d+)\}/g, (token: string, index?: string) =>
+        index === undefined ? token.charAt(0) : String(values[Number(index)]),
+      ),
+    toJSON: (value: unknown) => JSON.stringify(value ?? null, null, 2),
+    fromJSON: (text: string): unknown => JSON.parse(text),
   })
   return result
 }
@@ -105,7 +115,16 @@ function admitted(github: EventContext): {
   }
 }
 
-const cosmetics = [context('labeled', {}, 'review-has-feedback')]
+const cosmetics = [
+  context('labeled', {}, 'review-has-feedback'),
+  context('edited', { title: { from: 'Previous title' } }),
+  context('edited', { body: { from: '' } }),
+  context('edited', { body: { from: null } }),
+  context('edited', { title: { from: '' }, body: { from: 'Previous body' } }),
+  context('edited', { body: { from: 'Previous body' }, title: { from: '' } }),
+  // Text that looks like the reconstruction's own syntax round-trips intact.
+  context('edited', { body: { from: '{0}"title":{1}}}\n\'quoted\' ${{ x }}' } }),
+]
 
 describe('cosmetic CI event routing', () => {
   it('never publishes the required aggregate or executes either independent root for metadata', () => {
@@ -155,6 +174,26 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
+  it('binds one identical metadata predicate at every routing site', () => {
+    const metadataOnly = workflow.jobs['ci-passed']?.steps?.find(
+      (step) => step.env?.['METADATA_ONLY'],
+    )?.env?.['METADATA_ONLY']
+    const predicate = /^\$\{\{ (.+) \}\}$/s.exec(metadataOnly?.trim() ?? '')?.[1]
+    assert.ok(predicate, 'METADATA_ONLY must be a single expression')
+    assert.ok(predicate.includes("github.event.action == 'edited'"))
+    // A literal `}}` inside an expression could end the `${{` template early.
+    assert.doesNotMatch(predicate, /\}\}/)
+    for (const [site, text] of [
+      ['concurrency.group', workflow.concurrency.group],
+      ['concurrency.cancel-in-progress', workflow.concurrency['cancel-in-progress']],
+      ['precheck.if', binding('precheck').if],
+      ['autoformat.if', binding('autoformat').if],
+      ['ci-passed.name', binding('ci-passed').name],
+    ] as const) {
+      assert.ok(text?.includes(`(${predicate})`), `${site} must use the shared metadata predicate`)
+    }
+  })
+
   it('cannot replace a pending real run through shared workflow concurrency', () => {
     const real = admitted(context('synchronize'))
     assert.equal(real.group, 'ci-42')
@@ -167,15 +206,18 @@ describe('cosmetic CI event routing', () => {
 
   it('runs normal CI for retargets, meaningful labels, unknown edits and ordinary events', () => {
     const real = [
-      context('edited', { title: { from: 'Previous title' } }),
-      context('edited', { body: { from: '' } }),
-      context('edited', { title: { from: '' }, body: { from: 'Previous body' } }),
       context('edited', { base: { ref: { from: 'release' } } }),
+      context('edited', { title: { from: '' }, base: { ref: { from: 'release' } } }),
+      context('edited', { title: { from: '' }, body: { from: '' }, base: { ref: { from: 'a' } } }),
+      context('edited', {}),
       context('edited', { base: { ref: { from: 'release' } }, body: { from: '' } }),
       context('edited'),
       context('edited', { unknown: { from: '' } }),
       context('edited', { title: { from: '' }, reviewer: { from: '' } }),
       context('edited', { body: { from: '' }, unknown: { from: '' } }),
+      context('edited', { title: { from: '' }, body: { from: '' }, unknown: { from: '' } }),
+      context('edited', { unknown: { from: '' }, title: { from: '' } }),
+      context('labeled', { title: { from: '' } }, 'ci-full'),
       context('labeled', {}, 'future-ci-label'),
       context('future-action'),
       ...meaningfulLabels.map((name) => context('labeled', {}, name)),
