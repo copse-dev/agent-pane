@@ -37,6 +37,7 @@
   --bg-muted: #123f3b;
   --bg-subtle: #043431;
   --text-primary: #f9fcff;
+  --text-prose: var(--text-primary);
   --text-secondary: #b8cbc8;
   --text-muted: #829e9a;
   --border: #28534f;
@@ -77,6 +78,8 @@
   /* The dark-theme greys read as low-contrast smudges on white — every text
      tier and the status colours need their own light values. */
   --text-primary: #333333;
+  --text-prose: #333333;
+  --text-prose-strong: #111111;
   --text-secondary: #5f5f5f;
   --text-muted: #767676;
   /* Same chevron as :root (tokens.css), restated because its stroke is baked

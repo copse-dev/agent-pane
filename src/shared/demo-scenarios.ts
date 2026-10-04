@@ -224,7 +224,7 @@ const readingLayoutContent = [
   '',
   '## What changed',
   '',
-  '- A readable column keeps long lines from crossing the entire window.',
+  '- **A readable column:** keeps long lines from crossing the entire window.',
   '- Paragraphs and sections have enough separation to scan.',
   '  - Nested details retain their indentation.',
   '  - A second nested item checks the list rhythm.',
