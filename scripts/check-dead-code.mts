@@ -30,6 +30,8 @@ const SHARED = resolve(ROOT, 'src/shared')
 const ALLOWED_UNLINKED: Record<string, string> = {
   'src/main/services/container-runtime/cli.ts':
     'esbuild entry that scripts/run-thread-container.mts bundles by path (pnpm run thread:container)',
+  'src/main/services/container-runtime/worker-entry-harbor.ts':
+    'benchmark-only esbuild entry that scripts/build-harbor-container.mts bundles by path into dist-test/ (never dist/)',
 }
 
 // Product modules intentionally exercised only by tests/scripts. Prefer wiring
