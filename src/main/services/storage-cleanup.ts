@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../shared/safe-json.ts'
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, open, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { copseDataRoot, copseWorkspaceTmpDir } from '@copse/store-kit/copse-paths.ts'
@@ -69,43 +69,55 @@ export class StorageCleanup {
   private async locked<T>(run: () => Promise<T>): Promise<T> {
     await this.safePath(this.locks)
     await mkdir(this.locks, { recursive: true, mode: 0o700 })
-    const path = join(this.locks, 'cleanup.lock')
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const handle = await open(path, 'wx', 0o600).catch((error: unknown) => {
-        if (error instanceof Error && Reflect.get(error, 'code') === 'EEXIST') return null
-        throw error
-      })
-      if (handle) {
-        try {
-          await handle.writeFile(String(process.pid))
-          return await run()
-        } finally {
-          await handle.close()
-          await rm(path, { force: true })
-        }
+    // A filesystem bakery lock: owner identity is in each unique filename, so
+    // even a crash before publishing a ticket is reclaimable. Reaping touches
+    // only that dead owner's unique claim; there is no reusable reaper gate
+    // whose stale deletion could race a newly acquired owner.
+    const owner = `${String(process.pid)}-${randomUUID()}`
+    const choosing = join(this.locks, `choosing-${owner}.lock`)
+    let claim = choosing
+    await writeFile(choosing, '', { flag: 'wx', mode: 0o600 })
+    try {
+      let highest = 0n
+      for (const name of await readdir(this.locks)) {
+        const ticket = /^ticket-([0-9]{1,64})-[0-9]+-[a-f0-9-]+\.lock$/.exec(name)
+        if (ticket?.[1]) highest = BigInt(ticket[1]) > highest ? BigInt(ticket[1]) : highest
       }
-      // Only one contender may reap a dead owner's lock. Re-read under the
-      // reaper gate so a later contender cannot unlink a freshly acquired lock.
-      const reaperPath = join(this.locks, 'reaper.lock')
-      const reaper = await open(reaperPath, 'wx', 0o600).catch((error: unknown) => {
-        if (error instanceof Error && Reflect.get(error, 'code') === 'EEXIST') return null
-        throw error
-      })
-      if (reaper) {
-        try {
-          const owner = await readFile(path, 'utf8').catch((error: unknown) => {
-            if (missing(error)) return ''
-            throw error
-          })
-          if (/^[0-9]+$/.test(owner) && !alive(Number(owner))) await rm(path, { force: true })
-        } finally {
-          await reaper.close()
-          await rm(reaperPath, { force: true })
+      const number = highest + 1n
+      if (String(number).length > 64) throw new Error('Storage lock ticket is out of range')
+      claim = join(this.locks, `ticket-${String(number)}-${owner}.lock`)
+      await rename(choosing, claim)
+      for (let attempt = 0; attempt < 100; attempt++) {
+        let blocked = false
+        for (const name of await readdir(this.locks)) {
+          const ticket = /^ticket-([0-9]{1,64})-([0-9]+)-([a-f0-9-]+)\.lock$/.exec(name)
+          const selecting = /^choosing-([0-9]+)-([a-f0-9-]+)\.lock$/.exec(name)
+          const pid = ticket?.[2] ?? selecting?.[1]
+          if (!pid) continue
+          const path = join(this.locks, name)
+          if (path === claim) continue
+          if (!alive(Number(pid))) {
+            await rm(path, { force: true })
+            continue
+          }
+          // Wait for every live chooser; it may publish an earlier ticket.
+          if (selecting) blocked = true
+          if (ticket?.[1] && ticket[2] && ticket[3]) {
+            const otherNumber = BigInt(ticket[1])
+            const otherOwner = `${ticket[2]}-${ticket[3]}`
+            if (otherNumber < number || (otherNumber === number && otherOwner < owner))
+              blocked = true
+          }
         }
+        if (!blocked) return await run()
+        await delay(50)
       }
-      await delay(50)
+      throw new Error('Storage is busy. Try again when cleanup has finished.')
+    } finally {
+      await rm(claim, { force: true })
+      // If ticket publication failed, the choosing claim still belongs to us.
+      await rm(choosing, { force: true })
     }
-    throw new Error('Storage is busy. Try again when cleanup has finished.')
   }
   private async busy(area: StorageArea): Promise<boolean> {
     for (const name of await readdir(this.locks)) {
@@ -213,31 +225,56 @@ export class StorageCleanup {
       if (await this.busy(area)) return { removed: 0, bytes: 0, skipped: 1 }
       const result = { removed: 0, bytes: 0, skipped: 0 }
       const paths = await this.candidates(area)
-      const completed = new Set<string>()
-      if (area === 'runs')
-        for (const path of paths) {
-          if (!(await lstat(path)).isSymbolicLink() && (await this.completedRun(path)))
-            completed.add(path)
-        }
+      // Completed directories and their archives are one retention unit. A
+      // newer archive must keep its directory alive until both can expire.
+      const groups = new Map<string, string[]>()
       for (const path of paths) {
-        if (area === 'runs' && !completed.has(path)) {
-          result.skipped++
+        const key = area === 'runs' && path.endsWith('.zip') ? path.slice(0, -4) : path
+        const group = groups.get(key) ?? []
+        group.push(path)
+        groups.set(key, group)
+      }
+      for (const [runPath, group] of groups) {
+        if (
+          area === 'runs' &&
+          ((
+            await lstat(runPath).catch((error: unknown) => {
+              if (missing(error)) return null
+              throw error
+            })
+          )?.isSymbolicLink() ||
+            !(await this.completedRun(runPath)))
+        ) {
+          result.skipped += group.length
           continue
         }
-        const stat = await lstat(path)
-        if (stat.isSymbolicLink()) {
-          result.skipped++
+        const measurements: { path: string; bytes: number; modified: number }[] = []
+        let redirected = false
+        for (const path of group) {
+          if ((await lstat(path)).isSymbolicLink()) {
+            redirected = true
+            break
+          }
+          await this.safePath(path)
+          measurements.push({ path, ...(await this.measure(path)) })
+        }
+        if (
+          redirected ||
+          (olderThan !== undefined && measurements.some((entry) => entry.modified >= olderThan))
+        ) {
+          result.skipped += group.length
           continue
         }
-        const measured = await this.measure(path)
-        if (olderThan !== undefined && measured.modified >= olderThan) {
-          result.skipped++
-          continue
+        // Remove archives first so a failed directory removal remains eligible
+        // for a later pass rather than stranding an archive without its record.
+        measurements.sort(
+          (a, b) => Number(b.path.endsWith('.zip')) - Number(a.path.endsWith('.zip')),
+        )
+        for (const entry of measurements) {
+          await rm(entry.path, { recursive: true, force: true })
+          result.removed++
+          result.bytes += entry.bytes
         }
-        await this.safePath(path)
-        await rm(path, { recursive: true, force: true })
-        result.removed++
-        result.bytes += measured.bytes
       }
       return result
     })

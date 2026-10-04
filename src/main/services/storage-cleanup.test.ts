@@ -3,6 +3,9 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, utimes, readdir } fro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { setTimeout as delay } from 'node:timers/promises'
 import { StorageCleanup } from './storage-cleanup.ts'
 
 async function fixture(
@@ -116,4 +119,74 @@ test('missing roots are empty and expired dead process leases are reaped', async
     assert.equal((await cleanup.inspect('runs')).bytes, 0)
     await writeFile(join(root, 'storage-maintenance/runs-2147483647-abc.lease'), '')
     assert.equal((await cleanup.inspect('runs')).busy, false)
+  }))
+
+test('an abandoned reaper does not permanently block a dead cleanup owner', async () =>
+  fixture(async (root, cleanup) => {
+    const locks = join(root, 'storage-maintenance')
+    await mkdir(locks)
+    await writeFile(join(locks, 'cleanup.lock'), '2147483647')
+    await writeFile(join(locks, 'reaper.lock'), '')
+    assert.equal((await cleanup.inspect('runs')).entries, 0)
+  }))
+
+test('expiry keeps a run and newer archive together, then removes both when old', async () =>
+  fixture(async (root, cleanup) => {
+    const run = await completed(root)
+    const archive = `${run}.zip`
+    await writeFile(archive, 'archive')
+    const before = new Date(Date.now() - 40 * 86_400_000)
+    for (const name of await readdir(run)) await utimes(join(run, name), before, before)
+    await utimes(run, before, before)
+    const cutoff = Date.now() - 30 * 86_400_000
+    assert.equal((await cleanup.clean('runs', cutoff)).removed, 0)
+    assert.equal(await readFile(join(run, 'carry-in.bundle'), 'utf8'), 'snapshot')
+    await utimes(archive, before, before)
+    assert.equal((await cleanup.clean('runs', cutoff)).removed, 2)
+    assert.deepEqual(await readdir(join(root, 'runtimes')), [])
+  }))
+
+test('a live choosing owner blocks entry and its crashed unpublished claim is reclaimable', async () =>
+  fixture(async (root, cleanup) => {
+    const locks = join(root, 'storage-maintenance')
+    await mkdir(locks)
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    })
+    await once(child, 'spawn')
+    assert.ok(child.pid)
+    try {
+      await writeFile(join(locks, `choosing-${String(child.pid)}-abcdef.lock`), '')
+      let entered = false
+      const inspection = cleanup.inspect('runs').then((result) => {
+        entered = true
+        return result
+      })
+      await delay(150)
+      assert.equal(entered, false, 'live owner before ticket publication must fence entry')
+      const exited = once(child, 'exit')
+      child.kill('SIGKILL')
+      await exited
+      assert.equal((await inspection).entries, 0)
+      assert.deepEqual(
+        (await readdir(locks)).filter((name) => name.endsWith('.lock')),
+        [],
+      )
+    } finally {
+      child.kill('SIGKILL')
+    }
+  }))
+
+test('concurrent cleaners serialize and reclaim uniquely named dead tickets', async () =>
+  fixture(async (root, cleanup) => {
+    await completed(root)
+    const locks = join(root, 'storage-maintenance')
+    await mkdir(locks)
+    await writeFile(join(locks, 'ticket-1-2147483647-abcdef.lock'), '')
+    const results = await Promise.all(Array.from({ length: 12 }, () => cleanup.clean('runs')))
+    assert.equal(
+      results.reduce((sum, result) => sum + result.removed, 0),
+      1,
+    )
+    assert.deepEqual(await readdir(locks), [])
   }))
