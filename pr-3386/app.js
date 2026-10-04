@@ -52037,6 +52037,44 @@ var init_usage_section = __esm({
   }
 });
 
+// src/shared/release-channel.mts
+function getReleaseChannel(version2) {
+  if (stableVersion.test(version2)) return "stable";
+  if (betaVersion.test(version2)) return "beta";
+  throw new Error(
+    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
+  );
+}
+var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
+var init_release_channel = __esm({
+  "src/shared/release-channel.mts"() {
+    RELEASE_CHANNELS = ["stable", "beta"];
+    numericIdentifier = "(?:0|[1-9]\\d*)";
+    stableVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
+    );
+    betaVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
+    );
+  }
+});
+
+// src/shared/update-channel-choice.ts
+function chosenUpdateChannel(saved, installedVersion) {
+  if (typeof saved === "string" && isReleaseChannel(saved)) {
+    return { channel: saved, remember: false };
+  }
+  return { channel: getReleaseChannel(installedVersion), remember: true };
+}
+var isReleaseChannel;
+var init_update_channel_choice = __esm({
+  "src/shared/update-channel-choice.ts"() {
+    init_member_of2();
+    init_release_channel();
+    isReleaseChannel = memberOf(RELEASE_CHANNELS);
+  }
+});
+
 // src/renderer/views/setup/about-section.ts
 function describeInclusion(component) {
   if (component.partOf) return `Compiled into ${component.partOf}`;
@@ -52111,6 +52149,67 @@ function createAboutSection(api2) {
     ),
     uiActions(openButton("View licence", "copse"), { align: "start" })
   );
+  const channelSelect = el(
+    "select",
+    { name: "updateChannel" },
+    el("option", { value: "beta" }, "Beta"),
+    el("option", { value: "stable" }, "Stable")
+  );
+  const channelStatus = el("p", {
+    class: "about-update-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  const updates = el(
+    "fieldset",
+    { class: "about-updates" },
+    el("legend", {}, "Updates"),
+    el(
+      "label",
+      { class: "about-update-channel" },
+      "Update channel",
+      channelSelect,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
+      )
+    ),
+    channelStatus
+  );
+  let savedChannel = "beta";
+  let installedChannel = "beta";
+  channelSelect.addEventListener("change", () => {
+    const value = channelSelect.value;
+    if (!isReleaseChannel(value)) return;
+    channelSelect.disabled = true;
+    void api2.settings.set("updateChannel", value).then(
+      () => {
+        savedChannel = value;
+        setInlineStatus(
+          channelStatus,
+          "ok",
+          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
+        );
+      },
+      (err2) => {
+        channelSelect.value = savedChannel;
+        setInlineStatus(channelStatus, "error", errorMessage(err2));
+      }
+    ).finally(() => {
+      channelSelect.disabled = false;
+    });
+  });
+  const showChannel = async (version2) => {
+    let channel = "beta";
+    try {
+      installedChannel = getReleaseChannel(version2);
+      channel = chosenUpdateChannel(await api2.settings.get("updateChannel"), version2).channel;
+    } catch {
+    }
+    savedChannel = channel;
+    channelSelect.value = channel;
+  };
   const countEl = el("span", {}, "the open-source components");
   const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
   const thirdParty = el(
@@ -52168,6 +52267,7 @@ function createAboutSection(api2) {
     loaded ??= api2.about.getInfo().then(
       (info) => {
         versionEl.textContent = info.version;
+        void showChannel(info.version);
         if (info.report) {
           render(info.report);
         } else {
@@ -52183,14 +52283,17 @@ function createAboutSection(api2) {
     );
     return loaded;
   };
-  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
   return { root, refresh };
 }
 var SHIPPED_AS_LABEL;
 var init_about_section = __esm({
   "src/renderer/views/setup/about-section.ts"() {
     init_errors4();
+    init_update_channel_choice();
+    init_release_channel();
     init_helpers();
+    init_inline_status();
     init_ui();
     SHIPPED_AS_LABEL = {
       bundled: "compiled into Copse",
