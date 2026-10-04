@@ -55804,12 +55804,22 @@ function deleteThread(store2, id) {
   store2.emit("threads_changed");
   if (activeThreadId === id) store2.emit("panel_changed");
 }
-function archiveThread(store2, id) {
+function archiveThread(store2, id, persisted) {
   const { threads, activeThreadId } = store2.getState();
   const target = threads.find((t2) => t2.id === id);
   if (!target || isThreadArchived(target)) return;
-  const now = Date.now();
-  const updated = threads.map((t2) => t2.id !== id ? t2 : { ...t2, archivedAt: now, updatedAt: now });
+  const now = persisted?.archivedAt ?? Date.now();
+  const updated = threads.map((t2) => {
+    if (t2.id !== id) return t2;
+    const archived = { ...t2, archivedAt: now, updatedAt: now };
+    if (persisted) {
+      if (persisted.worktree) {
+        archived.worktree = persisted.worktree;
+        archived.gitBranch = persisted.worktree.branch;
+      } else delete archived.worktree;
+    }
+    return archived;
+  });
   const visible = updated.filter((t2) => !isThreadArchived(t2));
   if (visible.length === 0) {
     store2.setState({ threads: updated, activeThreadId: null });
@@ -59100,6 +59110,14 @@ function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
+}
+function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => thread.id === threadId ? { ...thread, archivedAt } : thread)
+  );
 }
 function applyCachedSidebarPrRefs(projectId, refs) {
   const cached2 = threadCache.get(projectId);
@@ -67824,6 +67842,12 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now();
+        const thread = threads.find((candidate) => candidate.id === threadId);
+        if (thread) thread.archivedAt = archivedAt;
+        return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
+      },
       loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
@@ -74017,9 +74041,51 @@ function mountProjectsPane(root, store2, api2) {
       showToast("Forked into a new thread.");
     });
   }
-  function archiveProjectThread(projectId, threadId) {
-    if (projectId !== store2.getState().activeProjectId) return;
-    archiveThread(store2, threadId);
+  const archivingThreads = /* @__PURE__ */ new Set();
+  async function archiveProjectThread(projectId, threadId) {
+    if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
+    archivingThreads.add(threadId);
+    try {
+      await flushProjectThreads(api2, projectId, store2.getState().threads);
+      if (projectId !== store2.getState().activeProjectId) return;
+      let result = await api2.threads.archive(projectId, threadId, null);
+      let refreshed = false;
+      while (result.status === "blocked-dirty") {
+        const title2 = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const shown = result.paths.slice(0, 10);
+        const remaining = result.paths.length - shown.length;
+        const confirmed = await showConfirmDialog({
+          message: `Discard uncommitted files and archive \u201C${title2}\u201D?`,
+          detail: [
+            ...refreshed ? ["Files changed while confirmation was open. Review the current files again."] : [],
+            "The worktree will be removed. These changes and local files will be permanently discarded:",
+            ...shown,
+            ...remaining > 0 ? [`\u2026and ${String(remaining)} more`] : [],
+            "The chat history and committed work on its branch will be kept."
+          ].join("\n"),
+          confirmLabel: "Discard and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        refreshed = true;
+      }
+      if (result.status === "blocked-running") {
+        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+          variant: "error"
+        });
+        return;
+      }
+      if (projectId === store2.getState().activeProjectId) archiveThread(store2, threadId, result);
+      else {
+        archiveCachedSidebarThread(projectId, threadId, result.archivedAt);
+        render();
+      }
+    } catch (error62) {
+      showErrorToast("Could not archive chat", error62);
+    } finally {
+      archivingThreads.delete(threadId);
+    }
   }
   function cachedPrLifecycle(key) {
     return prLifecycleCache.get(key)?.state;
@@ -74579,7 +74645,7 @@ function mountProjectsPane(root, store2, api2) {
             {
               label: "Archive",
               onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
+                void archiveProjectThread(project2.id, thread.id);
               }
             }
           ] : [],
@@ -75258,6 +75324,7 @@ var init_projects_pane = __esm({
     init_thread_history_editor();
     init_ssh_workspace_ui();
     init_thread_naming();
+    init_persistence();
     init_project_tree();
     init_project_groups();
     init_projects_drag();
