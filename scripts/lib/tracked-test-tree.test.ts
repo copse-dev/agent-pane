@@ -80,6 +80,73 @@ describe('tracked test tree invariant', () => {
     })
   })
 
+  for (const flag of ['assume-unchanged', 'skip-worktree']) {
+    it(`detects setting and clearing ${flag} while preserving unchanged pre-existing flags`, async () => {
+      await fixture(async (root) => {
+        const before = await captureTrackedTestTree(root)
+        git(root, 'update-index', `--${flag}`, 'generated.ts')
+        const flagged = await captureTrackedTestTree(root)
+        assert.deepEqual(changedTrackedTestFiles(before, flagged), ['"generated.ts" (index)'])
+        assert.deepEqual(changedTrackedTestFiles(flagged, await captureTrackedTestTree(root)), [])
+        git(root, 'update-index', `--no-${flag}`, 'generated.ts')
+        assert.deepEqual(changedTrackedTestFiles(flagged, await captureTrackedTestTree(root)), [
+          '"generated.ts" (index)',
+        ])
+      })
+    })
+
+    it(`never exempts ${flag} changes on an intentional golden-file update`, async () => {
+      await fixture(async (root) => {
+        const updates: Array<[NodeJS.ProcessEnv, string]> = [
+          [{ UPDATE_GATE_REPLAY: '1' }, 'benchmarks/escalation-review/testset/gate-replay.jsonl'],
+          [
+            { UPDATE_HOOK_PAYLOAD_SNAPSHOTS: '1' },
+            'src/main/services/hooks/__snapshots__/wire-payloads.json',
+          ],
+        ]
+        for (const [env, snapshot] of updates) {
+          const path = join(root, snapshot)
+          await mkdir(join(path, '..'), { recursive: true })
+          await writeFile(path, 'old\n')
+          git(root, 'add', snapshot)
+          const before = await captureTrackedTestTree(root)
+          await writeFile(path, 'new\n')
+          const allowed = intentionalTestUpdates(env)
+          assert.deepEqual(
+            changedTrackedTestFiles(before, await captureTrackedTestTree(root), allowed),
+            [],
+          )
+          git(root, 'update-index', `--${flag}`, snapshot)
+          const flagged = await captureTrackedTestTree(root)
+          assert.deepEqual(changedTrackedTestFiles(before, flagged, allowed), [
+            `${JSON.stringify(snapshot)} (index)`,
+          ])
+          git(root, 'update-index', `--no-${flag}`, snapshot)
+          assert.deepEqual(
+            changedTrackedTestFiles(flagged, await captureTrackedTestTree(root), allowed),
+            [`${JSON.stringify(snapshot)} (index)`],
+          )
+        }
+      })
+    })
+  }
+
+  it('preserves combined pre-existing flags and detects clearing either bit', async () => {
+    await fixture(async (root) => {
+      git(root, 'update-index', '--assume-unchanged', 'generated.ts')
+      git(root, 'update-index', '--skip-worktree', 'generated.ts')
+      const both = await captureTrackedTestTree(root)
+      assert.deepEqual(changedTrackedTestFiles(both, await captureTrackedTestTree(root)), [])
+      for (const flag of ['assume-unchanged', 'skip-worktree']) {
+        git(root, 'update-index', `--no-${flag}`, 'generated.ts')
+        assert.deepEqual(changedTrackedTestFiles(both, await captureTrackedTestTree(root)), [
+          '"generated.ts" (index)',
+        ])
+        git(root, 'update-index', `--${flag}`, 'generated.ts')
+      }
+    })
+  })
+
   it('detects symlink retargeting and quotes unusual filenames in diagnostics', async () => {
     await fixture(async (root) => {
       const path = 'link\nwith-tab\t'

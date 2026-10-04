@@ -46,7 +46,9 @@ async function worktreeContent(root: string, path: string, gitlink: boolean): Pr
 /** Capture content, not just dirty paths: pre-existing edits must stay unchanged. */
 export async function captureTrackedTestTree(root: string): Promise<TrackedTestTree> {
   const indexed = new Map<string, string[]>()
-  for (const entry of git(root, ['ls-files', '--stage', '-z']).split('\0')) {
+  // The -v tag includes skip-worktree and assume-unchanged state (lowercase).
+  // These bits can hide later changes from Git, even when stage/blob stay equal.
+  for (const entry of git(root, ['ls-files', '--stage', '-v', '-z']).split('\0')) {
     if (!entry) continue
     const separator = entry.indexOf('\t')
     if (separator < 0) throw new Error('[run-tests] malformed Git index entry')
@@ -66,7 +68,7 @@ export async function captureTrackedTestTree(root: string): Promise<TrackedTestT
         worktreeContent(
           root,
           path,
-          stages.some((stage) => stage.startsWith('160000 ')),
+          stages.some((stage) => stage.slice(2).startsWith('160000 ')),
         ),
       ),
     )

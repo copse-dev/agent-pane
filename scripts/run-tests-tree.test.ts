@@ -46,6 +46,27 @@ function track(root: string): void {
 }
 
 describe('unit runner tracked tree enforcement', () => {
+  for (const flag of ['assume-unchanged', 'skip-worktree']) {
+    it(`fails a passing test that sets ${flag} without changing tracked content`, async () => {
+      await fixture(async (root) => {
+        await writeFile(
+          join(root, 'src/mutate.test.ts'),
+          `import { spawnSync } from 'node:child_process';
+import { it } from 'node:test';
+import assert from 'node:assert/strict';
+it('passing index mutation', () => assert.equal(spawnSync('git', ['update-index', '--${flag}', 'generated.ts']).status, 0));\n`,
+        )
+        track(root)
+        const result = invoke(root)
+        assert.equal(result.status, 1, result.stdout + result.stderr)
+        assert.match(result.stderr, /tests changed tracked files/)
+        assert.match(result.stderr, /"generated\.ts" \(index\)/)
+        assert.equal(await readFile(join(root, 'generated.ts'), 'utf8'), 'original\n')
+        assert.match(await readFile(join(root, 'unit-tests.tap'), 'utf8'), /# pass 1/)
+      })
+    })
+  }
+
   it('fails a passing test that mutates a tracked generated file and leaves evidence intact', async () => {
     await fixture(async (root) => {
       await writeFile(
