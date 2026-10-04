@@ -1689,15 +1689,20 @@ dialog.settings-overlay::backdrop {
   min-width: 0;
   word-break: break-word;
 }
-/* When a hover origin is showing, keep the title to content width so the path
-   can claim the primary gutter without wrapping the row taller. */
-.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
-.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
-  flex: 0 1 auto;
+/* Origin-bearing rows stay on one title line even at rest. Changing a wrapped
+   title to nowrap only on hover can shrink the row out from under the pointer,
+   toggling hover repeatedly. The full title remains in the DOM. */
+.sources-row:has(.sources-row-hover-detail) .sources-row-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+}
+/* Reveal the path in the primary gutter without changing the title's height. */
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  max-width: 50%;
 }
 /* `.sources-badge` takes its shape from `.ui-badge`. Scope (`user`, `project`,
    `bundled`), rule kind, agent container, and a worktree's owner are labels, so
@@ -1820,15 +1825,6 @@ dialog.settings-overlay::backdrop {
    only this list has — a measured size that arrives after the row, and a
    destructive per-row action. The size keeps its own colour so it reads as a
    value rather than more of the sentence around it. */
-.sources-row[data-worktree-path] .sources-row-title {
-  /* Worktree headers also hold status chips and three actions. Keep a long
-     branch/path on one ellipsized line at rest so revealing the hover path
-     cannot collapse a previously wrapped row and visibly change its shape. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-}
 .sources-worktree-size {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);

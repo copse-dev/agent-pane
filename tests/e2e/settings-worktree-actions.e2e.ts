@@ -144,6 +144,45 @@ describe('settings → Storage → worktree actions', function () {
     assert.equal(heightOnHover, heightAtRest, 'hover must not change the worktree row height')
     assert.equal((await row.$('.sources-row-title').getCSSProperty('white-space')).value, 'nowrap')
 
+    // The same origin-row recipe must also reveal paths for keyboard users,
+    // without resizing a row when its checkbox receives focus.
+    await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>('#sources-worktrees-select-all')?.focus()
+    })
+    const checkbox = row.$('.sources-worktree-select')
+    // Inventory order reflects last use, so the other checkout may come first.
+    for (let tab = 0; tab < 10 && !(await checkbox.isFocused()); tab++) {
+      await browser.keys('Tab')
+    }
+    assert.equal(await checkbox.isFocused(), true)
+    assert.equal(
+      await row.getSize('height'),
+      heightAtRest,
+      'keyboard focus must preserve row height',
+    )
+    assert.equal(
+      (await row.$('.sources-row-hover-detail').getCSSProperty('display')).value,
+      'block',
+      'keyboard focus reveals the worktree origin',
+    )
+    await expect(row.$('.sources-worktree-select')).toHaveAttribute(
+      'aria-label',
+      `Select worktree ${WORKTREE_BRANCH}`,
+    )
+    const restoreFocusPath = await pinProfilePathForCapture(
+      `.sources-row[data-worktree-path="${worktreeRoot}"]`,
+    )
+    await saveElementScreenshot(
+      `.sources-row[data-worktree-path="${worktreeRoot}"]`,
+      'settings-sources-keyboard-focus.png',
+    )
+    await restoreFocusPath()
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>('#sources-worktrees-select-all')?.focus()
+    })
+    await row.moveTo()
+
     // The owner badge is a neutral label; only uncommitted work warns.
     const signals = await signalColours()
     const warning = signals.find((signal) => signal.token === '--warning')?.value

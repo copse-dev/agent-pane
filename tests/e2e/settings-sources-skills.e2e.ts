@@ -3,12 +3,19 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-skills'
 const SKILL_NAME = 'origin-hover-skill'
 const SKILL_DESC = 'E2E skill used to prove Sources hover shows the on-disk path.'
+const LONG_SKILL_NAME = 'review-accessibility-and-interaction-in-narrow-settings-panels'
+const LONG_SKILL_DESC =
+  'Review keyboard navigation, readable labels, pointer interaction and layout stability throughout the settings panel, including descriptions that occupy several lines.'
 
 describe('settings sources skills origin hover', () => {
   let workspaceRoot = ''
@@ -25,6 +32,13 @@ describe('settings sources skills origin hover', () => {
     writeFileSync(
       skillPath,
       `---\nname: ${SKILL_NAME}\ndescription: ${SKILL_DESC}\n---\n\n# Origin hover\n`,
+      'utf8',
+    )
+    const longSkillDir = join(workspaceRoot, '.cursor', 'skills', LONG_SKILL_NAME)
+    mkdirSync(longSkillDir, { recursive: true })
+    writeFileSync(
+      join(longSkillDir, 'SKILL.md'),
+      `---\nname: ${LONG_SKILL_NAME}\ndescription: ${LONG_SKILL_DESC}\n---\n\n# Review settings\n`,
       'utf8',
     )
 
@@ -198,5 +212,59 @@ describe('settings sources skills origin hover', () => {
       '#sources-skills-list .sources-row[data-e2e-skill-origin="hover"]',
       'settings-sources-skills-origin-hover.png',
     )
+  })
+
+  it('keeps a long skill title and multiline description stable under a real pointer', async () => {
+    const rowSelector = '#sources-skills-list .sources-row[data-e2e-long-title]'
+    await prepareE2eScreenshot()
+    await browser.execute((name: string) => {
+      const row = [
+        ...document.querySelectorAll<HTMLElement>('#sources-skills-list .sources-row'),
+      ].find((candidate) => candidate.querySelector('.sources-row-title')?.textContent === name)
+      if (!row) throw new Error('Long skill fixture was not discovered')
+      row.setAttribute('data-e2e-long-title', '')
+      row.style.maxWidth = '320px'
+      row.scrollIntoView({ block: 'center' })
+    }, LONG_SKILL_NAME)
+    await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+    const row = $(rowSelector)
+    const restingHeight = await row.getSize('height')
+    const restingWidth = await row.getSize('width')
+    const title = row.$('.sources-row-title')
+    assert.equal(await title.getText(), LONG_SKILL_NAME, 'truncation preserves the complete title')
+    assert.equal((await title.getCSSProperty('white-space')).value, 'nowrap')
+    const content = await browser.execute((selector: string) => {
+      const row = document.querySelector<HTMLElement>(selector)
+      const title = row?.querySelector<HTMLElement>('.sources-row-title')
+      const detail = row?.querySelector<HTMLElement>('.sources-row-detail')
+      if (!row || !title || !detail) return null
+      return {
+        titleTruncated: title.scrollWidth > title.clientWidth,
+        description: detail.textContent,
+        multiline: detail.clientHeight > Number.parseFloat(getComputedStyle(detail).lineHeight) * 2,
+      }
+    }, rowSelector)
+    assert.ok(content)
+    assert.equal(content.titleTruncated, true)
+    assert.equal(content.description, LONG_SKILL_DESC)
+    assert.equal(content.multiline, true, 'descriptions remain free to wrap')
+    await saveElementScreenshot(rowSelector, 'settings-sources-long-title-resting.png')
+
+    // Hover near the bottom: a title collapsing here could move the row out
+    // from under the pointer and repeatedly turn its hover state on and off.
+    await row.moveTo({ yOffset: Math.floor(restingHeight / 2) - 3 })
+    await browser.waitUntil(
+      async () =>
+        (await row.$('.sources-row-hover-detail').getCSSProperty('display')).value === 'block',
+    )
+    assert.equal(await row.getSize('height'), restingHeight)
+    assert.equal(await row.getSize('width'), restingWidth)
+    assert.equal(await title.getText(), LONG_SKILL_NAME)
+    assert.ok(
+      (await row.$('.sources-row-hover-detail').getSize('width')) > 0,
+      'origin has a visible gutter',
+    )
+    await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+    assert.equal(await row.getSize('height'), restingHeight)
   })
 })
