@@ -4,10 +4,12 @@ import {
   createModelInvalidationService,
   type ModelInvalidationEnvironment,
   modelInvalidationReason,
+  modelInvalidationService,
 } from './model-invalidation.ts'
 import { runWithExplicitSettings } from '../storage/settings-context.ts'
 import { clearProviderKeyStatusCache } from './provider-key-status.ts'
 import { invalidateLmStudioModelsCache } from './provider-selection.ts'
+import { fetchLmStudioModels } from './lm-studio-models.ts'
 
 const CODER = 'qwen/qwen3.6-35b-a3b'
 function fixture(): {
@@ -264,6 +266,113 @@ describe('conclusive provider change evidence', () => {
       )) ?? '',
       /no longer advertises/,
     )
+  })
+  it('never offers or persists an available local fallback from a blocked model maker', async () => {
+    const docs = 'google/gemma-3-12b'
+    globalThis.fetch = async (): Promise<Response> =>
+      new Response(JSON.stringify({ data: [{ id: CODER }, { id: docs }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    await runWithExplicitSettings(
+      {
+        values: {
+          model: `lmstudio:${CODER}`,
+          roleModels: { docs: 'missing-provider:docs' },
+          blockedModelMakers: ['google'],
+        },
+        apiKeys: {},
+      },
+      async () => {
+        const invalid = (await modelInvalidationService.list()).find(
+          (entry) => entry.target === 'role:docs',
+        )
+        assert.ok(invalid)
+        assert.equal(invalid.model, 'missing-provider:docs')
+        assert.equal(invalid.fallback, undefined)
+        assert.equal(
+          await modelInvalidationService.recover(
+            'role:docs',
+            'missing-provider:docs',
+            `lmstudio:${docs}`,
+          ),
+          false,
+        )
+      },
+    )
+  })
+  it('preserves a restored original local route despite a cached retirement warning', async () => {
+    let catalog = [CODER]
+    globalThis.fetch = async (): Promise<Response> =>
+      new Response(JSON.stringify({ data: catalog.map((id) => ({ id })) }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    const f = fixture()
+    f.values['model'] = 'lmstudio:restored'
+    f.values['research'] = ''
+    f.env.reason = modelInvalidationReason
+    f.env.localModels = async (): ReturnType<ModelInvalidationEnvironment['localModels']> => {
+      const result = await fetchLmStudioModels('http://127.0.0.1:1234/v1')
+      return result.ok ? result.models.map((entry) => ({ ...entry, local: true })) : []
+    }
+    await runWithExplicitSettings({ values: {}, apiKeys: {} }, async () => {
+      assert.match((await f.service.list())[0]?.reason ?? '', /no longer offers/)
+      catalog = [CODER, 'restored']
+      assert.equal(
+        await f.service.recover('model', 'lmstudio:restored', `lmstudio:${CODER}`),
+        false,
+      )
+      assert.equal(f.values['model'], 'lmstudio:restored')
+      assert.deepEqual(await f.service.list('lmstudio:restored', true), [])
+    })
+  })
+  it('preserves a cached-missing original when its authoritative refresh is offline', async () => {
+    globalThis.fetch = async (): Promise<Response> =>
+      new Response(JSON.stringify({ data: [{ id: CODER }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    const f = fixture()
+    f.values['model'] = 'lmstudio:restored'
+    f.values['research'] = ''
+    f.env.reason = modelInvalidationReason
+    f.env.localModels = async (): ReturnType<ModelInvalidationEnvironment['localModels']> => {
+      // Fallback verification succeeded, then the original-route probe loses connectivity.
+      globalThis.fetch = async (): Promise<Response> => {
+        throw new Error('offline')
+      }
+      return [{ id: CODER, local: true }]
+    }
+    await runWithExplicitSettings({ values: {}, apiKeys: {} }, async () => {
+      assert.match((await modelInvalidationReason('lmstudio:restored')) ?? '', /no longer offers/)
+      assert.equal(
+        await f.service.recover('model', 'lmstudio:restored', `lmstudio:${CODER}`),
+        false,
+      )
+      assert.equal(f.values['model'], 'lmstudio:restored')
+      const report = await f.service.report('lmstudio:restored', true)
+      assert.deepEqual(report.invalidations, [])
+      assert.deepEqual(report.verifiedChoices, [])
+    })
+  })
+  it('rechecks original validity after the fresh fallback catalogue and preserves unknown outages', async () => {
+    for (const state of ['restored', 'unknown']) {
+      const f = fixture()
+      let originalChanged = false
+      f.env.reason = async (): Promise<string | null> => (originalChanged ? null : 'Missing.')
+      f.env.verified = async (): Promise<boolean> => originalChanged && state === 'restored'
+      f.env.localModels = async (): ReturnType<ModelInvalidationEnvironment['localModels']> => {
+        originalChanged = true
+        return [{ id: CODER, local: true }]
+      }
+      assert.equal(await f.service.recover('model', 'missing:model', `lmstudio:${CODER}`), false)
+      assert.equal(f.values['model'], 'missing:model')
+      originalChanged = false
+      const report = await f.service.report('missing:thread', true)
+      assert.deepEqual(report.invalidations, [])
+      assert.equal(report.verifiedChoices.length, state === 'restored' ? 3 : 0)
+    }
   })
   it('checks pinned local-model retirement only against a successful catalogue', async () => {
     globalThis.fetch = async (): Promise<Response> =>

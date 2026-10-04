@@ -9,6 +9,7 @@ import {
   resetUserData,
   seedEmptyProject,
   seedStableWorkspace,
+  writeSettings,
 } from './helpers/seed-config.ts'
 
 const CODER = 'qwen/qwen3.6-35b-a3b'
@@ -143,6 +144,78 @@ describe('persisted model recovery through main-process IPC', function () {
     const roles = readSeededSettings()['roleModels']
     assert.ok(typeof roles === 'object' && roles !== null)
     assert.equal(Reflect.get(roles, 'planner'), `lmstudio:${CODER}`)
+  })
+
+  it('preserves a stale role when its only suitable local fallback is blocked by maker policy', async () => {
+    models = [CODER, DOCS]
+    resetUserData()
+    seedEmptyProject(seedStableWorkspace(), 'e2e-provider-model-recovery', {
+      model: `lmstudio:${CODER}`,
+      localServerUrl: url,
+      reviewModel: `lmstudio:${CODER}`,
+      roleModels: { docs: STALE },
+    })
+    writeSettings({ ...readSeededSettings(), blockedModelMakers: ['google'] })
+    await browser.reloadSession()
+    await $('#confirm-dialog').waitForDisplayed({ timeout: 30_000 })
+    await expect($('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('No suitable on-device model'),
+    )
+    assert.equal(
+      await browser.execute(() =>
+        window.api.models.recoverSetting(
+          'role:docs',
+          'removed-provider:model',
+          'lmstudio:google/gemma-3-12b',
+        ),
+      ),
+      false,
+    )
+    await $('.confirm-dialog-cancel').click()
+    await $('[aria-label="Settings"]').click()
+    await $('select[name="role:docs"] option[value="removed-provider:model"]').waitForExist({
+      timeout: 30_000,
+    })
+    const roles = readSeededSettings()['roleModels']
+    assert.ok(typeof roles === 'object' && roles !== null)
+    assert.equal(Reflect.get(roles, 'docs'), STALE)
+  })
+
+  it('preserves the original local choice when it becomes available while the warning is open', async () => {
+    models = [CODER]
+    resetUserData()
+    seedEmptyProject(seedStableWorkspace(), 'e2e-provider-model-recovery', {
+      model: 'lmstudio:restored-local',
+      localServerUrl: url,
+      reviewModel: `lmstudio:${CODER}`,
+    })
+    await browser.reloadSession()
+    await $('#confirm-dialog').waitForDisplayed({ timeout: 30_000 })
+    await expect($('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('no longer offers'),
+    )
+    models = [CODER, 'restored-local']
+    const fresh = await browser.execute(() =>
+      window.api.models.invalidations('lmstudio:restored-local', true),
+    )
+    assert.deepEqual(fresh.invalidations, [])
+    assert.ok(fresh.verifiedChoices.some((choice) => choice.model === 'lmstudio:restored-local'))
+    assert.equal(
+      await browser.execute(() =>
+        window.api.models.recoverSetting(
+          'model',
+          'lmstudio:restored-local',
+          'lmstudio:qwen/qwen3.6-35b-a3b',
+        ),
+      ),
+      false,
+    )
+    await $('.confirm-dialog-cancel').click()
+    await $('[aria-label="Settings"]').click()
+    await $('select[name="model"] option[value="lmstudio:restored-local"]').waitForExist({
+      timeout: 30_000,
+    })
+    assert.equal(readSeededSettings()['model'], 'lmstudio:restored-local')
   })
 
   it('preserves the saved choice if the proposed local model disappears before dismissal', async () => {

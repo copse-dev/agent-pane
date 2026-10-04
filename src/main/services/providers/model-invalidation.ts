@@ -37,8 +37,8 @@ interface SavedModel {
 
 export interface ModelInvalidationEnvironment {
   saved: () => SavedModel[]
-  reason: (model: string) => Promise<string | null>
-  verified?: (model: string) => Promise<boolean>
+  reason: (model: string, freshLocal?: boolean) => Promise<string | null>
+  verified?: (model: string, freshLocal?: boolean) => Promise<boolean>
   localModels: (
     fresh?: boolean,
   ) => Promise<Array<{ id: string; local: boolean; embedding?: boolean }>>
@@ -91,19 +91,29 @@ export function createModelInvalidationService(env: ModelInvalidationEnvironment
         role: 'coder',
       })
     const verifiedChoices: ModelInvalidationReport['verifiedChoices'] = []
-    const invalid = await Promise.all(
-      candidates.map(async (candidate) => {
-        if (!candidate.model.trim() || isDynamicModel(candidate.model)) return null
-        const reason = await env.reason(candidate.route ?? candidate.model)
-        if (!reason && (await env.verified?.(candidate.route ?? candidate.model)))
-          verifiedChoices.push({ target: candidate.target, model: candidate.model })
-        return reason ? { ...candidate, reason } : null
-      }),
-    )
+    const probe = async (): Promise<
+      Array<((typeof candidates)[number] & { reason: string }) | null>
+    > =>
+      Promise.all(
+        candidates.map(async (candidate) => {
+          if (!candidate.model.trim() || isDynamicModel(candidate.model)) return null
+          const reason = await env.reason(candidate.route ?? candidate.model, freshLocal)
+          if (!reason && (await env.verified?.(candidate.route ?? candidate.model, freshLocal)))
+            verifiedChoices.push({ target: candidate.target, model: candidate.model })
+          return reason ? { ...candidate, reason } : null
+        }),
+      )
+    let invalid = await probe()
     if (env.revision() !== revision) return empty
     const models = invalid.some((entry) => entry !== null)
       ? await env.localModels(freshLocal).catch(() => [])
       : []
+    if (freshLocal && invalid.some((entry) => entry !== null)) {
+      // The original route may recover while the fallback catalogue is loading.
+      // Never replace it based on the warning's earlier negative evidence.
+      verifiedChoices.length = 0
+      invalid = await probe()
+    }
     if (env.revision() !== revision) return empty
     const latestSaved = env.saved()
     const selections: ModelInvalidationReport['selections'] = latestSaved.map(
@@ -157,6 +167,9 @@ export function createModelInvalidationService(env: ModelInvalidationEnvironment
       ) !== fallback
     )
       return false
+    // A cached retirement warning is insufficient authority to overwrite a choice.
+    // Fresh unknown/outage evidence also preserves it, rather than implying invalidity.
+    if (!(await env.reason(candidate.route ?? expected, true))) return false
     if (env.revision() !== revision) return false
     return candidate.replace(
       expected,
@@ -269,7 +282,10 @@ function localUrl(): string {
 }
 
 /** Negative evidence is used only when the query succeeded or credentials were rejected. */
-export async function modelInvalidationReason(model: string): Promise<string | null> {
+export async function modelInvalidationReason(
+  model: string,
+  freshLocal = false,
+): Promise<string | null> {
   // Documented mock mode routes every selection in-process and uses no credentials.
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return null
   const maker = blockedModelMaker(
@@ -336,7 +352,9 @@ export async function modelInvalidationReason(model: string): Promise<string | n
   }
   if (model.startsWith('lmstudio:')) {
     const id = model.replace(/^lmstudio:/, '')
-    const catalog = await fetchLmStudioModelsCached(localUrl())
+    const catalog = await (freshLocal
+      ? fetchLmStudioModels(localUrl())
+      : fetchLmStudioModelsCached(localUrl()))
     return catalog.ok &&
       !catalog.models.some((entry) => entry.id === id && entry.embedding !== true)
       ? 'The configured local server no longer offers this chat model.'
@@ -352,8 +370,8 @@ export async function modelInvalidationReason(model: string): Promise<string | n
 }
 
 /** Conclusive positive evidence used to re-arm warnings after a repaired route. */
-async function modelRouteVerified(model: string): Promise<boolean> {
-  if (await modelInvalidationReason(model)) return false
+async function modelRouteVerified(model: string, freshLocal = false): Promise<boolean> {
+  if (await modelInvalidationReason(model, freshLocal)) return false
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1' || model === 'lm-studio') return true
   const acp = parseAcpModelSelection(model)
   if (acp) {
@@ -380,7 +398,9 @@ async function modelRouteVerified(model: string): Promise<boolean> {
     }
   }
   if (model.startsWith('lmstudio:')) {
-    const catalog = await fetchLmStudioModelsCached(localUrl())
+    const catalog = await (freshLocal
+      ? fetchLmStudioModels(localUrl())
+      : fetchLmStudioModelsCached(localUrl()))
     return (
       catalog.ok &&
       catalog.models.some(
@@ -432,7 +452,12 @@ export const modelInvalidationService = createModelInvalidationService({
     const url = localUrl()
     if (!isLocalBaseUrl(url)) return []
     const result = await (fresh ? fetchLmStudioModels(url) : fetchLmStudioModelsCached(url))
-    return result.ok ? result.models.map((entry) => ({ ...entry, local: isLocalBaseUrl(url) })) : []
+    const blocked = parseBlockedModelMakers(getSetting('blockedModelMakers', []))
+    return result.ok
+      ? result.models
+          .filter((entry) => !blockedModelMaker(`lmstudio:${entry.id}`, blocked))
+          .map((entry) => ({ ...entry, local: isLocalBaseUrl(url) }))
+      : []
   },
   revision: providerRevision,
 })
