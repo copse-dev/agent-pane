@@ -31,6 +31,7 @@ import {
   stopSupervisedBackgroundProcessesForThread,
 } from './exec/supervised-background-process.ts'
 import { getTaskSupervisor, type TaskSupervisor } from './supervisor/task-supervisor.ts'
+import { runWithThreadResourceStateLookup } from './thread-resource-fence.ts'
 
 export interface HeadlessInteractionProfile {
   readonly approve?: ApprovalHandler
@@ -168,7 +169,22 @@ export async function runHeadlessAgent(
     for (const [key, value] of Object.entries(values)) storage.set(key, value)
   }
 
-  return runWithBackgroundProcessSupervisor(
+  // This host owns an ephemeral thread through its injected dispatcher, not
+  // the desktop profile's store. Keep resource creation owner-scoped without
+  // consulting or creating ambient chat metadata.
+  const runWithOwnerScopedBackgroundProcessSupervisor = <T>(
+    supervisor: TaskSupervisor,
+    operation: () => T,
+  ): T =>
+    runWithThreadResourceStateLookup(
+      (owner) =>
+        Promise.resolve(
+          owner.projectId === projectId && owner.threadId === threadId ? { id: threadId } : null,
+        ),
+      () => runWithBackgroundProcessSupervisor(supervisor, operation),
+    )
+
+  return runWithOwnerScopedBackgroundProcessSupervisor(
     dependencies.taskSupervisor ?? getTaskSupervisor(),
     () =>
       runWithExplicitSettings(

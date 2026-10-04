@@ -370,8 +370,10 @@ export function archiveThread(
     if (t.id !== id) return t
     const archived = { ...t, archivedAt: now, updatedAt: now }
     if (persisted) {
-      if (persisted.worktree) archived.worktree = persisted.worktree
-      else delete archived.worktree
+      if (persisted.worktree) {
+        archived.worktree = persisted.worktree
+        archived.gitBranch = persisted.worktree.branch
+      } else delete archived.worktree
     }
     return archived
   })

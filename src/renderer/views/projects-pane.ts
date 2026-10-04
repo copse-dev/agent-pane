@@ -606,14 +606,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     try {
       await flushProjectThreads(api, projectId, store.getState().threads)
       if (projectId !== store.getState().activeProjectId) return
-      let result = await api.threads.archive(projectId, threadId, false)
-      if (result.status === 'blocked-dirty') {
+      let result = await api.threads.archive(projectId, threadId, null)
+      let refreshed = false
+      while (result.status === 'blocked-dirty') {
         const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
         const shown = result.paths.slice(0, 10)
         const remaining = result.paths.length - shown.length
         const confirmed = await showConfirmDialog({
           message: `Discard uncommitted files and archive “${title}”?`,
           detail: [
+            ...(refreshed
+              ? ['Files changed while confirmation was open. Review the current files again.']
+              : []),
             'The worktree will be removed. These changes and local files will be permanently discarded:',
             ...shown,
             ...(remaining > 0 ? [`…and ${String(remaining)} more`] : []),
@@ -622,8 +626,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           confirmLabel: 'Discard and archive',
           danger: true,
         })
-        if (!confirmed) return
-        result = await api.threads.archive(projectId, threadId, true)
+        if (!confirmed || projectId !== store.getState().activeProjectId) return
+        result = await api.threads.archive(projectId, threadId, result.fingerprint)
+        refreshed = true
       }
       if (result.status === 'blocked-running') {
         showToast('Stop the chat’s agent, terminals and background processes before archiving.', {
@@ -631,7 +636,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         })
         return
       }
-      if (result.status === 'blocked-dirty') return
       if (projectId === store.getState().activeProjectId) archiveThread(store, threadId, result)
       else {
         archiveCachedSidebarThread(projectId, threadId, result.archivedAt)

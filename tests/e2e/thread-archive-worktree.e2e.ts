@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -161,6 +163,40 @@ describe('archive chat and remove its worktree', function () {
     assert.equal(readFileSync(join(dirtyRoot, 'notes/draft.txt'), 'utf8'), 'untracked draft\n')
     assert.equal(readFileSync(join(dirtyRoot, 'local.log'), 'utf8'), 'ignored file\n')
 
+    await archiveFromSidebar(DIRTY_ID)
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    writeFileSync(join(dirtyRoot, 'README.md'), 'changed while confirming\n')
+    writeFileSync(join(dirtyRoot, 'late-draft.txt'), 'fresh unapproved draft\n')
+    await dialog.$('.confirm-dialog-confirm').click()
+    await expect(dialog.$('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('late-draft.txt'),
+    )
+    await expect(dialog.$('.confirm-dialog-detail')).toHaveText(
+      expect.stringContaining('Files changed while confirmation was open'),
+    )
+    await expect($(`.chat-row[data-thread-id="${DIRTY_ID}"]`)).toBeExisting()
+    assert.equal(readFileSync(join(dirtyRoot, 'README.md'), 'utf8'), 'changed while confirming\n')
+    assert.equal(
+      readFileSync(join(dirtyRoot, 'late-draft.txt'), 'utf8'),
+      'fresh unapproved draft\n',
+    )
+    const visibleMeta = safeJsonParse(
+      readFileSync(join(e2eWorkspaceDir(), PROJECT_ID, DIRTY_ID, 'meta.json'), 'utf8'),
+      decodeWithSchema(
+        z
+          .object({
+            archivedAt: z.number().optional(),
+            worktree: z.object({ retiredAt: z.number().optional() }).passthrough().optional(),
+          })
+          .passthrough(),
+      ),
+    )
+    assert.ok(visibleMeta)
+    assert.equal(visibleMeta.archivedAt, undefined)
+    assert.equal(visibleMeta.worktree?.retiredAt, undefined)
+    await saveAppScreenshot('thread-archive-refreshed-confirm.png')
+    await dialog.$('.confirm-dialog-cancel').click()
+    assert.equal(existsSync(dirtyRoot), true)
     await archiveFromSidebar(DIRTY_ID)
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await dialog.$('.confirm-dialog-confirm').click()

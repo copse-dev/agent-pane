@@ -1947,7 +1947,14 @@ export function registerAllHandlers(
     (event, projectId: unknown, threadId: unknown, discard: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, discardChanges] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, z.boolean()]),
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .nullable(),
+        ]),
         [projectId, threadId, discard],
       )
       return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)

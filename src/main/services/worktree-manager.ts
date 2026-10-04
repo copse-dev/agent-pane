@@ -1,5 +1,17 @@
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  readlink,
+  realpath,
+  rm,
+  rmdir,
+} from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { constants, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
@@ -14,7 +26,7 @@ import {
   threadWorktreeBranchName,
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
-import { runCommand } from './exec/command-runner.ts'
+import { runCommand, type CommandResult } from './exec/command-runner.ts'
 import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
@@ -431,7 +443,8 @@ export async function runWorktreeGit(
   args: string[],
   env?: NodeJS.ProcessEnv,
   extraWritePaths: string[] = [],
-): Promise<{ stdout: string; stderr: string; code: number }> {
+  stdoutMaxBytes?: number,
+): Promise<CommandResult> {
   // These host-owned bookkeeping operations update branch metadata. Config
   // inspection/updates do not execute repository helpers; hooks remain off for
   // branch deletion and rename. No general Git invocation receives writable configuration.
@@ -453,6 +466,7 @@ export async function runWorktreeGit(
       'check-ref-format',
       'for-each-ref',
       'merge-base',
+      'ls-files',
       'rev-parse',
       'show',
       'show-ref',
@@ -469,6 +483,7 @@ export async function runWorktreeGit(
   return runCommand('git', args, {
     cwd,
     ...(env ? { env } : {}),
+    ...(stdoutMaxBytes === undefined ? {} : { stdoutMaxBytes }),
     sandboxConfig: readOnly
       ? await worktreeReadOnlySandboxOverlay(cwd, extraWritePaths)
       : await worktreeManagerSandboxOverlay(cwd, extraWritePaths, writeConfig),
@@ -1451,43 +1466,255 @@ export async function listProjectWorktrees(projectRoot: string): Promise<Worktre
   return listRecords((await repositoryLocation(projectRoot)).repositoryRoot)
 }
 
+/** Bounded, content-bound confirmation. Links are fingerprinted, never followed.
+ * External editors are not locked: repeat this snapshot immediately before Git
+ * removal and fail closed on observed mutation; this is not an atomic FS snapshot.
+ */
+async function archiveContentIdentity(root: string, paths: string[]): Promise<string> {
+  const hash = createHash('sha256')
+  let entries = 0
+  let bytes = 0
+  const limit = 64 * 1024 * 1024
+  const checkAncestors = async (path: string): Promise<void> => {
+    const rel = relative(root, path)
+    if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel))
+      throw new Error('Archive file escaped its worktree.')
+    let parent = dirname(path)
+    while (parent !== root) {
+      if (parent === dirname(parent)) throw new Error('Invalid archive file path.')
+      if ((await lstat(parent)).isSymbolicLink())
+        throw new Error('Archive file parent is a symlink.')
+      parent = dirname(parent)
+    }
+  }
+  const visit = async (path: string): Promise<void> => {
+    if (++entries > 10_000) throw new Error('Too many files to safely confirm archival.')
+    await checkAncestors(path)
+    const name = relative(root, path)
+    const stat = await lstat(path).catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return null
+      throw error
+    })
+    if (!stat) {
+      hash.update(JSON.stringify([name, 'missing']))
+      return
+    }
+    if (stat.isSymbolicLink()) {
+      hash.update(JSON.stringify([name, 'link', await readlink(path)]))
+      return
+    }
+    if (stat.isDirectory()) {
+      hash.update(JSON.stringify([name, 'directory']))
+      for (const child of (await readdir(path)).sort()) await visit(join(path, child))
+      const after = await lstat(path)
+      await checkAncestors(path)
+      if (
+        !after.isDirectory() ||
+        after.ino !== stat.ino ||
+        after.dev !== stat.dev ||
+        after.ctimeMs !== stat.ctimeMs
+      )
+        throw new Error('Archive directory changed during inspection.')
+      return
+    }
+    if (!stat.isFile()) throw new Error('Cannot safely confirm a special archive file.')
+    if (stat.size > limit - bytes)
+      throw new Error('Too much file content to safely confirm archival.')
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const before = await handle.stat()
+      if (
+        !before.isFile() ||
+        before.ino !== stat.ino ||
+        before.dev !== stat.dev ||
+        before.size !== stat.size
+      )
+        throw new Error('Archive file changed during inspection.')
+      const contentHash = createHash('sha256')
+      const buffer = Buffer.alloc(Math.min(64 * 1024, limit - bytes + 1))
+      let size = 0
+      while (bytes <= limit) {
+        const result = await handle.read(
+          buffer,
+          0,
+          Math.min(buffer.length, limit - bytes + 1),
+          null,
+        )
+        if (result.bytesRead === 0) break
+        bytes += result.bytesRead
+        size += result.bytesRead
+        if (bytes > limit) throw new Error('Too much file content to safely confirm archival.')
+        contentHash.update(buffer.subarray(0, result.bytesRead))
+      }
+      const after = await handle.stat()
+      const current = await lstat(path)
+      await checkAncestors(path)
+      if (
+        !current.isFile() ||
+        current.ino !== before.ino ||
+        current.dev !== before.dev ||
+        size !== stat.size ||
+        after.mtimeMs !== before.mtimeMs ||
+        after.ctimeMs !== before.ctimeMs
+      )
+        throw new Error('Archive file changed during inspection.')
+      hash.update(JSON.stringify([name, 'file', stat.mode, size, contentHash.digest('hex')]))
+    } finally {
+      await handle.close()
+    }
+  }
+  for (const path of [...new Set(paths)].sort()) await visit(resolve(root, path))
+  return hash.digest('hex')
+}
+
+export type ArchiveWorktreeResult =
+  | { status: 'removed'; worktree: ThreadWorktree }
+  | { status: 'blocked-dirty'; paths: string[]; fingerprint: string }
+
 /** Archive a checkout, keeping its branch even when its commits are unmerged. */
 export async function archiveThreadWorktree(
   input: ValidateWorktreeInput,
-  discardChanges: boolean,
-  beforeRemove: () => Promise<void>,
-): Promise<{ status: 'removed' } | { status: 'blocked-dirty'; paths: string[] }> {
+  confirmation: string | null,
+  beforeRemove: (worktree: ThreadWorktree) => Promise<() => Promise<void>>,
+): Promise<ArchiveWorktreeResult> {
   const { repositoryRoot } = await repositoryLocation(input.projectRoot)
+  // Confirmation reads are data, not a display excerpt. Preserve the ordinary
+  // command cap elsewhere, and still refuse incomplete metadata at this bound.
+  const inspectGit = (cwd: string, args: string[]): Promise<CommandResult> =>
+    runWorktreeGit(cwd, args, undefined, [], 8 * 1024 * 1024)
   return runSerialized(`worktree-manager:${repositoryRoot}`, async () => {
     const target = expectedThreadWorktreePath(input.projectId, input.threadId)
-    const registered = (await listRecords(repositoryRoot)).some((record) =>
+    if (!sameWorktreePath(input.worktree.path, target))
+      throw new Error('Invalid stored worktree path.')
+    await assertManagedWorktreePath(input.projectId, target)
+    const listing = await inspectGit(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'])
+    if (listing.code !== 0 || listing.stdoutTruncated)
+      throw new Error('Cannot completely inspect worktree registration.')
+    const registered = parseWorktreePorcelain(listing.stdout).some((record) =>
       sameWorktreePath(record.path, target),
     )
-    // Parked checkouts need no reconstruction merely to archive their chat.
-    if (!registered && input.worktree.retiredAt !== undefined) return { status: 'removed' }
-    const validated = await validateThreadWorktree(input)
-    const status = await git(validated.path, [
-      'status',
-      '--porcelain=v1',
-      '-z',
-      '--untracked-files=all',
-      '--ignored=matching',
-    ])
-    if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
-    if (status.stdout && !discardChanges) {
-      return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
+    if (!registered && input.worktree.retiredAt !== undefined) {
+      try {
+        await lstat(target)
+      } catch (error) {
+        if (ownErrorCode(error) === 'ENOENT') return { status: 'removed', worktree: input.worktree }
+        throw error
+      }
+      throw new Error('The unregistered worktree still exists; archive was not completed.')
     }
-    // Record recoverable retirement before deletion. A failed metadata write
-    // must leave the checkout intact; a failed Git removal can be reopened.
-    await beforeRemove()
+    const validated = await validateThreadWorktree(input)
+    const { root, gitDir: _gitDir, commonGitDir: _commonGitDir, ...worktree } = validated
+    const snapshot = async (): Promise<{
+      paths: string[]
+      fingerprint: string
+      dirty: boolean
+    }> => {
+      const status = await inspectGit(validated.path, [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+        '--ignored=matching',
+      ])
+      if (status.code !== 0 || status.stdoutTruncated)
+        throw new Error('Cannot completely inspect thread worktree status.')
+      const head = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
+      const branch = await inspectGit(validated.path, [
+        'symbolic-ref',
+        '--quiet',
+        '--short',
+        'HEAD',
+      ])
+      const index = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
+      if (
+        head.code !== 0 ||
+        branch.code !== 0 ||
+        index.code !== 0 ||
+        head.stdoutTruncated ||
+        branch.stdoutTruncated ||
+        index.stdoutTruncated
+      )
+        throw new Error('Cannot identify archive snapshot.')
+      const paths = changedPaths(status.stdout)
+      const content = await archiveContentIdentity(validated.path, paths)
+      const verifyStatus = await inspectGit(validated.path, [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+        '--ignored=matching',
+      ])
+      const verifyHead = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
+      const verifyBranch = await inspectGit(validated.path, [
+        'symbolic-ref',
+        '--quiet',
+        '--short',
+        'HEAD',
+      ])
+      const verifyIndex = await inspectGit(validated.path, ['ls-files', '--stage', '-z'])
+      if (
+        branch.stdout.trim() !== validated.branch ||
+        verifyStatus.code !== 0 ||
+        verifyStatus.stdoutTruncated ||
+        verifyHead.stdoutTruncated ||
+        verifyBranch.stdoutTruncated ||
+        verifyIndex.stdoutTruncated ||
+        verifyHead.code !== 0 ||
+        verifyBranch.code !== 0 ||
+        verifyIndex.code !== 0 ||
+        verifyStatus.stdout !== status.stdout ||
+        verifyHead.stdout !== head.stdout ||
+        verifyBranch.stdout !== branch.stdout ||
+        verifyIndex.stdout !== index.stdout
+      )
+        throw new Error('Archive checkout changed during inspection; try again.')
+      const fingerprint = createHash('sha256')
+        .update(
+          JSON.stringify([
+            input.projectId,
+            input.threadId,
+            validated.path,
+            branch.stdout,
+            head.stdout,
+            status.stdout,
+            index.stdout,
+            content,
+          ]),
+        )
+        .digest('hex')
+      return { paths, fingerprint, dirty: status.stdout.length > 0 }
+    }
+    const initial = await snapshot()
+    if (initial.dirty && confirmation !== initial.fingerprint)
+      return { status: 'blocked-dirty', paths: initial.paths, fingerprint: initial.fingerprint }
+    // Durable retirement precedes deletion; the caller rolls it back if the
+    // final inspection discovers edits during its awaited bookkeeping.
+    const rollback = await beforeRemove(worktree)
+    let final: Awaited<ReturnType<typeof snapshot>>
+    try {
+      final = await snapshot()
+    } catch (error) {
+      await rollback()
+      throw error
+    }
+    if (final.fingerprint !== initial.fingerprint) {
+      await rollback()
+      return { status: 'blocked-dirty', paths: final.paths, fingerprint: final.fingerprint }
+    }
     const removed = await removeRegisteredWorktreeCheckout(
       repositoryRoot,
       validated.path,
-      discardChanges,
+      initial.dirty,
     )
     if (removed.code !== 0) throw commandFailure('Cannot archive thread worktree', removed)
-    releaseWorktreeRoot(validated.root)
-    return { status: 'removed' }
+    try {
+      await lstat(target)
+      throw new Error('Archived worktree still exists.')
+    } catch (error) {
+      if (ownErrorCode(error) !== 'ENOENT') throw error
+    }
+    releaseWorktreeRoot(root)
+    return { status: 'removed', worktree }
   })
 }
 

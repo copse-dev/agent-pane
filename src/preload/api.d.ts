@@ -600,7 +600,7 @@ export interface ApiClient {
     archive: (
       projectId: string,
       threadId: string,
-      discardChanges: boolean,
+      confirmation: string | null,
     ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,

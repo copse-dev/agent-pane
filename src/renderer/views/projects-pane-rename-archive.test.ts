@@ -176,7 +176,7 @@ describe('projects pane thread rename + archive (component)', () => {
       activeThreadId: 't1',
     })
     const api = makeApi()
-    const calls: boolean[] = []
+    const calls: (string | null)[] = []
     api.threads.archive = async (
       projectId,
       threadId,
@@ -185,13 +185,23 @@ describe('projects pane thread rename + archive (component)', () => {
       assert.equal(projectId, 'a')
       assert.equal(threadId, 't2')
       calls.push(discardChanges)
+      if (discardChanges === 'a'.repeat(64))
+        return {
+          status: 'blocked-dirty',
+          paths: ['README.md', 'fresh-draft.txt'],
+          fingerprint: 'b'.repeat(64),
+        }
       return discardChanges
         ? {
             status: 'archived',
             archivedAt: 42,
-            worktree: { ...worktree, retiredAt: 42 },
+            worktree: { ...worktree, branch: 'renamed-live', retiredAt: 42 },
           }
-        : { status: 'blocked-dirty', paths: ['README.md', 'notes/draft.txt', 'local.log'] }
+        : {
+            status: 'blocked-dirty',
+            paths: ['README.md', 'notes/draft.txt', 'local.log'],
+            fingerprint: 'a'.repeat(64),
+          }
     }
     mount(store, api)
     mountConfirmDialog()
@@ -214,16 +224,30 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.equal(isThreadArchived(archivedThread), false)
     clickActiveConfirmDialogCancel()
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(calls, [false])
+    assert.deepEqual(calls, [null])
     assert.ok(rowFor('Local edits'))
 
     await openArchive()
     clickActiveConfirmDialogConfirm()
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(calls, [false, false, true])
+    assert.deepEqual(calls, [null, null, 'a'.repeat(64)])
+    assert.match(dialog.textContent, /fresh-draft.txt/)
+    assert.match(dialog.textContent, /Files changed while confirmation was open/)
+    assert.equal(
+      store.getState().threads.find((candidate) => candidate.id === 't2')?.archivedAt,
+      undefined,
+    )
+    clickActiveConfirmDialogConfirm()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [null, null, 'a'.repeat(64), 'b'.repeat(64)])
     const stored = store.getState().threads.find((candidate) => candidate.id === 't2')
     assert.equal(stored?.archivedAt, 42)
     assert.equal(stored.worktree?.retiredAt, 42)
+    assert.equal(
+      stored.gitBranch,
+      'renamed-live',
+      'autosave must not restore stale Git branch metadata',
+    )
     assert.equal(document.querySelector('[data-thread-id="t2"]'), null)
   })
 
