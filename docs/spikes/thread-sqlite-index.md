@@ -23,6 +23,14 @@ PR must refresh local relationships on thread changes even without GitHub detail
 Cover these cases with storage/fork/renderer regression tests and a focused visual
 eval, then update the draft with current-head validation.
 
+Additional validation acceptance: create a real local commit and PR production
+through the Electron chat tools, inspect both relationship directions and exact
+commit attribution, and verify persisted relationships after an offline restart.
+Profile first and repeated lookups over at least 1,000 unscanned legacy chats,
+including offscreen references and event-loop delay. Race PR/project selection
+against delayed relationship responses. Compare full-suite failures with an
+untouched current-main worktree. Keep the draft/rework prerequisite in place.
+
 Acceptance criteria:
 
 - Project metadata loads and both directions of PR relationships use the real index.
@@ -40,6 +48,9 @@ Acceptance criteria:
   the build, and the full repository check. This change adds no visible DOM.
 
 ## Completion evidence
+
+Additional native Electron, navigation-race, legacy-data profiling and clean-main
+comparison results are recorded in [thread-pr-validation.md](thread-pr-validation.md).
 
 Implemented in `packages/thread-store/src/sqlite-thread-index.ts` and the native
 thread-store API. Project opening uses SQLite, with the existing 16-project

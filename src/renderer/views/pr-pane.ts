@@ -1231,6 +1231,7 @@ export function mountPrPane(
       number: ref.number,
       url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
     })
+    if (disposed || requestId !== detailsRequestId) return
     selectedFile = null
     renderList()
 

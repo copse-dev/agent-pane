@@ -333,6 +333,59 @@ describe('pr pane filter (issue #2482)', () => {
     assert.ok(linked.querySelector('.pr-list-status.is-merged svg[data-icon="git-merge"]'))
     assert.match(linked.textContent, /Already shipped/)
   })
+  for (const change of ['pr', 'project', 'dispose']) {
+    it(`discards a delayed selection after switching ${change}`, async () => {
+      let complete: (rows: PrThreadRelationship[]) => void = () => {
+        throw new Error('relationship request was not started')
+      }
+      const pending = new Promise<PrThreadRelationship[]>((resolve) => {
+        complete = resolve
+      })
+      const details: number[] = []
+      let projectChanged = false
+      const { listRoot, viewerRoot, store, dispose } = mount([], {
+        gh: {
+          prThreadRelationships: async (pr) =>
+            pr.number === 42 && !projectChanged ? pending : [],
+        },
+        prDetails: async (_owner, _repo, number) => {
+          details.push(number)
+          return null
+        },
+      })
+      try {
+        await settle()
+        if (change === 'pr') {
+          const row = [...listRoot.querySelectorAll<HTMLElement>('.pr-list-row')].find((element) =>
+            element.textContent.includes(WORKSPACE_PR.title),
+          )
+          assert.ok(row)
+          row.click()
+        } else if (change === 'project') {
+          projectChanged = true
+          store.getState().activeProjectId = 'project-2'
+          store.emit('workspace_changed')
+        } else dispose()
+        await settle()
+        const before = viewerRoot.textContent
+        const callsBefore = [...details]
+        complete([
+          { threadId: 'stale', title: 'Stale producer', kinds: ['produced'], productions: [] },
+        ])
+        await settle()
+        assert.deepEqual(details, callsBefore, 'obsolete selection must not request GitHub details')
+        assert.equal(
+          viewerRoot.textContent,
+          before,
+          'obsolete selection must not repaint the viewer',
+        )
+        assert.ok(!viewerRoot.textContent.includes('Stale producer'))
+      } finally {
+        dispose()
+      }
+    })
+  }
+
   for (const installed of [false, true]) {
     it(`refreshes selected local relationships with ${installed ? 'unauthenticated' : 'missing'} GitHub CLI`, async () => {
       let rows: PrThreadRelationship[] = []
