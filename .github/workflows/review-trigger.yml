@@ -39,6 +39,7 @@ jobs:
       app-id: ${{ secrets.RELEASE_APP_ID }}
       app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY }}
+      COPSE_REVIEW_OPENROUTER_API_KEY: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
       SCW_GENERATIVE_API_KEY: ${{ secrets.SCW_GENERATIVE_API_KEY }}
       SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
 
