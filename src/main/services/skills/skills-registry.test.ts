@@ -1,8 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import {
   refreshSkillsRegistry,
   listSkills,
@@ -176,11 +177,12 @@ description: Installed by the Codex CLI
     assert.equal(getSkill('github-skill')?.source, 'project')
     assert.equal(getSkill('copilot-skill')?.source, 'user')
     const meta = getSkill('github-skill')
-    assert.deepEqual(meta?.metadata, { author: 'Example', version: '1' })
-    assert.equal(meta?.license, 'MIT')
-    assert.equal(meta?.compatibility, 'Requires Python')
-    assert.equal(meta?.allowedTools, 'Bash(*) Read')
-    assert.deepEqual(meta?.paths, [], 'allowed-tools never turns into read roots')
+    assert.ok(meta)
+    assert.deepEqual(meta.metadata, { author: 'Example', version: '1' })
+    assert.equal(meta.license, 'MIT')
+    assert.equal(meta.compatibility, 'Requires Python')
+    assert.equal(meta.allowedTools, 'Bash(*) Read')
+    assert.deepEqual(meta.paths, [], 'allowed-tools never turns into read roots')
     assert.ok((await readSkill('github-skill')).body.includes('allowed-tools: Bash(*) Read'))
   })
 
@@ -230,11 +232,13 @@ description: Installed by the Codex CLI
       join(good, 'SKILL.md'),
       '---\nname: extra-only\ndescription: Before\nfuture-field: ignored\n---\nBody',
     )
-    setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing')])
+    const nonFolder = join(tempRoot, 'not-a-folder')
+    await writeFile(nonFolder, 'ordinary file')
+    setSetting('skillPluginPaths', [extra, join(tempRoot, 'missing'), nonFolder])
     await refreshSkillsRegistry()
     const before = listSkillSources()
     assert.equal(before.reload, 'manual')
-    assert.deepEqual(before.extraRoots, [extra, join(tempRoot, 'missing')])
+    assert.deepEqual(before.extraRoots, [extra, join(tempRoot, 'missing'), nonFolder])
     assert.ok(
       before.diagnostics.some(
         (diagnostic) =>
@@ -256,7 +260,12 @@ description: Installed by the Codex CLI
       ),
     )
     assert.ok(
-      before.diagnostics.some((diagnostic) => diagnostic.reason.includes('missing or unreadable')),
+      before.diagnostics.some((diagnostic) => diagnostic.reason.includes('missing, unreadable')),
+    )
+    assert.ok(
+      before.diagnostics.some(
+        (diagnostic) => diagnostic.skillPath === nonFolder && diagnostic.kind === 'invalid',
+      ),
     )
     await refreshSkillsRegistry()
     assert.deepEqual(listSkillSources().diagnostics, before.diagnostics)
@@ -286,6 +295,24 @@ description: Installed by the Codex CLI
       ),
     )
   })
+
+  it(
+    'skips non-regular skill files without blocking discovery',
+    { skip: process.platform === 'win32', timeout: 3000 },
+    async () => {
+      const folder = join(tempRoot, '.github/skills/fifo-skill')
+      await mkdir(folder, { recursive: true })
+      execFileSync('mkfifo', [join(folder, 'SKILL.md')])
+      await refreshSkillsRegistry()
+      assert.equal(getSkill('fifo-skill'), null)
+      assert.ok(
+        listSkillSources().diagnostics.some(
+          (diagnostic) =>
+            diagnostic.name === 'fifo-skill' && diagnostic.reason.includes('regular file'),
+        ),
+      )
+    },
+  )
 
   it('does not descend into a nested repository (git worktree or clone)', async () => {
     // A worktree under `.claude/worktrees/<name>` is a checkout of this same
@@ -430,6 +457,43 @@ description: Run a Copse setup health check
     assert.equal(skill.source, 'bundled')
 
     await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('adapts only immutable bundled headers and rejects identical untrusted copies', async () => {
+    const vendor = resolve('vendor/bundled-cursor-skills')
+    const original = await readFile(
+      join(vendor, 'plugins/cursor-sdk/skills/cursor-sdk/SKILL.md'),
+      'utf8',
+    )
+    setSetting('bundledCursorSkillsEnabled', true)
+    setBundledCursorSkillsRootForTest(vendor)
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('cursor-sdk')?.source, 'bundled')
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) => diagnostic.name === 'cursor-sdk' && diagnostic.kind === 'compatibility',
+      ),
+    )
+    assert.equal(
+      (await readSkill('cursor-sdk')).body,
+      original,
+      'original skill bytes remain readable',
+    )
+
+    const projectFolder = join(tempRoot, '.github/skills/cursor-sdk')
+    await mkdir(projectFolder, { recursive: true })
+    await writeFile(join(projectFolder, 'SKILL.md'), original)
+    setSetting('bundledCursorSkillsEnabled', false)
+    await refreshSkillsRegistry()
+    assert.equal(getSkill('cursor-sdk'), null)
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) =>
+          diagnostic.name === 'cursor-sdk' &&
+          diagnostic.kind === 'invalid' &&
+          diagnostic.reason.includes('1024'),
+      ),
+    )
   })
 
   it('ships reconcile-worktrees with its readable audit helper', async () => {

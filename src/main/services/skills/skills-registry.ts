@@ -190,7 +190,10 @@ async function loadSkillFromFile(
   }
   let raw: string
   try {
-    const file = await fsp.open(skillPath, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const file = await fsp.open(
+      skillPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    )
     try {
       const stat = await file.stat()
       if (!stat.isFile() || stat.size > SKILL_READ_MAX_BYTES) {
@@ -412,14 +415,20 @@ async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
   const failures: SkillLoadFailure[] = []
   const diagnostics: SkillDiagnostic[] = []
   for (const root of getSetting<string[]>('skillPluginPaths', [])) {
-    if (!(await pathExists(resolve(root))))
+    try {
+      // An extra path that exists but is a file or unreadable folder must not
+      // silently look like an empty catalog after the user explicitly saves it.
+      await fsp.readdir(resolve(root))
+    } catch {
       diagnostics.push({
         kind: 'invalid',
         name: basename(root),
         skillPath: root,
         source: 'plugin-path',
-        reason: 'Extra skill folder is missing or unreadable; no skills were loaded from it',
+        reason:
+          'Extra skill folder is missing, unreadable, or not a directory; no skills were loaded from it',
       })
+    }
   }
   const { targets: discoveryTargets, switchedOffPlugins } = await collectDiscoveryTargets()
 
@@ -482,11 +491,16 @@ export async function refreshSkillsRegistry(): Promise<void> {
 }
 
 export async function initSkillsRegistry(): Promise<void> {
-  if (refreshPromise) await refreshPromise
-  refreshPromise = refreshSkillsRegistry()
-  await refreshPromise
-  refreshPromise = null
-  notifyRefreshContextEstimate()
+  // Serialize explicit Sources/settings reloads. A failed previous discovery
+  // is reported to its caller and must not permanently block future reloads.
+  const current = (refreshPromise ?? Promise.resolve()).catch(() => {}).then(refreshSkillsRegistry)
+  refreshPromise = current
+  try {
+    await current
+    notifyRefreshContextEstimate()
+  } finally {
+    if (refreshPromise === current) refreshPromise = null
+  }
 }
 
 /** Wait until an already-started discovery pass has populated the shared cache. */

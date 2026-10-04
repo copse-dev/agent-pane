@@ -82,6 +82,7 @@ describe('Agent Skills frontmatter conformance', () => {
       'double--hyphen',
       'has_space',
       'two words',
+      '" padded "',
     ])
       assert.equal(parseSkillFrontmatter(`name: ${name}\ndescription: Demo`), null, name)
     for (const yaml of [

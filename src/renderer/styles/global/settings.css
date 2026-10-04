@@ -3152,6 +3152,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 .sources-skill-controls {
+  display: block;
   margin-top: var(--spacing-xs);
 }
 .sources-skill-metadata,
