@@ -1390,13 +1390,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: {
       list: emptyArray,
-      sources: async () => ({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
-      setRoots: async (extraRoots) => ({
-        skills: [],
-        diagnostics: [],
-        extraRoots,
-        reload: 'manual',
-      }),
+      sources: () => resolved({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
+      setRoots: (extraRoots) =>
+        resolved({
+          skills: [],
+          diagnostics: [],
+          extraRoots,
+          reload: 'manual',
+        }),
     },
     cursorPlugins: { list: emptyArray },
     bundledSkillPlugins: { list: emptyArray },
