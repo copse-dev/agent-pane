@@ -203,6 +203,26 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('fades transcript content through the conversation top buffer', () => {
+    const css = read('conversation.css')
+    assert.ok(
+      declares(css, '.conversation-scroll::before', /pointer-events:\s*none/),
+      'the transcript fade must not intercept conversation controls',
+    )
+    assert.ok(
+      declares(css, '.conversation-scroll::before', /linear-gradient/),
+      'the conversation top buffer must fade content into the chat surface',
+    )
+    assert.ok(
+      declares(
+        css,
+        '.conversation-scroll::before',
+        /height:\s*calc\(var\(--spacing-lg\) \+ var\(--spacing-md\)\)/,
+      ),
+      'the fade should use the existing transcript top spacing as its height',
+    )
+  })
+
   it('keeps concise results dense and removes transcript rules', () => {
     const css = read('conversation.css')
     const assistantResult = css.match(

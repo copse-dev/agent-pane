@@ -2,6 +2,7 @@ import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import {
   arrowUpDownIcon,
   bellIcon,
@@ -138,16 +139,20 @@ function runningStatus(label: string): SVGSVGElement {
 }
 
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
-  const label = ciFailing
+function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean, conflicts: boolean): HTMLElement {
+  const statusLabel = ciFailing
     ? `${describeThreadPrStatus(rollup)}; checks are failing`
     : describeThreadPrStatus(rollup)
-  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
+  const label = conflicts ? `${statusLabel}; merge conflicts` : statusLabel
+  const icon =
+    rollup.kind === 'merged'
+      ? gitMergeIcon('ui-icon ui-icon-sm')
+      : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? ' has-conflicts' : ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -545,7 +550,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -622,10 +627,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
           const previous = prLifecycleCache.get(key)
-          lifecycleChanged = previous?.state !== state
-          // CI only matters while the PR is open; the dot is the one extra cue.
+          const conflicts = state === 'open' && details !== null && prHasMergeConflicts(details)
+          lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts
+          // CI and merge conflicts only affect open PRs.
           prLifecycleCache.set(key, {
             state,
+            conflicts,
             ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
             fetchedAt: Date.now(),
           })
@@ -643,6 +650,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           const cached = prLifecycleCache.get(key)
           prLifecycleCache.set(key, {
             state: cached?.state ?? 'unknown',
+            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
           })
         })
@@ -658,6 +666,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return sidebarPrRefs(thread).some((ref) => {
       const entry = prLifecycleCache.get(githubPrKey(ref))
       return entry?.state === 'open' && entry.checks === 'failure'
+    })
+  }
+
+  function conflictsForThread(thread: SidebarThread): boolean {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref))
+      return entry?.state === 'open' && entry.conflicts === true
     })
   }
 
@@ -1345,7 +1360,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === 'open' && ciFailingForThread(thread)),
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === 'open' && ciFailingForThread(thread),
+            prRollup.kind === 'open' && conflictsForThread(thread),
+          ),
         )
       }
 
