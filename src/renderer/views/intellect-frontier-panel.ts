@@ -1560,7 +1560,7 @@ function buildAuxLists(
 
 export interface IntellectFrontierPanel {
   root: HTMLFieldSetElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
   /** Switch plan re-pricing for the value map (Plan / Inference / Expected). */
   setPlanCoverageMode: (mode: PlanCoverageMode) => void
   getPlanCoverageMode: () => PlanCoverageMode
@@ -1911,32 +1911,38 @@ export function createIntellectFrontierPanel(
   )
   const panelTooltip = createTooltipLayer(fieldset)
 
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     let localIds: string[]
+    if (signal?.aborted) return
     try {
       localIds = await loadLocalModels()
     } catch {
       localIds = []
     }
     let extraProviders: readonly ExtraProvider[]
+    if (signal?.aborted) return
     try {
       extraProviders = (await loadExtraProviders?.()) ?? []
     } catch {
       extraProviders = []
     }
     let liveFetch: LiveModelsFetch
+    if (signal?.aborted) return
     try {
       liveFetch = (await loadLiveModels?.()) ?? { ok: true, models: [] }
     } catch {
       liveFetch = { ok: true, models: [] }
     }
     let planUsage: PlanUsageSnapshot | null
+    if (signal?.aborted) return
     try {
       planUsage = (await loadPlanUsage?.()) ?? null
     } catch {
       planUsage = null
     }
     let openRouter: OpenRouterFrontierSource
+    if (signal?.aborted) return
     try {
       openRouter = (await loadOpenRouter?.()) ?? {
         models: [],
@@ -1948,6 +1954,7 @@ export function createIntellectFrontierPanel(
     }
     let routableSelections: readonly string[] | null = null
     if (loadRoutableModelSelections) {
+      if (signal?.aborted) return
       try {
         routableSelections = await loadRoutableModelSelections()
       } catch {
@@ -1957,6 +1964,7 @@ export function createIntellectFrontierPanel(
       }
     }
     let acpAgents: readonly AcpAgentConfig[] = []
+    if (signal?.aborted) return
     try {
       acpAgents = (await loadAcpAgents?.()) ?? []
     } catch {
@@ -1965,6 +1973,7 @@ export function createIntellectFrontierPanel(
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
+    if (signal?.aborted) return
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
     state = {
       localIds,
@@ -1976,6 +1985,7 @@ export function createIntellectFrontierPanel(
       routableSelections,
       acpAgents,
     }
+    if (signal?.aborted) return
     render()
   }
 

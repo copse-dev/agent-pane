@@ -1370,3 +1370,30 @@ describe('positionFrontierTooltip', () => {
     container.remove()
   })
 })
+
+describe('frontier refresh cancellation', () => {
+  it('stops later loaders and preserves the rendered map after leaving Settings', async () => {
+    let release = (_models: string[]): void => {
+      throw new Error('not started')
+    }
+    const local = new Promise<string[]>((resolve) => {
+      release = resolve
+    })
+    let providerCalls = 0
+    const panel = createIntellectFrontierPanel(
+      () => local,
+      async () => {
+        providerCalls += 1
+        return []
+      },
+    )
+    const before = panel.root.innerHTML
+    const controller = new AbortController()
+    const work = panel.refresh(controller.signal)
+    controller.abort()
+    release([])
+    await work
+    assert.equal(providerCalls, 0)
+    assert.equal(panel.root.innerHTML, before)
+  })
+})
