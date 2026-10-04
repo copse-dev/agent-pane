@@ -2126,7 +2126,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
  * `hook_run` lines anchored to the message they fired within — exactly the
  * on-disk shape `appendHookRun` produces — so the real fold path is exercised.
  */
-export function seedHookCardsFixture(workspaceRoot: string): void {
+export function seedHookCardsFixture(
+  workspaceRoot: string,
+  options?: { developerMode?: boolean },
+): void {
   const projectId = 'e2e-hook-cards-project'
   const threadId = 'e2e-hook-cards-thread'
   const now = Date.now()
@@ -2302,6 +2305,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     activeProjectId: projectId,
     activeThreadId: threadId,
   })
+  seedDeveloperModeSetting(options?.developerMode ?? true)
 }
 
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
