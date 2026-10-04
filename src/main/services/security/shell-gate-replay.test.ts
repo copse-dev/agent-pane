@@ -185,7 +185,7 @@ describe('shell gate replay', () => {
           // checkout lives below /workspace. One pass prevents rewriting the
           // physical paths introduced for the anonymised home.
           testCase.command.replace(
-            /\/Users\/dev(?=$|[\/\s'";|&<>),])|\/workspace(?=$|[\/\s'";|&<>),])/g,
+            /\/Users\/dev(?=$|\/|[\s'";|&<>),])|\/workspace(?=$|\/|[\s'";|&<>),])/g,
             (path) => (path === ANONYMISED_HOME ? home : outsideWorkspace),
           ),
           { sandboxEnabled: situation.sandboxEnabled, executionRoot: workspace },
