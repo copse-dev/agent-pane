@@ -100321,7 +100321,6 @@ function createContextWheel() {
   }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
-    const pct = Math.round(ratio * 100);
     const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
@@ -100332,6 +100331,7 @@ function createContextWheel() {
     setFillState(ratio);
     const shownBreakdown = options?.breakdown;
     const labelled = shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0 ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow } : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget };
+    const pct = pctOf(labelled.tokens, labelled.budget);
     const contextLine = `Context: ${formatTokenCount2(labelled.tokens)} / ${formatTokenCount2(labelled.budget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
