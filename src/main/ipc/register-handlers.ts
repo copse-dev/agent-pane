@@ -45,6 +45,7 @@ import {
   captureBrowserPageText,
   exportBrowserPageHtml,
   captureBrowserScreenshot,
+  captureBrowserScrollPosition,
   exportCanvasArtefact,
   exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
@@ -768,6 +769,10 @@ export function registerAllHandlers(
 
   ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
     return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+  })
+
+  ipcMain.handle('browser:scroll-position', async (event, rawId: unknown) => {
+    return await captureBrowserScrollPosition(interactiveBrowserContents(event, rawId))
   })
 
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMMessage } from '@shared/types'
 import {
+  contextPressureChunk,
   prepareAgentHistory,
   promptExceedsContextWindow,
   oversizedTurnMessage,
@@ -20,6 +21,18 @@ describe('prepareAgentHistory', () => {
     ]
     const prepared = prepareAgentHistory(messages, 128_000, 0)
     assert.equal(prepared.estimatedPromptTokens, 300)
+  })
+})
+
+describe('contextPressureChunk', () => {
+  it('counts the system prompt and tool schemas, like the measured readings that follow', () => {
+    const messages: LLMMessage[] = [{ role: 'system', content: 'y'.repeat(4000) }, userMessage(80)]
+    const prepared = prepareAgentHistory(messages, 128_000, 5000)
+    const chunk = contextPressureChunk(prepared, 128_000, 5000)
+    // ~1000 system + ~20 user + 5000 tool schemas, not just the ~20 conversation tokens.
+    assert.ok(chunk.conversationTokens > 6000, String(chunk.conversationTokens))
+    assert.ok(chunk.conversationTokens > prepared.initialConversationTokens)
+    assert.equal(chunk.fillRatio, chunk.conversationTokens / prepared.conversationBudget)
   })
 })
 

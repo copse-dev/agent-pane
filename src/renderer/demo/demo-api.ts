@@ -577,6 +577,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,

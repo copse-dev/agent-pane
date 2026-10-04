@@ -19,6 +19,33 @@ afterEach(() => {
 })
 
 describe('context wheel breakdown (component)', () => {
+  it('uses the hover percentage when snapshot and breakdown figures differ', () => {
+    const wheel = createContextWheel()
+    const breakdown = composeContextBreakdown({ system: 1800, history: 5000 }, 200_000)
+    wheel.update(
+      {
+        contextWindow: 200_000,
+        conversationBudget: 100_000,
+        conversationTokens: 50_000,
+        fillRatio: 0.5,
+        updatedAt: 1,
+      },
+      false,
+      { breakdown, breakdownRing: false },
+    )
+    assert.equal(wheel.root.title, 'Context: 6.8k / 200.0k (3%)')
+    assert.equal(wheel.root.getAttribute('aria-label'), 'Context 3% used, 6.8k of 200.0k tokens')
+    assert.equal(
+      wheel.root.querySelector('.context-wheel-popover-header')?.textContent,
+      'Context · 6.8k / 200.0k (3%)',
+    )
+    // The measured ring still represents the live snapshot.
+    assert.equal(
+      wheel.root.querySelector('.context-wheel-fill')?.getAttribute('stroke-dasharray'),
+      `${String(Math.PI * 6)} ${String(2 * Math.PI * 6)}`,
+    )
+  })
+
   it('shows the default-context breakdown ring on a fresh thread', () => {
     const wheel = createContextWheel()
     document.body.append(wheel.root)
