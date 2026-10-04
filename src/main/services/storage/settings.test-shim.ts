@@ -2,7 +2,7 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
-import { runSerializedUpdate } from './write-queue.ts'
+import { runSerialized, runSerializedUpdate } from './write-queue.ts'
 
 const settings = new Map<string, unknown>([
   // Unit tests must not wait on an optional LM Studio scope classifier. Suites
@@ -120,8 +120,33 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
-  settings.set(key, value)
-  return Promise.resolve()
+  return runSerialized('settings:transaction', () => {
+    settings.set(key, value)
+  })
+}
+
+export function setSettings(
+  values: Readonly<Record<string, unknown>>,
+  roleAssignments?: Record<string, string>,
+): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  const parsed: Record<string, unknown> = Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      const schema = getSettingSchema(key)
+      if (!schema) throw new Error(`Unregistered setting: ${key}`)
+      return [key, schema.parse(value)]
+    }),
+  )
+  return runSerialized('settings:transaction', () => {
+    if (roleAssignments)
+      parsed['roleModels'] = getSettingSchema('roleModels')?.parse({
+        ...getSetting('roleModels', {}),
+        ...roleAssignments,
+      })
+    for (const [key, value] of Object.entries(parsed)) settings.set(key, value)
+  })
 }
 
 export function updateSetting<T>(key: string, fallback: T, update: (current: T) => T): Promise<T> {
@@ -130,7 +155,7 @@ export function updateSetting<T>(key: string, fallback: T, update: (current: T) 
   }
   const schema = getSettingSchema(key)
   return runSerializedUpdate(
-    `settings:${key}`,
+    'settings:transaction',
     () => getSetting(key, fallback),
     update,
     (next) => {

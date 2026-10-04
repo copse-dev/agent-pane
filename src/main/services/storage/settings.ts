@@ -23,12 +23,12 @@ import { ALLOW_PLAINTEXT_SECRETS_ENV, resolveSecretWritePolicy } from './secret-
 // Known limitation (same as config storage): a separate process that shares
 // settings.json has its own persistent-store instance; this cache will not
 // observe another process's write to a key it has already read. In-process
-// writers stay coherent via write-through + the per-key write queue.
+// writers stay coherent via write-through + the shared settings write queue.
 const cached = openPersistentStore({ name: 'settings' })
 
 // Distinct write-queue namespace so settings keys can't collide with the shared
 // electron-store keys serialized elsewhere.
-const queueKey = (key: string): string => `settings:${key}`
+const SETTINGS_WRITE_QUEUE = 'settings:transaction'
 
 interface StoredKey {
   v: 1
@@ -325,8 +325,8 @@ export function getSettingTrimmed(key: string, fallback = ''): string {
 }
 
 /**
- * Persist a setting. Writes are serialized per key (electron-store's file write
- * is non-atomic, so concurrent writers could otherwise drop an update). When the
+ * Persist a setting. Writes share the batch transaction queue so read-modify-write
+ * mutations cannot interleave with a settings patch. When the
  * key has a registered schema, the value is validated first and a bad value is
  * rejected rather than silently corrupting the store.
  */
@@ -336,7 +336,7 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   }
   const schema = getSettingSchema(key)
   const toStore = schema ? schema.parse(value) : value
-  return runSerialized(queueKey(key), () => {
+  return runSerialized(SETTINGS_WRITE_QUEUE, () => {
     cached.set(key, toStore)
   })
 }
@@ -344,7 +344,7 @@ export function setSetting(key: string, value: unknown): Promise<void> {
 /**
  * Atomically update one setting from its latest persisted value. Unlike a
  * caller-side getSetting → setSetting sequence, the read runs inside the same
- * per-key queue as ordinary writes, so overlapping mutations cannot overwrite
+ * queue as ordinary writes and batches, so overlapping mutations cannot overwrite
  * one another with stale snapshots.
  */
 export function updateSetting<T>(key: string, fallback: T, update: (current: T) => T): Promise<T> {
@@ -353,7 +353,7 @@ export function updateSetting<T>(key: string, fallback: T, update: (current: T) 
   }
   const schema = getSettingSchema(key)
   return runSerializedUpdate(
-    queueKey(key),
+    SETTINGS_WRITE_QUEUE,
     () => getSetting(key, fallback),
     update,
     (next) => {
@@ -363,12 +363,40 @@ export function updateSetting<T>(key: string, fallback: T, update: (current: T) 
   )
 }
 
-/** Remove a persisted setting through the same per-key serialization as writes. */
+/** Remove a persisted setting through the same serialization as writes. */
 export function deleteSetting(key: string): Promise<void> {
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
-  return runSerialized(queueKey(key), () => {
+  return runSerialized(SETTINGS_WRITE_QUEUE, () => {
     cached.delete(key)
+  })
+}
+
+/** Validate the complete ordinary patch before one atomic backing-store write. */
+export function setSettings(
+  values: Readonly<Record<string, unknown>>,
+  roleAssignments?: Record<string, string>,
+): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  const parsed: Record<string, unknown> = Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      const schema = getSettingSchema(key)
+      if (!schema) throw new Error(`Unregistered setting: ${key}`)
+      return [key, schema.parse(value)]
+    }),
+  )
+  return runSerialized(SETTINGS_WRITE_QUEUE, () => {
+    if (roleAssignments) {
+      const current = getSettingSchema('roleModels')?.parse(getSetting('roleModels', {}))
+      if (!isRecord(current)) throw new Error('Invalid role map')
+      parsed['roleModels'] = getSettingSchema('roleModels')?.parse({
+        ...current,
+        ...roleAssignments,
+      })
+    }
+    cached.setMany(parsed)
   })
 }

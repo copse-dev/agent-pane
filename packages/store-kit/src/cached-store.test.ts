@@ -45,6 +45,38 @@ function countingBacking(seed: Record<string, unknown> = {}): {
 }
 
 describe('cached-store (storage read-complexity contract)', () => {
+  it('writes a batch once and keeps all cached values unchanged when the atomic write fails', () => {
+    const { backing, data } = countingBacking({ first: 'old', second: 'old' })
+    let commits = 0
+    let fail = true
+    const store = createCachedStore({
+      ...backing,
+      setMany(values): void {
+        commits += 1
+        if (fail) throw new Error('disk full')
+        for (const [key, value] of Object.entries(values)) data.set(key, value)
+      },
+    })
+    assert.equal(store.get('first'), 'old')
+    assert.equal(store.get('second'), 'old')
+    assert.throws(() => store.setMany({ first: 'new', second: 'new' }), /disk full/)
+    assert.equal(store.get('first'), 'old')
+    assert.equal(store.get('second'), 'old')
+    assert.deepEqual([...data.values()], ['old', 'old'])
+    fail = false
+    store.setMany({ first: 'new', second: 'new' })
+    assert.equal(commits, 2)
+    assert.equal(store.backingWrites(), 2)
+    assert.equal(store.get('second'), 'new')
+  })
+
+  it('refuses to emulate an atomic batch through separate per-key writes', () => {
+    const { backing, data, writes } = countingBacking({ first: 'old' })
+    const store = createCachedStore(backing)
+    assert.throws(() => store.setMany({ first: 'new', second: 'new' }), /atomic updates/)
+    assert.equal(writes(), 0)
+    assert.equal(data.get('first'), 'old')
+  })
   it('reads the backing store at most ONCE per key, no matter how often the key is read', () => {
     // Regression contract for the startup hang: electron-store re-parses the
     // whole multi-MB config.json on every `.get`, and a hot loop (the file-index

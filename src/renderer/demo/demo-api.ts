@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
@@ -1094,6 +1095,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     settings: {
+      getSnapshot: () => {
+        const values: Record<string, unknown> = Object.fromEntries(settings)
+        const snapshot: SettingsSnapshot = values
+        return resolved(snapshot)
+      },
+      update: (changes) => {
+        for (const [key, value] of Object.entries(changes)) settings.set(key, value)
+        return resolvedVoid()
+      },
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {
         settings.set(key, value)

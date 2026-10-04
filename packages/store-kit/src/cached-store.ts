@@ -20,6 +20,8 @@
 export interface BackingStore {
   get(key: string): unknown
   set(key: string, value: unknown): void
+  /** Commit the complete patch in one backing rewrite. No per-key fallback. */
+  setMany?(values: Readonly<Record<string, unknown>>): void
   delete(key: string): void
   /** List every key currently in the backing store (migrations / diagnostics). */
   listKeys(): string[]
@@ -34,6 +36,7 @@ export interface BackingStore {
 export interface CachedStore {
   get(key: string): unknown
   set(key: string, value: unknown): void
+  setMany(values: Readonly<Record<string, unknown>>): void
   delete(key: string): void
   listKeys(): string[]
   deleteKeys(keys: string[]): void
@@ -67,6 +70,17 @@ export function createCachedStore(backing: BackingStore): CachedStore {
       writes += 1
       backing.set(key, value)
       cache.set(key, snapshot)
+    },
+    setMany(values): void {
+      const entries = Object.entries(values).map(
+        ([key, value]) => [key, cloneValue(value)] as const,
+      )
+      if (entries.length === 0) return
+      if (!backing.setMany) throw new Error('Backing store does not support atomic updates')
+      const snapshot = Object.fromEntries(entries)
+      writes += 1
+      backing.setMany(snapshot)
+      for (const [key, value] of entries) cache.set(key, value)
     },
     delete(key: string): void {
       cache.delete(key)
