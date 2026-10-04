@@ -67534,6 +67534,7 @@ function createDemoApi(scenario, options = {}) {
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,
@@ -78031,6 +78032,7 @@ function composeAnnotationPng(svg2, width, height, base) {
 }
 function mountAnnotationLayer(host, options) {
   let root = null;
+  let resizeObserver = null;
   let svg2 = null;
   let drauu = null;
   let active2 = false;
@@ -78042,6 +78044,16 @@ function mountAnnotationLayer(host, options) {
   let undoBtn = null;
   let clearBtn = null;
   let sending = false;
+  let scrollX = 0;
+  let scrollY = 0;
+  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
+  const applyViewBox = () => {
+    if (!svg2) return;
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
+  };
   const applyBrush = () => {
     if (!drauu) return;
     const brush = drauu.brush;
@@ -78097,6 +78109,7 @@ function mountAnnotationLayer(host, options) {
     svg2.setAttribute("class", "annotation-layer-svg");
     svg2.setAttribute("role", "img");
     svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
+    applyViewBox();
     const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
     const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
       const button = el("button", {
@@ -78143,7 +78156,6 @@ function mountAnnotationLayer(host, options) {
       void layer.export().then(async (payload) => {
         const accepted = await options.onSend(payload);
         if (!accepted) return;
-        layer.clear();
         layer.deactivate();
       }).catch(() => {
       }).finally(() => {
@@ -78189,6 +78201,10 @@ function mountAnnotationLayer(host, options) {
     root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
     root.hidden = true;
     host.append(root);
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver.observe(host);
+    }
     drauu = createDrauu({
       el: svg2,
       brush: { mode: "stylus", color: colour, size: PEN_SIZE }
@@ -78253,6 +78269,11 @@ function mountAnnotationLayer(host, options) {
       tool = next;
       applyBrush();
     },
+    setScrollOffset(x2, y2) {
+      if (Number.isFinite(x2)) scrollX = x2;
+      if (Number.isFinite(y2)) scrollY = y2;
+      applyViewBox();
+    },
     async export() {
       ensureMounted();
       const rect = host.getBoundingClientRect();
@@ -78272,7 +78293,10 @@ function mountAnnotationLayer(host, options) {
       clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       clone3.setAttribute("width", String(width));
       clone3.setAttribute("height", String(height));
-      clone3.setAttribute("viewBox", `0 0 ${String(width)} ${String(height)}`);
+      clone3.setAttribute(
+        "viewBox",
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
+      );
       const serialised = clone3.outerHTML;
       const base = await options.captureBase?.().catch(() => null);
       let png = null;
@@ -78293,6 +78317,8 @@ function mountAnnotationLayer(host, options) {
     },
     dispose() {
       layer.deactivate();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       drauu?.unmount();
       drauu = null;
       root?.remove();
@@ -78361,6 +78387,123 @@ var init_attach_annotation = __esm({
   "src/renderer/drawing/attach-annotation.ts"() {
     init_prompt_attachments();
     init_toast();
+  }
+});
+
+// src/renderer/drawing/scroll-tracker.ts
+function trackGuestScroll(options) {
+  const timer = options.timer ?? window;
+  let lastX = null;
+  let lastY = null;
+  let strokeDepth = 0;
+  let disposed = false;
+  let enabled = false;
+  let polling = false;
+  let guestFocused = false;
+  let inFlight4 = false;
+  let idleTimer = null;
+  let interval = null;
+  const emit = (position2) => {
+    if (position2.x === lastX && position2.y === lastY) return;
+    lastX = position2.x;
+    lastY = position2.y;
+    options.onScroll(position2);
+  };
+  const stopPolling = () => {
+    if (interval !== null) timer.clearInterval(interval);
+    interval = null;
+  };
+  const startPolling = () => {
+    interval ??= timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS);
+  };
+  const scheduleIdleStop = () => {
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = timer.setTimeout(() => {
+      idleTimer = null;
+      polling = false;
+      if (strokeDepth === 0 && !guestFocused) stopPolling();
+    }, IDLE_STOP_MS);
+  };
+  function poll() {
+    if (disposed || !enabled || inFlight4 || !polling && strokeDepth === 0 && !guestFocused) return;
+    inFlight4 = true;
+    void options.fetchPosition().then((position2) => {
+      if (!disposed && position2) emit(position2);
+    }).catch(() => {
+    }).finally(() => {
+      inFlight4 = false;
+    });
+  }
+  const wake = (refreshLayout = false) => {
+    if (!enabled) return;
+    if (refreshLayout && lastX !== null && lastY !== null) {
+      options.onScroll({ x: lastX, y: lastY });
+    }
+    polling = true;
+    startPolling();
+    scheduleIdleStop();
+    poll();
+  };
+  const onWheel = () => {
+    wake();
+  };
+  const onPointerDown = () => {
+    strokeDepth += 1;
+    startPolling();
+    poll();
+  };
+  const onPointerUp = () => {
+    strokeDepth = Math.max(0, strokeDepth - 1);
+    if (strokeDepth === 0 && !polling && !guestFocused) stopPolling();
+  };
+  const start = (refreshLayout = false) => {
+    enabled = true;
+    options.wheelTarget.addEventListener("wheel", onWheel, { passive: true });
+    options.wheelTarget.addEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.addEventListener("pointerup", onPointerUp, CAPTURE);
+    window.addEventListener("pointercancel", onPointerUp, CAPTURE);
+    wake(refreshLayout);
+  };
+  const stop = () => {
+    enabled = false;
+    polling = false;
+    strokeDepth = 0;
+    stopPolling();
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = null;
+    options.wheelTarget.removeEventListener("wheel", onWheel);
+    options.wheelTarget.removeEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.removeEventListener("pointerup", onPointerUp, CAPTURE);
+    window.removeEventListener("pointercancel", onPointerUp, CAPTURE);
+  };
+  start();
+  return {
+    kick: () => {
+      wake(true);
+    },
+    setEnabled(next) {
+      if (disposed || next === enabled) return;
+      if (next) start(true);
+      else stop();
+    },
+    setGuestFocused(focused) {
+      if (disposed || focused === guestFocused) return;
+      guestFocused = focused;
+      if (focused) wake();
+      else if (!polling && strokeDepth === 0) stopPolling();
+    },
+    dispose() {
+      if (enabled) stop();
+      disposed = true;
+    }
+  };
+}
+var SCROLL_TRACK_INTERVAL_MS, IDLE_STOP_MS, CAPTURE;
+var init_scroll_tracker = __esm({
+  "src/renderer/drawing/scroll-tracker.ts"() {
+    SCROLL_TRACK_INTERVAL_MS = 80;
+    IDLE_STOP_MS = 1e3;
+    CAPTURE = true;
   }
 });
 
@@ -78514,33 +78657,74 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     "Annotate"
   );
   let annotation = null;
+  let annotationScroll = null;
   let inlineWebview = null;
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
   let mountTimer = null;
-  const captureBase = async () => {
+  const inlineWebContentsId = () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
-    if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
-      const contentsId = Reflect.apply(getId, inlineWebview, []);
-      if (typeof contentsId === "number") {
-        return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
-      }
+    if (typeof getId !== "function" || card.dataset["canvasState"] !== "interactive") return null;
+    const contentsId = Reflect.apply(getId, inlineWebview, []);
+    return typeof contentsId === "number" ? contentsId : null;
+  };
+  const captureBase = async () => {
+    const contentsId = inlineWebContentsId();
+    if (contentsId !== null) {
+      return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
     }
     return getArtefactPreview(threadId, title) ?? null;
   };
+  const syncAnnotationScroll = () => {
+    annotationScroll?.setEnabled(
+      annotation !== null && (annotation.active || !annotation.isEmpty())
+    );
+  };
   annotate.addEventListener("click", () => {
-    annotation ??= mountAnnotationLayer(stage, {
-      label: title,
-      captureBase,
-      onSend: (payload) => {
-        return attachAnnotation(payload, title);
-      },
-      onDeactivate: () => {
-        annotate.setAttribute("aria-pressed", "false");
-      }
-    });
+    if (!annotation) {
+      annotation = mountAnnotationLayer(stage, {
+        label: title,
+        captureBase,
+        onSend: (payload) => {
+          return attachAnnotation(payload, title);
+        },
+        onDeactivate: () => {
+          annotate.setAttribute("aria-pressed", "false");
+          syncAnnotationScroll();
+        }
+      });
+      const layer = annotation;
+      annotationScroll = trackGuestScroll({
+        wheelTarget: stage,
+        fetchPosition: async () => {
+          const contentsId = inlineWebContentsId();
+          if (contentsId === null) return null;
+          return await api2.browser.scrollPosition(contentsId);
+        },
+        onScroll: (position2) => {
+          layer.setScrollOffset(position2.x, position2.y);
+        }
+      });
+      const scroll = annotationScroll;
+      stage.addEventListener(
+        "focus",
+        () => {
+          scroll.setGuestFocused(true);
+        },
+        true
+      );
+      stage.addEventListener(
+        "blur",
+        () => {
+          scroll.setGuestFocused(false);
+        },
+        true
+      );
+    }
     annotate.setAttribute("aria-pressed", String(annotation.toggle()));
+    syncAnnotationScroll();
+    annotationScroll?.kick();
   });
   const card = el(
     "figure",
@@ -78565,6 +78749,8 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    annotationScroll?.dispose();
+    annotationScroll = null;
     if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
@@ -78632,6 +78818,7 @@ var init_inline_artefact = __esm({
     init_icons();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_artefact_previews();
     WEBVIEW_PREFS = "contextIsolation=true";
     LOAD_TIMEOUT_MS = 3e4;
@@ -101034,7 +101221,6 @@ function createContextWheel() {
   }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
-    const pct = Math.round(ratio * 100);
     const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
@@ -101043,14 +101229,17 @@ function createContextWheel() {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`
     );
     setFillState(ratio);
-    const contextLine = `Context: ${formatTokenCount2(snapshot.conversationTokens)} / ${formatTokenCount2(snapshot.conversationBudget)} (${String(pct)}%)`;
+    const shownBreakdown = options?.breakdown;
+    const labelled = shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0 ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow } : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget };
+    const pct = pctOf(labelled.tokens, labelled.budget);
+    const contextLine = `Context: ${formatTokenCount2(labelled.tokens)} / ${formatTokenCount2(labelled.budget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
 ${usageLine}` : contextLine;
     const ariaUsage = usageLine ? `; ${usageLine}` : "";
     root.setAttribute(
       "aria-label",
-      `Context ${String(pct)}% used, ${formatTokenCount2(snapshot.conversationTokens)} of ${formatTokenCount2(snapshot.conversationBudget)} tokens${ariaUsage}`
+      `Context ${String(pct)}% used, ${formatTokenCount2(labelled.tokens)} of ${formatTokenCount2(labelled.budget)} tokens${ariaUsage}`
     );
     popoverActive = true;
     root.tabIndex = 0;
@@ -101536,11 +101725,23 @@ function buildFooterUsageTooltip(display, opts) {
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const allRuns = estimated ? [] : listSubagentRuns(opts.messages);
+  const runningRuns = allRuns.filter((run2) => run2.status === "running").length;
+  const unreportedRuns = allRuns.length - subagents.runs;
+  const subagentRunNotes = [];
+  if (subagents.runs > 0) {
+    subagentRunNotes.push(
+      `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(subagents.outputTokens)} out`
+    );
+  }
+  if (runningRuns > 0) subagentRunNotes.push(`${String(runningRuns)} running`);
+  else if (unreportedRuns > 0) {
+    subagentRunNotes.push(
+      subagents.runs > 0 ? `${String(unreportedRuns)} without usage` : "no usage reported"
+    );
+  }
   const subagentRow = allRuns.length > 0 ? {
     label: "Subagents",
-    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagents.runs > 0 ? `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(
-      subagents.outputTokens
-    )} out` : "no usage yet"}`
+    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagentRunNotes.join(" \xB7 ")}`
   } : null;
   const subagentRuns = allRuns.slice(0, MAX_LISTED_SUBAGENT_RUNS).map((run2) => ({
     label: run2.label,
@@ -117968,14 +118169,19 @@ function readableState(state) {
   return state.toLowerCase().replaceAll("_", " ");
 }
 function checkTone(state) {
-  if (["SUCCESS", "NEUTRAL"].includes(state)) return "success";
+  if (state === "SUCCESS") return "success";
   if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state)) return "failure";
   if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state)) return "pending";
   return "unknown";
 }
 function externalButton(label, url2, open2) {
   if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
-  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  const button = el(
+    "button",
+    { type: "button", class: "pr-activity-link" },
+    el("span", {}, label),
+    externalLinkIcon("ui-icon ui-icon-sm")
+  );
   button.addEventListener("click", () => {
     open2(url2);
   });
@@ -118015,18 +118221,37 @@ function renderPrActivity(host, section, activity, open2) {
       const date5 = new Date(comment.createdAt);
       const time3 = el(
         "time",
-        { datetime: comment.createdAt },
-        Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        {
+          datetime: comment.createdAt,
+          title: Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        },
+        Number.isNaN(date5.getTime()) ? comment.createdAt : `${date5.toLocaleDateString(void 0, { month: "short", day: "numeric" })} \xB7 ${date5.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" })}`
       );
       const heading = el(
         "div",
         { class: "pr-comment-meta" },
-        el("strong", {}, `@${comment.author}`),
-        el("span", {}, comment.reviewState ? readableState(comment.reviewState) : "commented"),
+        el(
+          "span",
+          { class: "pr-comment-avatar", "aria-hidden": "true" },
+          comment.author.slice(0, 2).toUpperCase()
+        ),
+        el(
+          "div",
+          { class: "pr-comment-author" },
+          el("strong", {}, `@${comment.author}`),
+          el(
+            "span",
+            {
+              class: comment.reviewState ? `pr-review-state pr-review-state-${comment.reviewState.toLowerCase()}` : "pr-comment-kind"
+            },
+            comment.reviewState ? readableState(comment.reviewState) : "commented"
+          )
+        ),
         time3
       );
       const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
       body.innerHTML = renderMarkdown(comment.body);
+      attachCodeBlockCopyButtons(body);
       host.append(
         el("article", { class: "pr-comment", "data-comment-id": comment.id }, heading, body)
       );
@@ -118049,26 +118274,62 @@ function renderPrActivity(host, section, activity, open2) {
       )
     );
   if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
-  for (const check2 of activity.checks) {
-    host.append(
+  const groups = [
+    { tone: "failure", label: "Needs attention" },
+    { tone: "pending", label: "In progress" },
+    { tone: "success", label: "Passed" },
+    { tone: "unknown", label: "Other results" }
+  ];
+  const needsAttention = activity.checks.some(
+    (check2) => ["failure", "pending"].includes(checkTone(check2.state))
+  );
+  for (const group of groups) {
+    const checks = activity.checks.filter((check2) => checkTone(check2.state) === group.tone);
+    if (!checks.length) continue;
+    const collapsible = group.tone === "success" || group.tone === "unknown";
+    const section2 = collapsible ? el("details", {
+      class: "pr-check-group",
+      open: group.tone === "success" && !needsAttention
+    }) : el("section", { class: "pr-check-group" });
+    section2.append(
       el(
-        "div",
-        { class: "pr-check-row" },
-        el(
-          "span",
-          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
-          readableState(check2.state)
-        ),
-        el("span", { class: "pr-check-name" }, check2.name),
-        externalButton("Details", check2.url, open2)
+        collapsible ? "summary" : "h4",
+        { class: "pr-check-group-heading" },
+        ...collapsible ? [chevronRightIcon("ui-icon ui-icon-sm pr-check-chevron")] : [],
+        el("span", {}, group.label),
+        el("span", { class: "pr-check-count" }, String(checks.length))
       )
     );
+    for (const check2 of checks) {
+      const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      section2.append(
+        el(
+          "div",
+          { class: "pr-check-row" },
+          el("span", { class: `pr-check-icon pr-check-tone-${group.tone}` }, icon),
+          el(
+            "div",
+            { class: "pr-check-body" },
+            el("span", { class: "pr-check-name" }, check2.name),
+            el(
+              "span",
+              { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+              readableState(check2.state)
+            )
+          ),
+          externalButton("Details", check2.url, open2)
+        )
+      );
+    }
+    host.append(section2);
   }
 }
 var init_pr_pane_activity = __esm({
   "src/renderer/views/pr-pane-activity.ts"() {
     init_dist();
     init_helpers();
+    init_icons();
+    init_code_block_copy();
   }
 });
 
@@ -118189,7 +118450,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let selectedPr = null;
   let prDetails = null;
   let selectedFile = null;
-  let filesExpanded = false;
   let diffEditor = null;
   let selectRequestId = 0;
   let diffLoadQueue = Promise.resolve();
@@ -118238,6 +118498,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     node2.setAttribute("role", "img");
     node2.setAttribute("aria-label", label);
     setTooltip(node2, label);
+    const checksLabel = node2.parentElement?.querySelector(".pr-list-checks-label");
+    if (checksLabel) {
+      checksLabel.textContent = CI_LABEL[checks];
+      checksLabel.setAttribute("data-state", checks);
+    }
     node2.replaceChildren(
       lifecycle === "MERGED" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts)
     );
@@ -118320,12 +118585,23 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       {
         type: "button",
         class: `git-change-row pr-list-row${isSelected ? " is-selected" : ""}`,
-        "data-pr-section": section
+        "data-pr-section": section,
+        "aria-pressed": String(isSelected)
       },
-      el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
       el("span", { class: "git-change-path pr-list-title", title: titleText }, titleText),
-      ...agentBadge ? [agentBadge] : [],
-      ci2
+      el(
+        "span",
+        { class: "pr-list-meta" },
+        el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
+        el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
+        ...agentBadge ? [agentBadge] : [],
+        ci2,
+        el(
+          "span",
+          { class: "pr-list-checks-label", "data-state": state ?? "loading" },
+          CI_LABEL[state ?? "loading"]
+        )
+      )
     );
     row2.addEventListener("click", () => void selectPr(pr2));
     if (!state) ensureCheck(pr2);
@@ -118519,6 +118795,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     btn.addEventListener("click", () => {
       const ref = selectedPr;
       if (!ref) return;
+      const menu = btn.closest("details");
+      if (menu) menu.open = false;
       void (async () => {
         if (!await showConfirmDialog({ message: confirmMessage, confirmLabel: label })) return;
         for (const other of metaHost.querySelectorAll(".pr-action-btn")) {
@@ -118548,7 +118826,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn",
         "data-tooltip": "Open this pull request on GitHub"
       },
-      el("span", {}, "Open on GitHub"),
+      el("span", {}, "GitHub"),
       externalLinkIcon("ui-icon ui-icon-sm")
     );
     const prUrl = prDetails.url;
@@ -118568,7 +118846,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "span",
         {},
-        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open chat"
       )
     ) : null;
     if (openThreadBtn && producingThreadId) {
@@ -118590,14 +118868,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       startPrDiscussThread(store2, discussPr);
       getPromptAttachmentHandlers()?.focusComposer?.();
     });
-    const stats = [];
-    if (typeof prDetails.changedFiles === "number")
-      stats.push(`${String(prDetails.changedFiles)} files`);
-    if (typeof prDetails.additions === "number" || typeof prDetails.deletions === "number") {
-      stats.push(`+${String(prDetails.additions ?? 0)} -${String(prDetails.deletions ?? 0)}`);
-    }
+    const branch = el("div", { class: "pr-viewer-subtitle" });
+    const lifecycleIcon = el("span", {});
+    applyPrStatus(lifecycleIcon, prDetails, knownChecks(prDetails) ?? "no_checks");
+    lifecycleIcon.classList.remove("pr-list-status");
+    lifecycleIcon.classList.add("pr-viewer-status");
+    const lifecycle = prDetails.state === "OPEN" ? "Open" : prDetails.state === "MERGED" ? "Merged" : prDetails.state === "CLOSED" ? "Closed" : "Unknown";
+    branch.append(el("span", { class: "pr-lifecycle" }, lifecycleIcon, el("span", {}, lifecycle)));
     if (prDetails.headRefName && prDetails.baseRefName) {
-      stats.push(`${prDetails.headRefName} \u2192 ${prDetails.baseRefName}`);
+      branch.append(
+        el("code", {}, prDetails.headRefName),
+        arrowRightIcon("ui-icon ui-icon-sm"),
+        el("code", {}, prDetails.baseRefName)
+      );
     }
     const badges = el("span", { class: "pr-viewer-badges" });
     if (prDetails.isDraft) {
@@ -118633,16 +118916,29 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         )
       );
     }
-    const actions = el(
-      "div",
-      { class: "pr-viewer-actions" },
-      openBtn,
-      ...openThreadBtn ? [openThreadBtn] : [],
-      newThreadBtn
+    const overflow = el("details", { class: "pr-more-actions" });
+    const summary = el(
+      "summary",
+      {
+        class: "ui-btn ui-btn-secondary ui-btn-compact pr-more-toggle",
+        "aria-label": "More pull request actions",
+        "data-tooltip": "More pull request actions"
+      },
+      moreHorizontalIcon("ui-icon ui-icon-sm")
     );
+    const menu = el("div", { class: "pr-actions-menu" });
+    overflow.append(summary, menu);
+    const actions = el("div", { class: "pr-viewer-actions" }, openThreadBtn ?? newThreadBtn);
+    if (openThreadBtn) menu.append(newThreadBtn);
     if (prDetails.state === "OPEN") {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number };
-      actions.append(
+      const approve = actionButton(
+        "Approve",
+        `Approve pull request #${String(ref.number)}?`,
+        (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
+      );
+      actions.append(approve);
+      menu.append(
         actionButton(
           "Rerun CI",
           `Re-run the failed CI runs for #${String(ref.number)}?`,
@@ -118650,32 +118946,36 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
             if (result.ok) return result;
             return { ...result, message: "", ok: true };
           })
-        ),
-        actionButton(
-          "Approve",
-          `Approve pull request #${String(ref.number)}?`,
-          (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
         )
       );
-      if (prDetails.isDraft) {
-        actions.append(
+      if (prDetails.isDraft)
+        menu.append(
           actionButton(
             "Mark ready",
             `Mark #${String(ref.number)} ready for review?`,
             (r2) => api2.gh.markPrReady(r2.owner, r2.repo, r2.number)
           )
         );
-      }
-      if (!prDetails.autoMergeEnabled) {
-        actions.append(
+      if (!prDetails.autoMergeEnabled)
+        menu.append(
           actionButton(
             "Enable auto-merge",
             `Enable merge-when-ready for #${String(ref.number)}?`,
             (r2) => api2.gh.enableAutoMerge(r2.owner, r2.repo, r2.number)
           )
         );
-      }
     }
+    if (menu.childElementCount) actions.append(overflow);
+    newThreadBtn.addEventListener("click", () => {
+      overflow.open = false;
+    });
+    overflow.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !overflow.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      overflow.open = false;
+      summary.focus();
+    });
     const statusLine = el(
       "div",
       { class: "pr-action-status", "data-ok": String(lastActionMessage?.ok ?? true) },
@@ -118685,16 +118985,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     metaHost.append(
       el(
         "div",
-        { class: "pr-viewer-title-row" },
-        el("h4", { class: "pr-viewer-title" }, prDetails.title),
-        badges
+        { class: "pr-viewer-repo-line" },
+        el("span", {}, `${prDetails.owner}/${prDetails.repo}`),
+        openBtn
       ),
       el(
         "div",
-        { class: "pr-viewer-subtitle" },
-        `#${String(prDetails.number)} \xB7 ${prDetails.owner}/${prDetails.repo}`,
-        stats.length > 0 ? ` \xB7 ${stats.join(" \xB7 ")}` : ""
+        { class: "pr-viewer-title-row" },
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
+        el("span", { class: "pr-viewer-number" }, `#${String(prDetails.number)}`)
       ),
+      branch,
+      badges,
       actions,
       statusLine
     );
@@ -118705,8 +119007,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       descriptionHost.hidden = true;
       return;
     }
-    descriptionHost.hidden = false;
+    descriptionHost.hidden = activeSection !== "overview";
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
+    attachCodeBlockCopyButtons(descriptionHost);
+    const stats = el(
+      "div",
+      { class: "pr-description-meta" },
+      el("span", {}, `${String(prDetails.changedFiles ?? prDetails.files.length)} files`),
+      el("span", { class: "pr-additions" }, `+${String(prDetails.additions ?? 0)}`),
+      el("span", { class: "pr-deletions" }, `\u2212${String(prDetails.deletions ?? 0)}`)
+    );
+    descriptionHost.prepend(stats);
   }
   function renderSections() {
     clear(sectionsHost);
@@ -118715,7 +119026,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sections = [
       { key: "overview", label: "Overview" },
       { key: "comments", label: "Comments" },
-      { key: "checks", label: "Checks" }
+      { key: "checks", label: "Checks" },
+      { key: "files", label: "Files" }
     ];
     for (const section of sections) {
       const button = el(
@@ -118726,8 +119038,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "data-section": section.key,
           "aria-pressed": String(activeSection === section.key)
         },
-        section.label
+        el("span", {}, section.label)
       );
+      const activity = prDetails.activity;
+      const count = section.key === "files" ? prDetails.files.length : activity && !activity.error ? section.key === "comments" ? activity.comments.length : section.key === "checks" ? activity.checks.length : void 0 : void 0;
+      if (count !== void 0) {
+        const truncated = section.key === "comments" ? activity?.commentsTruncated : section.key === "checks" ? activity?.checksTruncated : false;
+        button.append(
+          el("span", { class: "pr-section-count" }, `${String(count)}${truncated ? "+" : ""}`)
+        );
+      }
       button.addEventListener("click", () => {
         activeSection = section.key;
         clearDiff();
@@ -118737,7 +119057,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       });
       sectionsHost.append(button);
     }
-    if (activeSection !== "overview") {
+    descriptionHost.hidden = activeSection !== "overview" || !prDetails.body.trim();
+    filesHost.hidden = activeSection !== "files";
+    if (activeSection === "comments" || activeSection === "checks") {
       descriptionHost.hidden = true;
       filesHost.hidden = true;
       diffWrap.hidden = true;
@@ -118750,31 +119072,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderFiles() {
     clear(filesHost);
-    if (!prDetails) {
+    filesHost.classList.toggle("pr-viewer-files-fill", selectedFile === null);
+    if (!prDetails || activeSection !== "files") {
       filesHost.hidden = true;
       return;
     }
     filesHost.hidden = false;
-    const header = el(
-      "button",
-      {
-        type: "button",
-        class: "pr-files-header",
-        "aria-expanded": String(filesExpanded)
-      },
-      el(
-        "span",
-        { class: `pr-other-chevron${filesExpanded ? " expanded" : ""}` },
-        chevronRightIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", {}, `Changed files (${String(prDetails.files.length)})`)
+    filesHost.append(
+      el("div", { class: "pr-files-header" }, `Changed files (${String(prDetails.files.length)})`)
     );
-    header.addEventListener("click", () => {
-      filesExpanded = !filesExpanded;
-      renderFiles();
-    });
-    filesHost.append(header);
-    if (!filesExpanded) return;
     const list = el("div", { class: "pr-files-list" });
     for (const file2 of prDetails.files) {
       const isSelected = selectedFile === file2.path;
@@ -118789,7 +119095,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           { class: `git-change-status git-change-status-${file2.status}` },
           STATUS_LABEL2[file2.status] ?? "M"
         ),
-        el("span", { class: "git-change-path" }, file2.path)
+        el("span", { class: "git-change-path", title: file2.path }, file2.path),
+        el(
+          "span",
+          { class: "pr-file-stats" },
+          el("span", { class: "pr-additions" }, `+${String(file2.additions)}`),
+          el("span", { class: "pr-deletions" }, `\u2212${String(file2.deletions)}`)
+        )
       );
       row2.addEventListener("click", () => void selectFile(file2.path));
       list.append(row2);
@@ -118802,13 +119114,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     clear(imageWrap);
-    const descriptionFills = Boolean(prDetails?.body.trim());
+    const descriptionFills = activeSection === "overview" && Boolean(prDetails?.body.trim());
     descriptionHost.classList.toggle("pr-viewer-description-fill", descriptionFills);
-    emptyState.hidden = descriptionFills;
+    emptyState.hidden = descriptionFills || Boolean(
+      prDetails && (activeSection === "comments" || activeSection === "checks" || activeSection === "files" && prDetails.files.length > 0)
+    );
     if (!ghStatus && !prDetails) {
       setInlineStatus(emptyState, "pending", "Loading pull requests\u2026");
     } else {
-      emptyState.textContent = prDetails ? "Select a changed file" : "Select a pull request";
+      emptyState.textContent = prDetails ? activeSection === "files" ? "No changed files" : "No description provided" : "Select a pull request";
     }
     if (diffEditor) disposeDiffModels(diffEditor);
   }
@@ -118862,7 +119176,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
-      filesExpanded = false;
       activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
@@ -119053,6 +119366,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderList();
     filterInput.focus();
   });
+  const dismissActions = (event) => {
+    const menu = metaHost.querySelector(".pr-more-actions[open]");
+    if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+  };
+  document.addEventListener("pointerdown", dismissActions);
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store2, api2);
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
@@ -119132,6 +119450,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   return () => {
     disposed = true;
+    document.removeEventListener("pointerdown", dismissActions);
     titleGen++;
     if (titleRepaintTimer != null) {
       clearTimeout(titleRepaintTimer);
@@ -119174,6 +119493,7 @@ var init_pr_pane = __esm({
     init_pr_pane_thread();
     init_prompt_attachments();
     init_dist();
+    init_code_block_copy();
     init_browser_links();
     init_pr_title_cache();
     init_workspace_links();
@@ -122540,6 +122860,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     updateNavButtons(tab);
     syncTabLabel(tab);
   }
+  function syncAnnotationScroll(tab) {
+    const layer = tab.annotation;
+    tab.annotationScroll?.setEnabled(
+      layer !== null && (layer.active || !layer.isEmpty()) && tab.id === activeTabId && browserModeActive(store2)
+    );
+  }
   function syncWebviewSize2(tab) {
     const webview = tab.webview;
     if (!webview || !tab.panel.classList.contains("is-active")) return;
@@ -122547,6 +122873,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (width <= 0 || height <= 0) return;
     webview.style.width = `${String(Math.round(width))}px`;
     webview.style.height = `${String(Math.round(height))}px`;
+    tab.annotationScroll?.kick();
   }
   function syncActiveWebviewSize() {
     const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -122613,6 +122940,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
+      syncAnnotationScroll(tab);
     });
     webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
@@ -122621,6 +122949,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      tab.annotationScroll?.kick();
       applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
@@ -122702,6 +123031,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const active2 = tab2.id === tabId;
       tab2.panel.classList.toggle("is-active", active2);
       tab2.tabBtn.classList.toggle("is-active", active2);
+      syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
     if (!tab) return;
@@ -123035,35 +123365,68 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
       }
     };
     const annotationLayer = () => {
-      tab.annotation ??= mountAnnotationLayer(webviewHost, {
-        label: webviewTitle(tab) ?? "browser page",
-        captureBase: async () => {
-          const contentsId = shareableWebContentsId(tab);
-          const capture = api2?.browser.captureScreenshot;
-          if (contentsId === null || !capture) return null;
-          return (await capture(contentsId)).dataUrl;
-        },
-        onSend: (payload) => {
-          return attachAnnotation(
-            payload,
-            firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
-          );
-        },
-        onDeactivate: () => {
-          annotateBtn.setAttribute("aria-pressed", "false");
-        }
-      });
+      if (!tab.annotation) {
+        tab.annotation = mountAnnotationLayer(webviewHost, {
+          label: webviewTitle(tab) ?? "browser page",
+          captureBase: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const capture = api2?.browser.captureScreenshot;
+            if (contentsId === null || !capture) return null;
+            return (await capture(contentsId)).dataUrl;
+          },
+          onSend: (payload) => {
+            return attachAnnotation(
+              payload,
+              firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
+            );
+          },
+          onDeactivate: () => {
+            annotateBtn.setAttribute("aria-pressed", "false");
+            syncAnnotationScroll(tab);
+          }
+        });
+        const layer = tab.annotation;
+        tab.annotationScroll = trackGuestScroll({
+          wheelTarget: webviewHost,
+          fetchPosition: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const read = api2?.browser.scrollPosition;
+            if (contentsId === null || !read) return null;
+            return await read(contentsId);
+          },
+          onScroll: (position2) => {
+            layer.setScrollOffset(position2.x, position2.y);
+          }
+        });
+        const scroll = tab.annotationScroll;
+        webviewHost.addEventListener(
+          "focus",
+          () => {
+            scroll.setGuestFocused(true);
+          },
+          true
+        );
+        webviewHost.addEventListener(
+          "blur",
+          () => {
+            scroll.setGuestFocused(false);
+          },
+          true
+        );
+      }
       return tab.annotation;
     };
     annotateBtn.addEventListener("click", () => {
       setMenuOpen(false);
       const on3 = annotationLayer().toggle();
       annotateBtn.setAttribute("aria-pressed", String(on3));
+      syncAnnotationScroll(tab);
     });
     let menuOpen = false;
     function setMenuOpen(next) {
@@ -123183,6 +123546,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     tab.webview?.remove();
     tab.tabBtn.remove();
+    tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
     tab.panel.remove();
     tabs.delete(tabId);
@@ -123200,6 +123564,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function onBrowserModeChange() {
     const active2 = browserModeActive(store2);
     scheduleSessionSave();
+    for (const tab of tabs.values()) syncAnnotationScroll(tab);
     if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -123241,6 +123606,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -123487,6 +123853,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -123512,6 +123879,7 @@ var init_browser_pane = __esm({
     init_prompt_attachments();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_toast();
     init_tooltip();
     NET_ERROR_ABORTED = -3;
