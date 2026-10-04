@@ -59,7 +59,7 @@ describe('isolated mermaid diagram rendering', () => {
       let parentBlocked = false
       let parentApiBlocked = false
       try {
-        void window.parent.document.body
+        window.parent.document.body
       } catch {
         parentBlocked = true
       }

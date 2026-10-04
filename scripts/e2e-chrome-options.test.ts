@@ -45,7 +45,9 @@ describe('Chrome session capability boundary', () => {
       { browserName: 'firefox' },
       { browserName: 'chrome', 'goog:chromeOptions': { args: [1] } },
     ]) {
-      assert.throws(() => updateChromeOptions(value, () => ({ args: ['--new'] })))
+      assert.throws(() => {
+        updateChromeOptions(value, () => ({ args: ['--new'] }))
+      })
     }
   })
 })
