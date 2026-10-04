@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
@@ -19,7 +20,7 @@ import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
-import { isRecord } from '@shared/unknown-value.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
@@ -1094,6 +1095,24 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     settings: {
+      getSnapshot: () => {
+        const values: Record<string, unknown> = Object.fromEntries(settings)
+        const snapshot: SettingsSnapshot = values
+        return resolved(snapshot)
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes
+        const next = new Map(settings)
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value)
+        if (roleAssignments)
+          next.set('roleModels', {
+            ...stringRecordOrEmpty(settings.get('roleModels')),
+            ...roleAssignments,
+          })
+        settings.clear()
+        for (const [key, value] of next) settings.set(key, value)
+        return resolvedVoid()
+      },
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {
         settings.set(key, value)

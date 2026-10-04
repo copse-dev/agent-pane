@@ -2,6 +2,7 @@ import { inspectStorageMaintenance, saveStorageRetention } from '../services/sto
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
@@ -1437,6 +1438,35 @@ export function registerAllHandlers(
         : alertUser
     alert('thread-finished', `${title} is ready.`, threadId)
   })
+  async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
+    if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
+    if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+    }
+    if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
+    if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
+      syncOrchestrationStrategyTools(registry)
+    if (changedKeys.has(DEVELOPER_MODE_SETTING)) {
+      const win = getMainWindow()
+      if (win)
+        buildAppMenu(
+          { getFocusedWindow: getFocusedMainWindow, createWindow: createMainWindow },
+          getSetting(DEVELOPER_MODE_SETTING, false),
+        )
+    }
+  }
+
+  ipcMain.handle('settings:get-snapshot', (event) => {
+    assertMainFrameSender(event, win)
+    return getSettingsSnapshot()
+  })
+  ipcMain.handle('settings:update', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const changes = await updateSettings(raw)
+    await syncChangedSettings(new Set(Object.keys(changes)))
+  })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1444,36 +1474,7 @@ export function registerAllHandlers(
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
-    if (k === 'alertOnInteraction') refreshNeedsInputBadge()
-    if (SKILLS_RELOAD_KEYS.has(k)) {
-      await initSkillsRegistry()
-      registerSkillTools(registry)
-    }
-    if (k === READ_TERMINAL_ENABLED_SETTING) {
-      syncReadTerminalTools(registry)
-    }
-    // Experimental tool toggles: apply live instead of waiting for a restart.
-    if (k === MODEL_CLASSIFIER_ENABLED_SETTING) {
-      syncModelClassifierTools(registry)
-    }
-    if (k === ORCHESTRATION_STRATEGY_ENABLED_SETTING) {
-      syncOrchestrationStrategyTools(registry)
-    }
-    // Keep the native diagnostics menu in sync with Developer mode. The
-    // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
-    if (k === DEVELOPER_MODE_SETTING) {
-      const win = getMainWindow()
-      const enabled = typeof value === 'boolean' && value
-      if (win) {
-        buildAppMenu(
-          {
-            getFocusedWindow: getFocusedMainWindow,
-            createWindow: createMainWindow,
-          },
-          enabled,
-        )
-      }
-    }
+    await syncChangedSettings(new Set([k]))
   })
   ipcMain.handle('settings:set-security', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
