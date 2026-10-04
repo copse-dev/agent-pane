@@ -45,8 +45,8 @@ function slug(text: string): string {
 }
 
 function normalizePercent(value: number): number {
-  // Anthropic usually reports 0–100; normalize rare 0–1 fractions.
-  return clampPercent(value > 0 && value <= 1 ? value * 100 : value)
+  // Anthropic reports 0–100. A 0–1 "fraction" heuristic is ambiguous with 1% (read as 100%).
+  return clampPercent(value)
 }
 
 function percentFromDollars(raw: Record<string, unknown>): number | null {
