@@ -3926,6 +3926,20 @@ label {
   min-height: 0;
   overflow: hidden;
 }
+.conversation-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(var(--spacing-lg) + var(--spacing-md));
+  pointer-events: none;
+  z-index: 4;
+  background:
+    linear-gradient(
+      180deg,
+      var(--chat-gradient-top) 0%,
+      color-mix(in srgb, var(--chat-gradient-top) 82%, transparent) 42%,
+      transparent 100%);
+}
 .scroll-to-bottom {
   position: absolute;
   left: 50%;

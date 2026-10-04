@@ -23071,7 +23071,8 @@ function acpModelDisplayLabel(model, agents) {
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent = agents.find((candidate) => canonicalAcpAgentId(candidate.id) === selectedId);
   const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId);
-  const title = agent?.title ?? retired?.title ?? selection2.id;
+  const known = findAcpCatalogEntry(selectedId);
+  const title = agent?.title ?? retired?.title ?? known?.title ?? selection2.id;
   if (!selection2.model) return title;
   const choice = agent?.availableModels?.find((m2) => m2.value === selection2.model);
   return `${title} \u2014 ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection2.model)}`;
@@ -23292,6 +23293,7 @@ var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
     init_service_tier();
+    init_model_selection();
   }
 });
 
