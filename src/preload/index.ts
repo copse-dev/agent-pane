@@ -928,6 +928,15 @@ const api: ApiClient = {
         ipcRenderer.off('menu:new-thread', listener)
       }
     },
+    onToggleSidebar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:toggle-sidebar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:toggle-sidebar', listener)
+      }
+    },
     onTogglePanel: (handler: () => void) => {
       const listener = (): void => {
         handler()

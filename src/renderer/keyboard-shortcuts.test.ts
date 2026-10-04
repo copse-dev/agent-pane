@@ -36,7 +36,7 @@ function fakeElement(tagName: string, contentEditable = false): EventTarget {
 
 describe('keyboard-shortcuts', () => {
   it('matchPanelShortcut follows VS Code panel chords', () => {
-    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 'b' })), 'togglePanel')
+    assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 'b' })), 'toggleSidebar')
     assert.deepEqual(matchPanelShortcut(keyEvent({ ctrlKey: true, key: 'j' })), 'togglePanel')
     assert.deepEqual(matchPanelShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'E' })), {
       openPanel: 'explorer',

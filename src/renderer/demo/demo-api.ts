@@ -1042,6 +1042,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,

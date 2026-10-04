@@ -2,7 +2,11 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { openNewThread } from '@shared/store/thread-helpers.ts'
-import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
+import {
+  openRightPanelWithWorkspace,
+  toggleFilesPaneWithWorkspace,
+  toggleProjectsPane,
+} from './controller/panels.ts'
 import { isAnyDialogOpen } from './views/dialog-shell.ts'
 
 type KeyboardShortcutEvent = Pick<
@@ -67,13 +71,13 @@ export function matchActivityPanelShortcut(e: KeyboardShortcutEvent): boolean {
   return e.key === 'a' || e.key === 'A'
 }
 
-export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
+export type PanelShortcutAction = 'toggleSidebar' | 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {
   const meta = e.ctrlKey || e.metaKey
   if (!meta || e.altKey) return null
 
-  if (!e.shiftKey && (e.key === 'b' || e.key === 'B')) return 'togglePanel'
+  if (!e.shiftKey && (e.key === 'b' || e.key === 'B')) return 'toggleSidebar'
   if (!e.shiftKey && (e.key === 'j' || e.key === 'J')) return 'togglePanel'
   if (e.shiftKey && (e.key === 'e' || e.key === 'E')) return { openPanel: 'explorer' }
   if (e.shiftKey && (e.key === 'g' || e.key === 'G')) return { openPanel: 'changes' }
@@ -88,6 +92,10 @@ export function handlePanelShortcut(
   api: ApiClient,
   action: PanelShortcutAction,
 ): void {
+  if (action === 'toggleSidebar') {
+    toggleProjectsPane(store)
+    return
+  }
   if (action === 'togglePanel') {
     toggleFilesPaneWithWorkspace(store, api)
     return

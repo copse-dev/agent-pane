@@ -123,6 +123,7 @@ import {
   openRightPanel,
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
+  toggleProjectsPane,
   syncFilesPaneDom,
   openCanvasArtefact,
   showCanvasArtefact,
@@ -409,6 +410,10 @@ async function boot(): Promise<void> {
     openNewThread(store)
   })
 
+  api.menu.onToggleSidebar(() => {
+    ensureLayout()
+    toggleProjectsPane(store)
+  })
   api.menu.onTogglePanel(() => {
     ensureLayout()
     toggleFilesPaneWithWorkspace(store, api)
