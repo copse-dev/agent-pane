@@ -8,6 +8,21 @@ import {
 } from './acp-known-agents.ts'
 
 describe('KNOWN_ACP_AGENTS', () => {
+  it('offers Qwen Code using its registry id and provider configuration guidance', () => {
+    const qwen = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'qwen-code')
+    assert.ok(qwen)
+    assert.equal(qwen.command, 'qwen')
+    assert.deepEqual(qwen.args, ['--acp'])
+    assert.equal(qwen.installPackage, '@qwen-code/qwen-code')
+    assert.equal(qwen.autoInstall, true)
+    assert.equal(qwen.setup, 'qwen')
+    assert.equal(qwen.reauth, 'qwen')
+    assert.deepEqual(qwen.envHints, ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'])
+    assert.ok(qwen.sandbox)
+    assert.deepEqual(qwen.sandbox.homeDirs, ['.qwen'])
+    assert.deepEqual(qwen.sandbox.allowedDomains, [])
+    assert.match(qwen.note ?? '', /OAuth.*free tier has ended/)
+  })
   it('launches Gemini CLI with the canonical --acp flag, not the deprecated alias', () => {
     // `--acp` landed in @google/gemini-cli 0.33.0 and is what the ACP registry
     // lists for agent id `gemini`. `--experimental-acp` still works as a

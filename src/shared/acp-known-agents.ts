@@ -212,6 +212,27 @@ export function findAcpCatalogEntry(id: string): KnownAcpAgent | undefined {
 
 export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
   {
+    id: 'qwen-code',
+    title: 'Qwen Code',
+    command: 'qwen',
+    args: ['--acp'],
+    envHints: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'],
+    install: 'npm install -g @qwen-code/qwen-code',
+    installPackage: '@qwen-code/qwen-code',
+    autoInstall: true,
+    sandbox: {
+      // No provider endpoint was observed in the unauthenticated reference
+      // probe. Keep network access closed until the user adds their endpoint.
+      allowedDomains: [],
+      homeDirs: ['.qwen'],
+    },
+    setup: 'qwen',
+    reauth: 'qwen',
+    docsUrl:
+      'https://github.com/copse-dev/agent-pane/blob/main/docs/acp-qwen-findings.md#hosted-endpoint-configuration',
+    note: 'Run `qwen`, then `/auth` to configure a provider, or set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`. Hosted providers also need the network setup described in Documentation. Qwen OAuth’s free tier has ended.',
+  },
+  {
     id: 'gemini',
     title: 'Gemini CLI',
     command: 'gemini',
