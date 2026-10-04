@@ -55175,6 +55175,31 @@ function collectSubagentUsage(toolCalls, totals) {
     }
   }
 }
+function subagentRunLabel(session) {
+  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
+  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine) return kind;
+  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  return `${kind} \xB7 ${prompt}`;
+}
+function collectSubagentRuns(toolCalls, runs) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session || session.kind === "container") continue;
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
+    });
+    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
+  }
+}
+function listSubagentRuns(messages) {
+  const runs = [];
+  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
+  return runs;
+}
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
@@ -55268,11 +55293,20 @@ function formatFooterUsageDetail(display, opts) {
   const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
   return `Usage: ${parts.join(" \xB7 ")}`;
 }
+var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
+    SUBAGENT_KIND_LABEL = {
+      explore: "Explore",
+      investigate_ci: "Investigate CI",
+      delegate: "Delegate",
+      custom: "Custom agent",
+      container: "Container run"
+    };
+    RUN_PROMPT_MAX_CHARS = 36;
   }
 });
 
@@ -86865,9 +86899,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -87304,6 +87350,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
@@ -99449,13 +99496,39 @@ function mountFooterBranchStatus(host, store2, api2) {
   let refreshToken = 0;
   let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
+  const footer = host.closest(".input-footer");
+  let popupFrame = 0;
+  function schedulePopupBoundary() {
+    if (!footer) return;
+    cancelAnimationFrame(popupFrame);
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0;
+      if (!open2) return;
+      const boundary = footer.getBoundingClientRect();
+      const anchor2 = trigger.getBoundingClientRect();
+      const width = menu.getBoundingClientRect().width;
+      menu.classList.toggle("is-footer-clamped", anchor2.left + width > boundary.right);
+    });
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null;
+  if (footer) {
+    popupObserver?.observe(footer);
+    popupObserver?.observe(trigger);
+    popupObserver?.observe(menu);
+  }
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function startBranch(thread) {
+    if (!isBlankThread(thread)) return void 0;
+    const picked = baseBranchByThread.get(thread.id);
+    if (picked) return picked;
+    if (thread.id !== store2.getState().activeThreadId) return void 0;
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
   function activeBaseBranch() {
     const thread = getActiveThread2();
-    if (!thread || !isBlankThread(thread)) return void 0;
-    return baseBranchByThread.get(thread.id);
+    return thread ? startBranch(thread) : void 0;
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -99478,6 +99551,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
     filterInput.setAttribute("aria-expanded", String(next));
+    schedulePopupBoundary();
     if (next) {
       menu.removeAttribute("hidden");
     } else {
@@ -99764,6 +99838,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const active2 = list.querySelector(".branch-picker-option.is-active");
     if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
+    schedulePopupBoundary();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -99965,9 +100040,21 @@ function mountFooterBranchStatus(host, store2, api2) {
   void refresh();
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId, threadId) => {
+      const thread = getThreadById(store2, threadId);
+      if (!thread || !isBlankThread(thread)) return void 0;
+      const picked = baseBranchByThread.get(threadId);
+      if (picked) return picked;
+      const [listed, defaultName] = await Promise.all([
+        api2.git.listBranches(projectId, threadId),
+        api2.git.getDefaultBranch(projectId, threadId)
+      ]);
+      return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
+    },
     destroy: () => {
       refreshToken += 1;
+      cancelAnimationFrame(popupFrame);
+      popupObserver?.disconnect();
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u2) => {
         u2();
@@ -99989,6 +100076,75 @@ var init_footer_branch_status = __esm({
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     nextPickerId = 0;
+  }
+});
+
+// src/renderer/views/footer-usage-popover.ts
+function row(entry, className) {
+  return el(
+    "div",
+    { class: className },
+    el("span", { class: "footer-usage-popover-name" }, entry.label),
+    el("span", { class: "footer-usage-popover-value" }, entry.value)
+  );
+}
+function runRow(run2) {
+  return el(
+    "div",
+    { class: "footer-usage-popover-row is-run" },
+    el("span", { class: `footer-usage-popover-dot is-${run2.status}` }),
+    el(
+      "span",
+      { class: "footer-usage-popover-run" },
+      el("span", { class: "footer-usage-popover-name" }, run2.label),
+      el("span", { class: "footer-usage-popover-meta" }, run2.detail)
+    ),
+    el("span", { class: "footer-usage-popover-value" }, run2.value)
+  );
+}
+function appendUsageSections(parent, model) {
+  parent.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+  if (model.conversationLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+  }
+  for (const entry of model.rows) parent.append(row(entry, "footer-usage-popover-row"));
+  if (model.threadLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+  } else {
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+    if (model.subagentRow || model.modelRows.length > 0) {
+      parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    }
+  }
+  if (model.subagentRow) {
+    parent.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
+    for (const run2 of model.subagentRuns) parent.append(runRow(run2));
+    if (model.subagentRunsOverflow > 0) {
+      parent.append(
+        el(
+          "div",
+          { class: "footer-usage-popover-meta" },
+          `+${String(model.subagentRunsOverflow)} more`
+        )
+      );
+    }
+  }
+  if (model.subagentRuns.length > 0 && model.modelRows.length > 0) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+  }
+  for (const entry of model.modelRows) {
+    parent.append(row(entry, "footer-usage-popover-row is-model"));
+  }
+  if (model.note) parent.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+  if (model.freeNote) {
+    parent.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+  }
+}
+var init_footer_usage_popover = __esm({
+  "src/renderer/views/footer-usage-popover.ts"() {
+    init_helpers();
   }
 });
 
@@ -100027,19 +100183,24 @@ function createContextWheel() {
   fill.setAttribute("stroke-width", "2");
   fill.setAttribute("transform", "rotate(-90 8 8)");
   fill.classList.add("context-wheel-fill");
-  const label = document.createElement("span");
-  label.className = "context-wheel-label";
   const popover = document.createElement("div");
   popover.className = "context-wheel-popover";
   popover.hidden = true;
   svg2.append(track, segGroup, fill);
-  root.append(svg2, label, popover);
+  root.append(svg2, popover);
   let popoverActive = false;
+  let currentUsage = null;
+  let engaged = false;
   function showPopover() {
+    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
+    engaged = false;
     popover.hidden = true;
+  }
+  function restoreEngagedPopover() {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
   }
   root.addEventListener("mouseenter", showPopover);
   root.addEventListener("mouseleave", hidePopover);
@@ -100051,7 +100212,6 @@ function createContextWheel() {
   function renderPopover(breakdown) {
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(totalTokens)} / ${formatTokenCount2(
@@ -100076,6 +100236,17 @@ function createContextWheel() {
       popover.append(row2);
     }
   }
+  function composePopover(drawContext) {
+    clearPopover();
+    drawContext?.();
+    if (!currentUsage) return;
+    if (drawContext) {
+      const divider = document.createElement("div");
+      divider.className = "footer-usage-popover-divider";
+      popover.append(divider);
+    }
+    appendUsageSections(popover, currentUsage);
+  }
   function renderBreakdown(breakdown) {
     popoverActive = true;
     root.hidden = false;
@@ -100084,7 +100255,6 @@ function createContextWheel() {
     fill.style.display = "none";
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    label.textContent = `${String(pct)}%`;
     const denom = Math.max(contextWindow, totalTokens, 1);
     clearSegments();
     let offset = 0;
@@ -100103,7 +100273,9 @@ function createContextWheel() {
       segGroup.append(arc);
       offset += len;
     }
-    renderPopover(breakdown);
+    composePopover(() => {
+      renderPopover(breakdown);
+    });
     const lines = segments.map(
       (s16) => `${s16.label}: ${formatTokenCount2(s16.tokens)} (${String(pctOf(s16.tokens, contextWindow))}%)`
     );
@@ -100123,7 +100295,7 @@ function createContextWheel() {
   }
   function resetToSnapshotMode() {
     popoverActive = false;
-    hidePopover();
+    popover.hidden = true;
     root.classList.remove("has-breakdown");
     root.removeAttribute("tabindex");
     fill.style.display = "";
@@ -100131,7 +100303,6 @@ function createContextWheel() {
   }
   function renderSnapshotPopover(snapshot, source) {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(
@@ -100144,17 +100315,21 @@ function createContextWheel() {
     note.textContent = source;
     popover.append(note);
   }
+  function setFillState(ratio) {
+    fill.classList.toggle("is-danger", ratio >= CONTEXT_DANGER_RATIO);
+    fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
+  }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
     const pct = Math.round(ratio * 100);
-    const visible = running || ratio > 0.01;
+    const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
     fill.setAttribute(
       "stroke-dasharray",
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`
     );
-    label.textContent = `${String(pct)}%`;
+    setFillState(ratio);
     const contextLine = `Context: ${formatTokenCount2(snapshot.conversationTokens)} / ${formatTokenCount2(snapshot.conversationBudget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
@@ -100168,32 +100343,56 @@ ${usageLine}` : contextLine;
     root.tabIndex = 0;
     const breakdown = options?.breakdown;
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      renderPopover(breakdown);
+      composePopover(() => {
+        renderPopover(breakdown);
+      });
       return;
     }
-    renderSnapshotPopover(snapshot, options?.snapshotSource);
+    composePopover(() => {
+      renderSnapshotPopover(snapshot, options?.snapshotSource);
+    });
+  }
+  function renderUsageOnly(usage, options) {
+    root.hidden = false;
+    fill.setAttribute("stroke-dasharray", `0 ${String(CIRCUMFERENCE)}`);
+    setFillState(0);
+    popoverActive = true;
+    root.tabIndex = 0;
+    const usageLine = options?.usageLine?.trim() ?? usage.header;
+    root.title = usageLine;
+    root.setAttribute("aria-label", usageLine);
+    composePopover(null);
   }
   function update(snapshot, running, options) {
+    currentUsage = options?.usage ?? null;
     const breakdown = options?.breakdown;
     if (!running && options?.breakdownRing && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
       renderBreakdown(breakdown);
+      root.classList.add("is-interactive");
+      restoreEngagedPopover();
       return;
     }
     resetToSnapshotMode();
     if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true;
-      return;
+      if (currentUsage) renderUsageOnly(currentUsage, options);
+      else root.hidden = true;
+    } else {
+      renderSnapshot(snapshot, running, options);
     }
-    renderSnapshot(snapshot, running, options);
+    root.classList.toggle("is-interactive", popoverActive && !root.hidden);
+    restoreEngagedPopover();
   }
   return { root, update };
 }
-var RADIUS, CIRCUMFERENCE, SVG_NS6, SEGMENT_COLORS;
+var RADIUS, CIRCUMFERENCE, SVG_NS6, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
     SVG_NS6 = "http://www.w3.org/2000/svg";
+    CONTEXT_WARN_RATIO = 0.8;
+    CONTEXT_DANGER_RATIO = 0.95;
     SEGMENT_COLORS = {
       system: "#6aa3ff",
       tools: "#4fd1c5",
@@ -100209,24 +100408,13 @@ var init_context_wheel = __esm({
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
   const previousFlex = [...items].map((el3) => el3.style.flex);
-  const usage = footer.querySelector(".footer-usage");
-  const previousUsageDisplay = usage?.style.display;
-  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) {
-    if (previousUsageDisplay) {
-      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
-    } else {
-      usage.style.removeProperty("display");
-    }
-  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -100634,14 +100822,25 @@ function buildFooterUsageTooltip(display, opts) {
   });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
-  const subagentRow = subagents.runs > 0 ? {
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages);
+  const subagentRow = allRuns.length > 0 ? {
     label: "Subagents",
-    value: `${String(subagents.runs)} ${subagents.runs === 1 ? "run" : "runs"} \xB7 ${formatTokenCount(
-      subagents.inputTokens
-    )} in / ${formatTokenCount(subagents.outputTokens)} out`
+    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagents.runs > 0 ? `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(
+      subagents.outputTokens
+    )} out` : "no usage yet"}`
   } : null;
-  const conversationLabel = subagentRow ? "Excluding subagents" : null;
-  const threadLabel2 = subagentRow ? "Whole thread" : null;
+  const subagentRuns = allRuns.slice(0, MAX_LISTED_SUBAGENT_RUNS).map((run2) => ({
+    label: run2.label,
+    detail: [
+      run2.model,
+      run2.status === "done" ? "done" : run2.status === "error" ? "failed" : "running"
+    ].filter((part) => part !== void 0).join(" \xB7 "),
+    value: run2.usage ? `${formatTokenCount(run2.usage.inputTokens)} in / ${formatTokenCount(run2.usage.outputTokens)} out` : "",
+    status: run2.status
+  }));
+  const hasReportedRuns = subagents.runs > 0;
+  const conversationLabel = hasReportedRuns ? "Excluding subagents" : null;
+  const threadLabel2 = hasReportedRuns ? "Whole thread" : null;
   const modelRows = [];
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
@@ -100659,78 +100858,21 @@ function buildFooterUsageTooltip(display, opts) {
     threadLabel: threadLabel2,
     threadRows,
     subagentRow,
+    subagentRuns,
+    subagentRunsOverflow: Math.max(0, allRuns.length - subagentRuns.length),
     modelRows,
     note,
     freeNote
   };
 }
+var MAX_LISTED_SUBAGENT_RUNS;
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
     init_footer_usage_summary();
     init_format_usage_summary();
     init_footer_usage_summary();
-  }
-});
-
-// src/renderer/views/footer-usage-popover.ts
-function row(entry, className) {
-  return el(
-    "div",
-    { class: className },
-    el("span", { class: "footer-usage-popover-name" }, entry.label),
-    el("span", { class: "footer-usage-popover-value" }, entry.value)
-  );
-}
-function createFooterUsagePopover() {
-  const root = el("div", { class: "footer-usage-popover", role: "tooltip", hidden: true });
-  let hasContent = false;
-  return {
-    root,
-    render(model) {
-      clear(root);
-      hasContent = model !== null;
-      if (!model) {
-        root.hidden = true;
-        return;
-      }
-      root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
-      if (model.conversationLabel) {
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
-      }
-      for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.threadLabel) {
-        root.append(el("div", { class: "footer-usage-popover-divider" }));
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-      } else {
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-        if (model.subagentRow || model.modelRows.length > 0) {
-          root.append(el("div", { class: "footer-usage-popover-divider" }));
-        }
-      }
-      if (model.subagentRow) {
-        root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
-      }
-      for (const entry of model.modelRows) {
-        root.append(row(entry, "footer-usage-popover-row is-model"));
-      }
-      if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
-      if (model.freeNote) {
-        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
-      }
-    },
-    show() {
-      if (hasContent) root.hidden = false;
-    },
-    hide() {
-      root.hidden = true;
-    }
-  };
-}
-var init_footer_usage_popover = __esm({
-  "src/renderer/views/footer-usage-popover.ts"() {
-    init_helpers();
+    MAX_LISTED_SUBAGENT_RUNS = 5;
   }
 });
 
@@ -102637,18 +102779,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn);
   checkoutHost.append(checkoutBtn, checkoutMenu);
   const branchHost = el("div", { class: "footer-branch-host" });
-  const usageBtn = el("span", {
-    class: "footer-usage",
-    tabindex: "0",
-    role: "note",
-    "aria-label": "Token usage"
-  });
-  const usagePopover = createFooterUsagePopover();
   const usageGroup = el("div", { class: "footer-usage-group" });
   const queueIndicator = el("span", { class: "footer-queue", hidden: "", "aria-live": "polite" });
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root);
+  usageGroup.append(contextWheel.root, queueIndicator);
   footer.append(modelHost, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -102823,10 +102958,6 @@ function mountInputBar(root, store2, api2, opts = {}) {
       showErrorToast("Debug trace failed", error62);
     });
   }
-  usageBtn.addEventListener("mouseenter", usagePopover.show);
-  usageBtn.addEventListener("mouseleave", usagePopover.hide);
-  usageBtn.addEventListener("focus", usagePopover.show);
-  usageBtn.addEventListener("blur", usagePopover.hide);
   const checkoutErrorText = el("span", {
     class: "composer-checkout-error-text composer-banner-text"
   });
@@ -103432,7 +103563,6 @@ ${description}
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
     const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages });
     return {
-      label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
       tooltip
     };
@@ -103456,30 +103586,18 @@ ${description}
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
     const usage = usageViews();
-    const compact = footerCompact.isCompact();
     const snapshot = thread?.contextSnapshot;
-    const snapshotVisible = !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01);
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
     const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible;
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usage?.detail ?? null : null,
+      usageLine: usage?.detail ?? null,
+      usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
     });
-    contextWheel.root.classList.toggle("is-interactive", tuckUsageIntoWheel);
-    if (!usage) {
-      usageBtn.hidden = true;
-      usagePopover.render(null);
-    } else {
-      usageBtn.hidden = tuckUsageIntoWheel;
-      usageBtn.textContent = usage.label;
-      usageBtn.setAttribute("aria-label", usage.detail);
-      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip);
-    }
     footerOverflow?.update();
     updateContextFitWarning();
     updateCheckoutControl();
@@ -103722,13 +103840,14 @@ ${description}
     if (!projectId || !thread) return;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
-    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
+    const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
     const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
     if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
@@ -103737,7 +103856,6 @@ ${description}
         return;
       }
     }
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -103834,6 +103952,9 @@ ${description}
       checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
+        if (branchDecision?.status === "rejected") throw branchDecision.reason;
+        const baseBranch = branchDecision?.status === "fulfilled" ? branchDecision.value : void 0;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           id,
@@ -104477,7 +104598,6 @@ var init_input_bar = __esm({
     init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
-    init_footer_usage_popover();
     init_lm_studio_defaults();
     init_dynamic_model();
     init_follow_up_suggestions();
