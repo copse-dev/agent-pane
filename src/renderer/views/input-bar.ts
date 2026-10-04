@@ -754,13 +754,10 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
-  // The picker's label carries the route as well as the name (`Title — Model`
-  // for an agent, `… · local` for LM Studio). These sentences name the model
-  // only — and the ones that care about local already say so in words — so the
-  // route half is dropped rather than read out as "Describe locally with
-  // qwen/… · local".
+  // Action text and description attribution use the undecorated name supplied
+  // by the option owner. Parsing punctuation would truncate custom model names.
   function shortModelLabel(option: ModelOption): string {
-    const name = option.label.split(' — ')[0] ?? option.label
+    const name = option.shortLabel ?? option.label
     return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 

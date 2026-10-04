@@ -96,6 +96,8 @@ const KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
 export interface ModelOption {
   value: string
   label: string
+  /** Undecorated model name for action text and generated-description attribution. */
+  shortLabel?: string
   group?: string
   disabled?: boolean
   /** Billing coverage of this concrete route; automatic/placeholder rows omit it. */
@@ -185,6 +187,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
+          shortLabel: label,
           group,
         })
       }
@@ -267,6 +270,7 @@ async function openRouterOptions(
     entries.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
       ...(free ? { coverage: 'free' } : {}),
@@ -341,6 +345,7 @@ function extraProviderOptions(
     entries.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
     })
@@ -574,6 +579,7 @@ export async function fetchModelOptions(
     options.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: cloudGroup,
       supportsImages: true,
     })
@@ -655,6 +661,7 @@ export async function fetchModelOptions(
     options.push({
       value: `lmstudio:${id}`,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: lmGroup,
       ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     })
