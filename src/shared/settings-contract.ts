@@ -1,4 +1,5 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
+import type { ReleaseChannel } from './release-channel.mts'
 
 /** Validated, nonsecret persisted preferences. Host schemas verify this wire contract. */
 export interface SettingsValues {
@@ -6,6 +7,9 @@ export interface SettingsValues {
   model: string
   chatGptPlanWelcomeSeen: boolean
   theme: 'system' | 'light' | 'dark'
+  updateChannel: ReleaseChannel
+  sidebarThreadSort: 'activity' | 'created' | 'title'
+  sidebarThreadSortReverse: boolean
   fontSize: number
   uiScale: number
   animateAgentAvatars: boolean
