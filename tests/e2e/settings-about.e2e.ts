@@ -72,4 +72,60 @@ describe('Settings → About', () => {
 
     await saveElementScreenshot('#settings-dialog', 'settings-about.png')
   })
+
+  it('chooses the update channel and explains switching to stable', async () => {
+    const about = $('.settings-section[data-section="about"]')
+    const updates = about.$('fieldset.about-updates')
+    await updates.scrollIntoView({ block: 'start' })
+    await expect(updates).toBeDisplayed()
+    await expect(updates.$('legend')).toHaveText('Updates')
+
+    // Nothing is saved yet, so the section shows the installed build's own
+    // channel. An unpackaged run reports a platform or dev version rather than
+    // Copse's (see the test above), so derive it from the version shown.
+    const version = await about.$('.about-version').getText()
+    const installed = /^\d+\.\d+\.\d+$/.test(version) ? 'stable' : 'beta'
+    const select = updates.$('select[name="updateChannel"]')
+    const channelValue = (): Promise<string> =>
+      browser.execute(
+        () =>
+          document.querySelector<HTMLSelectElement>('select[name="updateChannel"]')?.value ?? '',
+      )
+    const savedChannel = (): Promise<unknown> =>
+      browser.execute(() => window.api.settings.get('updateChannel'))
+    assert.equal(await channelValue(), installed)
+    const options = await select.$$('option').map((option) => option.getText())
+    assert.deepEqual(options, ['Beta', 'Stable'])
+    await expect(updates.$('.field-hint')).toHaveText(
+      'Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases.',
+    )
+
+    // Re-selecting the current option fires no change, so only a build that
+    // starts on Stable switches to Beta first; both then switch to Stable.
+    if (installed === 'stable') {
+      await select.selectByAttribute('value', 'beta')
+      await expect(updates.$('.about-update-status')).toHaveText(
+        'Copse now updates to beta releases.',
+      )
+      await browser.waitUntil(async () => (await savedChannel()) === 'beta', {
+        timeout: 5_000,
+        timeoutMsg: 'choosing Beta was not saved',
+      })
+    }
+
+    // Switching to Stable saves the choice and says what happens next for
+    // this build: at once on a stable build, at the next stable from a beta.
+    await select.selectByAttribute('value', 'stable')
+    await expect(updates.$('.about-update-status')).toHaveText(
+      installed === 'stable'
+        ? 'Copse now updates to stable releases only.'
+        : 'Copse keeps updating to betas until the next stable release.',
+    )
+    await browser.waitUntil(async () => (await savedChannel()) === 'stable', {
+      timeout: 5_000,
+      timeoutMsg: 'choosing Stable was not saved',
+    })
+    assert.equal(await channelValue(), 'stable')
+    await saveElementScreenshot('fieldset.about-updates', 'settings-about-update-channel.png')
+  })
 })
