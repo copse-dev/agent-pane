@@ -68053,6 +68053,24 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     settings: {
+      getSnapshot: () => {
+        const values = Object.fromEntries(settings);
+        const snapshot = values;
+        return resolved2(snapshot);
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes;
+        const next = new Map(settings);
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value);
+        if (roleAssignments)
+          next.set("roleModels", {
+            ...stringRecordOrEmpty(settings.get("roleModels")),
+            ...roleAssignments
+          });
+        settings.clear();
+        for (const [key, value] of next) settings.set(key, value);
+        return resolvedVoid();
+      },
       get: (key) => resolved2(settings.get(key)),
       set: (key, value) => {
         settings.set(key, value);
