@@ -10,7 +10,7 @@ import {
 } from './lib/e2e-release-policy.mts'
 import { safeJsonParse } from './lib/safe-json.mts'
 
-import { pathToFileURL } from 'node:url'
+import { isDirectExecution } from './lib/direct-execution.mts'
 
 function main(): void {
   const entries = safeJsonParse(
@@ -48,4 +48,4 @@ function main(): void {
     )
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
+if (isDirectExecution(import.meta.url, 'check-e2e-release-waivers')) main()
