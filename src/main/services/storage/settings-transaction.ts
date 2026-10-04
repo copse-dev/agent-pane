@@ -22,7 +22,7 @@ export function getSettingsSnapshot(): SettingsSnapshot {
   const values: Record<string, unknown> = {}
   for (const key of registeredSettingKeys()) {
     if (isSecretSettingKey(key)) continue
-    const value = getSetting(key, null)
+    const value = getSetting<unknown>(key, null)
     if (value !== null) values[key] = value
   }
   return settingsSnapshotSchema.parse(values)
