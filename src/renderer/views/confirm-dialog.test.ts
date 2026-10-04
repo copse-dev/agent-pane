@@ -14,6 +14,40 @@ afterEach((): void => {
 })
 
 describe('confirm-dialog', () => {
+  for (const method of ['button', 'escape']) {
+    it(`dismisses cancellable work by ${method} and holds queued requests until it settles`, async () => {
+      mountConfirmDialog()
+      let finishWork: () => void = () => {
+        throw new Error('work not started')
+      }
+      let workSignal: AbortSignal | undefined
+      const pending = showConfirmDialog({
+        message: 'Clean selected worktrees?',
+        cancellable: true,
+        onConfirm: async (_progress, signal) => {
+          workSignal = signal
+          await new Promise<void>((resolve) => {
+            finishWork = resolve
+          })
+        },
+      })
+      clickActiveConfirmDialogConfirm()
+      const queued = showConfirmDialog({ message: 'Next request' })
+      const dialog = qsRequired<HTMLDialogElement>(document, '#confirm-dialog')
+      assert.equal(qsRequired<HTMLButtonElement>(dialog, '.confirm-dialog-cancel').disabled, false)
+      if (method === 'button') clickActiveConfirmDialogCancel()
+      else dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+      assert.equal(workSignal?.aborted, true)
+      assert.equal(dialog.open, false, 'dismisses without waiting for the active work')
+      finishWork()
+      assert.equal(await pending, false)
+      assert.equal(dialog.open, true)
+      assert.equal(dialog.querySelector('.confirm-dialog-message')?.textContent, 'Next request')
+      clickActiveConfirmDialogConfirm()
+      assert.equal(await queued, true)
+    })
+  }
+
   it('resolves true when the confirm button is clicked', async () => {
     mountConfirmDialog()
     const pending = showConfirmDialog({

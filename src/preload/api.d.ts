@@ -1,3 +1,4 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type {
   AppRunOwner,
   AppRunSelection,
@@ -836,6 +837,8 @@ export interface ApiClient {
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
   settings: {
+    getSnapshot: () => Promise<SettingsSnapshot>
+    update: (changes: SettingsUpdate) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
     setSecurity: (prefs: {

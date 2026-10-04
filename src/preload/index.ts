@@ -1067,6 +1067,8 @@ const api: ApiClient = {
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
+    getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
+    update: (changes) => ipcRenderer.invoke('settings:update', changes),
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
     setSecurity: (prefs: {

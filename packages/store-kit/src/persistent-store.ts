@@ -32,6 +32,10 @@ function headlessBacking(options: PersistentStoreOptions): BackingStore {
     set: (key, value): void => {
       store.set(key, structuredClone(value))
     },
+    setMany: (values): void => {
+      const entries = structuredClone(Object.entries(values))
+      for (const [key, value] of entries) store.set(key, value)
+    },
     delete: (key): void => {
       store.delete(key)
     },

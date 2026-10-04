@@ -2,7 +2,7 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
-import { runSerializedUpdate } from './write-queue.ts'
+import { SETTINGS_WRITE_QUEUE, runSerialized, runSerializedUpdate } from './write-queue.ts'
 
 const settings = new Map<string, unknown>([
   // Unit tests must not wait on an optional LM Studio scope classifier. Suites
@@ -102,6 +102,16 @@ export function getLmStudioApiKey(): string {
   return resolveLmStudioApiKey(getApiKey('lmstudio'), process.env)
 }
 
+/** Read a registered value without conflating a valid null with an absent value. */
+export function getRegisteredSetting(key: string): unknown {
+  const schema = getSettingSchema(key)
+  if (!schema) return undefined
+  const scoped = getExplicitSettingsProfile()
+  const raw = scoped ? scoped.values[key] : settings.get(key)
+  const parsed = schema.safeParse(raw)
+  return parsed.success ? parsed.data : undefined
+}
+
 export function getSetting<T>(key: string, fallback: T): T {
   const scoped = getExplicitSettingsProfile()
   const value = scoped ? scoped.values[key] : settings.get(key)
@@ -120,8 +130,34 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   if (getExplicitSettingsProfile()) {
     return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
   }
+  // Legacy fixture setup seeds synchronously, including callers that do not
+  // await this resolved promise. Read-modify-write operations and batches below
+  // still share a queue to exercise their composition.
   settings.set(key, value)
   return Promise.resolve()
+}
+
+export function setSettings(
+  values: Readonly<Record<string, unknown>>,
+  roleAssignments?: Record<string, string>,
+): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  const parsed: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const schema = getSettingSchema(key)
+    if (!schema) throw new Error(`Unregistered setting: ${key}`)
+    parsed[key] = schema.parse(value)
+  }
+  return runSerialized(SETTINGS_WRITE_QUEUE, () => {
+    if (roleAssignments)
+      parsed['roleModels'] = getSettingSchema('roleModels')?.parse({
+        ...getSetting('roleModels', {}),
+        ...roleAssignments,
+      })
+    for (const [key, value] of Object.entries(parsed)) settings.set(key, value)
+  })
 }
 
 export function updateSetting<T>(key: string, fallback: T, update: (current: T) => T): Promise<T> {
@@ -130,7 +166,7 @@ export function updateSetting<T>(key: string, fallback: T, update: (current: T) 
   }
   const schema = getSettingSchema(key)
   return runSerializedUpdate(
-    `settings:${key}`,
+    SETTINGS_WRITE_QUEUE,
     () => getSetting(key, fallback),
     update,
     (next) => {

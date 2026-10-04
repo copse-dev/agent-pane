@@ -15,6 +15,11 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join, relative, resolve } from 'node:path'
 import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
 import { rewriteModuleRelativeTestPaths } from './lib/module-relative-test-paths.mts'
+import {
+  captureTrackedTestTree,
+  changedTrackedTestFiles,
+  intentionalTestUpdates,
+} from './lib/tracked-test-tree.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
@@ -413,13 +418,27 @@ if (filters.length > 0) {
   for (const f of testFiles) console.log(`  ${f}`)
 }
 
-if (isolatedRun) await mkdir(join(repoRoot, '.tmp'), { recursive: true })
-const outputDir = isolatedRun ? await mkdtemp(join(repoRoot, '.tmp/test-run-')) : fixedOutputDir
-if (isolatedRun) console.log(`[run-tests] output directory: ${outputDir}`)
+const trackedBefore = await captureTrackedTestTree(repoRoot)
+const allowedUpdates = intentionalTestUpdates(process.env)
+let status: number
+try {
+  if (isolatedRun) await mkdir(join(repoRoot, '.tmp'), { recursive: true })
+  const outputDir = isolatedRun ? await mkdtemp(join(repoRoot, '.tmp/test-run-')) : fixedOutputDir
+  if (isolatedRun) console.log(`[run-tests] output directory: ${outputDir}`)
 
-if (testOnly) {
-  process.exit(await runTests(testFiles, outputDir))
-} else {
-  await bundleTests(testFiles, outputDir)
-  if (!bundleOnly) process.exit(await runTests(testFiles, outputDir))
+  if (!testOnly) await bundleTests(testFiles, outputDir)
+  status = bundleOnly ? 0 : await runTests(testFiles, outputDir)
+} finally {
+  const changed = changedTrackedTestFiles(
+    trackedBefore,
+    await captureTrackedTestTree(repoRoot),
+    allowedUpdates,
+  )
+  if (changed.length > 0) {
+    console.error('[run-tests] tests changed tracked files:')
+    for (const path of changed) console.error(`  ${path}`)
+    console.error('[run-tests] inspect the diff; source and index changes have been left intact.')
+    status = 1
+  }
 }
+process.exit(status)
