@@ -4,9 +4,22 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readSkillTool } from './read-skill-tool.ts'
+import {
+  createSkillActivationTurn,
+  runWithSkillActivationTurn,
+} from '../services/skills/skill-activation.ts'
 import { setSkillsForTest } from '../services/skills/skills-registry.ts'
 import { normalizeToolExecuteResult, type ToolExecuteResult } from '@shared/types'
 import type { SkillMetadata } from '@shared/types/skills.ts'
+
+function executeReadSkill(
+  args: { name: string; path?: string },
+  signal: AbortSignal,
+): ToolExecuteResult | Promise<ToolExecuteResult> {
+  return runWithSkillActivationTurn(createSkillActivationTurn([], ['read_skill']), () =>
+    readSkillTool.execute(args, signal),
+  )
+}
 
 function toolText(result: ToolExecuteResult): string {
   return normalizeToolExecuteResult(result).result
@@ -42,45 +55,59 @@ describe('readSkillTool', () => {
   }
 
   it('reads a skill with no broken references without any note', async () => {
-    await writeFile(join(tempRoot, 'SKILL.md'), '# Body', 'utf-8')
+    await writeFile(
+      join(tempRoot, 'SKILL.md'),
+      '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
+      'utf-8',
+    )
     seedMetadata()
     const result = toolText(
-      await readSkillTool.execute({ name: 'linky-refs' }, new AbortController().signal),
+      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
     )
     assert.doesNotMatch(result, /not present in the bundle/)
     assert.match(result, /# Body/)
   })
 
   it('appends a note when the skill references a missing bundle file', async () => {
-    await writeFile(join(tempRoot, 'SKILL.md'), '# Body', 'utf-8')
+    await writeFile(
+      join(tempRoot, 'SKILL.md'),
+      '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
+      'utf-8',
+    )
     seedMetadata({ missingReferences: ['references/patterns.md'] })
     const result = toolText(
-      await readSkillTool.execute({ name: 'linky-refs' }, new AbortController().signal),
+      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
     )
-    assert.match(
-      result,
-      /Note: this skill references `references\/patterns\.md`, which is not present in the bundle/,
-    )
+    assert.match(result, /Missing bundled references: references\/patterns\.md/)
     assert.match(result, /# Body/)
   })
 
   it('pluralizes the note for more than one missing reference', async () => {
-    await writeFile(join(tempRoot, 'SKILL.md'), '# Body', 'utf-8')
+    await writeFile(
+      join(tempRoot, 'SKILL.md'),
+      '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
+      'utf-8',
+    )
     seedMetadata({ missingReferences: ['references/patterns.md', 'scripts/setup.sh'] })
     const result = toolText(
-      await readSkillTool.execute({ name: 'linky-refs' }, new AbortController().signal),
+      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
     )
-    assert.match(
-      result,
-      /Note: this skill references `references\/patterns\.md`, `scripts\/setup\.sh`, which are not present in the bundle/,
-    )
+    assert.match(result, /Missing bundled references: references\/patterns\.md, scripts\/setup\.sh/)
   })
 
   it('surfaces the enhanced unknown-skill error for an unrecognized name', async () => {
     setSkillsForTest([])
     await assert.rejects(
-      async () => readSkillTool.execute({ name: 'pstack' }, new AbortController().signal),
+      async () => executeReadSkill({ name: 'pstack' }, new AbortController().signal),
       /Unknown skill "pstack"\. No skills are currently available\./,
+    )
+  })
+
+  it('fails closed without a runner-owned activation scope', async () => {
+    seedMetadata()
+    await assert.rejects(
+      async () => readSkillTool.execute({ name: 'linky-refs' }, new AbortController().signal),
+      /activation is unavailable in this runner/,
     )
   })
 })

@@ -153,6 +153,7 @@ import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelForGating, resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
+import { createSkillActivationTurn, runWithSkillActivationTurn } from './skills/skill-activation.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
@@ -1796,6 +1797,10 @@ async function runAgentWithInlineCanvas(
       nestedInstructionTurn,
     })
     const systemPrompt = systemPromptBuild.prompt
+    const skillActivationTurn = createSkillActivationTurn(
+      invokedSkills,
+      parentLoopTools.map((tool) => tool.name),
+    )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,
     )
@@ -2257,9 +2262,13 @@ async function runAgentWithInlineCanvas(
         ): Promise<ToolExecuteResult> => {
           const startedAt = Date.now()
           try {
-            const raw = await (coordinationDemo
-              ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
-              : runParentTool(name, args, signal, toolCallId))
+            const execute = (): Promise<ToolExecuteResult> =>
+              coordinationDemo
+                ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
+                : runParentTool(name, args, signal, toolCallId)
+            const raw = await (name === 'read_skill'
+              ? runWithSkillActivationTurn(skillActivationTurn, execute)
+              : execute())
             // The agent just wrote, moved, or removed an AGENTS.md: the turn's
             // discovery memo no longer describes the tree, so the next file tool
             // call re-walks. `run_shell` writes are not seen here (documented).

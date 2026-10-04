@@ -37,6 +37,19 @@ const PARENT = tools(
 const names = (list: LLMTool[]): string[] => list.map((t) => t.name)
 
 describe('resolveCustomAgentTools', () => {
+  it('withholds parent-scoped skill activation even when a profile explicitly allows it', () => {
+    for (const allowed of [null, ['read_file', 'read_skill']]) {
+      assert.deepEqual(
+        names(
+          resolveCustomAgentTools(tools('read_file', 'read_skill'), {
+            tools: allowed,
+            disallowedTools: [],
+          }),
+        ),
+        ['read_file'],
+      )
+    }
+  })
   it('inherits the parent set minus what no subagent may hold', () => {
     const resolved = names(resolveCustomAgentTools(PARENT, { tools: null, disallowedTools: [] }))
     assert.ok(resolved.includes('read_file'))
