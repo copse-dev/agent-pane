@@ -269,12 +269,12 @@ describe('ci.yml workflow invariants', () => {
       const job = jobBlock(name)
       if (!job.includes('secrets.')) continue
       assert.ok(
-        /^ {4}if: github\.event_name == 'pull_request' &&/m.test(job) ||
+        /^ {4}if: (?:>-\n {6})?github\.event_name == 'pull_request' &&/m.test(job) ||
           /if: >-\n {6}github\.event_name != 'merge_group' &&\n/.test(job),
         `${name} must reject queue events before any secret-bearing steps`,
       )
     }
-    assert.match(jobBlock('autoformat'), /if: github\.event_name == 'pull_request' &&/)
+    assert.match(jobBlock('autoformat'), /if: (?:>-\n {6})?github\.event_name == 'pull_request' &&/)
     assert.match(jobBlock('screenshot-artifacts'), /github\.event_name == 'pull_request'/)
   })
 
@@ -532,7 +532,10 @@ describe('ci.yml workflow invariants', () => {
 
   it('never pushes a format commit to a promotion into release', () => {
     // The promotion head, promote/main, must hold only commits already on main.
-    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release' && /m)
+    assert.match(
+      jobBlock('autoformat'),
+      /^ {4}if: (?:>-\n {6})?.*github\.base_ref != 'release' && /m,
+    )
   })
 
   it('decides autofix has work to do before paying for the dependency install', () => {

@@ -25,6 +25,7 @@ on:
     # `edited` is required for base-branch retargets. The tier and oracle diff
     # both depend on the current base; without a new run, a head checked against
     # one base can retain stale CI after it is moved to another (#2520).
+    # Title/body-only edits take the metadata path (see `concurrency`).
     types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
     # No `branches:` filter — PRs into `main` and the promotion PRs into
     # `release` both run this workflow. Which TIER they get is decided per job by
@@ -46,16 +47,35 @@ on:
 permissions:
   contents: read
 
-# Only the known Copse feedback label may skip CI. Every edited event runs
-# normal CI, including title/body edits: Actions cannot whitelist change keys.
+# Two metadata events skip CI: the Copse feedback label, and an `edited` event
+# whose `changes` hold only `title` and/or `body`. Pushing and then editing
+# the PR description starts both `synchronize` and `edited` for one head a
+# second apart; sharing `ci-<PR>`, the edit cancelled the source run and left
+# a red `CI Passed` on the head. Actions cannot list an object's keys, so the
+# edit test rebuilds `{"title":…,"body":…}` from the event's own values and
+# requires its toJSON to equal the original's: any other key (a retarget's
+# `base`, or one GitHub adds later) or any serialisation drift runs real CI.
 # The same predicate controls concurrency, roots of the job graph, and the
 # aggregate NAME: a skipped required check would otherwise authorize a red head.
+# scripts/ci-cosmetic-events.test.ts pins it as identical at every site.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
   group: >-
-    ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+    ${{ (github.event_name == 'pull_request' &&
+    ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+    (github.event.action == 'edited' &&
+    (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
-    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
+    ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' &&
+    ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+    (github.event.action == 'edited' &&
+    (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) }}
 
 jobs:
   # Job timeouts: every job below sets `timeout-minutes`, and
@@ -119,7 +139,13 @@ jobs:
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
     if: >-
-      ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') }}
+      ${{ !(github.event_name == 'pull_request' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+      (github.event.action == 'edited' &&
+      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -523,7 +549,14 @@ jobs:
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback')
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+      (github.event.action == 'edited' &&
+      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}')))))))
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
@@ -2032,7 +2065,13 @@ jobs:
     # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
-      ${{ (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') && 'CI metadata ignored' ||
+      ${{ (github.event_name == 'pull_request' &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+      (github.event.action == 'edited' &&
+      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && 'CI metadata ignored' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
@@ -2056,7 +2095,14 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
-          METADATA_ONLY: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}
+          METADATA_ONLY: >-
+            ${{ github.event_name == 'pull_request' &&
+            ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
+            (github.event.action == 'edited' &&
+            (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
+            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
+            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
+            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}')))))) }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}

@@ -69,9 +69,12 @@ function gate(overrides: Record<string, string> = {}): number | null {
 
 describe('required CI gate bindings', () => {
   it('receives cancellation and dependency results directly from Actions, without shell interpolation', () => {
-    assert.deepEqual(bindings, {
-      METADATA_ONLY:
-        "${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}",
+    // The metadata predicate's routing is evaluated in ci-cosmetic-events.test.ts;
+    // here it only has to be one expression over the trusted event payload.
+    const { METADATA_ONLY: metadataOnly, ...results } = bindings ?? {}
+    assert.match(metadataOnly ?? '', /^\$\{\{ github\.event_name == 'pull_request' &&[^$]* \}\}$/)
+    assert.doesNotMatch(metadataOnly ?? '', /\b(?:needs|steps|env|inputs|vars|secrets)\./)
+    assert.deepEqual(results, {
       FORK_PR:
         "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
       MODE: '${{ needs.precheck.outputs.mode }}',
