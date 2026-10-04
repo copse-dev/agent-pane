@@ -61029,7 +61029,7 @@ function mountSettingsDialog(store2, api2) {
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue;
+      if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
       const btn = document.createElement("button");
@@ -70995,6 +70995,29 @@ var init_attention = __esm({
   }
 });
 
+// src/renderer/dom/patch-children.ts
+function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
+  let cursor = parent.firstElementChild;
+  for (const node2 of desired) {
+    if (node2 === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(node2, cursor);
+  }
+}
+var init_patch_children = __esm({
+  "src/renderer/dom/patch-children.ts"() {
+  }
+});
+
 // src/renderer/controller/activity-model.ts
 function truncateText(text2, max = WANT_MAX_CHARS) {
   const flat = text2.replace(/\s+/g, " ").trim();
@@ -71752,6 +71775,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     role: "status",
     "aria-live": "polite"
   });
+  const rowCache = /* @__PURE__ */ new Map();
+  const groupCache = /* @__PURE__ */ new Map();
+  const quiet = el("p", { class: "activity-quiet" }, "Nothing needs you right now.");
   let renderScheduled = false;
   let cancelRender = null;
   let lastRenderAt = Number.NEGATIVE_INFINITY;
@@ -71980,25 +72006,61 @@ function createActivityView(api2, store2, sources3, deps, host) {
       opener
     );
   }
+  function rowSignature(row2, at3) {
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    return JSON.stringify([
+      row2.state,
+      row2.threadId,
+      row2.requestId,
+      row2.requestType,
+      row2.threadTitle,
+      row2.projectName,
+      row2.want,
+      row2.detail,
+      row2.since,
+      row2.key === selectedKey,
+      elapsed === null ? null : formatAge(elapsed),
+      rowLabel(row2, at3)
+    ]);
+  }
+  function cachedRow(row2, at3) {
+    const signature = rowSignature(row2, at3);
+    const hit = rowCache.get(row2.key);
+    if (hit?.signature === signature) return hit.node;
+    const node2 = rowElement(row2, at3);
+    rowCache.set(row2.key, { signature, node: node2 });
+    return node2;
+  }
   function groupElement(group, at3) {
-    const titleId = `activity-group-${group.id}`;
     const hidden = group.total - group.rows.length;
     const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
-    return el(
-      "section",
-      { class: "activity-group", "data-group": group.id },
-      el(
-        "h4",
-        { id: titleId, class: "activity-group-title" },
-        group.label,
-        el("span", { class: "activity-group-count" }, count)
-      ),
-      el(
-        "ul",
-        { class: "activity-rows", role: "list", "aria-labelledby": titleId },
-        ...group.rows.map((row2) => rowElement(row2, at3))
-      )
+    let entry = groupCache.get(group.id);
+    if (!entry) {
+      const titleId = `activity-group-${group.id}`;
+      const countNode = el("span", { class: "activity-group-count" }, count);
+      const rowsNode = el("ul", {
+        class: "activity-rows",
+        role: "list",
+        "aria-labelledby": titleId
+      });
+      entry = {
+        section: el(
+          "section",
+          { class: "activity-group", "data-group": group.id },
+          el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode),
+          rowsNode
+        ),
+        count: countNode,
+        rows: rowsNode
+      };
+      groupCache.set(group.id, entry);
+    }
+    if (entry.count.textContent !== count) entry.count.textContent = count;
+    patchChildren(
+      entry.rows,
+      group.rows.map((row2) => cachedRow(row2, at3))
     );
+    return entry.section;
   }
   function emptyState() {
     return el(
@@ -72117,9 +72179,14 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const workCount = working?.total ?? 0;
     summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
+    const populatedIds = new Set(populated.map((group) => group.id));
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren();
+    }
     if (populated.length === 0) {
       list.hidden = true;
       list.replaceChildren();
+      rowCache.clear();
       body.dataset["empty"] = "true";
       detail.hidden = false;
       detail.replaceChildren(emptyState());
@@ -72129,11 +72196,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
       list.hidden = false;
       delete body.dataset["empty"];
       const children = [];
-      if (!needsYou || needsYou.rows.length === 0) {
-        children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
-      }
+      if (!needsYou || needsYou.rows.length === 0) children.push(quiet);
       children.push(...populated.map((group) => groupElement(group, at3)));
-      list.replaceChildren(...children);
+      patchChildren(list, children);
+      const live = new Set(rows.map((row2) => row2.key));
+      for (const rowKey2 of rowCache.keys()) {
+        if (!live.has(rowKey2)) rowCache.delete(rowKey2);
+      }
       restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
@@ -72216,6 +72285,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     selectedIndex = 0;
     shownKey = null;
     status.textContent = "";
+    for (const entry of groupCache.values()) entry.rows.replaceChildren();
+    rowCache.clear();
   }
   function show2() {
     needsYouSignature = null;
@@ -72234,6 +72305,7 @@ var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LON
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_patch_children();
     init_icons();
     init_projects();
     init_activity_model();
@@ -87029,9 +87101,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -87468,6 +87552,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
