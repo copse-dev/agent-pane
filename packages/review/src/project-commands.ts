@@ -1,6 +1,6 @@
 // Stage 0 has to know what "build", "typecheck", "lint" and "test" mean in
-// the repository under review. Binding decision B5: TypeScript with pnpm is
-// the only ecosystem detected for now. A repo can override or disable any
+// the repository under review. Binding decision B5: TypeScript with pnpm or
+// a locked npm install is detected. A repo can override or disable any
 // command with a `review.config.json` at its root (§Configuration); that file
 // is repo-controlled, so its argv only ever runs INSIDE the cell — the
 // orchestrator reads it as data and never evaluates it.
@@ -23,7 +23,7 @@ export interface CheckCommand {
 }
 
 export interface ProjectCommands {
-  readonly ecosystem: 'typescript-pnpm' | 'configured'
+  readonly ecosystem: 'typescript-pnpm' | 'typescript-npm' | 'configured'
   /** Where the commands came from, for the report. */
   readonly source: 'package.json' | typeof REVIEW_CONFIG_FILENAME
   readonly commands: readonly CheckCommand[]
@@ -49,6 +49,13 @@ export const DEFAULT_PNPM_PREPARE: readonly [string, ...string[]] = [
   'pnpm',
   'install',
   '--frozen-lockfile',
+  '--offline',
+  '--ignore-scripts',
+]
+
+const DEFAULT_NPM_PREPARE: readonly [string, ...string[]] = [
+  'npm',
+  'ci',
   '--offline',
   '--ignore-scripts',
 ]
@@ -128,6 +135,7 @@ export function detectProjectCommands(checkoutRoot: string): ProjectCommands | U
   const manifest = manifestText === null ? null : safeJsonParse(manifestText, decodePackageManifest)
   const lockfile = readOptional(checkoutRoot, 'pnpm-lock.yaml')
   const usesPnpm = lockfile !== null || (manifest?.packageManager?.startsWith('pnpm@') ?? false)
+  const usesNpm = !usesPnpm && readOptional(checkoutRoot, 'package-lock.json') !== null
   const tsconfig = readOptional(checkoutRoot, 'tsconfig.json')
   const usesTypeScript =
     tsconfig !== null ||
@@ -135,12 +143,12 @@ export function detectProjectCommands(checkoutRoot: string): ProjectCommands | U
     Object.hasOwn(manifest?.dependencies ?? {}, 'typescript')
 
   const detected: Partial<Record<CheckKind, readonly [string, ...string[]]>> = {}
-  if (manifest !== null && usesPnpm && usesTypeScript) {
-    detected.prepare = DEFAULT_PNPM_PREPARE
+  if (manifest !== null && (usesPnpm || usesNpm) && usesTypeScript) {
+    detected.prepare = usesPnpm ? DEFAULT_PNPM_PREPARE : DEFAULT_NPM_PREPARE
     for (const kind of CHECK_KINDS) {
       if (kind === 'prepare') continue
       if (manifest.scripts !== undefined && Object.hasOwn(manifest.scripts, kind)) {
-        detected[kind] = ['pnpm', 'run', kind]
+        detected[kind] = [usesPnpm ? 'pnpm' : 'npm', 'run', kind]
       }
     }
   }
@@ -156,7 +164,12 @@ export function detectProjectCommands(checkoutRoot: string): ProjectCommands | U
 
   if (commands.some((command) => command.kind !== 'prepare')) {
     return {
-      ecosystem: config?.commands !== undefined ? 'configured' : 'typescript-pnpm',
+      ecosystem:
+        config?.commands !== undefined
+          ? 'configured'
+          : usesPnpm
+            ? 'typescript-pnpm'
+            : 'typescript-npm',
       source: config !== null ? REVIEW_CONFIG_FILENAME : 'package.json',
       commands,
     }
@@ -164,11 +177,11 @@ export function detectProjectCommands(checkoutRoot: string): ProjectCommands | U
   if (manifest === null) {
     return { ecosystem: 'unsupported', reason: 'no package.json at the checkout root' }
   }
-  if (!usesPnpm) {
+  if (!usesPnpm && !usesNpm) {
     return {
       ecosystem: 'unsupported',
       reason:
-        'not a pnpm project (no pnpm-lock.yaml or pnpm packageManager); TypeScript with pnpm is the only detected ecosystem (B5)',
+        'not a pnpm or locked npm project (no pnpm-lock.yaml, pnpm packageManager or package-lock.json); TypeScript with pnpm or npm is required (B5)',
     }
   }
   if (!usesTypeScript) {

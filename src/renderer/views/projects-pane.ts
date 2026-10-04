@@ -2,7 +2,9 @@ import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import {
+  arrowUpDownIcon,
   bellIcon,
   chevronRightIcon,
   gitMergeIcon,
@@ -61,6 +63,8 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { orderSidebarThreads } from '../controller/thread-order.ts'
+import { THREAD_SORT_MODES, type ThreadSortMode } from '@shared/types/state.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
@@ -135,16 +139,20 @@ function runningStatus(label: string): SVGSVGElement {
 }
 
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
-  const label = ciFailing
+function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean, conflicts: boolean): HTMLElement {
+  const statusLabel = ciFailing
     ? `${describeThreadPrStatus(rollup)}; checks are failing`
     : describeThreadPrStatus(rollup)
-  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
+  const label = conflicts ? `${statusLabel}; merge conflicts` : statusLabel
+  const icon =
+    rollup.kind === 'merged'
+      ? gitMergeIcon('ui-icon ui-icon-sm')
+      : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? ' has-conflicts' : ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -269,6 +277,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     searchIcon('ui-icon ui-icon-sm'),
   )
+  // How each project's threads are ordered. Persisted per profile; the store
+  // keeps its own newest-first order and this only re-sorts what is drawn.
+  const sortBtn = el(
+    'button',
+    {
+      class: 'projects-sort-btn',
+      'aria-label': 'Sort threads',
+      'aria-haspopup': 'menu',
+      'data-tooltip': 'Sort threads',
+    },
+    arrowUpDownIcon('ui-icon ui-icon-sm'),
+  )
   // One "+" entry point for every way to add a project. The remote action is
   // included only while SSH workspaces are enabled.
   const addBtn = el(
@@ -314,6 +334,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'pane-projects-header' },
     title,
     searchToggle,
+    sortBtn,
     activityBtn,
     addBtn,
   )
@@ -394,6 +415,47 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   )
 
   let sshWorkspaceEnabled = false
+
+  const SORT_LABELS: Readonly<Record<ThreadSortMode, string>> = {
+    activity: 'Activity order',
+    created: 'Created',
+    title: 'Thread name',
+  }
+  // The menu applies the choice at once; a save that fails would otherwise be lost
+  // silently and the order would revert on the next launch.
+  const saveSort = (
+    key: 'sidebarThreadSort' | 'sidebarThreadSortReverse',
+    value: ThreadSortMode | boolean,
+  ): void => {
+    void api.settings.set(key, value).catch((err: unknown) => {
+      showErrorToast('Could not save the thread order', err)
+    })
+  }
+  sortBtn.addEventListener('click', () => {
+    const rect = sortBtn.getBoundingClientRect()
+    const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: 'Sort by' },
+      ...THREAD_SORT_MODES.map((mode): ContextMenuEntry => ({
+        label: SORT_LABELS[mode],
+        checked: mode === sidebarThreadSort,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSort: mode })
+          saveSort('sidebarThreadSort', mode)
+          render()
+        },
+      })),
+      {
+        label: 'Reverse order',
+        checked: sidebarThreadSortReverse,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
+          saveSort('sidebarThreadSortReverse', !sidebarThreadSortReverse)
+          render()
+        },
+      },
+    ])
+  })
 
   addBtn.addEventListener('click', () => {
     const rect = addBtn.getBoundingClientRect()
@@ -488,7 +550,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -565,10 +627,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
           const previous = prLifecycleCache.get(key)
-          lifecycleChanged = previous?.state !== state
-          // CI only matters while the PR is open; the dot is the one extra cue.
+          const conflicts = state === 'open' && details !== null && prHasMergeConflicts(details)
+          lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts
+          // CI and merge conflicts only affect open PRs.
           prLifecycleCache.set(key, {
             state,
+            conflicts,
             ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
             fetchedAt: Date.now(),
           })
@@ -586,6 +650,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           const cached = prLifecycleCache.get(key)
           prLifecycleCache.set(key, {
             state: cached?.state ?? 'unknown',
+            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
           })
         })
@@ -601,6 +666,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return sidebarPrRefs(thread).some((ref) => {
       const entry = prLifecycleCache.get(githubPrKey(ref))
       return entry?.state === 'open' && entry.checks === 'failure'
+    })
+  }
+
+  function conflictsForThread(thread: SidebarThread): boolean {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref))
+      return entry?.state === 'open' && entry.conflicts === true
     })
   }
 
@@ -1288,7 +1360,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === 'open' && ciFailingForThread(thread)),
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === 'open' && ciFailingForThread(thread),
+            prRollup.kind === 'open' && conflictsForThread(thread),
+          ),
         )
       }
 
@@ -1738,8 +1814,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         : sidebarThreads
       // Automation runs are collated in the workspace-level Automations section
       // (#2511) instead of rendering inside their project by default.
-      const conversationThreads = matchingThreads.filter(
-        (thread) => thread.automation === undefined,
+      const conversationThreads = orderSidebarThreads(
+        matchingThreads.filter((thread) => thread.automation === undefined),
+        // A filter's matches stay newest first; the chosen order is for the browse list.
+        isFiltering ? 'activity' : store.getState().sidebarThreadSort,
+        !isFiltering && store.getState().sidebarThreadSortReverse,
       )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null

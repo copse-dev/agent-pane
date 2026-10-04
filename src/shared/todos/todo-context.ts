@@ -112,10 +112,18 @@ export const TODO_COMPACTION_MIN_FILL_RATIO = 0.5
  * instead of rediscovering it via fresh explore calls (#i2jsed).
  *
  * `fillRatio` is the conversation's current share of its token budget. Below
- * {@link TODO_COMPACTION_MIN_FILL_RATIO} the history is left alone — the pinned
- * blocks are still rewritten, since the plan has to track the todos either way.
- * Omit it to compact unconditionally (the pre-gate behaviour, kept for callers
- * with no budget to measure against).
+ * {@link TODO_COMPACTION_MIN_FILL_RATIO} the history is left alone. Omit it to
+ * compact unconditionally (the pre-gate behaviour, kept for callers with no
+ * budget to measure against).
+ *
+ * The pinned blocks live in the leading system message, which every provider's
+ * prompt cache keys on, so rewriting them re-sends the whole conversation
+ * uncached. They are therefore written only when history was actually dropped
+ * (the prefix has already moved, and the dropped plan and paths need a home) or
+ * when a pin from an earlier compaction is already there and would otherwise go
+ * stale. A completion that drops nothing into an unpinned prompt changes no
+ * bytes: the `update_todos` result already carries the current plan. See
+ * docs/prompt-caching.md.
  */
 export function compactAtTodoBoundary(
   messages: LLMMessage[],
@@ -130,23 +138,26 @@ export function compactAtTodoBoundary(
   const baseContent = system && typeof system.content === 'string' ? system.content : ''
   let touchedFiles = parseTouchedFiles(baseContent)
 
+  // Both pinned blocks are always written together (files block first, see
+  // below), so the old-content cutoff is whichever marker appears first —
+  // using only the todo marker would leave a stale files block in place and
+  // stack duplicates call over call.
+  const markerIndexes = [
+    baseContent.indexOf(FILES_TOUCHED_PREFIX),
+    baseContent.indexOf(TODO_PIN_PREFIX),
+  ].filter((i) => i >= 0)
+  const cut = markerIndexes.length > 0 ? Math.min(...markerIndexes) : -1
+
   // Rewrites both pinned blocks from the current todos and touched-file list.
-  // Every exit path calls this, including the gated one that drops no history:
-  // the pin is what keeps the plan in the system prompt in step with the todos,
-  // so returning early without it would leave the previous plan pinned while the
-  // todos moved on.
-  const writePinnedBlocks = (): void => {
+  // Every exit path calls this. An existing pin is always refreshed, or the
+  // system prompt would keep advertising the previous plan while the todos moved
+  // on. With no pin yet, one is written only once history has been dropped:
+  // before that the history still holds the plan, and adding a pin would only
+  // break the prompt cache.
+  const writePinnedBlocks = (historyDropped: boolean): void => {
+    if (!system || (cut < 0 && !historyDropped)) return
     const pinned = formatTodosForPrompt(todos)
-    if (!system || (!pinned && touchedFiles.length === 0)) return
-    // Both pinned blocks are always written together (files block first, see
-    // below), so the old-content cutoff is whichever marker appears first —
-    // using only the todo marker would leave a stale files block in place and
-    // stack duplicates call over call.
-    const markerIndexes = [
-      baseContent.indexOf(FILES_TOUCHED_PREFIX),
-      baseContent.indexOf(TODO_PIN_PREFIX),
-    ].filter((i) => i >= 0)
-    const cut = markerIndexes.length > 0 ? Math.min(...markerIndexes) : -1
+    if (!pinned && touchedFiles.length === 0) return
     const withoutOldPins = cut >= 0 ? baseContent.slice(0, cut) : baseContent
     const filesBlock =
       touchedFiles.length > 0
@@ -158,7 +169,7 @@ export function compactAtTodoBoundary(
 
   const fillRatio = opts?.fillRatio
   if (fillRatio !== undefined && fillRatio < TODO_COMPACTION_MIN_FILL_RATIO) {
-    writePinnedBlocks()
+    writePinnedBlocks(false)
     return false
   }
 
@@ -194,7 +205,7 @@ export function compactAtTodoBoundary(
     removed = true
   }
 
-  writePinnedBlocks()
+  writePinnedBlocks(removed)
 
   return removed
 }

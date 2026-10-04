@@ -111,8 +111,18 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
       label: 'View',
       submenu: [
         {
-          label: 'Toggle Panel',
+          label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
+          click: (): void => {
+            sendToFocused('menu:toggle-sidebar')
+          },
+        },
+        {
+          label: 'Toggle Panel',
+          accelerator: 'CmdOrCtrl+J',
+          // Shown, not registered: the renderer handles Cmd/Ctrl+J so it stays
+          // inert while typing in the composer, unlike a native accelerator.
+          registerAccelerator: false,
           click: (): void => {
             sendToFocused('menu:toggle-panel')
           },

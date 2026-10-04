@@ -1851,8 +1851,29 @@
           2
         ]
       },
+      "storage:cleanup": {
+        "api": "storage.cleanup",
+        "args": [
+          1,
+          1
+        ]
+      },
       "storage:get": {
         "api": "storage.get",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "storage:maintenance": {
+        "api": "storage.maintenance",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "storage:retention": {
+        "api": "storage.retention",
         "args": [
           1,
           1
@@ -2585,6 +2606,13 @@
       },
       "menu:toggle-panel": {
         "api": "menu.onTogglePanel",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "menu:toggle-sidebar": {
+        "api": "menu.onToggleSidebar",
         "args": [
           0,
           0

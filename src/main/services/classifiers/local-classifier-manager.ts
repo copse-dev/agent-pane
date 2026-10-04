@@ -17,7 +17,7 @@ import {
   prepareClassifierCache,
   type CachePaths,
   type CatalogEntry,
-} from './local-server.ts'
+} from './local-server.mts'
 import { getExplicitSettingsProfile } from '../storage/settings-context.ts'
 
 /** How long a freshly started server may spend loading its weights before Copse gives up. */

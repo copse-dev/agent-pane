@@ -59,6 +59,33 @@ When `COPSE_DIR` points at a different volume from the old profile, the
 directory is copied rather than moved and the original is left beside it with a
 `.migrated` suffix. Delete it once the new profile is verified.
 
+## Saved runs and temporary build data
+
+Settings → Storage shows saved container runs and temporary Apple build data
+across all projects, with separate cleanup buttons. Cleanup requires confirmation.
+It preserves chats, attachments, source checkouts, arbitrary sandbox scratch files,
+and shared dependency caches.
+
+Saved runs live in `runtimes/run-*/`: repository bundles, outputs and saved state.
+Only runs with a completed host record and successful teardown are eligible.
+Incomplete runs, failed teardown records, redirected paths and active runs are
+kept. Deleting a saved run removes its on-disk review and continuation artifacts;
+commit refs already imported into a repository are not deleted.
+
+Temporary build cleanup targets only `workspace/tmp/apple-development/` and
+`workspace/tmp/app-run/`. These contain build outputs and package caches that
+subsequent builds recreate. It never removes the conversation directories beside
+`workspace/tmp/`, or other temporary files written by agents.
+
+Automatic cleanup is enabled with a 30-day retention period by default. Storage
+settings can disable it or choose 7, 30, 90 or 365 days; these controls save
+immediately. Copse checks at startup and once a day. An entry expires only when
+its newest file or directory modification is older than the retention window.
+Active work holds profile-scoped process leases, acquired under the same
+filesystem mutex as cleanup, so another Copse process cannot delete its files.
+Launched app sessions retain their build lease until stopped. A busy category is
+skipped and considered again on a later sweep.
+
 ## Worktree restore points
 
 When Copse needs to protect dirty Git changes before an agent edit, it can create

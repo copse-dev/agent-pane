@@ -23,7 +23,7 @@ interface ShortcutSection {
 }
 
 // happy-dom reports an empty navigator.platform, so fall back to userAgent.
-function isMacPlatform(): boolean {
+export function isMacPlatform(): boolean {
   const platform = navigator.platform || navigator.userAgent || ''
   return /mac/i.test(platform)
 }
@@ -72,7 +72,8 @@ const SECTIONS: ShortcutSection[] = [
   {
     title: 'Panels',
     shortcuts: [
-      { label: 'Toggle side panel', keys: ['Mod', 'B'] },
+      { label: 'Toggle sidebar', keys: ['Mod', 'B'] },
+      { label: 'Toggle panel', keys: ['Mod', 'J'] },
       { label: 'Explorer', keys: ['Mod', 'Shift', 'E'] },
       { label: 'Terminal', keys: ['Mod', '`'] },
       { label: 'Changes', keys: ['Mod', 'Shift', 'G'] },

@@ -15,6 +15,7 @@
 // entry has data in the generated catalog — so if the two lists drift, the
 // unit suite (which runs in both `npm run check` and the sync workflow) fails.
 
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
@@ -270,7 +271,7 @@ async function main(): Promise<void> {
   )
 }
 
-if (process.argv[1]?.endsWith('sync-model-catalog.mts')) {
+if (isDirectExecution(import.meta.url, 'sync-model-catalog')) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err))
     process.exit(1)

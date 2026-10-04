@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   setMockScenario,
   parseMockScenario,
@@ -1338,8 +1339,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 }
 
 if (
-  process.argv[1]?.endsWith('steer-eval-lib.mts') ||
-  process.argv[1]?.endsWith('steer-eval-lib.cjs')
+  isDirectExecution(
+    import.meta.url,
+    'steer-eval-lib',
+    typeof __filename === 'string' ? __filename : undefined,
+  )
 ) {
   main().catch((error: unknown) => {
     console.error(`eval:steer: ${error instanceof Error ? error.message : String(error)}`)

@@ -33,6 +33,17 @@
   background: var(--bg-hover);
 }
 /* ---- three-pane layout ---- */
+/* Cmd/Ctrl+B hides the projects sidebar; chat (and any open panel) take its width. */
+.three-pane.is-projects-collapsed .pane-projects,
+.three-pane.is-projects-collapsed #resizer-projects {
+  display: none;
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal .pane-chat {
+  grid-column: 1;
+}
 .three-pane {
   display: flex;
   flex: 1;
@@ -126,6 +137,18 @@
 }
 .projects-search-btn.active {
   color: var(--accent);
+}
+/* Sort menu entry beside the thread filter. */
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 /* Activity panel entry: a bell, with a count of waiting threads beside it. */
 .projects-activity-btn {
@@ -625,6 +648,11 @@
   fill: var(--pr-closed);
   stroke: var(--pr-closed);
 }
+/* Known merge conflicts replace the source node with a red X. */
+.chat-pr-status.has-conflicts svg path:nth-child(2) {
+  fill: none;
+  stroke: var(--pr-closed);
+}
 .chat-pr-status.is-merged {
   color: var(--pr-merged);
 }
@@ -939,6 +967,9 @@
   grid-row: 1 / -1;
   /* Chat is only hidden by being underneath, so the cover must be opaque. */
   background: var(--bg-base);
+}
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
 }
 .pane-files-body {
   flex: 1;
@@ -1380,30 +1411,6 @@
 .pr-list-title {
   flex: 1;
 }
-.pr-list-ci {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  margin-left: var(--spacing-xs);
-  border-radius: 50%;
-  background: transparent;
-}
-.pr-list-ci-success {
-  background: var(--success);
-}
-.pr-list-ci-failure {
-  background: var(--error);
-}
-.pr-list-ci-pending {
-  background: var(--warning);
-}
-.pr-list-ci-loading {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-  opacity: 0.5;
-}
-/* no_checks keeps the transparent default — an empty slot, no dot. */
 .pr-list-agent-badge {
   flex-shrink: 0;
   margin-left: var(--spacing-xs);

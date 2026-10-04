@@ -1,7 +1,14 @@
 import { el, clear, qsRequired } from '../dom/helpers.ts'
-import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
+import {
+  chevronRightIcon,
+  externalLinkIcon,
+  gitMergeIcon,
+  gitPullRequestIcon,
+  refreshIcon,
+} from '../dom/icons.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { setTooltip } from '../dom/tooltip.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import { setInlineStatus } from '../dom/inline-status.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -256,10 +263,32 @@ export function mountPrPane(
     return pr.checks ?? checksCache.get(githubPrKey(pr))
   }
 
-  function applyCiClass(node: HTMLElement, state: GhPrChecksState | 'loading'): void {
-    node.className = `pr-list-ci pr-list-ci-${state}`
-    // A bare coloured dot; the tooltip is the only place the colour is decoded.
-    setTooltip(node, CI_LABEL[state])
+  function applyPrStatus(
+    node: HTMLElement,
+    pr: GhPrSummary,
+    checks: GhPrChecksState | 'loading',
+  ): void {
+    const lifecycle = cachedPrTitle(pr)?.state ?? (isPlaceholderPr(pr) ? 'UNKNOWN' : pr.state)
+    const kind =
+      lifecycle === 'OPEN'
+        ? 'open'
+        : lifecycle === 'MERGED'
+          ? 'merged'
+          : lifecycle === 'CLOSED'
+            ? 'closed'
+            : 'unknown'
+    const failing = lifecycle === 'OPEN' && checks === 'failure'
+    const conflicts = lifecycle === 'OPEN' && cachedPrTitle(pr)?.conflicts === true
+    node.className = `chat-pr-status pr-list-status is-${kind}${conflicts ? ' has-conflicts' : failing ? ' has-ci-failure' : ''}`
+    const label = `PR #${String(pr.number)} ${kind}${conflicts ? '; merge conflicts' : ''}; ${CI_LABEL[checks]}`
+    node.setAttribute('role', 'img')
+    node.setAttribute('aria-label', label)
+    setTooltip(node, label)
+    node.replaceChildren(
+      lifecycle === 'MERGED'
+        ? gitMergeIcon('ui-icon ui-icon-sm')
+        : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts),
+    )
   }
 
   function ensureCheck(pr: GhPrSummary): void {
@@ -280,7 +309,7 @@ export function mountPrPane(
         checksInFlight.delete(key)
         if (gen !== ciGen) return
         const node = ciEls.get(key)
-        if (node) applyCiClass(node, checksCache.get(key) ?? 'no_checks')
+        if (node) applyPrStatus(node, pr, checksCache.get(key) ?? 'no_checks')
       })
   }
 
@@ -351,7 +380,7 @@ export function mountPrPane(
       selectedPr.number === pr.number
     const ci = el('span', {})
     const state = knownChecks(pr)
-    applyCiClass(ci, state ?? 'loading')
+    applyPrStatus(ci, pr, state ?? 'loading')
     ciEls.set(githubPrKey(pr), ci)
     const agent = agentLinks.get(githubPrKey(pr))
     const agentBadge = agent
@@ -395,12 +424,11 @@ export function mountPrPane(
       const cached = cachedPrTitle(pr)
       if (cached) {
         if (pr.title !== cached.title) pr.title = cached.title
-        continue
+        if (cached.conflicts !== undefined) continue
       }
-      if (!isPlaceholderPr(pr)) {
+      if (!cached && !isPlaceholderPr(pr)) {
         // A pool-enriched title is authoritative — remember it for later merges.
-        rememberPrTitle(pr, pr.title)
-        continue
+        rememberPrTitle(pr, pr.title, undefined, pr.state)
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue
       titleAttempted.add(key)
@@ -483,6 +511,7 @@ export function mountPrPane(
     }
 
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      ensureTitles(repoPrs)
       const firstRepoPr = at(repoPrs, 0)
       const slug = `${firstRepoPr.owner}/${firstRepoPr.repo}`
       const section = el('div', { class: 'git-changes-section' })
@@ -523,6 +552,7 @@ export function mountPrPane(
         if (otherLoading) {
           section.append(el('div', { class: 'git-changes-empty' }, 'Loading…'))
         } else if (otherPrs.length > 0) {
+          ensureTitles(otherPrs)
           for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
         } else {
           section.append(
@@ -595,7 +625,16 @@ export function mountPrPane(
       fresh = null
     }
     if (!isStillSelected(ref)) return
-    if (fresh) prDetails = fresh
+    if (fresh) {
+      prDetails = fresh
+      rememberPrTitle(fresh, fresh.title, fresh.isDraft, fresh.state, prHasMergeConflicts(fresh))
+      const row = prList.find((pr) => githubPrKey(pr) === githubPrKey(fresh))
+      if (row) {
+        row.title = fresh.title
+        row.state = fresh.state
+      }
+      renderList()
+    }
     renderMeta()
     renderSections()
   }
@@ -1037,10 +1076,17 @@ export function mountPrPane(
       // for chat-linked placeholders that never appeared in a listing pool.
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details)
-        rememberPrTitle(details, details.title, details.isDraft)
+        rememberPrTitle(
+          details,
+          details.title,
+          details.isDraft,
+          details.state,
+          prHasMergeConflicts(details),
+        )
         const row = prList.find((pr) => githubPrKey(pr) === key)
-        if (row && row.title !== details.title) {
+        if (row) {
           row.title = details.title
+          row.state = details.state
           scheduleTitleRepaint()
         }
       }

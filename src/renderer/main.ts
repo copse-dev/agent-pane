@@ -123,6 +123,7 @@ import {
   openRightPanel,
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
+  toggleProjectsPane,
   syncFilesPaneDom,
   openCanvasArtefact,
   showCanvasArtefact,
@@ -151,6 +152,7 @@ import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
+  isThreadSortMode,
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
 } from '@shared/types/state.ts'
@@ -285,6 +287,7 @@ async function boot(): Promise<void> {
   const savedLayout = startupSettings.layout
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
+  const savedSidebarThreadSort = startupSettings.sidebarThreadSort
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
   const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
@@ -339,6 +342,10 @@ async function boot(): Promise<void> {
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
       ? savedRightPanelPosition
       : 'auto',
+    sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort)
+      ? savedSidebarThreadSort
+      : 'activity',
+    sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
@@ -403,6 +410,10 @@ async function boot(): Promise<void> {
     openNewThread(store)
   })
 
+  api.menu.onToggleSidebar(() => {
+    ensureLayout()
+    toggleProjectsPane(store)
+  })
   api.menu.onTogglePanel(() => {
     ensureLayout()
     toggleFilesPaneWithWorkspace(store, api)

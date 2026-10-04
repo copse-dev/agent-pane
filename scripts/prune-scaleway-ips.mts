@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   DEFAULT_SCW_IP_PRUNE_SETTLE_SECONDS,
   type FleetTags,
@@ -69,7 +70,7 @@ function main(): void {
   if (failures > 0) throw new Error(`failed to delete ${String(failures)} managed flexible IP(s)`)
 }
 
-if (process.argv[1]?.endsWith('prune-scaleway-ips.mts')) {
+if (isDirectExecution(import.meta.url, 'prune-scaleway-ips')) {
   try {
     main()
   } catch (error) {

@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFileSync, writeFileSync } from 'node:fs'
 import {
   compareReleaseVersions,
@@ -162,7 +163,7 @@ function main(): void {
 }
 
 // Importing this module for its pure helpers must not print, write, or exit.
-if (process.argv[1]?.endsWith('release-bump.mts') === true) {
+if (isDirectExecution(import.meta.url, 'release-bump')) {
   try {
     main()
   } catch (error) {

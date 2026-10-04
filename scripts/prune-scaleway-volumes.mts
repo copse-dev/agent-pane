@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   DEFAULT_SCW_VOLUME_PRUNE_AGE_HOURS,
   type FleetTags,
@@ -71,7 +72,7 @@ function main(): void {
   if (failures > 0) throw new Error(`failed to delete ${String(failures)} managed volume(s)`)
 }
 
-if (process.argv[1]?.endsWith('prune-scaleway-volumes.mts')) {
+if (isDirectExecution(import.meta.url, 'prune-scaleway-volumes')) {
   try {
     main()
   } catch (error) {

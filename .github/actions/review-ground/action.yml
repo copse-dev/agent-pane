@@ -1,0 +1,51 @@
+name: Copse review ground
+description: Ground a pinned PR in credential-free, network-disabled validation containers
+inputs:
+  preparation:
+    description: Trusted preparation profile
+    default: npm
+  request:
+    description: Authorized JSON request containing repository, pr, head and base SHA
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install trusted reviewer dependencies
+      shell: bash
+      env:
+        REVIEWER_ROOT: ${{ github.action_path }}/../../..
+      run: |
+        set -euo pipefail
+        reviewer_root=$(realpath "$REVIEWER_ROOT")
+        cd "$reviewer_root"
+        corepack enable
+        corepack prepare --activate
+        pnpm install --frozen-lockfile --ignore-scripts --filter '@copse/review...'
+        echo "COPSE_REVIEWER_ROOT=$reviewer_root" >> "$GITHUB_ENV"
+    - name: Prepare pinned source, dependencies and validation image
+      shell: bash
+      env:
+        COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+        COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
+      run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
+    - name: Run isolated build and test grounding
+      shell: bash
+      env:
+        COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+      run: |
+        set -euo pipefail
+        cd "$COPSE_REVIEW_TARGET"
+        base_sha=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).base)')
+        mkdir -p "$RUNNER_TEMP/copse-review-ground"
+        node "$COPSE_REVIEWER_ROOT/packages/review/bin/copse-review.mjs" \
+          --foreign --head refs/remotes/copse/head --base "$base_sha" \
+          --backend container --image "$COPSE_REVIEW_CELL_IMAGE" \
+          --scratch-parent "$RUNNER_TEMP" --store "$COPSE_REVIEW_STORE" \
+          --trusted-prepare "$COPSE_REVIEW_PREPARE" \
+          --no-model --json "$RUNNER_TEMP/copse-review-ground/report.json"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/copse-review-ground/report.json
+        retention-days: 7
+        if-no-files-found: error

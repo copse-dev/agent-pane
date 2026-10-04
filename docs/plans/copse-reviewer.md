@@ -448,9 +448,13 @@ Changing one of these requires updating this document in the same change — the
    _Amended 2026-09-26:_ a description summary (a risk level and a short overview, §PR
    description summary) is allowed. It is not a finding: it never enters the findings list,
    the ranking, SARIF or B8's precision measurement, and no lens produces it.
-5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
-   detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
-   until there is a consumer for them. Recorded 2026-09-04; answers Q16.
+5. **B5 — TypeScript with pnpm or locked npm.** Stage 0's build and test
+   detection targets TypeScript/pnpm and TypeScript/npm repositories; npm requires
+   `package-lock.json` and installs offline with lifecycle scripts disabled. The reusable
+   Actions shell's first external consumer is `copse-dev/streaming-markdown`, an npm project.
+   Its host fetches only integrity-pinned npm-registry tarballs; npm installs and all checks
+   execute in network-disabled cells. Other ecosystems remain unscheduled.
+   Recorded 2026-09-04; amended 2026-10-04 for the streaming-markdown pilot; answers Q16.
 6. **B6 — OSS maintainers are the main consumer; Copse dogfoods first.** The CLI is the
    first shell, the first deployment is this repository's own PRs, and the local-model path
    must carry the reviewer lens. Recorded 2026-09-04; answers Q1.
@@ -837,7 +841,7 @@ On `main`: the container backend (`packages/review/src/container-backend.ts`), i
 adapter over the thread-in-container runtime (`src/main/services/review/container-backend.ts`),
 foreign-diff review in the CLI (`--head`, `--foreign`, `--backend`), the two hand-offs the
 CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
-(`.github/workflows/review-ground.yml`, `review-findings.yml`, `.forgejo/workflows/review.yml`).
+(`.github/workflows/review-trigger.yml` calling `reviewer.yml`, and `.forgejo/workflows/review.yml`).
 
 - **One container per command.** The backend runs every cell command in its own
   throwaway container from a pinned image with the hardening the thread-in-container
@@ -876,46 +880,39 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   CLI as a separate unprivileged user that cannot reach the runner's home
   (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
   the upload step.
-- **The CI shell, in two privilege domains.** `review-ground.yml` uses
-  a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
-  `pull_request_target` (`opened`, `reopened` and `ready_for_review` for a non-draft pull request;
-  `labeled` for the `copse-review` label; never for one labelled `copse-review-skip`), so its
-  definition comes from the trusted default branch even when the pull request predates it. (`issues:labeled` does not
-  fire for pull requests, while `pull_request:labeled` selects the pull request revision.) The
-  target context is deliberately confined to resolving current PR metadata and dispatching the
-  ground workflow: it checks out and executes no repository content. Grounding gets the PR
-  number, exact head and base in a separate fresh hosted run with `permissions: {}`, no secrets
-  and removed checkout credentials. That runner installs
-  only the reviewer's workspace subtree with scripts off, runs Stage 0 on the head, and
-  uploads the report. Reapplying the label is the explicit retrigger after a new head.
-  A separate handoff job runs after grounding on a fresh runner, checks out and downloads
-  nothing, and gets only `actions: write`; it explicitly dispatches `review-findings.yml`
-  with the trusted inputs and ground run id. This explicit `workflow_dispatch` is required
-  because GitHub suppresses the implicit `workflow_run` event after a run that another
-  workflow started with `GITHUB_TOKEN`; `workflow_dispatch` is the documented exception that
-  always creates a run. The findings workflow runs in the base repository's context with the
-  model key. Its ordinary workflow token can only read pull-request metadata and artefacts.
-  Before a step receives model or App credentials it builds the reviewed
-  `packages/review/Dockerfile.cell`, fetches the resolved refs, and primes pnpm's store from
-  the exact head lockfile with lifecycle scripts disabled. After that preparation it mints a
-  repository-scoped installation token for the existing Copse release/deploy App with only
-  `pull-requests: write`, and passes that token only as the forge posting credential. It
-  verifies that the named run is the
-  successful default-branch `Copse review ground` run, resolves the current contributor commit
-  and base from GitHub's Pull Request API, and never trusts the artefact or a dynamic run
-  association. It fetches the head
-  to read it and imports the Stage 0 report through `--stage0-json`, which is read-only by
-  default and refuses a report for another commit. The workflow explicitly supplies
-  `--backend container`: the model loop remains in the trusted host process while
-  `run_command` and Stage 4 reproducers execute through the container backend with no network,
-  no capabilities, a read-only root, bounded resources and an allowlisted environment that
-  excludes every provider, cloud, workflow and forge credential. Imported Stage 0 re-prepares
-  the fresh head checkout and build output before reviewers run; base is prepared independently
-  before the first reproducer. `--backend ephemeral-runner` is rejected for an imported report,
-  so the secret-bearing model host cannot be mislabeled as a cell. The Forgejo
-  workflow is the same split as two jobs of one workflow (Forgejo Actions has no
-  `workflow_run`), with the secret-holding job gated to same-repository pull requests and
-  a note that its runners must be ephemeral.
+- **The CI shell, in two privilege domains.** Amended 2026-10-04: Copse's
+  `review-trigger.yml` dogfoods the reusable `reviewer.yml` with a local workflow call
+  and the trusted caller SHA, replacing separate ground/findings dispatch workflows.
+  `pull_request_target` selects default-branch workflow code for ready/label events;
+  manual dispatch also resolves current PR metadata. Owner-only, same-repository paid
+  review policy remains enforced in preflight and on the protected model job, including
+  failed-job reruns. Pushes only trigger the independent cheap description summary.
+  Nightly sampling and real-model benchmarks remain separate.
+
+  The shared ground job has `permissions: {}` and references no model/App credentials.
+  It executes Stage 0 through network-disabled containers, including installs and builds;
+  contributor code cannot reach runner actions or command files. The npm profile accepts
+  registry-only lockfiles. The restricted `copse-pnpm` profile validates head and merge-base
+  lockfile resolutions and patch paths, then fetches dependency data in caller-owned scratch
+  without manifests/hooks. Local directory dependencies are skipped on the host. The
+  reviewed Copse preparation script installs offline with lifecycle scripts disabled and
+  explicitly builds node-pty inside the cell.
+
+  A fresh findings runner imports only the same run/attempt's grounding artifact. The
+  CLI validates the report's shape, head and merge-base; project commands and reproducers
+  use `--backend container` with a scrubbed environment. The protected Copse variant enters
+  `copse-review-models`, keeps a read-only workflow token for PR context and mints the
+  repository-scoped App token after preparation. Both variants call the same findings
+  Action. Copse retains Luna/configured provider routes, feedback labels and the
+  evidence-based description summary. Before every publishing mutation, the wrapper
+  rechecks current head/base, open state, draft consent and opt-out. Reviews are anchored
+  to the reviewed commit, although GitHub offers no atomic check-and-post API.
+
+  Each invocation grounds afresh; the old 24-hour lookup and cross-workflow handoff are
+  removed. The separate nightly workflow retains the unprivileged-runner grounding path.
+  Forgejo continues to use its own two-job workflow with its existing same-repository and
+  ephemeral-runner requirements.
+
 - **The Stage 0 report is a decoder.** Between the jobs it is an artefact a runner wrote
   after executing the pull request's own code, so `stage0-report.ts` validates every
   shape of it — findings included — before a field reaches a model or a comment.
