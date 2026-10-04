@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import {
@@ -195,7 +196,7 @@ async function main(): Promise<void> {
   await assembleMacosRelease(version, resolve(inputRoot), resolve(outputDirectory))
 }
 
-if (basename(process.argv[1] ?? '') === 'assemble-macos-release.mts') {
+if (isDirectExecution(import.meta.url, 'assemble-macos-release')) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error)
     process.exitCode = 1

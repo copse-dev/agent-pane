@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { appendFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
@@ -96,7 +97,7 @@ function main(): void {
   assertReleaseSizes(measurements)
 }
 
-if (basename(process.argv[1] ?? '') === 'check-macos-release-size.mts') {
+if (isDirectExecution(import.meta.url, 'check-macos-release-size')) {
   try {
     main()
   } catch (error) {
