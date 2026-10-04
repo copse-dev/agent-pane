@@ -15,16 +15,16 @@ export type SourceRowFactory = (
 ) => HTMLElement
 
 export const skillsSourcesMarkup = `
-  <fieldset class="settings-fieldset" id="sources-skills-fieldset">
+  <fieldset id="sources-skills-fieldset">
     <legend>Skills</legend>
-    <p class="settings-description">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
+    <p class="settings-fieldset-desc">Skill origins, invocation controls, and validation. Files refresh when Sources opens or you reload; changes apply to future turns.</p>
     <div id="sources-skills-list" class="sources-group"></div>
     <div id="sources-skills-diagnostics" class="sources-group" aria-label="Skill validation diagnostics"></div>
     <details class="sources-skill-folders">
       <summary>Extra skill folders</summary>
       <label for="sources-skill-roots">Absolute folder paths, one per line, in precedence order</label>
       <textarea id="sources-skill-roots" rows="3" spellcheck="false"></textarea>
-      <p class="settings-description">Folders may contain skills directly or a Cursor plugin. These sources remain untrusted; adding a folder grants no tool permissions. Earlier sources win duplicate names.</p>
+      <p class="settings-fieldset-desc">Folders may contain skills directly or a Cursor plugin. These sources remain untrusted; adding a folder grants no tool permissions. Earlier sources win duplicate names.</p>
       <button type="button" class="ui-btn ui-btn-secondary" id="sources-skill-roots-save">Save folders</button>
     </details>
     <button type="button" class="ui-btn ui-btn-secondary" id="sources-skills-reload">Reload skills</button>
@@ -66,7 +66,7 @@ export function mountSkillsSources({
   root: HTMLElement
   api: ApiClient
   makeSourceRow: SourceRowFactory
-}): { refresh: (result: SkillsSourcesResult) => void } {
+}): { refresh: (result: SkillsSourcesResult) => void; invalidate: () => void } {
   const list = root.querySelector('#sources-skills-list')
   const diagnostics = root.querySelector('#sources-skills-diagnostics')
   const folders = root.querySelector<HTMLTextAreaElement>('#sources-skill-roots')
@@ -152,6 +152,9 @@ export function mountSkillsSources({
     void perform(() => api.skills.sources(), 'Reloading skills…', 'Skills reloaded.')
   })
   return {
+    invalidate(): void {
+      generation++
+    },
     refresh(result): void {
       // A newer owner snapshot supersedes any pending subsection request.
       generation++

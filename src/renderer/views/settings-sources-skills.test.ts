@@ -14,7 +14,22 @@ function stubApi(skills: SkillSummary[]): ApiClient {
     ...base,
     instructions: { ...base.instructions, list: () => Promise.resolve([]) },
     cursorRules: { ...base.cursorRules, list: () => Promise.resolve([]) },
-    skills: { ...base.skills, list: () => Promise.resolve(skills) },
+    skills: {
+      ...base.skills,
+      sources: () =>
+        Promise.resolve({
+          skills: skills.map((skill) => ({
+            ...skill,
+            skillRoot: skill.skillPath.slice(0, skill.skillPath.lastIndexOf('/')),
+            disableModelInvocation: false,
+            paths: [],
+            missingReferences: [],
+          })),
+          diagnostics: [],
+          extraRoots: [],
+          reload: 'manual',
+        }),
+    },
     cursorPlugins: { ...base.cursorPlugins, list: () => Promise.resolve([]) },
     hooks: {
       ...base.hooks,

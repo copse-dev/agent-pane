@@ -37,7 +37,8 @@ function stubApi(
   return createPendingApi({
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
-    'skills.list': () => Promise.resolve([]),
+    'skills.sources': () =>
+      Promise.resolve({ skills: [], diagnostics: [], extraRoots: [], reload: 'manual' }),
     'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'cursorPlugins.list': () => Promise.resolve([]),
     'bundledSkillPlugins.list': () => Promise.resolve([]),

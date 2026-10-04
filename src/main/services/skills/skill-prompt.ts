@@ -141,8 +141,9 @@ export async function buildInvokedSkillsBlock(
   let anyExternalLinks = false
   for (const name of invokedSkills) {
     try {
-      const skill = await readSkill(name)
       const meta = getSkill(name)
+      if (meta?.userInvocable === false) throw new Error('Skill is not user-invocable')
+      const skill = await readSkill(name)
       const trusted = meta ? isTrustedSource(meta.source) : false
       if (!trusted) anyUntrusted = true
       const links = meta?.externalLinks ?? []
