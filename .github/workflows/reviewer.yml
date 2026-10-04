@@ -47,6 +47,11 @@ on:
         required: false
       app-private-key:
         required: false
+      # Native names inherited only by the trusted same-repository Copse caller.
+      RELEASE_APP_ID:
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
 
 permissions: {}
 
@@ -232,6 +237,6 @@ jobs:
           verify-concurrency: ${{ vars.COPSE_REVIEW_VERIFY_CONCURRENCY || '2' }}
           feedback-label: ${{ vars.COPSE_REVIEW_FEEDBACK_LABEL || 'review-has-feedback' }}
           post-summary: 'true'
-          app-id: ${{ secrets.app-id }}
-          app-private-key: ${{ secrets.app-private-key }}
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           github-token: ${{ github.token }}

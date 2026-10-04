@@ -889,6 +889,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   failed-job reruns. Pushes only trigger the independent cheap description summary.
   Nightly sampling and real-model benchmarks remain separate.
 
+  The trusted same-repository call uses `secrets: inherit` so the protected findings
+  job can resolve its environment secrets. Explicitly passing an empty key did not
+  enable resolution in a live run. Inheritance exposes the caller's secret namespace
+  to the reusable workflow; grounding must never reference it or bind an environment.
+  Only the guarded Copse findings job reads the inherited `RELEASE_APP_ID` and
+  `RELEASE_APP_PRIVATE_KEY` names. External callers retain explicit `model-api-key`,
+  `app-id` and `app-private-key` mappings and do not need inheritance.
+
   The shared ground job has `permissions: {}` and references no model/App credentials.
   It executes Stage 0 through network-disabled containers, including installs and builds;
   contributor code cannot reach runner actions or command files. The npm profile accepts

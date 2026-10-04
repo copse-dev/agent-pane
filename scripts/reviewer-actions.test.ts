@@ -295,7 +295,7 @@ describe('portable Actions isolation', () => {
     assert.deepEqual(workflow.jobs.ground.permissions, {})
     assert.doesNotMatch(
       JSON.stringify(workflow.jobs.ground),
-      /secrets\.|model-api-key|app-private-key/,
+      /\bsecrets\b|model-api-key|app-private-key/,
     )
     assert.deepEqual(workflow.jobs.findings.needs, ['authorize', 'ground'])
     assert.ok(Object.hasOwn(workflow.on.workflow_call.secrets, 'model-api-key'))
@@ -309,29 +309,97 @@ describe('portable Actions isolation', () => {
 })
 
 describe('Copse dogfooding of the reusable reviewer', () => {
-  it('names every protected model secret in the caller contract', () => {
-    const workflow = z
-      .object({
-        jobs: z.object({ 'copse-findings': z.unknown() }),
-      })
-      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+  it('inherits secrets only through the owner-gated same-repository workflow call', () => {
     const caller = z
       .object({
-        jobs: z.object({ review: z.object({ secrets: z.record(z.string(), z.string()) }) }),
+        jobs: z.object({
+          review: z.object({ if: z.string(), uses: z.string(), secrets: z.string() }),
+        }),
       })
       .parse(load(readFileSync('.github/workflows/review-trigger.yml', 'utf8')))
-    const job = JSON.stringify(workflow.jobs['copse-findings'])
-    const secretNames = new Set(
-      Array.from(job.matchAll(/secrets\.([A-Za-z0-9_-]+)/g), (match) => match[1] ?? ''),
-    )
-    assert.ok(secretNames.size > 0)
-    for (const name of secretNames) {
-      assert.ok(
-        name && Object.hasOwn(caller.jobs.review.secrets, name),
-        `${name} is not passed by name`,
-      )
+    const job = caller.jobs.review
+    assert.equal(job.secrets, 'inherit')
+    assert.equal(job.uses, './.github/workflows/reviewer.yml')
+    const github = {
+      repository_id: '1274237362',
+      actor_id: '338988',
+      triggering_actor: 'jonathanKingston',
+      event: { action: 'opened' },
     }
-    assert.equal(caller.jobs.review.secrets['COPSE_REVIEW_OPENROUTER_API_KEY'], '')
+    assert.equal(runInNewContext(job.if, { github }), true)
+    for (const patch of [
+      { repository_id: '999' },
+      { actor_id: '999' },
+      { triggering_actor: 'contributor' },
+      { event: { action: 'synchronize' } },
+    ]) {
+      assert.equal(runInNewContext(job.if, { github: { ...github, ...patch } }), false)
+    }
+  })
+
+  it('resolves native inherited App credentials only in Copse findings and retains portable aliases', () => {
+    const workflow = z
+      .object({
+        jobs: z.object({
+          ground: z.record(z.string(), z.unknown()),
+          findings: z.object({
+            steps: z.array(
+              z.object({
+                uses: z.string().optional(),
+                with: z.record(z.string(), z.unknown()).optional(),
+              }),
+            ),
+          }),
+          'copse-findings': z.object({
+            environment: z.string(),
+            needs: z.array(z.string()),
+            steps: z.array(
+              z.object({
+                uses: z.string().optional(),
+                with: z.record(z.string(), z.unknown()).optional(),
+              }),
+            ),
+          }),
+        }),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    assert.doesNotMatch(JSON.stringify(workflow.jobs.ground), /\bsecrets\b/)
+    assert.ok(!Object.hasOwn(workflow.jobs.ground, 'environment'))
+    const copse = workflow.jobs['copse-findings']
+    assert.equal(copse.environment, 'copse-review-models')
+    assert.deepEqual(copse.needs, ['authorize', 'ground'])
+    const secrets = {
+      RELEASE_APP_ID: 'copse-app',
+      RELEASE_APP_PRIVATE_KEY: 'copse-private-key',
+      COPSE_REVIEW_OPENROUTER_API_KEY: 'environment-model-key',
+      'app-id': 'portable-app',
+      'app-private-key': 'portable-private-key',
+    }
+    const secretValues = z.record(z.string(), z.string()).parse(secrets)
+    for (const [job, expectedId, expectedKey] of [
+      [copse, secrets.RELEASE_APP_ID, secrets.RELEASE_APP_PRIVATE_KEY],
+      [workflow.jobs.findings, secrets['app-id'], secrets['app-private-key']],
+    ] as const) {
+      const actionInputs = job.steps.find(
+        (step) => step.uses === './.copse-reviewer/.github/actions/review-findings',
+      )?.with
+      const inputs = z.record(z.string(), z.string()).parse(actionInputs)
+      const resolveSecret = (input: string): unknown => {
+        const expression = inputs[input]
+        assert.ok(expression)
+        const name = /^\$\{\{\s*secrets\.([A-Za-z0-9_-]+)\s*\}\}$/.exec(expression)?.[1]
+        assert.ok(name, `expected a direct secret reference for ${input}`)
+        assert.ok(Object.hasOwn(secretValues, name))
+        return secretValues[name]
+      }
+      assert.equal(resolveSecret('app-id'), expectedId)
+      assert.equal(resolveSecret('app-private-key'), expectedKey)
+      if (job === copse) {
+        assert.equal(resolveSecret('openrouter-api-key'), secrets.COPSE_REVIEW_OPENROUTER_API_KEY)
+      } else {
+        assert.doesNotMatch(JSON.stringify(job), /RELEASE_APP_/)
+      }
+    }
   })
 
   it('accepts only owner PRs in the Copse profile and obtains its key from the protected job', async () => {

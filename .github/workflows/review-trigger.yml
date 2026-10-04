@@ -35,14 +35,10 @@ jobs:
       reviewer-ref: ${{ github.sha }}
       preparation: copse-pnpm
       pr: ${{ inputs.pr || 0 }}
-    secrets:
-      app-id: ${{ secrets.RELEASE_APP_ID }}
-      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-      COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY }}
-      # Grant the name; its value is resolved only in the protected model job.
-      COPSE_REVIEW_OPENROUTER_API_KEY: ''
-      SCW_GENERATIVE_API_KEY: ${{ secrets.SCW_GENERATIVE_API_KEY }}
-      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+    # Same-repository inheritance enables the protected job's environment secrets
+    # (actions/runner#4453); naming an empty value does not. Grounding references
+    # no secrets, and only the guarded Copse findings job reads RELEASE_APP_*.
+    secrets: inherit
 
   summary:
     name: Dispatch the description summary for the current head
