@@ -67831,7 +67831,16 @@ function createDemoApi(scenario, options = {}) {
         return resolved2(snapshot);
       },
       update: (changes) => {
-        for (const [key, value] of Object.entries(changes)) settings.set(key, value);
+        const { roleAssignments, ...ordinary } = changes;
+        const next = new Map(settings);
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value);
+        if (roleAssignments)
+          next.set("roleModels", {
+            ...stringRecordOrEmpty(settings.get("roleModels")),
+            ...roleAssignments
+          });
+        settings.clear();
+        for (const [key, value] of next) settings.set(key, value);
         return resolvedVoid();
       },
       get: (key) => resolved2(settings.get(key)),
@@ -68024,8 +68033,8 @@ function createDemoApi(scenario, options = {}) {
     agents: { list: () => resolved2({ agents: [], skipped: [], shadowed: [] }) },
     skills: {
       list: emptyArray,
-      sources: async () => ({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
-      setRoots: async (extraRoots) => ({
+      sources: () => resolved2({ skills: [], diagnostics: [], extraRoots: [], reload: "manual" }),
+      setRoots: (extraRoots) => resolved2({
         skills: [],
         diagnostics: [],
         extraRoots,
