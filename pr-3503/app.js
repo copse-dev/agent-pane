@@ -99483,13 +99483,39 @@ function mountFooterBranchStatus(host, store2, api2) {
   let refreshToken = 0;
   let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
+  const footer = host.closest(".input-footer");
+  let popupFrame = 0;
+  function schedulePopupBoundary() {
+    if (!footer) return;
+    cancelAnimationFrame(popupFrame);
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0;
+      if (!open2) return;
+      const boundary = footer.getBoundingClientRect();
+      const anchor2 = trigger.getBoundingClientRect();
+      const width = menu.getBoundingClientRect().width;
+      menu.classList.toggle("is-footer-clamped", anchor2.left + width > boundary.right);
+    });
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null;
+  if (footer) {
+    popupObserver?.observe(footer);
+    popupObserver?.observe(trigger);
+    popupObserver?.observe(menu);
+  }
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function startBranch(thread) {
+    if (!isBlankThread(thread)) return void 0;
+    const picked = baseBranchByThread.get(thread.id);
+    if (picked) return picked;
+    if (thread.id !== store2.getState().activeThreadId) return void 0;
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
   function activeBaseBranch() {
     const thread = getActiveThread2();
-    if (!thread || !isBlankThread(thread)) return void 0;
-    return baseBranchByThread.get(thread.id);
+    return thread ? startBranch(thread) : void 0;
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -99512,6 +99538,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
     filterInput.setAttribute("aria-expanded", String(next));
+    schedulePopupBoundary();
     if (next) {
       menu.removeAttribute("hidden");
     } else {
@@ -99798,6 +99825,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const active2 = list.querySelector(".branch-picker-option.is-active");
     if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
+    schedulePopupBoundary();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -99999,9 +100027,21 @@ function mountFooterBranchStatus(host, store2, api2) {
   void refresh();
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId, threadId) => {
+      const thread = getThreadById(store2, threadId);
+      if (!thread || !isBlankThread(thread)) return void 0;
+      const picked = baseBranchByThread.get(threadId);
+      if (picked) return picked;
+      const [listed, defaultName] = await Promise.all([
+        api2.git.listBranches(projectId, threadId),
+        api2.git.getDefaultBranch(projectId, threadId)
+      ]);
+      return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
+    },
     destroy: () => {
       refreshToken += 1;
+      cancelAnimationFrame(popupFrame);
+      popupObserver?.disconnect();
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u2) => {
         u2();
@@ -103787,13 +103827,14 @@ ${description}
     if (!projectId || !thread) return;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
-    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
+    const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
     const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
     if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
@@ -103802,7 +103843,6 @@ ${description}
         return;
       }
     }
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -103899,6 +103939,9 @@ ${description}
       checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
+        if (branchDecision?.status === "rejected") throw branchDecision.reason;
+        const baseBranch = branchDecision?.status === "fulfilled" ? branchDecision.value : void 0;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           id,
