@@ -28,6 +28,10 @@ _before_ the version bump reaches `release`, not after.
 - [ ] Confirm the target commit is on current `main` and required CI is green.
 - [ ] Run `npm run check`, `npm run build`, and the release/e2e validation
       appropriate to the changed areas.
+- [ ] Run `node scripts/check-e2e-release-waivers.mts` on the candidate. Restore outstanding
+      failure quarantines or obtain the accountable person's explicit, scope-bound waiver;
+      inventory review dates and role names grant no acceptance. Tagging, signing and publication
+      all recheck expiry and the live review, including scheduled beta releases.
 - [ ] Choose one supported version shape: `X.Y.Z` for stable or
       `X.Y.Z-beta.N` for beta. Use the exact matching `v<version>` tag.
 - [ ] Complete the current security-review ledger, resolve every `ga-blocker`
