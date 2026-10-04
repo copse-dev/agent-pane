@@ -127,6 +127,18 @@
 .projects-search-btn.active {
   color: var(--accent);
 }
+/* Sort menu entry beside the thread filter. */
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 /* Activity panel entry: a bell, with a count of waiting threads beside it. */
 .projects-activity-btn {
   display: inline-flex;

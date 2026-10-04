@@ -41,6 +41,14 @@ export function arrowDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('arrow-down', ['M12 5v14', 'm19 12-7 7-7-7'], className)
 }
 
+export function arrowUpDownIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'arrow-up-down',
+    ['m21 16-4 4-4-4', 'M17 20V4', 'm3 8 4-4 4 4', 'M7 4v16'],
+    className,
+  )
+}
+
 export function refreshIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
     'refresh',

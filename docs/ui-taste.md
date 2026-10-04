@@ -1319,6 +1319,18 @@ same color as the plate; the rest of the callout still follows the user's contra
 `tests/e2e/callout-surfaces.e2e.ts` verifies all five glyphs in dark and light forced-colors
 palettes, plus the reduced-transparency and increased-contrast material fallbacks.
 
+## Sidebar thread sort
+
+The sort button sits in the Projects header beside the thread filter and opens the shared context
+menu: **Sort by** Activity order (the store's own newest-prompted-first order, and the default),
+Created, Thread name, then **Reverse order**. Each item is a checked radio-style row, so the menu
+always shows the current choice. The choice is saved per profile (`sidebarThreadSort`,
+`sidebarThreadSortReverse`) and applied when the list is drawn, to a copy: the store's own order
+is relied on elsewhere and stays as it is. It orders the browse list of every open project; the
+thread filter's matches stay newest first, so the button has nothing to change while a filter is
+open. An untitled thread sorts as "New Thread", the name its row shows. Spec:
+`tests/demo/sidebar-thread-sort.demo.ts`.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills, and **the fill is the whole
