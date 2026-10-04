@@ -31,7 +31,7 @@ it('decodes persisted fixture messages and rejects invalid seed fields in an iso
       for (const name of [
         'seedAcpAuthErrorFixture', 'seedCodeBlockCopyFixture', 'seedMermaidDiagramFixture',
         'seedCalloutSurfacesFixture', 'seedConversationVisualHierarchyFixture',
-        'seedStickyUserPromptFixture', 'seedBrowserCursorAgentThreadFixture',
+        'seedStickyUserPromptFixture', 'seedBrowserCursorAgentThreadFixture', 'seedCiInvestigatorFixture',
       ]) seed[name](root)
       const message = { id: 'message', role: 'assistant', content: 'Fixture reply', createdAt: 1,
         toolCalls: [{ id: 'tool', name: 'read_file', status: 'done', args: { path: 'README.md' } }] }
@@ -40,6 +40,15 @@ it('decodes persisted fixture messages and rejects invalid seed fields in an iso
       assert.ok(readFileSync(join(thread, 'events.jsonl'), 'utf8').length > 0)
       assert.deepEqual(JSON.parse(readFileSync(join(thread, 'meta.json'), 'utf8')).usage,
         { inputTokens: 0, outputTokens: 0 })
+      const child = { ...message, id: 'nested-message', toolCalls: [] }
+      const delegated = { ...message, toolCalls: [{ ...message.toolCalls[0],
+        subagent: { id: 'child', kind: 'explore', status: 'done', messages: [child] } }] }
+      seed.writeSeedConfig({ 'threads:boundary': [{ id: 'delegated', messages: [delegated] }] })
+      const { createdAt, ...missingChildTimestamp } = child
+      assert.throws(() => seed.writeSeedConfig({ 'threads:boundary': [{ id: 'invalid-nested',
+        messages: [{ ...delegated, toolCalls: [{ ...delegated.toolCalls[0],
+          subagent: { ...delegated.toolCalls[0].subagent, messages: [missingChildTimestamp] } }] }] }] }),
+        /Seeded message has invalid persisted fields/)
       for (const malformed of [null, { ...message, role: 'invalid' },
         { ...message, toolCalls: [{ id: 'tool', name: 'read_file', status: 'invalid' }] }]) {
         assert.throws(() => seed.writeSeedConfig({ 'threads:boundary': [{ id: 'invalid', messages: [malformed] }] }),

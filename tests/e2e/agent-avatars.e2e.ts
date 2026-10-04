@@ -84,6 +84,7 @@ function seedAgentAvatars(live = false): void {
                 messages: [
                   {
                     id: `${task.id}-message`,
+                    createdAt: timestamp + 1,
                     role: 'assistant',
                     content: task.summary,
                     toolCalls: [],

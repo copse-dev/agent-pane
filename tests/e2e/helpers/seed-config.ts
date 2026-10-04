@@ -3399,6 +3399,7 @@ export function seedCiInvestigatorFixture(workspaceRoot: string): void {
                   messages: [
                     {
                       id: 'sub-ci-msg-1',
+                      createdAt: Date.now(),
                       role: 'assistant',
                       content: 'Reading the **failing run logs** for PR #42.',
                       toolCalls: [
@@ -3420,6 +3421,7 @@ export function seedCiInvestigatorFixture(workspaceRoot: string): void {
                     },
                     {
                       id: 'sub-ci-msg-2',
+                      createdAt: Date.now(),
                       role: 'assistant',
                       content: summary,
                       toolCalls: [],
