@@ -241,6 +241,11 @@ and the challenger over the checkouts, no `run_command`) and says so with exit `
 
 ## In CI
 
+For adoption on a separate repository, see [the reusable Actions workflow](ACTIONS.md).
+Its first consumer is `copse-dev/streaming-markdown`; the workflow runs on the
+adopter's runners, with separate isolated grounding and review jobs. No Copse
+service is required. The existing dogfood workflows below remain unchanged.
+
 The plan's job A and job B (`.github/workflows/review-ground.yml` and
 `review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) review every ready (non-draft)
 owner pull request from this repository when it is opened, reopened or marked ready for review.

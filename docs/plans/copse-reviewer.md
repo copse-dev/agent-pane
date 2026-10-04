@@ -448,9 +448,13 @@ Changing one of these requires updating this document in the same change — the
    _Amended 2026-09-26:_ a description summary (a risk level and a short overview, §PR
    description summary) is allowed. It is not a finding: it never enters the findings list,
    the ranking, SARIF or B8's precision measurement, and no lens produces it.
-5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
-   detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
-   until there is a consumer for them. Recorded 2026-09-04; answers Q16.
+5. **B5 — TypeScript with pnpm or locked npm.** Stage 0's build and test
+   detection targets TypeScript/pnpm and TypeScript/npm repositories; npm requires
+   `package-lock.json` and installs offline with lifecycle scripts disabled. The reusable
+   Actions shell's first external consumer is `copse-dev/streaming-markdown`, an npm project.
+   Its host fetches only integrity-pinned npm-registry tarballs; npm installs and all checks
+   execute in network-disabled cells. Other ecosystems remain unscheduled.
+   Recorded 2026-09-04; amended 2026-10-04 for the streaming-markdown pilot; answers Q16.
 6. **B6 — OSS maintainers are the main consumer; Copse dogfoods first.** The CLI is the
    first shell, the first deployment is this repository's own PRs, and the local-model path
    must carry the reviewer lens. Recorded 2026-09-04; answers Q1.

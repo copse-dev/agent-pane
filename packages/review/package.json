@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./ci/action-policy.mts": "./ci/action-policy.mts",
     "./*.ts": "./src/*.ts",
     "./*": "./src/*.ts"
   },

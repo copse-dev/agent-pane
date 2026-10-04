@@ -1,0 +1,101 @@
+name: Copse review findings
+description: Review validated grounding and publish advisory findings with isolated verification
+inputs:
+  request:
+    description: The same authorized JSON request used for grounding
+    required: true
+  model-api-key:
+    description: Model provider API key
+    required: true
+  provider:
+    description: Copse model provider
+    default: openrouter
+  model:
+    description: Model identifier
+    default: openai/gpt-6-luna
+  lenses:
+    description: Comma-separated review lenses
+    default: correctness,visual
+  max-steps:
+    description: Maximum tool steps per reviewer
+    default: '12'
+  max-verify:
+    description: Maximum findings to verify
+    default: '3'
+  app-id:
+    description: Optional GitHub App ID, paired with app-private-key
+  app-private-key:
+    description: Optional GitHub App private key
+  github-token:
+    description: Caller workflow token for PR reads and fallback publishing
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install trusted reviewer dependencies
+      shell: bash
+      env:
+        REVIEWER_ROOT: ${{ github.action_path }}/../../..
+      run: |
+        set -euo pipefail
+        reviewer_root=$(realpath "$REVIEWER_ROOT")
+        cd "$reviewer_root"
+        corepack enable
+        corepack prepare --activate
+        pnpm install --frozen-lockfile --ignore-scripts --filter '@copse/review...'
+        echo "COPSE_REVIEWER_ROOT=$reviewer_root" >> "$GITHUB_ENV"
+    - name: Prepare pinned source, dependencies and validation image
+      shell: bash
+      env:
+        COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+      run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
+    - uses: actions/download-artifact@v8
+      with:
+        name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/copse-review-ground
+    - name: Mint repository-scoped App publishing token
+      if: ${{ inputs.app-id != '' && inputs.app-private-key != '' }}
+      id: app-token
+      uses: actions/create-github-app-token@v3
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        permission-pull-requests: write
+    - name: Review and publish findings
+      shell: bash
+      env:
+        COPSE_REVIEW_REQUEST: ${{ inputs.request }}
+        COPSE_REVIEW_API_KEY: ${{ inputs.model-api-key }}
+        COPSE_REVIEW_READ_TOKEN: ${{ inputs.github-token }}
+        COPSE_REVIEW_FORGE_TOKEN: ${{ steps.app-token.outputs.token || inputs.github-token }}
+        REVIEW_PROVIDER: ${{ inputs.provider }}
+        REVIEW_MODEL: ${{ inputs.model }}
+        REVIEW_LENSES: ${{ inputs.lenses }}
+        REVIEW_MAX_STEPS: ${{ inputs.max-steps }}
+        REVIEW_MAX_VERIFY: ${{ inputs.max-verify }}
+      run: |
+        set -euo pipefail
+        cd "$COPSE_REVIEW_TARGET"
+        base_sha=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).base)')
+        pr_number=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).pr)')
+        review_repo=$(node -e 'console.log(JSON.parse(process.env.COPSE_REVIEW_REQUEST).repository)')
+        mkdir -p "$RUNNER_TEMP/copse-review-findings"
+        node "$COPSE_REVIEWER_ROOT/packages/review/ci/run-action.mts" \
+          --foreign --head refs/remotes/copse/head --base "$base_sha" \
+          --stage0-json "$RUNNER_TEMP/copse-review-ground/report.json" \
+          --backend container --image "$COPSE_REVIEW_CELL_IMAGE" \
+          --scratch-parent "$RUNNER_TEMP" --store "$COPSE_REVIEW_STORE" \
+          --trusted-prepare "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-npm-checkout.mts" \
+          --provider "$REVIEW_PROVIDER" --model "$REVIEW_MODEL" --lenses "$REVIEW_LENSES" \
+          --max-steps "$REVIEW_MAX_STEPS" --max-verify "$REVIEW_MAX_VERIFY" \
+          --read-pr github --post-review github --repo "$review_repo" --pr "$pr_number" \
+          --json "$RUNNER_TEMP/copse-review-findings/report.json" \
+          --sarif "$RUNNER_TEMP/copse-review-findings/report.sarif" \
+          --events "$RUNNER_TEMP/copse-review-findings/events.jsonl"
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: copse-review-findings-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/copse-review-findings/
+        retention-days: 30
+        if-no-files-found: ignore

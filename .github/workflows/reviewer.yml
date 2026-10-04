@@ -1,0 +1,170 @@
+name: Copse reusable reviewer
+
+# Public npm/TypeScript pilot. Both actions come from an explicit trusted Copse
+# commit; the caller's PR contributes data and commands that execute only in cells.
+on:
+  workflow_call:
+    inputs:
+      reviewer-ref:
+        description: Full trusted agent-pane commit SHA (pin the workflow to this SHA too)
+        required: true
+        type: string
+      pr:
+        description: PR number for a manual workflow_dispatch caller
+        default: 0
+        type: number
+      provider:
+        default: openrouter
+        type: string
+      model:
+        default: openai/gpt-6-luna
+        type: string
+      lenses:
+        default: correctness,visual
+        type: string
+      max-steps:
+        default: 12
+        type: number
+      max-verify:
+        default: 3
+        type: number
+    secrets:
+      model-api-key:
+        required: true
+      app-id:
+        required: false
+      app-private-key:
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: copse-review-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      request: ${{ steps.authorize.outputs.request }}
+    steps:
+      - uses: actions/github-script@v9
+        id: authorize
+        env:
+          REVIEWER_REF: ${{ inputs.reviewer-ref }}
+          MANUAL_PR: ${{ inputs.pr }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          MAX_STEPS: ${{ inputs.max-steps }}
+          MAX_VERIFY: ${{ inputs.max-verify }}
+          HAS_MODEL_KEY: ${{ secrets.model-api-key != '' }}
+          HAS_APP_ID: ${{ secrets.app-id != '' }}
+          HAS_APP_KEY: ${{ secrets.app-private-key != '' }}
+        with:
+          script: |
+            if (process.env.HAS_MODEL_KEY !== 'true') {
+              throw new Error('Configure a model API key in the caller repository/org and pass it as model-api-key');
+            }
+            if (!/^[0-9a-f]{40}$/.test(process.env.REVIEWER_REF)) {
+              throw new Error('reviewer-ref must pin a trusted full Copse commit SHA');
+            }
+            if (process.env.HAS_APP_ID !== process.env.HAS_APP_KEY) {
+              throw new Error('Supply both app-id and app-private-key, or neither');
+            }
+            if (!/^[1-9][0-9]*$/.test(process.env.MAX_STEPS) || Number(process.env.MAX_STEPS) > 100 ||
+                !/^[1-9][0-9]*$/.test(process.env.MAX_VERIFY) || Number(process.env.MAX_VERIFY) > 10) {
+              throw new Error('Review budgets must be positive integers (max-steps <= 100, max-verify <= 10)');
+            }
+            const { owner, repo } = context.repo;
+            const { data: repository } = await github.rest.repos.get({ owner, repo });
+            if (repository.private || context.ref !== `refs/heads/${repository.default_branch}`) {
+              throw new Error('The initial Copse Actions release requires a public repo and default-branch workflow');
+            }
+            if (!['pull_request_target', 'workflow_dispatch'].includes(context.eventName)) {
+              throw new Error('Invoke from pull_request_target or workflow_dispatch');
+            }
+            if (context.eventName === 'pull_request_target') {
+              if (!['opened', 'reopened', 'ready_for_review', 'labeled'].includes(context.payload.action)) return;
+              if (context.payload.action === 'labeled' && context.payload.label?.name !== 'copse-review') return;
+            }
+            // Re-check both the initiating actor and the actor requesting a rerun.
+            for (const username of new Set([context.actor, process.env.TRIGGERING_ACTOR])) {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+              if (!['admin', 'maintain', 'write'].includes(data.permission)) {
+                core.notice('Copse reviews require a caller with repository write permission.');
+                return;
+              }
+            }
+            const number = context.eventName === 'workflow_dispatch'
+              ? Number(process.env.MANUAL_PR) : context.payload.pull_request?.number;
+            if (!Number.isSafeInteger(number) || number < 1) throw new Error('A valid PR number is required');
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const labels = pull.labels.map(label => label.name);
+            if (pull.state !== 'open' || pull.base.repo.id !== repository.id ||
+                pull.base.ref !== repository.default_branch || labels.includes('copse-review-skip') ||
+                (pull.draft && !labels.includes('copse-review'))) return;
+            if (!/^[0-9a-f]{40}$/.test(pull.head.sha) || !/^[0-9a-f]{40}$/.test(pull.base.sha)) {
+              throw new Error('GitHub returned an invalid commit SHA');
+            }
+            core.setOutput('request', JSON.stringify({
+              repository: `${owner}/${repo}`, pr: number, head: pull.head.sha, base: pull.base.sha,
+            }));
+
+  ground:
+    needs: authorize
+    if: ${{ needs.authorize.outputs.request != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # No model/App secrets are referenced or passed to this job. All project
+    # commands execute inside network-disabled containers, never on this host.
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: copse-dev/agent-pane
+          ref: ${{ inputs.reviewer-ref }}
+          path: .copse-reviewer
+          persist-credentials: false
+      - name: Select the pinned reviewer Node version
+        run: cp .copse-reviewer/.nvmrc .nvmrc
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: ./.copse-reviewer/.github/actions/review-ground
+        with:
+          request: ${{ needs.authorize.outputs.request }}
+
+  findings:
+    needs: [authorize, ground]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: copse-dev/agent-pane
+          ref: ${{ inputs.reviewer-ref }}
+          path: .copse-reviewer
+          persist-credentials: false
+      - name: Select the pinned reviewer Node version
+        run: cp .copse-reviewer/.nvmrc .nvmrc
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: ./.copse-reviewer/.github/actions/review-findings
+        with:
+          request: ${{ needs.authorize.outputs.request }}
+          model-api-key: ${{ secrets.model-api-key }}
+          provider: ${{ inputs.provider }}
+          model: ${{ inputs.model }}
+          lenses: ${{ inputs.lenses }}
+          max-steps: ${{ inputs.max-steps }}
+          max-verify: ${{ inputs.max-verify }}
+          app-id: ${{ secrets.app-id }}
+          app-private-key: ${{ secrets.app-private-key }}
+          github-token: ${{ github.token }}
