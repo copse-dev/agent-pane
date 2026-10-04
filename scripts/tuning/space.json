@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "description": "Candidate product defaults for Copse's unattended loop, measured on Terminal-Bench through the Harbor container agent. Benchmark-only; see benchmarks/terminal_bench/TUNING.md.",
+  "base": { "modelParametersMode": "server" },
+  "parameters": [
+    {
+      "id": "reasoningRecoveryMaxTokens",
+      "description": "Token cap for the one recovery stream after a reasoning circle is cut. 4096 is the product default.",
+      "productSeam": {
+        "file": "packages/agent/src/reasoning-checkpoint-policy.ts",
+        "symbol": "PRODUCT_REASONING_RECOVERY_MAX_TOKENS"
+      },
+      "default": "4096",
+      "values": [
+        { "label": "4096", "set": { "reasoningRecoveryMaxTokens": 4096 } },
+        { "label": "8192", "set": { "reasoningRecoveryMaxTokens": 8192 } },
+        { "label": "12288", "set": { "reasoningRecoveryMaxTokens": 12288 } },
+        { "label": "24576", "set": { "reasoningRecoveryMaxTokens": 24576 } }
+      ]
+    },
+    {
+      "id": "callBudget",
+      "description": "LLM-call budget policy. The product default is its own limit (40 calls) with adaptive extensions for healthy runs; flat N is exactly N calls and no extensions.",
+      "productSeam": {
+        "file": "packages/agent/src/agent-loop-limits.ts",
+        "symbol": "DEFAULT_MAX_LLM_CALLS"
+      },
+      "default": "product-adaptive",
+      "values": [
+        { "label": "product-adaptive", "set": {} },
+        {
+          "label": "flat-100",
+          "set": {
+            "loopLimits": { "maxSteps": 100, "maxLlmCalls": 100, "adaptiveExtensions": false }
+          }
+        },
+        {
+          "label": "flat-200",
+          "set": {
+            "loopLimits": { "maxSteps": 200, "maxLlmCalls": 200, "adaptiveExtensions": false }
+          }
+        }
+      ]
+    },
+    {
+      "id": "presencePenalty",
+      "description": "Sampling presence_penalty sent with every request. off sends none (LM Studio default).",
+      "productSeam": {
+        "file": "packages/llm/src/model-parameters.ts",
+        "symbol": "recommended recipe for the model (presencePenalty)"
+      },
+      "default": "off",
+      "values": [
+        { "label": "off", "set": {} },
+        { "label": "1.0", "set": { "sampling": { "presencePenalty": 1 } } },
+        { "label": "1.5", "set": { "sampling": { "presencePenalty": 1.5 } } }
+      ]
+    },
+    {
+      "id": "temperature",
+      "description": "Sampling temperature sent with every request. server-default sends none (LM Studio default).",
+      "productSeam": {
+        "file": "packages/llm/src/model-parameters.ts",
+        "symbol": "recommended recipe for the model (temperature)"
+      },
+      "default": "server-default",
+      "values": [
+        { "label": "server-default", "set": {} },
+        { "label": "0.6", "set": { "sampling": { "temperature": 0.6 } } },
+        { "label": "1.0", "set": { "sampling": { "temperature": 1 } } }
+      ]
+    },
+    {
+      "id": "contextWindow",
+      "description": "The context window the loop is told the model has (drives compaction). Must not exceed what LM Studio actually loaded.",
+      "productSeam": null,
+      "default": "262144",
+      "values": [
+        { "label": "262144", "set": { "contextWindow": 262144 } },
+        { "label": "131072", "set": { "contextWindow": 131072 } },
+        { "label": "65536", "set": { "contextWindow": 65536 } }
+      ]
+    }
+  ],
+  "taskSets": {
+    "screen": [
+      "git-multibranch",
+      "largest-eigenval",
+      "configure-git-webserver",
+      "multi-source-data-merger"
+    ],
+    "confirm": [
+      "regex-log",
+      "log-summary-date-ranges",
+      "sanitize-git-repo",
+      "git-leak-recovery",
+      "pypi-server",
+      "mailman",
+      "constraints-scheduling",
+      "query-optimize",
+      "overfull-hbox",
+      "vulnerable-secret"
+    ],
+    "canary": ["fix-git", "openssl-selfsigned-cert", "prove-plus-comm", "nginx-request-logging"]
+  },
+  "estimate": { "minutesPerTrial": 6.5 }
+}
