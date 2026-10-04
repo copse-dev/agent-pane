@@ -1,14 +1,17 @@
+import { realpathSync } from 'node:fs'
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('tool argument error guidance', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'tool-argument-error-project', {
+    // Native workspace selection stores its canonical path; keep the shared
+    // execution root and the file index on that same key on macOS too.
+    seedEmptyProject(realpathSync(seedStableWorkspace()), 'tool-argument-error-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
