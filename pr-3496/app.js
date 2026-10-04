@@ -70222,6 +70222,124 @@ var init_titlebar_compact = __esm({
   }
 });
 
+// src/renderer/views/keyboard-shortcuts-dialog.ts
+function isMacPlatform() {
+  const platform = navigator.platform || navigator.userAgent || "";
+  return /mac/i.test(platform);
+}
+function keyLabel(token, isMac2) {
+  switch (token) {
+    case "Mod":
+      return isMac2 ? "\u2318" : "Ctrl";
+    case "Shift":
+      return isMac2 ? "\u21E7" : "Shift";
+    case "Alt":
+      return isMac2 ? "\u2325" : "Alt";
+    default:
+      return token;
+  }
+}
+function openKeyboardShortcutsDialog() {
+  if (!dialogEl3 || dialogEl3.open) return;
+  dialogEl3.showModal();
+}
+function closeKeyboardShortcutsDialog() {
+  if (dialogEl3?.open) dialogEl3.close();
+}
+function isKeyboardShortcutsDialogOpen() {
+  return !!dialogEl3?.open;
+}
+function mountKeyboardShortcutsDialog() {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = "keyboard-shortcuts-dialog";
+  dialog2.className = "keyboard-shortcuts-overlay";
+  const isMac2 = isMacPlatform();
+  const grid = el("div", { class: "keyboard-shortcuts-grid" });
+  for (const section of SECTIONS) {
+    const group = el("div", { class: "keyboard-shortcuts-group" });
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
+    for (const shortcut of section.shortcuts) {
+      const keys = el("span", { class: "keyboard-shortcuts-keys" });
+      shortcut.keys.forEach((token) => {
+        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
+      });
+      group.append(
+        el(
+          "div",
+          { class: "keyboard-shortcuts-row" },
+          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
+          keys
+        )
+      );
+    }
+    grid.append(group);
+  }
+  const shell3 = el(
+    "div",
+    { class: "keyboard-shortcuts-shell" },
+    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
+    grid
+  );
+  clear(dialog2);
+  dialog2.append(shell3);
+  document.body.append(dialog2);
+  dialogEl3 = dialog2;
+  dialog2.addEventListener("mousedown", (e3) => {
+    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
+  });
+}
+var SECTIONS, dialogEl3;
+var init_keyboard_shortcuts_dialog = __esm({
+  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
+    init_helpers();
+    SECTIONS = [
+      {
+        title: "General",
+        shortcuts: [
+          { label: "New thread", keys: ["Mod", "N"] },
+          { label: "Open folder\u2026", keys: ["Mod", "O"] },
+          { label: "Settings", keys: ["Mod", ","] },
+          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
+          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
+          { label: "Zoom interface in", keys: ["Mod", "="] },
+          { label: "Zoom interface out", keys: ["Mod", "-"] },
+          { label: "Reset interface zoom", keys: ["Mod", "0"] },
+          { label: "Stop agent / close overlay", keys: ["Esc"] }
+        ]
+      },
+      {
+        title: "Navigation",
+        shortcuts: [
+          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
+          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
+          { label: "Find in conversation", keys: ["Mod", "F"] },
+          { label: "Next thread", keys: ["Ctrl", "Tab"] },
+          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
+          { label: "Close thread", keys: ["Mod", "W"] }
+        ]
+      },
+      {
+        title: "Panels",
+        shortcuts: [
+          { label: "Toggle sidebar", keys: ["Mod", "B"] },
+          { label: "Toggle panel", keys: ["Mod", "J"] },
+          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
+          { label: "Terminal", keys: ["Mod", "`"] },
+          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Browser", keys: ["Mod", "Shift", "B"] },
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
+        ]
+      }
+    ];
+    dialogEl3 = null;
+  }
+});
+
 // src/renderer/views/titlebar.ts
 function basename2(p2) {
   return p2.split("/").pop() ?? p2;
@@ -70252,7 +70370,8 @@ function mountTitlebar(root, store2, api2) {
     const open2 = store2.getState().projectsPaneOpen;
     document.getElementById("body")?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open2);
     sidebarBtn.setAttribute("aria-pressed", String(open2));
-    setTooltip(sidebarBtn, open2 ? "Hide sidebar (\u2318B)" : "Show sidebar (\u2318B)");
+    const chord = isMacPlatform() ? "\u2318B" : "Ctrl+B";
+    setTooltip(sidebarBtn, `${open2 ? "Hide" : "Show"} sidebar (${chord})`);
   }
   syncSidebar();
   leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
@@ -70410,6 +70529,7 @@ var init_titlebar = __esm({
     init_active_thread_owner();
     init_titlebar_compact();
     init_panels();
+    init_keyboard_shortcuts_dialog();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
@@ -100833,10 +100953,10 @@ var init_changes_stat = __esm({
 
 // src/renderer/views/create-pr-dialog.ts
 function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openCreatePrDialog(opts) {
   const dialog2 = ensureDialog4();
@@ -100978,11 +101098,11 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
     init_helpers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -140256,10 +140376,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -140279,7 +140399,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -140429,7 +140549,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -140440,125 +140560,8 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
-    openImpl2 = null;
-  }
-});
-
-// src/renderer/views/keyboard-shortcuts-dialog.ts
-function isMacPlatform() {
-  const platform = navigator.platform || navigator.userAgent || "";
-  return /mac/i.test(platform);
-}
-function keyLabel(token, isMac2) {
-  switch (token) {
-    case "Mod":
-      return isMac2 ? "\u2318" : "Ctrl";
-    case "Shift":
-      return isMac2 ? "\u21E7" : "Shift";
-    case "Alt":
-      return isMac2 ? "\u2325" : "Alt";
-    default:
-      return token;
-  }
-}
-function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
-}
-function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
-}
-function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
-}
-function mountKeyboardShortcutsDialog() {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = "keyboard-shortcuts-dialog";
-  dialog2.className = "keyboard-shortcuts-overlay";
-  const isMac2 = isMacPlatform();
-  const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
-    const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
-      const keys = el("span", { class: "keyboard-shortcuts-keys" });
-      shortcut.keys.forEach((token) => {
-        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
-      });
-      group.append(
-        el(
-          "div",
-          { class: "keyboard-shortcuts-row" },
-          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
-          keys
-        )
-      );
-    }
-    grid.append(group);
-  }
-  const shell3 = el(
-    "div",
-    { class: "keyboard-shortcuts-shell" },
-    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
-    grid
-  );
-  clear(dialog2);
-  dialog2.append(shell3);
-  document.body.append(dialog2);
-  dialogEl5 = dialog2;
-  dialog2.addEventListener("mousedown", (e3) => {
-    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
-  });
-}
-var SECTIONS, dialogEl5;
-var init_keyboard_shortcuts_dialog = __esm({
-  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
-    init_helpers();
-    SECTIONS = [
-      {
-        title: "General",
-        shortcuts: [
-          { label: "New thread", keys: ["Mod", "N"] },
-          { label: "Open folder\u2026", keys: ["Mod", "O"] },
-          { label: "Settings", keys: ["Mod", ","] },
-          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
-          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
-          { label: "Zoom interface in", keys: ["Mod", "="] },
-          { label: "Zoom interface out", keys: ["Mod", "-"] },
-          { label: "Reset interface zoom", keys: ["Mod", "0"] },
-          { label: "Stop agent / close overlay", keys: ["Esc"] }
-        ]
-      },
-      {
-        title: "Navigation",
-        shortcuts: [
-          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
-          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
-          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
-          { label: "Find in conversation", keys: ["Mod", "F"] },
-          { label: "Next thread", keys: ["Ctrl", "Tab"] },
-          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
-          { label: "Close thread", keys: ["Mod", "W"] }
-        ]
-      },
-      {
-        title: "Panels",
-        shortcuts: [
-          { label: "Toggle side panel", keys: ["Mod", "B"] },
-          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
-          { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
-          { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] },
-          // Same physical key as above: while the browser page itself has focus,
-          // Mod+L shares its selection (or a screenshot) instead of focusing the
-          // address bar — see attachBrowserGuestShareShortcut.
-          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
-        ]
-      }
-    ];
     dialogEl5 = null;
+    openImpl2 = null;
   }
 });
 

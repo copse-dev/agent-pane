@@ -189,6 +189,8 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --chat-user-max: 840px;
   --settings-content-max: 720px;
   --traffic-light-inset: 78px;
+  --titlebar-sidebar-btn-width: 28px;
+  --titlebar-title-inset: calc( var(--traffic-light-inset) + var(--titlebar-sidebar-btn-width) + var(--spacing-sm) );
   --titlebar-height: calc(40px * var(--ui-scale));
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
@@ -3122,7 +3124,10 @@ copse-ui-field input[type=password],
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 6px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--titlebar-sidebar-btn-width);
+  padding: 3px 0;
   color: var(--text-secondary);
 }
 .titlebar-sidebar-btn[aria-pressed=true] {
@@ -7540,7 +7545,7 @@ dialog.settings-overlay::backdrop {
   align-items: center;
   justify-content: space-between;
   height: calc(var(--titlebar-height) + 1px);
-  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  padding: 0 var(--spacing-lg) 0 var(--titlebar-title-inset);
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
