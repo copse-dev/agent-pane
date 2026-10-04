@@ -129,12 +129,12 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'safetyModel')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-advanced')?.open, true)
     openModelSettings('role:docs')
-    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'role:docs')
+    assert.equal(document.activeElement.getAttribute('data-model-setting-target'), 'role:docs')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-additional-roles')?.open, true)
     openModelSettings('orchestrationWorkerModel')
     assert.ok(dialog.querySelector('.settings-section.active[data-section="experimental"]'))
     assert.equal(
-      document.activeElement?.getAttribute('data-model-setting-target'),
+      document.activeElement.getAttribute('data-model-setting-target'),
       'orchestrationWorkerModel',
     )
   })

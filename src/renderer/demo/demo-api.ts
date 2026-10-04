@@ -1051,12 +1051,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     openRouter: { models: emptyArray },
     models: {
-      invalidations: async () => ({
-        evaluated: true,
-        invalidations: [],
-        selections: [],
-        verifiedChoices: [],
-      }),
+      invalidations: () =>
+        resolved({
+          evaluated: true,
+          invalidations: [],
+          selections: [],
+          verifiedChoices: [],
+        }),
       recoverSetting: () => resolved(false),
       bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
       resolveDynamic: (value: string) =>
