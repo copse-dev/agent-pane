@@ -175,7 +175,7 @@ describe('Agent Skills frontmatter conformance', () => {
     let adapted = 0
     for (const file of files.sort()) {
       const raw = readFileSync(file, 'utf8')
-      const normalized = adaptBundledSkill(raw)
+      const normalized = adaptBundledSkill(raw, file)
       if (normalized.reason) {
         adapted++
         assert.equal(
@@ -184,9 +184,14 @@ describe('Agent Skills frontmatter conformance', () => {
           'strict input rejects the original nonconforming header',
         )
         assert.equal(
-          adaptBundledSkill(`${raw}\n`).reason,
+          adaptBundledSkill(`${raw}\n`, file).reason,
           undefined,
           'adapter accepts only the reviewed immutable bytes',
+        )
+        assert.equal(
+          adaptBundledSkill(raw, '/other/skills/skill/SKILL.md').reason,
+          undefined,
+          'adapter requires the reviewed vendor layout as well as bytes',
         )
         assert.equal(
           splitSkillMarkdown(normalized.raw)?.body,

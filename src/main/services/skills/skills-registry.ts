@@ -14,14 +14,12 @@ import {
   listBundledCursorPluginRoots,
 } from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
-import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
   folderNameMatchesSkill,
-  validateSkillFrontmatter,
-  splitSkillMarkdown,
+  decodeSkillDefinition,
   toSkillMetadata,
 } from './parse-skill-frontmatter.ts'
 import type {
@@ -215,20 +213,10 @@ async function loadSkillFromFile(
     return
   }
 
-  const adapted = source === 'bundled' ? adaptBundledSkill(raw) : { raw }
-  const split = splitSkillMarkdown(adapted.raw)
-  if (!split) {
-    console.warn(`[skills] Skipping ${skillPath}: missing frontmatter`)
-    failures.push({
-      attemptedNames: [folderName],
-      skillPath,
-      reason: 'SKILL.md has no YAML frontmatter block (a leading `---`-delimited header)',
-      source,
-    })
-    return
-  }
-
-  const result = validateSkillFrontmatter(split.frontmatter)
+  const { validation: result, compatibilityReason } = decodeSkillDefinition(
+    { source, skillPath },
+    raw,
+  )
   if (!result.skill) {
     console.warn(`[skills] Skipping ${skillPath}: ${result.reason}`)
     failures.push({
@@ -269,13 +257,13 @@ async function loadSkillFromFile(
     })
     return
   }
-  if (adapted.reason)
+  if (compatibilityReason)
     diagnostics.push({
       kind: 'compatibility',
       name: parsed.name,
       skillPath,
       source,
-      reason: adapted.reason,
+      reason: compatibilityReason,
     })
   for (const reason of result.warnings)
     diagnostics.push({ kind: 'unsupported', name: parsed.name, skillPath, source, reason })

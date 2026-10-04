@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { SkillMetadata, SkillSource } from '@shared/types/skills.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { splitMarkdownFrontmatter } from '../discovery/yaml-frontmatter.ts'
+import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 
 const stringMetadata = z.unknown().transform((value, ctx): Record<string, string> => {
   if (!isRecord(value)) {
@@ -71,6 +72,27 @@ export interface ParsedSkillFile {
 }
 
 export const splitSkillMarkdown = splitMarkdownFrontmatter
+
+/** The same definition decoder at discovery and activation, with catalog-owned origin. */
+export function decodeSkillDefinition(
+  origin: Pick<SkillMetadata, 'source' | 'skillPath'>,
+  raw: string,
+): { validation: SkillFrontmatterResult; compatibilityReason?: string } {
+  const adapted = origin.source === 'bundled' ? adaptBundledSkill(raw, origin.skillPath) : { raw }
+  const split = splitSkillMarkdown(adapted.raw)
+  const validation: SkillFrontmatterResult = split
+    ? validateSkillFrontmatter(split.frontmatter)
+    : {
+        skill: null,
+        reason: 'SKILL.md has no YAML frontmatter block (a leading `---`-delimited header)',
+        name: undefined,
+        warnings: [],
+      }
+  return {
+    validation,
+    ...(adapted.reason !== undefined ? { compatibilityReason: adapted.reason } : {}),
+  }
+}
 
 export type SkillFrontmatterResult =
   | { skill: ParsedSkillFile; reason: null; warnings: string[] }

@@ -5,6 +5,7 @@ const ADAPTERS = new Map([
   [
     '3fbe439f366ea94e0a756fc7288d2d8bd3f871bed4b97219dc1aee2f8c8ab979',
     {
+      relativePath: 'plugins/cursor-sdk/skills/cursor-sdk/SKILL.md',
       description:
         'Guide users integrating the Cursor TypeScript SDK (@cursor/sdk) into apps, scripts, CI pipelines, and automations, including local/cloud runtimes, MCP, streaming, cancellation, and errors.',
       reason:
@@ -14,6 +15,7 @@ const ADAPTERS = new Map([
   [
     '2391a06aec1bfb475690a9c386207e009090e35c624b5ca6cace3ea4c6705970',
     {
+      relativePath: 'plugins/agent-compatibility/skills/check-agent-compatibility/SKILL.md',
       description:
         'Run the full repository compatibility pass: scanner score, startup path, validation loop, and docs reliability.',
       reason:
@@ -22,9 +24,13 @@ const ADAPTERS = new Map([
   ],
 ])
 
-export function adaptBundledSkill(raw: string): { raw: string; reason?: string } {
+export function adaptBundledSkill(
+  raw: string,
+  skillPath: string,
+): { raw: string; reason?: string } {
   const adapter = ADAPTERS.get(createHash('sha256').update(raw).digest('hex'))
-  return adapter
+  const normalizedPath = skillPath.replaceAll('\\', '/')
+  return adapter && normalizedPath.endsWith(`/${adapter.relativePath}`)
     ? {
         raw: raw.replace(
           /^description:.*$/m,
