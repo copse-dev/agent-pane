@@ -1,6 +1,6 @@
 import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -13,7 +13,8 @@ describe('next-step tab complete (experimental)', () => {
   before(async () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-next-step-project', {
+    // First-send checkout needs real local refs, independent of the CI source checkout.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-next-step-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       nextStepSuggestionEnabled: true,

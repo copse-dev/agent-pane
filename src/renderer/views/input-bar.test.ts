@@ -66,6 +66,7 @@ function createApi(options: {
   currentBranch: string
   getCurrentBranch?: () => string
   readCurrentBranch?: ApiClient['git']['currentBranch']
+  readDefaultBranch?: ApiClient['git']['getDefaultBranch']
   branchStatusCurrentBranch?: string
   onBranchStatus?: () => void
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
@@ -174,7 +175,7 @@ function createApi(options: {
         },
         listBranches: async () =>
           options.branches ?? [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
-        getDefaultBranch: async () => 'main',
+        getDefaultBranch: options.readDefaultBranch ?? (async (): Promise<string> => 'main'),
       },
       lmStudio: {
         ...base['lmStudio'],
@@ -317,6 +318,124 @@ describe('input bar running attribution', () => {
 })
 
 describe('input bar first-message checkout', () => {
+  for (const switchWhileWaiting of [false, true]) {
+    it(`waits for the original default branch on immediate first submit (switch=${String(switchWhileWaiting)})`, async () => {
+      const defaultBranch = deferred<string | null>()
+      const bases: (string | undefined)[] = []
+      const owners: string[] = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread(), { ...thread(), id: 'thread-2', draftPrompt: 'Other draft' }],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountInputBar(
+        host,
+        store,
+        createApi({
+          currentBranch: 'feature/left-behind',
+          branches: [
+            { name: 'main', lastCommitDate: '2024-01-01' },
+            { name: 'release', lastCommitDate: '2024-01-02' },
+            { name: 'feature/left-behind', lastCommitDate: '2024-01-03' },
+          ],
+          readDefaultBranch: async (projectId, threadId) => {
+            owners.push(`${projectId}/${threadId}`)
+            return threadId === 'thread-1' ? defaultBranch.promise : 'release'
+          },
+          onPrepareCheckout: async (_project, target, _prompt, _choice, _model, base) => {
+            assert.equal(target, 'thread-1')
+            bases.push(base)
+            return {
+              checkoutMode: 'shared',
+              choice: 'automatic',
+              branch: base ?? 'feature/left-behind',
+            }
+          },
+        }),
+      )
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+      assert.ok(composer)
+      assert.ok(submit)
+      composer.textContent = 'Start before the footer has loaded'
+      submit.click()
+      await flush()
+      assert.deepEqual(bases, [], 'checkout must wait rather than snapshot an undefined base')
+      if (switchWhileWaiting) {
+        switchThread(store, 'thread-2')
+        await flush()
+      }
+      defaultBranch.resolve('main')
+      await flush()
+      await flush()
+      assert.deepEqual(bases, ['main'])
+      assert.ok(owners.includes('project-1/thread-1'))
+      assert.equal(getThreadById(store, 'thread-1')?.gitBranch, 'main')
+      if (switchWhileWaiting) assert.equal(store.getState().activeThreadId, 'thread-2')
+    })
+  }
+
+  it('keeps a failed default lookup retryable without sending or moving checkout', async () => {
+    let fail = true
+    let preparations = 0
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'feature/left-behind',
+        branches: [{ name: 'main', lastCommitDate: '2024-01-01' }],
+        readDefaultBranch: async () => {
+          if (fail) throw new Error('default lookup unavailable')
+          return 'main'
+        },
+        onPrepareCheckout: async (_project, _thread, _prompt, _choice, _model, base) => {
+          preparations += 1
+          assert.equal(base, 'main')
+          return { checkoutMode: 'shared', choice: 'automatic', branch: 'main' }
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    const error = host.querySelector<HTMLElement>('.composer-checkout-error')
+    assert.ok(composer)
+    assert.ok(submit)
+    assert.ok(error)
+    composer.textContent = 'Keep this first prompt'
+    submit.click()
+    await flush()
+    assert.equal(preparations, 0)
+    assert.equal(runs, 0)
+    assert.equal(getThreadById(store, 'thread-1')?.messages.length, 0)
+    assert.equal(composer.textContent, 'Keep this first prompt')
+    assert.equal(error.hidden, false)
+    assert.match(error.textContent, /default lookup unavailable/)
+    fail = false
+    host.querySelector<HTMLButtonElement>('.composer-checkout-retry-btn')?.click()
+    await flush()
+    await flush()
+    assert.equal(preparations, 1)
+    assert.equal(runs, 1)
+    assert.equal(error.hidden, true)
+  })
+
   for (const prompt of ['', 'Use the attached context']) {
     it(`snapshots attachments before async lookups and preserves the next composer (${prompt || 'attachments only'})`, async () => {
       const skills = deferred<SkillSummary[]>()

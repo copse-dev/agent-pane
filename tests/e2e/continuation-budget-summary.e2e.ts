@@ -1,6 +1,11 @@
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedStableWorkspace,
+  writeSeedConfig,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -14,7 +19,7 @@ describe('continuation budget exhaustion summary', () => {
     writeSettings({ model: 'claude-sonnet-4-6', subagentsEnabled: false })
     const now = Date.now()
     writeSeedConfig({
-      projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
+      projects: [{ id: PROJECT_ID, path: seedStableWorkspace(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
       expandedProjectId: PROJECT_ID,
       activeThreadId: THREAD_ID,
