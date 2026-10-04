@@ -279,6 +279,36 @@ describe('aggregate usage', () => {
     assert.equal(parsed?.serviceTierUsage, undefined)
   })
 
+  it('repairs legacy fresh-only ACP ledger events on read, idempotently', () => {
+    const raw = [
+      {
+        at: NOW,
+        model: 'acp:claude-acp#opus',
+        source: 'agent',
+        inputTokens: 3,
+        outputTokens: 120,
+        cacheReadTokens: 40_000,
+        cacheCreationTokens: 1_200,
+      },
+      {
+        at: NOW,
+        model: 'acp:claude-acp#opus',
+        source: 'agent',
+        inputTokens: 41_203,
+        outputTokens: 1,
+        cacheReadTokens: 40_000,
+        cacheCreationTokens: 1_200,
+      },
+    ]
+    const parsed = parseUsageEvents(raw)
+    assert.deepEqual(
+      parsed.map((e) => e.inputTokens),
+      [41_203, 41_203],
+    )
+    // A ledger write persists the parsed events; reading them again changes nothing.
+    assert.deepEqual(parseUsageEvents(JSON.parse(JSON.stringify(parsed))), parsed)
+  })
+
   it('pruneUsageEvents removes entries older than 90 days', () => {
     const events: UsageEvent[] = [
       event({ model: 'gpt-4o', inputTokens: 1, outputTokens: 1, at: NOW - 91 * DAY_MS }),
