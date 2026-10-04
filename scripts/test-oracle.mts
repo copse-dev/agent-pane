@@ -49,6 +49,7 @@ import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { safeJsonParse } from './lib/safe-json.mts'
 
 const ROOT = process.cwd()
 const E2E_DIR = 'tests/e2e'
@@ -116,6 +117,8 @@ Options:
   --pr-head <ref>  source PR head for --refresh (required)
   --candidate <ref>  fresh combined candidate for --refresh (default: HEAD)
   --list-ci-specs   list the full CI e2e suite, retaining configured exclusions
+  --ci-shard <i>/<n>  list shard i of n, balanced by recorded spec durations
+  --specs <a b…>   with --ci-shard: shard these specs instead of the full suite
   --run <tier>     run the recommendation: e2e (default) | unit | all
   --help           show this help
 
@@ -131,6 +134,8 @@ type Args = {
   json: boolean
   plan: boolean
   listCiSpecs: boolean
+  ciShard: { index: number; total: number } | null
+  specs: string[] | null
   run: 'e2e' | 'unit' | 'all' | null
   refresh: boolean
   testedBase: string | null
@@ -149,6 +154,8 @@ function parseArgs(argv: string[]): Args {
     json: false,
     plan: false,
     listCiSpecs: false,
+    ciShard: null,
+    specs: null,
     run: null,
     refresh: false,
     testedBase: null,
@@ -175,7 +182,21 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--json') a.json = true
     else if (arg === '--plan') a.plan = true
     else if (arg === '--list-ci-specs') a.listCiSpecs = true
-    else if (arg === '--run') {
+    else if (arg === '--ci-shard') {
+      const m = /^(\d+)\/(\d+)$/.exec(argv[++i] ?? '')
+      const index = Number(m?.[1])
+      const total = Number(m?.[2])
+      if (!m || index < 1 || index > total) {
+        console.error('--ci-shard expects <i>/<n> with 1 <= i <= n')
+        process.exit(2)
+      }
+      a.ciShard = { index, total }
+    } else if (arg === '--specs') {
+      const specs: string[] = []
+      a.specs = specs
+      while (argv[i + 1] !== undefined && !argv[i + 1]?.startsWith('--'))
+        specs.push(argv[++i] ?? '')
+    } else if (arg === '--run') {
       const v = argv[i + 1]
       a.run = v === 'unit' || v === 'all' ? (++i, v) : 'e2e'
     } else if (arg === '--files') {
@@ -293,6 +314,72 @@ export function ciExcludedSpecs(tree: OracleFiles = workingTree): Set<string> {
     .matchAll(/['"]\.\/(tests\/e2e\/[^'"]+\.e2e\.ts)['"]/g))
     if (m[1] !== undefined) out.add(m[1])
   return out
+}
+
+/** The full CI e2e suite: every spec wdio would glob, minus wdio.ci.conf.ts excludes. */
+function listCiSpecs(): string[] {
+  const excluded = ciExcludedSpecs()
+  return listSpecs().filter((spec) => !excluded.has(spec))
+}
+
+/**
+ * Median seconds each spec took in recent CI e2e shards, written by
+ * `scripts/e2e-shard-weights.mts`. Only relative sizes matter: they decide which
+ * shard a spec lands on, never whether it may run or how long it may take.
+ */
+export const SHARD_WEIGHTS_FILE = 'scripts/e2e-shard-weights.json'
+function decodeShardWeights(value: unknown): Map<string, number> | null {
+  if (typeof value !== 'object' || value === null || !('seconds' in value)) return null
+  const { seconds } = value
+  if (typeof seconds !== 'object' || seconds === null) return null
+  const out = new Map<string, number>()
+  for (const [spec, secs] of Object.entries(seconds)) {
+    if (typeof secs !== 'number' || !(secs >= 0)) return null
+    out.set(spec, secs)
+  }
+  return out
+}
+
+export function readShardWeights(): Map<string, number> {
+  const weights = safeJsonParse(read(SHARD_WEIGHTS_FILE), decodeShardWeights)
+  if (!weights) throw new Error(`${SHARD_WEIGHTS_FILE} is missing or malformed`)
+  return weights
+}
+
+/**
+ * Per-spec cost wdio adds between one spec's PASSED and the next spec's
+ * RUNNING (session teardown and Electron relaunch): ~1.3 s on CI runners.
+ */
+const SPEC_OVERHEAD_SECONDS = 1.3
+
+/**
+ * Split `specs` into `total` shards with similar expected runtime: longest
+ * spec first, each onto the currently lightest shard (LPT). Round-robin by
+ * count let one shard collect the slow specs, and every added spec reshuffled
+ * which shard that was. A spec with no recorded duration costs the median of
+ * the recorded ones, so new specs are spread rather than piled up. Ties break
+ * by path and shard order, so every shard computes the same partition. Each
+ * shard keeps the input order.
+ */
+export function assignShards(
+  specs: readonly string[],
+  total: number,
+  seconds: ReadonlyMap<string, number>,
+): string[][] {
+  const known = [...seconds.values()].sort((a, b) => a - b)
+  const fallback = known.length > 0 ? (known[Math.floor(known.length / 2)] ?? 0) : 0
+  const cost = (spec: string): number => (seconds.get(spec) ?? fallback) + SPEC_OVERHEAD_SECONDS
+  const order = new Map(specs.map((spec, index) => [spec, index]))
+  const loads = Array.from({ length: total }, () => 0)
+  const shards = Array.from({ length: total }, (): string[] => [])
+  const byCost = [...order.keys()].sort((a, b) => cost(b) - cost(a) || a.localeCompare(b))
+  for (const spec of byCost) {
+    let lightest = 0
+    for (let i = 1; i < total; i++) if ((loads[i] ?? 0) < (loads[lightest] ?? 0)) lightest = i
+    loads[lightest] = (loads[lightest] ?? 0) + cost(spec)
+    shards[lightest]?.push(spec)
+  }
+  return shards.map((shard) => shard.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)))
 }
 
 export type CiPlan = { mode: 'full' | 'subset' | 'skip'; specs: string[]; count: number }
@@ -824,10 +911,12 @@ async function main(): Promise<void> {
       !args.prHead ||
       args.run ||
       args.files ||
-      args.listCiSpecs
+      args.listCiSpecs ||
+      args.ciShard ||
+      args.specs
     ) {
       throw new Error(
-        '--refresh requires --tested-base, --tested-candidate, --tested-pr-head and --pr-head; --run/--files/--list-ci-specs are not supported',
+        '--refresh requires --tested-base, --tested-candidate, --tested-pr-head and --pr-head; --run/--files/--list-ci-specs are not supported; --ci-shard/--specs are not supported',
       )
     }
     const { planRefresh, emitRefreshPlan } = await import('./lib/oracle-refresh.mts')
@@ -845,13 +934,15 @@ async function main(): Promise<void> {
     if (refresh.mode === 'review') process.exitCode = 2
     return
   }
+  if (args.ciShard) {
+    const { index, total } = args.ciShard
+    const shards = assignShards(args.specs ?? listCiSpecs(), total, readShardWeights())
+    const shard = shards[index - 1] ?? []
+    if (shard.length > 0) console.log(shard.join('\n'))
+    return
+  }
   if (args.listCiSpecs) {
-    const excluded = ciExcludedSpecs()
-    console.log(
-      listSpecs()
-        .filter((spec) => !excluded.has(spec))
-        .join('\n'),
-    )
+    console.log(listCiSpecs().join('\n'))
     return
   }
   const sel = computeSelection(args.files ?? changedFiles(args.base))
