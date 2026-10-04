@@ -1970,6 +1970,13 @@
           3
         ]
       },
+      "threads:archive": {
+        "api": "threads.archive",
+        "args": [
+          3,
+          3
+        ]
+      },
       "threads:backfill-pr-refs": {
         "api": "threads.backfillPrRefs",
         "args": [

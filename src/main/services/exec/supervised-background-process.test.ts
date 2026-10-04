@@ -1,3 +1,4 @@
+import { saveProjectThread } from '../thread-store.ts'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,18 @@ import {
   stopSupervisedBackgroundProcess,
   stopSupervisedBackgroundProcessesForThread,
 } from './supervised-background-process.ts'
+
+async function seedOwner(owner: { projectId: string; threadId: string }): Promise<void> {
+  await saveProjectThread(owner.projectId, {
+    id: owner.threadId,
+    title: 'Background process owner',
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  })
+}
 
 const OWNER = { projectId: 'project-a', threadId: 'thread-a' }
 
@@ -30,12 +43,16 @@ async function waitForState(
 }
 
 describe('supervised background processes', () => {
+  let previousWorkspace: string | undefined
   let root: string
   let supervisor: TaskSupervisor
   let dispose: () => void
 
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), 'copse-supervised-background-'))
+    previousWorkspace = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    await seedOwner(OWNER)
     supervisor = new TaskSupervisor({
       store: new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: root }),
     })
@@ -47,6 +64,8 @@ describe('supervised background processes', () => {
     stopAllBackgroundProcesses()
     await supervisor.shutdown()
     dispose()
+    if (previousWorkspace === undefined) Reflect.deleteProperty(process.env, 'COPSE_WORKSPACE_DIR')
+    else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspace
     rmSync(root, { recursive: true, force: true })
   })
 
