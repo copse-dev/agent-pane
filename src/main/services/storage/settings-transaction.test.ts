@@ -56,7 +56,7 @@ describe('ordinary Settings transaction boundary', () => {
       {},
       { claudePlanMonthlyFeeUsd: 'corrupt' },
     ]) {
-      await runWithExplicitSettings({ values }, () => {
+      runWithExplicitSettings({ values }, () => {
         const snapshot = getSettingsSnapshot()
         assert.equal(
           Object.hasOwn(snapshot, 'claudePlanMonthlyFeeUsd'),
