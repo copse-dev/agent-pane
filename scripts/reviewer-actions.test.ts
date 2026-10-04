@@ -331,6 +331,7 @@ describe('Copse dogfooding of the reusable reviewer', () => {
         `${name} is not passed by name`,
       )
     }
+    assert.equal(caller.jobs.review.secrets['COPSE_REVIEW_OPENROUTER_API_KEY'], '')
   })
 
   it('accepts only owner PRs in the Copse profile and obtains its key from the protected job', async () => {
