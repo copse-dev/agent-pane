@@ -1,10 +1,35 @@
+import type { z } from 'zod'
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
+import type { MAIN_ONLY_SETTING_SCHEMAS } from './settings-schema.ts'
+import type { RENDERER_WRITABLE_SETTING_SCHEMAS } from './settings-writable.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { getSettingsSnapshot, updateSettings } from './settings-transaction.ts'
 import { getSetting, setSetting, setApiKey, updateSetting } from './settings.ts'
 import { runWithExplicitSettings } from './settings-context.ts'
 
+type ReadableSchemas = typeof MAIN_ONLY_SETTING_SCHEMAS & typeof RENDERER_WRITABLE_SETTING_SCHEMAS
+type SchemaSnapshot = { [K in keyof ReadableSchemas]?: z.output<ReadableSchemas[K]> | undefined }
+type SchemaUpdate = {
+  -readonly [K in Exclude<keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS, 'trustedSshHosts'>]?:
+    | z.output<(typeof RENDERER_WRITABLE_SETTING_SCHEMAS)[K]>
+    | undefined
+} & { roleAssignments?: Record<string, string> | undefined }
+
+// Both directions catch narrowed values as well as missing or extra wire fields.
+type SameContract<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
 describe('ordinary Settings transaction boundary', () => {
+  it('keeps the pure wire contract aligned with host validation schemas', () => {
+    const snapshotMatches: SameContract<SettingsSnapshot, SchemaSnapshot> = true
+    const snapshotKeysMatch: SameContract<keyof SettingsSnapshot, keyof SchemaSnapshot> = true
+    const updateMatches: SameContract<SettingsUpdate, SchemaUpdate> = true
+    const updateKeysMatch: SameContract<keyof SettingsUpdate, keyof SchemaUpdate> = true
+    assert.deepEqual(
+      [snapshotMatches, snapshotKeysMatch, updateMatches, updateKeysMatch],
+      [true, true, true, true],
+    )
+  })
   it('uses explicit profiles for reads and rejects all writes inside them', async () => {
     await runWithExplicitSettings(
       { values: { theme: 'light', fontSize: 'corrupt' }, apiKeys: { openai: 'profile-secret' } },
