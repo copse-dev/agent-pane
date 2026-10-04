@@ -1825,7 +1825,6 @@ export function registerAllHandlers(
       prompt: parsed.prompt,
       model: parsed.model,
       budgets: parsed.budgets,
-      ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
       ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
       ...(parsed.installDependencies !== undefined
         ? { installDependencies: parsed.installDependencies }
@@ -3117,7 +3116,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
     assertMainFrameSender(event, win)
-    return { version: app.getVersion(), report: await readThirdPartyLicenseReport() }
+    return { version: getElectronAppVersion(), report: await readThirdPartyLicenseReport() }
   })
   ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
     assertMainFrameSender(event, win)

@@ -1,6 +1,8 @@
 import type { ThreadContainerRunSpec } from './run-spec.ts'
 import {
   containerBuildCommand,
+  containerEngineInvocation,
+  runLockedContainerBuild,
   dockerDaemonReachable,
   engineCommand,
   reachableThreadContainerEngines,
@@ -1031,7 +1033,9 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
         WORKER_UID: String(WORKER_UID),
       },
     })
-    await runContainerImageBuild(engine, () => runEngine(engine, build.args))
+    await runContainerImageBuild(engine, () =>
+      runEngine(engine, build.args, { timeoutMs: 15 * 60_000 }),
+    )
     return image
   } finally {
     if (ownedContext) rmSync(contextDir, { recursive: true, force: true })
@@ -1042,9 +1046,24 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-async function runEngine(engine: ThreadContainerEngine, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync(engineCommand(engine), args, {
+/** Every engine operation has a deadline, including preparation and teardown. */
+async function runEngine(
+  engine: ThreadContainerEngine,
+  args: string[],
+  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
+  const invocation = containerEngineInvocation(engine, args)
+  if (engine === 'apple' && args[0] === 'build') {
+    return await runLockedContainerBuild(invocation, {
+      timeoutMs: options.timeoutMs ?? 45_000,
+      ...(options.env ? { env: options.env } : {}),
+    })
+  }
+  const { stdout } = await execFileAsync(invocation.command, invocation.args, {
     maxBuffer: 64 * 1024 * 1024,
+    timeout: options.timeoutMs ?? 45_000,
+    killSignal: 'SIGKILL',
+    ...(options.env ? { env: options.env } : {}),
   })
   return stdout.trim()
 }
@@ -1067,6 +1086,14 @@ export async function appleContainerAvailable(): Promise<boolean> {
  */
 export function assertThreadContainerEngine(): Promise<ThreadContainerEngine> {
   return resolveThreadContainerEngine()
+}
+
+/** Docker CLI boundary retained for callers and direct deadline coverage. */
+export async function runDocker(
+  args: string[],
+  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
+  return await runEngine('docker', args, options)
 }
 
 async function imageDigest(
@@ -1124,8 +1151,12 @@ async function teardownDockerRuntime(
   try {
     await runEngine('docker', ['container', 'inspect', '--format', '{{.Id}}', name])
     container = 'removed'
-  } catch {
-    container = 'already-gone'
+  } catch (error) {
+    // Only the daemon saying the container does not exist means it is gone. A
+    // timed-out or failed inspect (slow or hung daemon) says nothing about the
+    // container, so it still gets the forced removal below — which is what
+    // decides whether teardown succeeded.
+    container = isNotFound('docker', error) ? 'already-gone' : 'removed'
   }
   if (container === 'removed') {
     try {
@@ -1739,11 +1770,18 @@ function readJsonFile<T>(path: string, decode: (value: unknown) => T | null): T 
 }
 
 /**
- * The secret canary (`unattended-runs.md` U3): a marker value present in the
- * host environment must be absent from everything the guest could see or wrote.
- * The guest's own environment is checked from inside by the worker (it reports
- * it in the result); the host checks the surfaces it owns.
+ * The secret canary (`unattended-runs.md` U3): a per-run marker value placed in
+ * the environment of the `docker create` client (not the Copse host process)
+ * must be absent from everything the guest could see or wrote. It therefore
+ * catches leaks through the container launch only; other host children (the
+ * egress broker, git carry-in, ACP) never see it. The guest's own environment
+ * is not handed the canary (it is a negative control, never forwarded with
+ * `--env`); the worker reports the *names* of its environment in the result, so
+ * the check also fails if the canary variable name appears there. The host
+ * checks the value across the surfaces it owns.
  */
+export const SECRET_CANARY_ENV = 'COPSE_SECRET_CANARY'
+
 export function secretCanaryCheck(
   runDir: string,
   canary: string,
@@ -1757,8 +1795,16 @@ export function secretCanaryCheck(
   for (const surface of surfaces) {
     const path = join(runDir, surface)
     if (!existsSync(path)) continue
-    if (readFileSync(path, 'utf8').includes(canary)) {
+    const text = readFileSync(path, 'utf8')
+    if (text.includes(canary)) {
       return { present: true, detail: `canary found in ${surface}` }
+    }
+    // result.json carries the guest's environment key names (worker-entry).
+    if (surface === join('out', 'result.json') && text.includes(SECRET_CANARY_ENV)) {
+      return {
+        present: true,
+        detail: `canary variable name found in guest environment (${surface})`,
+      }
     }
   }
   return { present: false, detail: `canary absent from ${surfaces.join(', ')}` }
@@ -1786,6 +1832,7 @@ const STOPPED_BEFORE_START = 'Stopped by you before the container started'
 export async function runThreadInContainer(
   request: ThreadContainerRequest,
   options: RunThreadOptions = {},
+  dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },
 ): Promise<ThreadContainerRecord> {
   const log =
     options.onLog ??
@@ -1815,7 +1862,6 @@ export async function runThreadInContainer(
   if (aliasRefusal !== null) throw new Error(aliasRefusal)
   const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
-  process.env['COPSE_SECRET_CANARY'] = canary
   const engine = request.engine ?? (await assertThreadContainerEngine())
   log(`[thread-container] engine: ${engine === 'apple' ? 'Apple container' : 'Docker'}`)
 
@@ -1842,15 +1888,28 @@ export async function runThreadInContainer(
   )
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
 
+  const duringPreparation = async <T>(operation: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await operation()
+    } catch (error) {
+      removeStagedLogin(runDir)
+      throw error
+    }
+  }
+
   // The user's sign-in, when they opted in: staged now, removed in `finally`
   // below whatever happens, so the world-readable copy lives only as long as
   // the container it exists for.
   let acp = request.acp
   let stagedLogin: string[] | null = null
   if (acp?.login) {
-    stagedLogin = await stageAgentLogin(homedir(), acp.login.files, runDir, acp.agent.title)
+    const { agent, login } = acp
+    stagedLogin = await duringPreparation(async () => {
+      const files = await dependencies.stageLogin(homedir(), login.files, runDir, agent.title)
+      log(`[thread-container] sign-in carried in: ${files.map((d) => `~/${d}`).join(', ')}`)
+      return files
+    })
     acp = { ...acp, login: { files: stagedLogin } }
-    log(`[thread-container] sign-in carried in: ${stagedLogin.map((d) => `~/${d}`).join(', ')}`)
   }
 
   // The guest's thread is its own; the record names the desktop thread.
@@ -1870,7 +1929,7 @@ export async function runThreadInContainer(
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
     carryInBase: carryIn.sha,
-    originUrl: sanitizedOriginUrl(await originUrlOf(workspace)),
+    originUrl: sanitizedOriginUrl(await duringPreparation(() => originUrlOf(workspace))),
     maxSteps: request.maxSteps ?? null,
   }
   const installs = request.installDependencies === true
@@ -1892,16 +1951,21 @@ export async function runThreadInContainer(
     pidsLimit: 512,
     cpus: 2,
   }
-  const digest = await imageDigest(image, engine)
+  const digest = await duringPreparation(() => imageDigest(image, engine))
   const attestation = buildAttestation(runInput, digest)
-  writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
-  writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
-
-  const broker = new EgressBroker({
-    rules: egress,
-    ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
-    ...(apiKey !== null ? { runKey: apiKey } : {}),
+  await duringPreparation(() => {
+    writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
+    writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
   })
+
+  const broker = await duringPreparation(
+    () =>
+      new EgressBroker({
+        rules: egress,
+        ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
+        ...(apiKey !== null ? { runKey: apiKey } : {}),
+      }),
+  )
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
@@ -1922,7 +1986,9 @@ export async function runThreadInContainer(
     ])
     if (engine === 'apple') await runEngine('apple', appleVolumePrepareArgs(runInput))
     if (runInput.sharedStore) await ensurePnpmStoreVolume()
-    await runEngine(engine, containerCreateArgs(runInput))
+    await runEngine(engine, containerCreateArgs(runInput), {
+      env: { ...process.env, [SECRET_CANARY_ENV]: canary },
+    })
     if (engine === 'apple') {
       // The attestation is already written; refuse to start a guest it
       // would misdescribe. The `finally` below removes the container.
@@ -1958,16 +2024,19 @@ export async function runThreadInContainer(
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
   } finally {
-    options.onPhase?.('collecting')
-    teardown = await teardownRuntime(runtimeId, engine)
-    if (teardown === 'failed') {
-      const failure = `the container ${containerName(runtimeId)} could not be removed`
-      cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
-      log(`[thread-container] ${failure}`)
+    try {
+      options.onPhase?.('collecting')
+      teardown = await teardownRuntime(runtimeId, engine)
+      if (teardown === 'failed') {
+        const failure = `the container ${containerName(runtimeId)} could not be removed`
+        cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
+        log(`[thread-container] ${failure}`)
+      }
+      broker.stop()
+      if (attached) await detachContainer(attached)
+    } finally {
+      removeStagedLogin(runDir)
     }
-    broker.stop()
-    if (attached) await detachContainer(attached)
-    removeStagedLogin(runDir)
   }
 
   const decoded = readJsonFile(

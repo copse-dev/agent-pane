@@ -3,9 +3,11 @@ import { isAbsolute, basename, join, resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import {
   commandName,
+  inlineLeadingLiteralAssignments,
   printfAssignsShellVariable,
+  shellInputRedirects,
   shellRedirects,
-  shellSegments,
+  shellSegmentsQuoteAware,
   TRUST_TRANSPARENT_WRAPPERS,
   unwrapWrappers,
 } from './shell-argv.ts'
@@ -367,7 +369,7 @@ export function analyzeReadOutsideProject(
   workspaceRoot: string | null,
   options: AnalyzeOptions = {},
 ): ReadOutsideProjectAnalysis {
-  const trimmed = command.trim()
+  const trimmed = inlineLeadingLiteralAssignments(command.trim())
   if (!trimmed) return INELIGIBLE(['empty command'])
   // Without a project root there is no inside/outside to reason about.
   if (!workspaceRoot) return INELIGIBLE(['no project root'])
@@ -415,6 +417,12 @@ export function analyzeReadOutsideProject(
     resolvedTargets.push(resolved)
   }
 
+  // `tr -d x < file` opens `file` exactly as `cat file` does; it is an operand
+  // to the shell rather than to the command, so the segment walk never sees it.
+  for (const token of shellInputRedirects(trimmed)) {
+    if (looksLikePath(token)) addTarget(token, resolveTarget(token, root, homeDir))
+  }
+
   const cdBlocker = directoryChangeBlocker(trimmed)
   if (cdBlocker) addBlocker(cdBlocker)
   // `shellSegments` unions two lexers and deliberately over-segments; that can
@@ -422,10 +430,10 @@ export function analyzeReadOutsideProject(
   // segments come first and in order, so only they move the working directory a
   // `cd` sets; the fallback lexer's repeats still add blockers, and add targets
   // only while no `cd` has moved the base (never a path resolved from a guess).
-  const ordered = shellSegments(trimmed, false).length
+  const ordered = shellSegmentsQuoteAware(trimmed).length
   let base = root
   let baseToken = '.'
-  for (const [index, rawArgv] of shellSegments(trimmed).entries()) {
+  for (const [index, rawArgv] of shellSegmentsQuoteAware(trimmed).entries()) {
     const tracked = index < ordered
     const argv = unwrapWrappers(rawArgv)
     if (argv.length === 0) continue
