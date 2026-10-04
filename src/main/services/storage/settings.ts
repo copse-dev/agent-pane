@@ -302,6 +302,16 @@ export function getLmStudioApiKey(): string {
   return resolveLmStudioApiKey(getApiKey('lmstudio'), process.env)
 }
 
+/** Read a registered value without conflating a valid null with an absent value. */
+export function getRegisteredSetting(key: string): unknown {
+  const schema = getSettingSchema(key)
+  if (!schema) return undefined
+  const scoped = getExplicitSettingsProfile()
+  const raw = scoped ? scoped.values[key] : cached.get(key)
+  const parsed = schema.safeParse(raw)
+  return parsed.success ? parsed.data : undefined
+}
+
 export function getSetting<T>(key: string, fallback: T): T {
   const scoped = getExplicitSettingsProfile()
   const raw = scoped ? scoped.values[key] : cached.get(key)

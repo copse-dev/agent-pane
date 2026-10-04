@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import { RENDERER_WRITABLE_SETTING_SCHEMAS, isSecretSettingKey } from './settings-writable.ts'
 import { MAIN_ONLY_SETTING_SCHEMAS, registeredSettingKeys } from './settings-schema.ts'
-import { getSetting, setSettings } from './settings.ts'
+import { getRegisteredSetting, setSettings } from './settings.ts'
 
 export const settingsUpdateSchema = z
   .strictObject(RENDERER_WRITABLE_SETTING_SCHEMAS)
@@ -22,8 +22,8 @@ export function getSettingsSnapshot(): SettingsSnapshot {
   const values: Record<string, unknown> = {}
   for (const key of registeredSettingKeys()) {
     if (isSecretSettingKey(key)) continue
-    const value = getSetting<unknown>(key, null)
-    if (value !== null) values[key] = value
+    const value = getRegisteredSetting(key)
+    if (value !== undefined) values[key] = value
   }
   return settingsSnapshotSchema.parse(values)
 }

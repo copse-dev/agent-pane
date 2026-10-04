@@ -45,6 +45,31 @@ describe('ordinary Settings transaction boundary', () => {
       },
     )
   })
+  it('preserves a valid null fee while omitting missing and invalid snapshot values', async () => {
+    await updateSettings({ claudePlanMonthlyFeeUsd: null })
+    const persisted = getSettingsSnapshot()
+    assert.ok(Object.hasOwn(persisted, 'claudePlanMonthlyFeeUsd'))
+    assert.equal(persisted.claudePlanMonthlyFeeUsd, null)
+
+    for (const values of [
+      { claudePlanMonthlyFeeUsd: null },
+      {},
+      { claudePlanMonthlyFeeUsd: 'corrupt' },
+    ]) {
+      await runWithExplicitSettings({ values }, () => {
+        const snapshot = getSettingsSnapshot()
+        assert.equal(
+          Object.hasOwn(snapshot, 'claudePlanMonthlyFeeUsd'),
+          Object.hasOwn(values, 'claudePlanMonthlyFeeUsd') &&
+            values.claudePlanMonthlyFeeUsd === null,
+        )
+        if (values.claudePlanMonthlyFeeUsd === null) {
+          assert.equal(snapshot.claudePlanMonthlyFeeUsd, null)
+        }
+      })
+    }
+  })
+
   it('rejects an invalid later field without writing the earlier valid field', async () => {
     await setSetting('theme', 'dark')
     await setSetting('fontSize', 14)
