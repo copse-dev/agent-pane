@@ -48617,7 +48617,11 @@ function createModelRoutingSection(api2, options = {}) {
       )
     );
   }
+  function reset() {
+    pendingRoles = {};
+  }
   async function refresh(snapshot) {
+    reset();
     const localModel = optionalString(
       snapshot ? snapshot.localDefaultModel : await api2.settings.get("localDefaultModel")
     );
@@ -48633,7 +48637,6 @@ function createModelRoutingSection(api2, options = {}) {
     const roleModels = stringRecordOrEmpty(
       snapshot ? snapshot.roleModels : await api2.settings.get("roleModels")
     );
-    pendingRoles = {};
     if (modelScope === "all") {
       const coder = roleModels["coder"] ?? localModel;
       const research = roleModels["research"] ?? subagent;
@@ -48678,6 +48681,7 @@ function createModelRoutingSection(api2, options = {}) {
   }
   return {
     root,
+    reset,
     refresh,
     readValues,
     readRoleModels: () => Object.keys(pendingRoles).length ? { ...pendingRoles } : void 0
@@ -63093,6 +63097,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     appearanceBaseline = currentAppearance();
     appearanceCommitted = false;
     resetDirtyState();
+    modelRoutingSection.reset();
     developerModeInput.checked = store2.getState().developerMode;
     syncDeveloperOnlySettings();
     searchContentLoaded = false;
