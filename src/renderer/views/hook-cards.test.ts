@@ -74,6 +74,33 @@ afterEach(() => {
 })
 
 describe('hook cards (component, decision 10)', () => {
+  it('shows and hides existing cards when developer mode is toggled', () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'run the build',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [card({ id: 'h-allow', status: 'allow' })],
+      },
+    ])
+    assert.equal(document.querySelector('[data-hook-cards-for]'), null, 'hidden by default')
+
+    store.setState({ developerMode: true })
+    store.emit('settings_changed')
+    assert.ok(document.querySelector('[data-hook-cards-for="u1"]'), 'appears when turned on')
+
+    store.setState({ developerMode: false })
+    store.emit('settings_changed')
+    assert.equal(document.querySelector('[data-hook-cards-for]'), null, 'removed when turned off')
+  })
+
   it('renders no hook cards unless developer mode is on', () => {
     const store = createStore()
     const host = document.createElement('div')
