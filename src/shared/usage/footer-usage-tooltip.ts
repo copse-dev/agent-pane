@@ -153,16 +153,23 @@ export function buildFooterUsageTooltip(
   const subagents = estimated
     ? { runs: 0, inputTokens: 0, outputTokens: 0 }
     : sumSubagentUsage(opts.messages)
+  // The headline counts every recorded run so it matches the list under it; the
+  // tokens beside it sum only the runs that reported usage, and a run that has
+  // not reported yet is listed as running rather than silently left out.
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages)
   const subagentRow: FooterUsageTooltipRow | null =
-    subagents.runs > 0
+    allRuns.length > 0
       ? {
           label: 'Subagents',
-          value: `${String(subagents.runs)} ${subagents.runs === 1 ? 'run' : 'runs'} · ${formatTokenCount(
-            subagents.inputTokens,
-          )} in / ${formatTokenCount(subagents.outputTokens)} out`,
+          value: `${String(allRuns.length)} ${allRuns.length === 1 ? 'run' : 'runs'} · ${
+            subagents.runs > 0
+              ? `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(
+                  subagents.outputTokens,
+                )} out`
+              : 'no usage yet'
+          }`,
         }
       : null
-  const allRuns = estimated ? [] : listSubagentRuns(opts.messages)
   const subagentRuns: FooterUsageTooltipRun[] = allRuns
     .slice(0, MAX_LISTED_SUBAGENT_RUNS)
     .map((run) => ({
@@ -178,8 +185,11 @@ export function buildFooterUsageTooltip(
         : '',
       status: run.status,
     }))
-  const conversationLabel = subagentRow ? 'Excluding subagents' : null
-  const threadLabel = subagentRow ? 'Whole thread' : null
+  // The headline only excludes runs whose usage was folded in, so the scope labels
+  // follow the runs that reported, not the ones still in flight.
+  const hasReportedRuns = subagents.runs > 0
+  const conversationLabel = hasReportedRuns ? 'Excluding subagents' : null
+  const threadLabel = hasReportedRuns ? 'Whole thread' : null
 
   const modelRows: FooterUsageTooltipRow[] = []
   if (!estimated && byModel.length > 1) {
