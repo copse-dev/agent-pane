@@ -139,6 +139,7 @@ describe('application vault', () => {
       const calls: string[] = []
       const vault = new AppProfileVault({
         ...f.deps,
+        legacy: { ...legacy, shouldReencrypt: (): boolean => true },
         invoke: async (request): Promise<NativeVaultReply> => {
           calls.push(request.operation)
           return { ok: true, automatic: false }
@@ -146,9 +147,55 @@ describe('application vault', () => {
       })
       assert.equal(await vault.initialize(), false)
       assert.equal(vault.cipher.protection, undefined)
+      assert.equal(vault.cipher.shouldReencrypt?.(Buffer.from('legacy')), true)
       assert.equal(readVaultManifest(f.path), null)
       assert.deepEqual(calls, ['status'])
     } finally {
+      f.dispose()
+    }
+  })
+  it('keeps legacy reads from rewriting credentials after an active client blocks enrollment', async () => {
+    const f = fixture()
+    const releaseClient = registerVaultProfileClient(f.path)
+    try {
+      const encrypted = Buffer.from('synthetic legacy key')
+      const original = JSON.stringify({
+        apiKey: { openai: { v: 1, enc: encrypted.toString('base64'), plain: false } },
+      })
+      writeFileSync(join(f.path, 'settings.json'), original)
+      let rewrites = 0
+      const vault = new AppProfileVault({
+        ...f.deps,
+        legacy: {
+          ...legacy,
+          shouldReencrypt: (): boolean => true,
+          encryptStringForMigration: (text): Buffer => {
+            rewrites++
+            return Buffer.from(`new format:${text}`)
+          },
+        },
+      })
+      await assert.rejects(vault.initialize(), /Close headless/)
+      assert.equal((await vault.status()).migrationFailed, true)
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      assert.equal(vault.cipher.decryptString(encrypted), 'synthetic legacy key')
+      assert.equal(vault.cipher.shouldReencrypt?.(encrypted), false)
+      assert.throws(() => vault.cipher.encryptStringForMigration?.('synthetic legacy key'), {
+        reason: 'unsupported',
+      })
+      assert.equal(rewrites, 0)
+      assert.equal(readFileSync(join(f.path, 'settings.json'), 'utf8'), original)
+      assert.equal(readVaultManifest(f.path), null)
+      assert.ok(!f.calls.some((call) => call.operation === 'create'))
+
+      releaseClient()
+      await vault.migrate()
+      assert.equal((await vault.status()).migrationFailed, false)
+      assert.equal(readVaultManifest(f.path)?.requireAuth, false)
+      assert.equal(f.restarts(), 1)
+      vault.dispose()
+    } finally {
+      releaseClient()
       f.dispose()
     }
   })

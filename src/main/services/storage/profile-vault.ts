@@ -77,9 +77,15 @@ export class AppProfileVault {
         return this.#session.decrypt(bytes, identity)
       },
       shouldReencrypt: (bytes): boolean =>
-        !this.#manifest && !this.#busy && (dependencies.legacy.shouldReencrypt?.(bytes) ?? false),
+        !this.#manifest &&
+        !this.#busy &&
+        !this.#migrationFailed &&
+        (dependencies.legacy.shouldReencrypt?.(bytes) ?? false),
       encryptStringForMigration: (text): Buffer => {
-        if (this.#manifest || this.#busy) throw new VaultError('unsupported')
+        // A refused vault migration must not be followed by lazy legacy rewrites
+        // from startup credential reads, especially beside an active client.
+        if (this.#manifest || this.#busy || this.#migrationFailed)
+          throw new VaultError('unsupported')
         return (
           dependencies.legacy.encryptStringForMigration?.(text) ??
           dependencies.legacy.encryptString(text)
