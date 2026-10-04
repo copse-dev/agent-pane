@@ -60919,7 +60919,7 @@ function mountSettingsDialog(store2, api2) {
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue;
+      if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
       const btn = document.createElement("button");
