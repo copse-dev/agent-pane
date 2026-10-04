@@ -32,7 +32,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 60_000 })
+    await $('.prompt-input').waitForExist({ timeout: 60_000 }).getElement()
   })
 
   after(() => {
@@ -40,19 +40,19 @@ describe('PR panel lifecycle actions (mock gh)', () => {
   })
 
   async function openPrTab(): Promise<void> {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement().getElement()
     if (!(await pane.isDisplayed())) {
-      await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
+      await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click().getElement()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await $('[aria-label="Open pull requests"]').click().getElement()
     await browser.pause(800)
   }
 
   async function waitForViewer(title: string): Promise<void> {
     await browser.waitUntil(
       async () => {
-        const el = await $('.pr-viewer-title')
+        const el = await $('.pr-viewer-title').getElement().getElement()
         return (await el.isDisplayed()) && (await el.getText()).includes(title)
       },
       { timeout: 15_000, timeoutMsg: `expected PR viewer for "${title}"` },
@@ -60,10 +60,10 @@ describe('PR panel lifecycle actions (mock gh)', () => {
   }
 
   async function clickPrAction(label: string): Promise<void> {
-    const action = await $(`button.pr-action-btn*=${label}`)
-    if (!(await action.isDisplayed())) await $('.pr-more-toggle').click()
+    const action = await $(`button.pr-action-btn*=${label}`).getElement()
+    if (!(await action.isDisplayed())) await $('.pr-more-toggle').click().getElement()
     await action.click()
-    const confirm = await $('#confirm-dialog .confirm-dialog-confirm')
+    const confirm = await $('#confirm-dialog .confirm-dialog-confirm').getElement()
     await confirm.waitForDisplayed({ timeout: 10_000 })
     await confirm.click()
   }
@@ -74,48 +74,53 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await openPrTab()
     // The linked PR (#42) auto-selects; under the actions fixture it is a draft.
     await waitForViewer('Add GitHub PR panel tab')
-    await expect(await $('.pr-badge-draft')).toBeDisplayed()
+    await expect(await $('.pr-badge-draft').getElement().getElement()).toBeDisplayed()
 
     // Approve stays visible; secondary actions use the native disclosure.
-    await expect(await $('button.pr-action-btn*=Rerun CI')).not.toBeDisplayed()
-    await expect(await $('button.pr-action-btn*=Approve')).toBeDisplayed()
-    await expect(await $('button.pr-action-btn*=Mark ready')).not.toBeDisplayed()
-    await expect(await $('button.pr-action-btn*=Enable auto-merge')).not.toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Rerun CI').getElement()).not.toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Approve').getElement()).toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Mark ready').getElement()).not.toBeDisplayed()
+    await expect(await $('button.pr-action-btn*=Enable auto-merge').getElement()).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-actions-initial.png')
-    await $('.pr-more-toggle').click()
-    await expect(await $('button.pr-action-btn*=Mark ready')).toBeDisplayed()
+    await $('.pr-more-toggle').click().getElement()
+    await expect(await $('button.pr-action-btn*=Mark ready').getElement()).toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-actions-menu.png')
     await browser.keys('Escape')
-    await expect(await $('.pr-more-toggle')).toBeFocused()
-    await expect(await $('button.pr-action-btn*=Mark ready')).not.toBeDisplayed()
+    await expect(await $('.pr-more-toggle').getElement()).toBeFocused()
+    await expect(await $('button.pr-action-btn*=Mark ready').getElement()).not.toBeDisplayed()
 
     // Approve → outcome message + Approved badge.
     await clickPrAction('Approve')
-    await browser.waitUntil(async () => (await $('.pr-badge-approved')).isExisting(), {
+    await browser.waitUntil(async () => (await $('.pr-badge-approved').getElement().getElement()).isExisting(), {
       timeout: 15_000,
       timeoutMsg: 'expected Approved badge after approving',
     })
-    await expect(await $('.pr-action-status')).toHaveText(expect.stringMatching(/approved pr #42/i))
+    await expect(await $('.pr-action-status').getElement().getElement()).toHaveText(
+      expect.stringMatching(/approved pr #42/i),
+    )
     await saveElementScreenshot('#pane-files', 'pr-actions-approved.png')
 
     // Enable auto-merge → Auto-merge badge + strategy in the message.
     await clickPrAction('Enable auto-merge')
-    await browser.waitUntil(async () => (await $('.pr-badge-automerge')).isExisting(), {
-      timeout: 15_000,
-      timeoutMsg: 'expected Auto-merge badge after enabling',
-    })
-    await expect(await $('.pr-action-status')).toHaveText(
+    await browser.waitUntil(
+      async () => (await $('.pr-badge-automerge').getElement().getElement()).isExisting(),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected Auto-merge badge after enabling',
+      },
+    )
+    await expect(await $('.pr-action-status').getElement().getElement()).toHaveText(
       expect.stringMatching(/auto-merge \(squash\)/i),
     )
     await saveElementScreenshot('#pane-files', 'pr-actions-automerge.png')
 
     // Mark ready → the Draft badge disappears.
     await clickPrAction('Mark ready')
-    await browser.waitUntil(async () => !(await $('.pr-badge-draft').isExisting()), {
+    await browser.waitUntil(async () => !(await $('.pr-badge-draft').isExisting().getElement()), {
       timeout: 15_000,
       timeoutMsg: 'expected Draft badge to clear after marking ready',
     })
-    await expect(await $('.pr-action-status')).toHaveText(
+    await expect(await $('.pr-action-status').getElement().getElement()).toHaveText(
       expect.stringMatching(/ready for review/i),
     )
 
@@ -144,8 +149,8 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     assert.ok(automerge, 'expected the Auto-merge badge')
     assert.equal(automerge.color, await tokenColour('--text-secondary'))
     assert.equal(automerge.border, await tokenColour('--border', 'border-top-color'))
-    await expect(await $('.pr-list-status[aria-label="PR #42 open; CI passing"]')).toBeDisplayed()
-    await expect(await $('.pr-list-status[aria-label="PR #88 open; CI failing"]')).toBeDisplayed()
+    await expect(await $('.pr-list-status[aria-label="PR #42 open; CI passing"]').getElement()).toBeDisplayed()
+    await expect(await $('.pr-list-status[aria-label="PR #88 open; CI failing"]').getElement()).toBeDisplayed()
     const statusColours = await browser.execute(() => {
       const open = document.querySelector('.pr-list-status.is-open')
       const failure = document.querySelector('.pr-list-status.has-ci-failure svg path:nth-child(2)')
@@ -160,16 +165,16 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     assert.equal(statusColours.failure, await tokenColour('--pr-closed'))
     // #3477 lifecycle/conflict SVGs remain intact in the redesigned rows.
     await expect(
-      await $('.pr-list-status.is-open.has-ci-failure svg[data-icon="git-pull-request"]'),
+      await $('.pr-list-status.is-open.has-ci-failure svg[data-icon="git-pull-request"]').getElement(),
     ).toBeDisplayed()
-    await expect(await $('.pr-list-ci')).not.toBeExisting()
+    await expect(await $('.pr-list-ci').getElement()).not.toBeExisting()
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
-    await $('.pr-list-title*=Tidy up workspace status polling').click()
+    await $('.pr-list-title*=Tidy up workspace status polling').click().getElement()
     await waitForViewer('Tidy up workspace status polling')
     await clickPrAction('Rerun CI')
     await browser.waitUntil(
-      async () => /re-ran 1 failed run/i.test(await $('.pr-action-status').getText()),
+      async () => /re-ran 1 failed run/i.test(await $('.pr-action-status').getText().getElement()),
       { timeout: 15_000, timeoutMsg: 'expected rerun outcome message' },
     )
     await saveElementScreenshot('#pane-files', 'pr-actions-rerun.png')

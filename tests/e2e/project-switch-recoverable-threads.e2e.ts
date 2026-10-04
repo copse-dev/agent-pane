@@ -7,9 +7,9 @@ import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 
 describe('project switch with recoverable threads', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     const now = Date.now()

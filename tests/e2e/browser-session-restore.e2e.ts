@@ -27,15 +27,16 @@ const tabLabels = async (): Promise<string[]> =>
 
 /** The heading the active artefact guest is currently showing. */
 async function activeArtefactHeading(): Promise<string | null> {
-  return await browser.execute(async () => {
-    const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-      executeJavaScript?: (code: string) => Promise<unknown>
-    } | null
-    const text = await webview?.executeJavaScript?.(
+  const guestResult = await browser.execute(async () => {
+    const webview = document.querySelector<Electron.WebviewTag>(
+      '.browser-tab-panel.is-active webview',
+    )
+    const text: unknown = await webview?.executeJavaScript(
       'document.getElementById("version")?.textContent ?? null',
     )
     return typeof text === 'string' ? text : null
   })
+  return guestResult
 }
 
 describe('browser session restore', function () {
@@ -44,9 +45,9 @@ describe('browser session restore', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     projectRoot = mkdtempSync(join(tmpdir(), 'copse-browser-session-'))
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedCanvasArtefactThreadFixture(projectRoot, PROJECT_ID, ACTIVE_THREAD_ID, HISTORY_THREAD_ID)
     await browser.reloadSession()
@@ -120,12 +121,12 @@ describe('browser session restore', function () {
       timeoutMsg: 'expected the restored canvas tab to close',
     })
     await browser.execute(() => {
-      for (const card of document.querySelectorAll('details.tool-card')) {
-        ;(card as HTMLDetailsElement).open = true
+      for (const card of document.querySelectorAll<HTMLDetailsElement>('details.tool-card')) {
+        card.open = true
         card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       }
     })
-    const open = await $('.canvas-preview-card button')
+    const open = await $('.canvas-preview-card button').getElement()
     await open.waitForDisplayed({ timeout: 20_000 })
     await open.click()
 

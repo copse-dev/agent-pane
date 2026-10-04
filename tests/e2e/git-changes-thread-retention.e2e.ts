@@ -16,9 +16,9 @@ describe('Changes pane thread retention', function () {
   let repoRoot = ''
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     repoRoot = seedGitChangesFixture()
     const now = Date.now()
@@ -80,7 +80,7 @@ describe('Changes pane thread retention', function () {
         (
           await browser.execute(() =>
             Array.from(document.querySelectorAll('.git-change-path'), (element) =>
-              (element.textContent ?? '').trim(),
+              element.textContent.trim(),
             ),
           )
         ).includes('retention-external.ts'),

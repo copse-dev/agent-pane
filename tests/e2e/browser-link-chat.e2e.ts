@@ -39,14 +39,14 @@ describe('chat browser links', () => {
 
   after(async () => {
     resetUserData()
-    await page?.close()
+    await page.close()
   })
 
   it('opens chat links in the browser panel and navigates to the URL', async () => {
-    const message = await $('[data-message-id="msg-assistant-link"] .message-text')
+    const message = await $('[data-message-id="msg-assistant-link"] .message-text').getElement()
     await message.waitForDisplayed({ timeout: 30_000 })
 
-    const link = await message.$('a')
+    const link = await message.$('a').getElement()
     await link.waitForDisplayed({ timeout: 5_000 })
     await expect(link).toHaveAttribute('href', page.url)
 
@@ -65,16 +65,19 @@ describe('chat browser links', () => {
       },
     )
 
-    const urlInput = await $('.browser-tab-panel.is-active .browser-url-input')
+    const urlInput = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await urlInput.waitForDisplayed({ timeout: 5_000 })
     await expect(urlInput).toHaveValue(page.url)
 
     await waitForWebviewTitle('Copse browser fixture')
     expect(page.requests).toContain('/page')
-    const heading = await browser.execute(async () => {
+    const heading: unknown = await browser.execute(async () => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       if (!webview) throw new Error('active browser webview missing')
-      return webview.executeJavaScript("document.querySelector('h1')?.textContent")
+      const result: unknown = await webview.executeJavaScript(
+        "document.querySelector('h1')?.textContent",
+      )
+      return result
     })
     expect(heading).toBe('Local browser page')
     await saveAppScreenshot('browser-link-chat-local-page.png')

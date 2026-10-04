@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -11,9 +12,16 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function expectPickerContainment(): Promise<void> {
   // Filtering resizes the popup; let CSS anchor fallbacks settle before measuring it.
-  await browser.executeAsync((done) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => done()))
-  })
+  await browser.execute(
+    () =>
+      new Promise<void>((done) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            done()
+          }),
+        )
+      }),
+  )
   const geometry = await browser.execute(() => {
     const menu = document.querySelector<HTMLElement>('.branch-picker-menu')
     const filter = menu?.querySelector<HTMLElement>('.branch-picker-filter')
@@ -84,20 +92,20 @@ describe('footer branch picker', () => {
   it('shows the picker on a new chat with default branch first', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const picker = await $('.branch-picker.is-picker-mode')
+    const picker = await $('.branch-picker.is-picker-mode').getElement()
     await expect(picker).toBeDisplayed()
     await expect(picker.$('.branch-picker-label')).toHaveText('main')
     await expect(picker.$('.branch-picker-chevron')).toBeDisplayed()
 
     await picker.$('.branch-picker-trigger').click()
-    const menu = await picker.$('.branch-picker-menu')
+    const menu = await picker.$('.branch-picker-menu').getElement()
     await expect(menu).toBeDisplayed()
     await expect(menu.$('.branch-picker-option')).toBeDisplayed({ wait: 10_000 })
     await expect(menu.$('.branch-picker-action')).not.toExist()
 
-    const branchOptions = await menu.$$('.branch-picker-option')
-    await expect(branchOptions.length).toBeGreaterThan(0)
-    await expect(branchOptions[0].$('.branch-picker-default-badge')).toBeDisplayed()
+    const branchOptions = await menu.$$('.branch-picker-option').getElements()
+    expect(branchOptions.length).toBeGreaterThan(0)
+    await expect(at([...branchOptions], 0).$('.branch-picker-default-badge')).toBeDisplayed()
 
     // The full app, not just #input-bar: the menu opens upward from the footer
     // and can be taller than the composer's own box (the filter row grew it),
@@ -107,7 +115,7 @@ describe('footer branch picker', () => {
   })
 
   it('records a picked branch as the thread base without moving the checkout', async () => {
-    const picker = await $('.branch-picker.is-picker-mode')
+    const picker = await $('.branch-picker.is-picker-mode').getElement()
     const trigger = picker.$('.branch-picker-trigger')
     const menu = picker.$('.branch-picker-menu')
     if (!(await menu.isDisplayed())) await trigger.click()
@@ -116,7 +124,7 @@ describe('footer branch picker', () => {
 
     // The isolated fixture has a default branch and a checked-out work branch.
     let picked: string | null = null
-    for (const option of await menu.$$('.branch-picker-option')) {
+    for (const option of await menu.$$('.branch-picker-option').getElements()) {
       const name = await option.$('.branch-picker-option-label').getText()
       if (name === 'main') continue
       picked = name
@@ -152,7 +160,7 @@ describe('footer branch picker', () => {
   })
 
   it('filters branches, navigates with the keyboard, and reports a no-match state', async () => {
-    const picker = await $('.branch-picker.is-picker-mode')
+    const picker = await $('.branch-picker.is-picker-mode').getElement()
     const trigger = picker.$('.branch-picker-trigger')
     const menu = picker.$('.branch-picker-menu')
     if (!(await menu.isDisplayed())) await trigger.click()
@@ -165,10 +173,13 @@ describe('footer branch picker', () => {
 
     // Case-insensitive substring narrows the list to the one matching branch.
     await filter.setValue(seed.currentBranch.toUpperCase())
-    await browser.waitUntil(async () => (await menu.$$('.branch-picker-option')).length === 1, {
-      timeout: 2_000,
-      timeoutMsg: 'branch picker did not filter after typing',
-    })
+    await browser.waitUntil(
+      async () => (await menu.$$('.branch-picker-option').getElements()).length === 1,
+      {
+        timeout: 2_000,
+        timeoutMsg: 'branch picker did not filter after typing',
+      },
+    )
     await expect(menu.$('.branch-picker-option-label')).toHaveText(seed.currentBranch)
 
     await expectPickerContainment()
@@ -177,10 +188,13 @@ describe('footer branch picker', () => {
     // Clearing the filter restores the full list; keyboard nav plus Enter selects.
     await filter.click()
     await browser.keys(Array(seed.currentBranch.length).fill('Backspace'))
-    await browser.waitUntil(async () => (await menu.$$('.branch-picker-option')).length === 2, {
-      timeout: 2_000,
-      timeoutMsg: 'branch picker did not restore the full list',
-    })
+    await browser.waitUntil(
+      async () => (await menu.$$('.branch-picker-option').getElements()).length === 2,
+      {
+        timeout: 2_000,
+        timeoutMsg: 'branch picker did not restore the full list',
+      },
+    )
     await browser.keys('ArrowDown')
     const activeId = await filter.getAttribute('aria-activedescendant')
     assert.ok(activeId, 'the filter exposes the keyboard-highlighted option')

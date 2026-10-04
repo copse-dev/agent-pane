@@ -25,14 +25,13 @@ describe('scoped Git signing approval', function () {
   let directory = ''
   let root = ''
   let server: Server | undefined
-  const previousSocket = process.env.SSH_AUTH_SOCK
+  const previousSocket = process.env['SSH_AUTH_SOCK']
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
   before(async function () {
     if (process.platform !== 'darwin') {
       this.skip()
-      return
     }
     directory = mkdtempSync('/private/tmp/copse-sign-ui-')
     root = join(directory, 'repo')

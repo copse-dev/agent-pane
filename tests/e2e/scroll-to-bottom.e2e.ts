@@ -74,8 +74,8 @@ describe('scroll to bottom', () => {
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
 
-    await expect(await isScrollToBottomVisible()).toBe(true)
-    await expect(await isNearBottom()).toBe(false)
+    expect(await isScrollToBottomVisible()).toBe(true)
+    expect(await isNearBottom()).toBe(false)
     await saveAppScreenshot('scroll-to-bottom-scrolled-up.png')
   })
 
@@ -89,7 +89,7 @@ describe('scroll to bottom', () => {
       const current = await browser.execute(() => document.documentElement.dataset['theme'])
       if (current !== theme) await switchTheme(theme)
       await scrollMessagesListToTop()
-      await expect(await isScrollToBottomVisible()).toBe(true)
+      expect(await isScrollToBottomVisible()).toBe(true)
 
       // White on an 80% --accent measured 2.91:1 in dark. The button is a fill
       // carrying the label tier now: --accent-fill + --text-on-accent, opaque,
@@ -112,10 +112,10 @@ describe('scroll to bottom', () => {
         probe.remove()
         return result
       })
-      await expect(paint).toEqual({ fill: true, label: true, shadow: true, opacity: '1' })
+      expect(paint).toEqual({ fill: true, label: true, shadow: true, opacity: '1' })
       const rest = await fillContrast('.scroll-to-bottom')
       if (!rest) throw new Error('scroll-to-bottom not found')
-      await expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
       await saveAppScreenshot(`scroll-to-bottom-${theme}.png`)
 
       // The glyph is non-text, so hover holds it to the 3:1 non-text bar: light
@@ -124,7 +124,7 @@ describe('scroll to bottom', () => {
       await browser.pause(300)
       const hovered = await fillContrast('.scroll-to-bottom')
       if (!hovered) throw new Error('scroll-to-bottom not found')
-      await expect(hovered.ratio).toBeGreaterThanOrEqual(3)
+      expect(hovered.ratio).toBeGreaterThanOrEqual(3)
     }
   })
 
@@ -135,12 +135,12 @@ describe('scroll to bottom', () => {
 
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
-    await expect(await isNearBottom()).toBe(false)
+    expect(await isNearBottom()).toBe(false)
 
     await $('.scroll-to-bottom').click()
 
-    await expect(await isNearBottom()).toBe(true)
-    await expect(await isScrollToBottomVisible()).toBe(false)
+    expect(await isNearBottom()).toBe(true)
+    expect(await isScrollToBottomVisible()).toBe(false)
 
     const lastMessageVisible = await browser.execute(() => {
       const messages = document.querySelectorAll('.messages-list .msg')
@@ -152,7 +152,7 @@ describe('scroll to bottom', () => {
       const msgRect = last.getBoundingClientRect()
       return msgRect.bottom <= listRect.bottom + 1 && msgRect.bottom >= listRect.top
     })
-    await expect(lastMessageVisible).toBe(true)
+    expect(lastMessageVisible).toBe(true)
 
     await saveAppScreenshot('scroll-to-bottom-at-bottom.png')
   })
@@ -188,14 +188,14 @@ describe('scroll to bottom', () => {
       { timeout: 30_000, interval: 50 },
     )
 
-    await expect(await isNearBottom()).toBe(true)
-    await expect(await isScrollToBottomVisible()).toBe(false)
+    expect(await isNearBottom()).toBe(true)
+    expect(await isScrollToBottomVisible()).toBe(false)
 
     // More tokens arrive while still pinned to the bottom.
     await browser.pause(400)
 
-    await expect(await isNearBottom()).toBe(true)
-    await expect(await isScrollToBottomVisible()).toBe(false)
+    expect(await isNearBottom()).toBe(true)
+    expect(await isScrollToBottomVisible()).toBe(false)
 
     await waitForAgentIdle()
     await scenario.assertComplete()
@@ -238,7 +238,7 @@ describe('scroll to bottom', () => {
     // Stay scrolled up while tokens keep arriving.
     await browser.pause(400)
 
-    await expect(await isScrollToBottomVisible()).toBe(true)
+    expect(await isScrollToBottomVisible()).toBe(true)
     const firstQuestionVisible = await browser.execute(() => {
       const firstUser = document.querySelector('.messages-list .msg-user')
       if (!(firstUser instanceof HTMLElement)) return false
@@ -248,7 +248,7 @@ describe('scroll to bottom', () => {
       const msgRect = firstUser.getBoundingClientRect()
       return msgRect.top >= listRect.top - 4 && msgRect.top <= listRect.bottom
     })
-    await expect(firstQuestionVisible).toBe(true)
+    expect(firstQuestionVisible).toBe(true)
 
     await saveAppScreenshot('scroll-to-bottom-streaming-scrolled-up.png')
     await waitForAgentIdle()

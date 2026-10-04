@@ -13,7 +13,9 @@ describe('assistant visual evidence', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('rests as a compact, meaningful before/after card', async () => {
     await $('.messages-list').waitForExist({ timeout: 30_000 })
@@ -60,11 +62,11 @@ describe('assistant visual evidence', () => {
       return {
         labels: Array.from(
           evidence?.querySelectorAll('.visual-evidence-label') ?? [],
-          (node) => node.textContent ?? '',
+          (node) => node.textContent,
         ),
         sourceUrls: Array.from(
           evidence?.querySelectorAll('.visual-evidence-source-url') ?? [],
-          (node) => node.textContent ?? '',
+          (node) => node.textContent,
         ),
         imageCount: images.length,
         loaded: images.every((image) => image.complete && image.naturalWidth === 480),

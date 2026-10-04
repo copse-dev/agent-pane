@@ -13,7 +13,7 @@ async function openPermissions(): Promise<WebdriverIO.Element> {
   await dialog.$('button[data-section="permissions"]').click()
   const permissions = $('.settings-section[data-section="permissions"]')
   await expect(permissions).toBeDisplayed()
-  return permissions
+  return permissions.getElement()
 }
 
 describe('shared terminal history setting (#2433)', () => {
@@ -32,7 +32,7 @@ describe('shared terminal history setting (#2433)', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const permissions = await openPermissions()
 
-    const toggle = await permissions.$('input[name="shareTerminalHistoryEnabled"]')
+    const toggle = await permissions.$('input[name="shareTerminalHistoryEnabled"]').getElement()
     await expect(toggle).toBeExisting()
     // On by default: every terminal opened for a project shares one HISTFILE.
     assert.equal(await toggle.isSelected(), true)
@@ -70,7 +70,9 @@ describe('shared terminal history setting (#2433)', () => {
 
     // Reopen to prove the off state persisted, not just the in-memory checkbox.
     const reopened = await openPermissions()
-    const reopenedToggle = await reopened.$('input[name="shareTerminalHistoryEnabled"]')
+    const reopenedToggle = await reopened
+      .$('input[name="shareTerminalHistoryEnabled"]')
+      .getElement()
     await expect(reopenedToggle).toBeExisting()
     assert.equal(await reopenedToggle.isSelected(), false)
   })

@@ -7,7 +7,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
-const LOCAL_MODELS = ['qwen/qwen3.6-35b-a3b', 'google/gemma-4-e4b', 'qwen/qwen3-4b-2507']
+const LOCAL_MODELS = ['qwen/qwen3.6-35b-a3b', 'google/gemma-4-e4b', 'qwen/qwen3-4b-2507'] as const
 const LM_STUDIO_FIXTURE_PORT = 51234
 
 async function startLmStudioModelServer(): Promise<{ url: string; close: () => Promise<void> }> {
@@ -30,20 +30,23 @@ async function startLmStudioModelServer(): Promise<{ url: string; close: () => P
   const url = await new Promise<string>((resolve, reject) => {
     server.once('error', reject)
     server.listen(LM_STUDIO_FIXTURE_PORT, '127.0.0.1', () => {
-      resolve(`http://127.0.0.1:${LM_STUDIO_FIXTURE_PORT}/v1`)
+      resolve(`http://127.0.0.1:${String(LM_STUDIO_FIXTURE_PORT)}/v1`)
     })
   })
 
   return {
     url,
-    close: () =>
+    close: (): Promise<void> =>
       new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()))
+        server.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   }
 }
 
-function settingsSection(section: 'general' | 'agent') {
+function settingsSection(section: 'general' | 'agent'): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -51,7 +54,7 @@ async function scrollSettingsToLegend(legendText: string): Promise<void> {
   await browser.execute((text) => {
     const content = document.querySelector<HTMLElement>('.settings-content')
     const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-      (candidate) => candidate.querySelector('legend')?.textContent?.trim() === text,
+      (candidate) => candidate.querySelector('legend')?.textContent.trim() === text,
     )
     if (!content || !fieldset) return
     content.scrollTop = Math.max(0, fieldset.offsetTop - 64)
@@ -128,7 +131,7 @@ describe('settings model routing placement', function () {
     await expect(modelFilter).toBeFocused()
     await modelFilter.setValue('qwen3.6')
     await browser.waitUntil(
-      async () => (await chatModelPicker.$$('.model-picker-option')).length === 1,
+      async () => (await chatModelPicker.$$('.model-picker-option').getElements()).length === 1,
       { timeout: 2_000, timeoutMsg: 'settings model picker did not filter after typing' },
     )
     await expect(chatModelPicker.$('.model-picker-option')).toHaveText(
@@ -154,19 +157,17 @@ describe('settings model routing placement', function () {
       const routingHost = generalSection?.querySelector<HTMLElement>('#settings-model-routing-host')
       const routingFieldLabels = [
         ...(routingHost?.querySelectorAll<HTMLElement>('.ui-field-label') ?? []),
-      ].map((label) => label.textContent?.trim())
+      ].map((label) => label.textContent.trim())
 
       return {
         generalHasRouting: !!routingHost?.querySelector('fieldset'),
-        modelsLegend: modelSection?.querySelector('legend')?.textContent?.trim() ?? '',
+        modelsLegend: modelSection?.querySelector('legend')?.textContent.trim() ?? '',
         modelControlNames: [
           ...(modelSection?.querySelectorAll<HTMLSelectElement>('select[name]') ?? []),
         ].map((select) => select.name),
         standaloneModelLegends: [...(generalSection?.querySelectorAll('legend') ?? [])]
-          .map((legend) => legend.textContent?.trim())
-          .filter((legend) =>
-            ['Chat model', 'Small tasks', 'Local model roles'].includes(legend ?? ''),
-          ),
+          .map((legend) => legend.textContent.trim())
+          .filter((legend) => ['Chat model', 'Small tasks', 'Local model roles'].includes(legend)),
         // Model routing lives in exactly one place: the General > Models block.
         routingHostCount: document.querySelectorAll('#settings-model-routing-host').length,
         routingFieldLabels,

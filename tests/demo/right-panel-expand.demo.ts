@@ -20,7 +20,19 @@ async function openRightPanel(): Promise<void> {
  * that is the right size but stacked underneath, so the probe also hit-tests the
  * middle of the chat column and of the projects rail.
  */
-async function probeLayout() {
+async function probeLayout(): Promise<{
+  maximized: boolean
+  paneWidth: number
+  bodyWidth: number
+  projectsWidth: number
+  trailingGaps: number[]
+  paneToChatLeft: number
+  paneOverChat: boolean
+  chatOnTop: boolean
+  projectsOnTop: boolean
+  label: string | null
+  pressed: string | null
+} | null> {
   return browser.execute((expandSelector: string) => {
     const pane = document.getElementById('pane-files')
     const body = document.getElementById('body')

@@ -224,9 +224,9 @@ function seedAcpSettledOpenToolFixture(workspaceRoot: string): void {
 
 describe('ACP interrupted by a new chat prompt', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpPromptInterruptedFixture(process.cwd())
     await browser.reloadSession()
@@ -238,7 +238,7 @@ describe('ACP interrupted by a new chat prompt', () => {
   })
 
   it('keeps the interrupted run folded and attributes the call when opened', async () => {
-    const run = await $('.tool-card-rollup[data-rollup-key="run"]')
+    const run = await $('.tool-card-rollup[data-rollup-key="run"]').getElement()
     await expect(run).toHaveAttribute('data-status', 'interrupted')
     await expect(run).not.toHaveAttribute('open')
     await expect(run.$(':scope > summary .tool-name')).toHaveText(
@@ -250,10 +250,12 @@ describe('ACP interrupted by a new chat prompt', () => {
     await expect(run.$(':scope > .tool-rollup-body > .tool-interruption-note')).toHaveText(
       'Interrupted when you sent a new message.',
     )
-    const step = await run.$('[data-step-message-id="msg-assistant-acp-interrupted-step"]')
+    const step = await run
+      .$('[data-step-message-id="msg-assistant-acp-interrupted-step"]')
+      .getElement()
     await expect(step).not.toHaveAttribute('open')
     await step.$(':scope > summary').click()
-    const call = await step.$('[data-tool-id="tc-acp-interrupted-read"]')
+    const call = await step.$('[data-tool-id="tc-acp-interrupted-read"]').getElement()
     await expect(call).toHaveAttribute('data-status', 'interrupted')
     await expect(call).not.toHaveAttribute('open')
     await call.$(':scope > summary').click()
@@ -269,9 +271,9 @@ describe('ACP interrupted by a new chat prompt', () => {
 
 describe('ACP unfinished-turn recovery fallback', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpUnfinishedTurnFixture(process.cwd())
     await browser.reloadSession()
@@ -285,8 +287,10 @@ describe('ACP unfinished-turn recovery fallback', () => {
   })
 
   it('places the recovery fallback after the interrupted tool trace', async () => {
-    const toolCard = await $('.tool-card[data-tool-id="tc-acp-upstream-search"]')
-    const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
+    const toolCard = await $('.tool-card[data-tool-id="tc-acp-upstream-search"]').getElement()
+    const fallback = await $(
+      '[data-message-id="msg-assistant-acp-fallback"] .message-text',
+    ).getElement()
     await expect(toolCard).toHaveAttribute('data-status', 'error')
     await expect(toolCard).toHaveAttribute('open')
     await expect(toolCard).toHaveText('may have partially run or produced effects', {
@@ -319,9 +323,9 @@ describe('ACP unfinished-turn recovery fallback', () => {
 
 describe('ACP unfinished-turn recovery with exhausted continuation budget', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpBudgetDeniedFixture(process.cwd())
     await browser.reloadSession()
@@ -335,7 +339,9 @@ describe('ACP unfinished-turn recovery with exhausted continuation budget', () =
   })
 
   it('attributes the skipped recovery to the continuation limit and offers a next step', async () => {
-    const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
+    const fallback = await $(
+      '[data-message-id="msg-assistant-acp-fallback"] .message-text',
+    ).getElement()
     await expect(fallback).toHaveText(
       'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.',
     )
@@ -347,9 +353,9 @@ describe('ACP unfinished-turn recovery with exhausted continuation budget', () =
 
 describe('ACP final answer followed by a trailing tool update', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpTrailingToolUpdateFixture(process.cwd())
     await browser.reloadSession()
@@ -363,8 +369,10 @@ describe('ACP final answer followed by a trailing tool update', () => {
   })
 
   it('keeps the final answer after the completed tool trace without a fallback', async () => {
-    const toolCard = await $('.tool-card[data-tool-id="tc-acp-trailing-search"]')
-    const answer = await $('[data-message-id="msg-assistant-acp-final-answer"] .message-text')
+    const toolCard = await $('.tool-card[data-tool-id="tc-acp-trailing-search"]').getElement()
+    const answer = await $(
+      '[data-message-id="msg-assistant-acp-final-answer"] .message-text',
+    ).getElement()
     await expect(toolCard).toHaveAttribute('data-status', 'done')
     await expect(answer).toHaveText('Updated the Selenium ADR and verified the diff.')
     await expect($('[data-message-id="msg-assistant-acp-fallback"]')).not.toExist()
@@ -389,9 +397,9 @@ describe('ACP final answer followed by a trailing tool update', () => {
 
 describe('ACP successful turn with an unterminated tool call', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpSettledOpenToolFixture(process.cwd())
     await browser.reloadSession()
@@ -405,8 +413,8 @@ describe('ACP successful turn with an unterminated tool call', () => {
   })
 
   it('shows the completed rollup as failed without a running spinner', async () => {
-    const anchor = await $('[data-message-id="msg-assistant-acp-settled-first-step"]')
-    const rollup = await anchor.$('.tool-card-rollup')
+    const anchor = await $('[data-message-id="msg-assistant-acp-settled-first-step"]').getElement()
+    const rollup = await anchor.$('.tool-card-rollup').getElement()
     await expect(rollup).toHaveAttribute('data-status', 'error')
     await expect(rollup.$('summary.tool-card-header')).toHaveText(
       'Used 2 tools · 2 steps · 1 failed',
@@ -415,7 +423,9 @@ describe('ACP successful turn with an unterminated tool call', () => {
 
     // The run stays quiet; the genuine failure is shown open beside it.
     await expect(rollup).not.toHaveAttribute('open')
-    const failedSearch = await anchor.$(':scope > [data-tool-id="tc-acp-settled-web-search"]')
+    const failedSearch = await anchor
+      .$(':scope > [data-tool-id="tc-acp-settled-web-search"]')
+      .getElement()
     await expect(failedSearch).toHaveAttribute('data-status', 'error')
     await expect(failedSearch).toHaveAttribute('open')
     await expect(

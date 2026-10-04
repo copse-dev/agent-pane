@@ -45,15 +45,14 @@ describe('ACP GPT model picker labels', () => {
     assert.doesNotMatch(triggerLabel, /acp/i)
     await trigger.click()
     await $('.model-picker-browse').click()
-    const filter = await $('.model-picker-filter')
+    const filter = await $('.model-picker-filter').getElement()
     await filter.waitForDisplayed({ timeout: 5_000 })
     await filter.setValue('gpt')
 
-    const menu = await $('.model-picker-menu')
     const labels = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
-      ].map((element) => element.textContent?.trim() ?? ''),
+      ].map((element) => element.textContent.trim()),
     )
     const names = labels.map((label) => label.replace(/\s+— intellect [\d.]+$/, ''))
     for (const expected of ['GPT-5.4 nano', 'GPT-5.1', 'GPT-5 mini', 'GPT-5.6 Sol']) {
@@ -61,6 +60,6 @@ describe('ACP GPT model picker labels', () => {
     }
     assert.ok(!labels.some((label) => /^gpt-/.test(label)), JSON.stringify(labels))
 
-    await saveElementScreenshot(menu, 'acp-gpt-model-labels.png')
+    await saveElementScreenshot('.model-picker-menu', 'acp-gpt-model-labels.png')
   })
 })

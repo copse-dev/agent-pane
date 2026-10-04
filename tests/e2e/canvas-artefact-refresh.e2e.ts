@@ -57,15 +57,16 @@ async function renderVersion(heading: string): Promise<void> {
 
 /** The heading the active artefact webview is currently showing. */
 async function activeArtefactHeading(): Promise<string | null> {
-  return await browser.execute(async () => {
-    const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-      executeJavaScript?: (code: string) => Promise<unknown>
-    } | null
-    const text = await webview?.executeJavaScript?.(
+  const guestResult = await browser.execute(async () => {
+    const webview = document.querySelector<Electron.WebviewTag>(
+      '.browser-tab-panel.is-active webview',
+    )
+    const text: unknown = await webview?.executeJavaScript(
       'document.getElementById("version")?.textContent ?? null',
     )
     return typeof text === 'string' ? text : null
   })
+  return guestResult
 }
 
 /**
@@ -73,21 +74,20 @@ async function activeArtefactHeading(): Promise<string | null> {
  * colour. The dashboard declares no colours, so it sits on the host surface.
  */
 async function activeArtefactTextColors(): Promise<{ guest: string | null; host: string }> {
-  return await browser.execute(async () => {
+  const guestResult = await browser.execute(async () => {
     const host = document.querySelector<HTMLElement>(
       '.browser-tab-panel.is-active .browser-webview-host',
     )
-    const webview = host?.querySelector('webview') as {
-      executeJavaScript?: (code: string) => Promise<unknown>
-    } | null
-    const guest = await webview
-      ?.executeJavaScript?.('getComputedStyle(document.getElementById("version")).color')
+    const webview = host?.querySelector<Electron.WebviewTag>('webview')
+    const guest: unknown = await webview
+      ?.executeJavaScript('getComputedStyle(document.getElementById("version")).color')
       .catch(() => null)
     return {
       guest: typeof guest === 'string' ? guest : null,
       host: host ? getComputedStyle(host).color : '',
     }
   })
+  return guestResult
 }
 
 /** Drive a built-in tool through the mock model, the same way renderVersion does. */
@@ -121,7 +121,7 @@ async function selectThread(threadId: string): Promise<void> {
   await browser.waitUntil(
     async () =>
       (await browser.execute(
-        () => document.querySelector('.chat-row.selected')?.dataset.threadId,
+        () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'],
       )) === threadId,
     { timeout: 10_000, timeoutMsg: `expected thread ${threadId} to be selected` },
   )
@@ -136,9 +136,9 @@ describe('canvas artefact refresh', () => {
     tempParent = mkdtempSync(join(tmpdir(), 'copse-canvas-artefact-'))
     projectRoot = join(tempParent, 'canvas-project')
     mkdirSync(projectRoot)
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedCanvasArtefactThreadFixture(projectRoot, PROJECT_ID, ACTIVE_THREAD_ID, HISTORY_THREAD_ID)
     await browser.reloadSession()
@@ -201,11 +201,11 @@ describe('canvas artefact refresh', () => {
     // The user moves off the artefact tab, as they would while reading something
     // else in the pane.
     await browser.execute(() => {
-      const tabs = Array.from(document.querySelectorAll('.browser-tabs-tab'))
+      const tabs = Array.from(document.querySelectorAll<HTMLElement>('.browser-tabs-tab'))
       const other = tabs.find(
         (tab) => tab.querySelector('.browser-tabs-tab-label')?.textContent !== 'Sales Dashboard',
       )
-      ;(other as HTMLElement | undefined)?.click()
+      other?.click()
     })
     expect(await activeTabLabel()).not.toEqual('Sales Dashboard')
 
@@ -283,8 +283,8 @@ describe('canvas artefact refresh', () => {
     // data means the mirror loaded the document the canvas is showing. It is
     // also the card that offers to promote a background re-render.
     await browser.execute(() => {
-      for (const card of document.querySelectorAll('details.tool-card')) {
-        ;(card as HTMLDetailsElement).open = true
+      for (const card of document.querySelectorAll<HTMLDetailsElement>('details.tool-card')) {
+        card.open = true
         card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       }
     })

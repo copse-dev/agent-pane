@@ -11,7 +11,7 @@ import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.t
 
 async function savePortraitElementScreenshot(selector: string, filename: string): Promise<void> {
   await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
-  const el = await $(selector)
+  const el = await $(selector).getElement()
   await el.waitForDisplayed({ timeout: 15_000 })
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
@@ -22,7 +22,7 @@ const PORTRAIT_HEIGHT = 1180
 
 async function setProjectsWidth(px: number): Promise<void> {
   await browser.execute((width) => {
-    document.getElementById('body')?.style.setProperty('--projects-width', `${width}px`)
+    document.getElementById('body')?.style.setProperty('--projects-width', `${String(width)}px`)
     window.dispatchEvent(new Event('resize'))
   }, px)
   await browser.pause(150)
@@ -41,8 +41,8 @@ async function pinPortraitAppShell(): Promise<void> {
     if (!app) throw new Error('missing #app')
     // Width only — forcing a taller-than-display height makes Electron screenshot
     // captures hang on some CI / VNC setups.
-    app.style.width = `${width}px`
-    app.style.maxWidth = `${width}px`
+    app.style.width = `${String(width)}px`
+    app.style.maxWidth = `${String(width)}px`
     app.style.boxSizing = 'border-box'
     window.dispatchEvent(new Event('resize'))
   }, PORTRAIT_WIDTH)
@@ -72,7 +72,8 @@ async function openPortraitChrome(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await pinPortraitAppShell()
   await browser.waitUntil(
-    async () => (await (await $('#app')).getAttribute('class'))?.includes('is-portrait-chrome'),
+    async () =>
+      (await (await $('#app').getElement()).getAttribute('class'))?.includes('is-portrait-chrome'),
     { timeout: 5_000, timeoutMsg: 'expected portrait chrome class on #app' },
   )
   // Keep a normal projects width so Settings stays band-aligned with the bar.
@@ -88,7 +89,7 @@ async function openPortraitChrome(): Promise<void> {
   })
   await browser.waitUntil(
     async () => {
-      const overflow = await $('.portrait-panel-overflow')
+      const overflow = await $('.portrait-panel-overflow').getElement()
       return !(await overflow.isExisting()) || !(await overflow.isDisplayed())
     },
     { timeout: 5_000, timeoutMsg: 'expected all portrait panel modes to fit without overflow' },
@@ -125,8 +126,18 @@ describe('portrait panel controls row', () => {
     await openEmptyThreadPortraitChrome()
 
     const geometry = await browser.execute(() => {
-      const input = document.getElementById('input-bar')!.getBoundingClientRect()
-      const bar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
+      const input = (
+        document.getElementById('input-bar') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('input-bar')")
+        })()
+      ).getBoundingClientRect()
+      const bar = (
+        document.querySelector('.portrait-panel-bar') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.portrait-panel-bar')")
+        })()
+      ).getBoundingClientRect()
       return {
         inputLeft: input.left,
         inputRight: input.right,
@@ -147,7 +158,7 @@ describe('portrait panel controls row', () => {
   it('docks one composer-width mode strip to the seam and keeps buttons unboxed', async () => {
     await openPortraitChrome()
 
-    const portraitBar = await $('.portrait-panel-bar')
+    const portraitBar = await $('.portrait-panel-bar').getElement()
     await expect(portraitBar).toBeDisplayed()
     await expect($('.portrait-panel-overflow')).not.toBeDisplayed()
 
@@ -161,25 +172,38 @@ describe('portrait panel controls row', () => {
       { label: 'Open browser', text: 'Browser' },
     ]
     for (const button of labeled) {
-      const btn = await portraitBar.$(`.titlebar-text-btn[aria-label="${button.label}"]`)
+      const btn = await portraitBar
+        .$(`.titlebar-text-btn[aria-label="${button.label}"]`)
+        .getElement()
       await expect(btn).toBeDisplayed()
       await expect(btn).toHaveText(expect.stringContaining(button.text))
     }
 
     // Titlebar keeps Panel labeled; secondary mode buttons drop their text.
-    const titlebarPanel = await $('#titlebar .titlebar-text-btn[aria-label="Toggle right panel"]')
+    const titlebarPanel = await $(
+      '#titlebar .titlebar-text-btn[aria-label="Toggle right panel"]',
+    ).getElement()
     await expect(titlebarPanel).toHaveText('Panel')
     const titlebarTerminalLabel = await $(
       '#titlebar .titlebar-text-btn[aria-label="Open terminal"] .titlebar-btn-label',
-    )
+    ).getElement()
     await expect(titlebarTerminalLabel).not.toBeDisplayed()
 
     const layout = await browser.execute(() => {
-      const footer = document.querySelector('.input-footer')!.getBoundingClientRect()
-      const bar = document.querySelector('.portrait-panel-bar')!
-      const settings = document.querySelector('.projects-settings-btn')!
-      const paneChat = document.getElementById('pane-chat')!
-      const inputBar = document.getElementById('input-bar')!
+      const footer = (
+        document.querySelector('.input-footer') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.input-footer')")
+        })()
+      ).getBoundingClientRect()
+      const bar = document.querySelector('.portrait-panel-bar')
+      if (bar == null) throw new Error('Missing bar in test fixture')
+      const settings = document.querySelector('.projects-settings-btn')
+      if (settings == null) throw new Error('Missing settings in test fixture')
+      const paneChat = document.getElementById('pane-chat')
+      if (paneChat == null) throw new Error('Missing paneChat in test fixture')
+      const inputBar = document.getElementById('input-bar')
+      if (inputBar == null) throw new Error('Missing inputBar in test fixture')
       const barStyle = getComputedStyle(bar)
       const barRect = bar.getBoundingClientRect()
       const inputRect = inputBar.getBoundingClientRect()
@@ -238,7 +262,8 @@ describe('portrait panel controls row', () => {
     // Keep the entire visible Settings box above that invisible overlap so its
     // far-right edge still opens Settings.
     const settingsOwnsRightEdge = await browser.execute(() => {
-      const settings = document.querySelector<HTMLElement>('.projects-settings-btn')!
+      const settings = document.querySelector<HTMLElement>('.projects-settings-btn')
+      if (settings == null) throw new Error('Missing settings in test fixture')
       const rect = settings.getBoundingClientRect()
       return settings.contains(
         document.elementFromPoint(rect.right - 0.5, rect.top + rect.height / 2),
@@ -250,7 +275,8 @@ describe('portrait panel controls row', () => {
       ['explorer', 'terminal', 'changes'].map((id) => {
         const element = document.querySelector<HTMLElement>(
           `.portrait-panel-bar [data-panel-control="${id}"]`,
-        )!
+        )
+        if (element == null) throw new Error('Missing element in test fixture')
         const style = getComputedStyle(element)
         return {
           id,
@@ -305,7 +331,9 @@ describe('portrait panel controls row', () => {
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
     await browser.waitUntil(
       async () =>
-        (await (await $('#body')).getAttribute('class'))?.includes('is-right-panel-horizontal'),
+        (await (await $('#body').getElement()).getAttribute('class'))?.includes(
+          'is-right-panel-horizontal',
+        ),
       { timeout: 5_000, timeoutMsg: 'expected stacked right-panel layout after opening Changes' },
     )
     await expect(portraitBar.$('.titlebar-text-btn[aria-label="Open changes"]')).toHaveElementClass(
@@ -313,12 +341,35 @@ describe('portrait panel controls row', () => {
     )
 
     const stacked = await browser.execute(() => {
-      const bar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
-      const files = document.getElementById('pane-files')!.getBoundingClientRect()
-      const resizer = document.getElementById('resizer-files')!
+      const bar = (
+        document.querySelector('.portrait-panel-bar') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.querySelector('.portrait-panel-bar')")
+        })()
+      ).getBoundingClientRect()
+      const files = (
+        document.getElementById('pane-files') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-files')")
+        })()
+      ).getBoundingClientRect()
+      const resizer = document.getElementById('resizer-files')
+      if (resizer == null) throw new Error('Missing resizer in test fixture')
       const resizerRect = resizer.getBoundingClientRect()
-      const filesStyle = getComputedStyle(document.getElementById('pane-files')!)
-      const settings = document.querySelector('.projects-settings-btn')!.getBoundingClientRect()
+      const filesStyle = getComputedStyle(
+        document.getElementById('pane-files') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.getElementById('pane-files')")
+          })(),
+      )
+      const settings = (
+        document.querySelector('.projects-settings-btn') ??
+        ((): never => {
+          throw new Error(
+            "Missing fixture element: document.querySelector('.projects-settings-btn')",
+          )
+        })()
+      ).getBoundingClientRect()
       const seamHitTarget = document.elementFromPoint(bar.left + bar.width / 2, resizerRect.top - 1)
       return {
         barBottom: bar.bottom,
@@ -363,8 +414,8 @@ describe('portrait panel controls row', () => {
     await setProjectsWidth(420)
     await browser.waitUntil(
       async () => {
-        const overflow = await $('.portrait-panel-overflow')
-        return overflow.isExisting() && (await overflow.isDisplayed())
+        const overflow = await $('.portrait-panel-overflow').getElement()
+        return (await overflow.isExisting()) && (await overflow.isDisplayed())
       },
       { timeout: 5_000, timeoutMsg: 'expected portrait panel overflow trigger when cramped' },
     )
@@ -382,20 +433,20 @@ describe('portrait panel controls row', () => {
     )
 
     await $('.portrait-panel-overflow-trigger').click()
-    const menu = await $('.portrait-panel-overflow-menu')
+    const menu = await $('.portrait-panel-overflow-menu').getElement()
     await expect(menu).toBeDisplayed()
-    const items = await $$('.portrait-panel-overflow-item')
+    const items = await $$('.portrait-panel-overflow-item').getElements()
     expect(items.length).toBeGreaterThan(0)
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.portrait-panel-overflow-item')).map((el) =>
-        (el.textContent ?? '').trim(),
+        el.textContent.trim(),
       ),
     )
     expect(labels).toContain('Browser')
 
     await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-overflow-open.png')
 
-    const browserItem = await menu.$('.portrait-panel-overflow-item*=Browser')
+    const browserItem = await menu.$('.portrait-panel-overflow-item*=Browser').getElement()
     await browserItem.waitForClickable({ timeout: 5_000 })
     await browserItem.click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })

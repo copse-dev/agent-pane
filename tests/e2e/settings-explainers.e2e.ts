@@ -42,7 +42,9 @@ describe('experimental explainer setting', function () {
     seedEmptyProject(process.cwd(), 'e2e-settings-explainers', { mcpUiCanvasEnabled: true })
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('defaults off, applies immediately, persists, and leaves Canvas usable when switched off', async () => {
     await openSettings(true)

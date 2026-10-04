@@ -35,15 +35,15 @@ describe('ACP stale model picker label', () => {
 
   it('identifies an unadvertised model without calling Cursor unconfigured', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    const trigger = await $('.model-picker-trigger')
+    const trigger = await $('.model-picker-trigger').getElement()
     await trigger.click()
-    const menu = await $('.model-picker-menu')
+    const menu = await $('.model-picker-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
 
     const labels = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
-      ].map((element) => element.textContent?.trim() ?? ''),
+      ].map((element) => element.textContent.trim()),
     )
     assert.ok(
       labels.includes('Cursor — composer-2.5[fast=true] (not currently advertised)'),
@@ -51,6 +51,6 @@ describe('ACP stale model picker label', () => {
     )
     assert.ok(!labels.some((label) => label.includes('not configured')))
 
-    await saveElementScreenshot(menu, 'acp-stale-model-picker.png')
+    await saveElementScreenshot('.model-picker-menu', 'acp-stale-model-picker.png')
   })
 })

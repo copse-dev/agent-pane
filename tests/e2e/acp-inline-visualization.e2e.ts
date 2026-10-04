@@ -124,9 +124,9 @@ async function drawAnnotation(selector: string): Promise<void> {
 describe('ACP inline visualization reference', () => {
   before(async () => {
     const now = Date.now()
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
@@ -209,22 +209,19 @@ describe('ACP inline visualization reference', () => {
     )
     expect(await $('#pane-files').getAttribute('hidden')).not.toEqual(null)
 
-    const selected = await browser.execute(async () => {
-      const webview = document.querySelector('.canvas-inline-webview') as {
-        executeJavaScript?: (source: string) => Promise<unknown>
-      } | null
-      await webview?.executeJavaScript?.(`document.querySelector('[data-choice="A"]')?.click()`)
-      return await webview?.executeJavaScript?.(
+    const selected: unknown = await browser.execute(async () => {
+      const webview = document.querySelector<Electron.WebviewTag>('.canvas-inline-webview')
+      await webview?.executeJavaScript(`document.querySelector('[data-choice="A"]')?.click()`)
+      const guestResult: unknown = await webview?.executeJavaScript(
         `document.querySelector('#selection')?.textContent ?? null`,
       )
+      return guestResult
     })
     expect(selected).toEqual('Approach A')
 
     await browser.execute(async () => {
-      const webview = document.querySelector('.canvas-inline-webview') as {
-        executeJavaScript?: (source: string) => Promise<unknown>
-      } | null
-      await webview?.executeJavaScript?.(`document.querySelector('[data-choice="C"]')?.click()`)
+      const webview = document.querySelector<Electron.WebviewTag>('.canvas-inline-webview')
+      await webview?.executeJavaScript(`document.querySelector('[data-choice="C"]')?.click()`)
     })
 
     await prepareChatMessageScreenshot()
@@ -283,12 +280,13 @@ describe('ACP inline visualization reference', () => {
     await browser.waitUntil(
       async () =>
         (await browser.execute(async () => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            executeJavaScript?: (source: string) => Promise<unknown>
-          } | null
-          return await webview?.executeJavaScript?.(
+          const webview = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
+          const guestResult: unknown = await webview?.executeJavaScript(
             `document.querySelector('h1')?.textContent ?? null`,
           )
+          return guestResult
         })) === 'Choose how work folds into the thread',
       { timeout: 20_000, timeoutMsg: 'expected the Browser canvas guest to finish loading' },
     )

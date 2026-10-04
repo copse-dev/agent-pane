@@ -84,7 +84,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
       {
         type: 'key',
         id: 'reasoning-probe-typing',
-        actions: [...draft].flatMap((value) => [
+        actions: Array.from(draft).flatMap((value) => [
           { type: 'keyDown', value },
           { type: 'keyUp', value },
           { type: 'pause', duration: 200 },
@@ -149,7 +149,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
       platform: process.platform,
       arch: process.arch,
       browser: await browser.execute(() => navigator.userAgent),
-      headless: process.env.COPSE_E2E_HEADLESS !== '0',
+      headless: process.env['COPSE_E2E_HEADLESS'] !== '0',
       gpuDisabled: true,
       producer,
       samples,

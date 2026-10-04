@@ -67,13 +67,14 @@ describe('queued chats stay pinned to the bottom', function () {
       await setComposerValue(text)
       await $('.submit-btn').click()
       await browser.waitUntil(
-        async () => (await $$('.conversation-queued .msg-queued')).length === index + 1,
+        async () =>
+          (await $$('.conversation-queued .msg-queued').getElements()).length === index + 1,
         { timeout: 5_000 },
       )
     }
 
-    const queuedItems = await $$('.conversation-queued .msg-queued')
-    await expect(queuedItems).toHaveLength(2)
+    const queuedItems = await $$('.conversation-queued .msg-queued').getElements()
+    expect(queuedItems).toHaveLength(2)
     await expect($('.conversation-queued .message-queued-badge')).toHaveText('QUEUED')
 
     // Scroll the message list to the top — the pinned queue panel must remain visible.
@@ -89,7 +90,7 @@ describe('queued chats stay pinned to the bottom', function () {
       const rect = panel.getBoundingClientRect()
       return rect.height > 0 && rect.bottom <= window.innerHeight + 1
     })
-    await expect(panelVisibleAfterScroll).toBe(true)
+    expect(panelVisibleAfterScroll).toBe(true)
 
     await saveAppScreenshot('queued-pinned-scrolled-top.png')
     await scenario.release('module-refactor')

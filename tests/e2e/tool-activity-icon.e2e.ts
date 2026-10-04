@@ -257,7 +257,15 @@ describe('tool activity icon — nested rollup row', function () {
     await expect(nestedCard).toHaveAttribute('data-status', 'running')
     await approveShellCommandIfPrompted()
 
-    function measureNestedRow() {
+    function measureNestedRow(): {
+      status: string | null
+      text: string | null
+      nameWidth: number | null
+      nameRight: number | null
+      headerRight: number | null
+      messageRight: number | null
+      statusVisible: boolean | null
+    } {
       const header = document.querySelector('.tool-rollup-body .tool-card-header')
       const name = header?.querySelector('.tool-name')
       const status = header?.querySelector('.tool-status-icon')
@@ -277,6 +285,13 @@ describe('tool activity icon — nested rollup row', function () {
     }
 
     const running = await browser.execute(measureNestedRow)
+    if (
+      running.nameRight === null ||
+      running.headerRight === null ||
+      running.messageRight === null ||
+      running.nameWidth === null
+    )
+      throw new Error('Missing running tool row geometry')
     expect(running.status).toBe('running')
     // The live spiral alone conveys "running" — the static status glyph
     // (redundant with it) is hidden rather than also claiming a slot.
@@ -286,8 +301,8 @@ describe('tool activity icon — nested rollup row', function () {
     expect(running.messageRight).not.toBe(null)
     // The label's own right edge never pokes out past the hover pill, which
     // in turn never pokes out past the message box that clips horizontally.
-    expect((running.nameRight as number) <= (running.headerRight as number)).toBe(true)
-    expect((running.headerRight as number) <= (running.messageRight as number)).toBe(true)
+    expect(running.nameRight <= running.headerRight).toBe(true)
+    expect(running.headerRight <= running.messageRight).toBe(true)
 
     await browser.pause(600)
     await saveAppScreenshot('tool-activity-icon-nested-row-running.png')
@@ -295,15 +310,17 @@ describe('tool activity icon — nested rollup row', function () {
     await expect(nestedCard).toHaveAttribute('data-status', 'done', { wait: 60_000 })
     await browser.pause(300)
     const settled = await browser.execute(measureNestedRow)
+    if (settled.nameRight === null || settled.headerRight === null || settled.nameWidth === null)
+      throw new Error('Missing settled tool row geometry')
     expect(settled.statusVisible).toBe(true)
     expect(settled.text).toBe(running.text)
-    expect((settled.nameRight as number) <= (settled.headerRight as number)).toBe(true)
+    expect(settled.nameRight <= settled.headerRight).toBe(true)
 
     // Read the trailing slot's own tokens instead of a magic number: the most
     // a running row should ever cost the label, versus its settled self, is
     // one icon-slot plus one row gap (the live spiral it alone now reserves).
     const tolerance = await browser.execute(() => {
-      const probe = (value: string) => {
+      const probe = (value: string): number => {
         const el = document.createElement('span')
         el.style.position = 'absolute'
         el.style.visibility = 'hidden'
@@ -315,7 +332,7 @@ describe('tool activity icon — nested rollup row', function () {
       }
       return probe('var(--font-size-sm)') + probe('var(--spacing-sm)') + 1
     })
-    const lostToRunning = (settled.nameWidth as number) - (running.nameWidth as number)
+    const lostToRunning = settled.nameWidth - running.nameWidth
     expect(lostToRunning).toBeLessThanOrEqual(tolerance)
   })
 })

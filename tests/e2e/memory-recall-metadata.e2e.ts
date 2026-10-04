@@ -15,9 +15,9 @@ describe('memory recall metadata', () => {
   let result: string
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     const root = mkdtempSync(join(tmpdir(), 'copse-memory-visual-'))
     setKnowledgeRootForTest(root)
@@ -33,7 +33,7 @@ describe('memory recall metadata', () => {
           'revision: 3\nmemorySchema: 2\nsources: ["msg:review", "https://example.com/a,b"]\nappliesTo: ["src/{a,b}/**"]',
         ],
         ['memory-legacy', 'Legacy guidance', ''],
-      ]) {
+      ] as const) {
         writeFileSync(
           join(dir, `${id}.md`),
           [
@@ -106,7 +106,9 @@ describe('memory recall metadata', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('shows revision, unverified sources, applicability and paging in the native tool card', async () => {
     const card = $('.tool-card[data-tool-id="memory-recall"]')

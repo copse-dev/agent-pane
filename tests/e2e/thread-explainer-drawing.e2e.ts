@@ -40,9 +40,12 @@ async function lastCall(): Promise<ToolCall | undefined> {
 async function guest(code: string, index = 0): Promise<unknown> {
   return browser.execute(
     async (script, item) => {
-      const view = document.querySelectorAll('.canvas-inline-artefact webview').item(item)
-      const execute = view ? Reflect.get(view, 'executeJavaScript') : undefined
-      return typeof execute === 'function' ? execute.call(view, script) : null
+      const view = document.querySelectorAll<Electron.WebviewTag>(
+        '.canvas-inline-artefact webview',
+      )[item]
+      if (!view) return null
+      const result: unknown = await view.executeJavaScript(script)
+      return result
     },
     code,
     index,
@@ -51,14 +54,14 @@ async function guest(code: string, index = 0): Promise<unknown> {
 async function capture(index: number, name: string, playerName: string): Promise<void> {
   await prepareE2eScreenshot()
   const png = await browser.execute(async (item) => {
-    const card = document.querySelectorAll('.canvas-inline-artefact').item(item)
-    card?.scrollIntoView({ block: 'center' })
-    const view = card?.querySelector('webview')
-    const getId = view ? Reflect.get(view, 'getWebContentsId') : undefined
-    if (typeof getId !== 'function') throw new Error('Expected live drawing guest')
-    const screenshot = await window.api.browser.captureScreenshot(getId.call(view))
+    const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+    if (!card) throw new Error('Expected a drawing card')
+    card.scrollIntoView({ block: 'center' })
+    const view = card.querySelector<Electron.WebviewTag>('webview')
+    if (!view) throw new Error('Expected live drawing guest')
+    const screenshot = await window.api.browser.captureScreenshot(view.getWebContentsId())
     const image = card.querySelector('img')
-    if (!image || !view) throw new Error('Expected card preview')
+    if (!image) throw new Error('Expected card preview')
     image.src = screenshot.dataUrl
     await image.decode()
     image.style.objectFit = 'contain'
@@ -72,9 +75,10 @@ async function capture(index: number, name: string, playerName: string): Promise
   )
   await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `${name}.png`))
   await browser.execute((item) => {
-    const card = document.querySelectorAll('.canvas-inline-artefact').item(item)
-    const view = card?.querySelector<HTMLElement>('webview')
-    const image = card?.querySelector('img')
+    const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+    if (!card) throw new Error('Expected a drawing card')
+    const view = card.querySelector<HTMLElement>('webview')
+    const image = card.querySelector('img')
     if (view) view.style.opacity = ''
     if (image) image.style.visibility = ''
   }, index)
@@ -83,9 +87,9 @@ async function capture(index: number, name: string, playerName: string): Promise
 describe('original drawings in the thread player', function () {
   this.timeout(180_000)
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-explainer-drawing', {
       model: 'claude-sonnet-4-6',
@@ -100,7 +104,9 @@ describe('original drawings in the thread player', function () {
     })
     await waitForPromptReady()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('rejects broken, frozen and nondeterministic drawings without publishing', async function () {
     this.timeout(180_000)
@@ -125,7 +131,7 @@ describe('original drawings in the thread player', function () {
       })
       const call = await lastCall()
       assert.equal(call?.status, 'error')
-      assert.match(call?.result ?? '', message)
+      assert.match(call.result ?? '', message)
       assert.equal(await browser.$$('.canvas-inline-artefact').length, 0)
     }
   })
@@ -155,10 +161,10 @@ if(!blocked)throw new Error('Drawing network policy is missing');
         input,
       )
       const preview = await lastCall()
-      assert.equal(preview?.status, 'done', preview?.result)
-      assert.equal(preview?.images?.length, 4)
-      assert.match(preview?.result ?? '', /mid-transition/)
-      const previewId = preview?.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
+      assert.equal(preview?.status, 'done', preview?.result ?? 'Explainer preview did not complete')
+      assert.equal(preview.images?.length, 4)
+      assert.match(preview.result ?? '', /mid-transition/)
+      const previewId = preview.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
       assert.ok(previewId)
       await turn('Show the reviewed explanation.', 'mcp__copse-canvas__render_explainer', {
         previewId,
@@ -180,14 +186,11 @@ if(!blocked)throw new Error('Drawing network policy is missing');
         ),
         3,
       )
-      await browser.execute(
-        (item) =>
-          document
-            .querySelectorAll('.canvas-inline-artefact')
-            .item(item)
-            ?.scrollIntoView({ block: 'center' }),
-        index,
-      )
+      await browser.execute((item) => {
+        const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+        if (!card) throw new Error('Expected a drawing card')
+        card.scrollIntoView({ block: 'center' })
+      }, index)
       assert.equal(await guest('document.querySelectorAll("#transcript li").length', index), 4)
       await guest('window.renderFrame(0)', index)
       const first = await guest('document.querySelector("#scene").toDataURL()', index)
@@ -227,7 +230,8 @@ if(!blocked)throw new Error('Drawing network policy is missing');
         : capture(index, 'explainer-drawing-2', 'explainer-drawing-2-player'))
       if (index === 1) {
         await browser.execute(() => {
-          const card = document.querySelectorAll<HTMLElement>('.canvas-inline-artefact').item(1)
+          const card = document.querySelectorAll<HTMLElement>('.canvas-inline-artefact')[1]
+          if (!card) throw new Error('Expected the second drawing card')
           card.style.width = '320px'
         })
         await browser.waitUntil(async () => (await guest('innerWidth <= 322', index)) === true, {
@@ -255,14 +259,11 @@ if(!blocked)throw new Error('Drawing network policy is missing');
       { timeout: 30_000 },
     )
     for (const index of [0, 1]) {
-      await browser.execute(
-        (item) =>
-          document
-            .querySelectorAll('.canvas-inline-artefact')
-            .item(item)
-            ?.scrollIntoView({ block: 'center' }),
-        index,
-      )
+      await browser.execute((item) => {
+        const card = document.querySelectorAll('.canvas-inline-artefact')[item]
+        if (!card) throw new Error('Expected a drawing card')
+        card.scrollIntoView({ block: 'center' })
+      }, index)
       await browser.waitUntil(
         async () => {
           try {
@@ -283,9 +284,9 @@ if(!blocked)throw new Error('Drawing network policy is missing');
   it('centres real glyphs, wraps without clipping and keeps transformed labels attached', async () => {
     await turn('Check text alignment.', 'mcp__copse-canvas__preview_explainer', textAlignmentStory)
     const preview = await lastCall()
-    assert.equal(preview?.status, 'done', preview?.result)
-    assert.equal(preview?.images?.length, 3)
-    const previewId = preview?.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
+    assert.equal(preview?.status, 'done', preview?.result ?? 'Explainer preview did not complete')
+    assert.equal(preview.images?.length, 3)
+    const previewId = preview.result?.match(/Preview ID: ([a-f0-9-]+)/)?.[1]
     assert.ok(previewId)
     await turn('Publish the checked layout.', 'mcp__copse-canvas__render_explainer', { previewId })
     assert.equal((await lastCall())?.status, 'done')

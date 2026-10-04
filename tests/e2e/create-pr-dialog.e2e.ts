@@ -76,13 +76,13 @@ describe('create PR dialog', function () {
   it('opens from the chip, needs a title, and records the create as a card', async () => {
     await completeMockTurn()
 
-    const chip = await $('.follow-up-bubble[data-id="create-pr"]')
+    const chip = await $('.follow-up-bubble[data-id="create-pr"]').getElement()
     await expect(chip).toBeDisplayed()
     await expect(chip).toHaveText('Create PR')
     await chip.click()
 
     // Clicking offers a form; it must not publish on its own.
-    const dialog = await $(DIALOG)
+    const dialog = await $(DIALOG).getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await expect($(`${DIALOG} h3`)).toHaveText('Create pull request')
     await expect($(TITLE_INPUT)).toBeDisplayed()
@@ -98,7 +98,7 @@ describe('create PR dialog', function () {
 
     // The description is proposed while the dialog is open; under the mock
     // fixture that is `mockPrBody()`, which arrives without a model.
-    const body = await $(BODY_INPUT)
+    const body = await $(BODY_INPUT).getElement()
     await browser.waitUntil(
       async () => (await body.getValue()).includes('Rolls tool activity up'),
       { timeout: 10_000, timeoutMsg: 'the proposed description did not land in the dialog' },
@@ -119,8 +119,9 @@ describe('create PR dialog', function () {
     // synthetic bold.
     const title = await readHeadingStyle('.create-pr-dialog h3')
     expect(title).not.toBeNull()
-    expect(isDisplayFace(title!.family)).toBe(true)
-    expect(title!.weight).toBe('400')
+    if (!title) throw new Error('Missing fixture measurement: title')
+    expect(isDisplayFace(title.family)).toBe(true)
+    expect(title.weight).toBe('400')
 
     await saveAppScreenshot('create-pr-dialog.png')
 
@@ -129,7 +130,7 @@ describe('create PR dialog', function () {
     // own call would leave.
     await $(CREATE_BUTTON).click()
     await expect(dialog).not.toBeDisplayed()
-    const card = await $('.tool-card[data-tool-id^="create-pr-"]')
+    const card = await $('.tool-card[data-tool-id^="create-pr-"]').getElement()
     await card.waitForExist({ timeout: 15_000 })
     await browser.waitUntil(async () => (await card.getAttribute('data-status')) !== 'running', {
       timeout: 15_000,

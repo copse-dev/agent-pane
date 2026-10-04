@@ -4,7 +4,7 @@ import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { waitForAgentIdle } from '../helpers.ts'
 import { setComposerValue } from './composer.ts'
-import { installMockScenario } from './mock-scenario.ts'
+import { installMockScenario, type ScenarioHandle } from './mock-scenario.ts'
 
 export function seedCleanFeatureBranch(root: string): void {
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
@@ -50,7 +50,7 @@ export function writeFailingPrGhFixture(binDir: string): void {
   chmodSync(gh, 0o755)
 }
 
-export async function completeMockTurn(includeDebugCiFollowUp = false) {
+export async function completeMockTurn(includeDebugCiFollowUp = false): Promise<ScenarioHandle> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   const prompt = 'Review my uncommitted changes and suggest any improvements.'
   const scenario = await installMockScenario({

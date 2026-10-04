@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -62,9 +63,9 @@ describe('edit thread history', function () {
   this.timeout(90_000)
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedThread()
@@ -77,12 +78,15 @@ describe('edit thread history', function () {
 
   it('opens the dot-menu Fork submenu, reconstructs the same thread, and survives reload', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await $$('.messages-list .msg')).length === 4, {
-      timeout: 10_000,
-      timeoutMsg: 'expected the seeded transcript',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg').getElements()).length === 4,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the seeded transcript',
+      },
+    )
 
-    const row = await $('.chat-row.selected')
+    const row = await $('.chat-row.selected').getElement()
     await row.$('.chat-menu-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Fork').click()
@@ -92,29 +96,32 @@ describe('edit thread history', function () {
     await saveElementScreenshot('.context-menu', 'thread-history-dot-fork-menu.png')
     await $('.context-menu-item*=Edit thread history').click()
 
-    const dialog = await $('#thread-history-editor')
+    const dialog = await $('#thread-history-editor').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await expect(await $$('.history-editor-message')).toBeElementsArrayOfSize(4)
+    await expect(await $$('.history-editor-message').getElements()).toBeElementsArrayOfSize(4)
     await expect($('.history-editor-title')).toHaveText('Edit thread history')
     await saveElementScreenshot('#thread-history-editor', 'thread-history-editor-open.png')
 
-    const textareas = await $$('.history-editor-message-input')
-    await textareas[0]!.setValue('Use SQLite for the local prototype.')
-    const includes = await $$('.history-editor-include')
-    await includes[2]!.click()
+    const textareas = await $$('.history-editor-message-input').getElements()
+    await at([...textareas], 0).setValue('Use SQLite for the local prototype.')
+    const includes = await $$('.history-editor-include').getElements()
+    await at([...includes], 2).click()
     await $('.history-editor-actions .ui-btn-primary').click()
 
-    await browser.waitUntil(async () => (await $$('.history-editor-message')).length === 3, {
-      timeout: 10_000,
-      timeoutMsg: 'expected the excluded correction to leave the reconstructed history',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.history-editor-message').getElements()).length === 3,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the excluded correction to leave the reconstructed history',
+      },
+    )
     await expect($('.history-editor-undo')).toBeDisplayed()
     await expect($('.history-editor-summary')).toHaveText('3 of 3 messages kept')
     await saveElementScreenshot('#thread-history-editor', 'thread-history-editor-applied.png')
 
     await $('.history-editor-close').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
-    await expect(await $$('.messages-list .msg')).toBeElementsArrayOfSize(3)
+    await expect(await $$('.messages-list .msg').getElements()).toBeElementsArrayOfSize(3)
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('Use SQLite for the local prototype.'),
     )
@@ -127,10 +134,13 @@ describe('edit thread history', function () {
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await $$('.messages-list .msg')).length === 3, {
-      timeout: 10_000,
-      timeoutMsg: 'expected the reconstructed transcript after relaunch',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg').getElements()).length === 3,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the reconstructed transcript after relaunch',
+      },
+    )
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', THREAD_ID)
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('Use SQLite for the local prototype.'),

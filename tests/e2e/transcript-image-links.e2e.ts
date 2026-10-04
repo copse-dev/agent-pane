@@ -97,7 +97,7 @@ describe('transcript workspace image links', () => {
         return { type: blob.type, size: blob.size }
       })
       assert.equal(clipboardImage?.type, 'image/png')
-      assert.ok((clipboardImage?.size ?? 0) > 0)
+      assert.ok(clipboardImage.size > 0)
       await assertNoErrorToasts('chat file image copy')
     } finally {
       await dialog.$('.attachment-preview-close').click()
@@ -169,12 +169,12 @@ describe('transcript workspace image links', () => {
 
   it('attaches workspace images from mentions and explorer drags without reading text', async () => {
     await setComposerValue('@chart')
-    const mention = await $('.mention-picker .mention-item')
+    const mention = await $('.mention-picker .mention-item').getElement()
     await mention.waitForDisplayed({ timeout: 15_000 })
     await expect(mention).toHaveText('chart.png')
     await mention.click()
 
-    const imageChip = await $('.attachment-chip.image-chip')
+    const imageChip = await $('.attachment-chip.image-chip').getElement()
     await imageChip.waitForDisplayed({ timeout: 15_000 })
     await expect($('.attachment-chip.image-chip img')).toHaveAttribute(
       'src',
@@ -185,12 +185,12 @@ describe('transcript workspace image links', () => {
     await expect(imageChip).not.toBeExisting()
 
     await setComposerValue('@diagram')
-    const svgMention = await $('.mention-picker .mention-item')
+    const svgMention = await $('.mention-picker .mention-item').getElement()
     await svgMention.waitForDisplayed({ timeout: 15_000 })
     await expect(svgMention).toHaveText('diagram.svg')
     await svgMention.click()
 
-    const svgChip = await $('.attachment-chip:not(.image-chip)')
+    const svgChip = await $('.attachment-chip:not(.image-chip)').getElement()
     await svgChip.waitForDisplayed({ timeout: 15_000 })
     await expect(svgChip).toHaveText(expect.stringContaining('diagram.svg'))
     await expect($('.attachment-chip.image-chip')).not.toBeExisting()

@@ -24,7 +24,7 @@ async function assertAtBottom(): Promise<void> {
   assert.ok(metrics.overflow > 100, 'fixture must overflow the transcript viewport')
   assert.ok(metrics.gap <= 1, `expected the actual bottom; gap was ${String(metrics.gap)}px`)
   assert.ok(metrics.activityBottom <= metrics.listBottom + 1, 'the activity row must fit')
-  assert.match(metrics.activityText ?? '', /Reasoning/)
+  assert.match(metrics.activityText, /Reasoning/)
 }
 
 describe('running thread switch scroll restoration', function () {

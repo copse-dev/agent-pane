@@ -30,7 +30,7 @@ describe('thread GitHub PR status icon', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
 
-    const openIcon = await $('.chat-row.selected .chat-pr-status')
+    const openIcon = await $('.chat-row.selected .chat-pr-status').getElement()
     await openIcon.waitForExist({ timeout: 15_000 })
     await expect(openIcon).toHaveElementClass('is-open')
     await expect(openIcon.$('svg[data-icon="git-pull-request"]')).toExist()
@@ -41,11 +41,12 @@ describe('thread GitHub PR status icon', () => {
     await $(`.chat-row[data-thread-id="e2e-pr-merged-thread"]`).click()
     await $(`.chat-row[data-thread-id="e2e-pr-failing-thread"]`).click()
     await browser.waitUntil(
-      async () => (await $$('.chats-list .chat-pr-status.is-open.has-ci-failure')).length > 0,
+      async () =>
+        (await $$('.chats-list .chat-pr-status.is-open.has-ci-failure').getElements()).length > 0,
       { timeout: 15_000, timeoutMsg: 'failing-CI dot never appeared' },
     )
     await browser.waitUntil(
-      async () => (await $$('.chats-list .chat-pr-status.is-merged')).length > 0,
+      async () => (await $$('.chats-list .chat-pr-status.is-merged').getElements()).length > 0,
       {
         timeout: 15_000,
         timeoutMsg: 'merged PR icon never resolved',
@@ -75,13 +76,13 @@ describe('thread GitHub PR status icon', () => {
       plainThreadTitle,
     )
 
-    await expect(labels.openKind).toBe(true)
-    await expect(labels.openIcon).toBe('git-pull-request')
-    await expect(labels.openLabel).toMatch(/#42.*open/i)
-    await expect(labels.mergedKind).toBe(true)
-    await expect(labels.mergedIcon).toBe('git-merge')
-    await expect(labels.mergedLabel).toMatch(/merged/i)
-    await expect(labels.plainHasIcon).toBe(false)
+    expect(labels.openKind).toBe(true)
+    expect(labels.openIcon).toBe('git-pull-request')
+    expect(labels.openLabel).toMatch(/#42.*open/i)
+    expect(labels.mergedKind).toBe(true)
+    expect(labels.mergedIcon).toBe('git-merge')
+    expect(labels.mergedLabel).toMatch(/merged/i)
+    expect(labels.plainHasIcon).toBe(false)
 
     // Merged follows GitHub's purple, distinct from the open (accent) and success hues.
     const colours = await browser.execute(() => {
@@ -104,9 +105,9 @@ describe('thread GitHub PR status icon', () => {
         success: resolve('var(--success)'),
       }
     })
-    await expect(colours.merged).toBe(colours.important)
-    await expect(colours.merged).not.toBe(colours.success)
-    await expect(colours.merged).not.toBe(colours.open)
+    expect(colours.merged).toBe(colours.important)
+    expect(colours.merged).not.toBe(colours.success)
+    expect(colours.merged).not.toBe(colours.open)
 
     // Only the red-checks PR carries the dot; the green open PR must not.
     const dots = await browser.execute(() =>
@@ -115,7 +116,7 @@ describe('thread GitHub PR status icon', () => {
         failing: row.querySelector('.chat-pr-status.has-ci-failure') !== null,
       })),
     )
-    await expect(dots.filter((d) => d.failing).map((d) => d.title)).toEqual([failingThreadTitle])
+    expect(dots.filter((d) => d.failing).map((d) => d.title)).toEqual([failingThreadTitle])
 
     await saveElementScreenshot('#pane-projects', 'thread-pr-status-icon.png')
   })

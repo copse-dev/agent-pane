@@ -51,10 +51,13 @@ describe('roadmap import picker', () => {
     await $('.roadmap-import-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-import-btn').click()
     await $('.roadmap-import').waitForDisplayed({ timeout: 10_000 })
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length >= 2, {
-      timeout: 15_000,
-      timeoutMsg: 'expected mock open issues in the import picker',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length >= 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected mock open issues in the import picker',
+      },
+    )
 
     const layout = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>('.roadmap-import-row')
@@ -81,11 +84,11 @@ describe('roadmap import picker', () => {
       'checkbox and title are vertically aligned',
     )
     assert.ok(
-      layout.titles.some((t) => t?.includes('#41')),
+      layout.titles.some((t) => t.includes('#41')),
       'mock issue #41 is listed',
     )
     assert.ok(
-      layout.titles.some((t) => t?.includes('#52')),
+      layout.titles.some((t) => t.includes('#52')),
       'mock issue #52 is listed',
     )
 
@@ -110,10 +113,13 @@ describe('roadmap import picker', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
     await $('.roadmap-import-btn').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 20, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the first bounded page of mock open issues',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length === 20,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the first bounded page of mock open issues',
+      },
+    )
 
     const loadMore = $('.roadmap-import-more')
     await loadMore.waitForDisplayed({ timeout: 10_000 })
@@ -122,10 +128,13 @@ describe('roadmap import picker', () => {
     await saveAppScreenshot('roadmap-import-picker-paginated.png')
 
     await loadMore.click()
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 25, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the final open-issue page to append',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length === 25,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the final open-issue page to append',
+      },
+    )
     assert.equal(await loadMore.isDisplayed(), false, 'load-more hides after the final page')
   })
 })

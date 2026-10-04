@@ -23,21 +23,21 @@ describe('titlebar workspace name', () => {
   })
 
   it('shows the active project folder name after restoring on launch', async () => {
-    const workspaceName = await $('.workspace-name')
+    const workspaceName = await $('.workspace-name').getElement().getElement()
     await workspaceName.waitForExist({ timeout: 30_000 })
     await expect(workspaceName).toHaveText(basename(workspaceRoot))
     await expect(workspaceName).not.toHaveText('No folder')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
 
-    const newThreadBtn = await $('.project-new-thread-btn')
+    const newThreadBtn = await $('.project-new-thread-btn').getElement().getElement()
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     // An empty thread with nothing running or waiting anywhere is the bare
     // composer, centred; the Activity home steps aside until there is something
     // to list.
-    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 })
+    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 }).getElement()
     await expect($('#activity-home')).not.toBeDisplayed()
     const idle = await browser.execute(() => {
       const input = document.getElementById('input-bar')
@@ -57,20 +57,20 @@ describe('titlebar workspace name', () => {
         boxShadow: getComputedStyle(input).boxShadow,
       }
     })
-    await expect(idle).not.toBeNull()
+    expect(idle).not.toBeNull()
     if (!idle) throw new Error('Missing composer elements')
-    await expect(Math.abs(idle.barMid - idle.paneMid)).toBeLessThanOrEqual(2)
-    await expect(idle.conversationDisplay).toBe('none')
-    await expect(idle.composerBorder).toBe('0px')
-    await expect(idle.borderRight).toBe('0px')
-    await expect(idle.borderBottom).toBe('0px')
-    await expect(idle.borderLeft).toBe('0px')
-    await expect(idle.boxShadow).toMatch(/0px 0px 0px 1px/)
+    expect(Math.abs(idle.barMid - idle.paneMid)).toBeLessThanOrEqual(2)
+    expect(idle.conversationDisplay).toBe('none')
+    expect(idle.composerBorder).toBe('0px')
+    expect(idle.borderRight).toBe('0px')
+    expect(idle.borderBottom).toBe('0px')
+    expect(idle.borderLeft).toBe('0px')
+    expect(idle.boxShadow).toMatch(/0px 0px 0px 1px/)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()
-    const blankRows = await $$('.chats-list .chat-row .chat-title')
+    const blankRows = await $$('.chats-list .chat-row .chat-title').getElements().getElements()
     const titles = await blankRows.map((el) => el.getText())
-    await expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
+    expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
   })
 })

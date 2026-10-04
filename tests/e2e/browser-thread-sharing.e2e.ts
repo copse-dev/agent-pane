@@ -34,7 +34,7 @@ async function openBrowserMenu(): Promise<void> {
 }
 
 async function clickBrowserMenuItem(label: string): Promise<void> {
-  const items = await $$('.browser-menu-item')
+  const items = await $$('.browser-menu-item').getElements()
   for (const item of items) {
     if ((await item.getText()) === label) {
       await item.click()
@@ -130,7 +130,7 @@ describe('browser context sharing with a thread', function () {
 
   it('offers the live regular page as an enabled HTML download', async () => {
     await openBrowserMenu()
-    const download = await $('.browser-menu-item*=Download page')
+    const download = await $('.browser-menu-item*=Download page').getElement()
     await expect(download).toBeDisplayed()
     await expect(download).toBeEnabled()
     await expect(download).toHaveText('Download page')
@@ -159,7 +159,7 @@ describe('browser context sharing with a thread', function () {
     await clickBrowserMenuItem('Share screenshot')
     const image = $('.attachment-chips .image-chip img')
     await image.waitForDisplayed({ timeout: 10_000 })
-    assert.match(await image.getAttribute('src'), /^data:image\/png;base64,/)
+    assert.match((await image.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
 
     await browser.pause(2_100)
     await saveAppScreenshot('browser-thread-sharing-attachments.png')

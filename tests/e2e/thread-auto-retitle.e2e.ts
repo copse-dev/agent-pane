@@ -59,7 +59,9 @@ describe('automatic thread re-titling', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('updates an automatic title on the third user turn and preserves a manual rename', async function () {
     this.timeout(90_000)
@@ -82,8 +84,8 @@ describe('automatic thread re-titling', () => {
       await browser.waitUntil(
         async () => {
           observedTitles = await browser.execute(() =>
-            [...document.querySelectorAll('.chat-row .chat-title')].map(
-              (element) => element.textContent?.trim() ?? '',
+            [...document.querySelectorAll('.chat-row .chat-title')].map((element) =>
+              element.textContent.trim(),
             ),
           )
           return observedTitles.includes('Authentication session repair')
@@ -125,7 +127,7 @@ describe('automatic thread re-titling', () => {
         browser.execute(
           (text) =>
             [...document.querySelectorAll('.msg-assistant .message-text')].some((element) =>
-              element.textContent?.includes(text),
+              element.textContent.includes(text),
             ),
           `Session detail ${String(turn)} has been reviewed.`,
         ),

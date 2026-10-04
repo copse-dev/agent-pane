@@ -24,7 +24,13 @@ describe('browser-hosted Apple Development target picker', () => {
   it('spaces the panel from tokens, so the interface scale reaches it', async () => {
     // Before #3065 the panel used raw 4-12px gaps and 11-12px type, so
     // Settings -> Appearance -> Interface scale left it at its 1x size.
-    const read = () =>
+    const read = (): Promise<{
+      gap: number
+      paddingTop: number
+      paddingLeft: number
+      statusSize: number
+      tokens: { sm: number }
+    } | null> =>
       browser.execute(() => {
         const panel = document.querySelector<HTMLElement>('.apple-development-panel')
         const status = panel?.querySelector<HTMLElement>('.apple-development-status')

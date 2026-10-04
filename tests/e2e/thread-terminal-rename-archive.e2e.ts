@@ -30,20 +30,21 @@ describe('thread + terminal rename / archive', () => {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const archiveRow = await $(`.chat-row*=${archiveTitle}`)
+    const archiveRow = await $(`.chat-row*=${archiveTitle}`).getElement()
     await archiveRow.waitForExist({ timeout: 10_000 })
 
     // The dots open the menu without selecting or deleting this thread.
     const selectedThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    if (!selectedThreadId) throw new Error('Selected thread id is missing')
     await archiveRow.moveTo()
     const menuButton = archiveRow.$('.chat-menu-btn')
     await expect(menuButton).toHaveAttribute('aria-haspopup', 'menu')
     await expect(menuButton.$('[data-icon="more-vertical"]')).toBeExisting()
     await menuButton.click()
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent),
     )
     expect(labels).toEqual(['Rename', 'Fork', 'Archive', 'Delete'])
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', selectedThreadId)
@@ -55,7 +56,7 @@ describe('thread + terminal rename / archive', () => {
     await archiveRow.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     const rightClickLabels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent),
     )
     expect(rightClickLabels).toEqual(labels)
     await saveAppScreenshot('thread-context-menu-rename-archive.png')
@@ -66,7 +67,7 @@ describe('thread + terminal rename / archive', () => {
 
     // Nested lookup — WDIO `*=` text match cannot be chained with a descendant
     // class in one selector (that would look for the literal text "... .chat-title").
-    const keepRow = await $(`.chat-row*=${keepTitle}`)
+    const keepRow = await $(`.chat-row*=${keepTitle}`).getElement()
     await keepRow.waitForExist({ timeout: 10_000 })
     // Electron/WDIO `doubleClick()` often does not synthesize a DOM `dblclick`
     // on the title; dispatch the event the component listens for.
@@ -78,7 +79,7 @@ describe('thread + terminal rename / archive', () => {
       if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
       el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
     }, keepTitle)
-    const renameInput = await $('.chat-title-rename')
+    const renameInput = await $('.chat-title-rename').getElement()
     await renameInput.waitForExist({ timeout: 5_000 })
     // Reclaim focus explicitly — WDIO can steal it between mount and setValue.
     await browser.execute(() => {
@@ -93,7 +94,7 @@ describe('thread + terminal rename / archive', () => {
     await browser.waitUntil(
       async () => {
         const titles = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent ?? ''),
+          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent),
         )
         return titles.includes('Renamed keep thread')
       },
@@ -102,7 +103,7 @@ describe('thread + terminal rename / archive', () => {
     await saveElementScreenshot('#pane-projects', 'thread-renamed-sidebar.png')
 
     // Archive the other thread via context menu.
-    const toArchive = await $(`.chat-row*=${archiveTitle}`)
+    const toArchive = await $(`.chat-row*=${archiveTitle}`).getElement()
     await toArchive.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Archive').click()
@@ -110,7 +111,7 @@ describe('thread + terminal rename / archive', () => {
     await browser.waitUntil(
       async () => {
         const titles = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent ?? ''),
+          Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent),
         )
         return titles.includes('Renamed keep thread') && !titles.includes(archiveTitle)
       },
@@ -123,7 +124,7 @@ describe('thread + terminal rename / archive', () => {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
@@ -132,7 +133,7 @@ describe('thread + terminal rename / archive', () => {
     // qualify unconditionally; since the ASRT Linux backend was enabled it
     // depends on the host having bubblewrap + socat, so observe rather than
     // assume — the same shape the second shell below already uses.
-    const approval = await $('#approval-dialog')
+    const approval = await $('#approval-dialog').getElement()
     const unsandboxed = await approval
       .waitForDisplayed({ timeout: 5_000 })
       .then(() => true)
@@ -147,7 +148,7 @@ describe('thread + terminal rename / archive', () => {
     // Second shell so Archive does not auto-spawn a replacement mid-assert.
     await $('.terminals-new-btn').click()
     if (process.platform !== 'darwin') {
-      const approval = await $('#approval-dialog')
+      const approval = await $('#approval-dialog').getElement()
       const shown = await approval
         .waitForDisplayed({ timeout: 5_000 })
         .then(() => true)
@@ -157,17 +158,17 @@ describe('thread + terminal rename / archive', () => {
         await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
       }
     }
-    await browser.waitUntil(async () => (await $$('.terminals-tab')).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.terminals-tab').getElements()).length >= 2, {
       timeout: 10_000,
       timeoutMsg: 'expected two terminal tabs',
     })
 
-    const firstTab = await $('.terminals-tab')
+    const firstTab = await $('.terminals-tab').getElement()
     await firstTab.click({ button: 'right' })
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent),
     )
     expect(labels).toEqual(['Rename', 'Archive'])
     // Prefer element capture — full-app screenshots can blur the window and
@@ -188,7 +189,7 @@ describe('thread + terminal rename / archive', () => {
         new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }),
       )
     })
-    const renameInput = await $('.terminals-tab-rename')
+    const renameInput = await $('.terminals-tab-rename').getElement()
     await renameInput.waitForExist({ timeout: 5_000 })
     await browser.execute(() => {
       const input = document.querySelector<HTMLInputElement>('.terminals-tab-rename')
@@ -208,9 +209,7 @@ describe('thread + terminal rename / archive', () => {
     await browser.waitUntil(
       async () => {
         const labels = await browser.execute(() =>
-          Array.from(document.querySelectorAll('.terminals-tab-label')).map(
-            (n) => n.textContent ?? '',
-          ),
+          Array.from(document.querySelectorAll('.terminals-tab-label')).map((n) => n.textContent),
         )
         return labels.includes('Build shell')
       },
@@ -218,14 +217,14 @@ describe('thread + terminal rename / archive', () => {
     )
     await saveElementScreenshot('#terminals-list-host', 'terminal-renamed-list.png')
 
-    const tabCountBefore = (await $$('.terminals-tab')).length
-    const buildTab = await $(`.terminals-tab*=Build shell`)
+    const tabCountBefore = (await $$('.terminals-tab').getElements()).length
+    const buildTab = await $(`.terminals-tab*=Build shell`).getElement()
     await buildTab.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await $('.context-menu-item*=Archive').click()
 
     await browser.waitUntil(
-      async () => (await $$('.terminals-tab')).length === tabCountBefore - 1,
+      async () => (await $$('.terminals-tab').getElements()).length === tabCountBefore - 1,
       { timeout: 5_000, timeoutMsg: 'expected archived terminal tab to close' },
     )
     await saveElementScreenshot('#terminals-list-host', 'terminal-archived-list.png')

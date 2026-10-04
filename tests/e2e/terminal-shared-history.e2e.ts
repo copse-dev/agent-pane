@@ -29,7 +29,7 @@ async function activeTerminalText(): Promise<string> {
   )
 }
 
-function activeTerminalHelper() {
+function activeTerminalHelper(): ReturnType<typeof $> {
   return $('.terminals-tab-panel.is-active .xterm-helper-textarea')
 }
 
@@ -97,14 +97,14 @@ describe('shared terminal command history across threads (#2433)', function () {
   it("recalls a command typed in one thread's terminal from a second thread's terminal", async function () {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const threadARow = await $(`.chat-row[data-thread-id="${THREAD_A_ID}"]`)
+    const threadARow = await $(`.chat-row[data-thread-id="${THREAD_A_ID}"]`).getElement()
     await expect(threadARow).toHaveElementClass('selected')
 
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     await approveUnsandboxedTerminalIfPrompted()
 
-    const shellA = await $('.terminals-tab-panel.is-active .terminal-container .xterm')
+    const shellA = await $('.terminals-tab-panel.is-active .terminal-container .xterm').getElement()
     await shellA.waitForExist({ timeout: 30_000 })
     await waitForShellReady('thread A')
 
@@ -138,12 +138,12 @@ describe('shared terminal command history across threads (#2433)', function () {
     // Switch to thread B: it has no Shells tab yet, so the terminal pane
     // (already open from thread A) spawns a fresh PTY for it automatically
     // (`onScopeSwitch` in terminals-pane.ts) — a second, independent approval.
-    const threadBRow = await $(`.chat-row[data-thread-id="${THREAD_B_ID}"]`)
+    const threadBRow = await $(`.chat-row[data-thread-id="${THREAD_B_ID}"]`).getElement()
     await threadBRow.click()
     await expect(threadBRow).toHaveElementClass('selected')
     await approveUnsandboxedTerminalIfPrompted()
 
-    const shellB = await $('.terminals-tab-panel.is-active .terminal-container .xterm')
+    const shellB = await $('.terminals-tab-panel.is-active .terminal-container .xterm').getElement()
     await shellB.waitForExist({ timeout: 30_000 })
     await waitForShellReady('thread B')
 

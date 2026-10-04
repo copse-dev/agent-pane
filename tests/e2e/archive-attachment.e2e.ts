@@ -32,7 +32,7 @@ const EMPTY_ZIP = [0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -87,29 +87,30 @@ describe('Attaching an archive to the chat', () => {
     await setComposerValue('what is in this bundle?')
     await dropArchiveOnComposer(ARCHIVE_NAME, EMPTY_ZIP)
 
-    const chip = await $('.attachment-chips .archive-chip')
+    const chip = await $('.attachment-chips .archive-chip').getElement()
     await chip.waitForDisplayed({ timeout: 10_000 })
-    await expect(await chip.$('.attachment-chip-label').getText()).toBe(ARCHIVE_NAME)
-    await expect(await chip.$('.attachment-chip-meta').getText()).toBe('22 B')
-    await expect(await chip.$('svg[data-icon="archive"]').isExisting()).toBe(true)
+    expect(await chip.$('.attachment-chip-label').getText()).toBe(ARCHIVE_NAME)
+    expect(await chip.$('.attachment-chip-meta').getText()).toBe('22 B')
+    expect(await chip.$('svg[data-icon="archive"]').isExisting()).toBe(true)
     // The regression this whole feature fixes: a zip must never arrive as a
     // pasted-text / file chip, which is what reading it as text produced.
-    await expect(await $('.attachment-chips .file-chip').isExisting()).toBe(false)
+    expect(await $('.attachment-chips .file-chip').isExisting()).toBe(false)
 
     await saveAppScreenshot(COMPOSER_SCREENSHOT)
   })
 
   it('keeps the unsent archive with its draft while switching threads', async () => {
     const originalThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    if (!originalThreadId) throw new Error('Missing selected thread id')
     await $('.project-new-thread-btn').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await expect($('.attachment-chips .archive-chip')).not.toBeExisting()
 
     await $(`.chat-row[data-thread-id="${originalThreadId}"]`).click()
-    const restored = await $('.attachment-chips .archive-chip')
+    const restored = await $('.attachment-chips .archive-chip').getElement()
     await restored.waitForDisplayed({ timeout: 10_000 })
-    await expect(await restored.$('.attachment-chip-label').getText()).toBe(ARCHIVE_NAME)
-    await expect(await $('.prompt-input').getText()).toContain('what is in this bundle?')
+    expect(await restored.$('.attachment-chip-label').getText()).toBe(ARCHIVE_NAME)
+    expect(await $('.prompt-input').getText()).toContain('what is in this bundle?')
 
     await saveAppScreenshot(RESTORED_DRAFT_SCREENSHOT)
   })

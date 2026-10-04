@@ -49,22 +49,14 @@ describe('Simulator desktop preview', function () {
   this.timeout(90_000)
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     await browser.execute(
       async (workspaceRoot, frameBase64, udid) => {
         await window.api.settings.set('onboardingCompleted', true)
         await window.api.settings.set('vncEnabled', true)
-        const e2e = (
-          window as unknown as {
-            __copseE2e?: {
-              openWorkspace(root: string): Promise<string>
-              setSimulatorDesktop(value: unknown): Promise<void>
-              showSimulatorDesktop(udid: string): Promise<void>
-            }
-          }
-        ).__copseE2e
+        const e2e = window.__copseE2e
         if (!e2e) throw new Error('__copseE2e unavailable')
         await e2e.setSimulatorDesktop({
           devices: [{ udid, name: 'iPhone 17 Pro', runtime: 'iOS 26.5' }],
@@ -103,11 +95,7 @@ describe('Simulator desktop preview', function () {
     await saveAppScreenshot('simulator-desktop-choice.png')
 
     await browser.execute(async (udid) => {
-      const e2e = (
-        window as unknown as {
-          __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
-        }
-      ).__copseE2e
+      const e2e = window.__copseE2e
       if (!e2e) throw new Error('__copseE2e unavailable')
       await e2e.showSimulatorDesktop(udid)
     }, DEVICE_UDID)
@@ -134,11 +122,7 @@ describe('Simulator desktop preview', function () {
     await $('.vnc-disconnect-btn').click()
     await browser.execute(
       async (udid, frameBase64) => {
-        const e2e = (
-          window as unknown as {
-            __copseE2e?: { setSimulatorDesktop(value: unknown): Promise<void> }
-          }
-        ).__copseE2e
+        const e2e = window.__copseE2e
         if (!e2e) throw new Error('__copseE2e unavailable')
         // Inject the display at the existing service fixture boundary. Transport/auth
         // and real Android identifiers are covered by the local gRPC integration tests.
@@ -179,14 +163,7 @@ describe('Simulator desktop preview', function () {
   it('opens another device in a separate tab and reuses its existing tab on repeat presentation', async () => {
     await browser.execute(
       async (frameBase64, udid) => {
-        const bridge = (
-          window as unknown as {
-            __copseE2e?: {
-              setSimulatorDesktop(value: unknown): Promise<void>
-              showSimulatorDesktop(udid: string): Promise<void>
-            }
-          }
-        ).__copseE2e
+        const bridge = window.__copseE2e
         if (!bridge) throw new Error('__copseE2e unavailable')
         await bridge.setSimulatorDesktop({
           devices: [
@@ -209,11 +186,7 @@ describe('Simulator desktop preview', function () {
     )
     const show = async (udid: string): Promise<void> => {
       await browser.execute(async (id) => {
-        const bridge = (
-          window as unknown as {
-            __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
-          }
-        ).__copseE2e
+        const bridge = window.__copseE2e
         if (!bridge) throw new Error('__copseE2e unavailable')
         await bridge.showSimulatorDesktop(id)
       }, udid)
@@ -249,11 +222,7 @@ describe('Simulator desktop preview', function () {
     // An Apple panel Run presents its Simulator through the same main-process
     // presenter as this hook and should retain the same guidance.
     await browser.execute(async (id) => {
-      const bridge = (
-        window as unknown as {
-          __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
-        }
-      ).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
       await bridge.showSimulatorDesktop(id)
     }, udid)

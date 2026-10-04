@@ -1,3 +1,4 @@
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 // A minimal stdio MCP server used by e2e tests. It exposes two tools:
 //   - echo (read-only)            → returns the provided text
 //   - danger (destructive hint)   → returns a fixed string
@@ -15,7 +16,8 @@ server.registerTool(
     inputSchema: { text: z.string().describe('text to echo') },
     annotations: { readOnlyHint: true },
   },
-  async ({ text }) => ({ content: [{ type: 'text', text: `echo: ${text}` }] }),
+  ({ text }): Promise<CallToolResult> =>
+    Promise.resolve({ content: [{ type: 'text', text: `echo: ${text}` }] }),
 )
 
 server.registerTool(
@@ -25,7 +27,8 @@ server.registerTool(
     inputSchema: {},
     annotations: { destructiveHint: true },
   },
-  async () => ({ content: [{ type: 'text', text: 'danger ran' }] }),
+  (): Promise<CallToolResult> =>
+    Promise.resolve({ content: [{ type: 'text', text: 'danger ran' }] }),
 )
 
 await server.connect(new StdioServerTransport())

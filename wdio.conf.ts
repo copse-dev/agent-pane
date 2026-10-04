@@ -1,6 +1,7 @@
-import type { Options } from '@wdio/types'
+import { nonEmptyStringOr } from '@copse/std/unknown-value.ts'
+import { updateChromeOptions } from './tests/e2e/helpers/chrome-options.ts'
 import { browser } from '@wdio/globals'
-import electronBinary from 'electron'
+import { resolveElectronExecutable } from './tests/e2e/helpers/electron-executable.ts'
 import { createRequire } from 'node:module'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -14,7 +15,7 @@ import {
 import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/settings-action-bar-click.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
-import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
+import { assignDebugPort } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
@@ -39,23 +40,25 @@ async function parkSessionPointer(): Promise<void> {
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
+const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
 const requireFromProject = createRequire(join(process.cwd(), 'package.json'))
-const chromedriverBinary =
-  process.env.COPSE_E2E_CHROMEDRIVER_BINARY?.trim() ||
+const chromedriverBinary = nonEmptyStringOr(
+  process.env['COPSE_E2E_CHROMEDRIVER_BINARY']?.trim(),
   join(
     dirname(requireFromProject.resolve('electron-chromedriver/package.json')),
     'bin',
     'chromedriver',
-  )
+  ),
+)
 const electronBrowserVersion = resolveElectronBrowserVersion(electronBinary, chromedriverBinary)
 const useChromiumHeadless = shouldUseChromiumHeadless()
 
 let e2eUserDataDir: string | null = null
 let cleanupE2eUserDataDir: (() => void) | null = null
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   runner: 'local',
   // Keep the runner + chromedriver logs instead of discarding them. When a spec
   // dies with "Unable to connect to http://localhost:PORT", that message is the
@@ -162,7 +165,7 @@ export const config: Options.Testrunner = {
     // entirely and force-kill orphans so deleteSession cannot burn another full
     // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
     // cdeb3abf / shard 2).
-    if (shouldSkipAfterTestSessionTraffic(result?.error)) {
+    if (shouldSkipAfterTestSessionTraffic(result.error)) {
       forceKillWedgedE2eSession()
       return
     }
@@ -170,15 +173,13 @@ export const config: Options.Testrunner = {
     // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
     // CI can upload them for debugging the constrained-runner render/OOM flakes.
     // Best-effort + hard-capped: if the session is wedged, bail quickly.
-    if (!result?.passed) {
+    if (!result.passed) {
       try {
         const dir = join(process.cwd(), 'e2e-failure-artifacts')
         mkdirSync(dir, { recursive: true })
-        const base = `${String(test.title ?? 'e2e-test')
-          .replace(/[^a-z0-9]+/gi, '-')
-          .slice(0, 80)}-${Date.now()}`
+        const base = `${test.title.replace(/[^a-z0-9]+/gi, '-').slice(0, 80)}-${String(Date.now())}`
         await withTimeout(
-          (async () => {
+          (async (): Promise<void> => {
             await browser.saveScreenshot(join(dir, `${base}.png`))
             writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
             // The page source shows *that* an element is missing or unpopulated;
@@ -212,11 +213,11 @@ export const config: Options.Testrunner = {
         forceKillWedgedE2eSession()
         return
       }
-      if (result?.passed) throw error
+      if (result.passed) throw error
     }
   },
   async beforeSession(_config, capabilities, specs) {
-    delete process.env.ELECTRON_RUN_AS_NODE
+    delete process.env['ELECTRON_RUN_AS_NODE']
     cleanupE2eUserDataDir?.()
     e2eUserDataDir = makeE2eScratchDir('.wdio-profile-')
     cleanupE2eUserDataDir = installE2eProfileCleanup(e2eUserDataDir)
@@ -226,14 +227,20 @@ export const config: Options.Testrunner = {
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).
-      COPSE_PLAN_USAGE_MOCK: process.env.COPSE_PLAN_USAGE_MOCK?.trim() || '1',
+      COPSE_PLAN_USAGE_MOCK: nonEmptyStringOr(process.env['COPSE_PLAN_USAGE_MOCK']?.trim(), '1'),
       // Deterministic Artificial Analysis live cohort (incl. costPerTask) for the
       // Settings → Usage model value map — no AA API key required in e2e.
-      COPSE_AA_INTELLECT_MOCK: process.env.COPSE_AA_INTELLECT_MOCK?.trim() || '1',
+      COPSE_AA_INTELLECT_MOCK: nonEmptyStringOr(
+        process.env['COPSE_AA_INTELLECT_MOCK']?.trim(),
+        '1',
+      ),
       // Resolve every model-card candidate without touching a vendor site, so
       // the value map's card links render deterministically and e2e makes no
       // outbound requests. '0' would resolve none.
-      COPSE_MODEL_CARD_PROBE_MOCK: process.env.COPSE_MODEL_CARD_PROBE_MOCK?.trim() || '1',
+      COPSE_MODEL_CARD_PROBE_MOCK: nonEmptyStringOr(
+        process.env['COPSE_MODEL_CARD_PROBE_MOCK']?.trim(),
+        '1',
+      ),
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
@@ -283,21 +290,25 @@ export const config: Options.Testrunner = {
       LMSTUDIO_API_KEY: '',
       LM_API_TOKEN: '',
     }
-    if (process.env.COPSE_PANEL_MOCK_GH_STATUS) {
-      e2eEnv.COPSE_PANEL_MOCK_GH_STATUS = process.env.COPSE_PANEL_MOCK_GH_STATUS
+    if (process.env['COPSE_PANEL_MOCK_GH_STATUS']) {
+      e2eEnv['COPSE_PANEL_MOCK_GH_STATUS'] = process.env['COPSE_PANEL_MOCK_GH_STATUS']
     }
     for (const [key, value] of Object.entries(e2eEnv)) {
       process.env[key] = value
     }
     writeFileSync(e2eEnvFile, JSON.stringify(e2eEnv), 'utf8')
 
-    const cap = capabilities as ChromeCapabilities
-    const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    cap['goog:chromeOptions'] = {
-      ...chromeOptions,
-      args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
-    }
+    const userDataDir = e2eUserDataDir
+    const cap = { 'goog:chromeOptions': {} }
+    updateChromeOptions(capabilities, (chromeOptions) => {
+      cap['goog:chromeOptions'] = {
+        ...chromeOptions,
+        args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${userDataDir}`])],
+      }
+      return cap['goog:chromeOptions']
+    })
     await assignDebugPort(cap)
+    updateChromeOptions(capabilities, () => cap['goog:chromeOptions'])
     if (specs.some((spec) => spec.endsWith('agent-coordination.e2e.ts'))) {
       const { seedCoordinationDemo } = await import('./tests/e2e/helpers/coordination-fixture.ts')
       await seedCoordinationDemo()
@@ -320,22 +331,22 @@ export const config: Options.Testrunner = {
       // user discarding that window, and multi-window persistence would drop
       // its record — breaking any spec that relaunches expecting the full
       // window set to restore (multiple-main-windows.e2e.ts).
-      await browser.execute(() =>
-        (
-          window as unknown as { __copseE2e?: { markQuit?: () => Promise<void> } }
-        ).__copseE2e?.markQuit?.(),
-      )
+      await browser.execute(() => window.__copseE2e?.markQuit())
       await browser.closeWindow()
     } catch {
       // A session that is already gone needs no extra shutdown work.
     }
-    const requested = browser.requestedCapabilities as
-      | (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities })
-      | undefined
+    const requested: unknown = browser.requestedCapabilities
     if (!requested) return
     // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
     // the flat capabilities object; reloadSession re-sends whichever it holds.
-    await assignDebugPort(requested.alwaysMatch ?? requested)
+    const cap = { 'goog:chromeOptions': {} }
+    updateChromeOptions(requested.alwaysMatch ?? requested, (options) => {
+      cap['goog:chromeOptions'] = options
+      return options
+    })
+    await assignDebugPort(cap)
+    updateChromeOptions(requested.alwaysMatch ?? requested, () => cap['goog:chromeOptions'])
   },
   afterSession() {
     cleanupE2eUserDataDir?.()

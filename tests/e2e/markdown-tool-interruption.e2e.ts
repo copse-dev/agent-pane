@@ -22,7 +22,9 @@ describe('markdown interrupted by real tool rounds', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('keeps a split table row and bold list label in one rendered reply', async function () {
     this.timeout(60_000)
@@ -64,7 +66,7 @@ describe('markdown interrupted by real tool rounds', () => {
 
   it('keeps an unterminated code fence together and renders HTML-like code inertly', async function () {
     this.timeout(60_000)
-    const previousReplies = (await $$('.msg-assistant .message-text')).length
+    const previousReplies = (await $$('.msg-assistant .message-text').getElements()).length
     const prompt = 'Show an incomplete HTML example after inspecting the workspace.'
     const scenario = await installMockScenario({
       title: 'Interrupted malformed fence',
@@ -93,14 +95,14 @@ describe('markdown interrupted by real tool rounds', () => {
       '<img src=x onerror="document.body.dataset.interruptedMarkupExecuted=1">',
     )
     await expect($('.msg-assistant .message-text img')).not.toExist()
-    const executed = await browser.execute(() => document.body.dataset.interruptedMarkupExecuted)
+    const executed = await browser.execute(() => document.body.dataset['interruptedMarkupExecuted'])
     expect(executed ?? null).toBeNull()
     await saveAppScreenshot('markdown-tool-interruption-malformed-fence.png')
   })
 
   it('starts a separate reply after a completed bold span', async function () {
     this.timeout(60_000)
-    const previousReplies = (await $$('.msg-assistant .message-text')).length
+    const previousReplies = (await $$('.msg-assistant .message-text').getElements()).length
     const prompt =
       'Finish the first thought before inspecting the workspace, then give the next step.'
     const scenario = await installMockScenario({
@@ -125,7 +127,7 @@ describe('markdown interrupted by real tool rounds', () => {
     await submitComposer()
     await waitForAgentIdle()
     await scenario.assertComplete()
-    const replies = await $$('.msg-assistant .message-text')
+    const replies = await $$('.msg-assistant .message-text').getElements()
     expect(replies.length).toBe(previousReplies + 2)
     await expect(replies[previousReplies]).toHaveText('Completed.')
     await expect(replies[previousReplies + 1]).toHaveText('Next, inspect the build.')
@@ -134,7 +136,7 @@ describe('markdown interrupted by real tool rounds', () => {
 
   it('keeps a table row with optional outer pipes together across the tool', async function () {
     this.timeout(60_000)
-    const previousReplies = (await $$('.msg-assistant .message-text')).length
+    const previousReplies = (await $$('.msg-assistant .message-text').getElements()).length
     const prompt = 'Inspect the workspace and complete the table without outer pipes.'
     const scenario = await installMockScenario({
       title: 'Optional table outer pipes',
@@ -158,7 +160,7 @@ describe('markdown interrupted by real tool rounds', () => {
     await submitComposer()
     await waitForAgentIdle()
     await scenario.assertComplete()
-    const replies = await $$('.msg-assistant .message-text')
+    const replies = await $$('.msg-assistant .message-text').getElements()
     expect(replies.length).toBe(previousReplies + 1)
     const lastReply = replies.at(-1)
     if (!lastReply) throw new Error('Expected the table reply')

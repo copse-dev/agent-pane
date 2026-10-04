@@ -31,7 +31,7 @@ describe('GitHub write approval', () => {
     )
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-heading')).toHaveText(
@@ -66,7 +66,7 @@ describe('GitHub write approval', () => {
     )
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-heading')).toHaveText('Open pull request on GitHub?')

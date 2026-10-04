@@ -160,7 +160,9 @@ describe('starting a proposed thread in an isolated checkout', () => {
     seedThreadProposalFixture(seedStableWorkspace())
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
@@ -182,7 +184,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
-            message.textContent?.includes('The config loader guard is ready for review.'),
+            message.textContent.includes('The config loader guard is ready for review.'),
           ),
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },

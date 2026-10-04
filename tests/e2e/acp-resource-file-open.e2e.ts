@@ -103,12 +103,14 @@ describe('ACP resource file links', () => {
       title: join(workspace, FILE_PATH),
     })
 
-    const link = await $('[data-message-id="assistant-resource-file-reply"] .message-text a')
+    const link = await $(
+      '[data-message-id="assistant-resource-file-reply"] .message-text a',
+    ).getElement()
     await expect(link).toHaveText('the guide')
     await expect(link).toHaveAttribute('data-workspace-resource-path', FILE_PATH)
     await link.click()
 
-    const preview = await $('.markdown-file-preview')
+    const preview = await $('.markdown-file-preview').getElement()
     await preview.waitForDisplayed({ timeout: 15_000 })
     await expect(preview).toHaveText(expect.stringContaining('Agent development environment'))
     await saveAppScreenshot('acp-resource-file-reference.png')

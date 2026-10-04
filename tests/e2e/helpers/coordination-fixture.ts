@@ -55,7 +55,7 @@ export async function seedCoordinationDemo(): Promise<void> {
     })),
   })
   writeE2eEnv({
-    COPSE_PANEL_USER_DATA: process.env.COPSE_PANEL_USER_DATA,
-    COPSE_WORKSPACE_DIR: process.env.COPSE_WORKSPACE_DIR,
+    COPSE_PANEL_USER_DATA: process.env['COPSE_PANEL_USER_DATA'],
+    COPSE_WORKSPACE_DIR: process.env['COPSE_WORKSPACE_DIR'],
   })
 }

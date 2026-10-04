@@ -9,9 +9,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // hard-coded value.
 describe('context wheel near the context limit', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     // 174.6k of the 180k conversation budget: 97%.
     seedContextWheelFixture(process.cwd(), 174_600)
@@ -25,11 +25,11 @@ describe('context wheel near the context limit', () => {
   it('turns the ring red at 95% and says so on hover', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     await expect(wheel).toHaveAttribute('aria-label', /Context 97% used/)
 
-    const fill = await wheel.$('.context-wheel-fill')
+    const fill = await wheel.$('.context-wheel-fill').getElement()
     await expect(fill).toHaveElementClass('is-danger')
     await expect(fill).not.toHaveElementClass('is-warn')
 

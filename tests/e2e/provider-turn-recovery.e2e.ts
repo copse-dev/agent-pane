@@ -89,9 +89,9 @@ function seedInterruptedProviderTurn(workspaceRoot: string): void {
 
 describe('explicit provider turn recovery', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedInterruptedProviderTurn(process.cwd())
     await browser.reloadSession()
@@ -103,16 +103,16 @@ describe('explicit provider turn recovery', () => {
   })
 
   it('shows saved partial progress and starts one explicit continuation', async () => {
-    const failed = await $('[data-message-id="msg-assistant-interrupted"]')
-    const card = await $('[data-turn-recovery-card]')
-    const tool = await failed.$('[data-tool-id="tc-upload-report"]')
+    const failed = await $('[data-message-id="msg-assistant-interrupted"]').getElement()
+    const card = await $('[data-turn-recovery-card]').getElement()
+    const tool = await failed.$('[data-tool-id="tc-upload-report"]').getElement()
     await expect(failed).toHaveText('The report is uploaded. Cleaning up next.', {
       containing: true,
     })
     await expect(tool).toHaveAttribute('data-status', 'done')
     await expect(card).toHaveText('Retry this turn', { containing: true })
     await expect(card).toHaveText('An earlier turn completed with', { containing: true })
-    await expect(await card.$$('.turn-recovery-button')).toBeElementsArrayOfSize(2)
+    await expect(await card.$$('.turn-recovery-button').getElements()).toBeElementsArrayOfSize(2)
     // A hatched status plate like Review and Comparison: no perimeter border and
     // a caps title in the plate's severity hue (docs/ui-taste.md).
     const plate = await browser.execute(() => {
@@ -143,10 +143,13 @@ describe('explicit provider turn recovery', () => {
     await savePreparedElementScreenshot('.messages-list', 'provider-turn-recovery.png')
 
     await card.$('button*=Retry this turn').click()
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 3, {
-      timeout: 10_000,
-      timeoutMsg: 'expected an explicit continuation user message',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 3,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected an explicit continuation user message',
+      },
+    )
     const prompts = await $$('.messages-list .msg-user').map((message) => message.getText())
     expect(prompts.at(-1)).toContain(INTERRUPTED_TURN_CONTINUATION)
     await expect($('[data-turn-recovery-card]')).not.toExist()

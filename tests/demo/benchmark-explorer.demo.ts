@@ -52,7 +52,9 @@ describe('Copse Benchmarks', () => {
     await expect($('.badge*=low-work')).toBeDisplayed()
     await expect($('.tab[data-tab="trace"]')).toHaveText('Trace · 3 steps')
     await expect($$('.step-card')).toBeElementsArrayOfSize(3)
-    await browser.execute(() => window.scrollTo({ top: 0 }))
+    await browser.execute(() => {
+      window.scrollTo({ top: 0 })
+    })
     await saveAppScreenshot('benchmark-trial.png')
 
     await $('.tool-call summary').click()

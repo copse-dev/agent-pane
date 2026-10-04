@@ -32,7 +32,7 @@ describe('read access outside the project approval', () => {
     )
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-heading')).toHaveText('Read outside the project?')

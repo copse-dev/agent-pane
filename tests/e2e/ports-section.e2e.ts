@@ -44,9 +44,7 @@ const SEEDED_ROWS = [
 
 async function seedPortRows(rows: unknown): Promise<void> {
   await browser.execute(async (seeded) => {
-    const bridge = (
-      window as unknown as { __copseE2e?: { setPortRows: (rows: unknown) => Promise<unknown> } }
-    ).__copseE2e
+    const bridge = window.__copseE2e
     if (!bridge) throw new Error('__copseE2e unavailable')
     await bridge.setPortRows(seeded)
   }, rows)

@@ -121,9 +121,9 @@ async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
 
 describe('selected text stays visible', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedConversationVisualHierarchyFixture(seedStableWorkspace())
     seedE2eViewport({ width: 1280, height: 800 })

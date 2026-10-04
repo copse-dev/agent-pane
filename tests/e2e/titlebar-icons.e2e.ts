@@ -22,7 +22,7 @@ describe('titlebar panel icons', () => {
   })
 
   it('shows consistent outline icons on the panel controls', async () => {
-    const titlebar = await $('#titlebar')
+    const titlebar = await $('#titlebar').getElement()
     await titlebar.waitForDisplayed({ timeout: 30_000 })
 
     const buttons = [
@@ -36,9 +36,9 @@ describe('titlebar panel icons', () => {
     for (const button of buttons) {
       // Scope to #titlebar — portrait chrome mounts a second labeled cluster
       // under the composer with the same aria-labels / titlebar-text-btn classes.
-      const btn = await $(`#titlebar .titlebar-text-btn[aria-label="${button.label}"]`)
+      const btn = await $(`#titlebar .titlebar-text-btn[aria-label="${button.label}"]`).getElement()
       await expect(btn).toHaveText(button.text)
-      const icon = await btn.$(`svg.titlebar-btn-icon[data-icon="${button.icon}"]`)
+      const icon = await btn.$(`svg.titlebar-btn-icon[data-icon="${button.icon}"]`).getElement()
       await expect(icon).toExist()
       await expect(icon).toHaveAttribute('aria-hidden', 'true')
     }
@@ -50,7 +50,12 @@ describe('titlebar panel icons', () => {
         ),
       ).map((icon) => {
         const styles = getComputedStyle(icon)
-        const buttonStyles = getComputedStyle(icon.closest('button')!)
+        const buttonStyles = getComputedStyle(
+          icon.closest('button') ??
+            ((): never => {
+              throw new Error("Missing fixture element: icon.closest('button')")
+            })(),
+        )
         return {
           fill: styles.fill,
           stroke: styles.stroke,
@@ -61,10 +66,10 @@ describe('titlebar panel icons', () => {
       }),
     )
     for (const styles of iconStyles) {
-      await expect(styles.fill).toBe('none')
-      await expect(styles.stroke).toBe(styles.buttonColor)
-      await expect(styles.strokeLinecap).toBe('round')
-      await expect(styles.strokeLinejoin).toBe('round')
+      expect(styles.fill).toBe('none')
+      expect(styles.stroke).toBe(styles.buttonColor)
+      expect(styles.strokeLinecap).toBe('round')
+      expect(styles.strokeLinejoin).toBe('round')
     }
     // Nine outline-icon buttons: the five checked above, the experimental
     // Memories and Roadmap buttons (rendered up front but hidden until their
@@ -74,7 +79,7 @@ describe('titlebar panel icons', () => {
     // uses a ui-icon chevron, not titlebar-btn-icon, so it is excluded from
     // this set. Portrait-bar duplicates are excluded by the #titlebar scope.
     await expect(
-      await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon'),
+      await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon').getElements(),
     ).toBeElementsArrayOfSize(9)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')

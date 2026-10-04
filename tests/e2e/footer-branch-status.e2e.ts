@@ -35,7 +35,7 @@ describe('footer branch status match', () => {
   it('shows the thread branch when checkout matches', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const branchBtn = await $('.footer-branch-status')
+    const branchBtn = await $('.footer-branch-status').getElement()
     await expect(branchBtn).toBeDisplayed()
     await expect(branchBtn).not.toHaveElementClass('is-mismatch')
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(seed.currentBranch)
@@ -63,7 +63,7 @@ describe('footer branch status mismatch', () => {
   it('highlights mismatch when thread branch differs from checkout', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const branchBtn = await $('.footer-branch-status')
+    const branchBtn = await $('.footer-branch-status').getElement()
     await expect(branchBtn).toBeDisplayed({ wait: 10_000 })
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(seed.mismatchBranch, {
       wait: 10_000,
@@ -197,12 +197,12 @@ describe('footer branch status for a detached thread worktree', function () {
     await $(`[data-thread-id="${detachedThreadId}"]`).click()
     await expect($(`[data-thread-id="${detachedThreadId}"]`)).toHaveElementClass('selected')
 
-    const branchBtn = await $('.footer-branch-status')
+    const branchBtn = await $('.footer-branch-status').getElement()
     await expect(branchBtn).toBeDisplayed()
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(detachedBranch)
     await expect($('.toast-error')).not.toExist()
     await expect(branchBtn).toHaveElementClass('is-detached')
-    const reattachBtn = await $('.branch-reattach-button')
+    const reattachBtn = await $('.branch-reattach-button').getElement()
     await expect(reattachBtn).toBeDisplayed()
     await expect(reattachBtn).toBeEnabled()
     await expect(reattachBtn).toHaveAttribute(
@@ -218,7 +218,7 @@ describe('footer branch status for a detached thread worktree', function () {
     await $('.branch-reattach-button').click()
 
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 10_000 })
-    const branchBtn = await $('.footer-branch-status')
+    const branchBtn = await $('.footer-branch-status').getElement()
     await expect(branchBtn).not.toHaveElementClass('is-detached')
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(detachedBranch)
     await expect($('.toast-error')).not.toExist()
@@ -280,7 +280,7 @@ describe('footer branch status for a detached thread worktree', function () {
 
     // The rebase rewrote the checkout's files, and the footer's working-tree
     // watcher picks that up without a thread switch.
-    const continueBtn = await $('.branch-reattach-button')
+    const continueBtn = await $('.branch-reattach-button').getElement()
     await expect(continueBtn).toHaveText('Continue rebase', { wait: 20_000 })
     await expect(continueBtn).toBeEnabled()
     await expect(continueBtn).toHaveAttribute(
@@ -342,7 +342,7 @@ describe('footer branch status for a detached thread worktree', function () {
       ]),
     ).toThrow()
 
-    const button = await $('.branch-reattach-button')
+    const button = await $('.branch-reattach-button').getElement()
     await expect(button).toHaveText('Commit and continue', { wait: 20_000 })
     await expect(button).toBeEnabled()
     await expect(button).toHaveAttribute('title', expect.stringContaining(picked.slice(0, 7)))
@@ -386,7 +386,7 @@ describe('footer branch status for a detached thread worktree', function () {
     git(worktreeRoot, ['bisect', 'start', 'HEAD', 'HEAD~2'])
     expect(git(worktreeRoot, ['branch', '--show-current'])).toBe('')
 
-    const button = await $('.branch-reattach-button')
+    const button = await $('.branch-reattach-button').getElement()
     await expect(button).toHaveText('Reset bisect', { wait: 20_000 })
     await expect(button).toBeEnabled()
     await expect(button).toHaveAttribute(

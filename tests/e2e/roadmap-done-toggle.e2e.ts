@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, $$, browser } from '@wdio/globals'
+import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -17,7 +17,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // `mouseover`, so the icon stays hidden and `waitForDisplayed` times out on a
 // row that is perfectly healthy. Re-hover on every poll, re-querying the row so
 // a detached handle can't pin us to stale coordinates.
-const revealDoneToggle = async () => {
+const revealDoneToggle = async (): Promise<WebdriverIO.Element> => {
   const toggle = $('.roadmap-done-toggle')
   await browser.waitUntil(
     async () => {
@@ -26,7 +26,7 @@ const revealDoneToggle = async () => {
     },
     { timeout: 15_000, timeoutMsg: 'mark-done toggle never revealed on row hover' },
   )
-  return toggle
+  return toggle.getElement()
 }
 
 describe('roadmap done toggle', () => {
@@ -72,12 +72,20 @@ describe('roadmap done toggle', () => {
 
     // `done` is hidden by default, so the row leaves the list on completion
     // rather than staying struck through.
-    await browser.waitUntil(async () => (await $('.roadmap-row').isExisting()) === false, {
+    await browser.waitUntil(async () => !(await $('.roadmap-row').isExisting()), {
       timeout: 10_000,
       timeoutMsg: 'done row never disappeared from the list',
     })
     const editorEmpty = await browser.execute(
-      () => !document.querySelector<HTMLElement>('.roadmap-empty')!.hidden,
+      () =>
+        !(
+          document.querySelector<HTMLElement>('.roadmap-empty') ??
+          ((): never => {
+            throw new Error(
+              "Missing fixture element: document.querySelector<HTMLElement>('.roadmap-empty')",
+            )
+          })()
+        ).hidden,
     )
     assert.equal(editorEmpty, true, 'toggle must not open the editor')
     await saveAppScreenshot('roadmap-done-hidden-default.png')
@@ -121,7 +129,7 @@ describe('roadmap done toggle', () => {
     await filterToggle.click()
     await doneFacet.waitForDisplayed({ timeout: 10_000 })
     await doneCheckbox.click()
-    await browser.waitUntil(async () => (await $('.roadmap-row').isExisting()) === false, {
+    await browser.waitUntil(async () => !(await $('.roadmap-row').isExisting()), {
       timeout: 10_000,
       timeoutMsg: 'done row never hid again after unchecking',
     })
@@ -138,8 +146,7 @@ describe('roadmap done toggle', () => {
     await reopen.click()
     await browser.waitUntil(
       async () =>
-        (await $('.roadmap-row').isExisting()) === true &&
-        (await $('.roadmap-row.is-done').isExisting()) === false,
+        (await $('.roadmap-row').isExisting()) && !(await $('.roadmap-row.is-done').isExisting()),
       { timeout: 10_000, timeoutMsg: 'row never returned to ready (no is-done)' },
     )
     assert.equal(

@@ -90,11 +90,11 @@ describe('subagent badge and footer model label', () => {
     // otherwise reads exactly like a parent-level tool row. The mark lives in
     // the `<summary>` itself, so it must be visible before ever opening the
     // card — not only once expanded.
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await card.waitForExist({ timeout: 30_000 })
     await expect(card).not.toHaveAttribute('open')
 
-    const marker = await card.$('summary.tool-card-header .tool-subagent-marker')
+    const marker = await card.$('summary.tool-card-header .tool-subagent-marker').getElement()
     await expect(marker).toBeDisplayed()
     await expect(marker).toHaveAttribute('aria-label', 'Subagent')
     await expect(marker).toHaveAttribute('role', 'img')
@@ -104,7 +104,7 @@ describe('subagent badge and footer model label', () => {
   })
 
   it('renders the subagent badge through the shared labeler and captures a screenshot', async () => {
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await card.waitForExist({ timeout: 30_000 })
     await expect(card).not.toHaveAttribute('open')
     await card.$('summary.tool-card-header').click()
@@ -112,7 +112,7 @@ describe('subagent badge and footer model label', () => {
 
     // The badge is the whole point of local/cloud routing visibility; it used
     // to show the raw `claude-haiku-4-5` id. It now reads the house-style label.
-    const badge = await card.$('.subagent-model')
+    const badge = await card.$('.subagent-model').getElement()
     await expect(badge).toBeDisplayed()
     await expect(badge).toHaveText('Claude Haiku 4.5')
 
@@ -124,7 +124,7 @@ describe('subagent badge and footer model label', () => {
     // selection. Best value is intentionally replaced by a local fallback in
     // footer chrome, so the fixture uses `auto:balanced` with a resolved cloud
     // route to exercise the shared labeler here.
-    const trigger = await $('.model-picker-trigger')
+    const trigger = await $('.model-picker-trigger').getElement()
     await trigger.waitForExist({ timeout: 15_000 })
     await expect(trigger.$('.model-picker-label')).toHaveText('Claude Sonnet 4.6')
     await expect(trigger.$('.model-picker-cost')).toBeDisplayed()

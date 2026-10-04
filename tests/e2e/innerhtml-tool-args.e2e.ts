@@ -25,7 +25,7 @@ describe('innerHTML-safe tool args', () => {
   it('renders tool args with </pre> without breaking card markup', async () => {
     await $('.tool-card[data-tool-id="tc-write-trap"]').waitForExist({ timeout: 30_000 })
 
-    const toolCard = await $('.tool-card[data-tool-id="tc-write-trap"]')
+    const toolCard = await $('.tool-card[data-tool-id="tc-write-trap"]').getElement()
     await expect(toolCard.$('.tool-name')).toHaveText('Edited index.html')
     await expect(toolCard.$('.tool-stat-add')).toHaveText('+1')
     await expect(toolCard.$('.tool-stat-del')).toHaveText('-0')
@@ -63,13 +63,15 @@ describe('innerHTML-safe tool args', () => {
       })
     const closed = await summaryStyle()
     expect(closed).not.toBeNull()
-    expect(closed!.listStyle).toBe('none')
-    expect(closed!.marker).toBe('"▸ "')
-    expect(closed!.color).toBe(closed!.muted)
+    if (!closed) throw new Error('Missing fixture measurement: closed')
+    expect(closed.listStyle).toBe('none')
+    expect(closed.marker).toBe('"▸ "')
+    expect(closed.color).toBe(closed.muted)
 
     await toolCard.$('.tool-args summary').click()
     const opened = await summaryStyle()
-    expect(opened!.marker).toBe('"▾ "')
+    if (!opened) throw new Error('Missing fixture measurement: opened')
+    expect(opened.marker).toBe('"▾ "')
 
     const argsPre = toolCard.$('.tool-args pre')
     await expect(argsPre).toHaveText(renderToolArgs(INNERHTML_TRAP_ARGS))

@@ -6,18 +6,20 @@ describe('browser-hosted subagent display reference', () => {
   beforeEach(async () => {
     await browser.url('/?scenario=subagent-display')
     await $('.tool-card-subagent').waitForExist()
-    await browser.waitUntil(async () => (await $$('.tool-card-subagent')).length === 2)
+    await browser.waitUntil(
+      async () => (await $$('.tool-card-subagent').getElements()).length === 2,
+    )
   })
 
   it('captures the collapsed and expanded subagent card', async () => {
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await saveAppScreenshot('subagent-display-collapsed.png')
     await card.$('summary.tool-card-header').click()
     await saveAppScreenshot('subagent-display-expanded.png')
   })
 
   it('shows a named custom agent and the concrete model it ran', async () => {
-    const cards = await $$('.tool-card-subagent')
+    const cards = await $$('.tool-card-subagent').getElements()
     let customCard = null
     for (const card of cards) {
       if ((await card.getText()).includes('security-reviewer')) customCard = card

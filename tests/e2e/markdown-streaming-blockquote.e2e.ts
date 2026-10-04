@@ -23,7 +23,7 @@ describe('markdown streaming blockquote pending', () => {
 
     const result = await browser.execute(() => {
       const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
+      if (!list) throw new Error('no messages list')
 
       const msg = document.createElement('div')
       msg.className = 'msg msg-assistant'

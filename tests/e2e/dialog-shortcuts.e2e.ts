@@ -60,10 +60,13 @@ describe('dialog keyboard shortcuts', () => {
   })
 
   it('does not delete the active thread while Settings is open', async () => {
-    await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length === 2, {
-      timeout: 15_000,
-      timeoutMsg: 'expected two seeded chat rows',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-row').getElements()).length === 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected two seeded chat rows',
+      },
+    )
     await expect($('.chat-row.selected .chat-title')).toHaveText('Active conversation')
 
     await $('[aria-label="Settings"]').click()
@@ -81,7 +84,7 @@ describe('dialog keyboard shortcuts', () => {
     await expect(settings).toBeDisplayed()
     await expect($('#confirm-dialog')).not.toBeDisplayed()
     await expect($('.chat-row.selected .chat-title')).toHaveText('Active conversation')
-    expect(await $$('.chats-list .chat-row')).toHaveLength(2)
+    expect(await $$('.chats-list .chat-row').getElements()).toHaveLength(2)
     await saveElementScreenshot('#settings-dialog', 'cmd-w-settings-dialog-safe.png')
   })
 })

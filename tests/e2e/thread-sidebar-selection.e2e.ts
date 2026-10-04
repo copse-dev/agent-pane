@@ -47,9 +47,9 @@ function seedThreads(): void {
 
 describe('sidebar thread selection styling', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedThreads()
@@ -100,25 +100,25 @@ describe('sidebar thread selection styling', () => {
       }
     })
 
-    expect(geometry).not.toBeNull()
-    expect(geometry!.marginLeft).toBe('0px')
-    expect(geometry!.marginRight).toBe('0px')
-    expect(Math.abs(geometry!.rowLeft - geometry!.listLeft)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(geometry!.rowRight - geometry!.listRight)).toBeLessThanOrEqual(0.5)
+    if (!geometry) throw new Error('Sidebar geometry requires pane, header, list, and selected row')
+    expect(geometry.marginLeft).toBe('0px')
+    expect(geometry.marginRight).toBe('0px')
+    expect(Math.abs(geometry.rowLeft - geometry.listLeft)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(geometry.rowRight - geometry.listRight)).toBeLessThanOrEqual(0.5)
     // Full-bleed against the projects pane (not just the list box).
-    expect(Math.abs(geometry!.rowLeft - geometry!.paneLeft)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(geometry!.rowRight - geometry!.paneRight)).toBeLessThanOrEqual(1)
+    expect(Math.abs(geometry.rowLeft - geometry.paneLeft)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(geometry.rowRight - geometry.paneRight)).toBeLessThanOrEqual(1)
     // The full-bleed wash is the whole marker: an accent rail on the trailing
     // edge was redundant with it. Weight carries the rest.
-    expect(geometry!.boxShadow).toBe('none')
-    expect(geometry!.fontWeight).toBe('600')
-    expect(geometry!.borderRadius).toBe('0px')
+    expect(geometry.boxShadow).toBe('none')
+    expect(geometry.fontWeight).toBe('600')
+    expect(geometry.borderRadius).toBe('0px')
     // Follow the shared row rhythm, with the trailing edge aligned to the
     // projects action column.
-    expect(geometry!.paddingTop).toBe(geometry!.rowPadding)
-    expect(geometry!.paddingBottom).toBe(geometry!.rowPadding)
-    expect(geometry!.paddingRight).toBe(geometry!.headerPaddingRight)
-    expect(Number.parseFloat(geometry!.paddingLeft)).toBe(28)
+    expect(geometry.paddingTop).toBe(geometry.rowPadding)
+    expect(geometry.paddingBottom).toBe(geometry.rowPadding)
+    expect(geometry.paddingRight).toBe(geometry.headerPaddingRight)
+    expect(Number.parseFloat(geometry.paddingLeft)).toBe(28)
 
     await saveElementScreenshot('#pane-projects', 'thread-sidebar-selection.png')
   })

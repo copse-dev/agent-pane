@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -70,21 +71,21 @@ describe('ACP config options in the model picker', () => {
   it('lists the agent’s selectors under the models and drills into one', async function () {
     this.timeout(60_000)
     await $('.model-picker-trigger').click()
-    const rows = await $$('.model-picker-group-row')
-    await expect(rows.length).toBe(2)
-    await expect(rows[0].$('.model-picker-group-row-label')).toHaveText('Thinking effort')
-    await expect(rows[0].$('.model-picker-group-row-value')).toHaveText('Medium')
-    await expect(rows[1].$('.model-picker-group-row-label')).toHaveText('Mode')
+    const rows = await $$('.model-picker-group-row').getElements()
+    expect(rows.length).toBe(2)
+    await expect(at([...rows], 0).$('.model-picker-group-row-label')).toHaveText('Thinking effort')
+    await expect(at([...rows], 0).$('.model-picker-group-row-value')).toHaveText('Medium')
+    await expect(at([...rows], 1).$('.model-picker-group-row-label')).toHaveText('Mode')
 
     await saveElementScreenshot('.model-picker-menu', 'acp-config-options-menu.png')
 
-    await rows[0].click()
-    const choices = await $$('.model-picker-menu .model-picker-option')
-    await expect(choices.length).toBe(3)
-    await expect(choices[1]).toHaveAttribute('aria-current', 'true')
+    await at([...rows], 0).click()
+    const choices = await $$('.model-picker-menu .model-picker-option').getElements()
+    expect(choices.length).toBe(3)
+    await expect(at([...choices], 1)).toHaveAttribute('aria-current', 'true')
     await saveElementScreenshot('.model-picker-menu', 'acp-config-options-thinking-effort.png')
 
-    await choices[2].click()
+    await at([...choices], 2).click()
     await expect($('.model-picker-menu')).not.toBeDisplayed()
 
     // The pick persists to the agent config, so it survives a reopen.
@@ -117,9 +118,9 @@ describe('ACP config options in the model picker', () => {
       }
     })
 
-    await expect(opened.pickerMenuOpen).toBe(false)
-    await expect(opened.headings).toEqual(['Thinking effort', 'Mode'])
-    await expect(opened.items).toEqual([
+    expect(opened.pickerMenuOpen).toBe(false)
+    expect(opened.headings).toEqual(['Thinking effort', 'Mode'])
+    expect(opened.items).toEqual([
       { label: 'Low', checked: 'false' },
       { label: 'Medium', checked: 'false' },
       // The reasoning level picked in the previous test is the checked one.

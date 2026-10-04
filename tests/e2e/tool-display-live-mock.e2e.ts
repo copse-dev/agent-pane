@@ -31,11 +31,7 @@ describe('tool call display live mock', () => {
 
     await browser.execute(() => {
       const state: { transitions: string[] } = { transitions: [] }
-      ;(
-        window as unknown as {
-          __toolDisclosureTrace?: { transitions: string[] }
-        }
-      ).__toolDisclosureTrace = state
+      window.__toolDisclosureTrace = state
       new MutationObserver((mutations) => {
         for (const mutation of mutations) {
           if (
@@ -94,14 +90,7 @@ describe('tool call display live mock', () => {
 
     await expect($('.tool-card-rollup')).toExist()
     await expect($('.tool-card-rollup')).not.toHaveAttribute('open')
-    const trace = await browser.execute(
-      () =>
-        (
-          window as unknown as {
-            __toolDisclosureTrace?: { transitions: string[] }
-          }
-        ).__toolDisclosureTrace ?? null,
-    )
+    const trace = await browser.execute(() => window.__toolDisclosureTrace ?? null)
     expect((trace?.transitions ?? []).join(',')).not.toContain('closed,open')
 
     await expectAssistantReply(

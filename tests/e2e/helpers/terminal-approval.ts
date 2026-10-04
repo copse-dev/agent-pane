@@ -20,7 +20,7 @@ export async function approvalDialogShowing(): Promise<boolean> {
  * terminal prompts for approval. macOS seatbelt usually skips that dialog.
  */
 export async function approveUnsandboxedTerminalIfPrompted(): Promise<void> {
-  const dialog = await $('#approval-dialog')
+  const dialog = await $('#approval-dialog').getElement()
   const approvalShown = await dialog
     .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 10_000 })
     .then(() => true)

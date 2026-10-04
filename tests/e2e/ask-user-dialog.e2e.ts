@@ -126,18 +126,18 @@ describe('ask_user dialog', () => {
     await setComposerValue('Help me sign in to Claude.')
     await submitComposer()
 
-    const dialog = await $('#ask-user-dialog')
+    const dialog = await $('#ask-user-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.ask-user-question code')).toHaveText('claude /login')
     await expect(dialog.$('.ask-user-question')).not.toHaveText(expect.stringContaining('`'))
 
-    const option = await dialog.$('.ask-user-option*=Run')
+    const option = await dialog.$('.ask-user-option*=Run').getElement()
     await expect(option.$('code')).toHaveText('claude /login')
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog.png')
     await option.click()
 
-    const input = await dialog.$('.ask-user-input')
+    const input = await dialog.$('.ask-user-input').getElement()
     await expect(input).toHaveValue('Run claude /login')
 
     await dialog.$('.ask-user-submit').click()
@@ -161,7 +161,7 @@ describe('ask_user dialog', () => {
     )
     await submitComposer()
 
-    const dialog = await $('#ask-user-dialog')
+    const dialog = await $('#ask-user-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(async () => await $('.stop-btn').isDisplayed(), {
       timeout: 10_000,
@@ -228,10 +228,10 @@ describe('ask_user dialog', () => {
     await setComposerValue(user)
     await submitComposer()
 
-    const dialog = await $('#ask-user-dialog')
+    const dialog = await $('#ask-user-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
-    const input = await dialog.$('.ask-user-input')
+    const input = await dialog.$('.ask-user-input').getElement()
     await input.click()
     await input.setValue('Green')
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog-keyboard-submit.png')
@@ -275,7 +275,7 @@ describe('ask_user dialog', () => {
     await setComposerValue(user)
     await submitComposer()
 
-    const dialog = await $('#ask-user-dialog')
+    const dialog = await $('#ask-user-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog-escape-cancel.png')
 

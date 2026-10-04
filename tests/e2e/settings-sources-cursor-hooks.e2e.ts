@@ -76,9 +76,7 @@ describe('settings sources hooks', () => {
       return Array.from(document.querySelectorAll('#sources-hooks-list .sources-row')).map(
         (row) => ({
           title: row.querySelector('.sources-row-title')?.textContent ?? '',
-          badges: Array.from(row.querySelectorAll('.sources-badge')).map(
-            (b) => b.textContent ?? '',
-          ),
+          badges: Array.from(row.querySelectorAll('.sources-badge')).map((b) => b.textContent),
           isWarning: row.classList.contains('sources-row-warning'),
           detail: row.querySelector('.sources-row-detail')?.textContent ?? '',
         }),
@@ -133,7 +131,7 @@ describe('settings sources hooks', () => {
       const btn = row?.querySelector<HTMLElement>('.sources-hook-test-btn')
       const badge = row?.querySelector<HTMLElement>('.sources-badge')
       if (!btn || !badge) return null
-      const look = (node: HTMLElement) => {
+      const look = (node: HTMLElement): string => {
         const css = getComputedStyle(node)
         return `${css.fontSize}|${css.fontWeight}|${css.textTransform}|${css.letterSpacing}`
       }

@@ -27,7 +27,7 @@ import {
 //
 // Screenshots of all three land in tests/e2e/screenshots for visual review.
 
-function settingsSection(section: string) {
+function settingsSection(section: string): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 

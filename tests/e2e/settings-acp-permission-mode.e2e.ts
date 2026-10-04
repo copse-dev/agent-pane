@@ -76,7 +76,7 @@ describe('ACP permission-mode settings', () => {
       ],
     })
     await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 }).getElement()
   })
 
   after(() => {
@@ -87,65 +87,69 @@ describe('ACP permission-mode settings', () => {
 
   it('shows the saved ACP session mode and its discovered choices', async function () {
     this.timeout(60_000)
-    await $('[aria-label="Settings"]').click()
-    const dialog = await $('#settings-dialog')
+    await $('[aria-label="Settings"]').click().getElement()
+    const dialog = await $('#settings-dialog').getElement().getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await $('.settings-nav-btn[data-section="general"]').click()
+    await $('.settings-nav-btn[data-section="general"]').click().getElement()
 
     // Device agents live under the one Providers panel now: an agent with no
     // other capability gets a chip of its own.
-    const chip = await $('.provider-chip[data-provider="fixture-agent"]')
+    const chip = await $('.provider-chip[data-provider="fixture-agent"]').getElement().getElement()
     await chip.waitForExist({ timeout: 15_000 })
     await chip.click()
 
-    const card = await $('.acp-agent-card')
+    const card = await $('.acp-agent-card').getElement().getElement()
     await card.waitForExist({ timeout: 15_000 })
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'Providers',
+        (candidate) => candidate.querySelector('legend')?.textContent.trim() === 'Providers',
       )
       if (content && fieldset) content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })
 
-    await expect(await card.$('.acp-agent-card-head strong')).toHaveText('Fixture ACP Agent')
-    const modelPicker = await card.$('.model-picker-field')
+    await expect(await card.$('.acp-agent-card-head strong').getElement().getElement()).toHaveText(
+      'Fixture ACP Agent',
+    )
+    const modelPicker = await card.$('.model-picker-field').getElement().getElement()
     await expect(modelPicker).toBeDisplayed()
-    await expect(await modelPicker.$('.model-picker-label')).toHaveText('Fixture Sonnet')
+    await expect(await modelPicker.$('.model-picker-label').getElement().getElement()).toHaveText(
+      'Fixture Sonnet',
+    )
     await browser.execute(() => {
       document
         .querySelector<HTMLElement>('.acp-agent-card .model-picker-trigger')
         ?.scrollIntoView({ block: 'center' })
     })
     await browser.pause(200)
-    await modelPicker.$('.model-picker-trigger').click()
-    const modelFilter = await modelPicker.$('.model-picker-filter')
+    await modelPicker.$('.model-picker-trigger').click().getElement()
+    const modelFilter = await modelPicker.$('.model-picker-filter').getElement().getElement()
     await modelFilter.setValue('opus')
-    await expect(await modelPicker.$$('.model-picker-option')).toBeElementsArrayOfSize(1)
-    await expect(await modelPicker.$('.model-picker-option .model-picker-option-label')).toHaveText(
+    await expect(await modelPicker.$$('.model-picker-option').getElements()).toBeElementsArrayOfSize(1)
+    await expect(await modelPicker.$('.model-picker-option .model-picker-option-label').getElement()).toHaveText(
       'Fixture Opus',
     )
     await saveElementScreenshot('.acp-agent-card', 'settings-acp-model-picker-search.png')
     await browser.keys('Escape')
 
-    const modeSelect = await card.$('.acp-permission-mode-field select')
+    const modeSelect = await card.$('.acp-permission-mode-field select').getElement().getElement()
     await expect(modeSelect).toBeDisplayed()
     await expect(modeSelect).toHaveValue('acceptEdits')
-    await expect(await modeSelect.$$('option')).toBeElementsArrayOfSize(4)
-    await expect(await modeSelect.$('option[value="acceptEdits"]')).toHaveAttribute(
+    await expect(await modeSelect.$$('option').getElements().getElements()).toBeElementsArrayOfSize(4)
+    await expect(await modeSelect.$('option[value="acceptEdits"]').getElement().getElement()).toHaveAttribute(
       'title',
       'Apply edits automatically.',
     )
     // #1448 rewrote this hint's copy along with the rest of Settings; the field
     // it explains is unchanged.
     await expect(
-      await card.$('.field-hint*=How much the agent asks before it acts'),
+      await card.$('.field-hint*=How much the agent asks before it acts').getElement().getElement(),
     ).toBeDisplayed()
 
     await browser.execute(() => {
       const cardElement = document.querySelector<HTMLElement>('.acp-agent-card')
       const mode = [...(cardElement?.querySelectorAll<HTMLLabelElement>('label') ?? [])].find(
-        (label) => label.textContent?.includes('Permission mode'),
+        (label) => label.textContent.includes('Permission mode'),
       )
       mode?.scrollIntoView({ block: 'center' })
     })

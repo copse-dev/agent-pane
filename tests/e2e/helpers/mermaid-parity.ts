@@ -6,7 +6,8 @@ import { renderMarkdown, StreamingMarkdownRenderer } from '@copse/streaming-mark
 
 function mount(): HTMLElement {
   document.querySelector('#parity')?.remove()
-  const app = document.getElementById('app')!
+  const app = document.getElementById('app')
+  if (app == null) throw new Error('Missing app in test fixture')
   const root = document.createElement('div')
   root.id = 'parity'
   root.style.cssText =
@@ -28,8 +29,8 @@ function column(root: HTMLElement, id: string, title: string): HTMLElement {
   return body
 }
 
-Reflect.set(window, 'mermaidParity', {
-  async pair(source: string, title: string) {
+const parity = {
+  async pair(source: string, title: string): Promise<void> {
     await Promise.all([
       document.fonts.load('400 16px Pliant'),
       document.fonts.load('700 16px Pliant'),
@@ -47,7 +48,7 @@ Reflect.set(window, 'mermaidParity', {
     baseline.querySelector('.mermaid-diagram')?.classList.add('mermaid-diagram--folded')
     await renderMermaidIn(isolated)
   },
-  async stream() {
+  async stream(): Promise<{ prematureFrames: number; frames: number; text: string }> {
     const root = mount()
     const host = column(root, 'isolated', 'Streaming Mermaid')
     const renderer = new StreamingMarkdownRenderer(host)
@@ -67,13 +68,13 @@ Reflect.set(window, 'mermaidParity', {
       text: host.textContent,
     }
   },
-  async many(count: number) {
+  async many(count: number): Promise<{ ms: number; frames: number; fallbacks: number }> {
     const root = mount()
-    const host = column(root, 'isolated', `${count} diagrams`)
+    const host = column(root, 'isolated', `${String(count)} diagrams`)
     host.innerHTML = renderMarkdown(
       Array.from(
         { length: count },
-        (_, i) => `\`\`\`mermaid\ngraph LR\nA[Diagram ${i}] --> B[Done]\n\`\`\``,
+        (_, i) => `\`\`\`mermaid\ngraph LR\nA[Diagram ${String(i)}] --> B[Done]\n\`\`\``,
       ).join('\n\n'),
     )
     const start = performance.now()
@@ -84,4 +85,12 @@ Reflect.set(window, 'mermaidParity', {
       fallbacks: host.querySelectorAll('.mermaid-fallback-title').length,
     }
   },
-})
+}
+
+declare global {
+  interface Window {
+    mermaidParity?: typeof parity
+  }
+}
+
+window.mermaidParity = parity

@@ -38,13 +38,25 @@ describe('right panel position setting', () => {
 
     await browser.waitUntil(
       async () =>
-        (await (await $('#body')).getAttribute('class'))?.includes('is-right-panel-horizontal'),
+        (await (await $('#body').getElement()).getAttribute('class'))?.includes(
+          'is-right-panel-horizontal',
+        ),
       { timeout: 5_000, timeoutMsg: 'expected the bottom (horizontal) right-panel layout class' },
     )
 
     const layout = await browser.execute(() => {
-      const chat = document.getElementById('pane-chat')!.getBoundingClientRect()
-      const files = document.getElementById('pane-files')!.getBoundingClientRect()
+      const chat = (
+        document.getElementById('pane-chat') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-chat')")
+        })()
+      ).getBoundingClientRect()
+      const files = (
+        document.getElementById('pane-files') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-files')")
+        })()
+      ).getBoundingClientRect()
       return { chatBottom: chat.bottom, filesTop: files.top }
     })
     // Panel sits below chat, not beside it.
@@ -59,8 +71,18 @@ describe('right panel position setting', () => {
     await expect($('#body')).not.toHaveElementClass('is-right-panel-horizontal')
 
     const layout = await browser.execute(() => {
-      const chat = document.getElementById('pane-chat')!.getBoundingClientRect()
-      const files = document.getElementById('pane-files')!.getBoundingClientRect()
+      const chat = (
+        document.getElementById('pane-chat') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-chat')")
+        })()
+      ).getBoundingClientRect()
+      const files = (
+        document.getElementById('pane-files') ??
+        ((): never => {
+          throw new Error("Missing fixture element: document.getElementById('pane-files')")
+        })()
+      ).getBoundingClientRect()
       return { chatRight: chat.right, filesLeft: files.left }
     })
     // Panel sits beside chat, not below it.

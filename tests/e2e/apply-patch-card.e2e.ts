@@ -113,7 +113,7 @@ describe('apply_patch tool card', () => {
     await expect(card.$('.tool-name')).toHaveText('Patched 3 files')
     await expect(card.$('.tool-stat-add')).toHaveText('+4')
     await expect(card.$('.tool-stat-del')).toHaveText('-2')
-    const rows = await card.$$('.tool-patch-file')
+    const rows = await card.$$('.tool-patch-file').getElements()
     assert.equal(rows.length, 3)
     const seen = await browser.execute(() =>
       [...document.querySelectorAll('.tool-patch-file')].map((row) => [

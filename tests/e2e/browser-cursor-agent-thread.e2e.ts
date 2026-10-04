@@ -32,11 +32,12 @@ async function recordGuestNavigations(stopAtUrl: string): Promise<void> {
   await browser.execute((expected) => {
     const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
     if (!guest) throw new Error('missing browser guest')
-    guest.dataset.e2eMainFrameStarts = ''
+    guest.dataset['e2eMainFrameStarts'] = ''
     guest.addEventListener('did-start-navigation', (event) => {
       if (!('url' in event) || typeof event.url !== 'string') return
       if (!('isMainFrame' in event) || event.isMainFrame !== true) return
-      guest.dataset.e2eMainFrameStarts = `${guest.dataset.e2eMainFrameStarts ?? ''}${event.url}\n`
+      guest.dataset['e2eMainFrameStarts'] =
+        `${guest.dataset['e2eMainFrameStarts'] ?? ''}${event.url}\n`
       if (event.url === expected) guest.stop()
     })
   }, stopAtUrl)
@@ -45,8 +46,9 @@ async function recordGuestNavigations(stopAtUrl: string): Promise<void> {
 async function guestMainFrameStarts(): Promise<string[]> {
   const log = await browser.execute(
     () =>
-      document.querySelector<Guest>('.browser-tab-panel.is-active webview')?.dataset
-        .e2eMainFrameStarts ?? '',
+      document.querySelector<Guest>('.browser-tab-panel.is-active webview')?.dataset[
+        'e2eMainFrameStarts'
+      ] ?? '',
   )
   return log.split('\n').filter(Boolean)
 }
@@ -75,7 +77,7 @@ describe('browser Cursor agent URL navigation', () => {
 
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review agent PR on GitHub')
     await $('.titlebar-btn[aria-label="Open browser"]').click()
-    const input = await $('.browser-tab-panel.is-active .browser-url-input')
+    const input = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await input.waitForDisplayed({ timeout: 10_000 })
     await browser.waitUntil(
       async () =>
@@ -108,7 +110,7 @@ describe('browser Cursor agent URL navigation', () => {
     // Linked-thread handoff is reserved for the PR pane button — chat/browser
     // navigation must not steal the active conversation or spawn another tab.
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review agent PR on GitHub')
-    expect(await $$('.browser-tabs-tab')).toHaveLength(1)
+    expect(await $$('.browser-tabs-tab').getElements()).toHaveLength(1)
     expect(await guestMainFrameStarts()).toEqual([AGENTS_URL])
     // Nor did the browser network policy deny the request once it started.
     expect(await input.getAttribute('class')).not.toContain('has-blocked')

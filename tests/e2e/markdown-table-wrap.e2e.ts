@@ -19,7 +19,7 @@ describe('markdown table wrapping', () => {
 
     const metrics = await browser.execute(() => {
       const table = document.querySelector('.message-text table')
-      if (!table) return { error: 'no table' }
+      if (!table) throw new Error('no table')
 
       const rows = [...table.querySelectorAll('tbody tr')]
       const rowMetrics = rows.map((row) => {
@@ -27,7 +27,7 @@ describe('markdown table wrapping', () => {
         const indexCell = cells[0]
         const statusCell = cells[3]
 
-        const singleLine = (el: Element | undefined) => {
+        const singleLine = (el: Element | undefined): boolean => {
           if (!el) return false
           const range = document.createRange()
           range.selectNodeContents(el)
@@ -79,11 +79,11 @@ describe('markdown table wrapping', () => {
 
     const narrowWrap = await browser.execute(() => {
       const app = document.getElementById('app')
-      if (!app) return { error: 'no app' }
+      if (!app) throw new Error('no app')
       app.style.width = '720px'
       window.dispatchEvent(new Event('resize'))
       const branchCode = document.querySelector('.message-text td:nth-child(3) code')
-      if (!branchCode) return { error: 'no branch code' }
+      if (!branchCode) throw new Error('no branch code')
       const range = document.createRange()
       range.selectNodeContents(branchCode)
       return { branchLineCount: range.getClientRects().length }
@@ -102,7 +102,7 @@ describe('markdown table wrapping', () => {
       const projects = document.getElementById('pane-projects')
       const statusHeader = table?.querySelector('th:last-child')
       const branchCode = table?.querySelector('td:nth-child(3) code')
-      if (!table || !statusHeader || !branchCode) return { error: 'missing nodes' }
+      if (!table || !statusHeader || !branchCode) throw new Error('missing nodes')
       const statusRect = statusHeader.getBoundingClientRect()
       const appRect = document.getElementById('app')?.getBoundingClientRect()
       const range = document.createRange()

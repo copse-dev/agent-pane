@@ -64,7 +64,7 @@ describe('roadmap category grouping and filters', () => {
   it('shows category accordions and filters category and complexity', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 4, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 4, {
       timeout: 20_000,
       timeoutMsg: 'expected four categorized roadmap rows',
     })
@@ -72,7 +72,7 @@ describe('roadmap category grouping and filters', () => {
     const bugHeader = $('[data-category="bug"] .roadmap-category-header')
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'true')
     assert.equal(await $('[data-category="bug"] .roadmap-category-count').getText(), '2')
-    assert.equal((await $$('.roadmap-category-badge')).length, 4)
+    assert.equal((await $$('.roadmap-category-badge').getElements()).length, 4)
 
     // Category is a label, not a status: every category chip is the same neutral
     // colour, and `project` no longer matches the `blocked` status beside it.
@@ -114,7 +114,7 @@ describe('roadmap category grouping and filters', () => {
       assert.ok(fit, 'every roadmap row has a title and meta slot')
       assert.ok(
         fit.width >= fit.floor - 1,
-        `"${fit.text ?? ''}" keeps a readable width (${String(fit.width)} < ${String(fit.floor)})`,
+        `"${fit.text}" keeps a readable width (${String(fit.width)} < ${String(fit.floor)})`,
       )
     }
     assert.ok(
@@ -122,7 +122,7 @@ describe('roadmap category grouping and filters', () => {
       'the blocked row wraps its chips under the title',
     )
     // The `done` toolbar toggle is gone; status is a filter facet now.
-    assert.equal((await $$('.roadmap-show-done-btn')).length, 0)
+    assert.equal((await $$('.roadmap-show-done-btn').getElements()).length, 0)
 
     await bugHeader.click()
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'false')

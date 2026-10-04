@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -33,7 +34,7 @@ const STRING_BODY_LINE_INDEX = 3
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -62,15 +63,15 @@ describe('Monaco python multi-line f-string highlighting', () => {
   })
 
   it('keeps code after the f-string tokenized as code, not string', async () => {
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`)
+    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`).getElement()
     await sampleRow.waitForDisplayed({ timeout: 30_000 })
     await sampleRow.click()
 
-    const editor = await $('#file-viewer .monaco-editor')
+    const editor = await $('#file-viewer .monaco-editor').getElement()
     await editor.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () => await browser.execute(() => window.__copseMonaco !== undefined),
@@ -85,9 +86,15 @@ describe('Monaco python multi-line f-string highlighting', () => {
       if (!monaco) throw new Error('window.__copseMonaco is not set')
       return monaco.editor.tokenize(source, 'python').map((line) => line.map((t) => t.type))
     }, SAMPLE_LINES.join('\n'))
-    expect(tokenTypes[DEF_LINE_INDEX].some((type) => type.startsWith('keyword'))).toBe(true)
-    expect(tokenTypes[DEF_LINE_INDEX].every((type) => type.startsWith('string'))).toBe(false)
-    expect(tokenTypes[STRING_BODY_LINE_INDEX].every((type) => type.startsWith('string'))).toBe(true)
+    expect(at([...tokenTypes], DEF_LINE_INDEX).some((type) => type.startsWith('keyword'))).toBe(
+      true,
+    )
+    expect(at([...tokenTypes], DEF_LINE_INDEX).every((type) => type.startsWith('string'))).toBe(
+      false,
+    )
+    expect(
+      at([...tokenTypes], STRING_BODY_LINE_INDEX).every((type) => type.startsWith('string')),
+    ).toBe(true)
 
     // And the rendered DOM agrees: the `def` line paints more than one token
     // color (with the unpatched grammar the whole line is one string-colored
@@ -99,7 +106,7 @@ describe('Monaco python multi-line f-string highlighting', () => {
             document.querySelectorAll('#file-viewer .monaco-editor .view-line'),
           )
           const defLine = lines.find((line) =>
-            line.textContent?.replaceAll('\u00a0', ' ').includes('def after_the_string'),
+            line.textContent.replaceAll('\u00a0', ' ').includes('def after_the_string'),
           )
           if (!defLine) return false
           const classes = new Set(

@@ -44,7 +44,7 @@ describe('git changes diff colouring after a worker restart', function () {
     repoRoot = seedGitChangesFixture()
     await browser.reloadSession()
     await browser.waitUntil(
-      async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+      async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
       { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
     )
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
@@ -56,14 +56,16 @@ describe('git changes diff colouring after a worker restart', function () {
   })
 
   it('recolours the diff after Monaco stopped and restarted its editor worker', async () => {
-    const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
+    const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
     await changesBtn.waitForExist({ timeout: 30_000 })
     await changesBtn.click()
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await (
-      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+      await $(
+        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+      ).getElement()
     ).click()
-    await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
+    await browser.waitUntil(async () => (await $$('.git-change-row').getElements()).length >= 3, {
       timeout: 30_000,
       timeoutMsg: 'expected changed-file rows',
     })
@@ -84,7 +86,7 @@ describe('git changes diff colouring after a worker restart', function () {
     // A changed file forces a real model rebuild and a fresh diff computation,
     // which makes Monaco request a worker from getWorker again.
     writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const rewritten = true\n')
-    const unstagedRow = await $('.git-change-row*=unstaged.ts')
+    const unstagedRow = await $('.git-change-row*=unstaged.ts').getElement()
     await unstagedRow.waitForClickable({ timeout: 30_000 })
     await unstagedRow.click()
 

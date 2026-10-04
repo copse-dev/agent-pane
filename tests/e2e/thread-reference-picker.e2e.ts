@@ -13,9 +13,9 @@ import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 
 describe('@-reference past threads (#644)', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     const { projectId } = seedThreadReferenceFixture(seedStableWorkspace())
     await browser.reloadSession()
@@ -35,18 +35,18 @@ describe('@-reference past threads (#644)', () => {
     // on catalog digest extraction (covered by thread-store unit tests).
     await setComposerValue('From @auth')
 
-    const threadItem = await $('.mention-picker .mention-item-thread')
+    const threadItem = await $('.mention-picker .mention-item-thread').getElement()
     await threadItem.waitForDisplayed({ timeout: 10_000 })
 
     // Both seeded past threads are offered (the active thread is excluded).
-    const threadItems = await $$('.mention-picker .mention-item-thread')
+    const threadItems = await $$('.mention-picker .mention-item-thread').getElements()
     await expect(threadItems).toBeElementsArrayOfSize({ gte: 1 })
     await expect($('.mention-item-thread svg.mention-thread-icon')).toBeExisting()
 
     await saveAppScreenshot('thread-reference-picker-open.png')
 
     await threadItem.click()
-    const chip = await $('.prompt-input .inline-thread-chip')
+    const chip = await $('.prompt-input .inline-thread-chip').getElement()
     await chip.waitForDisplayed({ timeout: 10_000 })
     await expect(chip).toHaveText(expect.stringContaining('Auth refactor plan'))
     await expect(chip.$('svg.thread-chip-icon[data-icon="thread"]')).toBeExisting()
@@ -91,7 +91,12 @@ describe('@-reference past threads (#644)', () => {
       'the close icon is vertically centered with the label',
     )
 
-    const readChipRect = async () =>
+    const readChipRect = async (): Promise<{
+      x: number
+      y: number
+      width: number
+      height: number
+    } | null> =>
       browser.execute(() => {
         const rect = document.querySelector('.inline-thread-chip')?.getBoundingClientRect()
         return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null
@@ -148,7 +153,7 @@ describe('@-reference past threads (#644)', () => {
     })
     await $('.submit-btn').click()
 
-    const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread')
+    const sentChip = await $('.msg-user .message-text > .transcript-attachment-thread').getElement()
     await sentChip.waitForDisplayed({ timeout: 30_000 })
     await expect(sentChip).toHaveText(expect.stringContaining('Auth refactor plan'))
     await expect(sentChip.$('svg[data-icon="thread"]')).toBeExisting()

@@ -10,7 +10,7 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 describe('GPT-6.1 Sol in the model picker (browser-hosted)', () => {
   it('lists GPT-6.1 Sol with its intellect and offers its low-through-max effort ladder', async () => {
     await browser.url('/?scenario=concise-thread-full')
-    const picker = await $('.footer-model-host .model-picker')
+    const picker = await $('.footer-model-host .model-picker').getElement()
     await picker.waitForExist()
 
     await picker.$('.model-picker-trigger').click()
@@ -33,7 +33,7 @@ describe('GPT-6.1 Sol in the model picker (browser-hosted)', () => {
     const labels = await browser.execute(() =>
       [
         ...document.querySelectorAll('.footer-model-host .model-picker-menu .model-picker-option'),
-      ].map((option) => (option.textContent ?? '').trim()),
+      ].map((option) => option.textContent.trim()),
     )
     expect(labels).toEqual(['Default', 'Low', 'Medium', 'High', 'Extra high', 'Max'])
     await saveElementScreenshot('.footer-model-host .model-picker-menu', 'gpt-6-1-sol-effort.png')

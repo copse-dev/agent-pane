@@ -56,7 +56,7 @@ describe('sidebar Show more alignment', () => {
 
   it('aligns Show more text with thread titles above it', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const showMore = await $('.chats-show-more')
+    const showMore = await $('.chats-show-more').getElement()
     await showMore.waitForDisplayed({ timeout: 10_000 })
     await expect(showMore).toHaveText('Show more')
 
@@ -77,8 +77,9 @@ describe('sidebar Show more alignment', () => {
     })
 
     expect(alignment).not.toBeNull()
-    expect(alignment!.btnMarginInline).toBe(alignment!.rowMarginInline)
-    expect(Math.abs(alignment!.btnTextLeft - alignment!.rowTextLeft)).toBeLessThanOrEqual(0.5)
+    if (!alignment) throw new Error('Missing fixture measurement: alignment')
+    expect(alignment.btnMarginInline).toBe(alignment.rowMarginInline)
+    expect(Math.abs(alignment.btnTextLeft - alignment.rowTextLeft)).toBeLessThanOrEqual(0.5)
 
     await saveElementScreenshot('.chats-list', 'chats-show-more-align.png')
   })

@@ -12,7 +12,7 @@ async function xtermText(): Promise<string> {
 }
 
 async function approveUnsandboxedTerminalIfShown(): Promise<void> {
-  const approval = await $('#approval-dialog')
+  const approval = await $('#approval-dialog').getElement()
   const unsandboxed = await approval
     .waitForDisplayed({ timeout: 5_000 })
     .then(() => true)
@@ -40,7 +40,7 @@ describe('terminal after new thread', () => {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })

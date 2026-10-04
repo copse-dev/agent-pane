@@ -17,7 +17,7 @@ type ChordInit = {
 }
 
 async function waitForComposer(): Promise<void> {
-  await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  await $('.prompt-input').waitForExist({ timeout: 30_000 }).getElement()
 }
 
 async function pressPanelChord(chord: ChordInit, target?: 'document' | 'composer'): Promise<void> {
@@ -33,7 +33,7 @@ async function pressPanelChord(chord: ChordInit, target?: 'document' | 'composer
           metaKey: c.meta ?? false,
           shiftKey: c.shift ?? false,
           key: c.key,
-          code: c.code,
+          ...(c.code === undefined ? {} : { code: c.code }),
         }),
       )
     },
@@ -50,7 +50,7 @@ async function focusOutsideComposer(): Promise<void> {
 }
 
 async function closeRightPanelIfOpen(): Promise<void> {
-  const pane = await $('#pane-files')
+  const pane = await $('#pane-files').getElement().getElement()
   if (await pane.isDisplayed()) {
     await pressPanelChord({ ctrl: true, key: 'j' })
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
@@ -70,7 +70,7 @@ describe('right panel toggle and shortcuts', () => {
     // relaunch. Its header covers the titlebar controls this spec exercises.
     const onboarding = $('#onboarding-dialog')
     if (await onboarding.isDisplayed()) {
-      await $('#onboarding-skip').click()
+      await $('#onboarding-skip').click().getElement()
       await onboarding.waitForDisplayed({ reverse: true, timeout: 10_000 })
     }
   })
@@ -80,8 +80,8 @@ describe('right panel toggle and shortcuts', () => {
   })
 
   it('opens and closes the files panel from the titlebar', async () => {
-    const pane = await $('#pane-files')
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const pane = await $('#pane-files').getElement().getElement()
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement().getElement()
 
     await closeRightPanelIfOpen()
     await expect(pane).not.toBeDisplayed()
@@ -98,18 +98,18 @@ describe('right panel toggle and shortcuts', () => {
   })
 
   it('opens terminal mode from the titlebar', async () => {
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement().getElement()
     await terminalBtn.click()
     // Linux CI has no OS sandbox, so the terminal open itself prompts first.
     await approveUnsandboxedTerminalIfPrompted()
 
-    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 }).getElement()
     await expect(terminalBtn).toHaveElementClass('active')
-    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
+    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 }).getElement()
   })
 
   it('toggles the right panel with Ctrl/Cmd+J', async () => {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
 
@@ -126,8 +126,8 @@ describe('right panel toggle and shortcuts', () => {
 
   it('hides and shows the projects sidebar with Ctrl/Cmd+B and the titlebar button', async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    const sidebar = await $('#pane-projects')
-    const toggle = await $('.titlebar-sidebar-btn')
+    const sidebar = await $('#pane-projects').getElement()
+    const toggle = await $('.titlebar-sidebar-btn').getElement()
     await focusOutsideComposer()
     await sidebar.waitForDisplayed({ timeout: 5_000 })
 
@@ -147,20 +147,20 @@ describe('right panel toggle and shortcuts', () => {
 
   it('lets a maximized right panel cover the hidden projects sidebar', async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    const sidebarToggle = await $('.titlebar-sidebar-btn')
-    const panel = await $('#pane-files')
-    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const sidebarToggle = await $('.titlebar-sidebar-btn').getElement()
+    const panel = await $('#pane-files').getElement()
+    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     await closeRightPanelIfOpen()
     await panelToggle.click()
     await panel.waitForDisplayed({ timeout: 5_000 })
-    await $('.pane-maximize-btn').click()
+    await $('.pane-maximize-btn').click().getElement()
     await browser.waitUntil(
-      async () => (await $('.pane-maximize-btn').getAttribute('aria-pressed')) === 'true',
+      async () => (await $('.pane-maximize-btn').getAttribute('aria-pressed').getElement()) === 'true',
       { timeout: 5_000, timeoutMsg: 'expected the right panel to maximize' },
     )
 
     await sidebarToggle.click()
-    await browser.waitUntil(async () => !(await $('#pane-projects').isDisplayed()), {
+    await browser.waitUntil(async () => !(await $('#pane-projects').isDisplayed().getElement()), {
       timeout: 5_000,
       timeoutMsg: 'expected the projects sidebar to hide',
     })
@@ -176,7 +176,7 @@ describe('right panel toggle and shortcuts', () => {
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
 
     await sidebarToggle.click()
-    await $('.pane-maximize-btn').click()
+    await $('.pane-maximize-btn').click().getElement()
     await panelToggle.click()
   })
 
@@ -184,7 +184,7 @@ describe('right panel toggle and shortcuts', () => {
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, shift: true, key: 'E' })
-    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 }).getElement()
     await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
   })
 
@@ -193,24 +193,24 @@ describe('right panel toggle and shortcuts', () => {
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, key: '`', code: 'Backquote' })
     await approveUnsandboxedTerminalIfPrompted()
-    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 }).getElement()
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toHaveElementClass('active')
-    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
+    await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 }).getElement()
   })
 
   it('opens changes with Ctrl/Cmd+Shift+G', async () => {
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, shift: true, key: 'G' })
-    await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
+    await $('#pane-files').waitForDisplayed({ timeout: 5_000 }).getElement()
     await expect($('.titlebar-btn[aria-label="Open changes"]')).toHaveElementClass('active')
-    await $('#git-changes-host').waitForDisplayed({ timeout: 5_000 })
+    await $('#git-changes-host').waitForDisplayed({ timeout: 5_000 }).getElement()
   })
 
   it('does not toggle the panel while typing in the composer', async () => {
     await closeRightPanelIfOpen()
-    const pane = await $('#pane-files')
-    const composer = await $('.prompt-input')
+    const pane = await $('#pane-files').getElement().getElement()
+    const composer = await $('.prompt-input').getElement().getElement()
     await composer.click()
     await pressPanelChord({ ctrl: true, key: 'j' }, 'composer')
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {

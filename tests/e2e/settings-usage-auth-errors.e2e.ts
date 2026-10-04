@@ -1,5 +1,6 @@
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -8,8 +9,8 @@ import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screensho
 const e2eEnvFile = join(process.cwd(), 'tests/e2e/electron-shell/.e2e-env.json')
 
 function setPlanUsageMock(mode: string): void {
-  const env = JSON.parse(readFileSync(e2eEnvFile, 'utf8')) as Record<string, string>
-  env.COPSE_PLAN_USAGE_MOCK = mode
+  const env = readFixtureJsonObject(e2eEnvFile)
+  env['COPSE_PLAN_USAGE_MOCK'] = mode
   writeFileSync(e2eEnvFile, JSON.stringify(env), 'utf8')
 }
 

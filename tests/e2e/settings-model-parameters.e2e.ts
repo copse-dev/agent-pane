@@ -35,11 +35,11 @@ describe('per-model generation parameters', () => {
   it('shows the saved parameters for the selected chat model', async function () {
     this.timeout(60_000)
     await $('[aria-label="Settings"]').click()
-    const dialog = await $('#settings-dialog')
+    const dialog = await $('#settings-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    const section = await $('[data-testid="model-parameters"]')
+    const section = await $('[data-testid="model-parameters"]').getElement()
     await section.waitForExist({ timeout: 15_000 })
     await browser.execute(() => {
       document
@@ -49,11 +49,15 @@ describe('per-model generation parameters', () => {
     await browser.pause(200)
 
     // An OpenAI-compatible local server takes all three knobs.
-    const reasoning = await section.$('[data-testid="model-parameter-reasoning"]')
+    const reasoning = await section.$('[data-testid="model-parameter-reasoning"]').getElement()
     await expect(reasoning).toBeDisplayed()
     await expect(reasoning).toHaveValue('high')
-    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toHaveValue('1')
-    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveValue('0.95')
+    await expect(
+      await section.$('[data-testid="model-parameter-temperature"]').getElement(),
+    ).toHaveValue('1')
+    await expect(await section.$('[data-testid="model-parameter-top-p"]').getElement()).toHaveValue(
+      '0.95',
+    )
 
     await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
@@ -73,22 +77,23 @@ describe('per-model generation parameters', () => {
       select.value = model
       select.dispatchEvent(new Event('change', { bubbles: true }))
     }, RECIPE_MODEL)
-    const section = await $('[data-testid="model-parameters"]')
-    const recipe = await section.$('[data-testid="model-parameter-recommend"]')
+    const section = await $('[data-testid="model-parameters"]').getElement()
+    const recipe = await section.$('[data-testid="model-parameter-recommend"]').getElement()
     await recipe.waitForDisplayed({ timeout: 10_000 })
 
     // Applied, not filled in: the fields stay blank and say what blank sends.
-    const reasoning = await section.$('[data-testid="model-parameter-reasoning"]')
+    const reasoning = await section.$('[data-testid="model-parameter-reasoning"]').getElement()
     await expect(reasoning).toHaveValue('')
-    await expect(await reasoning.$('option')).toHaveText('Recommended (Medium)')
-    const maxOutput = await section.$('[data-testid="model-parameter-max-output-tokens"]')
+    await expect(await reasoning.$('option').getElement()).toHaveText('Recommended (Medium)')
+    const maxOutput = await section
+      .$('[data-testid="model-parameter-max-output-tokens"]')
+      .getElement()
     await expect(maxOutput).toHaveValue('')
     await expect(maxOutput).toHaveAttribute('placeholder', '16384')
-    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveAttribute(
-      'placeholder',
-      '0.95',
-    )
-    await expect(await section.$('.model-parameter-recommend-note')).toHaveText(
+    await expect(
+      await section.$('[data-testid="model-parameter-top-p"]').getElement(),
+    ).toHaveAttribute('placeholder', '0.95')
+    await expect(await section.$('.model-parameter-recommend-note').getElement()).toHaveText(
       expect.stringContaining('paired Terminal-Bench record'),
     )
     await browser.execute(() => {
@@ -128,15 +133,15 @@ describe('per-model generation parameters', () => {
         select.dispatchEvent(new Event('change', { bubbles: true }))
       }, model)
     }
-    const section = await $('[data-testid="model-parameters"]')
+    const section = await $('[data-testid="model-parameters"]').getElement()
 
     await pick('gpt-6.1-sol')
-    const verbosity = await section.$('[data-testid="model-parameter-verbosity"]')
+    const verbosity = await section.$('[data-testid="model-parameter-verbosity"]').getElement()
     await verbosity.waitForDisplayed({ timeout: 10_000 })
     // No curated default: blank sends nothing, so the first option says so and
     // the three levels follow.
     const labels = await verbosity.$$('option').map((option) => option.getText())
-    await expect(labels).toEqual([
+    expect(labels).toEqual([
       "Model default (don't send)",
       'Low — terse answers',
       'Medium',
@@ -158,14 +163,18 @@ describe('per-model generation parameters', () => {
     await verbosity.selectByAttribute('value', 'low')
     await expect(verbosity).toHaveValue('low')
     await expect(
-      await section.$('[data-testid="model-parameter-customised"] [data-model="gpt-6.1-sol"]'),
+      await section
+        .$('[data-testid="model-parameter-customised"] [data-model="gpt-6.1-sol"]')
+        .getElement(),
     ).toBeDisplayed()
 
     // A codex id takes only `medium` and an aggregator route is not OpenAI's
     // endpoint, so neither shows the control.
     for (const model of ['gpt-5-codex', 'openrouter:openai/gpt-5.6-sol', LOCAL_MODEL]) {
       await pick(model)
-      await expect(await section.$('[data-testid="model-parameter-verbosity"]')).not.toBeExisting()
+      await expect(
+        await section.$('[data-testid="model-parameter-verbosity"]').getElement(),
+      ).not.toBeExisting()
     }
   })
 
@@ -183,19 +192,19 @@ describe('per-model generation parameters', () => {
       select.value = model
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const section = await $('[data-testid="model-parameters"]')
-    const recipe = await section.$('[data-testid="model-parameter-recommend"]')
+    const section = await $('[data-testid="model-parameters"]').getElement()
+    const recipe = await section.$('[data-testid="model-parameter-recommend"]').getElement()
     await recipe.waitForDisplayed({ timeout: 10_000 })
     for (const { field, value } of [
       { field: 'temperature', value: '0.7' },
       { field: 'top-p', value: '1' },
       { field: 'max-output-tokens', value: '16384' },
     ]) {
-      const input = await section.$(`[data-testid="model-parameter-${field}"]`)
+      const input = await section.$(`[data-testid="model-parameter-${field}"]`).getElement()
       await expect(input).toHaveValue('')
       await expect(input).toHaveAttribute('placeholder', value)
     }
-    const source = await section.$('.model-parameter-recommend-note a')
+    const source = await section.$('.model-parameter-recommend-note a').getElement()
     await expect(source).toHaveText('model card')
     await expect(source).toHaveAttribute(
       'href',
@@ -235,14 +244,18 @@ describe('per-model generation parameters', () => {
       select.value = 'auto:balanced'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const section = await $('[data-testid="model-parameters"]')
-    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toBeDisplayed()
-    const chip = await section.$(
-      `[data-testid="model-parameter-customised"] [data-model="${LOCAL_MODEL}"]`,
-    )
+    const section = await $('[data-testid="model-parameters"]').getElement()
+    await expect(
+      await section.$('[data-testid="model-parameter-temperature"]').getElement(),
+    ).toBeDisplayed()
+    const chip = await section
+      .$(`[data-testid="model-parameter-customised"] [data-model="${LOCAL_MODEL}"]`)
+      .getElement()
     await expect(chip).toBeDisplayed()
     await expect(chip).toHaveAttribute('aria-pressed', 'true')
-    await expect(await section.$('[data-testid="model-parameter-reset"]')).toBeDisplayed()
+    await expect(
+      await section.$('[data-testid="model-parameter-reset"]').getElement(),
+    ).toBeDisplayed()
     await browser.execute(() => {
       document
         .querySelector<HTMLElement>('[data-testid="model-parameters"]')
@@ -266,12 +279,14 @@ describe('per-model generation parameters', () => {
 
   it('offers only the levels the model accepts, and says who decides', async function () {
     this.timeout(60_000)
-    const section = await $('[data-testid="model-parameters"]')
-    const options = await section.$$('[data-testid="model-parameter-reasoning"] option')
+    const section = await $('[data-testid="model-parameters"]').getElement()
+    const options = await section
+      .$$('[data-testid="model-parameter-reasoning"] option')
+      .getElements()
     // Model default plus the seven-level ladder an OpenAI-compatible endpoint
     // can express.
     await expect(options).toBeElementsArrayOfSize(8)
-    await expect(await section.$('.model-parameter-note')).toHaveText(
+    await expect(await section.$('.model-parameter-note').getElement()).toHaveText(
       expect.stringContaining('up to the model behind it'),
     )
   })

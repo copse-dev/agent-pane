@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { collectErrorToasts } from '../e2e/helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from '../e2e/helpers/composer.ts'
@@ -51,7 +52,9 @@ describe('copse.dev feature tour screenshots', () => {
 
   it('offers Fork from here and Resend on the latest prompt', async () => {
     await openScenario('site-fork-resend')
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2)
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+    )
     // Preview the site under discussion, as a visitor would from the address bar.
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     const address = $('.browser-tab-panel.is-active .browser-url-input')
@@ -67,7 +70,7 @@ describe('copse.dev feature tour screenshots', () => {
     await expect($('#signup-form')).toBeDisplayed()
     await browser.switchFrame(null)
     await settleCapture()
-    const latest = $$('.messages-list .msg-user')[1]
+    const latest = at([...(await $$('.messages-list .msg-user').getElements())], 1)
     await latest.moveTo()
     await expect(latest.$('.msg-fork')).toBeDisplayed()
     await expect(latest.$('.msg-resend')).toBeDisplayed()

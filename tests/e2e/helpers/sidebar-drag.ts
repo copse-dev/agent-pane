@@ -100,7 +100,7 @@ export function readSidebarShape(): Promise<string[]> {
       if (!node.classList.contains('project-group')) return []
       const groupName = node.querySelector('.project-group-name')?.textContent ?? ''
       const members = Array.from(node.querySelectorAll('.project-name')).map(
-        (name) => `${groupName} > ${name.textContent ?? ''}`,
+        (name) => `${groupName} > ${name.textContent}`,
       )
       return members.length > 0 ? members : [`${groupName} > (empty)`]
     })

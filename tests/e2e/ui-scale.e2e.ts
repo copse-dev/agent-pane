@@ -30,7 +30,6 @@ interface UiScaleSnapshot {
 async function uiScaleSnapshot(): Promise<UiScaleSnapshot | null> {
   return browser.execute(() => {
     const body = document.body
-    if (!body) return null
     const probe = document.createElement('div')
     probe.style.width = 'var(--spacing-sm)'
     probe.style.position = 'absolute'
@@ -87,9 +86,9 @@ async function visualViewportSnapshot(): Promise<VisualViewportSnapshot | null> 
 
 describe('interface scale (--ui-scale)', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedConversationVisualHierarchyFixture(process.cwd())
     await browser.reloadSession()
@@ -130,7 +129,7 @@ describe('interface scale (--ui-scale)', () => {
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
-    const scaleInput = await $('input[name="uiScale"]')
+    const scaleInput = await $('input[name="uiScale"]').getElement()
     await scaleInput.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(async () => (await scaleInput.getValue()) !== '', {
       timeout: 30_000,

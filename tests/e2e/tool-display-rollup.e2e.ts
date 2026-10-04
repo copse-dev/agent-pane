@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedToolDisplayFixture } from './helpers/seed-config.ts'
@@ -10,9 +11,9 @@ import {
 describe('tool call turn rollup', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedToolDisplayFixture(process.cwd())
     await browser.reloadSession()
@@ -27,29 +28,29 @@ describe('tool call turn rollup', () => {
 
     // Two summaries, not four: the three prose-less segments are one run, and
     // the segment after the prose answer stands on its own.
-    const rollups = await $$('.tool-card-rollup')
+    const rollups = await $$('.tool-card-rollup').getElements()
     await expect(rollups).toBeElementsArrayOfSize(2)
-    await expect(rollups[0]!).toHaveAttribute('data-rollup-key', 'run')
-    await expect(rollups[1]!).toHaveAttribute('data-rollup-key', 'turn')
+    await expect(at([...rollups], 0)).toHaveAttribute('data-rollup-key', 'run')
+    await expect(at([...rollups], 1)).toHaveAttribute('data-rollup-key', 'turn')
 
     // The run's summary counts every member's operations and carries the
     // failure; the per-message rollup keeps its own polished label.
-    await expect(rollups[0]!.$('.tool-card-header .tool-name')).toHaveText(
+    await expect(at([...rollups], 0).$('.tool-card-header .tool-name')).toHaveText(
       'Used 10 tools · 3 steps · 1 failed',
     )
-    await expect(rollups[1]!.$('.tool-card-header .tool-name')).toHaveText(
+    await expect(at([...rollups], 1).$('.tool-card-header .tool-name')).toHaveText(
       'Verified the settings fix',
     )
 
     // Successful work and reasoning stay collapsed; the failed read is shown
     // open beside the run so its diagnostic needs no click.
-    await expect(rollups[0]!).not.toHaveAttribute('open')
+    await expect(at([...rollups], 0)).not.toHaveAttribute('open')
     const failure = $(
       '[data-message-id="msg-assistant-search"] > .tool-card[data-tool-id="tc-read-2"]',
     )
     await expect(failure).toHaveAttribute('open')
     await expect(failure.$('.tool-result')).toHaveText(expect.stringContaining('ENOENT'))
-    await expect(rollups[0]!.$('[data-tool-id="tc-read-2"]')).not.toExist()
+    await expect(at([...rollups], 0).$('[data-tool-id="tc-read-2"]')).not.toExist()
     await expect($$('.message-reasoning[open]')).toBeElementsArrayOfSize(0)
 
     // The run renders on its anchor — the first segment of the burst — and the
@@ -125,29 +126,32 @@ describe('tool call turn rollup', () => {
   })
 
   it('expands the run into one step per message, each with its own reasoning and tools', async () => {
-    const run = await $('.tool-card-rollup[data-rollup-key="run"]')
+    const run = await $('.tool-card-rollup[data-rollup-key="run"]').getElement()
     await run.scrollIntoView()
     await run.$('summary.tool-card-header').click()
     await expect(run).toHaveAttribute('open')
 
     // One step per persisted message, in the order they streamed, each headed
     // by that message's own polished label.
-    const steps = await run.$$('.tool-card-step')
+    const steps = await run.$$('.tool-card-step').getElements()
     await expect(steps).toBeElementsArrayOfSize(3)
-    await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-search')
-    await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-reads')
-    await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-html')
-    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Searched the settings UI')
-    await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText(
+    await expect(at([...steps], 0)).toHaveAttribute('data-step-message-id', 'msg-assistant-search')
+    await expect(at([...steps], 1)).toHaveAttribute('data-step-message-id', 'msg-assistant-reads')
+    await expect(at([...steps], 2)).toHaveAttribute('data-step-message-id', 'msg-assistant-html')
+    await expect(at([...steps], 0).$('.tool-card-header .tool-name')).toHaveText(
+      'Searched the settings UI',
+    )
+    await expect(at([...steps], 1).$('.tool-card-header .tool-name')).toHaveText(
       'Inspected the repo layout · 1 failed',
     )
-    await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText(
+    await expect(at([...steps], 2).$('.tool-card-header .tool-name')).toHaveText(
       'Read settings template paths',
     )
 
     // Expand the mixed-success step: its reasoning and successful tool rows
     // live inside it, not on the run and not on the message bubble.
-    const mixed = steps[1]!
+    const mixed = steps[1]
+    if (mixed == null) throw new Error('Missing mixed in test fixture')
     await mixed.scrollIntoView()
     // Steps stay closed even when their message had a failure (shown beside).
     await expect(mixed).not.toHaveAttribute('open')

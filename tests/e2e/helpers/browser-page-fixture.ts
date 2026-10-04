@@ -2,7 +2,9 @@ import { createServer } from 'node:http'
 import { listenOnFixturePort } from './fixture-server.ts'
 
 /** A real webview destination with no DNS, public network, or third-party assets. */
-export async function startBrowserPageFixture(port: number) {
+export async function startBrowserPageFixture(
+  port: number,
+): Promise<{ origin: string; url: string; requests: string[]; close: () => Promise<void> }> {
   const requests: string[] = []
   const server = createServer((request, response) => {
     const path = request.url ?? ''

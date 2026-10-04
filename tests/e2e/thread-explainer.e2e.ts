@@ -44,10 +44,12 @@ const story = {
 async function guest(script: string, index = 0): Promise<unknown> {
   return browser.execute(
     async (code, item) => {
-      const view = document.querySelectorAll('.canvas-inline-artefact webview').item(item)
-      const execute = view ? Reflect.get(view, 'executeJavaScript') : undefined
-      if (typeof execute !== 'function') return null
-      return execute.call(view, code)
+      const view = document.querySelectorAll<Electron.WebviewTag>(
+        '.canvas-inline-artefact webview',
+      )[item]
+      if (!view) return null
+      const result: unknown = await view.executeJavaScript(code)
+      return result
     },
     script,
     index,
@@ -84,9 +86,9 @@ async function makeExplainer(prompt: string, style: string): Promise<void> {
 
 describe('thread explainer', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-thread-explainer', {
       model: 'claude-sonnet-4-6',
@@ -150,12 +152,11 @@ describe('thread explainer', () => {
     )
     assert.equal(await guest('document.getElementById("style").textContent', 1), 'Paper desk')
     await prepareE2eScreenshot()
-    await browser.execute(() =>
-      document
-        .querySelectorAll('.canvas-inline-artefact')
-        .item(1)
-        ?.scrollIntoView({ block: 'center' }),
-    )
+    await browser.execute(() => {
+      const card = document.querySelectorAll('.canvas-inline-artefact')[1]
+      if (!card) throw new Error('Expected the second explainer card')
+      card.scrollIntoView({ block: 'center' })
+    })
     await waitForPlayer(1)
     await guest(
       'document.getElementById("seek").value=10;document.getElementById("seek").dispatchEvent(new Event("input"))',
@@ -174,14 +175,14 @@ describe('thread explainer', () => {
     // Capture the live guest through Copse's normal screenshot API, then use
     // that exact frame in the existing preview layer for the app screenshot.
     const frame = await browser.execute(async () => {
-      const card = document.querySelectorAll('.canvas-inline-artefact').item(1)
-      const view = card?.querySelector('webview')
-      const getId = view ? Reflect.get(view, 'getWebContentsId') : undefined
-      if (typeof getId !== 'function') throw new Error('Expected a live guest')
-      const id = getId.call(view)
+      const card = document.querySelectorAll('.canvas-inline-artefact')[1]
+      if (!card) throw new Error('Expected the second explainer card')
+      const view = card.querySelector<Electron.WebviewTag>('webview')
+      if (!view) throw new Error('Expected a live guest')
+      const id = view.getWebContentsId()
       const screenshot = await window.api.browser.captureScreenshot(id)
       const preview = card.querySelector('img')
-      if (!preview || !view) throw new Error('Expected preview and guest')
+      if (!preview) throw new Error('Expected preview and guest')
       preview.src = screenshot.dataUrl
       await preview.decode()
       preview.style.objectFit = 'contain'

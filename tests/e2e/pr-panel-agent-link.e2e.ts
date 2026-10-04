@@ -30,7 +30,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
   })
 
   async function openPrTab(): Promise<void> {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
@@ -47,7 +47,9 @@ describe('PR panel agent-owned PR (mock gh)', () => {
 
     // The chat-linked PR #42 is also recorded as agent-owned, so its row shows
     // the agent badge with a provider-named tooltip.
-    const badge = await $('.pr-list-row[data-pr-section="linked"] .pr-list-agent-badge')
+    const badge = await $(
+      '.pr-list-row[data-pr-section="linked"] .pr-list-agent-badge',
+    ).getElement()
     await badge.waitForDisplayed({ timeout: 15_000 })
     expect(await badge.getAttribute('data-tooltip')).toMatch(/linked to 1 agent thread: cursor/i)
 
@@ -55,7 +57,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     // This is the only intentional thread handoff for a Cursor agent run —
     // browser/chat navigation to cursor.com/agents stays on the web page.
     await $('.pr-list-row[data-pr-section="linked"]').click()
-    const openThreadBtn = await $('.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]')
+    const openThreadBtn = await $('.pr-open-thread-btn[data-thread-id="e2e-pr-agent-link-thread"]').getElement()
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
     expect(await openThreadBtn.getText()).toMatch(/agent-linked/i)
     await expect($('.pr-thread-group[data-relationship-group="produced"]')).toHaveText(

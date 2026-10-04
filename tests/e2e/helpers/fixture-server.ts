@@ -35,9 +35,6 @@ async function bind(server: Server, port: number): Promise<number> {
 
 function isAddressInUse(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'EADDRINUSE'
+    typeof error === 'object' && error !== null && 'code' in error && error.code === 'EADDRINUSE'
   )
 }

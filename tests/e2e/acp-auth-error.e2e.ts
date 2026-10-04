@@ -7,10 +7,12 @@ import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
  * markdown package folds a trailing unindented paragraph into the last ordered
  * item) or in the credentials note that follows them.
  */
-async function hintPlacement(messageId: string) {
+async function hintPlacement(
+  messageId: string,
+): Promise<{ inSteps: (string | null)[]; inNote: (string | null)[] }> {
   return browser.execute((id) => {
     const root = document.querySelector(`[data-message-id="${id}"] .message-text`)
-    const codeText = (selector: string) =>
+    const codeText = (selector: string): (string | null)[] =>
       [...(root?.querySelectorAll(selector) ?? [])].map((code) => code.textContent)
     return {
       inSteps: codeText('ol code'),
@@ -23,9 +25,9 @@ describe('ACP authentication error presentation', () => {
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
   beforeEach(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpAuthErrorFixture(process.cwd())
     await browser.reloadSession()
@@ -45,8 +47,8 @@ describe('ACP authentication error presentation', () => {
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
-    const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text').getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
     await expect(message.$('ol code')).toHaveText('claude /login')
     await expect(message.$('pre code')).toHaveText(
@@ -60,11 +62,11 @@ describe('ACP authentication error presentation', () => {
       const warningEl = root?.querySelector('.markdown-alert-warning')
       const steps = root?.querySelector('ol')
       const diagnostic = root?.querySelector('pre')
-      if (!root || !warningEl || !steps || !diagnostic) return { error: 'missing auth error block' }
+      if (!root || !warningEl || !steps || !diagnostic) throw new Error('missing auth error block')
       const rootRect = root.getBoundingClientRect()
       const diagnosticRect = diagnostic.getBoundingClientRect()
       const diagnosticStyle = getComputedStyle(diagnostic)
-      const diagnosticLines = (diagnostic.textContent ?? '').trimEnd().split('\n').length
+      const diagnosticLines = diagnostic.textContent.trimEnd().split('\n').length
       const diagnosticContentHeight =
         diagnostic.clientHeight -
         parseFloat(diagnosticStyle.paddingTop) -
@@ -101,8 +103,10 @@ describe('ACP authentication error presentation', () => {
   })
 
   it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
-    const message = await $('[data-message-id="msg-assistant-cursor-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $(
+      '[data-message-id="msg-assistant-cursor-auth"] .message-text',
+    ).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Cursor sign-in expired')
     await expect(message.$('ol code')).toHaveText('cursor-agent login')
     // Check the complete prose token set for the recovery hint.
@@ -122,8 +126,10 @@ describe('ACP authentication error presentation', () => {
   })
 
   it('shows workspace-routing 401 recovery as an expired Codex sign-in', async () => {
-    const message = await $('[data-message-id="msg-assistant-codex-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $(
+      '[data-message-id="msg-assistant-codex-auth"] .message-text',
+    ).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Codex sign-in expired')
     await expect(message.$('ol code')).toHaveText('codex login')
     const paragraphCodeText = await message.$$('p code').map((code) => code.getText())

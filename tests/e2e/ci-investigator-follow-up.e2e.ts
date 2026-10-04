@@ -48,7 +48,7 @@ describe('CI investigator follow-up', () => {
 
   it('names the available investigate_ci tool in the failing-CI bubble', async () => {
     const scenario = await completeMockTurn()
-    const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
+    const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]').getElement()
     await ciBubble.waitForDisplayed({ timeout: 30_000 })
     await expect(ciBubble).toHaveText('Investigate CI failure')
 

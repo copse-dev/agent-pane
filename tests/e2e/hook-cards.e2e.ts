@@ -41,7 +41,9 @@ describe('hook cards in the transcript', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     // Executions + deny decision folded from the spine hook_run records.
-    await browser.waitUntil(async () => (await $$('.hook-card')).length >= 3, { timeout: 10_000 })
+    await browser.waitUntil(async () => (await $$('.hook-card').getElements()).length >= 3, {
+      timeout: 10_000,
+    })
 
     await expect($('.hook-card[data-status="allow"]')).toBeExisting()
     await expect($('.hook-card[data-hook-kind="decision"][data-status="deny"]')).toBeExisting()
@@ -49,7 +51,7 @@ describe('hook cards in the transcript', function () {
 
     // Hook cards are a distinct family, right-aligned in their own host — never a
     // user message, and rendered as the anchor message's next sibling.
-    const host = await $('[data-hook-cards-for="msg-assistant-hook"]')
+    const host = await $('[data-hook-cards-for="msg-assistant-hook"]').getElement()
     await expect(host).toBeExisting()
 
     // The first turn's `sessionStart` hooks fire detached before any message
@@ -57,16 +59,16 @@ describe('hook cards in the transcript', function () {
     // The shared host margin is tuned for assistant-message bulk; the first
     // host must not be pulled flush against the sticky user prompt, or the
     // first-turn cards read as a cramped "no gap" next to later turns.
-    const firstHost = await $('[data-hook-cards-for="msg-user-hook-open"]')
+    const firstHost = await $('[data-hook-cards-for="msg-user-hook-open"]').getElement()
     await expect(firstHost).toBeExisting()
 
     // Multi-card turns always collapse into one summary group by default. The
     // summary leads with the outcome instead of merely reporting that hooks ran.
-    const group = await host.$('.hook-card-group')
+    const group = await host.$('.hook-card-group').getElement()
     await expect(group).toBeExisting()
     await expect(group).not.toHaveAttribute('open')
     await expect(group).toHaveAttribute('data-status', 'deny')
-    const summary = await group.$(':scope > .hook-card-header .hook-card-status')
+    const summary = await group.$(':scope > .hook-card-header .hook-card-status').getElement()
     await expect(summary).toHaveText(expect.stringMatching(/^1 blocked/))
     await expect(summary).toHaveText(expect.stringMatching(/4 ran/))
 
@@ -74,21 +76,21 @@ describe('hook cards in the transcript', function () {
     // while a hook that applied a deny is already open with its effect first.
     await group.$(':scope > .hook-card-header').click()
     await expect(group).toHaveAttribute('open')
-    const allow = await group.$('.hook-card[data-status="allow"]')
-    const deny = await group.$('.hook-card[data-status="deny"]')
+    const allow = await group.$('.hook-card[data-status="allow"]').getElement()
+    const deny = await group.$('.hook-card[data-status="deny"]').getElement()
     await expect(allow).not.toHaveAttribute('open')
     await expect(allow.$('.hook-card-status')).toHaveText('Allowed')
     await expect(deny).toHaveAttribute('open')
     await expect(deny.$('.hook-card-status')).toHaveText('Blocked action')
     await expect(deny.$('.hook-card-detail')).toHaveText(expect.stringMatching(/gated action/))
-    const finalize = await group.$('.hook-card[data-hook-run="hr-finalize"]')
+    const finalize = await group.$('.hook-card[data-hook-run="hr-finalize"]').getElement()
     await expect(finalize).toHaveAttribute('open')
     await expect(finalize.$('.hook-card-detail')).toHaveText(
       expect.stringMatching(/tool-enabled finalization turn/),
     )
 
     // The hook-originated follow-up turn is marked, not shown as a plain user msg.
-    const originTurn = await $('.msg-hook-origin[data-hook-id="todo-closeout"]')
+    const originTurn = await $('.msg-hook-origin[data-hook-id="todo-closeout"]').getElement()
     await expect(originTurn).toBeExisting()
     await expect($('.msg-hook-origin .msg-hook-origin-marker')).toBeExisting()
 
@@ -99,18 +101,18 @@ describe('hook cards in the transcript', function () {
     // the real main-process path over the seeded thread's blobs, not a stub. A
     // card that only counts characters ("Injected 57 chars of context") opens to
     // the context the model actually received.
-    const contextCard = await group.$('.hook-card[data-hook-run="hr-context"]')
+    const contextCard = await group.$('.hook-card[data-hook-run="hr-context"]').getElement()
     await expect(contextCard).toBeExisting()
     await contextCard.$('.hook-card-raw-summary').click()
-    const injected = await contextCard.$('[data-section="injected context"] pre')
+    const injected = await contextCard.$('[data-section="injected context"] pre').getElement()
     await injected.waitForExist({ timeout: 10_000 })
     await expect(injected).toHaveText(expect.stringMatching(/You still have open todos/))
 
     // A command hook shows the whole exchange — the payload it was handed and
     // the response it printed.
-    const denyCard = await group.$('.hook-card[data-hook-run="hr-deny"]')
+    const denyCard = await group.$('.hook-card[data-hook-run="hr-deny"]').getElement()
     await denyCard.$('.hook-card-raw-summary').click()
-    const stdin = await denyCard.$('[data-section="stdin"] pre')
+    const stdin = await denyCard.$('[data-section="stdin"] pre').getElement()
     await stdin.waitForExist({ timeout: 10_000 })
     await expect(stdin).toHaveText(expect.stringMatching(/kubectl delete deploy/))
     await expect(denyCard.$('[data-section="stdout"] pre')).toHaveText(

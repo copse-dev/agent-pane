@@ -31,9 +31,9 @@ async function setFilterValue(value: string): Promise<void> {
 
 describe('sidebar user-request search', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     const now = Date.now()
     writeSeedConfig({
@@ -58,7 +58,7 @@ describe('sidebar user-request search', () => {
           message('needle', { origin: { kind: 'machine', operationId: 'background-job' } }),
         ]),
         ...Array.from({ length: 10 }, (_, i) =>
-          thread(`filler-${i}`, `Other work ${i}`, now - 5000 - i * 1000, [
+          thread(`filler-${String(i)}`, `Other work ${String(i)}`, now - 5000 - i * 1000, [
             message('Unrelated work'),
           ]),
         ),

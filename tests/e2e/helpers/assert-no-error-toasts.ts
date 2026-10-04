@@ -1,15 +1,12 @@
+import type {} from './browser-globals.d.ts'
 import { browser } from '@wdio/globals'
 
 /** Visible `.toast-error` nodes plus any errors recorded for e2e (survives auto-dismiss). */
 export async function collectErrorToasts(): Promise<string[]> {
   return browser.execute(() => {
-    const dom = [...document.querySelectorAll('.toast-error')].map(
-      (el) => el.textContent?.trim() ?? '',
-    )
-    const e2e = window as unknown as {
-      __copseE2e?: { getErrorToasts?: () => string[] }
-    }
-    const ledger = e2e.__copseE2e?.getErrorToasts?.().map((s) => s.trim()) ?? []
+    const dom = [...document.querySelectorAll('.toast-error')].map((el) => el.textContent.trim())
+    const e2e = window
+    const ledger = e2e.__copseE2e?.getErrorToasts().map((s) => s.trim()) ?? []
     return [...new Set([...dom, ...ledger].filter(Boolean))]
   })
 }

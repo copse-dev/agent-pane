@@ -7,16 +7,8 @@ async function requestFixture(
   scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap',
 ): Promise<void> {
   await browser.execute((scenario) => {
-    const bridge = (
-      window as unknown as {
-        __copseE2e?: {
-          requestAcpPackageInstallApproval: (
-            scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap',
-          ) => Promise<unknown>
-        }
-      }
-    ).__copseE2e
-    if (!bridge?.requestAcpPackageInstallApproval) {
+    const bridge = window.__copseE2e
+    if (!bridge) {
       throw new Error('__copseE2e.requestAcpPackageInstallApproval unavailable')
     }
     void bridge.requestAcpPackageInstallApproval(scenario)
@@ -44,7 +36,7 @@ describe('ACP adapter auto-install approval', () => {
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await requestFixture('install')
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText(
       'Install software to connect your coding agents?',
@@ -74,7 +66,7 @@ describe('ACP adapter auto-install approval', () => {
     this.timeout(60_000)
     await expect($('#settings-dialog')).toBeDisplayed()
     await requestFixture('firewall-bootstrap')
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Install Socket Firewall globally?')
     const body = await dialog.$('.approval-body').getText()
@@ -95,7 +87,7 @@ describe('ACP adapter auto-install approval', () => {
   it('discloses installed adapter updates alongside fresh installs when Socket Firewall is missing', async function () {
     this.timeout(60_000)
     await requestFixture('mixed-bootstrap')
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('@agentclientprotocol/claude-agent-acp')

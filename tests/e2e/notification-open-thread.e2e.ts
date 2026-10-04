@@ -99,7 +99,7 @@ async function nativeAlerts(action: 'hide' | 'click-notification'): Promise<void
 
 async function selectedThreadId(): Promise<string | undefined> {
   return browser.execute(
-    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId,
+    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'],
   )
 }
 

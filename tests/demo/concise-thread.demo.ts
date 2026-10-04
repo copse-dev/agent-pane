@@ -102,7 +102,7 @@ describe('concise thread view', () => {
       await browser.execute((scrollTop) => {
         document.querySelector('.messages-list')?.scrollTo({ top: scrollTop })
       }, top)
-      await saveAppScreenshot(`concise-thread-multi-${index}.png`)
+      await saveAppScreenshot(`concise-thread-multi-${String(index)}.png`)
     }
   })
 
@@ -113,7 +113,7 @@ describe('concise thread view', () => {
     await row.waitForDisplayed()
     await expect(row).toHaveAttribute('aria-expanded', 'false')
 
-    const cards = () =>
+    const cards = (): Promise<{ cards: number; reasoning: number }[]> =>
       browser.execute(() => {
         const visible = (node: Element): boolean =>
           node instanceof HTMLElement && node.checkVisibility()

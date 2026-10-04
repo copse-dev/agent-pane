@@ -57,10 +57,10 @@ describe('ZDR provider presets', () => {
       const policyHint = host?.querySelector('.provider-privacy-hint')
       const baseUrl = host?.querySelector<HTMLInputElement>('input[type="url"]')
       return {
-        title: title?.textContent?.trim() ?? '',
-        badge: badge?.textContent?.trim() ?? '',
+        title: title?.textContent.trim() ?? '',
+        badge: badge?.textContent.trim() ?? '',
         badgeKind: badge?.classList.contains('zdr') ?? false,
-        policyHint: policyHint?.textContent?.trim() ?? '',
+        policyHint: policyHint?.textContent.trim() ?? '',
         baseUrl: baseUrl?.value ?? '',
       }
     })

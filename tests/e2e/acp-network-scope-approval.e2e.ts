@@ -10,10 +10,6 @@ const REASON =
   'The sandbox network allowlist is temporarily widened for agent: codex; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.'
 const EXPLANATION = `Why this needs approval:\n• ${REASON}`
 
-interface ApprovalTestBridge {
-  emitApprovalRequests: (requests: unknown) => Promise<void>
-}
-
 describe('ACP network-scope overlap approval', function () {
   this.timeout(90_000)
 
@@ -31,7 +27,7 @@ describe('ACP network-scope overlap approval', function () {
   it('explains why another command needs approval while an ACP scope is widened', async () => {
     await $('.prompt-input').waitForExist({ timeout: 20_000 })
     await browser.execute((bodyFooter) => {
-      const bridge = (window as unknown as { __copseE2e?: ApprovalTestBridge }).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
       void bridge.emitApprovalRequests([
         {

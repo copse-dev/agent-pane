@@ -10,7 +10,13 @@ async function chooseCoverage(value: string): Promise<void> {
   await $(MENU + ' [data-coverage="' + value + '"]').click()
 }
 
-async function geometry() {
+async function geometry(): Promise<{
+  top: number
+  left: number
+  right: number
+  height: number
+  filterTop: number
+}> {
   return browser.execute(() => {
     const menu = document.querySelector('.footer-model-host .model-picker-menu')
     const filters = menu?.querySelector('.model-picker-coverage-filters')
@@ -34,7 +40,7 @@ describe('coverage in the real composer model picker', () => {
     // catalog loader, picker, selection persistence, and styles remain in use.
     await browser.execute(() => {
       const getSetting = window.api.settings.get
-      window.api.settings.get = async (key) =>
+      window.api.settings.get = async (key): ReturnType<typeof window.api.settings.get> =>
         key === 'registeredAcpAgents'
           ? [
               {
@@ -46,7 +52,9 @@ describe('coverage in the real composer model picker', () => {
               },
             ]
           : getSetting(key)
-      window.api.settings.availableProviders = async () => ({
+      window.api.settings.availableProviders = async (): ReturnType<
+        typeof window.api.settings.availableProviders
+      > => ({
         anthropic: true,
         openai: false,
         'openai:gpt-6-astra': false,
@@ -58,10 +66,18 @@ describe('coverage in the real composer model picker', () => {
         deepseek: false,
         huggingface: false,
       })
-      window.api.settings.extraProviders = async () => []
-      window.api.lmStudio.models = async () => ['qwen-local']
-      window.api.lmStudio.modelInfo = async () => [{ id: 'qwen-local', supportsImages: false }]
-      window.api.usage.getPlanUsage = async () => ({
+      window.api.settings.extraProviders = async (): ReturnType<
+        typeof window.api.settings.extraProviders
+      > => []
+      window.api.lmStudio.models = async (): ReturnType<typeof window.api.lmStudio.models> => [
+        'qwen-local',
+      ]
+      window.api.lmStudio.modelInfo = async (): ReturnType<
+        typeof window.api.lmStudio.modelInfo
+      > => [{ id: 'qwen-local', supportsImages: false }]
+      window.api.usage.getPlanUsage = async (): ReturnType<
+        typeof window.api.usage.getPlanUsage
+      > => ({
         checkedAt: '2026-10-01T00:00:00Z',
         providers: [
           {
@@ -141,7 +157,7 @@ describe('coverage in the real composer model picker', () => {
     await expect($(MENU + ' [data-coverage="all"]')).toHaveAttribute('aria-pressed', 'true')
     for (const theme of ['dark', 'light']) {
       await browser.execute((value) => {
-        document.documentElement.dataset.theme = value
+        document.documentElement.dataset['theme'] = value
       }, theme)
       if (theme === 'dark') await saveElementScreenshot(MENU, 'model-picker-coverage-dark.png')
       else await saveElementScreenshot(MENU, 'model-picker-coverage-light.png')

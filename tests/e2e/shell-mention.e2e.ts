@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -25,7 +24,7 @@ describe('@shell mention', () => {
   it('lists the open Shells tab and attaches a chip on select', async function () {
     this.timeout(90_000)
 
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     // Linux CI has no OS sandbox, so the terminal open itself prompts first.
     await approveUnsandboxedTerminalIfPrompted()
@@ -34,14 +33,14 @@ describe('@shell mention', () => {
     // Focus the composer and open the mention picker on @shell.
     await setComposerValue('@shell')
 
-    const shellItem = await $('.mention-picker .mention-item-shell')
+    const shellItem = await $('.mention-picker .mention-item-shell').getElement()
     await shellItem.waitForDisplayed({ timeout: 10_000 })
     await expect($('.mention-item-shell svg.mention-shell-icon')).toBeExisting()
 
     await saveAppScreenshot('shell-mention-picker.png')
 
     await shellItem.click()
-    const chip = await $('.attachment-chip.shell-chip')
+    const chip = await $('.attachment-chip.shell-chip').getElement()
     await chip.waitForDisplayed({ timeout: 10_000 })
     await expect(chip.$('svg.shell-chip-icon')).toBeExisting()
     await expect($('.mention-picker')).not.toBeDisplayed()

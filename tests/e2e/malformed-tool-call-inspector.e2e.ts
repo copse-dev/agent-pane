@@ -15,7 +15,9 @@ import {
 describe('malformed tool-call recovery inspector copy', function () {
   this.timeout(90_000)
 
-  afterEach(() => resetUserData())
+  afterEach(() => {
+    resetUserData()
+  })
 
   it('shows both discarded-call messages without denying preceding tool execution', async function () {
     resetUserData()
@@ -94,19 +96,19 @@ describe('malformed tool-call recovery inspector copy', function () {
     }
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const group = await $('[data-hook-cards-for="result"] .hook-card-group')
+    const group = await $('[data-hook-cards-for="result"] .hook-card-group').getElement()
     await group.waitForExist({ timeout: 10_000 })
     await group.$(':scope > .hook-card-header').click()
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     for (const { id, text, screenshot } of cases) {
       for (const candidate of cases) {
-        const other = await group.$(`.hook-card[data-hook-run="${candidate.id}"]`)
+        const other = await group.$(`.hook-card[data-hook-run="${candidate.id}"]`).getElement()
         const isOpen = (await other.getAttribute('open')) !== null
         if (isOpen !== (candidate.id === id)) await other.$(':scope > .hook-card-header').click()
       }
-      const card = await group.$(`.hook-card[data-hook-run="${id}"]`)
+      const card = await group.$(`.hook-card[data-hook-run="${id}"]`).getElement()
       await card.$('.hook-card-raw-summary').click()
-      const body = await card.$('[data-section="injected context"] pre')
+      const body = await card.$('[data-section="injected context"] pre').getElement()
       await body.waitForExist({ timeout: 10_000 })
       await expect(body).toHaveText(text)
       await expect(body).not.toHaveText(expect.stringMatching(/nothing ran/))

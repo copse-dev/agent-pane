@@ -30,7 +30,7 @@ describe('agent tasks in terminal tab', () => {
 
   it('lists the agent shell command and shows its output when selected', async () => {
     // Open the Terminal tab so the agent-tasks pane is visible.
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
 
     // Opening the integrated terminal itself requires a separate approval on
@@ -58,7 +58,7 @@ describe('agent tasks in terminal tab', () => {
     await submitComposer()
 
     // The seeded setting requires approval even when an OS sandbox is active.
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     expect(await dialog.$('.approval-body').getText()).toContain('echo agent-task-hello')
     await saveElementScreenshot('#approval-dialog', 'agent-tasks-shell-approval.png')
@@ -66,12 +66,14 @@ describe('agent tasks in terminal tab', () => {
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
     // The command appears as an entry in the left rail's Agent tasks section.
-    const taskTab = await $('.agent-task-tab')
+    const taskTab = await $('.agent-task-tab').getElement()
     await taskTab.waitForExist({ timeout: 30_000 })
 
     // Selecting it shows the command output as a full panel on the right.
     await taskTab.click()
-    const panel = await $('.terminals-viewer-host.showing-agent-task .agent-task-output-panel')
+    const panel = await $(
+      '.terminals-viewer-host.showing-agent-task .agent-task-output-panel',
+    ).getElement()
     await panel.waitForDisplayed({ timeout: 10_000 })
 
     // The command header and Arguments block already contain this token before
@@ -101,24 +103,16 @@ describe('agent tasks in terminal tab', () => {
 
   it('shows arguments and responses delivered by later ACP tool updates', async () => {
     const threadId = await browser.execute(async (projectId) => {
-      const host = window as unknown as {
-        api?: { threads?: { loadProject?: (id: string) => Promise<Array<{ id: string }>> } }
-      }
-      const threads = await host.api?.threads?.loadProject?.(projectId)
-      return threads?.[0]?.id ?? null
+      const host = window
+      const threads = await host.api.threads.loadProject(projectId)
+      return threads[0]?.id ?? null
     }, 'e2e-agent-tasks-project')
     expect(threadId).not.toBeNull()
     if (!threadId) throw new Error('expected the seeded project to have an active thread')
 
     await browser.execute(async (activeThreadId) => {
-      const bridge = (
-        window as unknown as {
-          __copseE2e?: {
-            emitAgentChunks?: (threadId: string, chunks: unknown[]) => Promise<void>
-          }
-        }
-      ).__copseE2e
-      if (!bridge?.emitAgentChunks) throw new Error('__copseE2e.emitAgentChunks unavailable')
+      const bridge = window.__copseE2e
+      if (!bridge) throw new Error('__copseE2e.emitAgentChunks unavailable')
       await bridge.emitAgentChunks(activeThreadId, [
         {
           type: 'tool_call',
@@ -157,12 +151,12 @@ describe('agent tasks in terminal tab', () => {
       ])
     }, threadId)
 
-    const taskTab = await $('.agent-task-tab*=mcp.copse.git_diff')
+    const taskTab = await $('.agent-task-tab*=mcp.copse.git_diff').getElement()
     await taskTab.waitForExist({ timeout: 10_000 })
     await expect(taskTab).toHaveAttribute('data-status', 'done')
     await taskTab.click()
 
-    const panel = await $('.agent-task-output-panel[data-task-id="acp-e2e-task"]')
+    const panel = await $('.agent-task-output-panel[data-task-id="acp-e2e-task"]').getElement()
     await panel.waitForDisplayed({ timeout: 10_000 })
     const panelText = await panel.getText()
     expect(panelText).toContain('$ mcp.copse.git_diff')
