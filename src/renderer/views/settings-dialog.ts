@@ -4723,6 +4723,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     appearanceBaseline = currentAppearance()
     appearanceCommitted = false
     resetDirtyState()
+    modelRoutingSection.reset()
     developerModeInput.checked = store.getState().developerMode
     syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.

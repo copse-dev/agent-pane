@@ -23,6 +23,8 @@ export interface ModelRoutingSnapshot {
 
 export interface ModelRoutingSection {
   root: HTMLElement
+  /** Discard cancelled role edits immediately, without waiting for provider reads. */
+  reset: () => void
   refresh: (snapshot?: ModelRoutingSnapshot) => Promise<void>
   /** Only user-edited additional roles; parent Save merges these atomically. */
   readRoleModels: () => Record<string, string> | undefined
@@ -213,7 +215,12 @@ export function createModelRoutingSection(
     )
   }
 
+  function reset(): void {
+    pendingRoles = {}
+  }
+
   async function refresh(snapshot?: ModelRoutingSnapshot): Promise<void> {
+    reset()
     const localModel = optionalString(
       snapshot ? snapshot.localDefaultModel : await api.settings.get('localDefaultModel'),
     )
@@ -229,8 +236,6 @@ export function createModelRoutingSection(
     const roleModels = stringRecordOrEmpty(
       snapshot ? snapshot.roleModels : await api.settings.get('roleModels'),
     )
-    pendingRoles = {}
-
     if (modelScope === 'all') {
       const coder = roleModels['coder'] ?? localModel
       const research = roleModels['research'] ?? subagent
@@ -285,6 +290,7 @@ export function createModelRoutingSection(
 
   return {
     root,
+    reset,
     refresh,
     readValues,
     readRoleModels: (): Record<string, string> | undefined =>
