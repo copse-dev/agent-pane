@@ -197,13 +197,16 @@ describe('pr pane filter (issue #2482)', () => {
 
   it('keeps Files separate from Overview and retains the selected section on refresh', async () => {
     const { listRoot, viewerRoot } = mount([], {
-      prDetails: async () => ({
-        ...LINKED_PR,
-        body: '**Summary** of the change.',
-        additions: 12,
-        deletions: 3,
-        files: [{ path: 'src/login.ts', status: 'modified', additions: 12, deletions: 3 }],
-      }),
+      prDetails: async (_owner, _repo, number) =>
+        number === LINKED_PR.number
+          ? {
+              ...LINKED_PR,
+              body: '**Summary** of the change.',
+              additions: 12,
+              deletions: 3,
+              files: [{ path: 'src/login.ts', status: 'modified', additions: 12, deletions: 3 }],
+            }
+          : null,
     })
     await settle()
     const files = viewerRoot.querySelector<HTMLElement>('.pr-viewer-files')
