@@ -20793,6 +20793,27 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
+// src/shared/file-bytes.ts
+function fileExtension(name) {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot).toLowerCase();
+}
+function formatByteSize(bytes) {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+}
+var init_file_bytes = __esm({
+  "src/shared/file-bytes.ts"() {
+  }
+});
+
 // packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
@@ -20806,6 +20827,232 @@ var init_errors3 = __esm({
 var init_errors4 = __esm({
   "src/shared/errors.ts"() {
     init_errors3();
+  }
+});
+
+// src/renderer/views/confirm-dialog.ts
+function mountConfirmDialog() {
+  document.getElementById("confirm-dialog")?.remove();
+  showConfirmDialogImpl = null;
+  const messageEl = el("h3", { class: "confirm-dialog-message" });
+  const detailEl = el("p", { class: "confirm-dialog-detail" });
+  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
+  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
+  document.body.append(dialog2);
+  const queue = [];
+  let active2 = null;
+  let confirming = false;
+  function finish(confirmed) {
+    if (!active2) return;
+    const resolve = active2.resolve;
+    active2 = null;
+    confirming = false;
+    dialog2.close();
+    resolve(confirmed);
+    if (queue.length > 0) {
+      active2 = queue.shift() ?? null;
+      renderActive();
+    }
+  }
+  function renderActive() {
+    if (!active2) return;
+    messageEl.textContent = active2.message;
+    if (active2.detail) {
+      detailEl.replaceChildren(active2.detail);
+      detailEl.hidden = false;
+    } else {
+      detailEl.textContent = "";
+      detailEl.hidden = true;
+    }
+    const cancelLabel = active2.cancelLabel ?? "Cancel";
+    const confirmLabel = active2.confirmLabel ?? "OK";
+    const cancelBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
+      cancelLabel
+    );
+    const confirmBtn = el(
+      "button",
+      {
+        type: "button",
+        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
+      },
+      confirmLabel
+    );
+    cancelBtn.addEventListener("click", () => {
+      finish(false);
+    });
+    async function confirmActive() {
+      if (!active2 || confirming) return;
+      const request = active2;
+      if (!request.onConfirm) {
+        finish(true);
+        return;
+      }
+      confirming = true;
+      cancelBtn.disabled = true;
+      confirmBtn.disabled = true;
+      confirmBtn.setAttribute("aria-busy", "true");
+      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
+      try {
+        await request.onConfirm((label) => {
+          if (active2 === request) confirmBtn.textContent = label;
+        });
+        if (active2 === request) finish(true);
+      } catch (error62) {
+        if (active2 !== request) return;
+        const reject = request.reject;
+        active2 = null;
+        confirming = false;
+        dialog2.close();
+        reject(error62);
+        if (queue.length > 0) {
+          active2 = queue.shift() ?? null;
+          renderActive();
+        }
+      }
+    }
+    confirmBtn.addEventListener("click", () => {
+      void confirmActive();
+    });
+    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
+    dialog2.showModal();
+    confirmBtn.focus();
+  }
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (confirming) return;
+    finish(false);
+  });
+  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
+    const queued = { ...req, resolve, reject };
+    if (active2) queue.push(queued);
+    else {
+      active2 = queued;
+      renderActive();
+    }
+  });
+}
+function showConfirmDialog(req) {
+  if (!showConfirmDialogImpl) return Promise.resolve(false);
+  return showConfirmDialogImpl(req);
+}
+var showConfirmDialogImpl;
+var init_confirm_dialog = __esm({
+  "src/renderer/views/confirm-dialog.ts"() {
+    init_helpers();
+    init_ui();
+    showConfirmDialogImpl = null;
+  }
+});
+
+// src/renderer/views/storage-maintenance-panel.ts
+function createStorageMaintenancePanel(api2) {
+  const element = el("fieldset", { id: "storage-maintenance" });
+  element.innerHTML = `
+    <legend>Saved runs and build data</legend>
+    <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
+    <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
+    <div class="settings-action-row"><span>Temporary build data</span><span id="storage-builds-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-builds-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
+    <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
+    <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const status = qsRequired(element, "#storage-maintenance-status");
+  const enabled = qsRequired(element, "#storage-expiry-enabled");
+  const days = qsRequired(element, "#storage-expiry-days");
+  let state = null;
+  let working = false;
+  let generation = 0;
+  function controls() {
+    enabled.disabled = working || !state;
+    days.disabled = working || !state;
+    for (const area of ["runs", "builds"]) {
+      const summary = state?.areas.find((entry) => entry.area === area);
+      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+    }
+  }
+  async function refresh() {
+    const token = ++generation;
+    controls();
+    try {
+      const next = await api2.storage.maintenance();
+      if (token !== generation) return;
+      state = next;
+      enabled.checked = next.retention.enabled;
+      if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
+        days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
+      }
+      days.value = String(next.retention.days);
+      for (const summary of next.areas)
+        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+    } catch (error62) {
+      if (token === generation) status.textContent = errorMessage(error62);
+    } finally {
+      if (token === generation) controls();
+    }
+  }
+  async function save() {
+    working = true;
+    generation++;
+    controls();
+    try {
+      const retention = { enabled: enabled.checked, days: Number(days.value) };
+      await api2.storage.retention(retention);
+      if (state) state.retention = retention;
+      status.textContent = "Automatic cleanup updated.";
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+      await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function clean(area) {
+    const confirmed = await showConfirmDialog({
+      message: area === "runs" ? "Remove saved container runs?" : "Remove temporary build data?",
+      detail: area === "runs" ? "Completed run snapshots, outputs and saved state will be permanently removed. Incomplete runs, teardown failures and active runs are kept. Chats remain." : "Apple build outputs and package caches will be removed and recreated on the next build. Active builds and chats are kept.",
+      confirmLabel: "Clean up",
+      danger: true
+    });
+    if (!confirmed) return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api2.storage.cleanup(area);
+      await refresh();
+      status.textContent = `Removed ${String(result.removed)} item${result.removed === 1 ? "" : "s"} (${formatByteSize(result.bytes)}).${result.skipped ? ` Kept ${String(result.skipped)} active, incomplete or protected items.` : ""}`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  enabled.addEventListener("change", () => {
+    void save();
+  });
+  days.addEventListener("change", () => {
+    void save();
+  });
+  for (const area of ["runs", "builds"])
+    qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
+      void clean(area);
+    });
+  controls();
+  return { element, refresh };
+}
+var init_storage_maintenance_panel = __esm({
+  "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_file_bytes();
+    init_errors4();
+    init_helpers();
+    init_confirm_dialog();
   }
 });
 
@@ -34148,27 +34395,6 @@ var init_icons = __esm({
   }
 });
 
-// src/shared/file-bytes.ts
-function fileExtension(name) {
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? "" : name.slice(dot).toLowerCase();
-}
-function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
-}
-var init_file_bytes = __esm({
-  "src/shared/file-bytes.ts"() {
-  }
-});
-
 // src/renderer/attachments/attachment-preview.ts
 function releaseCurrent() {
   const cleanup = currentCleanup;
@@ -34276,122 +34502,6 @@ var init_attachment_preview = __esm({
     currentCleanup = null;
     returnFocus = null;
     activeToken = 0;
-  }
-});
-
-// src/renderer/views/confirm-dialog.ts
-function mountConfirmDialog() {
-  document.getElementById("confirm-dialog")?.remove();
-  showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
-  const detailEl = el("p", { class: "confirm-dialog-detail" });
-  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
-  document.body.append(dialog2);
-  const queue = [];
-  let active2 = null;
-  let confirming = false;
-  function finish(confirmed) {
-    if (!active2) return;
-    const resolve = active2.resolve;
-    active2 = null;
-    confirming = false;
-    dialog2.close();
-    resolve(confirmed);
-    if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
-      renderActive();
-    }
-  }
-  function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.replaceChildren(active2.detail);
-      detailEl.hidden = false;
-    } else {
-      detailEl.textContent = "";
-      detailEl.hidden = true;
-    }
-    const cancelLabel = active2.cancelLabel ?? "Cancel";
-    const confirmLabel = active2.confirmLabel ?? "OK";
-    const cancelBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
-      cancelLabel
-    );
-    const confirmBtn = el(
-      "button",
-      {
-        type: "button",
-        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
-      },
-      confirmLabel
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(false);
-    });
-    async function confirmActive() {
-      if (!active2 || confirming) return;
-      const request = active2;
-      if (!request.onConfirm) {
-        finish(true);
-        return;
-      }
-      confirming = true;
-      cancelBtn.disabled = true;
-      confirmBtn.disabled = true;
-      confirmBtn.setAttribute("aria-busy", "true");
-      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
-      try {
-        await request.onConfirm((label) => {
-          if (active2 === request) confirmBtn.textContent = label;
-        });
-        if (active2 === request) finish(true);
-      } catch (error62) {
-        if (active2 !== request) return;
-        const reject = request.reject;
-        active2 = null;
-        confirming = false;
-        dialog2.close();
-        reject(error62);
-        if (queue.length > 0) {
-          active2 = queue.shift() ?? null;
-          renderActive();
-        }
-      }
-    }
-    confirmBtn.addEventListener("click", () => {
-      void confirmActive();
-    });
-    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
-    dialog2.showModal();
-    confirmBtn.focus();
-  }
-  dialog2.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    if (confirming) return;
-    finish(false);
-  });
-  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
-    const queued = { ...req, resolve, reject };
-    if (active2) queue.push(queued);
-    else {
-      active2 = queued;
-      renderActive();
-    }
-  });
-}
-function showConfirmDialog(req) {
-  if (!showConfirmDialogImpl) return Promise.resolve(false);
-  return showConfirmDialogImpl(req);
-}
-var showConfirmDialogImpl;
-var init_confirm_dialog = __esm({
-  "src/renderer/views/confirm-dialog.ts"() {
-    init_helpers();
-    init_ui();
-    showConfirmDialogImpl = null;
   }
 });
 
@@ -61013,7 +61123,10 @@ function mountSettingsDialog(store2, api2) {
           void refreshSources();
         }
         if (id === "customise" || id === "experimental") void refreshPlugins();
-        if (id === "storage") void refreshWorktrees();
+        if (id === "storage") {
+          void refreshWorktrees();
+          void storageMaintenance.refresh();
+        }
         if (id === "mcp") {
           void refreshMcpServers();
           void refreshDeclaredMcpServers();
@@ -62940,6 +63053,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       button.disabled = false;
     });
   });
+  const storageMaintenance = createStorageMaintenancePanel(api2);
+  qsRequired(overlay, '.settings-section[data-section="storage"]').append(
+    storageMaintenance.element
+  );
   const storageProjectSelect = qsRequired(overlay, "#storage-project-select");
   storageProjectSelect.addEventListener("change", () => {
     storageProjectId = storageProjectSelect.value || null;
@@ -63000,7 +63117,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       void refreshSources();
       void revealPluginDetail();
     }
-    if (openedSection === "storage") void refreshWorktrees("", true);
+    if (openedSection === "storage") {
+      void refreshWorktrees("", true);
+      void storageMaintenance.refresh();
+    }
     searchInput.focus();
     void (async () => {
       failedRefreshStages.length = 0;
@@ -63301,6 +63421,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
 var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
+    init_storage_maintenance_panel();
     init_errors4();
     init_humanize_identifier();
     init_auto_approval();
@@ -67439,6 +67560,15 @@ function createDemoApi(scenario, options = {}) {
       reopenArtefact: () => resolved2(false)
     },
     storage: {
+      maintenance: () => resolved2({
+        retention: { enabled: true, days: 30 },
+        areas: [
+          { area: "runs", bytes: 0, entries: 0, busy: false },
+          { area: "builds", bytes: 0, entries: 0, busy: false }
+        ]
+      }),
+      cleanup: () => resolved2({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key) => resolved2(storage.get(key)),
       set: (key, value) => {
         storage.set(key, value);
