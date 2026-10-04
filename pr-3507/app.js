@@ -21548,6 +21548,9 @@ function mountSkillsSources({
   return {
     invalidate() {
       generation++;
+      save.disabled = false;
+      reload.disabled = false;
+      status.textContent = "";
     },
     refresh(result) {
       generation++;
