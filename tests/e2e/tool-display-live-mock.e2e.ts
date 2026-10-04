@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -14,7 +14,7 @@ describe('tool call display live mock', () => {
     // context window from an LM Studio server that is absent in CI (the default
     // model is `lmstudio:…`). The mock LLM is used regardless via
     // COPSE_PANEL_MOCK_LLM, so this only fixes the model-metadata path.
-    seedEmptyProject(process.cwd(), 'e2e-live-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-live-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

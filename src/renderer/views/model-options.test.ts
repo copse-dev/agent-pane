@@ -16,6 +16,39 @@ import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { ModelCoverage } from './model-coverage.ts'
 
+describe('native ChatGPT plan picker', () => {
+  it('offers subscription models without an API key and preserves their registration', async () => {
+    const base = mockApi()
+    const api = {
+      ...base,
+      chatGptPlan: {
+        ...base.chatGptPlan,
+        models: async (): ReturnType<ApiClient['chatGptPlan']['models']> => ({
+          clientId: 'oaiapp_account',
+          models: [{ slug: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }],
+        }),
+      },
+    }
+    const options = await fetchModelOptions(api, '')
+    const plan = options.find((option) => option.group === 'ChatGPT plan')
+    assert.ok(plan)
+    assert.equal(plan.value, 'chatgpt-plan:oaiapp_account#gpt-6.1-sol')
+    assert.equal(plan.label, 'GPT-6.1 Sol · ChatGPT plan')
+    assert.equal(
+      options.some((option) => option.value === 'gpt-6.1-sol'),
+      false,
+    )
+  })
+  it('retains a disconnected selection as disabled instead of substituting API billing', async () => {
+    const current = 'chatgpt-plan:oaiapp_old#gpt-6.1-sol'
+    const options = await fetchModelOptions(mockApi(), current)
+    const plan = options.find((option) => option.value === current)
+    assert.ok(plan)
+    assert.equal(plan.disabled, true)
+    assert.match(plan.label, /ChatGPT plan/)
+  })
+})
+
 interface MockOpts {
   available?: Record<string, boolean>
   extraProviders?: ExtraProvider[]
@@ -270,10 +303,11 @@ describe('fetchModelOptions visibility', () => {
 
   it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    // Automatic choices plus the empty placeholder.
     const values = options.map((o) => o.value)
     assert.ok(values.includes('auto:best-value'))
     assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    assert.ok(values.includes('auto:balanced-included'), 'no-charge balanced should be selectable')
     const bestValue = options.find((o) => o.value === 'auto:best-value')
     assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)

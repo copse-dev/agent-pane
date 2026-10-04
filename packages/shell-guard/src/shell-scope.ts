@@ -9,8 +9,9 @@ import {
   SCRIPT_EXTENSION_ALTERNATION,
   SHELL_INTERPRETERS,
   commandName,
+  inlineLeadingLiteralAssignments,
   isStructurallyReadOnlyShellCommand,
-  shellSegments,
+  shellSegmentsQuoteAware,
   unwrapWrappers,
 } from './shell-argv.ts'
 
@@ -479,7 +480,7 @@ function tokenBasedExternalReasons(command: string): {
     if (!reasons.includes(reason)) reasons.push(reason)
   }
 
-  for (const segment of shellSegments(command)) {
+  for (const segment of shellSegmentsQuoteAware(command)) {
     const argv = unwrapWrappers(segment)
     const exe0 = argv[0]
     if (exe0 === undefined) continue
@@ -959,7 +960,7 @@ export function analyzeShellCommand(
   command: string,
   workspaceRoot: string | null,
 ): ShellScopeAnalysis {
-  const trimmed = command.trim()
+  const trimmed = inlineLeadingLiteralAssignments(command.trim())
   if (!trimmed) {
     return { verdict: 'sandbox', reasons: ['empty command'] satisfies ScopeReason[] }
   }
@@ -1014,14 +1015,14 @@ export function analyzeShellCommand(
  * recognise but the caller does.
  */
 export function needsMoreThanOutsideAccess(command: string): boolean {
-  const trimmed = command.trim()
+  const trimmed = inlineLeadingLiteralAssignments(command.trim())
   if (!trimmed) return false
   const { reasons } = collectExternalReasons(trimmed)
   return reasons.length > 0
 }
 
 export function externalOnlyForOutsidePath(command: string, workspaceRoot: string | null): boolean {
-  const trimmed = command.trim()
+  const trimmed = inlineLeadingLiteralAssignments(command.trim())
   if (!trimmed) return false
   const { reasons, hasHard } = collectExternalReasons(trimmed)
   if (hasHard || reasons.length > 0) return false

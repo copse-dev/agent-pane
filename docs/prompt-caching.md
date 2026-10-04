@@ -149,6 +149,12 @@ ID or API key is written to the diagnostic log. Failed/cancelled streams do not
 emit a completed-stream record. Responses and externally hosted ACP agents are
 not instrumented by this diagnostic.
 
+The persisted usage ledger (`usageEvents` in `user-data/config.json`) also
+keeps, per call, the cache read/write tokens and the `hostingProvider` that
+OpenRouter reports served the request. Caches are per upstream, so a change of
+host between consecutive calls in a thread explains a full miss that no request
+byte change does.
+
 To measure, send a synthetic prefix exceeding the model's cache minimum, then
 append a follow-up within the TTL. Check that the system/tool hashes stay fixed
 and `cacheReadTokens` becomes positive. Change the start of the system prompt

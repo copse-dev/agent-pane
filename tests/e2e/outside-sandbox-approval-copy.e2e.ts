@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { submitComposer } from './helpers/composer.ts'
@@ -10,7 +10,7 @@ const PROJECT_ID = 'e2e-outside-sandbox-approval-copy'
 describe('outside-sandbox approval copy', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

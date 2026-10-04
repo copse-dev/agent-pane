@@ -16,6 +16,7 @@ import { ContainerRunService, judgeRun } from './container-run-service.ts'
 import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
+import type { ThreadContainerEngine } from './container-engine.ts'
 
 const PROJECT = 'container-run-project'
 const THREAD = 'container-run-thread'
@@ -149,7 +150,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         runs += 1
@@ -181,7 +182,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -251,7 +252,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
     })
@@ -268,7 +269,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
     })
@@ -287,7 +288,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request: ThreadContainerRequest): Promise<ThreadContainerRecord> =>
         Promise.resolve(fakeRecord(request.prompt)),
@@ -314,7 +315,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -360,7 +361,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -399,7 +400,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -435,7 +436,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (runtimeId): Promise<'removed'> => {
         stopped.push(runtimeId)
         // The runner's wait settles once the container is gone: no result.
@@ -480,7 +481,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -516,7 +517,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (runtimeId): Promise<'already-gone'> => {
         stopped.push(runtimeId)
         return Promise.resolve('already-gone')
@@ -550,6 +551,87 @@ describe('ContainerRunService', () => {
     assert.equal(service.isActive(THREAD), false)
   })
 
+  it('shares an image build across concurrent threads and retries after a failed build', async () => {
+    let builds = 0
+    const preparation = Promise.withResolvers<undefined>()
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => {
+        builds += 1
+        return builds === 1 ? preparation.promise : Promise.resolve()
+      },
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> =>
+        Promise.resolve(fakeRecord(request.threadId ?? THREAD)),
+    })
+    const request: ContainerRunRequest = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    await Promise.all([
+      service.start(request),
+      service.start({ ...request, threadId: 'another-thread' }),
+    ])
+    assert.equal(builds, 1)
+    preparation.reject(new Error('image build failed'))
+    await waitFor(service, THREAD, (progress) => progress.phase === 'failed')
+    await waitFor(service, 'another-thread', (progress) => progress.phase === 'failed')
+    await service.start(request)
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(builds, 2)
+  })
+
+  it('reserves the thread before provider resolution yields', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.threadId ?? THREAD))
+      },
+    })
+    const request: ContainerRunRequest = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    const first = service.start(request)
+    assert.equal(service.isActive(THREAD), true)
+    await assert.rejects(service.start(request), /already has a container run/)
+    await first
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(seen.length, 1)
+
+    deleteApiKey('anthropic')
+    deleteApiKey('openai')
+    await assert.rejects(
+      service.start({ ...request, model: 'mystery' }),
+      /cannot resolve a provider/,
+    )
+    assert.equal(service.isActive(THREAD), false)
+    setApiKey('anthropic', 'sk-ant-test')
+    await service.start(request)
+    await waitFor(service, THREAD, (progress) => progress.phase === 'finished')
+    assert.equal(seen.length, 2)
+  })
+
   it('refuses a second run while one is live, and reports a failed run', async () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
@@ -559,7 +641,7 @@ describe('ContainerRunService', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (): Promise<ThreadContainerRecord> =>
         new Promise((_resolve, reject) => {
@@ -602,7 +684,7 @@ describe('ContainerRunService', () => {
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
     })
     const base = {
@@ -649,7 +731,7 @@ describe('ContainerRunService checkout resolution', () => {
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(worktree, 'worktree', 'thread/work'),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
         return Promise.resolve(fakeRecord(request.prompt))
@@ -683,7 +765,7 @@ describe('ContainerRunService checkout resolution', () => {
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(notARepo),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
     })
     await assert.rejects(
@@ -712,7 +794,7 @@ describe('ContainerRunService checkout resolution', () => {
       resolveContext: (): Promise<ThreadExecutionContext> =>
         Promise.reject(new Error('worktree is not registered with git')),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
     })
     await assert.rejects(
@@ -857,7 +939,7 @@ describe('ContainerRunService.adopt', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
     })
@@ -899,7 +981,7 @@ describe('ContainerRunService continuation (A14)', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -946,7 +1028,7 @@ describe('ContainerRunService continuation (A14)', () => {
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -1015,7 +1097,7 @@ describe('ContainerRunService continuation (A14)', () => {
             : null,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): void => undefined,
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request): Promise<ThreadContainerRecord> => {
         seen.push(request)
@@ -1089,6 +1171,51 @@ describe('ContainerRunService continuation (A14)', () => {
       /record is gone/,
     )
     assert.equal(service.isActive(THREAD), false, 'a refused continuation claims no slot')
+  })
+
+  it('keeps the finished run it continues when a follow-up fails before starting', async () => {
+    let engineUp = true
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => {
+        if (!engineUp) throw new Error('Docker is unavailable: daemon down')
+        return Promise.resolve('docker')
+      },
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'First task',
+      model: 'claude-sonnet-4-6',
+      budgets,
+    })
+    const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    engineUp = false
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'Follow-up',
+        model: 'claude-sonnet-4-6',
+        budgets,
+        continueFrom: 'run-fake',
+      }),
+      /daemon down/,
+    )
+    assert.equal(service.isActive(THREAD), false)
+    const kept = service.get(THREAD)
+    assert.ok(kept)
+    assert.equal(kept.phase, 'finished', 'the earlier run is still what the thread shows')
+    assert.equal(kept.prompt, finished.prompt)
+    assert.equal(kept.record?.runtimeId, 'run-fake')
   })
 })
 
@@ -1308,7 +1435,7 @@ describe('container task supervision', () => {
       loadCarryOut: noRecordOnDisk,
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
-      assertEngine: (): void => {
+      assertEngine: (): Promise<ThreadContainerEngine> => {
         throw new Error(
           'Unattended container runs need a running Docker daemon before the worker image is built. Docker is unavailable: dial unix docker.sock: connect: no such file or directory. Start Docker Desktop (or point DOCKER_HOST / the active docker context at a live engine) and retry.',
         )
@@ -1337,32 +1464,54 @@ describe('container task supervision', () => {
     assert.equal(service.get(THREAD), null)
   })
 
-  it('mentions a ready Apple container when Docker is down on this path', async () => {
+  it('resolves the engine once and hands that engine to the image, the run and its stop', async () => {
+    let resolved = 0
+    const images: ThreadContainerEngine[] = []
+    const runs: Array<ThreadContainerEngine | undefined> = []
+    const stops: Array<[string, ThreadContainerEngine | undefined]> = []
+    const pending: { release?: () => void } = {}
     const service = new ContainerRunService({
       sweep: noSweep,
       adopt: adoptSpy().adopt,
       loadCarryOut: noRecordOnDisk,
       loadContinuation: noContinuationOnDisk,
       resolveContext: checkoutAt(root),
-      assertEngine: (): void => {
-        throw new Error(
-          'Unattended container runs need a running Docker daemon before the worker image is built. Docker is unavailable: daemon down. Start Docker Desktop (or point DOCKER_HOST / the active docker context at a live engine) and retry. Apple container is running on this Mac, but unattended thread runs still require Docker: the guest attestation claims network isolation, pids limits, and default security profiles that Apple container does not expose the same way. Development and eval scripts can use COPSE_CONTAINER_ENGINE=apple; this product path cannot yet.',
-        )
+      assertEngine: (): Promise<ThreadContainerEngine> => {
+        resolved += 1
+        return Promise.resolve('apple')
       },
-      ensureImage: (): Promise<void> => Promise.reject(new Error('must not build')),
-      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not run')),
-      stop: async () => 'already-gone' as const,
+      ensureImage: (engine): Promise<void> => {
+        images.push(engine)
+        return Promise.resolve()
+      },
+      run: (request, options): Promise<ThreadContainerRecord> =>
+        new Promise((resolve) => {
+          runs.push(request.engine)
+          options?.onPhase?.('running')
+          pending.release = (): void => {
+            resolve({ ...fakeRecord(request.prompt), result: null, teardown: 'already-gone' })
+          }
+        }),
+      stop: (runtimeId, engine): Promise<'removed'> => {
+        stops.push([runtimeId, engine])
+        pending.release?.()
+        return Promise.resolve('removed')
+      },
     })
-    await assert.rejects(
-      service.start({
-        projectId: PROJECT,
-        threadId: THREAD,
-        prompt: 'apple only',
-        model: 'claude-sonnet-4-6',
-        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
-      }),
-      /Apple container is running on this Mac[\s\S]*still require Docker/,
-    )
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'apple silicon, no docker',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const running = await waitFor(service, THREAD, (p) => p.phase === 'running')
+    await service.stop(THREAD)
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(resolved, 1)
+    assert.deepEqual(images, ['apple'])
+    assert.deepEqual(runs, ['apple'])
+    assert.deepEqual(stops, [[running.runtimeId, 'apple']])
   })
 })
 
@@ -1374,7 +1523,7 @@ function supervisedService(
   return new ContainerRunService({
     resolveContext: checkoutAt(root),
     ensureImage,
-    assertEngine: (): void => undefined,
+    assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
     run,
     stop: () => Promise.resolve('removed'),
     sweep: () => Promise.resolve({ removed: [], failed: [], skipped: [] }),

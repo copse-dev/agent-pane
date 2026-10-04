@@ -82,6 +82,13 @@ import {
   shouldShowPrimaryChatModelLabels,
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
+import {
+  DEFAULT_APP_CHAT_MODEL,
+  FALLBACK_APP_CHAT_MODEL,
+  isBestValueChatModel,
+} from '@shared/lm-studio-defaults.ts'
+import { mountModelPicker } from './model-picker.ts'
+import { fetchModelOptions } from './model-options.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import {
   attachImageCopyMenu,
@@ -160,6 +167,7 @@ import {
   releaseHeldMessage,
   removeQueuedMessage,
   sendQueuedMessageNow,
+  updateQueuedMessageModel,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
 import { forkThread } from '../controller/fork-thread.ts'
@@ -171,6 +179,7 @@ import { showToast } from './toast.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
+import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
@@ -2867,6 +2876,66 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (threadId) releaseHeldMessage(store, api, threadId, messageId)
   }
 
+  function queuedModelValue(threadId: string, messageId: string): string {
+    const thread = getThreadById(store, threadId)
+    const raw =
+      thread?.pendingMessages?.find((item) => item.messageId === messageId)?.model ??
+      thread?.model ??
+      store.getState().settings?.model ??
+      DEFAULT_APP_CHAT_MODEL
+    // The queue control is a concrete model picker, so show the route a dynamic
+    // default currently resolves to while keeping the stored selector intact
+    // until the user makes an explicit per-prompt choice.
+    return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+  }
+
+  function queuedRecentModels(): string[] {
+    const { threads, settings } = store.getState()
+    return threads
+      .slice()
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((thread) => {
+        const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL
+        return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+      })
+  }
+
+  function queuedWorkspaceIsSsh(): boolean {
+    const { activeProjectId, projects } = store.getState()
+    return Boolean(projects.find((project) => project.id === activeProjectId)?.sshHost)
+  }
+
+  /**
+   * Each queued prompt owns its model snapshot. This reuses the searchable
+   * picker, but keeps the footer's current-chat selection independent from the
+   * prompt already waiting in the pinned queue.
+   */
+  function buildQueuedModelPicker(messageId: string): HTMLElement {
+    const threadId = store.getState().activeThreadId
+    const host = el('div', { class: 'message-queued-model' })
+    const pickerHost = el('div', { class: 'message-queued-model-picker' })
+    if (!threadId) return host
+    mountModelPicker(
+      pickerHost,
+      () => queuedModelValue(threadId, messageId),
+      (model) => {
+        updateQueuedMessageModel(store, threadId, messageId, model)
+      },
+      (current) =>
+        fetchModelOptions(api, current, {
+          sshWorkspace: queuedWorkspaceIsSsh(),
+        }),
+      {
+        variant: 'compact',
+        enableShortcut: false,
+        ariaLabel: 'Model for queued prompt',
+        getRecentValues: queuedRecentModels,
+      },
+    )
+    host.append(el('span', { class: 'message-queued-model-label' }, 'Run with'), pickerHost)
+    return host
+  }
+
   // A held message (decisions 5 & 16) is skipped by the drain loop — it only
   // moves on an explicit human action. It gets a primary "Release" affordance
   // (submit + start a fresh turn tree) plus the usual edit / delete.
@@ -2894,7 +2963,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return el(
       'div',
       { class: 'message-queued-ui' },
-      el('div', { class: 'message-queued-actions' }, releaseBtn, editBtn, deleteBtn),
+      el(
+        'div',
+        { class: 'message-queued-actions' },
+        buildQueuedModelPicker(messageId),
+        releaseBtn,
+        editBtn,
+        deleteBtn,
+      ),
     )
   }
 
@@ -2923,7 +2999,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return el(
       'div',
       { class: 'message-queued-ui' },
-      el('div', { class: 'message-queued-actions' }, editBtn, sendNowBtn, deleteBtn),
+      el(
+        'div',
+        { class: 'message-queued-actions' },
+        buildQueuedModelPicker(messageId),
+        editBtn,
+        sendNowBtn,
+        deleteBtn,
+      ),
     )
   }
 
@@ -4019,8 +4102,25 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       'Fork from here',
     )
     fork.addEventListener('click', () => {
-      fork.disabled = true
-      void runFork(threadId, msgId).finally(() => (fork.disabled = false))
+      const rect = fork.getBoundingClientRect()
+      showContextMenu(rect.left, rect.bottom + 4, [
+        { heading: 'Fork from here' },
+        {
+          label: 'Fork a copy',
+          onSelect: (): void => {
+            fork.disabled = true
+            void runFork(threadId, msgId).finally(() => (fork.disabled = false))
+          },
+        },
+        {
+          label: 'Edit thread history…',
+          onSelect: (): void => {
+            const projectId = store.getState().activeProjectId
+            if (!projectId) return
+            openThreadHistoryEditor(store, api, { projectId, threadId, focusMessageId: msgId })
+          },
+        },
+      ])
     })
     const resend = el(
       'button',
@@ -4336,6 +4436,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
+      ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
@@ -4844,7 +4945,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           setReasoningDisclosureTitle(details, false)
         })
         const last = getThreadById(store, tid)?.messages.at(-1)
-        if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
+        if (last) renderMessageTurnRecovery(tid, last.id)
       }
       syncAvatarMotion()
     }),

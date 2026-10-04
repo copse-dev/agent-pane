@@ -266,6 +266,9 @@ function parseServiceTierUsage(
   return Object.keys(serviceTierUsage).length > 0 ? serviceTierUsage : undefined
 }
 
+/** Same bound the provider applies to the router's label before it reaches a chunk. */
+const MAX_HOSTING_PROVIDER_LENGTH = 80
+
 /**
  * Parse persisted ledger JSON; drops malformed entries. Legacy ACP events with
  * fresh-only `inputTokens` are repaired here (see `repairLegacyAcpInputTokens`);
@@ -289,6 +292,7 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
       continue
     }
     const serviceTierUsage = parseServiceTierUsage(rec['serviceTierUsage'])
+    const hostingProvider = rec['hostingProvider']
     const event: UsageEvent = {
       at: rec['at'],
       model: rec['model'],
@@ -313,6 +317,11 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
         ? { responseServiceTier: rec['responseServiceTier'] }
         : {}),
       ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
+      ...(typeof hostingProvider === 'string' &&
+      hostingProvider.length > 0 &&
+      hostingProvider.length <= MAX_HOSTING_PROVIDER_LENGTH
+        ? { hostingProvider }
+        : {}),
     }
     out.push(repairLegacyAcpInputTokens(event.model, event))
   }

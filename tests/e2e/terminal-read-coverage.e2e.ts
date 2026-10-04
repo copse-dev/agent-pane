@@ -1,7 +1,7 @@
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
@@ -10,7 +10,7 @@ describe('terminal read screening coverage', function () {
 
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-terminal-read-coverage', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-terminal-read-coverage', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

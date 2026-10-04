@@ -102,6 +102,10 @@ import {
 } from '@shared/appearance.ts'
 import { switchProjectThread } from '../controller/projects.ts'
 import {
+  DEFAULT_GIT_THREAD_LINK_ENABLED,
+  GIT_THREAD_LINK_SETTING,
+} from '@shared/git/thread-link.ts'
+import {
   DEFAULT_GIT_ATTRIBUTION_ENABLED,
   GIT_ATTRIBUTION_SETTING,
 } from '@shared/git/commit-attribution.ts'
@@ -266,6 +270,12 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
     save: true,
   },
   { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
+  {
+    name: GIT_THREAD_LINK_SETTING,
+    kind: 'checkbox',
+    default: DEFAULT_GIT_THREAD_LINK_ENABLED,
+    save: true,
+  },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
     name: 'subagentsEnabled',
@@ -791,6 +801,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <div id="settings-gh-cli-host" class="settings-mount"></div>
+            <fieldset data-testid="git-thread-link-settings">
+              <legend>Thread links</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_THREAD_LINK_SETTING}" />
+                Link commits and pull requests back to their Copse thread
+              </label>
+              <p class="field-hint">
+                Adds a public link containing an opaque thread ID, independently of attribution.
+                The conversation stays on your device. Links only open where that thread exists.
+                Off by default.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="permissions">
@@ -1632,7 +1654,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Detected settings',
+    legend: 'Detected API keys',
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
       void providersPanel.refresh()

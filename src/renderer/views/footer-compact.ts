@@ -3,36 +3,18 @@ const SHRINKING_FOOTER_ITEMS = '.footer-model-host, .footer-branch-host, .footer
 function footerNaturalWidth(footer: HTMLElement): number {
   const items = footer.querySelectorAll<HTMLElement>(SHRINKING_FOOTER_ITEMS)
   const previousFlex = [...items].map((el) => el.style.flex)
-  const usage = footer.querySelector<HTMLElement>('.footer-usage')
-  const previousUsageDisplay = usage?.style.display
-  const previousUsageDisplayPriority = usage?.style.getPropertyPriority('display')
 
   // The pickers lay out from a zero basis (input-bar.css), so measure each at
   // its own width rather than at whatever share of the room it was given.
   items.forEach((el) => {
     el.style.flex = '0 0 auto'
   })
-  // `updateFooter` also sets the native `hidden` attribute while usage is
-  // tucked into the context wheel. The global `[hidden] { display: none
-  // !important }` backstop outranks an ordinary inline display declaration,
-  // which made a compact footer measure without usage and expand again. That
-  // expansion unhides usage, overflows, and repeats forever. An inline
-  // important declaration wins for this synchronous measurement without
-  // mutating `hidden` (and therefore without feeding its observers).
-  if (usage) usage.style.setProperty('display', 'inline', 'important')
 
   const width = footer.scrollWidth
 
   items.forEach((el, index) => {
     el.style.flex = previousFlex[index] ?? ''
   })
-  if (usage) {
-    if (previousUsageDisplay) {
-      usage.style.setProperty('display', previousUsageDisplay, previousUsageDisplayPriority)
-    } else {
-      usage.style.removeProperty('display')
-    }
-  }
   return width
 }
 
@@ -67,8 +49,6 @@ export function bindFooterCompactLayout(
   observer.observe(footer)
   // Watch the controls too: a control that appears, disappears or changes size
   // (a font or UI-scale change) moves the natural width.
-  // Toggling `is-compact` does resize the usage group, but the re-run measures
-  // the same natural width (usage forced visible), so it settles after one pass.
   for (const control of footer.children) observer.observe(control)
   const inputBar = footer.closest('#input-bar')
   if (inputBar) observer.observe(inputBar)

@@ -220,6 +220,27 @@ describe('aggregate usage', () => {
     assert.equal(formatPeriodHeadline(summary.day), 'Cost unavailable · 2 cloud models')
   })
 
+  it('round-trips a bounded hosting provider label and drops anything else', () => {
+    const base = {
+      at: NOW,
+      model: 'openrouter:x-ai/grok-4.5',
+      source: 'agent',
+      inputTokens: 5,
+      outputTokens: 1,
+    }
+    const parsed = parseUsageEvents([
+      { ...base, hostingProvider: 'xAI' },
+      { ...base, hostingProvider: 42 },
+      { ...base, hostingProvider: '' },
+      { ...base, hostingProvider: 'x'.repeat(81) },
+    ])
+    assert.equal(parsed.length, 4, 'a bad label never drops the usage itself')
+    assert.deepEqual(
+      parsed.map((e) => e.hostingProvider),
+      ['xAI', undefined, undefined, undefined],
+    )
+  })
+
   it('parseUsageEvents drops malformed records', () => {
     const parsed = parseUsageEvents([
       { at: NOW, model: 'gpt-4o', inputTokens: 1, outputTokens: 2, source: 'agent' },

@@ -277,9 +277,11 @@ assertions.
   denials recorded with `host:port` and raised as deferred requests.
 - Deny cloud-metadata endpoints and private ranges outright (per
   `execution-runtime-security.md`), independent of the allowlist.
-- Secret canary tests: a marker value present in the host environment and in Copse's
-  settings must be absent from the guest environment, filesystem, image layers, and the
-  run record.
+- Secret canary tests: a per-run marker value placed in the environment of the Docker
+  client that creates the container (not the Copse host process, so concurrent runs
+  cannot clobber each other's) must be absent from the guest environment, filesystem,
+  image layers, and the run record. It covers the container launch only: leaks through
+  other host children (the egress broker, git carry-in, ACP) are not watched by it.
 - Git carry-in/carry-out over the run's own SSH connection; no token in the guest. Host-side
   push happens only through the review queue.
 

@@ -180,6 +180,7 @@ function setup(
           ],
         }),
       },
+      deepLinks: { ready: async () => undefined, onOpenThread: () => () => undefined },
       alerts: {
         threadFinished: async (threadId: string, title: string): Promise<void> => {
           finishedAlerts.push({ threadId, title })

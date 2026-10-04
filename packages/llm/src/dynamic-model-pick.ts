@@ -108,22 +108,25 @@ export function pickDynamicModel(
         null
       )
     }
-    case 'balanced': {
+    case 'balanced':
+    case 'balanced-included': {
+      const candidates = selector.kind === 'balanced-included' ? pool.filter(isFree) : pool
+      if (candidates.length === 0) return null
       // Use confirmed subscription headroom before spending on an API route.
       // A newly launched paid model must not displace an included model just
       // because its benchmark or price moved. Missing/exhausted usage does not
       // set plan + planDetail, so it never qualifies as confirmed coverage.
-      const covered = pool.filter(
+      const covered = candidates.filter(
         (point) => point.plan !== undefined && point.planDetail !== undefined,
       )
       // Preserve local and genuinely free alternatives as well; this preference
       // prevents extra API spend, not the use of a better on-device model.
       const eligible =
         covered.length > 0
-          ? pool.filter(
+          ? candidates.filter(
               (point) => covered.includes(point) || point.local === true || point.costPerMTok <= 0,
             )
-          : pool
+          : candidates
       // Within that pool, real API prices still balance capability against
       // likely plan consumption; an expensive included model is not scored $0.
       const priced = eligible.map((point) => ({
