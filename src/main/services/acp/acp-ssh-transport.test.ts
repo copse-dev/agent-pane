@@ -307,10 +307,15 @@ describe('every catalog agent, not just Claude', () => {
         // must come from the catalog, never from the agent's command name.
         assert.ok(known.installPackage, 'autoInstall requires an explicit installPackage')
         // A remote install has no Socket Firewall in front of npm, so it only
-        // ever fetches the version the container image pins and reviews.
+        // ever fetches the reviewed container or remote-only version.
         const spec = remoteAcpInstallSpec(known)
         assert.ok(spec, `${known.id}: a remote auto-install needs a pinned version`)
-        assert.equal(spec, `${known.installPackage}@${containerAcpAgent(known.id)?.version ?? ''}`)
+        assert.equal(
+          spec,
+          known.id === 'qwen-code'
+            ? '@qwen-code/qwen-code@0.24.7'
+            : `${known.installPackage}@${containerAcpAgent(known.id)?.version ?? ''}`,
+        )
         const script = remoteNpmInstallScript(spec, '/opt/node/bin')
         assert.ok(script.includes(spec))
         assert.ok(script.includes('--ignore-scripts'), 'lifecycle scripts stay disabled')
@@ -330,6 +335,18 @@ describe('every catalog agent, not just Claude', () => {
 })
 
 describe('remoteAcpInstallSpec', () => {
+  it('pins Qwen for SSH without advertising unattended-container support', () => {
+    assert.equal(containerAcpAgent('qwen-code'), null)
+    assert.equal(
+      remoteAcpInstallSpec({ id: 'qwen-code', installPackage: '@qwen-code/qwen-code' }),
+      '@qwen-code/qwen-code@0.24.7',
+    )
+    assert.equal(
+      remoteAcpInstallSpec({ id: 'qwen-code', installPackage: '@qwen-code/qwen-code@latest' }),
+      null,
+    )
+    assert.equal(remoteAcpInstallSpec({ id: 'qwen-code', installPackage: 'other-pkg' }), null)
+  })
   it('pins the package to the version the container image bakes', () => {
     const pinned = containerAcpAgent('claude-acp')
     assert.ok(pinned)

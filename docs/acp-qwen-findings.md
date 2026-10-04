@@ -24,6 +24,11 @@ The CLI itself, ACP transport, session configuration and tool handling are real.
 
 ## Hosted endpoint configuration
 
+When an opted-in SSH workspace needs Qwen installed, the existing approval flow
+names the reviewed `@qwen-code/qwen-code@0.24.7` pin and disables lifecycle scripts.
+This remote-only pin does not add Qwen to the unattended-container worker image:
+its model/endpoint and credential route have not been verified for that runtime.
+
 There is currently no network-domain editor in the ACP Settings form. Its supported advanced configuration is the registered agent's `sandbox` object in `~/.copse/user-data/settings.json` (`COPSE_DIR` changes the profile root). Stop Copse before editing that file; preserve the other settings and the existing agent fields. Set that agent's `sandbox` object to `{"allowedDomains":["your-observed-provider-host"],"homeDirs":[".qwen"]}` only after checking the actual provider and token endpoints. This overrides the catalog profile; it does not change other agents. Do not use wildcards inferred from Qwen's model name. Re-run both probes with an authorized provider and commit the resulting hosted rows before closing #2304.
 
 ## Reproduce the local evidence
