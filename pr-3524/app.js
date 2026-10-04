@@ -46012,6 +46012,7 @@ function acpAgentOptions(agents) {
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
+          shortLabel: label,
           group
         });
       }
@@ -46063,6 +46064,7 @@ async function openRouterOptions(api2, available, current) {
     entries2.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...supportsImages !== void 0 ? { supportsImages } : {},
       ...free ? { coverage: "free" } : {}
@@ -46109,6 +46111,7 @@ function extraProviderOptions(provider, available, current) {
     entries2.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group,
       ...supportsImages !== void 0 ? { supportsImages } : {}
     });
@@ -46226,6 +46229,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
     options.push({
       value,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: cloudGroup,
       supportsImages: true
     });
@@ -46274,6 +46278,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
     options.push({
       value: `lmstudio:${id}`,
       label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
       group: lmGroup,
       ...model.supportsImages !== void 0 ? { supportsImages: model.supportsImages } : {}
     });
@@ -104372,7 +104377,7 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
   function shortModelLabel(option) {
-    const name = option.label.split(" \u2014 ")[0] ?? option.label;
+    const name = option.shortLabel ?? option.label;
     return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name;
   }
   function appendImageDescription(text2, modelLabel2, description) {
