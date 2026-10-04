@@ -50,6 +50,7 @@ interface HostState {
   shown: boolean
   fallbackFocus: number
   needsYou: number[]
+  clock: number
 }
 
 interface Harness {
@@ -72,7 +73,7 @@ function setup(threads: Thread[]): Harness {
   // would otherwise loop forever. flush() runs what is due once.
   const queued: Array<() => void> = []
   const needsYou: number[] = []
-  const state: HostState = { shown: false, fallbackFocus: 0, needsYou }
+  const state: HostState = { shown: false, fallbackFocus: 0, needsYou, clock: 1_000_000 }
   const host: ActivityViewHost = {
     close: () => {},
     isShown: () => state.shown,
@@ -86,7 +87,7 @@ function setup(threads: Thread[]): Harness {
   // Existing panel callers retain these named type imports after extraction.
   const sources: ActivitySources = { approvals: noApprovals, questions: noQuestions }
   const deps: ActivityPanelDeps = {
-    now: () => 1_000_000,
+    now: () => state.clock,
     setTimer: (fn) => {
       queued.push(fn)
       return (): void => {}
@@ -150,7 +151,7 @@ describe('activity view', () => {
     store.setState({ threads: [thread('t1'), thread('t2', { status: 'running' })] })
     store.emit('thread_status_changed', 't2', 'running')
     flush()
-    assert.equal(rowCount(view), 1, 'a hidden view must not redraw')
+    assert.equal(rowCount(view), 0, 'a hidden view must release rows and not redraw')
     assert.equal(view.status.textContent, '')
   })
 
@@ -168,5 +169,127 @@ describe('activity view', () => {
       view.body.querySelector('.activity-row[data-selected]')?.getAttribute('data-row-key'),
       first,
     )
+  })
+  describe('redraws', () => {
+    function rowNode(view: ActivityView, key: string): HTMLElement {
+      const found = view.body.querySelector<HTMLElement>(`.activity-row[data-row-key="${key}"]`)
+      assert.ok(found, `expected row ${key}`)
+      return found
+    }
+
+    /** Two running threads; t2 started later, so it sorts first. */
+    function twoRunning(): Harness {
+      const harness = setup([thread('t1', { status: 'running' }), thread('t2')])
+      const { store, state, view, flush } = harness
+      // Attached, so focus() behaves as it does on screen.
+      document.body.replaceChildren(view.body)
+      state.shown = true
+      state.clock = 1_000_000
+      store.emit('thread_status_changed', 't1', 'running')
+      state.clock = 1_001_000
+      store.setState({
+        threads: [thread('t1', { status: 'running' }), thread('t2', { status: 'running' })],
+      })
+      store.emit('thread_status_changed', 't2', 'running')
+      view.show()
+      flush()
+      return harness
+    }
+
+    it('keeps an untouched row and its group as the same nodes', () => {
+      const { store, view, flush } = twoRunning()
+      const t2 = rowNode(view, 'thread:t2')
+      const section = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(section)
+
+      store.emit('agent_activity', 't1', 'Running tests…')
+      flush()
+
+      assert.ok(rowNode(view, 'thread:t2') === t2, 'an unchanged row must not be rebuilt')
+      assert.ok(
+        view.body.querySelector('.activity-group[data-group="working"]') === section,
+        'the group must keep its section',
+      )
+      assert.match(rowNode(view, 'thread:t1').textContent, /Running tests/)
+    })
+
+    it('keeps focus on an untouched row while another row changes', () => {
+      const { store, view, flush } = twoRunning()
+      const opener = rowNode(view, 'thread:t2').querySelector<HTMLButtonElement>(
+        '.activity-row-open',
+      )
+      assert.ok(opener)
+      opener.focus()
+      assert.ok(document.activeElement === opener, 'focus must stay on the untouched row')
+
+      store.emit('agent_activity', 't1', 'Reading files…')
+      flush()
+
+      assert.ok(document.activeElement === opener, 'focus must stay on the untouched row')
+    })
+
+    it('rebuilds a row when its selection changes', () => {
+      const { view } = twoRunning()
+      const t1 = rowNode(view, 'thread:t1')
+      const before = t1.hasAttribute('data-selected')
+      t1.querySelector<HTMLButtonElement>('.activity-row-open')?.click()
+      const after = rowNode(view, 'thread:t1')
+      assert.notEqual(before, after.hasAttribute('data-selected'))
+    })
+
+    it('clears cached row descendants when a group empties but another remains', () => {
+      const { store, view, state, flush } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      state.clock = 1_002_000
+      store.setState({ threads: [thread('t1'), thread('t2')] })
+      store.emit('thread_status_changed', 't1', 'idle')
+      store.emit('thread_status_changed', 't2', 'idle')
+      flush()
+      assert.equal(view.body.contains(working), false)
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      assert.equal(rowCount(view), 2, 'finished runs remain in the recent group')
+    })
+
+    it('clears cached row descendants when every group empties', () => {
+      const { store, view, flush } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      store.setState({ threads: [] })
+      store.emit('threads_changed')
+      flush()
+      assert.equal(rowCount(view), 0)
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      assert.ok(view.body.querySelector('.activity-empty'))
+    })
+
+    it('clears cached row descendants on hide and rebuilds them on show', () => {
+      const { view, state } = twoRunning()
+      const working = view.body.querySelector('.activity-group[data-group="working"]')
+      assert.ok(working)
+      state.shown = false
+      view.hide()
+      assert.equal(working.querySelectorAll('.activity-row').length, 0)
+      state.shown = true
+      view.show()
+      assert.equal(rowCount(view), 2)
+      assert.equal(working.querySelectorAll('.activity-row').length, 2)
+    })
+
+    it('drops a row that leaves the list and forgets it', () => {
+      const { store, view, state, flush } = twoRunning()
+      state.clock = 1_002_000
+      store.setState({ threads: [thread('t1', { status: 'running' }), thread('t2')] })
+      store.emit('thread_status_changed', 't2', 'idle')
+      flush()
+      assert.equal(
+        view.body.querySelector('.activity-group[data-group="working"] [data-row-key="thread:t2"]'),
+        null,
+      )
+      assert.ok(
+        view.body.querySelector('.activity-group[data-group="recent"] [data-row-key="thread:t2"]'),
+        'the finished run is listed under Recently finished',
+      )
+    })
   })
 })
