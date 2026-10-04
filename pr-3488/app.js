@@ -20793,6 +20793,27 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
+// src/shared/file-bytes.ts
+function fileExtension(name) {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot).toLowerCase();
+}
+function formatByteSize(bytes) {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+}
+var init_file_bytes = __esm({
+  "src/shared/file-bytes.ts"() {
+  }
+});
+
 // packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
@@ -20806,6 +20827,232 @@ var init_errors3 = __esm({
 var init_errors4 = __esm({
   "src/shared/errors.ts"() {
     init_errors3();
+  }
+});
+
+// src/renderer/views/confirm-dialog.ts
+function mountConfirmDialog() {
+  document.getElementById("confirm-dialog")?.remove();
+  showConfirmDialogImpl = null;
+  const messageEl = el("h3", { class: "confirm-dialog-message" });
+  const detailEl = el("p", { class: "confirm-dialog-detail" });
+  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
+  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
+  document.body.append(dialog2);
+  const queue = [];
+  let active2 = null;
+  let confirming = false;
+  function finish(confirmed) {
+    if (!active2) return;
+    const resolve = active2.resolve;
+    active2 = null;
+    confirming = false;
+    dialog2.close();
+    resolve(confirmed);
+    if (queue.length > 0) {
+      active2 = queue.shift() ?? null;
+      renderActive();
+    }
+  }
+  function renderActive() {
+    if (!active2) return;
+    messageEl.textContent = active2.message;
+    if (active2.detail) {
+      detailEl.replaceChildren(active2.detail);
+      detailEl.hidden = false;
+    } else {
+      detailEl.textContent = "";
+      detailEl.hidden = true;
+    }
+    const cancelLabel = active2.cancelLabel ?? "Cancel";
+    const confirmLabel = active2.confirmLabel ?? "OK";
+    const cancelBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
+      cancelLabel
+    );
+    const confirmBtn = el(
+      "button",
+      {
+        type: "button",
+        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
+      },
+      confirmLabel
+    );
+    cancelBtn.addEventListener("click", () => {
+      finish(false);
+    });
+    async function confirmActive() {
+      if (!active2 || confirming) return;
+      const request = active2;
+      if (!request.onConfirm) {
+        finish(true);
+        return;
+      }
+      confirming = true;
+      cancelBtn.disabled = true;
+      confirmBtn.disabled = true;
+      confirmBtn.setAttribute("aria-busy", "true");
+      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
+      try {
+        await request.onConfirm((label) => {
+          if (active2 === request) confirmBtn.textContent = label;
+        });
+        if (active2 === request) finish(true);
+      } catch (error62) {
+        if (active2 !== request) return;
+        const reject = request.reject;
+        active2 = null;
+        confirming = false;
+        dialog2.close();
+        reject(error62);
+        if (queue.length > 0) {
+          active2 = queue.shift() ?? null;
+          renderActive();
+        }
+      }
+    }
+    confirmBtn.addEventListener("click", () => {
+      void confirmActive();
+    });
+    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
+    dialog2.showModal();
+    confirmBtn.focus();
+  }
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (confirming) return;
+    finish(false);
+  });
+  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
+    const queued = { ...req, resolve, reject };
+    if (active2) queue.push(queued);
+    else {
+      active2 = queued;
+      renderActive();
+    }
+  });
+}
+function showConfirmDialog(req) {
+  if (!showConfirmDialogImpl) return Promise.resolve(false);
+  return showConfirmDialogImpl(req);
+}
+var showConfirmDialogImpl;
+var init_confirm_dialog = __esm({
+  "src/renderer/views/confirm-dialog.ts"() {
+    init_helpers();
+    init_ui();
+    showConfirmDialogImpl = null;
+  }
+});
+
+// src/renderer/views/storage-maintenance-panel.ts
+function createStorageMaintenancePanel(api2) {
+  const element = el("fieldset", { id: "storage-maintenance" });
+  element.innerHTML = `
+    <legend>Saved runs and build data</legend>
+    <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
+    <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
+    <div class="settings-action-row"><span>Temporary build data</span><span id="storage-builds-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-builds-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
+    <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
+    <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const status = qsRequired(element, "#storage-maintenance-status");
+  const enabled = qsRequired(element, "#storage-expiry-enabled");
+  const days = qsRequired(element, "#storage-expiry-days");
+  let state = null;
+  let working = false;
+  let generation = 0;
+  function controls() {
+    enabled.disabled = working || !state;
+    days.disabled = working || !state;
+    for (const area of ["runs", "builds"]) {
+      const summary = state?.areas.find((entry) => entry.area === area);
+      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+    }
+  }
+  async function refresh() {
+    const token = ++generation;
+    controls();
+    try {
+      const next = await api2.storage.maintenance();
+      if (token !== generation) return;
+      state = next;
+      enabled.checked = next.retention.enabled;
+      if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
+        days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
+      }
+      days.value = String(next.retention.days);
+      for (const summary of next.areas)
+        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+    } catch (error62) {
+      if (token === generation) status.textContent = errorMessage(error62);
+    } finally {
+      if (token === generation) controls();
+    }
+  }
+  async function save() {
+    working = true;
+    generation++;
+    controls();
+    try {
+      const retention = { enabled: enabled.checked, days: Number(days.value) };
+      await api2.storage.retention(retention);
+      if (state) state.retention = retention;
+      status.textContent = "Automatic cleanup updated.";
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+      await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function clean(area) {
+    const confirmed = await showConfirmDialog({
+      message: area === "runs" ? "Remove saved container runs?" : "Remove temporary build data?",
+      detail: area === "runs" ? "Completed run snapshots, outputs and saved state will be permanently removed. Incomplete runs, teardown failures and active runs are kept. Chats remain." : "Apple build outputs and package caches will be removed and recreated on the next build. Active builds and chats are kept.",
+      confirmLabel: "Clean up",
+      danger: true
+    });
+    if (!confirmed) return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api2.storage.cleanup(area);
+      await refresh();
+      status.textContent = `Removed ${String(result.removed)} item${result.removed === 1 ? "" : "s"} (${formatByteSize(result.bytes)}).${result.skipped ? ` Kept ${String(result.skipped)} active, incomplete or protected items.` : ""}`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  enabled.addEventListener("change", () => {
+    void save();
+  });
+  days.addEventListener("change", () => {
+    void save();
+  });
+  for (const area of ["runs", "builds"])
+    qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
+      void clean(area);
+    });
+  controls();
+  return { element, refresh };
+}
+var init_storage_maintenance_panel = __esm({
+  "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_file_bytes();
+    init_errors4();
+    init_helpers();
+    init_confirm_dialog();
   }
 });
 
@@ -22826,7 +23073,8 @@ function acpModelDisplayLabel(model, agents) {
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent = agents.find((candidate) => canonicalAcpAgentId(candidate.id) === selectedId);
   const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId);
-  const title = agent?.title ?? retired?.title ?? selection2.id;
+  const known = findAcpCatalogEntry(selectedId);
+  const title = agent?.title ?? retired?.title ?? known?.title ?? selection2.id;
   if (!selection2.model) return title;
   const choice = agent?.availableModels?.find((m2) => m2.value === selection2.model);
   return `${title} \u2014 ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection2.model)}`;
@@ -23047,6 +23295,7 @@ var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
     init_service_tier();
+    init_model_selection();
   }
 });
 
@@ -34069,12 +34318,12 @@ function gitBranchIcon(className = DEFAULT) {
     className
   );
 }
-function gitPullRequestIcon(className = DEFAULT) {
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
   return outlineIcon(
     "git-pull-request",
     [
       "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
       "M13 6h3a2 2 0 0 1 2 2v7",
       "M6 9v12"
     ],
@@ -34149,27 +34398,6 @@ var init_icons = __esm({
   "src/renderer/dom/icons.ts"() {
     init_outline_icon();
     DEFAULT = "ui-icon";
-  }
-});
-
-// src/shared/file-bytes.ts
-function fileExtension(name) {
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? "" : name.slice(dot).toLowerCase();
-}
-function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
-}
-var init_file_bytes = __esm({
-  "src/shared/file-bytes.ts"() {
   }
 });
 
@@ -34280,122 +34508,6 @@ var init_attachment_preview = __esm({
     currentCleanup = null;
     returnFocus = null;
     activeToken = 0;
-  }
-});
-
-// src/renderer/views/confirm-dialog.ts
-function mountConfirmDialog() {
-  document.getElementById("confirm-dialog")?.remove();
-  showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
-  const detailEl = el("p", { class: "confirm-dialog-detail" });
-  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
-  document.body.append(dialog2);
-  const queue = [];
-  let active2 = null;
-  let confirming = false;
-  function finish(confirmed) {
-    if (!active2) return;
-    const resolve = active2.resolve;
-    active2 = null;
-    confirming = false;
-    dialog2.close();
-    resolve(confirmed);
-    if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
-      renderActive();
-    }
-  }
-  function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.replaceChildren(active2.detail);
-      detailEl.hidden = false;
-    } else {
-      detailEl.textContent = "";
-      detailEl.hidden = true;
-    }
-    const cancelLabel = active2.cancelLabel ?? "Cancel";
-    const confirmLabel = active2.confirmLabel ?? "OK";
-    const cancelBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
-      cancelLabel
-    );
-    const confirmBtn = el(
-      "button",
-      {
-        type: "button",
-        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
-      },
-      confirmLabel
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(false);
-    });
-    async function confirmActive() {
-      if (!active2 || confirming) return;
-      const request = active2;
-      if (!request.onConfirm) {
-        finish(true);
-        return;
-      }
-      confirming = true;
-      cancelBtn.disabled = true;
-      confirmBtn.disabled = true;
-      confirmBtn.setAttribute("aria-busy", "true");
-      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
-      try {
-        await request.onConfirm((label) => {
-          if (active2 === request) confirmBtn.textContent = label;
-        });
-        if (active2 === request) finish(true);
-      } catch (error62) {
-        if (active2 !== request) return;
-        const reject = request.reject;
-        active2 = null;
-        confirming = false;
-        dialog2.close();
-        reject(error62);
-        if (queue.length > 0) {
-          active2 = queue.shift() ?? null;
-          renderActive();
-        }
-      }
-    }
-    confirmBtn.addEventListener("click", () => {
-      void confirmActive();
-    });
-    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
-    dialog2.showModal();
-    confirmBtn.focus();
-  }
-  dialog2.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    if (confirming) return;
-    finish(false);
-  });
-  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
-    const queued = { ...req, resolve, reject };
-    if (active2) queue.push(queued);
-    else {
-      active2 = queued;
-      renderActive();
-    }
-  });
-}
-function showConfirmDialog(req) {
-  if (!showConfirmDialogImpl) return Promise.resolve(false);
-  return showConfirmDialogImpl(req);
-}
-var showConfirmDialogImpl;
-var init_confirm_dialog = __esm({
-  "src/renderer/views/confirm-dialog.ts"() {
-    init_helpers();
-    init_ui();
-    showConfirmDialogImpl = null;
   }
 });
 
@@ -42347,6 +42459,17 @@ var init_inline_status = __esm({
   }
 });
 
+// src/shared/acp-retention.ts
+var ACP_RETENTION_NOTICE;
+var init_acp_retention = __esm({
+  "src/shared/acp-retention.ts"() {
+    ACP_RETENTION_NOTICE = {
+      label: "ZDR not verified",
+      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
+    };
+  }
+});
+
 // packages/llm/src/chatgpt-plan.ts
 function chatGptPlanModelValue(clientId, model) {
   return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
@@ -42805,13 +42928,19 @@ function acpAgentOptions(agents) {
         const versioned = acpModelVersionName(model.description);
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
         options.push({
+          retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} \u2014 ${hint}` : label,
           group
         });
       }
     } else {
-      options.push({ value: acpModelValue(agent.id), label: agent.title, group });
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE
+      });
     }
   }
   return options;
@@ -43089,6 +43218,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
       const configuredButUnlisted = configuredAgent?.enabled === true;
       const staleModel = selection2?.model ? canonicalModelLabel(selection2.model) : "agent default";
       const stale = {
+        retention: ACP_RETENTION_NOTICE,
         value: current,
         label: sshWorkspace ? `${modelDisplayLabel(current)} (unavailable on SSH)` : configuredButUnlisted ? `${configuredAgent.title} \u2014 ${staleModel} (not currently advertised)` : configuredAgent ? `${configuredAgent.title} (disabled)` : `${modelDisplayLabel(current)} (not configured)`,
         group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP
@@ -43204,6 +43334,7 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_acp_retention();
     init_chatgpt_plan();
     init_model_catalog();
     init_local_model_catalog();
@@ -43395,7 +43526,8 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     },
     "$"
   );
-  trigger.append(labelEl, triggerCost, chevron);
+  const triggerRetention = el("span", { class: "ui-badge model-picker-retention", hidden: true });
+  trigger.append(labelEl, triggerRetention, triggerCost, chevron);
   const menu = el("div", {
     class: "model-picker-menu",
     hidden: "",
@@ -43722,6 +43854,13 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
           title: opt.label
         },
         el("span", { class: "model-picker-option-label" }, opt.label),
+        ...opt.retention ? [
+          el(
+            "span",
+            { class: "ui-badge model-picker-retention", title: opt.retention.detail },
+            opt.retention.label
+          )
+        ] : [],
         ...opt.coverage ? [
           el(
             "span",
@@ -43786,6 +43925,9 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     labelEl.textContent = label;
     labelEl.title = current;
     triggerCost.hidden = match?.coverage !== "paid";
+    triggerRetention.hidden = !match?.retention;
+    triggerRetention.textContent = match?.retention?.label ?? "";
+    triggerRetention.title = match?.retention?.detail ?? "";
   }
   async function refresh() {
     const generation = ++refreshGeneration;
@@ -45315,6 +45457,27 @@ var init_custom_providers_section = __esm({
 });
 
 // src/renderer/views/setup/acp-agents-section.ts
+function retentionNotice(agent) {
+  const known = agent ? findAcpCatalogEntry(agent.id) : void 0;
+  const source = agent && known && launchesAcpCatalogEntry(agent, known) ? AGENT_DATA_POLICY_URLS[known.id] : void 0;
+  return el(
+    "div",
+    { class: "acp-retention-notice" },
+    el("span", { class: "ui-badge provider-privacy-badge unknown" }, ACP_RETENTION_NOTICE.label),
+    el("p", { class: "field-hint" }, ACP_RETENTION_NOTICE.detail),
+    ...source ? [
+      el(
+        "p",
+        { class: "field-hint" },
+        el(
+          "a",
+          { href: source, target: "_blank", rel: "noopener noreferrer" },
+          "Agent data policy"
+        )
+      )
+    ] : []
+  );
+}
 function parseEnvText(text2) {
   const env = {};
   for (const line of text2.split("\n")) {
@@ -45566,15 +45729,20 @@ function createAcpAgentsSection(api2, opts = {}) {
     const modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: (current) => {
         const pickerOptions = [
-          { value: "", label: DEFAULT_MODEL_LABEL },
+          { value: "", label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
           ...detectedModels.map((choice) => ({
             value: choice.value,
             label: acpModelChoiceLabel(choice),
-            group: "Detected models"
+            group: "Detected models",
+            retention: ACP_RETENTION_NOTICE
           }))
         ];
         if (current && !detectedModels.some((choice) => choice.value === current)) {
-          pickerOptions.push({ value: current, label: `${current} (saved)` });
+          pickerOptions.push({
+            value: current,
+            label: `${current} (saved)`,
+            retention: ACP_RETENTION_NOTICE
+          });
         }
         return Promise.resolve(pickerOptions);
       },
@@ -45661,6 +45829,7 @@ function createAcpAgentsSection(api2, opts = {}) {
     const fields = el(
       "div",
       { class: "acp-agent-fields" },
+      retentionNotice(options.initial),
       el("label", {}, "Id", idInput),
       el("label", {}, "Title", titleInput),
       el("label", {}, "Command", commandInput),
@@ -45711,6 +45880,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         )
       );
     }
+    form.append(retentionNotice(known));
     const add2 = el("button", { type: "button", class: "provider-save" }, "Add to my agents");
     add2.addEventListener("click", () => {
       selected = known.id;
@@ -45846,15 +46016,22 @@ function createAcpAgentsSection(api2, opts = {}) {
   }
   return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select };
 }
-var ID_RE;
+var AGENT_DATA_POLICY_URLS, ID_RE;
 var init_acp_agents_section = __esm({
   "src/renderer/views/setup/acp-agents-section.ts"() {
+    init_acp_retention();
     init_acp();
     init_acp_known_agents();
     init_helpers();
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    AGENT_DATA_POLICY_URLS = {
+      "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      gemini: "https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md",
+      "qwen-code": "https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md"
+    };
     ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });
@@ -51877,6 +52054,44 @@ var init_usage_section = __esm({
   }
 });
 
+// src/shared/release-channel.mts
+function getReleaseChannel(version2) {
+  if (stableVersion.test(version2)) return "stable";
+  if (betaVersion.test(version2)) return "beta";
+  throw new Error(
+    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
+  );
+}
+var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
+var init_release_channel = __esm({
+  "src/shared/release-channel.mts"() {
+    RELEASE_CHANNELS = ["stable", "beta"];
+    numericIdentifier = "(?:0|[1-9]\\d*)";
+    stableVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
+    );
+    betaVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
+    );
+  }
+});
+
+// src/shared/update-channel-choice.ts
+function chosenUpdateChannel(saved, installedVersion) {
+  if (typeof saved === "string" && isReleaseChannel(saved)) {
+    return { channel: saved, remember: false };
+  }
+  return { channel: getReleaseChannel(installedVersion), remember: true };
+}
+var isReleaseChannel;
+var init_update_channel_choice = __esm({
+  "src/shared/update-channel-choice.ts"() {
+    init_member_of2();
+    init_release_channel();
+    isReleaseChannel = memberOf(RELEASE_CHANNELS);
+  }
+});
+
 // src/renderer/views/setup/about-section.ts
 function describeInclusion(component) {
   if (component.partOf) return `Compiled into ${component.partOf}`;
@@ -51951,6 +52166,67 @@ function createAboutSection(api2) {
     ),
     uiActions(openButton("View licence", "copse"), { align: "start" })
   );
+  const channelSelect = el(
+    "select",
+    { name: "updateChannel" },
+    el("option", { value: "beta" }, "Beta"),
+    el("option", { value: "stable" }, "Stable")
+  );
+  const channelStatus = el("p", {
+    class: "about-update-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  const updates = el(
+    "fieldset",
+    { class: "about-updates" },
+    el("legend", {}, "Updates"),
+    el(
+      "label",
+      { class: "about-update-channel" },
+      "Update channel",
+      channelSelect,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
+      )
+    ),
+    channelStatus
+  );
+  let savedChannel = "beta";
+  let installedChannel = "beta";
+  channelSelect.addEventListener("change", () => {
+    const value = channelSelect.value;
+    if (!isReleaseChannel(value)) return;
+    channelSelect.disabled = true;
+    void api2.settings.set("updateChannel", value).then(
+      () => {
+        savedChannel = value;
+        setInlineStatus(
+          channelStatus,
+          "ok",
+          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
+        );
+      },
+      (err2) => {
+        channelSelect.value = savedChannel;
+        setInlineStatus(channelStatus, "error", errorMessage(err2));
+      }
+    ).finally(() => {
+      channelSelect.disabled = false;
+    });
+  });
+  const showChannel = async (version2) => {
+    let channel = "beta";
+    try {
+      installedChannel = getReleaseChannel(version2);
+      channel = chosenUpdateChannel(await api2.settings.get("updateChannel"), version2).channel;
+    } catch {
+    }
+    savedChannel = channel;
+    channelSelect.value = channel;
+  };
   const countEl = el("span", {}, "the open-source components");
   const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
   const thirdParty = el(
@@ -52008,6 +52284,7 @@ function createAboutSection(api2) {
     loaded ??= api2.about.getInfo().then(
       (info) => {
         versionEl.textContent = info.version;
+        void showChannel(info.version);
         if (info.report) {
           render(info.report);
         } else {
@@ -52023,14 +52300,17 @@ function createAboutSection(api2) {
     );
     return loaded;
   };
-  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
   return { root, refresh };
 }
 var SHIPPED_AS_LABEL;
 var init_about_section = __esm({
   "src/renderer/views/setup/about-section.ts"() {
     init_errors4();
+    init_update_channel_choice();
+    init_release_channel();
     init_helpers();
+    init_inline_status();
     init_ui();
     SHIPPED_AS_LABEL = {
       bundled: "compiled into Copse",
@@ -55199,6 +55479,31 @@ function collectSubagentUsage(toolCalls, totals) {
     }
   }
 }
+function subagentRunLabel(session) {
+  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
+  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine) return kind;
+  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  return `${kind} \xB7 ${prompt}`;
+}
+function collectSubagentRuns(toolCalls, runs) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session || session.kind === "container") continue;
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
+    });
+    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
+  }
+}
+function listSubagentRuns(messages) {
+  const runs = [];
+  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
+  return runs;
+}
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
@@ -55292,11 +55597,20 @@ function formatFooterUsageDetail(display, opts) {
   const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
   return `Usage: ${parts.join(" \xB7 ")}`;
 }
+var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
+    SUBAGENT_KIND_LABEL = {
+      explore: "Explore",
+      investigate_ci: "Investigate CI",
+      delegate: "Delegate",
+      custom: "Custom agent",
+      container: "Container run"
+    };
+    RUN_PROMPT_MAX_CHARS = 36;
   }
 });
 
@@ -55505,12 +55819,22 @@ function deleteThread(store2, id) {
   store2.emit("threads_changed");
   if (activeThreadId === id) store2.emit("panel_changed");
 }
-function archiveThread(store2, id) {
+function archiveThread(store2, id, persisted) {
   const { threads, activeThreadId } = store2.getState();
   const target = threads.find((t2) => t2.id === id);
   if (!target || isThreadArchived(target)) return;
-  const now = Date.now();
-  const updated = threads.map((t2) => t2.id !== id ? t2 : { ...t2, archivedAt: now, updatedAt: now });
+  const now = persisted?.archivedAt ?? Date.now();
+  const updated = threads.map((t2) => {
+    if (t2.id !== id) return t2;
+    const archived = { ...t2, archivedAt: now, updatedAt: now };
+    if (persisted) {
+      if (persisted.worktree) {
+        archived.worktree = persisted.worktree;
+        archived.gitBranch = persisted.worktree.branch;
+      } else delete archived.worktree;
+    }
+    return archived;
+  });
   const visible = updated.filter((t2) => !isThreadArchived(t2));
   if (visible.length === 0) {
     store2.setState({ threads: updated, activeThreadId: null });
@@ -58814,6 +59138,14 @@ function getSidebarThreads(store2, projectId) {
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
 }
+function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => thread.id === threadId ? { ...thread, archivedAt } : thread)
+  );
+}
 function applyCachedSidebarPrRefs(projectId, refs) {
   const cached2 = threadCache.get(projectId);
   if (!cached2) return false;
@@ -60922,7 +61254,7 @@ function mountSettingsDialog(store2, api2) {
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue;
+      if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
       const btn = document.createElement("button");
@@ -61016,7 +61348,10 @@ function mountSettingsDialog(store2, api2) {
           void refreshSources();
         }
         if (id === "customise" || id === "experimental") void refreshPlugins();
-        if (id === "storage") void refreshWorktrees();
+        if (id === "storage") {
+          void refreshWorktrees();
+          void storageMaintenance.refresh();
+        }
         if (id === "mcp") {
           void refreshMcpServers();
           void refreshDeclaredMcpServers();
@@ -62943,6 +63278,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       button.disabled = false;
     });
   });
+  const storageMaintenance = createStorageMaintenancePanel(api2);
+  qsRequired(overlay, '.settings-section[data-section="storage"]').append(
+    storageMaintenance.element
+  );
   const storageProjectSelect = qsRequired(overlay, "#storage-project-select");
   storageProjectSelect.addEventListener("change", () => {
     storageProjectId = storageProjectSelect.value || null;
@@ -63003,7 +63342,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       void refreshSources();
       void revealPluginDetail();
     }
-    if (openedSection === "storage") void refreshWorktrees("", true);
+    if (openedSection === "storage") {
+      void refreshWorktrees("", true);
+      void storageMaintenance.refresh();
+    }
     searchInput.focus();
     void (async () => {
       failedRefreshStages.length = 0;
@@ -63304,6 +63646,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
 var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
+    init_storage_maintenance_panel();
     init_errors4();
     init_humanize_identifier();
     init_auto_approval();
@@ -63688,6 +64031,10 @@ function clearMaximizedOnClose(store2) {
   if (!store2.getState().rightPanelMaximized) return;
   store2.setState({ rightPanelMaximized: false });
   store2.emit("right_panel_maximized_changed");
+}
+function toggleProjectsPane(store2) {
+  store2.setState({ projectsPaneOpen: !store2.getState().projectsPaneOpen });
+  store2.emit("projects_pane_changed");
 }
 function toggleFilesPane(store2) {
   const open2 = !store2.getState().filesPaneOpen;
@@ -67300,6 +67647,7 @@ function createDemoApi(scenario, options = {}) {
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,
@@ -67563,6 +67911,15 @@ function createDemoApi(scenario, options = {}) {
       reopenArtefact: () => resolved2(false)
     },
     storage: {
+      maintenance: () => resolved2({
+        retention: { enabled: true, days: 30 },
+        areas: [
+          { area: "runs", bytes: 0, entries: 0, busy: false },
+          { area: "builds", bytes: 0, entries: 0, busy: false }
+        ]
+      }),
+      cleanup: () => resolved2({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key) => resolved2(storage.get(key)),
       set: (key, value) => {
         storage.set(key, value);
@@ -67580,6 +67937,12 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now();
+        const thread = threads.find((candidate) => candidate.id === threadId);
+        if (thread) thread.archivedAt = archivedAt;
+        return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
+      },
       loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
@@ -67714,6 +68077,7 @@ function createDemoApi(scenario, options = {}) {
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,
@@ -68727,6 +69091,7 @@ function createStore(initial) {
     filesPaneOpen: false,
     rightPanelMode: "explorer",
     rightPanelMaximized: false,
+    projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
     theme: "dark",
     themePreference: DEFAULT_THEME_PREFERENCE,
@@ -68768,6 +69133,7 @@ function createStore(initial) {
     files_pane_changed: /* @__PURE__ */ new Set(),
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
+    projects_pane_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     browser_url_requested: /* @__PURE__ */ new Set(),
@@ -70376,6 +70742,124 @@ var init_titlebar_compact = __esm({
   }
 });
 
+// src/renderer/views/keyboard-shortcuts-dialog.ts
+function isMacPlatform() {
+  const platform = navigator.platform || navigator.userAgent || "";
+  return /mac/i.test(platform);
+}
+function keyLabel(token, isMac2) {
+  switch (token) {
+    case "Mod":
+      return isMac2 ? "\u2318" : "Ctrl";
+    case "Shift":
+      return isMac2 ? "\u21E7" : "Shift";
+    case "Alt":
+      return isMac2 ? "\u2325" : "Alt";
+    default:
+      return token;
+  }
+}
+function openKeyboardShortcutsDialog() {
+  if (!dialogEl3 || dialogEl3.open) return;
+  dialogEl3.showModal();
+}
+function closeKeyboardShortcutsDialog() {
+  if (dialogEl3?.open) dialogEl3.close();
+}
+function isKeyboardShortcutsDialogOpen() {
+  return !!dialogEl3?.open;
+}
+function mountKeyboardShortcutsDialog() {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = "keyboard-shortcuts-dialog";
+  dialog2.className = "keyboard-shortcuts-overlay";
+  const isMac2 = isMacPlatform();
+  const grid = el("div", { class: "keyboard-shortcuts-grid" });
+  for (const section of SECTIONS) {
+    const group = el("div", { class: "keyboard-shortcuts-group" });
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
+    for (const shortcut of section.shortcuts) {
+      const keys = el("span", { class: "keyboard-shortcuts-keys" });
+      shortcut.keys.forEach((token) => {
+        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
+      });
+      group.append(
+        el(
+          "div",
+          { class: "keyboard-shortcuts-row" },
+          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
+          keys
+        )
+      );
+    }
+    grid.append(group);
+  }
+  const shell3 = el(
+    "div",
+    { class: "keyboard-shortcuts-shell" },
+    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
+    grid
+  );
+  clear(dialog2);
+  dialog2.append(shell3);
+  document.body.append(dialog2);
+  dialogEl3 = dialog2;
+  dialog2.addEventListener("mousedown", (e3) => {
+    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
+  });
+}
+var SECTIONS, dialogEl3;
+var init_keyboard_shortcuts_dialog = __esm({
+  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
+    init_helpers();
+    SECTIONS = [
+      {
+        title: "General",
+        shortcuts: [
+          { label: "New thread", keys: ["Mod", "N"] },
+          { label: "Open folder\u2026", keys: ["Mod", "O"] },
+          { label: "Settings", keys: ["Mod", ","] },
+          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
+          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
+          { label: "Zoom interface in", keys: ["Mod", "="] },
+          { label: "Zoom interface out", keys: ["Mod", "-"] },
+          { label: "Reset interface zoom", keys: ["Mod", "0"] },
+          { label: "Stop agent / close overlay", keys: ["Esc"] }
+        ]
+      },
+      {
+        title: "Navigation",
+        shortcuts: [
+          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
+          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
+          { label: "Find in conversation", keys: ["Mod", "F"] },
+          { label: "Next thread", keys: ["Ctrl", "Tab"] },
+          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
+          { label: "Close thread", keys: ["Mod", "W"] }
+        ]
+      },
+      {
+        title: "Panels",
+        shortcuts: [
+          { label: "Toggle sidebar", keys: ["Mod", "B"] },
+          { label: "Toggle panel", keys: ["Mod", "J"] },
+          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
+          { label: "Terminal", keys: ["Mod", "`"] },
+          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Browser", keys: ["Mod", "Shift", "B"] },
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
+        ]
+      }
+    ];
+    dialogEl3 = null;
+  }
+});
+
 // src/renderer/views/titlebar.ts
 function basename2(p2) {
   return p2.split("/").pop() ?? p2;
@@ -70386,7 +70870,31 @@ function mountTitlebar(root, store2, api2) {
   const workspaceName = el("span", { class: "workspace-name" }, "No folder");
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
-  leftCluster.append(workspaceName, sshTarget, workspaceBranch);
+  const sidebarBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost titlebar-sidebar-btn",
+      "aria-label": "Toggle sidebar"
+    },
+    outlineIcon(
+      "sidebar",
+      ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z", "M9 4v16"],
+      "titlebar-btn-icon"
+    )
+  );
+  sidebarBtn.addEventListener("click", () => {
+    toggleProjectsPane(store2);
+  });
+  function syncSidebar() {
+    const open2 = store2.getState().projectsPaneOpen;
+    document.getElementById("body")?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open2);
+    sidebarBtn.setAttribute("aria-pressed", String(open2));
+    const chord = isMacPlatform() ? "\u2318B" : "Ctrl+B";
+    setTooltip(sidebarBtn, `${open2 ? "Hide" : "Show"} sidebar (${chord})`);
+  }
+  syncSidebar();
+  leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
   const dragRegion = el("div", { class: "titlebar-drag" });
   const panelControls = mountPanelModeControls(store2, api2, {
     alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"])
@@ -70494,6 +71002,7 @@ function mountTitlebar(root, store2, api2) {
   syncName();
   syncBranch();
   const unsubs = [
+    store2.on("projects_pane_changed", syncSidebar),
     store2.on("workspace_changed", () => {
       syncName();
       syncBranchNow();
@@ -70527,16 +71036,21 @@ function mountTitlebar(root, store2, api2) {
     });
   };
 }
+var PROJECTS_COLLAPSED_CLASS;
 var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
     init_helpers();
+    init_outline_icon();
     init_tooltip();
     init_open_in_editor();
     init_panel_mode_controls();
     init_active_thread_owner();
     init_titlebar_compact();
+    init_panels();
+    init_keyboard_shortcuts_dialog();
+    PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
 
@@ -70561,6 +71075,16 @@ var RENAME_BLUR_GRACE_MS;
 var init_rename_blur = __esm({
   "src/renderer/dom/rename-blur.ts"() {
     RENAME_BLUR_GRACE_MS = 200;
+  }
+});
+
+// src/renderer/dom/pr-status.ts
+function prHasMergeConflicts(pr2) {
+  const status = pr2.mergeStateStatus?.toUpperCase();
+  return pr2.mergeable === "CONFLICTING" || status === "DIRTY" || status === "CONFLICTING";
+}
+var init_pr_status = __esm({
+  "src/renderer/dom/pr-status.ts"() {
   }
 });
 
@@ -71034,6 +71558,29 @@ var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/dom/patch-children.ts
+function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
+  let cursor = parent.firstElementChild;
+  for (const node2 of desired) {
+    if (node2 === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(node2, cursor);
+  }
+}
+var init_patch_children = __esm({
+  "src/renderer/dom/patch-children.ts"() {
   }
 });
 
@@ -71794,6 +72341,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     role: "status",
     "aria-live": "polite"
   });
+  const rowCache = /* @__PURE__ */ new Map();
+  const groupCache = /* @__PURE__ */ new Map();
+  const quiet = el("p", { class: "activity-quiet" }, "Nothing needs you right now.");
   let renderScheduled = false;
   let cancelRender = null;
   let lastRenderAt = Number.NEGATIVE_INFINITY;
@@ -72022,25 +72572,61 @@ function createActivityView(api2, store2, sources3, deps, host) {
       opener
     );
   }
+  function rowSignature(row2, at3) {
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    return JSON.stringify([
+      row2.state,
+      row2.threadId,
+      row2.requestId,
+      row2.requestType,
+      row2.threadTitle,
+      row2.projectName,
+      row2.want,
+      row2.detail,
+      row2.since,
+      row2.key === selectedKey,
+      elapsed === null ? null : formatAge(elapsed),
+      rowLabel(row2, at3)
+    ]);
+  }
+  function cachedRow(row2, at3) {
+    const signature = rowSignature(row2, at3);
+    const hit = rowCache.get(row2.key);
+    if (hit?.signature === signature) return hit.node;
+    const node2 = rowElement(row2, at3);
+    rowCache.set(row2.key, { signature, node: node2 });
+    return node2;
+  }
   function groupElement(group, at3) {
-    const titleId = `activity-group-${group.id}`;
     const hidden = group.total - group.rows.length;
     const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
-    return el(
-      "section",
-      { class: "activity-group", "data-group": group.id },
-      el(
-        "h4",
-        { id: titleId, class: "activity-group-title" },
-        group.label,
-        el("span", { class: "activity-group-count" }, count)
-      ),
-      el(
-        "ul",
-        { class: "activity-rows", role: "list", "aria-labelledby": titleId },
-        ...group.rows.map((row2) => rowElement(row2, at3))
-      )
+    let entry = groupCache.get(group.id);
+    if (!entry) {
+      const titleId = `activity-group-${group.id}`;
+      const countNode = el("span", { class: "activity-group-count" }, count);
+      const rowsNode = el("ul", {
+        class: "activity-rows",
+        role: "list",
+        "aria-labelledby": titleId
+      });
+      entry = {
+        section: el(
+          "section",
+          { class: "activity-group", "data-group": group.id },
+          el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode),
+          rowsNode
+        ),
+        count: countNode,
+        rows: rowsNode
+      };
+      groupCache.set(group.id, entry);
+    }
+    if (entry.count.textContent !== count) entry.count.textContent = count;
+    patchChildren(
+      entry.rows,
+      group.rows.map((row2) => cachedRow(row2, at3))
     );
+    return entry.section;
   }
   function emptyState() {
     return el(
@@ -72159,9 +72745,14 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const workCount = working?.total ?? 0;
     summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
+    const populatedIds = new Set(populated.map((group) => group.id));
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren();
+    }
     if (populated.length === 0) {
       list.hidden = true;
       list.replaceChildren();
+      rowCache.clear();
       body.dataset["empty"] = "true";
       detail.hidden = false;
       detail.replaceChildren(emptyState());
@@ -72171,11 +72762,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
       list.hidden = false;
       delete body.dataset["empty"];
       const children = [];
-      if (!needsYou || needsYou.rows.length === 0) {
-        children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
-      }
+      if (!needsYou || needsYou.rows.length === 0) children.push(quiet);
       children.push(...populated.map((group) => groupElement(group, at3)));
-      list.replaceChildren(...children);
+      patchChildren(list, children);
+      const live = new Set(rows.map((row2) => row2.key));
+      for (const rowKey2 of rowCache.keys()) {
+        if (!live.has(rowKey2)) rowCache.delete(rowKey2);
+      }
       restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
@@ -72258,6 +72851,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     selectedIndex = 0;
     shownKey = null;
     status.textContent = "";
+    for (const entry of groupCache.values()) entry.rows.replaceChildren();
+    rowCache.clear();
   }
   function show2() {
     needsYouSignature = null;
@@ -72276,6 +72871,7 @@ var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LON
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_patch_children();
     init_icons();
     init_projects();
     init_activity_model();
@@ -73241,14 +73837,15 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup, ciFailing) {
-  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
-  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing, conflicts) {
+  const statusLabel4 = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const label = conflicts ? `${statusLabel4}; merge conflicts` : statusLabel4;
+  const icon = rollup.kind === "merged" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts);
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? " has-conflicts" : ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -73641,9 +74238,51 @@ function mountProjectsPane(root, store2, api2) {
       showToast("Forked into a new thread.");
     });
   }
-  function archiveProjectThread(projectId, threadId) {
-    if (projectId !== store2.getState().activeProjectId) return;
-    archiveThread(store2, threadId);
+  const archivingThreads = /* @__PURE__ */ new Set();
+  async function archiveProjectThread(projectId, threadId) {
+    if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
+    archivingThreads.add(threadId);
+    try {
+      await flushProjectThreads(api2, projectId, store2.getState().threads);
+      if (projectId !== store2.getState().activeProjectId) return;
+      let result = await api2.threads.archive(projectId, threadId, null);
+      let refreshed = false;
+      while (result.status === "blocked-dirty") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const shown = result.paths.slice(0, 10);
+        const remaining = result.paths.length - shown.length;
+        const confirmed = await showConfirmDialog({
+          message: `Discard uncommitted files and archive \u201C${title}\u201D?`,
+          detail: [
+            ...refreshed ? ["Files changed while confirmation was open. Review the current files again."] : [],
+            "The worktree will be removed. These changes and local files will be permanently discarded:",
+            ...shown,
+            ...remaining > 0 ? [`\u2026and ${String(remaining)} more`] : [],
+            "The chat history and committed work on its branch will be kept."
+          ].join("\n"),
+          confirmLabel: "Discard and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        refreshed = true;
+      }
+      if (result.status === "blocked-running") {
+        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+          variant: "error"
+        });
+        return;
+      }
+      if (projectId === store2.getState().activeProjectId) archiveThread(store2, threadId, result);
+      else {
+        archiveCachedSidebarThread(projectId, threadId, result.archivedAt);
+        render();
+      }
+    } catch (error62) {
+      showErrorToast("Could not archive chat", error62);
+    } finally {
+      archivingThreads.delete(threadId);
+    }
   }
   function cachedPrLifecycle(key) {
     return prLifecycleCache.get(key)?.state;
@@ -73667,9 +74306,11 @@ function mountProjectsPane(root, store2, api2) {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
         const previous = prLifecycleCache.get(key);
-        lifecycleChanged = previous?.state !== state;
+        const conflicts = state === "open" && details !== null && prHasMergeConflicts(details);
+        lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts;
         prLifecycleCache.set(key, {
           state,
+          conflicts,
           ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
           fetchedAt: Date.now()
         });
@@ -73686,6 +74327,7 @@ function mountProjectsPane(root, store2, api2) {
         const cached2 = prLifecycleCache.get(key);
         prLifecycleCache.set(key, {
           state: cached2?.state ?? "unknown",
+          ...cached2?.conflicts !== void 0 ? { conflicts: cached2.conflicts } : {},
           fetchedAt: Date.now()
         });
       }).finally(() => {
@@ -73699,6 +74341,12 @@ function mountProjectsPane(root, store2, api2) {
     return sidebarPrRefs(thread).some((ref) => {
       const entry = prLifecycleCache.get(githubPrKey(ref));
       return entry?.state === "open" && entry.checks === "failure";
+    });
+  }
+  function conflictsForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.conflicts === true;
     });
   }
   function rollupForThread(thread) {
@@ -74196,7 +74844,7 @@ function mountProjectsPane(root, store2, api2) {
             {
               label: "Archive",
               onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
+                void archiveProjectThread(project2.id, thread.id);
               }
             }
           ] : [],
@@ -74266,7 +74914,11 @@ function mountProjectsPane(root, store2, api2) {
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === "open" && ciFailingForThread(thread),
+            prRollup.kind === "open" && conflictsForThread(thread)
+          )
         );
       }
       if (thread.prRefs === void 0) {
@@ -74461,7 +75113,7 @@ function mountProjectsPane(root, store2, api2) {
           });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
-            const runRow = (thread) => {
+            const runRow2 = (thread) => {
               const index = runs.indexOf(thread);
               const timestamp = thread.automation?.triggeredAt;
               const when = timestamp ? new Date(timestamp).toLocaleString([], {
@@ -74474,11 +75126,11 @@ function mountProjectsPane(root, store2, api2) {
               });
             };
             if (showingAllRuns) {
-              for (const thread of runs) runRows.append(runRow(thread));
+              for (const thread of runs) runRows.append(runRow2(thread));
             } else {
               for (const entry of foldEntries) {
                 if (entry.kind === "run") {
-                  runRows.append(runRow(entry.run));
+                  runRows.append(runRow2(entry.run));
                 } else if (entry.kind === "pending") {
                   const row2 = el(
                     "button",
@@ -74515,7 +75167,7 @@ function mountProjectsPane(root, store2, api2) {
                     render();
                   });
                   runRows.append(row2);
-                  if (open2) for (const thread of entry.runs) runRows.append(runRow(thread));
+                  if (open2) for (const thread of entry.runs) runRows.append(runRow2(thread));
                 }
               }
             }
@@ -74954,6 +75606,7 @@ var init_projects_pane = __esm({
     init_helpers();
     init_context_menu();
     init_rename_blur();
+    init_pr_status();
     init_icons();
     init_thread_helpers();
     init_github_pr_url2();
@@ -74976,6 +75629,7 @@ var init_projects_pane = __esm({
     init_automation_fold();
     init_ssh_workspace_ui();
     init_thread_naming();
+    init_persistence();
     init_project_tree();
     init_project_groups();
     init_projects_drag();
@@ -77751,6 +78405,7 @@ function composeAnnotationPng(svg2, width, height, base) {
 }
 function mountAnnotationLayer(host, options) {
   let root = null;
+  let resizeObserver = null;
   let svg2 = null;
   let drauu = null;
   let active2 = false;
@@ -77762,6 +78417,16 @@ function mountAnnotationLayer(host, options) {
   let undoBtn = null;
   let clearBtn = null;
   let sending = false;
+  let scrollX = 0;
+  let scrollY = 0;
+  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
+  const applyViewBox = () => {
+    if (!svg2) return;
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
+  };
   const applyBrush = () => {
     if (!drauu) return;
     const brush = drauu.brush;
@@ -77817,6 +78482,7 @@ function mountAnnotationLayer(host, options) {
     svg2.setAttribute("class", "annotation-layer-svg");
     svg2.setAttribute("role", "img");
     svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
+    applyViewBox();
     const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
     const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
       const button = el("button", {
@@ -77863,7 +78529,6 @@ function mountAnnotationLayer(host, options) {
       void layer.export().then(async (payload) => {
         const accepted = await options.onSend(payload);
         if (!accepted) return;
-        layer.clear();
         layer.deactivate();
       }).catch(() => {
       }).finally(() => {
@@ -77909,6 +78574,10 @@ function mountAnnotationLayer(host, options) {
     root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
     root.hidden = true;
     host.append(root);
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver.observe(host);
+    }
     drauu = createDrauu({
       el: svg2,
       brush: { mode: "stylus", color: colour, size: PEN_SIZE }
@@ -77973,6 +78642,11 @@ function mountAnnotationLayer(host, options) {
       tool = next;
       applyBrush();
     },
+    setScrollOffset(x2, y2) {
+      if (Number.isFinite(x2)) scrollX = x2;
+      if (Number.isFinite(y2)) scrollY = y2;
+      applyViewBox();
+    },
     async export() {
       ensureMounted();
       const rect = host.getBoundingClientRect();
@@ -77992,7 +78666,10 @@ function mountAnnotationLayer(host, options) {
       clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       clone3.setAttribute("width", String(width));
       clone3.setAttribute("height", String(height));
-      clone3.setAttribute("viewBox", `0 0 ${String(width)} ${String(height)}`);
+      clone3.setAttribute(
+        "viewBox",
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
+      );
       const serialised = clone3.outerHTML;
       const base = await options.captureBase?.().catch(() => null);
       let png = null;
@@ -78013,6 +78690,8 @@ function mountAnnotationLayer(host, options) {
     },
     dispose() {
       layer.deactivate();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       drauu?.unmount();
       drauu = null;
       root?.remove();
@@ -78081,6 +78760,123 @@ var init_attach_annotation = __esm({
   "src/renderer/drawing/attach-annotation.ts"() {
     init_prompt_attachments();
     init_toast();
+  }
+});
+
+// src/renderer/drawing/scroll-tracker.ts
+function trackGuestScroll(options) {
+  const timer = options.timer ?? window;
+  let lastX = null;
+  let lastY = null;
+  let strokeDepth = 0;
+  let disposed = false;
+  let enabled = false;
+  let polling = false;
+  let guestFocused = false;
+  let inFlight4 = false;
+  let idleTimer = null;
+  let interval = null;
+  const emit = (position2) => {
+    if (position2.x === lastX && position2.y === lastY) return;
+    lastX = position2.x;
+    lastY = position2.y;
+    options.onScroll(position2);
+  };
+  const stopPolling = () => {
+    if (interval !== null) timer.clearInterval(interval);
+    interval = null;
+  };
+  const startPolling = () => {
+    interval ??= timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS);
+  };
+  const scheduleIdleStop = () => {
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = timer.setTimeout(() => {
+      idleTimer = null;
+      polling = false;
+      if (strokeDepth === 0 && !guestFocused) stopPolling();
+    }, IDLE_STOP_MS);
+  };
+  function poll() {
+    if (disposed || !enabled || inFlight4 || !polling && strokeDepth === 0 && !guestFocused) return;
+    inFlight4 = true;
+    void options.fetchPosition().then((position2) => {
+      if (!disposed && position2) emit(position2);
+    }).catch(() => {
+    }).finally(() => {
+      inFlight4 = false;
+    });
+  }
+  const wake = (refreshLayout = false) => {
+    if (!enabled) return;
+    if (refreshLayout && lastX !== null && lastY !== null) {
+      options.onScroll({ x: lastX, y: lastY });
+    }
+    polling = true;
+    startPolling();
+    scheduleIdleStop();
+    poll();
+  };
+  const onWheel = () => {
+    wake();
+  };
+  const onPointerDown = () => {
+    strokeDepth += 1;
+    startPolling();
+    poll();
+  };
+  const onPointerUp = () => {
+    strokeDepth = Math.max(0, strokeDepth - 1);
+    if (strokeDepth === 0 && !polling && !guestFocused) stopPolling();
+  };
+  const start = (refreshLayout = false) => {
+    enabled = true;
+    options.wheelTarget.addEventListener("wheel", onWheel, { passive: true });
+    options.wheelTarget.addEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.addEventListener("pointerup", onPointerUp, CAPTURE);
+    window.addEventListener("pointercancel", onPointerUp, CAPTURE);
+    wake(refreshLayout);
+  };
+  const stop = () => {
+    enabled = false;
+    polling = false;
+    strokeDepth = 0;
+    stopPolling();
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = null;
+    options.wheelTarget.removeEventListener("wheel", onWheel);
+    options.wheelTarget.removeEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.removeEventListener("pointerup", onPointerUp, CAPTURE);
+    window.removeEventListener("pointercancel", onPointerUp, CAPTURE);
+  };
+  start();
+  return {
+    kick: () => {
+      wake(true);
+    },
+    setEnabled(next) {
+      if (disposed || next === enabled) return;
+      if (next) start(true);
+      else stop();
+    },
+    setGuestFocused(focused) {
+      if (disposed || focused === guestFocused) return;
+      guestFocused = focused;
+      if (focused) wake();
+      else if (!polling && strokeDepth === 0) stopPolling();
+    },
+    dispose() {
+      if (enabled) stop();
+      disposed = true;
+    }
+  };
+}
+var SCROLL_TRACK_INTERVAL_MS, IDLE_STOP_MS, CAPTURE;
+var init_scroll_tracker = __esm({
+  "src/renderer/drawing/scroll-tracker.ts"() {
+    SCROLL_TRACK_INTERVAL_MS = 80;
+    IDLE_STOP_MS = 1e3;
+    CAPTURE = true;
   }
 });
 
@@ -78234,33 +79030,74 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     "Annotate"
   );
   let annotation = null;
+  let annotationScroll = null;
   let inlineWebview = null;
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
   let mountTimer = null;
-  const captureBase = async () => {
+  const inlineWebContentsId = () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
-    if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
-      const contentsId = Reflect.apply(getId, inlineWebview, []);
-      if (typeof contentsId === "number") {
-        return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
-      }
+    if (typeof getId !== "function" || card.dataset["canvasState"] !== "interactive") return null;
+    const contentsId = Reflect.apply(getId, inlineWebview, []);
+    return typeof contentsId === "number" ? contentsId : null;
+  };
+  const captureBase = async () => {
+    const contentsId = inlineWebContentsId();
+    if (contentsId !== null) {
+      return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
     }
     return getArtefactPreview(threadId, title) ?? null;
   };
+  const syncAnnotationScroll = () => {
+    annotationScroll?.setEnabled(
+      annotation !== null && (annotation.active || !annotation.isEmpty())
+    );
+  };
   annotate.addEventListener("click", () => {
-    annotation ??= mountAnnotationLayer(stage, {
-      label: title,
-      captureBase,
-      onSend: (payload) => {
-        return attachAnnotation(payload, title);
-      },
-      onDeactivate: () => {
-        annotate.setAttribute("aria-pressed", "false");
-      }
-    });
+    if (!annotation) {
+      annotation = mountAnnotationLayer(stage, {
+        label: title,
+        captureBase,
+        onSend: (payload) => {
+          return attachAnnotation(payload, title);
+        },
+        onDeactivate: () => {
+          annotate.setAttribute("aria-pressed", "false");
+          syncAnnotationScroll();
+        }
+      });
+      const layer = annotation;
+      annotationScroll = trackGuestScroll({
+        wheelTarget: stage,
+        fetchPosition: async () => {
+          const contentsId = inlineWebContentsId();
+          if (contentsId === null) return null;
+          return await api2.browser.scrollPosition(contentsId);
+        },
+        onScroll: (position2) => {
+          layer.setScrollOffset(position2.x, position2.y);
+        }
+      });
+      const scroll = annotationScroll;
+      stage.addEventListener(
+        "focus",
+        () => {
+          scroll.setGuestFocused(true);
+        },
+        true
+      );
+      stage.addEventListener(
+        "blur",
+        () => {
+          scroll.setGuestFocused(false);
+        },
+        true
+      );
+    }
     annotate.setAttribute("aria-pressed", String(annotation.toggle()));
+    syncAnnotationScroll();
+    annotationScroll?.kick();
   });
   const card = el(
     "figure",
@@ -78285,6 +79122,8 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    annotationScroll?.dispose();
+    annotationScroll = null;
     if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
@@ -78352,6 +79191,7 @@ var init_inline_artefact = __esm({
     init_icons();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_artefact_previews();
     WEBVIEW_PREFS = "contextIsolation=true";
     LOAD_TIMEOUT_MS = 3e4;
@@ -79759,14 +80599,18 @@ var init_file_links = __esm({
 function cachedPrTitle(ref) {
   return titles.get(githubPrKey(ref));
 }
-function rememberPrTitle(ref, title, isDraft) {
+function rememberPrTitle(ref, title, isDraft, state, conflicts) {
   const trimmed2 = title.trim();
   if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
   const key = githubPrKey(ref);
   const previous = titles.get(key);
+  const lifecycle = state ?? previous?.state;
+  const mergeConflicts = conflicts ?? previous?.conflicts;
   titles.delete(key);
   titles.set(key, {
     title: trimmed2,
+    ...lifecycle !== void 0 ? { state: lifecycle } : {},
+    ...mergeConflicts !== void 0 ? { conflicts: mergeConflicts } : {},
     ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
   });
   if (titles.size > MAX_TITLES) {
@@ -79776,13 +80620,19 @@ function rememberPrTitle(ref, title, isDraft) {
 }
 function loadPrTitle(ref, gh) {
   const cached2 = cachedPrTitle(ref);
-  if (cached2) return Promise.resolve(cached2);
+  if (cached2?.conflicts !== void 0) return Promise.resolve(cached2);
   const key = githubPrKey(ref);
   const pending = inFlight3.get(key);
   if (pending) return pending;
   const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
     if (!details) return null;
-    rememberPrTitle(ref, details.title, details.isDraft);
+    rememberPrTitle(
+      ref,
+      details.title,
+      details.isDraft,
+      details.state,
+      prHasMergeConflicts(details)
+    );
     return cachedPrTitle(ref) ?? null;
   }).finally(() => {
     inFlight3.delete(key);
@@ -79794,6 +80644,7 @@ var MAX_TITLES, titles, inFlight3;
 var init_pr_title_cache = __esm({
   "src/renderer/markdown/pr-title-cache.ts"() {
     init_github_pr_url2();
+    init_pr_status();
     MAX_TITLES = 128;
     titles = /* @__PURE__ */ new Map();
     inFlight3 = /* @__PURE__ */ new Map();
@@ -87321,9 +88172,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -87760,6 +88623,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
@@ -99905,13 +100769,39 @@ function mountFooterBranchStatus(host, store2, api2) {
   let refreshToken = 0;
   let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
+  const footer = host.closest(".input-footer");
+  let popupFrame = 0;
+  function schedulePopupBoundary() {
+    if (!footer) return;
+    cancelAnimationFrame(popupFrame);
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0;
+      if (!open2) return;
+      const boundary = footer.getBoundingClientRect();
+      const anchor2 = trigger.getBoundingClientRect();
+      const width = menu.getBoundingClientRect().width;
+      menu.classList.toggle("is-footer-clamped", anchor2.left + width > boundary.right);
+    });
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null;
+  if (footer) {
+    popupObserver?.observe(footer);
+    popupObserver?.observe(trigger);
+    popupObserver?.observe(menu);
+  }
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function startBranch(thread) {
+    if (!isBlankThread(thread)) return void 0;
+    const picked = baseBranchByThread.get(thread.id);
+    if (picked) return picked;
+    if (thread.id !== store2.getState().activeThreadId) return void 0;
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
   function activeBaseBranch() {
     const thread = getActiveThread2();
-    if (!thread || !isBlankThread(thread)) return void 0;
-    return baseBranchByThread.get(thread.id);
+    return thread ? startBranch(thread) : void 0;
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -99934,6 +100824,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
     filterInput.setAttribute("aria-expanded", String(next));
+    schedulePopupBoundary();
     if (next) {
       menu.removeAttribute("hidden");
     } else {
@@ -100220,6 +101111,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const active2 = list.querySelector(".branch-picker-option.is-active");
     if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
+    schedulePopupBoundary();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -100421,9 +101313,21 @@ function mountFooterBranchStatus(host, store2, api2) {
   void refresh();
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId, threadId) => {
+      const thread = getThreadById(store2, threadId);
+      if (!thread || !isBlankThread(thread)) return void 0;
+      const picked = baseBranchByThread.get(threadId);
+      if (picked) return picked;
+      const [listed, defaultName] = await Promise.all([
+        api2.git.listBranches(projectId, threadId),
+        api2.git.getDefaultBranch(projectId, threadId)
+      ]);
+      return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
+    },
     destroy: () => {
       refreshToken += 1;
+      cancelAnimationFrame(popupFrame);
+      popupObserver?.disconnect();
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u2) => {
         u2();
@@ -100445,6 +101349,75 @@ var init_footer_branch_status = __esm({
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     nextPickerId = 0;
+  }
+});
+
+// src/renderer/views/footer-usage-popover.ts
+function row(entry, className) {
+  return el(
+    "div",
+    { class: className },
+    el("span", { class: "footer-usage-popover-name" }, entry.label),
+    el("span", { class: "footer-usage-popover-value" }, entry.value)
+  );
+}
+function runRow(run2) {
+  return el(
+    "div",
+    { class: "footer-usage-popover-row is-run" },
+    el("span", { class: `footer-usage-popover-dot is-${run2.status}` }),
+    el(
+      "span",
+      { class: "footer-usage-popover-run" },
+      el("span", { class: "footer-usage-popover-name" }, run2.label),
+      el("span", { class: "footer-usage-popover-meta" }, run2.detail)
+    ),
+    el("span", { class: "footer-usage-popover-value" }, run2.value)
+  );
+}
+function appendUsageSections(parent, model) {
+  parent.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+  if (model.conversationLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+  }
+  for (const entry of model.rows) parent.append(row(entry, "footer-usage-popover-row"));
+  if (model.threadLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+  } else {
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+    if (model.subagentRow || model.modelRows.length > 0) {
+      parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    }
+  }
+  if (model.subagentRow) {
+    parent.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
+    for (const run2 of model.subagentRuns) parent.append(runRow(run2));
+    if (model.subagentRunsOverflow > 0) {
+      parent.append(
+        el(
+          "div",
+          { class: "footer-usage-popover-meta" },
+          `+${String(model.subagentRunsOverflow)} more`
+        )
+      );
+    }
+  }
+  if (model.subagentRuns.length > 0 && model.modelRows.length > 0) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+  }
+  for (const entry of model.modelRows) {
+    parent.append(row(entry, "footer-usage-popover-row is-model"));
+  }
+  if (model.note) parent.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+  if (model.freeNote) {
+    parent.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+  }
+}
+var init_footer_usage_popover = __esm({
+  "src/renderer/views/footer-usage-popover.ts"() {
+    init_helpers();
   }
 });
 
@@ -100483,19 +101456,24 @@ function createContextWheel() {
   fill.setAttribute("stroke-width", "2");
   fill.setAttribute("transform", "rotate(-90 8 8)");
   fill.classList.add("context-wheel-fill");
-  const label = document.createElement("span");
-  label.className = "context-wheel-label";
   const popover = document.createElement("div");
   popover.className = "context-wheel-popover";
   popover.hidden = true;
   svg2.append(track, segGroup, fill);
-  root.append(svg2, label, popover);
+  root.append(svg2, popover);
   let popoverActive = false;
+  let currentUsage = null;
+  let engaged = false;
   function showPopover() {
+    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
+    engaged = false;
     popover.hidden = true;
+  }
+  function restoreEngagedPopover() {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
   }
   root.addEventListener("mouseenter", showPopover);
   root.addEventListener("mouseleave", hidePopover);
@@ -100507,7 +101485,6 @@ function createContextWheel() {
   function renderPopover(breakdown) {
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(totalTokens)} / ${formatTokenCount2(
@@ -100532,6 +101509,17 @@ function createContextWheel() {
       popover.append(row2);
     }
   }
+  function composePopover(drawContext) {
+    clearPopover();
+    drawContext?.();
+    if (!currentUsage) return;
+    if (drawContext) {
+      const divider = document.createElement("div");
+      divider.className = "footer-usage-popover-divider";
+      popover.append(divider);
+    }
+    appendUsageSections(popover, currentUsage);
+  }
   function renderBreakdown(breakdown) {
     popoverActive = true;
     root.hidden = false;
@@ -100540,7 +101528,6 @@ function createContextWheel() {
     fill.style.display = "none";
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    label.textContent = `${String(pct)}%`;
     const denom = Math.max(contextWindow, totalTokens, 1);
     clearSegments();
     let offset = 0;
@@ -100559,7 +101546,9 @@ function createContextWheel() {
       segGroup.append(arc);
       offset += len;
     }
-    renderPopover(breakdown);
+    composePopover(() => {
+      renderPopover(breakdown);
+    });
     const lines = segments.map(
       (s16) => `${s16.label}: ${formatTokenCount2(s16.tokens)} (${String(pctOf(s16.tokens, contextWindow))}%)`
     );
@@ -100579,7 +101568,7 @@ function createContextWheel() {
   }
   function resetToSnapshotMode() {
     popoverActive = false;
-    hidePopover();
+    popover.hidden = true;
     root.classList.remove("has-breakdown");
     root.removeAttribute("tabindex");
     fill.style.display = "";
@@ -100587,7 +101576,6 @@ function createContextWheel() {
   }
   function renderSnapshotPopover(snapshot, source) {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(
@@ -100600,56 +101588,86 @@ function createContextWheel() {
     note.textContent = source;
     popover.append(note);
   }
+  function setFillState(ratio) {
+    fill.classList.toggle("is-danger", ratio >= CONTEXT_DANGER_RATIO);
+    fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
+  }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
-    const pct = Math.round(ratio * 100);
-    const visible = running || ratio > 0.01;
+    const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
     fill.setAttribute(
       "stroke-dasharray",
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`
     );
-    label.textContent = `${String(pct)}%`;
-    const contextLine = `Context: ${formatTokenCount2(snapshot.conversationTokens)} / ${formatTokenCount2(snapshot.conversationBudget)} (${String(pct)}%)`;
+    setFillState(ratio);
+    const shownBreakdown = options?.breakdown;
+    const labelled = shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0 ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow } : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget };
+    const pct = pctOf(labelled.tokens, labelled.budget);
+    const contextLine = `Context: ${formatTokenCount2(labelled.tokens)} / ${formatTokenCount2(labelled.budget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
 ${usageLine}` : contextLine;
     const ariaUsage = usageLine ? `; ${usageLine}` : "";
     root.setAttribute(
       "aria-label",
-      `Context ${String(pct)}% used, ${formatTokenCount2(snapshot.conversationTokens)} of ${formatTokenCount2(snapshot.conversationBudget)} tokens${ariaUsage}`
+      `Context ${String(pct)}% used, ${formatTokenCount2(labelled.tokens)} of ${formatTokenCount2(labelled.budget)} tokens${ariaUsage}`
     );
     popoverActive = true;
     root.tabIndex = 0;
     const breakdown = options?.breakdown;
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      renderPopover(breakdown);
+      composePopover(() => {
+        renderPopover(breakdown);
+      });
       return;
     }
-    renderSnapshotPopover(snapshot, options?.snapshotSource);
+    composePopover(() => {
+      renderSnapshotPopover(snapshot, options?.snapshotSource);
+    });
+  }
+  function renderUsageOnly(usage, options) {
+    root.hidden = false;
+    fill.setAttribute("stroke-dasharray", `0 ${String(CIRCUMFERENCE)}`);
+    setFillState(0);
+    popoverActive = true;
+    root.tabIndex = 0;
+    const usageLine = options?.usageLine?.trim() ?? usage.header;
+    root.title = usageLine;
+    root.setAttribute("aria-label", usageLine);
+    composePopover(null);
   }
   function update(snapshot, running, options) {
+    currentUsage = options?.usage ?? null;
     const breakdown = options?.breakdown;
     if (!running && options?.breakdownRing && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
       renderBreakdown(breakdown);
+      root.classList.add("is-interactive");
+      restoreEngagedPopover();
       return;
     }
     resetToSnapshotMode();
     if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true;
-      return;
+      if (currentUsage) renderUsageOnly(currentUsage, options);
+      else root.hidden = true;
+    } else {
+      renderSnapshot(snapshot, running, options);
     }
-    renderSnapshot(snapshot, running, options);
+    root.classList.toggle("is-interactive", popoverActive && !root.hidden);
+    restoreEngagedPopover();
   }
   return { root, update };
 }
-var RADIUS, CIRCUMFERENCE, SVG_NS6, SEGMENT_COLORS;
+var RADIUS, CIRCUMFERENCE, SVG_NS6, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
     SVG_NS6 = "http://www.w3.org/2000/svg";
+    CONTEXT_WARN_RATIO = 0.8;
+    CONTEXT_DANGER_RATIO = 0.95;
     SEGMENT_COLORS = {
       system: "#6aa3ff",
       tools: "#4fd1c5",
@@ -100665,24 +101683,13 @@ var init_context_wheel = __esm({
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
   const previousFlex = [...items].map((el3) => el3.style.flex);
-  const usage = footer.querySelector(".footer-usage");
-  const previousUsageDisplay = usage?.style.display;
-  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) {
-    if (previousUsageDisplay) {
-      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
-    } else {
-      usage.style.removeProperty("display");
-    }
-  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -101090,14 +102097,37 @@ function buildFooterUsageTooltip(display, opts) {
   });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
-  const subagentRow = subagents.runs > 0 ? {
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages);
+  const runningRuns = allRuns.filter((run2) => run2.status === "running").length;
+  const unreportedRuns = allRuns.length - subagents.runs;
+  const subagentRunNotes = [];
+  if (subagents.runs > 0) {
+    subagentRunNotes.push(
+      `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(subagents.outputTokens)} out`
+    );
+  }
+  if (runningRuns > 0) subagentRunNotes.push(`${String(runningRuns)} running`);
+  else if (unreportedRuns > 0) {
+    subagentRunNotes.push(
+      subagents.runs > 0 ? `${String(unreportedRuns)} without usage` : "no usage reported"
+    );
+  }
+  const subagentRow = allRuns.length > 0 ? {
     label: "Subagents",
-    value: `${String(subagents.runs)} ${subagents.runs === 1 ? "run" : "runs"} \xB7 ${formatTokenCount(
-      subagents.inputTokens
-    )} in / ${formatTokenCount(subagents.outputTokens)} out`
+    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagentRunNotes.join(" \xB7 ")}`
   } : null;
-  const conversationLabel = subagentRow ? "Excluding subagents" : null;
-  const threadLabel2 = subagentRow ? "Whole thread" : null;
+  const subagentRuns = allRuns.slice(0, MAX_LISTED_SUBAGENT_RUNS).map((run2) => ({
+    label: run2.label,
+    detail: [
+      run2.model,
+      run2.status === "done" ? "done" : run2.status === "error" ? "failed" : "running"
+    ].filter((part) => part !== void 0).join(" \xB7 "),
+    value: run2.usage ? `${formatTokenCount(run2.usage.inputTokens)} in / ${formatTokenCount(run2.usage.outputTokens)} out` : "",
+    status: run2.status
+  }));
+  const hasReportedRuns = subagents.runs > 0;
+  const conversationLabel = hasReportedRuns ? "Excluding subagents" : null;
+  const threadLabel2 = hasReportedRuns ? "Whole thread" : null;
   const modelRows = [];
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
@@ -101115,78 +102145,21 @@ function buildFooterUsageTooltip(display, opts) {
     threadLabel: threadLabel2,
     threadRows,
     subagentRow,
+    subagentRuns,
+    subagentRunsOverflow: Math.max(0, allRuns.length - subagentRuns.length),
     modelRows,
     note,
     freeNote
   };
 }
+var MAX_LISTED_SUBAGENT_RUNS;
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
     init_footer_usage_summary();
     init_format_usage_summary();
     init_footer_usage_summary();
-  }
-});
-
-// src/renderer/views/footer-usage-popover.ts
-function row(entry, className) {
-  return el(
-    "div",
-    { class: className },
-    el("span", { class: "footer-usage-popover-name" }, entry.label),
-    el("span", { class: "footer-usage-popover-value" }, entry.value)
-  );
-}
-function createFooterUsagePopover() {
-  const root = el("div", { class: "footer-usage-popover", role: "tooltip", hidden: true });
-  let hasContent = false;
-  return {
-    root,
-    render(model) {
-      clear(root);
-      hasContent = model !== null;
-      if (!model) {
-        root.hidden = true;
-        return;
-      }
-      root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
-      if (model.conversationLabel) {
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
-      }
-      for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.threadLabel) {
-        root.append(el("div", { class: "footer-usage-popover-divider" }));
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-      } else {
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-        if (model.subagentRow || model.modelRows.length > 0) {
-          root.append(el("div", { class: "footer-usage-popover-divider" }));
-        }
-      }
-      if (model.subagentRow) {
-        root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
-      }
-      for (const entry of model.modelRows) {
-        root.append(row(entry, "footer-usage-popover-row is-model"));
-      }
-      if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
-      if (model.freeNote) {
-        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
-      }
-    },
-    show() {
-      if (hasContent) root.hidden = false;
-    },
-    hide() {
-      root.hidden = true;
-    }
-  };
-}
-var init_footer_usage_popover = __esm({
-  "src/renderer/views/footer-usage-popover.ts"() {
-    init_helpers();
+    MAX_LISTED_SUBAGENT_RUNS = 5;
   }
 });
 
@@ -101254,10 +102227,10 @@ var init_changes_stat = __esm({
 
 // src/renderer/views/create-pr-dialog.ts
 function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openCreatePrDialog(opts) {
   const dialog2 = ensureDialog4();
@@ -101281,17 +102254,16 @@ function openCreatePrDialog(opts) {
   bodyInput.addEventListener("input", () => {
     bodyIsUsers = true;
   });
-  if (opts.bodyPromise) {
+  let bodyPending = !!opts.bodyPromise;
+  const bodyReady = opts.bodyPromise?.catch(() => null).then((suggested) => {
+    bodyPending = false;
+    bodyInput.classList.remove("is-pending");
+    bodyInput.placeholder = "Optional";
+    if (!bodyIsUsers && suggested) bodyInput.value = suggested;
+    return suggested;
+  });
+  if (bodyReady) {
     bodyInput.classList.add("is-pending");
-    void opts.bodyPromise.then((suggested) => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-      if (bodyIsUsers || !suggested) return;
-      bodyInput.value = suggested;
-    }).catch(() => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-    });
   }
   const draftInput = el("input", {
     type: "checkbox",
@@ -101321,8 +102293,9 @@ function openCreatePrDialog(opts) {
   };
   syncCreateLabel();
   draftInput.addEventListener("change", syncCreateLabel);
+  let submitting = false;
   const syncCreateEnabled = () => {
-    createBtn.disabled = titleInput.value.trim().length === 0;
+    createBtn.disabled = submitting || titleInput.value.trim().length === 0;
   };
   syncCreateEnabled();
   titleInput.addEventListener("input", syncCreateEnabled);
@@ -101386,8 +102359,21 @@ function openCreatePrDialog(opts) {
     });
     createBtn.addEventListener("click", () => {
       const title = titleInput.value.trim();
-      if (!title) return;
-      finish({ title, body: bodyInput.value.trim(), draft: draftInput.checked });
+      if (!title || submitting || settled) return;
+      const choice = { title, body: bodyInput.value.trim(), draft: draftInput.checked };
+      if (!bodyPending || bodyIsUsers) {
+        finish(choice);
+        return;
+      }
+      submitting = true;
+      syncCreateEnabled();
+      titleInput.disabled = true;
+      bodyInput.disabled = true;
+      draftInput.disabled = true;
+      createBtn.textContent = "Waiting for description\u2026";
+      void bodyReady?.then((suggested) => {
+        finish({ ...choice, body: suggested?.trim() ?? "" });
+      });
     });
     titleInput.addEventListener("keydown", (e3) => {
       if (e3.key !== "Enter") return;
@@ -101399,11 +102385,11 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
     init_helpers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -103093,18 +104079,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn);
   checkoutHost.append(checkoutBtn, checkoutMenu);
   const branchHost = el("div", { class: "footer-branch-host" });
-  const usageBtn = el("span", {
-    class: "footer-usage",
-    tabindex: "0",
-    role: "note",
-    "aria-label": "Token usage"
-  });
-  const usagePopover = createFooterUsagePopover();
   const usageGroup = el("div", { class: "footer-usage-group" });
   const queueIndicator = el("span", { class: "footer-queue", hidden: "", "aria-live": "polite" });
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root);
+  usageGroup.append(contextWheel.root, queueIndicator);
   footer.append(modelHost, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -103279,10 +104258,6 @@ function mountInputBar(root, store2, api2, opts = {}) {
       showErrorToast("Debug trace failed", error62);
     });
   }
-  usageBtn.addEventListener("mouseenter", usagePopover.show);
-  usageBtn.addEventListener("mouseleave", usagePopover.hide);
-  usageBtn.addEventListener("focus", usagePopover.show);
-  usageBtn.addEventListener("blur", usagePopover.hide);
   const checkoutErrorText = el("span", {
     class: "composer-checkout-error-text composer-banner-text"
   });
@@ -103888,7 +104863,6 @@ ${description}
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
     const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages });
     return {
-      label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
       tooltip
     };
@@ -103912,30 +104886,18 @@ ${description}
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
     const usage = usageViews();
-    const compact = footerCompact.isCompact();
     const snapshot = thread?.contextSnapshot;
-    const snapshotVisible = !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01);
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
     const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible;
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usage?.detail ?? null : null,
+      usageLine: usage?.detail ?? null,
+      usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
     });
-    contextWheel.root.classList.toggle("is-interactive", tuckUsageIntoWheel);
-    if (!usage) {
-      usageBtn.hidden = true;
-      usagePopover.render(null);
-    } else {
-      usageBtn.hidden = tuckUsageIntoWheel;
-      usageBtn.textContent = usage.label;
-      usageBtn.setAttribute("aria-label", usage.detail);
-      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip);
-    }
     footerOverflow?.update();
     updateContextFitWarning();
     updateCheckoutControl();
@@ -104178,13 +105140,14 @@ ${description}
     if (!projectId || !thread) return;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
-    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
+    const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
     const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
     if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
@@ -104193,7 +105156,6 @@ ${description}
         return;
       }
     }
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -104290,6 +105252,9 @@ ${description}
       checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
+        if (branchDecision?.status === "rejected") throw branchDecision.reason;
+        const baseBranch = branchDecision?.status === "fulfilled" ? branchDecision.value : void 0;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           id,
@@ -104933,7 +105898,6 @@ var init_input_bar = __esm({
     init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
-    init_footer_usage_popover();
     init_lm_studio_defaults();
     init_dynamic_model();
     init_follow_up_suggestions();
@@ -117578,14 +118542,19 @@ function readableState(state) {
   return state.toLowerCase().replaceAll("_", " ");
 }
 function checkTone(state) {
-  if (["SUCCESS", "NEUTRAL"].includes(state)) return "success";
+  if (state === "SUCCESS") return "success";
   if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state)) return "failure";
   if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state)) return "pending";
   return "unknown";
 }
 function externalButton(label, url2, open2) {
   if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
-  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  const button = el(
+    "button",
+    { type: "button", class: "pr-activity-link" },
+    el("span", {}, label),
+    externalLinkIcon("ui-icon ui-icon-sm")
+  );
   button.addEventListener("click", () => {
     open2(url2);
   });
@@ -117625,18 +118594,37 @@ function renderPrActivity(host, section, activity, open2) {
       const date5 = new Date(comment.createdAt);
       const time3 = el(
         "time",
-        { datetime: comment.createdAt },
-        Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        {
+          datetime: comment.createdAt,
+          title: Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        },
+        Number.isNaN(date5.getTime()) ? comment.createdAt : `${date5.toLocaleDateString(void 0, { month: "short", day: "numeric" })} \xB7 ${date5.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" })}`
       );
       const heading = el(
         "div",
         { class: "pr-comment-meta" },
-        el("strong", {}, `@${comment.author}`),
-        el("span", {}, comment.reviewState ? readableState(comment.reviewState) : "commented"),
+        el(
+          "span",
+          { class: "pr-comment-avatar", "aria-hidden": "true" },
+          comment.author.slice(0, 2).toUpperCase()
+        ),
+        el(
+          "div",
+          { class: "pr-comment-author" },
+          el("strong", {}, `@${comment.author}`),
+          el(
+            "span",
+            {
+              class: comment.reviewState ? `pr-review-state pr-review-state-${comment.reviewState.toLowerCase()}` : "pr-comment-kind"
+            },
+            comment.reviewState ? readableState(comment.reviewState) : "commented"
+          )
+        ),
         time3
       );
       const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
       body.innerHTML = renderMarkdown(comment.body);
+      attachCodeBlockCopyButtons(body);
       host.append(
         el("article", { class: "pr-comment", "data-comment-id": comment.id }, heading, body)
       );
@@ -117659,26 +118647,62 @@ function renderPrActivity(host, section, activity, open2) {
       )
     );
   if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
-  for (const check2 of activity.checks) {
-    host.append(
+  const groups = [
+    { tone: "failure", label: "Needs attention" },
+    { tone: "pending", label: "In progress" },
+    { tone: "success", label: "Passed" },
+    { tone: "unknown", label: "Other results" }
+  ];
+  const needsAttention = activity.checks.some(
+    (check2) => ["failure", "pending"].includes(checkTone(check2.state))
+  );
+  for (const group of groups) {
+    const checks = activity.checks.filter((check2) => checkTone(check2.state) === group.tone);
+    if (!checks.length) continue;
+    const collapsible = group.tone === "success" || group.tone === "unknown";
+    const section2 = collapsible ? el("details", {
+      class: "pr-check-group",
+      open: group.tone === "success" && !needsAttention
+    }) : el("section", { class: "pr-check-group" });
+    section2.append(
       el(
-        "div",
-        { class: "pr-check-row" },
-        el(
-          "span",
-          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
-          readableState(check2.state)
-        ),
-        el("span", { class: "pr-check-name" }, check2.name),
-        externalButton("Details", check2.url, open2)
+        collapsible ? "summary" : "h4",
+        { class: "pr-check-group-heading" },
+        ...collapsible ? [chevronRightIcon("ui-icon ui-icon-sm pr-check-chevron")] : [],
+        el("span", {}, group.label),
+        el("span", { class: "pr-check-count" }, String(checks.length))
       )
     );
+    for (const check2 of checks) {
+      const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      section2.append(
+        el(
+          "div",
+          { class: "pr-check-row" },
+          el("span", { class: `pr-check-icon pr-check-tone-${group.tone}` }, icon),
+          el(
+            "div",
+            { class: "pr-check-body" },
+            el("span", { class: "pr-check-name" }, check2.name),
+            el(
+              "span",
+              { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+              readableState(check2.state)
+            )
+          ),
+          externalButton("Details", check2.url, open2)
+        )
+      );
+    }
+    host.append(section2);
   }
 }
 var init_pr_pane_activity = __esm({
   "src/renderer/views/pr-pane-activity.ts"() {
     init_dist();
     init_helpers();
+    init_icons();
+    init_code_block_copy();
   }
 });
 
@@ -117799,7 +118823,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let selectedPr = null;
   let prDetails = null;
   let selectedFile = null;
-  let filesExpanded = false;
   let diffEditor = null;
   let selectRequestId = 0;
   let diffLoadQueue = Promise.resolve();
@@ -117838,9 +118861,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function knownChecks(pr2) {
     return pr2.checks ?? checksCache.get(githubPrKey(pr2));
   }
-  function applyCiClass(node2, state) {
-    node2.className = `pr-list-ci pr-list-ci-${state}`;
-    setTooltip(node2, CI_LABEL[state]);
+  function applyPrStatus(node2, pr2, checks) {
+    const lifecycle = cachedPrTitle(pr2)?.state ?? (isPlaceholderPr(pr2) ? "UNKNOWN" : pr2.state);
+    const kind = lifecycle === "OPEN" ? "open" : lifecycle === "MERGED" ? "merged" : lifecycle === "CLOSED" ? "closed" : "unknown";
+    const failing = lifecycle === "OPEN" && checks === "failure";
+    const conflicts = lifecycle === "OPEN" && cachedPrTitle(pr2)?.conflicts === true;
+    node2.className = `chat-pr-status pr-list-status is-${kind}${conflicts ? " has-conflicts" : failing ? " has-ci-failure" : ""}`;
+    const label = `PR #${String(pr2.number)} ${kind}${conflicts ? "; merge conflicts" : ""}; ${CI_LABEL[checks]}`;
+    node2.setAttribute("role", "img");
+    node2.setAttribute("aria-label", label);
+    setTooltip(node2, label);
+    const checksLabel = node2.parentElement?.querySelector(".pr-list-checks-label");
+    if (checksLabel) {
+      checksLabel.textContent = CI_LABEL[checks];
+      checksLabel.setAttribute("data-state", checks);
+    }
+    node2.replaceChildren(
+      lifecycle === "MERGED" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts)
+    );
   }
   function ensureCheck(pr2) {
     const key = githubPrKey(pr2);
@@ -117856,7 +118894,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       checksInFlight.delete(key);
       if (gen !== ciGen) return;
       const node2 = ciEls.get(key);
-      if (node2) applyCiClass(node2, checksCache.get(key) ?? "no_checks");
+      if (node2) applyPrStatus(node2, pr2, checksCache.get(key) ?? "no_checks");
     });
   }
   function ensureDiffEditor() {
@@ -117903,7 +118941,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const isSelected = selectedPr?.owner === pr2.owner && selectedPr.repo === pr2.repo && selectedPr.number === pr2.number;
     const ci2 = el("span", {});
     const state = knownChecks(pr2);
-    applyCiClass(ci2, state ?? "loading");
+    applyPrStatus(ci2, pr2, state ?? "loading");
     ciEls.set(githubPrKey(pr2), ci2);
     const agent = agentLinks.get(githubPrKey(pr2));
     const agentBadge = agent ? el(
@@ -117920,12 +118958,23 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       {
         type: "button",
         class: `git-change-row pr-list-row${isSelected ? " is-selected" : ""}`,
-        "data-pr-section": section
+        "data-pr-section": section,
+        "aria-pressed": String(isSelected)
       },
-      el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
       el("span", { class: "git-change-path pr-list-title", title: titleText }, titleText),
-      ...agentBadge ? [agentBadge] : [],
-      ci2
+      el(
+        "span",
+        { class: "pr-list-meta" },
+        el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
+        el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
+        ...agentBadge ? [agentBadge] : [],
+        ci2,
+        el(
+          "span",
+          { class: "pr-list-checks-label", "data-state": state ?? "loading" },
+          CI_LABEL[state ?? "loading"]
+        )
+      )
     );
     row2.addEventListener("click", () => void selectPr(pr2));
     if (!state) ensureCheck(pr2);
@@ -117938,11 +118987,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       const cached2 = cachedPrTitle(pr2);
       if (cached2) {
         if (pr2.title !== cached2.title) pr2.title = cached2.title;
-        continue;
+        if (cached2.conflicts !== void 0) continue;
       }
-      if (!isPlaceholderPr(pr2)) {
-        rememberPrTitle(pr2, pr2.title);
-        continue;
+      if (!cached2 && !isPlaceholderPr(pr2)) {
+        rememberPrTitle(pr2, pr2.title, void 0, pr2.state);
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
@@ -118007,6 +119055,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       listBody.append(section);
     }
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      ensureTitles(repoPrs);
       const firstRepoPr = at(repoPrs, 0);
       const slug2 = `${firstRepoPr.owner}/${firstRepoPr.repo}`;
       const section = el("div", { class: "git-changes-section" });
@@ -118043,6 +119092,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         if (otherLoading) {
           section.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
         } else if (otherPrs.length > 0) {
+          ensureTitles(otherPrs);
           for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
         } else {
           section.append(
@@ -118096,7 +119146,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       fresh = null;
     }
     if (!isStillSelected(ref)) return;
-    if (fresh) prDetails = fresh;
+    if (fresh) {
+      prDetails = fresh;
+      rememberPrTitle(fresh, fresh.title, fresh.isDraft, fresh.state, prHasMergeConflicts(fresh));
+      const row2 = prList.find((pr2) => githubPrKey(pr2) === githubPrKey(fresh));
+      if (row2) {
+        row2.title = fresh.title;
+        row2.state = fresh.state;
+      }
+      renderList();
+    }
     renderMeta();
     renderSections();
   }
@@ -118109,6 +119168,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     btn.addEventListener("click", () => {
       const ref = selectedPr;
       if (!ref) return;
+      const menu = btn.closest("details");
+      if (menu) menu.open = false;
       void (async () => {
         if (!await showConfirmDialog({ message: confirmMessage, confirmLabel: label })) return;
         for (const other of metaHost.querySelectorAll(".pr-action-btn")) {
@@ -118138,7 +119199,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn",
         "data-tooltip": "Open this pull request on GitHub"
       },
-      el("span", {}, "Open on GitHub"),
+      el("span", {}, "GitHub"),
       externalLinkIcon("ui-icon ui-icon-sm")
     );
     const prUrl = prDetails.url;
@@ -118158,7 +119219,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "span",
         {},
-        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open chat"
       )
     ) : null;
     if (openThreadBtn && producingThreadId) {
@@ -118180,14 +119241,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       startPrDiscussThread(store2, discussPr);
       getPromptAttachmentHandlers()?.focusComposer?.();
     });
-    const stats = [];
-    if (typeof prDetails.changedFiles === "number")
-      stats.push(`${String(prDetails.changedFiles)} files`);
-    if (typeof prDetails.additions === "number" || typeof prDetails.deletions === "number") {
-      stats.push(`+${String(prDetails.additions ?? 0)} -${String(prDetails.deletions ?? 0)}`);
-    }
+    const branch = el("div", { class: "pr-viewer-subtitle" });
+    const lifecycleIcon = el("span", {});
+    applyPrStatus(lifecycleIcon, prDetails, knownChecks(prDetails) ?? "no_checks");
+    lifecycleIcon.classList.remove("pr-list-status");
+    lifecycleIcon.classList.add("pr-viewer-status");
+    const lifecycle = prDetails.state === "OPEN" ? "Open" : prDetails.state === "MERGED" ? "Merged" : prDetails.state === "CLOSED" ? "Closed" : "Unknown";
+    branch.append(el("span", { class: "pr-lifecycle" }, lifecycleIcon, el("span", {}, lifecycle)));
     if (prDetails.headRefName && prDetails.baseRefName) {
-      stats.push(`${prDetails.headRefName} \u2192 ${prDetails.baseRefName}`);
+      branch.append(
+        el("code", {}, prDetails.headRefName),
+        arrowRightIcon("ui-icon ui-icon-sm"),
+        el("code", {}, prDetails.baseRefName)
+      );
     }
     const badges = el("span", { class: "pr-viewer-badges" });
     if (prDetails.isDraft) {
@@ -118223,16 +119289,29 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         )
       );
     }
-    const actions = el(
-      "div",
-      { class: "pr-viewer-actions" },
-      openBtn,
-      ...openThreadBtn ? [openThreadBtn] : [],
-      newThreadBtn
+    const overflow = el("details", { class: "pr-more-actions" });
+    const summary = el(
+      "summary",
+      {
+        class: "ui-btn ui-btn-secondary ui-btn-compact pr-more-toggle",
+        "aria-label": "More pull request actions",
+        "data-tooltip": "More pull request actions"
+      },
+      moreHorizontalIcon("ui-icon ui-icon-sm")
     );
+    const menu = el("div", { class: "pr-actions-menu" });
+    overflow.append(summary, menu);
+    const actions = el("div", { class: "pr-viewer-actions" }, openThreadBtn ?? newThreadBtn);
+    if (openThreadBtn) menu.append(newThreadBtn);
     if (prDetails.state === "OPEN") {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number };
-      actions.append(
+      const approve = actionButton(
+        "Approve",
+        `Approve pull request #${String(ref.number)}?`,
+        (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
+      );
+      actions.append(approve);
+      menu.append(
         actionButton(
           "Rerun CI",
           `Re-run the failed CI runs for #${String(ref.number)}?`,
@@ -118240,32 +119319,36 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
             if (result.ok) return result;
             return { ...result, message: "", ok: true };
           })
-        ),
-        actionButton(
-          "Approve",
-          `Approve pull request #${String(ref.number)}?`,
-          (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
         )
       );
-      if (prDetails.isDraft) {
-        actions.append(
+      if (prDetails.isDraft)
+        menu.append(
           actionButton(
             "Mark ready",
             `Mark #${String(ref.number)} ready for review?`,
             (r2) => api2.gh.markPrReady(r2.owner, r2.repo, r2.number)
           )
         );
-      }
-      if (!prDetails.autoMergeEnabled) {
-        actions.append(
+      if (!prDetails.autoMergeEnabled)
+        menu.append(
           actionButton(
             "Enable auto-merge",
             `Enable merge-when-ready for #${String(ref.number)}?`,
             (r2) => api2.gh.enableAutoMerge(r2.owner, r2.repo, r2.number)
           )
         );
-      }
     }
+    if (menu.childElementCount) actions.append(overflow);
+    newThreadBtn.addEventListener("click", () => {
+      overflow.open = false;
+    });
+    overflow.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !overflow.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      overflow.open = false;
+      summary.focus();
+    });
     const statusLine = el(
       "div",
       { class: "pr-action-status", "data-ok": String(lastActionMessage?.ok ?? true) },
@@ -118275,16 +119358,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     metaHost.append(
       el(
         "div",
-        { class: "pr-viewer-title-row" },
-        el("h4", { class: "pr-viewer-title" }, prDetails.title),
-        badges
+        { class: "pr-viewer-repo-line" },
+        el("span", {}, `${prDetails.owner}/${prDetails.repo}`),
+        openBtn
       ),
       el(
         "div",
-        { class: "pr-viewer-subtitle" },
-        `#${String(prDetails.number)} \xB7 ${prDetails.owner}/${prDetails.repo}`,
-        stats.length > 0 ? ` \xB7 ${stats.join(" \xB7 ")}` : ""
+        { class: "pr-viewer-title-row" },
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
+        el("span", { class: "pr-viewer-number" }, `#${String(prDetails.number)}`)
       ),
+      branch,
+      badges,
       actions,
       statusLine
     );
@@ -118295,8 +119380,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       descriptionHost.hidden = true;
       return;
     }
-    descriptionHost.hidden = false;
+    descriptionHost.hidden = activeSection !== "overview";
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
+    attachCodeBlockCopyButtons(descriptionHost);
+    const stats = el(
+      "div",
+      { class: "pr-description-meta" },
+      el("span", {}, `${String(prDetails.changedFiles ?? prDetails.files.length)} files`),
+      el("span", { class: "pr-additions" }, `+${String(prDetails.additions ?? 0)}`),
+      el("span", { class: "pr-deletions" }, `\u2212${String(prDetails.deletions ?? 0)}`)
+    );
+    descriptionHost.prepend(stats);
   }
   function renderSections() {
     clear(sectionsHost);
@@ -118305,7 +119399,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sections = [
       { key: "overview", label: "Overview" },
       { key: "comments", label: "Comments" },
-      { key: "checks", label: "Checks" }
+      { key: "checks", label: "Checks" },
+      { key: "files", label: "Files" }
     ];
     for (const section of sections) {
       const button = el(
@@ -118316,8 +119411,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "data-section": section.key,
           "aria-pressed": String(activeSection === section.key)
         },
-        section.label
+        el("span", {}, section.label)
       );
+      const activity = prDetails.activity;
+      const count = section.key === "files" ? prDetails.files.length : activity && !activity.error ? section.key === "comments" ? activity.comments.length : section.key === "checks" ? activity.checks.length : void 0 : void 0;
+      if (count !== void 0) {
+        const truncated = section.key === "comments" ? activity?.commentsTruncated : section.key === "checks" ? activity?.checksTruncated : false;
+        button.append(
+          el("span", { class: "pr-section-count" }, `${String(count)}${truncated ? "+" : ""}`)
+        );
+      }
       button.addEventListener("click", () => {
         activeSection = section.key;
         clearDiff();
@@ -118327,7 +119430,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       });
       sectionsHost.append(button);
     }
-    if (activeSection !== "overview") {
+    descriptionHost.hidden = activeSection !== "overview" || !prDetails.body.trim();
+    filesHost.hidden = activeSection !== "files";
+    if (activeSection === "comments" || activeSection === "checks") {
       descriptionHost.hidden = true;
       filesHost.hidden = true;
       diffWrap.hidden = true;
@@ -118340,31 +119445,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderFiles() {
     clear(filesHost);
-    if (!prDetails) {
+    filesHost.classList.toggle("pr-viewer-files-fill", selectedFile === null);
+    if (!prDetails || activeSection !== "files") {
       filesHost.hidden = true;
       return;
     }
     filesHost.hidden = false;
-    const header = el(
-      "button",
-      {
-        type: "button",
-        class: "pr-files-header",
-        "aria-expanded": String(filesExpanded)
-      },
-      el(
-        "span",
-        { class: `pr-other-chevron${filesExpanded ? " expanded" : ""}` },
-        chevronRightIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", {}, `Changed files (${String(prDetails.files.length)})`)
+    filesHost.append(
+      el("div", { class: "pr-files-header" }, `Changed files (${String(prDetails.files.length)})`)
     );
-    header.addEventListener("click", () => {
-      filesExpanded = !filesExpanded;
-      renderFiles();
-    });
-    filesHost.append(header);
-    if (!filesExpanded) return;
     const list = el("div", { class: "pr-files-list" });
     for (const file2 of prDetails.files) {
       const isSelected = selectedFile === file2.path;
@@ -118379,7 +119468,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           { class: `git-change-status git-change-status-${file2.status}` },
           STATUS_LABEL2[file2.status] ?? "M"
         ),
-        el("span", { class: "git-change-path" }, file2.path)
+        el("span", { class: "git-change-path", title: file2.path }, file2.path),
+        el(
+          "span",
+          { class: "pr-file-stats" },
+          el("span", { class: "pr-additions" }, `+${String(file2.additions)}`),
+          el("span", { class: "pr-deletions" }, `\u2212${String(file2.deletions)}`)
+        )
       );
       row2.addEventListener("click", () => void selectFile(file2.path));
       list.append(row2);
@@ -118392,13 +119487,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     clear(imageWrap);
-    const descriptionFills = Boolean(prDetails?.body.trim());
+    const descriptionFills = activeSection === "overview" && Boolean(prDetails?.body.trim());
     descriptionHost.classList.toggle("pr-viewer-description-fill", descriptionFills);
-    emptyState.hidden = descriptionFills;
+    emptyState.hidden = descriptionFills || Boolean(
+      prDetails && (activeSection === "comments" || activeSection === "checks" || activeSection === "files" && prDetails.files.length > 0)
+    );
     if (!ghStatus && !prDetails) {
       setInlineStatus(emptyState, "pending", "Loading pull requests\u2026");
     } else {
-      emptyState.textContent = prDetails ? "Select a changed file" : "Select a pull request";
+      emptyState.textContent = prDetails ? activeSection === "files" ? "No changed files" : "No description provided" : "Select a pull request";
     }
     if (diffEditor) disposeDiffModels(diffEditor);
   }
@@ -118452,7 +119549,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
-      filesExpanded = false;
       activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
@@ -118493,10 +119589,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        rememberPrTitle(details, details.title, details.isDraft);
+        rememberPrTitle(
+          details,
+          details.title,
+          details.isDraft,
+          details.state,
+          prHasMergeConflicts(details)
+        );
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
-        if (row2 && row2.title !== details.title) {
+        if (row2) {
           row2.title = details.title;
+          row2.state = details.state;
           scheduleTitleRepaint();
         }
       }
@@ -118636,6 +119739,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderList();
     filterInput.focus();
   });
+  const dismissActions = (event) => {
+    const menu = metaHost.querySelector(".pr-more-actions[open]");
+    if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+  };
+  document.addEventListener("pointerdown", dismissActions);
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store2, api2);
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
@@ -118715,6 +119823,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   return () => {
     disposed = true;
+    document.removeEventListener("pointerdown", dismissActions);
     titleGen++;
     if (titleRepaintTimer != null) {
       clearTimeout(titleRepaintTimer);
@@ -118743,6 +119852,7 @@ var init_pr_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_tooltip();
+    init_pr_status();
     init_inline_status();
     init_pane_loading();
     init_pane_popout_button();
@@ -118756,6 +119866,7 @@ var init_pr_pane = __esm({
     init_pr_pane_thread();
     init_prompt_attachments();
     init_dist();
+    init_code_block_copy();
     init_browser_links();
     init_pr_title_cache();
     init_workspace_links();
@@ -122122,6 +123233,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     updateNavButtons(tab);
     syncTabLabel(tab);
   }
+  function syncAnnotationScroll(tab) {
+    const layer = tab.annotation;
+    tab.annotationScroll?.setEnabled(
+      layer !== null && (layer.active || !layer.isEmpty()) && tab.id === activeTabId && browserModeActive(store2)
+    );
+  }
   function syncWebviewSize2(tab) {
     const webview = tab.webview;
     if (!webview || !tab.panel.classList.contains("is-active")) return;
@@ -122129,6 +123246,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (width <= 0 || height <= 0) return;
     webview.style.width = `${String(Math.round(width))}px`;
     webview.style.height = `${String(Math.round(height))}px`;
+    tab.annotationScroll?.kick();
   }
   function syncActiveWebviewSize() {
     const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -122195,6 +123313,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
+      syncAnnotationScroll(tab);
     });
     webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
@@ -122203,6 +123322,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      tab.annotationScroll?.kick();
       applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
@@ -122284,6 +123404,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const active2 = tab2.id === tabId;
       tab2.panel.classList.toggle("is-active", active2);
       tab2.tabBtn.classList.toggle("is-active", active2);
+      syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
     if (!tab) return;
@@ -122617,35 +123738,68 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
       }
     };
     const annotationLayer = () => {
-      tab.annotation ??= mountAnnotationLayer(webviewHost, {
-        label: webviewTitle(tab) ?? "browser page",
-        captureBase: async () => {
-          const contentsId = shareableWebContentsId(tab);
-          const capture = api2?.browser.captureScreenshot;
-          if (contentsId === null || !capture) return null;
-          return (await capture(contentsId)).dataUrl;
-        },
-        onSend: (payload) => {
-          return attachAnnotation(
-            payload,
-            firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
-          );
-        },
-        onDeactivate: () => {
-          annotateBtn.setAttribute("aria-pressed", "false");
-        }
-      });
+      if (!tab.annotation) {
+        tab.annotation = mountAnnotationLayer(webviewHost, {
+          label: webviewTitle(tab) ?? "browser page",
+          captureBase: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const capture = api2?.browser.captureScreenshot;
+            if (contentsId === null || !capture) return null;
+            return (await capture(contentsId)).dataUrl;
+          },
+          onSend: (payload) => {
+            return attachAnnotation(
+              payload,
+              firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
+            );
+          },
+          onDeactivate: () => {
+            annotateBtn.setAttribute("aria-pressed", "false");
+            syncAnnotationScroll(tab);
+          }
+        });
+        const layer = tab.annotation;
+        tab.annotationScroll = trackGuestScroll({
+          wheelTarget: webviewHost,
+          fetchPosition: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const read = api2?.browser.scrollPosition;
+            if (contentsId === null || !read) return null;
+            return await read(contentsId);
+          },
+          onScroll: (position2) => {
+            layer.setScrollOffset(position2.x, position2.y);
+          }
+        });
+        const scroll = tab.annotationScroll;
+        webviewHost.addEventListener(
+          "focus",
+          () => {
+            scroll.setGuestFocused(true);
+          },
+          true
+        );
+        webviewHost.addEventListener(
+          "blur",
+          () => {
+            scroll.setGuestFocused(false);
+          },
+          true
+        );
+      }
       return tab.annotation;
     };
     annotateBtn.addEventListener("click", () => {
       setMenuOpen(false);
       const on3 = annotationLayer().toggle();
       annotateBtn.setAttribute("aria-pressed", String(on3));
+      syncAnnotationScroll(tab);
     });
     let menuOpen = false;
     function setMenuOpen(next) {
@@ -122765,6 +123919,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     tab.webview?.remove();
     tab.tabBtn.remove();
+    tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
     tab.panel.remove();
     tabs.delete(tabId);
@@ -122782,6 +123937,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function onBrowserModeChange() {
     const active2 = browserModeActive(store2);
     scheduleSessionSave();
+    for (const tab of tabs.values()) syncAnnotationScroll(tab);
     if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -122823,6 +123979,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -123069,6 +124226,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -123094,6 +124252,7 @@ var init_browser_pane = __esm({
     init_prompt_attachments();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_toast();
     init_tooltip();
     NET_ERROR_ABORTED = -3;
@@ -140677,10 +141836,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -140700,7 +141859,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -140850,7 +142009,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -140861,125 +142020,8 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
-    openImpl2 = null;
-  }
-});
-
-// src/renderer/views/keyboard-shortcuts-dialog.ts
-function isMacPlatform() {
-  const platform = navigator.platform || navigator.userAgent || "";
-  return /mac/i.test(platform);
-}
-function keyLabel(token, isMac2) {
-  switch (token) {
-    case "Mod":
-      return isMac2 ? "\u2318" : "Ctrl";
-    case "Shift":
-      return isMac2 ? "\u21E7" : "Shift";
-    case "Alt":
-      return isMac2 ? "\u2325" : "Alt";
-    default:
-      return token;
-  }
-}
-function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
-}
-function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
-}
-function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
-}
-function mountKeyboardShortcutsDialog() {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = "keyboard-shortcuts-dialog";
-  dialog2.className = "keyboard-shortcuts-overlay";
-  const isMac2 = isMacPlatform();
-  const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
-    const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
-      const keys = el("span", { class: "keyboard-shortcuts-keys" });
-      shortcut.keys.forEach((token) => {
-        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
-      });
-      group.append(
-        el(
-          "div",
-          { class: "keyboard-shortcuts-row" },
-          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
-          keys
-        )
-      );
-    }
-    grid.append(group);
-  }
-  const shell3 = el(
-    "div",
-    { class: "keyboard-shortcuts-shell" },
-    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
-    grid
-  );
-  clear(dialog2);
-  dialog2.append(shell3);
-  document.body.append(dialog2);
-  dialogEl5 = dialog2;
-  dialog2.addEventListener("mousedown", (e3) => {
-    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
-  });
-}
-var SECTIONS, dialogEl5;
-var init_keyboard_shortcuts_dialog = __esm({
-  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
-    init_helpers();
-    SECTIONS = [
-      {
-        title: "General",
-        shortcuts: [
-          { label: "New thread", keys: ["Mod", "N"] },
-          { label: "Open folder\u2026", keys: ["Mod", "O"] },
-          { label: "Settings", keys: ["Mod", ","] },
-          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
-          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
-          { label: "Zoom interface in", keys: ["Mod", "="] },
-          { label: "Zoom interface out", keys: ["Mod", "-"] },
-          { label: "Reset interface zoom", keys: ["Mod", "0"] },
-          { label: "Stop agent / close overlay", keys: ["Esc"] }
-        ]
-      },
-      {
-        title: "Navigation",
-        shortcuts: [
-          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
-          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
-          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
-          { label: "Find in conversation", keys: ["Mod", "F"] },
-          { label: "Next thread", keys: ["Ctrl", "Tab"] },
-          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
-          { label: "Close thread", keys: ["Mod", "W"] }
-        ]
-      },
-      {
-        title: "Panels",
-        shortcuts: [
-          { label: "Toggle side panel", keys: ["Mod", "B"] },
-          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
-          { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
-          { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] },
-          // Same physical key as above: while the browser page itself has focus,
-          // Mod+L shares its selection (or a screenshot) instead of focusing the
-          // address bar — see attachBrowserGuestShareShortcut.
-          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
-        ]
-      }
-    ];
     dialogEl5 = null;
+    openImpl2 = null;
   }
 });
 
@@ -144144,7 +145186,7 @@ function matchActivityPanelShortcut(e3) {
 function matchPanelShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
   if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "togglePanel";
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
   if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
   if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
   if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
@@ -144153,6 +145195,10 @@ function matchPanelShortcut(e3) {
   return null;
 }
 function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
   if (action === "togglePanel") {
     toggleFilesPaneWithWorkspace(store2, api2);
     return;
@@ -153276,6 +154322,10 @@ async function boot() {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
     openNewThread(store);
+  });
+  api.menu.onToggleSidebar(() => {
+    ensureLayout();
+    toggleProjectsPane(store);
   });
   api.menu.onTogglePanel(() => {
     ensureLayout();
