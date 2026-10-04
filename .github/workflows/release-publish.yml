@@ -23,6 +23,8 @@ permissions:
   actions: read
   attestations: write
   contents: write
+  issues: read
+  pull-requests: read
   id-token: write
 
 concurrency:
@@ -72,6 +74,9 @@ jobs:
             echo "Tag $TAG does not match package.json version $version"
             exit 1
           fi
+          # A waiver may expire between packaging and this manual publication.
+          # Check the exact tagged registry and the live owner review again.
+          GH_TOKEN="$SOURCE_GH_TOKEN" node scripts/check-e2e-release-waivers.mts
           release_type="$(node scripts/release-channel.mts --release-type "$version")"
           release_sha="$(git rev-parse 'HEAD^{commit}')"
           git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release

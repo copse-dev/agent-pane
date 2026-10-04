@@ -216,9 +216,38 @@ or stale entries fail the check. Add/remove the relevant record in the same PR a
 Each entry records its category, reason, tracking issue, accountable role, review deadline, and
 compensating evidence or an explicit gap. Existing records are **an inventory, not release waivers**;
 their initial dates schedule triage and do not assert a maintainer accepted the missing coverage.
-Due reviews are warnings until the owner/expiry enforcement slice in
-[#2719](https://github.com/copse-dev/agent-pane/issues/2719) is decided. Critical runtime repairs
-remain owned by [#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+Due inventory reviews remain warnings. Failure quarantines also require an `accountability`
+record with a real person's GitHub login (or explicit `null` while assignment is pending), a
+`restore`, `replace`, or `retire` disposition, and the next evidence/action. Assignment and a
+repair plan grant no release acceptance. Critical runtime repairs remain owned by
+[#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+
+`node scripts/check-e2e-release-waivers.mts` is the release gate. It needs no dependency install
+and runs before a new tag, before signing, and again before publication, against the checked-out
+candidate's registry. Each outstanding failure quarantine blocks release unless its accountable
+person has explicitly reviewed a bounded waiver. Platform gates, deliberate real-service tiers,
+and environment skips keep their separate evidence requirements and are not reclassified as
+failure waivers. No existing quarantine has been granted a waiver by this implementation.
+
+A waiver records `reviewedBy`, `reviewedOn`, `expiresOn`, `decisionUrl`, `reason`, and
+`scopeDigest`. The reviewer must be the assigned person; the waiver expires at the start of its
+UTC expiry date, no more than 14 days after review. The scope digest covers the spec, category,
+reason, compensating evidence and exact skip markers, so changing those invalidates approval.
+The command prints current digests. The reviewer posts an issue comment or approved PR review
+in this repository containing these exact lines, with the actual digest and date:
+
+```text
+Release waiver approved
+Scope: <printed SHA-256 digest>
+Expires: YYYY-MM-DD
+```
+
+The gate uses authenticated `gh api` to verify the live author, approval, date, digest and expiry.
+Unavailable/deleted decisions fail closed. An owner must update or remove an approval if a
+decision comment is edited; `reviewedOn` follows its current update date. The normal exclusion
+check also rejects invalid or expired recorded waivers, without interpreting pending ownership
+or overdue inventory reviews as acceptance. [#2719](https://github.com/copse-dev/agent-pane/issues/2719)
+remains open while real-person assignment and runtime restoration evidence are pending.
 
 The static check recognizes literal/local-array config exclusions (including the existing inherited
 base config), CI skip helpers and their import aliases, Mocha `.skip`/`['skip']`, `this.skip()`,

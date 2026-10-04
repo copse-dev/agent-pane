@@ -12,7 +12,7 @@ const marker = 'describeSkipInCi: approval'
 
 function registry(): ExclusionRegistry {
   return {
-    version: 1,
+    version: 2,
     entries: [
       {
         spec,
@@ -24,6 +24,11 @@ function registry(): ExclusionRegistry {
         reviewBy: '2026-09-27',
         coverage: 'Policy tests are not equivalent runtime evidence',
         markers: [marker],
+        accountability: {
+          owner: null,
+          disposition: 'restore',
+          nextStep: 'Repair the fixture and obtain runtime evidence',
+        },
       },
     ],
   }
@@ -242,7 +247,7 @@ describe('validateExclusionRegistry', () => {
     }
     assert.deepEqual(
       validateExclusionRegistry(
-        { version: 1, entries: [] },
+        { version: 2, entries: [] },
         [{ spec, marker }],
         new Set([spec]),
         '2026-09-20',
@@ -276,7 +281,7 @@ describe('validateExclusionRegistry', () => {
     ]) {
       assert.equal(
         exclusionRegistrySchema.safeParse({
-          version: 1,
+          version: 2,
           entries: [{ ...valid.entries[0], ...patch }],
         }).success,
         false,
