@@ -48,7 +48,7 @@ export const searchCodeTool = defineTool({
     const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root
 
     if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
-      return slowCodeSearch({
+      const result = await slowCodeSearch({
         searchRoot,
         pattern: searchPattern,
         maxResults: max_results,
@@ -56,6 +56,19 @@ export const searchCodeTool = defineTool({
         caseSensitive: case_sensitive,
         fileGlob: file_glob,
       })
+      if (result === 'No matches found.' && file_glob) {
+        return explainEmptyGlobResult({
+          fileGlob: file_glob,
+          pattern: searchPattern,
+          searchRoot,
+          displayRoot: root,
+          fixedString: fixed_string,
+          caseSensitive: case_sensitive,
+          signal,
+          slow: true,
+        })
+      }
+      return result
     }
 
     const { lines, backend } = await searchCodeContent({
@@ -102,27 +115,40 @@ async function explainEmptyGlobResult(opts: {
   fixedString: boolean
   caseSensitive: boolean
   signal: AbortSignal
+  slow?: boolean
 }): Promise<string> {
   const lines: string[] = [`No matches found within file_glob "${opts.fileGlob}".`]
-  // `|` is not alternation in a glob (brace sets are), so a `*a*|*b*` glob matches no file.
-  if (opts.fileGlob.includes('|') && !opts.fileGlob.includes('{')) {
+  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses micromatch.
+  if (!opts.slow && opts.fileGlob.includes('|') && !opts.fileGlob.includes('{')) {
     lines.push(
       'file_glob is a glob, not a regex: `|` does not mean "or". Use braces, e.g. "{*a*,*b*}".',
     )
   }
   try {
-    const probe = await searchCodeContent({
-      pattern: opts.pattern,
-      searchRoot: opts.searchRoot,
-      fixedString: opts.fixedString,
-      caseSensitive: opts.caseSensitive,
-      maxResults: GLOB_PROBE_MAX_RESULTS,
-      displayRoot: opts.displayRoot,
-      signal: opts.signal,
-    })
+    const probeLines = opts.slow
+      ? (
+          await slowCodeSearch({
+            pattern: opts.pattern,
+            searchRoot: opts.searchRoot,
+            fixedString: opts.fixedString,
+            caseSensitive: opts.caseSensitive,
+            maxResults: GLOB_PROBE_MAX_RESULTS,
+          })
+        ).split('\n')
+      : (
+          await searchCodeContent({
+            pattern: opts.pattern,
+            searchRoot: opts.searchRoot,
+            fixedString: opts.fixedString,
+            caseSensitive: opts.caseSensitive,
+            maxResults: GLOB_PROBE_MAX_RESULTS,
+            displayRoot: opts.displayRoot,
+            signal: opts.signal,
+          })
+        ).lines
     const files = [
       ...new Set(
-        probe.lines.flatMap((line) => {
+        probeLines.flatMap((line) => {
           const match = /^(.+?):\d+: /.exec(line)
           return match?.[1] ? [match[1]] : []
         }),
