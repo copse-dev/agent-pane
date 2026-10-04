@@ -40,8 +40,11 @@ describe('persisted model recovery through main-process IPC', function () {
       server.once('error', reject)
       server.listen(0, '127.0.0.1', () => {
         const address = server.address()
-        if (!address || typeof address === 'string') return reject(new Error('No fixture address'))
-        resolve(`http://127.0.0.1:${address.port}/v1`)
+        if (!address || typeof address === 'string') {
+          reject(new Error('No fixture address'))
+          return
+        }
+        resolve(`http://127.0.0.1:${String(address.port)}/v1`)
       })
     })
     writeE2eEnv({ COPSE_PANEL_MOCK_LLM: '0', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' })
@@ -50,9 +53,12 @@ describe('persisted model recovery through main-process IPC', function () {
   after(async () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_LLM: '1' })
     resetUserData()
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    )
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error)
+        else resolve()
+      })
+    })
   })
 
   async function seed(roleModels: Record<string, string>, safetyModel = ''): Promise<void> {
