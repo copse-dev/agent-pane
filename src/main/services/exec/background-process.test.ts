@@ -8,6 +8,7 @@ import {
   detectServerUrl,
   startBackgroundProcess,
   listBackgroundProcesses,
+  listBackgroundProcessPids,
   getBackgroundProcessLogs,
   nextBackgroundOperationId,
   stopBackgroundProcess,
@@ -190,8 +191,25 @@ describe('background process manager', () => {
       },
     })
 
+    const processInfo = listBackgroundProcessPids().find((entry) => entry.id === info.id)
+    assert.ok(processInfo)
     assert.equal(stopBackgroundProcess(info.id, OWNER), true)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Observe the real direct child's disappearance instead of assuming exit
+    // callbacks have run after a fixed 100ms sleep.
+    const deadline = Date.now() + 30_000
+    let exited = false
+    while (Date.now() < deadline) {
+      try {
+        process.kill(processInfo.pid, 0)
+      } catch (error: unknown) {
+        assert.ok(error instanceof Error)
+        assert.equal(Object.getOwnPropertyDescriptor(error, 'code')?.value, 'ESRCH')
+        exited = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    assert.equal(exited, true, 'explicitly cancelled child must exit')
 
     assert.equal(notified, false)
   })

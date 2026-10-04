@@ -77,7 +77,7 @@ describe('macOS native toolchain preflight', () => {
     const { runCommand, calls } = toolchainRunner()
 
     assert.doesNotThrow(() => {
-      checkMacosNativeToolchain({ platform: 'darwin', runCommand, temporaryRoot })
+      checkMacosNativeToolchain({ platform: 'darwin', env: {}, runCommand, temporaryRoot })
     })
     assert.equal(calls.length, 4)
     assert.match(calls[3] ?? '', /clang\+\+ -isysroot .*MacOSX27\.0\.sdk .*probe\.cc -o .*probe$/)
@@ -90,7 +90,7 @@ describe('macOS native toolchain preflight', () => {
 
     assert.throws(
       () => {
-        checkMacosNativeToolchain({ platform: 'darwin', runCommand, temporaryRoot })
+        checkMacosNativeToolchain({ platform: 'darwin', env: {}, runCommand, temporaryRoot })
       },
       (error: unknown) => {
         assert.ok(error instanceof Error)

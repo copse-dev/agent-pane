@@ -297,7 +297,7 @@ export const config: Options.Testrunner = {
       ...chromeOptions,
       args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
     }
-    assignDebugPort(cap)
+    await assignDebugPort(cap)
     if (specs.some((spec) => spec.endsWith('agent-coordination.e2e.ts'))) {
       const { seedCoordinationDemo } = await import('./tests/e2e/helpers/coordination-fixture.ts')
       await seedCoordinationDemo()
@@ -306,10 +306,10 @@ export const config: Options.Testrunner = {
   async beforeCommand(commandName) {
     // beforeSession runs once per worker, but every spec calls
     // browser.reloadSession() (196 call sites) and reloadSession re-launches
-    // Electron from the capabilities captured back then — so without this the
-    // whole shard rebinds one fixed devtools port ~25 times in a row, each time
-    // onto the port the process it is replacing has only just released. Rotate
-    // it first; see helpers/debug-port.ts for why reuse is what breaks.
+    // Electron from the capabilities captured back then — so without this every
+    // reload rebinds the devtools port that the Electron it replaces, or a
+    // detached child that inherited its socket, may still be listening on.
+    // Rotate to a fresh, unbound port first; see helpers/debug-port.ts.
     if (commandName !== 'reloadSession') return
     // On macOS, ChromeDriver can leave the Electron process alive long enough
     // for its replacement to lose the app's single-instance lock. Closing the
@@ -335,7 +335,7 @@ export const config: Options.Testrunner = {
     if (!requested) return
     // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
     // the flat capabilities object; reloadSession re-sends whichever it holds.
-    assignDebugPort(requested.alwaysMatch ?? requested)
+    await assignDebugPort(requested.alwaysMatch ?? requested)
   },
   afterSession() {
     cleanupE2eUserDataDir?.()

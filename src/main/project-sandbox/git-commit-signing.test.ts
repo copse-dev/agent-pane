@@ -91,12 +91,17 @@ describe('sshAgentSocketAllowList', () => {
     assert.deepEqual(sshAgentSocketAllowList({ ...base, authSock: '/', isSocket: false }), [])
   })
 
-  it('checks the path is a real unix socket', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'copse-signing-socket-'))
+  it('checks the path is a real unix socket', { skip: process.platform === 'win32' }, async () => {
+    // macOS TMPDIR can consume the entire sun_path budget before the filename.
+    // Path-budget behavior has separate ssh-paths tests; this checks socket type.
+    const dir = await mkdtemp('/tmp/copse-sign-')
     const socketPath = join(dir, 'agent.sock')
     const server = createServer()
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve))
     try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(socketPath, resolve)
+      })
       assert.deepEqual(
         await resolveSshAgentSocketAllowList({
           enabled: true,
@@ -114,11 +119,12 @@ describe('sshAgentSocketAllowList', () => {
         [],
       )
     } finally {
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve()
+      if (server.listening)
+        await new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve()
+          })
         })
-      })
       await rm(dir, { recursive: true, force: true })
     }
   })

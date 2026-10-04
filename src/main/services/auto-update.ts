@@ -1,6 +1,8 @@
 import { app, type BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
-import { getAutoUpdatePolicy } from '../../shared/release-channel.mts'
+import { getUpdateCheckPlan, type AutoUpdatePolicy } from '../../shared/release-channel.mts'
+import { chosenUpdateChannel } from '../../shared/update-channel-choice.ts'
+import { getSetting, setSetting } from './storage/settings.ts'
 import { RELEASES_URL, fetchUpdateChangelog } from './update-changelog.ts'
 import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 
@@ -17,6 +19,49 @@ import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 // before the relaunch that installs it.
 
 let wired = false
+// The policy of the check now running, so the prompt fetches matching notes.
+let activePolicy: AutoUpdatePolicy | null = null
+
+function applyPolicy(policy: AutoUpdatePolicy): void {
+  // GitHub does not infer update channels from the version. Both channel and
+  // allowPrerelease can enable downgrade inside electron-updater, so restore
+  // the forward-fix-only invariant last.
+  autoUpdater.channel = policy.channel
+  autoUpdater.allowPrerelease = policy.allowPrerelease
+  autoUpdater.allowDowngrade = policy.allowDowngrade
+  activePolicy = policy
+}
+
+/** The checks for the channel chosen in Settings → About; see getUpdateCheckPlan. */
+function updateCheckPlan(): AutoUpdatePolicy[] {
+  const version = app.getVersion()
+  const choice = chosenUpdateChannel(getSetting<string>('updateChannel', ''), version)
+  if (choice.remember) {
+    setSetting('updateChannel', choice.channel).catch((error: unknown) => {
+      console.warn('[auto-update] could not remember the update channel:', error)
+    })
+  }
+  return getUpdateCheckPlan(version, choice.channel)
+}
+
+/**
+ * Run the plan's checks in order and stop at the first that finds an update.
+ * A step that finds nothing, or fails because its channel has no release yet
+ * (no stable release before 0.1.0), moves on; only the last step's failure is
+ * reported. The `update-available` listener drives the prompt.
+ */
+async function runUpdateCheck(): Promise<void> {
+  const plan = updateCheckPlan()
+  for (const [index, policy] of plan.entries()) {
+    applyPolicy(policy)
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      if (result?.isUpdateAvailable === true) return
+    } catch (error) {
+      if (index === plan.length - 1) throw error
+    }
+  }
+}
 
 /**
  * Wire the background update check + prompts. No-op unless this is a packaged
@@ -26,9 +71,8 @@ let wired = false
 export function initAutoUpdate(win: BrowserWindow): void {
   if (!app.isPackaged || process.platform !== 'darwin' || wired) return
 
-  let updatePolicy: ReturnType<typeof getAutoUpdatePolicy>
   try {
-    updatePolicy = getAutoUpdatePolicy(app.getVersion())
+    updateCheckPlan()
   } catch (error) {
     console.warn(
       '[auto-update] disabled for unsupported release version:',
@@ -40,16 +84,9 @@ export function initAutoUpdate(win: BrowserWindow): void {
   wired = true
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
-  // GitHub does not infer update channels from the version. Stable clients
-  // follow only normal releases; beta clients follow beta and may advance to a
-  // newer stable release. Both channel and allowPrerelease can enable downgrade
-  // inside electron-updater, so restore the forward-fix-only invariant last.
-  autoUpdater.channel = updatePolicy.channel
-  autoUpdater.allowPrerelease = updatePolicy.allowPrerelease
-  autoUpdater.allowDowngrade = updatePolicy.allowDowngrade
 
   autoUpdater.on('update-available', (info: UpdateInfo): void => {
-    void promptDownload(win, info.version, updatePolicy.allowPrerelease)
+    void promptDownload(win, info.version, activePolicy?.allowPrerelease ?? false)
   })
   autoUpdater.on('update-downloaded', (info: UpdateInfo): void => {
     void promptInstall(win, info.version)
@@ -59,7 +96,7 @@ export function initAutoUpdate(win: BrowserWindow): void {
   })
 
   // Background check on launch; failures surface via the 'error' handler above.
-  autoUpdater.checkForUpdates().catch(() => {
+  runUpdateCheck().catch(() => {
     /* reported via the 'error' handler */
   })
 }
@@ -75,7 +112,8 @@ export function checkForUpdatesManually(win: BrowserWindow): void {
     return
   }
   // initAutoUpdate ran at startup, so the result listeners are already attached.
-  autoUpdater.checkForUpdates().catch(() => {
+  // The plan is read afresh, so a channel changed in Settings applies here.
+  runUpdateCheck().catch(() => {
     /* reported via the 'error' handler registered in initAutoUpdate */
   })
 }

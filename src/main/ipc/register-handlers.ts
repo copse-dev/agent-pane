@@ -11,7 +11,7 @@ import {
   readThirdPartyLicenseReport,
 } from '../services/about/third-party-licenses.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -29,7 +29,7 @@ import {
 } from '../services/classifiers/classifier-service.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { runCommand } from '../services/exec/command-runner.ts'
+import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
@@ -514,25 +514,6 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
   })
 }
 
-// Starter guidance written to a newly-created project's AGENT.md. Kept in the
-// main process (not the renderer) so the file is written at the trust boundary
-// alongside the folder itself; the text steers the agent to plan and ask before
-// acting in a codebase it has never seen.
-const STARTER_AGENT_MD = `# Project guide
-
-This is a new project scaffolded in Copse. Add project-specific context here that
-you want the coding agent to follow on every turn.
-
-## Working style
-
-- This project is new and may have no existing conventions yet. Before making
-  changes, explore the codebase, then propose a plan and ask clarifying questions.
-- Prefer plan mode: lay out what you intend to do and confirm the approach before
-  writing code or running destructive commands.
-- Keep changes small and reviewable; prefer to ask rather than assume when an
-  intent is ambiguous.
-`
-
 function processManagerLabels(): Map<number, string> {
   const labels = new Map<number, string>()
   for (const window of BrowserWindow.getAllWindows()) {
@@ -747,37 +728,7 @@ export function registerAllHandlers(
         projectMissing = true
       }
       if (projectMissing) await mkdir(projectPath, { recursive: true })
-      await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
-      await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
-      // git init -b main keeps the initial branch name stable regardless of the
-      // user's global init.defaultBranch / git template config.
-      //
-      // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
-      // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
-      // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
-      // scaffolding above is main-process `fs` and never hit that wall, which is
-      // why the failure only surfaced once the exit code was checked.
-      const init = await runCommand('git', ['init', '-b', 'main'], {
-        cwd: projectPath,
-        timeout_ms: 0,
-        unsandboxed: true,
-      })
-      // `runCommand` resolves with the exit code rather than rejecting, so an
-      // unchecked call silently accepts a failed `git init`: the folder scaffolds,
-      // the project registers, and the user gets a "project" that is not a
-      // repository — with the reason discarded at the only point that had it.
-      // Everything downstream (branch chip, Changes, worktrees) then fails in ways
-      // that never mention Git.
-      if (init.code !== 0) {
-        // A folder we created ourselves is ours to remove. Leaving it behind would
-        // trap the retry: the emptiness check above rejects the same name on the
-        // second attempt. A pre-existing (empty) folder is the user's, so it stays.
-        if (projectMissing) await rm(projectPath, { recursive: true, force: true })
-        const detail = (init.stderr || init.stdout).trim()
-        throw new Error(
-          `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
-        )
-      }
+      await scaffoldProject(projectPath, name, projectMissing)
       const root = await registerAllowedWorkspaceRoot(projectPath)
       return root
     },

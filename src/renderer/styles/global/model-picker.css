@@ -450,3 +450,9 @@
     min-width: 100%;
   }
 }
+
+/* Keep the route privacy qualification legible beside a truncated model name. */
+.model-picker-retention {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}

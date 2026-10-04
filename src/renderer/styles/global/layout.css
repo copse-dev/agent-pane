@@ -33,6 +33,17 @@
   background: var(--bg-hover);
 }
 /* ---- three-pane layout ---- */
+/* Cmd/Ctrl+B hides the projects sidebar; chat (and any open panel) take its width. */
+.three-pane.is-projects-collapsed .pane-projects,
+.three-pane.is-projects-collapsed #resizer-projects {
+  display: none;
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal .pane-chat {
+  grid-column: 1;
+}
 .three-pane {
   display: flex;
   flex: 1;
@@ -126,6 +137,18 @@
 }
 .projects-search-btn.active {
   color: var(--accent);
+}
+/* Sort menu entry beside the thread filter. */
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 /* Activity panel entry: a bell, with a count of waiting threads beside it. */
 .projects-activity-btn {
@@ -939,6 +962,9 @@
   grid-row: 1 / -1;
   /* Chat is only hidden by being underneath, so the cover must be opaque. */
   background: var(--bg-base);
+}
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
 }
 .pane-files-body {
   flex: 1;

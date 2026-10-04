@@ -25,6 +25,8 @@ test('loads every first-paint setting concurrently', async () => {
     'layout',
     'autoPortraitRightPanel',
     'rightPanelPosition',
+    'sidebarThreadSort',
+    'sidebarThreadSortReverse',
     'openLinksInBuiltInBrowser',
     'theme',
     'fontSize',

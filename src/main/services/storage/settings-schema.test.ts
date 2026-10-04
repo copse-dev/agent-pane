@@ -58,6 +58,19 @@ describe('settings-schema', () => {
     assert.equal(rightPanelPosition.safeParse('top').success, false)
   })
 
+  it('validates the sidebar thread sort settings', () => {
+    const sort = getSettingSchema('sidebarThreadSort')
+    assert.ok(sort)
+    for (const mode of ['activity', 'created', 'title']) {
+      assert.equal(sort.safeParse(mode).success, true)
+    }
+    assert.equal(sort.safeParse('random').success, false)
+    const reverse = getSettingSchema('sidebarThreadSortReverse')
+    assert.ok(reverse)
+    assert.equal(reverse.safeParse(true).success, true)
+    assert.equal(reverse.safeParse('yes').success, false)
+  })
+
   // Regression: `trustedShellCommands`, `cursorHooksEnabled` and
   // `defaultReadonlyMode` were written by the security bundle but never
   // registered here, so `settings:get` (which reads with a `null` fallback)

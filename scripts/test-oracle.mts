@@ -45,10 +45,10 @@
  * merge yet — so every PR that can actually reach trunk still runs the whole
  * suite under the coverage ratchet. See {@link computeUnitPlan}.
  */
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 const ROOT = process.cwd()
 const E2E_DIR = 'tests/e2e'
@@ -1041,7 +1041,7 @@ function runSelected(
 
 // Run the CLI only when invoked directly — importing this module (e.g. from
 // scripts/check-oracle.mts) must not trigger a git diff + report.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+if (isDirectExecution(import.meta.url, 'test-oracle'))
   void main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1

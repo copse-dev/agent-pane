@@ -2618,6 +2618,13 @@
           0
         ]
       },
+      "menu:toggle-sidebar": {
+        "api": "menu.onToggleSidebar",
+        "args": [
+          0,
+          0
+        ]
+      },
       "menu:ui-scale-reset": {
         "api": "menu.onUiScaleReset",
         "args": [

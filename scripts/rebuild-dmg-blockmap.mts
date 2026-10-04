@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { createRequire } from 'node:module'
 
 /**
@@ -65,7 +66,7 @@ async function main(): Promise<void> {
 }
 
 // Importing this module for its helpers must not run it.
-if (process.argv[1]?.endsWith('rebuild-dmg-blockmap.mts') === true) {
+if (isDirectExecution(import.meta.url, 'rebuild-dmg-blockmap')) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error)
     process.exitCode = 1

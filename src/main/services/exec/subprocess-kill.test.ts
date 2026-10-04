@@ -64,7 +64,9 @@ describe('terminateProcessTree', () => {
     // process group (pgid === parent pid) because it was spawned detached. A
     // group-targeted kill (negative pid) therefore reaches the grandchild too,
     // whereas killing only the direct child would orphan it.
-    const proc = spawn('/bin/sh', ['-c', 'sleep 30 & echo $!; wait'], {
+    // Keep the leader alive to reap its child after SIGTERM. Otherwise PID 1 in
+    // a container may retain the killed sleeper as a zombie indefinitely.
+    const proc = spawn('/bin/sh', ['-c', "trap 'wait; exit 0' TERM; sleep 30 & echo $!; wait"], {
       stdio: ['ignore', 'pipe', 'ignore'],
       detached: true,
     })
@@ -81,15 +83,22 @@ describe('terminateProcessTree', () => {
     const pgid = pgidProbe.error ? undefined : pgidProbe.stdout.toString().trim()
     const sameGroup = pgid ? Number(pgid) === proc.pid : null
 
-    terminateProcessTree(proc, SUBPROCESS_KILL_GRACE_MS)
+    const cancelKill = terminateProcessTree(proc, SUBPROCESS_KILL_GRACE_MS)
     await once(proc, 'exit')
-    await new Promise((r) => setTimeout(r, 200))
+    cancelKill()
 
     let grandchildAlive = true
-    try {
-      process.kill(grandchildPid, 0)
-    } catch {
-      grandchildAlive = false
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline) {
+      try {
+        process.kill(grandchildPid, 0)
+      } catch (error: unknown) {
+        assert.ok(error instanceof Error)
+        assert.equal(Object.getOwnPropertyDescriptor(error, 'code')?.value, 'ESRCH')
+        grandchildAlive = false
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
     }
 
     // Always clean up before an assertion or environment-dependent skip. The
@@ -103,16 +112,14 @@ describe('terminateProcessTree', () => {
       }
     }
 
-    if (!grandchildAlive) {
-      assert.ok(true, 'grandchild reaped via process-group kill')
-    } else if (sameGroup === null) {
+    if (grandchildAlive && sameGroup === null) {
       t.skip(
         `could not inspect the grandchild process group: ${pgidProbe.error?.message ?? 'no output'}`,
       )
     } else {
-      // Some sandboxed CI namespaces don't deliver group signals across the PID
-      // boundary; the precondition (shared group) is what makes group kill correct.
-      assert.ok(sameGroup, 'grandchild shares the detached child process group')
+      if (grandchildAlive)
+        assert.ok(sameGroup, 'grandchild shares the detached child process group')
+      assert.equal(grandchildAlive, false, 'grandchild reaped via process-group kill')
     }
   })
 })

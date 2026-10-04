@@ -1,3 +1,4 @@
+import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
@@ -717,6 +718,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: 'acp:codex',
       label: 'Codex',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Codex on this device',
       coverage: 'paid',
     })
@@ -742,6 +744,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: staleValue,
       label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
     })
@@ -770,6 +773,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: staleValue,
       label: 'Cursor — agent default (not currently advertised)',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
     })
@@ -1111,5 +1115,32 @@ describe('embedding models are not offered', () => {
     const row = options.find((o) => o.value === 'lmstudio:text-embedding-nomic-embed-text-v1.5')
     assert.ok(row, 'the current selection must stay visible')
     assert.match(row.label, /not available/i)
+  })
+})
+
+describe('ACP retention qualification', () => {
+  it('qualifies advertised, automatic and saved routes without inferring local/ZDR from names or environment', async () => {
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'local',
+        title: 'Local zero-retention agent',
+        command: 'fixture',
+        enabled: true,
+        env: { OPENAI_BASE_URL: 'http://localhost:1234/v1', OPENAI_API_KEY: 'not-a-real-key' },
+        availableModels: [{ value: 'fireworks:model', label: 'Zero retention model' }],
+      },
+      { id: 'default', title: 'Default agent', command: 'fixture', enabled: true },
+      { id: 'disabled', title: 'Disabled agent', command: 'fixture', enabled: false },
+    ]
+    for (const selected of ['acp:local#retired', 'acp:disabled', 'acp:removed']) {
+      const rows = (await fetchModelOptions(mockApi({ acpAgents: agents }), selected)).filter(
+        (row) => row.value.startsWith('acp:'),
+      )
+      assert.ok(rows.some((row) => row.value === 'acp:local#fireworks:model'))
+      assert.ok(rows.some((row) => row.value === 'acp:default'))
+      assert.ok(rows.some((row) => row.value === selected))
+      assert.ok(rows.every((row) => row.retention === ACP_RETENTION_NOTICE))
+      assert.match(ACP_RETENTION_NOTICE.detail, /signed-in account and upstream model provider/)
+    }
   })
 })
