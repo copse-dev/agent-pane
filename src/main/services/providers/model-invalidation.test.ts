@@ -165,7 +165,7 @@ describe('main-owned saved model recovery', () => {
     const f = fixture()
     const result = await f.service.list('missing:thread')
     assert.equal(result[0]?.target, 'thread')
-    assert.equal(result[0]?.model, 'missing:thread')
+    assert.equal(result[0].model, 'missing:thread')
     assert.equal(result.length, 3)
   })
 })
