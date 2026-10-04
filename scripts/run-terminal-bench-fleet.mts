@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   awaitHostReady,
   type CloudHost,
@@ -697,7 +698,7 @@ async function main(): Promise<void> {
   else await downFleet(options)
 }
 
-if (process.argv[1]?.endsWith('run-terminal-bench-fleet.mts')) {
+if (isDirectExecution(import.meta.url, 'run-terminal-bench-fleet')) {
   void main().catch((error: unknown) => {
     console.error(`terminal-bench fleet: ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1

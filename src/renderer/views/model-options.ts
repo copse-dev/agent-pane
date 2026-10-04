@@ -1,3 +1,4 @@
+import { ACP_RETENTION_NOTICE, type AcpRetentionNotice } from '@shared/acp-retention.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { chatGptPlanModelValue, parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
@@ -97,6 +98,8 @@ export interface ModelOption {
   coverage?: ModelCoverage
   /** Image-input support when known; absent means the provider did not advertise it. */
   supportsImages?: boolean
+  /** Route-level privacy evidence; ACP does not report account retention controls. */
+  retention?: Readonly<AcpRetentionNotice>
 }
 
 export function modelDisplayLabel(model: string): string {
@@ -175,6 +178,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
         const versioned = acpModelVersionName(model.description)
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
         options.push({
+          retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} — ${hint}` : label,
           group,
@@ -183,7 +187,12 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
     } else {
       // No discovered models (never detected, or the agent has a fixed model):
       // fall back to a single entry that routes to the agent's own default.
-      options.push({ value: acpModelValue(agent.id), label: agent.title, group })
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE,
+      })
     }
   }
   return options
@@ -637,6 +646,7 @@ export async function fetchModelOptions(
       // labeling pass exists to stop showing).
       const staleModel = selection?.model ? canonicalModelLabel(selection.model) : 'agent default'
       const stale: ModelOption = {
+        retention: ACP_RETENTION_NOTICE,
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`

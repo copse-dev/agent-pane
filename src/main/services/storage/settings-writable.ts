@@ -194,6 +194,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   animateAgentAvatars: z.boolean(),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
+  sidebarThreadSort: z.enum(['activity', 'created', 'title']),
+  sidebarThreadSortReverse: z.boolean(),
   // Interaction colour for links, primary actions, selections, and chat
   // emphasis. Theme CSS derives accessible link/hover shades from this hue.
   uiAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),

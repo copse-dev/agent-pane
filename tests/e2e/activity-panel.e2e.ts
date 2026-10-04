@@ -259,6 +259,13 @@ describe('Activity panel', function () {
       `the activity list should scroll before the update (${JSON.stringify(initialScroll)})`,
     )
 
+    // A real approval redraw must leave an unchanged recent row and group as
+    // the same Chromium nodes, not recreate a target under the pointer.
+    const untouchedSelector = rowSelector('recent', 'e2e-activity-recent-9')
+    const untouchedRowId = (await $(untouchedSelector)).elementId
+    const recentGroupId = (await $('#activity-panel .activity-group[data-group="recent"]'))
+      .elementId
+
     // Approve from the panel. The user stays on thread B the whole time.
     await reopenedApprove.click()
     await browser.waitUntil(
@@ -284,6 +291,16 @@ describe('Activity panel', function () {
     const finishedRow = $(rowSelector('recent', AUTH_THREAD))
     await finishedRow.waitForExist({ timeout: 30_000 })
     await expect(finishedRow).toHaveAttribute('data-state', 'finished')
+    assert.equal(
+      (await $(untouchedSelector)).elementId,
+      untouchedRowId,
+      'unchanged row survives the native approval redraw',
+    )
+    assert.equal(
+      (await $('#activity-panel .activity-group[data-group="recent"]')).elementId,
+      recentGroupId,
+      'unchanged group survives the native approval redraw',
+    )
     await expect($(rowSelector('working', AUDIT_THREAD))).toBeDisplayed()
     await expect($('#activity-panel .activity-quiet')).toHaveText('Nothing needs you right now.')
     await expect($(`.chat-row[data-thread-id="${AUDIT_THREAD}"]`)).toHaveElementClass('selected')

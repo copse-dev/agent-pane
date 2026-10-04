@@ -384,6 +384,9 @@ importers:
       '@copse/std':
         specifier: workspace:*
         version: link:../std
+      js-yaml:
+        specifier: 5.4.2
+        version: 5.4.2
       zod:
         specifier: ^4.5.4
         version: 4.6.5

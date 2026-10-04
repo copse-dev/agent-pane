@@ -3,6 +3,7 @@ import {
   installMockScenario,
   prepareMockToolTurn,
 } from './helpers/mock-scenario.ts'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -85,6 +86,9 @@ describe('git changes image preview', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     repoRoot = seedGitImageChangesFixture()
+    // Checkout preparation needs a real default ref, independent of host Git defaults.
+    execFileSync('git', ['branch', '-M', 'main'], { cwd: repoRoot, stdio: 'pipe' })
+    execFileSync('git', ['config', 'init.defaultBranch', 'main'], { cwd: repoRoot, stdio: 'pipe' })
     await browser.reloadSession()
     await waitForWorkspace()
   })

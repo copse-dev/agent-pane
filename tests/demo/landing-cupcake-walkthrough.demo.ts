@@ -74,10 +74,12 @@ describe('landing cupcake walkthrough', () => {
       { timeout: 20_000, timeoutMsg: 'expected the replayed turn to finish' },
     )
 
-    const tokenLabel = await browser.execute(
-      () => document.querySelector('.footer-usage')?.textContent ?? '',
+    const usageHeader = await browser.execute(
+      () =>
+        document.querySelector('.context-wheel-popover .footer-usage-popover-header')
+          ?.textContent ?? '',
     )
-    expect(tokenLabel).toBe('1.4k tokens')
+    expect(usageHeader).toBe('Usage · 1.4k tokens')
     await expect($('.titlebar-btn[aria-label="Open browser"]')).toHaveElementClass('active')
     await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
     const address = $('.browser-tab-panel.is-active .browser-url-input')

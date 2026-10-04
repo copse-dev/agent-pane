@@ -22,6 +22,8 @@ describe('browser preview tool', () => {
     seedEmptyProject(projectRoot, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // Hook chips are a developer-mode surface; the chip-sizing check below needs them.
+      developerMode: true,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

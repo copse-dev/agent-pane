@@ -1,6 +1,6 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -12,7 +12,7 @@ import { waitForAgentIdle } from './helpers.ts'
 describe('ask_user dialog', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-ask-user-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-ask-user-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

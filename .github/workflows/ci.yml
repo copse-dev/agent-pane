@@ -202,8 +202,10 @@ jobs:
             .nvmrc \
             packages/review \
             scripts/prepare-review-stage0.mts \
-            .github/workflows/review-findings.yml \
-            .github/workflows/review-ground.yml \
+            .github/actions/review-ground \
+            .github/actions/review-findings \
+            .github/workflows/reviewer.yml \
+            .github/workflows/review-trigger.yml \
             .github/workflows/review-nightly.yml; then
             echo "required=false" >> "$GITHUB_OUTPUT"
           else

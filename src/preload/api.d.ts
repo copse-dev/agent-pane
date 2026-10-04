@@ -542,6 +542,13 @@ export interface ApiClient {
     reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
+    maintenance: () => Promise<import('@shared/types/storage-cleanup.ts').StorageMaintenanceState>
+    cleanup: (
+      area: import('@shared/types/storage-cleanup.ts').StorageArea,
+    ) => Promise<import('@shared/types/storage-cleanup.ts').StorageCleanupResult>
+    retention: (
+      policy: import('@shared/types/storage-cleanup.ts').StorageRetention,
+    ) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
@@ -802,6 +809,7 @@ export interface ApiClient {
     onProcessManager: (handler: () => void) => () => void
     onSettings: (handler: () => void) => () => void
     onNewThread: (handler: () => void) => () => void
+    onToggleSidebar: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
     onShowExplorer: (handler: () => void) => () => void
     onShowTerminal: (handler: () => void) => () => void

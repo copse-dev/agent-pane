@@ -1,12 +1,29 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFooterUsageTooltip } from '@shared/usage/footer-usage-tooltip.ts'
-import { createFooterUsagePopover } from './footer-usage-popover.ts'
+import {
+  buildFooterUsageTooltip,
+  type FooterUsageTooltipModel,
+} from '@shared/usage/footer-usage-tooltip.ts'
+import { appendUsageSections } from './footer-usage-popover.ts'
 
 afterEach(() => {
   document.body.replaceChildren()
 })
+
+/** The sections render into the context wheel's popover; a bare div stands in for it here. */
+function createFooterUsagePopover(): {
+  root: HTMLElement
+  render: (model: FooterUsageTooltipModel) => void
+} {
+  const root = document.createElement('div')
+  return {
+    root,
+    render: (model): void => {
+      appendUsageSections(root, model)
+    },
+  }
+}
 
 describe('footer usage popover (component)', () => {
   it('renders header, in/out rows and cost from a measured tooltip model', () => {
@@ -24,11 +41,6 @@ describe('footer usage popover (component)', () => {
       ),
     )
 
-    // Hidden until hovered/focused, like the context-wheel popover beside it.
-    assert.equal(popover.root.hidden, true)
-    popover.show()
-    assert.equal(popover.root.hidden, false)
-
     const header = popover.root.querySelector('.footer-usage-popover-header')
     assert.equal(header?.textContent, 'Usage · 13.1M tokens')
     const rows = [...popover.root.querySelectorAll('.footer-usage-popover-row')].map(
@@ -40,9 +52,6 @@ describe('footer usage popover (component)', () => {
     )
     assert.ok(rows.some((text) => text.startsWith('Output')))
     assert.ok(rows.some((text) => text.startsWith('Cost')))
-
-    popover.hide()
-    assert.equal(popover.root.hidden, true)
   })
 
   it('shows the estimate note and no cost row for estimated usage', () => {
@@ -59,7 +68,6 @@ describe('footer usage popover (component)', () => {
         },
       ),
     )
-    popover.show()
 
     assert.match(popover.root.textContent, /~1\.3k tokens/)
     assert.match(popover.root.textContent, /Estimated/)
@@ -90,30 +98,6 @@ describe('footer usage popover (component)', () => {
 
     assert.equal(popover.root.querySelectorAll('.footer-usage-popover-divider').length, 1)
     assert.equal(popover.root.querySelectorAll('.footer-usage-popover-row.is-model').length, 2)
-  })
-
-  it('empties and stays hidden when there is nothing to show', () => {
-    const popover = createFooterUsagePopover()
-    document.body.append(popover.root)
-
-    popover.render(
-      buildFooterUsageTooltip(
-        { inputTokens: 10, outputTokens: 2, estimated: false },
-        {
-          model: 'claude-sonnet-4-6',
-          messages: [],
-          measuredUsage: { inputTokens: 10, outputTokens: 2 },
-        },
-      ),
-    )
-    popover.show()
-    popover.render(null)
-
-    assert.equal(popover.root.hidden, true)
-    assert.equal(popover.root.childElementCount, 0)
-    // A show() after an empty render must not flash an empty box.
-    popover.show()
-    assert.equal(popover.root.hidden, true)
   })
 })
 
@@ -170,8 +154,9 @@ describe('footer usage popover subagent row (component)', () => {
     assert.match(subagents.textContent, /Subagents/)
     assert.match(subagents.textContent, /1 run · 2\.1M in \/ 84\.0k out/)
 
-    // One divider, shared with the per-model rows, and the subagent line first.
-    assert.equal(popover.root.querySelectorAll('.footer-usage-popover-divider').length, 1)
+    // The subagent line comes first; the recorded run is listed under it and a
+    // second divider keeps the per-model rows from reading as another run.
+    assert.equal(popover.root.querySelectorAll('.footer-usage-popover-divider').length, 2)
     const below = [...popover.root.querySelectorAll('.footer-usage-popover-row')].filter(
       (row) => row.classList.contains('is-subagents') || row.classList.contains('is-model'),
     )
@@ -230,7 +215,6 @@ describe('footer usage popover subagent-excluded headline and free explanation (
         },
       ),
     )
-    popover.show()
 
     const header = popover.root.querySelector('.footer-usage-popover-header')
     assert.equal(header?.textContent, 'Usage · 12.3M tokens')
@@ -254,5 +238,108 @@ describe('footer usage popover subagent-excluded headline and free explanation (
       notes.includes('Free: local model'),
       `expected a "Free: local model" note, got ${notes.join(' | ')}`,
     )
+  })
+})
+
+describe('footer usage popover subagent runs (component)', () => {
+  it('lists each run under the Subagents row with its status, model and tokens', () => {
+    const popover = createFooterUsagePopover()
+    document.body.append(popover.root)
+
+    popover.render(
+      buildFooterUsageTooltip(
+        { inputTokens: 5000, outputTokens: 900, estimated: false },
+        {
+          model: 'claude-sonnet-4-6',
+          measuredUsage: { inputTokens: 9000, outputTokens: 1400 },
+          messages: [
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: '',
+              createdAt: 1,
+              toolCalls: [
+                {
+                  id: 't1',
+                  name: 'explore',
+                  args: {},
+                  status: 'done',
+                  result: 'done',
+                  subagent: {
+                    id: 'sub-1',
+                    kind: 'explore',
+                    status: 'done',
+                    prompt: 'find call sites',
+                    summary: null,
+                    messages: [],
+                    model: 'claude-haiku-4-5',
+                    usage: { inputTokens: 4000, outputTokens: 500 },
+                  },
+                },
+                {
+                  id: 't2',
+                  name: 'delegate',
+                  args: {},
+                  status: 'running',
+                  result: '',
+                  subagent: {
+                    id: 'sub-2',
+                    kind: 'delegate',
+                    status: 'running',
+                    prompt: 'write tests',
+                    summary: null,
+                    messages: [],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ),
+    )
+
+    const runs = [...popover.root.querySelectorAll('.footer-usage-popover-row.is-run')]
+    assert.equal(runs.length, 2)
+    assert.match(runs[0]?.textContent ?? '', /Explore · find call sites/)
+    assert.match(runs[0]?.textContent ?? '', /claude-haiku-4-5 · done/)
+    assert.match(runs[0]?.textContent ?? '', /4\.0k in \/ 500 out/)
+    assert.ok(runs[0]?.querySelector('.footer-usage-popover-dot.is-done'))
+    assert.match(runs[1]?.textContent ?? '', /Delegate · write tests/)
+    assert.ok(runs[1]?.querySelector('.footer-usage-popover-dot.is-running'))
+  })
+
+  it('collapses runs past the cap into a "+N more" line', () => {
+    const popover = createFooterUsagePopover()
+    document.body.append(popover.root)
+    const toolCalls = Array.from({ length: 7 }, (_, index) => ({
+      id: `t${String(index)}`,
+      name: 'explore',
+      args: {},
+      status: 'done' as const,
+      result: 'done',
+      subagent: {
+        id: `sub-${String(index)}`,
+        kind: 'explore' as const,
+        status: 'done' as const,
+        prompt: `q${String(index)}`,
+        summary: null,
+        messages: [],
+        usage: { inputTokens: 100, outputTokens: 10 },
+      },
+    }))
+
+    popover.render(
+      buildFooterUsageTooltip(
+        { inputTokens: 1000, outputTokens: 100, estimated: false },
+        {
+          model: 'claude-sonnet-4-6',
+          measuredUsage: { inputTokens: 1700, outputTokens: 170 },
+          messages: [{ id: 'a1', role: 'assistant', content: '', createdAt: 1, toolCalls }],
+        },
+      ),
+    )
+
+    assert.equal(popover.root.querySelectorAll('.footer-usage-popover-row.is-run').length, 5)
+    assert.match(popover.root.textContent, /\+2 more/)
   })
 })

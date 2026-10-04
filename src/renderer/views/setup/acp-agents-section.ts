@@ -1,3 +1,4 @@
+import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
 import { acpModelChoiceLabel, launchesAcpCatalogEntry, parseAcpAgentConfigs } from '@shared/acp.ts'
@@ -54,6 +55,41 @@ export interface AcpAgentsSection {
   isConfigured: (id: string) => boolean
   /** Embedded mode only: show one agent's form (or the add form for `'other'`). */
   select: (id: string) => void
+}
+
+const AGENT_DATA_POLICY_URLS: Readonly<Record<string, string>> = {
+  'claude-acp': 'https://github.com/anthropics/claude-code#data-collection-usage-and-retention',
+  'claude-code-acp':
+    'https://github.com/anthropics/claude-code#data-collection-usage-and-retention',
+  gemini: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md',
+  'qwen-code': 'https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md',
+}
+
+function retentionNotice(agent?: Pick<AcpAgentConfig, 'id' | 'command' | 'args'>): HTMLElement {
+  const known = agent ? findAcpCatalogEntry(agent.id) : undefined
+  const source =
+    agent && known && launchesAcpCatalogEntry(agent, known)
+      ? AGENT_DATA_POLICY_URLS[known.id]
+      : undefined
+  return el(
+    'div',
+    { class: 'acp-retention-notice' },
+    el('span', { class: 'ui-badge provider-privacy-badge unknown' }, ACP_RETENTION_NOTICE.label),
+    el('p', { class: 'field-hint' }, ACP_RETENTION_NOTICE.detail),
+    ...(source
+      ? [
+          el(
+            'p',
+            { class: 'field-hint' },
+            el(
+              'a',
+              { href: source, target: '_blank', rel: 'noopener noreferrer' },
+              'Agent data policy',
+            ),
+          ),
+        ]
+      : []),
+  )
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -403,16 +439,21 @@ export function createAcpAgentsSection(
     const modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: (current): Promise<ModelOption[]> => {
         const pickerOptions: ModelOption[] = [
-          { value: '', label: DEFAULT_MODEL_LABEL },
+          { value: '', label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
           ...detectedModels.map((choice) => ({
             value: choice.value,
             label: acpModelChoiceLabel(choice),
             group: 'Detected models',
+            retention: ACP_RETENTION_NOTICE,
           })),
         ]
         // Preserve a saved value even if it isn't in the (not-yet-detected) list.
         if (current && !detectedModels.some((choice) => choice.value === current)) {
-          pickerOptions.push({ value: current, label: `${current} (saved)` })
+          pickerOptions.push({
+            value: current,
+            label: `${current} (saved)`,
+            retention: ACP_RETENTION_NOTICE,
+          })
         }
         return Promise.resolve(pickerOptions)
       },
@@ -517,6 +558,7 @@ export function createAcpAgentsSection(
     const fields = el(
       'div',
       { class: 'acp-agent-fields' },
+      retentionNotice(options.initial),
       el('label', {}, 'Id', idInput),
       el('label', {}, 'Title', titleInput),
       el('label', {}, 'Command', commandInput),
@@ -570,6 +612,7 @@ export function createAcpAgentsSection(
         ),
       )
     }
+    form.append(retentionNotice(known))
     const add = el('button', { type: 'button', class: 'provider-save' }, 'Add to my agents')
     add.addEventListener('click', () => {
       selected = known.id

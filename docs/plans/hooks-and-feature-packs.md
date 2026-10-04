@@ -171,7 +171,12 @@ revisiting this document, not silently diverging in an implementation PR.
     run counts. When the human expands it, allow-only/no-op/suppressed/failure runs remain
     individually collapsed; runs that applied an effect (deny/ask/halt, rewrite, injected
     context, agent/user message, queued follow-up, or session environment) start open with
-    the effect before execution metadata.
+    the effect before execution metadata. **The card family is a developer-mode
+    surface** (same gate as the Hooks settings): without `developerMode` the renderer
+    draws no hook cards, including the first-party hooks that run for every user, so a
+    default install never sees harness internals. History is unaffected — cards are still
+    folded from the spine (decision 17) and appear as soon as developer mode is on,
+    including for already-open threads.
 11. **`injectContext` from async hooks is converted to a queued message** (v1). Only
     blocking hooks inject context at their fire point. This preserves decision 4 and
     keeps turn content deterministic for evals. Claude's `asyncRewake` (background hook
@@ -608,7 +613,8 @@ pack manifest
 
 UI contribution levels:
 
-- **Level 1 — declarative cards**: the hook-card family. User-reachable.
+- **Level 1 — declarative cards**: the hook-card family. User-reachable, shown when
+  developer mode is on (decision 10).
 - **Level 2 — named panel slot**: pack supplies structured data, host renders a generic
   list/tree panel. User-reachable. Data model extends the existing chunk vocabulary —
   `todo_update` already round-trips to ACP `plan`

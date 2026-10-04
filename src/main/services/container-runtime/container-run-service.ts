@@ -1,3 +1,4 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -290,6 +291,13 @@ export class ContainerRunService {
    * asking, so one thread cannot pull another's run into its checkout.
    */
   async adopt(projectId: string, threadId: string, runtimeId: string): Promise<CarryOutAdoption> {
+    return storageCleanup().use('runs', () => this.adoptLeased(projectId, threadId, runtimeId))
+  }
+  private async adoptLeased(
+    projectId: string,
+    threadId: string,
+    runtimeId: string,
+  ): Promise<CarryOutAdoption> {
     if (this.isActive(threadId)) {
       throw new Error('This thread has a container run in progress; wait for it to finish')
     }

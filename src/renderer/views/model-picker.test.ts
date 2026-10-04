@@ -1,4 +1,5 @@
 import '../../../tests/setup-dom.ts'
+import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -465,5 +466,41 @@ describe('shared model picker', () => {
     // it, which would anchor one menu to the other picker's trigger.
     assert.equal(new Set(names).size, 2)
     for (const name of names) assert.match(name, /^--model-picker-\d+$/)
+  })
+})
+
+describe('route retention notice', () => {
+  it('shows the qualification on the current route and each choice, then removes it for an unqualified selection', async () => {
+    document.body.innerHTML = ''
+    const host = document.createElement('div')
+    document.body.append(host)
+    let current = 'acp:fixture#model'
+    const picker = mountModelPicker(
+      host,
+      () => current,
+      (value) => {
+        current = value
+      },
+      async () => [
+        { value: 'acp:fixture#model', label: 'Agent model', retention: ACP_RETENTION_NOTICE },
+        { value: 'gpt-5-mini', label: 'API model' },
+      ],
+      { loadOnMount: false },
+    )
+    await picker.refresh()
+    const qualification = host.querySelector<HTMLElement>(
+      '.model-picker-trigger .model-picker-retention',
+    )
+    assert.ok(qualification)
+    assert.equal(qualification.hidden, false)
+    assert.equal(qualification.textContent, 'ZDR not verified')
+    assert.equal(qualification.title, ACP_RETENTION_NOTICE.detail)
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const option = host.querySelector<HTMLButtonElement>('[data-value="acp:fixture#model"]')
+    assert.equal(option?.querySelector('.model-picker-retention')?.textContent, 'ZDR not verified')
+    host.querySelector<HTMLButtonElement>('[data-value="gpt-5-mini"]')?.click()
+    assert.equal(qualification.hidden, true)
+    assert.equal(qualification.textContent, '')
+    picker.destroy()
   })
 })

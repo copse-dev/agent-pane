@@ -1,6 +1,9 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import type { ThreadContainerRunSpec } from './run-spec.ts'
 import {
   containerBuildCommand,
+  containerEngineInvocation,
+  runLockedContainerBuild,
   dockerDaemonReachable,
   engineCommand,
   reachableThreadContainerEngines,
@@ -1050,7 +1053,14 @@ async function runEngine(
   args: string[],
   options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const { stdout } = await execFileAsync(engineCommand(engine), args, {
+  const invocation = containerEngineInvocation(engine, args)
+  if (engine === 'apple' && args[0] === 'build') {
+    return await runLockedContainerBuild(invocation, {
+      timeoutMs: options.timeoutMs ?? 45_000,
+      ...(options.env ? { env: options.env } : {}),
+    })
+  }
+  const { stdout } = await execFileAsync(invocation.command, invocation.args, {
     maxBuffer: 64 * 1024 * 1024,
     timeout: options.timeoutMs ?? 45_000,
     killSignal: 'SIGKILL',
@@ -1821,6 +1831,16 @@ const STOPPED_BEFORE_START = 'Stopped by you before the container started'
 
 /** Provision → carry in → run → carry out → record → tear down. */
 export async function runThreadInContainer(
+  request: ThreadContainerRequest,
+  options: RunThreadOptions = {},
+  dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },
+): Promise<ThreadContainerRecord> {
+  return storageCleanup().use('runs', () =>
+    runThreadInContainerLeased(request, options, dependencies),
+  )
+}
+
+async function runThreadInContainerLeased(
   request: ThreadContainerRequest,
   options: RunThreadOptions = {},
   dependencies: { stageLogin: typeof stageAgentLogin } = { stageLogin: stageAgentLogin },

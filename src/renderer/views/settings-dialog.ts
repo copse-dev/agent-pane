@@ -1,3 +1,4 @@
+import { createStorageMaintenancePanel } from './storage-maintenance-panel.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
@@ -1654,7 +1655,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Detected settings',
+    legend: 'Detected API keys',
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
       void providersPanel.refresh()
@@ -1978,7 +1979,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const list = document.createElement('div')
     list.className = 'settings-nav-subheadings'
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue
+      // A hidden ancestor counts too: the cloud-agent auth cards are parked in a
+      // hidden template until the Providers panel moves them under a provider.
+      if (block.closest('[hidden]')) continue
       const label = block.querySelector('legend')?.textContent.trim()
       if (!label) continue
       const btn = document.createElement('button')
@@ -2105,7 +2108,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           void refreshSources()
         }
         if (id === 'customise' || id === 'experimental') void refreshPlugins()
-        if (id === 'storage') void refreshWorktrees()
+        if (id === 'storage') {
+          void refreshWorktrees()
+          void storageMaintenance.refresh()
+        }
         // Plugin toggles and config edits both change what this section claims,
         // and the open-time staged refresh already ran by the time a user comes
         // back to it — so re-read on entry rather than showing a stale account
@@ -4730,6 +4736,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
   })
 
+  const storageMaintenance = createStorageMaintenancePanel(api)
+  qsRequired(overlay, '.settings-section[data-section="storage"]').append(
+    storageMaintenance.element,
+  )
   const storageProjectSelect = qsRequired<HTMLSelectElement>(overlay, '#storage-project-select')
   storageProjectSelect.addEventListener('change', () => {
     storageProjectId = storageProjectSelect.value || null
@@ -4812,7 +4822,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       void refreshSources()
       void revealPluginDetail()
     }
-    if (openedSection === 'storage') void refreshWorktrees('', true)
+    if (openedSection === 'storage') {
+      void refreshWorktrees('', true)
+      void storageMaintenance.refresh()
+    }
     searchInput.focus()
     void (async (): Promise<void> => {
       // These stages used to be one unbroken `await` chain inside this

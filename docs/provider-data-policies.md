@@ -182,3 +182,35 @@ copy, never at fetched data.
 - Fireworks AI: <https://docs.fireworks.ai/guides/security_compliance/data_handling>
 - xAI: <https://docs.x.ai/developers/faq/security>
 - Ollama FAQ (local): <https://docs.ollama.com/faq>
+
+## Agents on this device
+
+ACP model choices now carry **ZDR not verified**, including the selected route,
+agent default, advertised choices, and saved choices that are no longer listed.
+Settings shows the same qualification before adding an agent and in its editor.
+The process location, model name, provider API badge, environment variables, and
+successful capability probe do not establish the agent's active account or a
+zero-retention agreement. Copse does not forward its direct OpenRouter privacy
+routing controls through an arbitrary agent process.
+
+Evidence checked **2026-10-04**:
+
+- [Claude Code's official README](https://github.com/anthropics/claude-code/blob/2bfb629dfaff0c8318047a4beb93cf1dc5b58b18/README.md#data-collection-usage-and-retention)
+  documents collection of feedback, associated conversation data, and limited
+  retention periods; this is not an unconditional ZDR guarantee.
+- [Gemini CLI's official privacy notice](https://github.com/google-gemini/gemini-cli/blob/fb972b2f87fe7d5b06d37eac711490162d98de2c/docs/resources/tos-privacy.md)
+  distinguishes Google account, unpaid/paid Gemini API, and Vertex AI terms.
+- [Qwen Code's official privacy notice](https://github.com/QwenLM/qwen-code/blob/6136786c0cbdfc9376243e3c524b22c6d374df47/docs/users/support/tos-privacy.md)
+  distinguishes Qwen OAuth, Alibaba Coding Plan, provider API keys, and Vertex AI.
+  Retention and training follow the chosen service; telemetry opt-out does not
+  change that service's handling of prompts.
+- ACP v1's [protocol schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v1/schema.json)
+  does not establish the active account's retention agreement. Copse's cached
+  model choices do not include verified account-level privacy evidence. Vendor
+  extensions alone are not audited promises.
+
+No ACP route currently earns a positive ZDR badge. The annotation describes the
+absence of verified route evidence; it does not assert that every agent retains
+prompts. A future positive annotation needs evidence for the actual account,
+upstream endpoint, enabled controls, and agent telemetry, with a primary source
+and tests for loss of that evidence.

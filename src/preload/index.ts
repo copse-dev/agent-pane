@@ -750,6 +750,11 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    maintenance: () => ipcRenderer.invoke('storage:maintenance'),
+    cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
+      ipcRenderer.invoke('storage:cleanup', area),
+    retention: (policy: import('@shared/types/storage-cleanup.ts').StorageRetention) =>
+      ipcRenderer.invoke('storage:retention', policy),
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
@@ -921,6 +926,15 @@ const api: ApiClient = {
       ipcRenderer.on('menu:new-thread', listener)
       return (): void => {
         ipcRenderer.off('menu:new-thread', listener)
+      }
+    },
+    onToggleSidebar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:toggle-sidebar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:toggle-sidebar', listener)
       }
     },
     onTogglePanel: (handler: () => void) => {

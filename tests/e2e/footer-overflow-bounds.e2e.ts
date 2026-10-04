@@ -249,12 +249,14 @@ describe('footer overflow menu bounds', () => {
     expect(anchoredBounds?.verticalGap).toBeLessThanOrEqual(5)
     await saveAppScreenshot('footer-overflow-trigger-anchored.png')
 
+    // Narrow enough to overflow without the token counter: usage now lives in the
+    // context wheel, so the footer needs less width before it goes compact.
     await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
       if (!pane) return
       pane.style.flex = '0 0 auto'
-      pane.style.width = '360px'
-      pane.style.maxWidth = '360px'
+      pane.style.width = '320px'
+      pane.style.maxWidth = '320px'
     })
     await browser.waitUntil(
       async () => (await $('.input-footer').getAttribute('class'))?.includes('is-compact') ?? false,

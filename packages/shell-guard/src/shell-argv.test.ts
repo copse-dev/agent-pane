@@ -8,11 +8,14 @@ import {
   commandName,
   hasShellInputRedirect,
   inlineCodeBody,
+  inlineLeadingLiteralAssignments,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
   printfAssignsShellVariable,
+  shellInputRedirects,
   shellRedirects,
   shellSegments,
+  shellSegmentsQuoteAware,
   unwrapWrappers,
 } from './shell-argv.ts'
 
@@ -380,6 +383,90 @@ describe('read-only classification and its escape hatches', () => {
     assert.equal(isReadOnlySimpleCommand('sort -o out.txt data.txt'), false)
     // A bare `-` is stdin, not a flag.
     assert.equal(isReadOnlySimpleCommand('sort -'), true)
+  })
+})
+
+describe('shellSegmentsQuoteAware', () => {
+  const quoteAware = (command: string): string[] =>
+    shellSegmentsQuoteAware(command).map((argv) => argv.join(' '))
+  const reachesQuoteAware = (command: string, head: string): boolean =>
+    shellSegmentsQuoteAware(command).some((argv) => commandName(unwrapWrappers(argv)[0]) === head)
+
+  it('does not split a sed script at the `;` in its character class', () => {
+    const command = String.raw`sed 's/\x1b\[[0-9;]*m//g' log.txt | cut -c1-9`
+    for (const argv of quoteAware(command)) assert.doesNotMatch(argv, /^\]/)
+    assert.equal(reachesQuoteAware(command, 'sed'), true)
+    assert.equal(reachesQuoteAware(command, 'cut'), true)
+  })
+
+  it('leaves the blunt split to shellSegments, which the hard checks read code through', () => {
+    const command = `python3 -c "import os; os.system('x')"`
+    assert.ok(segments(command).some((argv) => argv.startsWith('os.system')))
+    assert.ok(!quoteAware(command).some((argv) => argv.startsWith('os.system')))
+  })
+
+  it('still splits at a separator outside the quotes', () => {
+    assert.equal(reachesQuoteAware(`echo 'a;b'; rm -rf x`, 'rm'), true)
+    assert.equal(reachesQuoteAware(`echo "a;b" && rm -rf x`, 'rm'), true)
+  })
+
+  it('keeps splitting inside double quotes that expand something', () => {
+    assert.equal(reachesQuoteAware('echo "$(true; rm -rf x)"', 'rm'), true)
+  })
+
+  it('over-segments when the quoting is unbalanced', () => {
+    assert.equal(reachesQuoteAware(`echo 'a; rm -rf x`, 'rm'), true)
+  })
+})
+
+describe('shellInputRedirects', () => {
+  it('names the files read through `<`', () => {
+    assert.deepEqual(shellInputRedirects(`tr -d x < /var/log/a | wc -l < b`), ['/var/log/a', 'b'])
+  })
+
+  it('ignores heredocs, here-strings, writes, and descriptor duplication', () => {
+    assert.deepEqual(shellInputRedirects(`cat <<< hi > out 2>&1`), [])
+  })
+})
+
+describe('inlineLeadingLiteralAssignments', () => {
+  it('folds a literal path into every later reference', () => {
+    assert.equal(
+      inlineLeadingLiteralAssignments('L=/tmp/a.log; tail "$L" | wc -l < ${L}'),
+      'tail "/tmp/a.log" | wc -l < /tmp/a.log',
+    )
+  })
+
+  it('chains several assignments', () => {
+    assert.equal(inlineLeadingLiteralAssignments("A=/x; B='y.log'; cat $A/$B"), 'cat /x/y.log')
+  })
+
+  it('leaves values the shell would expand or split', () => {
+    for (const command of [
+      'L=~/a; cat $L',
+      'L=$HOME/a; cat $L',
+      'L="a b"; cat $L',
+      'L=*.log; cat $L',
+      'L=$(pwd); cat $L',
+    ]) {
+      assert.equal(inlineLeadingLiteralAssignments(command), command)
+    }
+  })
+
+  it('leaves variables the shell or linker reads', () => {
+    for (const name of ['PATH', 'IFS', 'HOME', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'BASH_ENV']) {
+      const command = `${name}=/x; ls`
+      assert.equal(inlineLeadingLiteralAssignments(command), command)
+    }
+  })
+
+  it('leaves a name that is reassigned later', () => {
+    const command = 'L=/a; L=/b; cat $L'
+    assert.equal(inlineLeadingLiteralAssignments(command), command)
+  })
+
+  it('does not touch a longer variable that shares the prefix', () => {
+    assert.equal(inlineLeadingLiteralAssignments('L=/a; cat $LOG'), 'cat $LOG')
   })
 })
 

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedStableWorkspace,
+  seedEmptyProject,
+  seedE2eViewport,
+} from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -15,7 +20,7 @@ describe('Process manager agent activity', function () {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-process-manager-agent-activity')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-process-manager-agent-activity')
     seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })

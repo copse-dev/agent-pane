@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFileSync } from 'node:fs'
 import {
   RELEASE_NOTES_CHANGELOG_MARKER,
@@ -131,7 +132,7 @@ function main(): void {
 }
 
 // Importing this module for its pure helpers must not print or exit.
-if (process.argv[1]?.endsWith('release-notes.mts') === true) {
+if (isDirectExecution(import.meta.url, 'release-notes')) {
   try {
     main()
   } catch (error) {

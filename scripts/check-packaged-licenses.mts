@@ -16,6 +16,7 @@
  * Runs from scripts/after-pack.cjs on every package, and by hand against any
  * app: `node scripts/check-packaged-licenses.mts /Applications/Copse.app`.
  */
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { z } from 'zod'
@@ -160,7 +161,7 @@ export function assertPackagedLicenses(resources: string): void {
   }
 }
 
-if (basename(process.argv[1] ?? '') === 'check-packaged-licenses.mts') {
+if (isDirectExecution(import.meta.url, 'check-packaged-licenses')) {
   const app = process.argv[2]
   if (!app) {
     console.error('Usage: node scripts/check-packaged-licenses.mts <path/to/Copse.app>')

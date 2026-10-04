@@ -21,6 +21,10 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+if (process.env.COPSE_E2E_ABOUT_OPTIONS) {
+  require('./about-options-fixture.cjs').install(process.env.COPSE_E2E_ABOUT_OPTIONS)
+}
+
 // Fixtures may be seeded while the previous app is still open. Apply the
 // pending config only in this e2e entry point, after that app's shutdown saves.
 if (process.env.COPSE_E2E === '1' && process.env.COPSE_PANEL_USER_DATA) {

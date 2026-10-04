@@ -94,8 +94,8 @@ export function mountFooterBranchStatus(
 ): {
   destroy: () => void
   refresh: () => void
-  /** The branch a blank thread was told to start from, if the user picked one. */
-  pendingBaseBranch: (threadId: string) => string | undefined
+  /** Resolve first-send intent independently of the supplementary footer refresh. */
+  resolveBaseBranch: (projectId: string, threadId: string) => Promise<string | undefined>
 } {
   const listId = `branch-picker-list-${String(++nextPickerId)}`
   const wrap = el('div', { class: 'branch-picker', hidden: '' })
@@ -161,15 +161,54 @@ export function mountFooterBranchStatus(
    */
   const baseBranchByThread = new Map<string, string>()
 
+  const footer = host.closest<HTMLElement>('.input-footer')
+  let popupFrame = 0
+  function schedulePopupBoundary(): void {
+    if (!footer) return
+    cancelAnimationFrame(popupFrame)
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0
+      if (!open) return
+      const boundary = footer.getBoundingClientRect()
+      const anchor = trigger.getBoundingClientRect()
+      const width = menu.getBoundingClientRect().width
+      // Measure the preferred position, never the already-clamped menu's left:
+      // otherwise moving it back inside would immediately toggle the clamp off.
+      menu.classList.toggle('is-footer-clamped', anchor.left + width > boundary.right)
+    })
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null
+  if (footer) {
+    popupObserver?.observe(footer)
+    popupObserver?.observe(trigger)
+    popupObserver?.observe(menu)
+  }
+
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
   }
 
-  /** The picked base branch for the active thread, while it is still blank. */
+  /**
+   * Where a blank thread starts: the user's pick, else the repository's default
+   * branch. Falling back to the live checkout instead would make a new thread
+   * inherit whatever branch the previously viewed thread left it on. The default
+   * only counts once it is a listed branch, because the send fails outright on a
+   * base the repository does not hold.
+   */
+  function startBranch(thread: Thread): string | undefined {
+    if (!isBlankThread(thread)) return undefined
+    const picked = baseBranchByThread.get(thread.id)
+    if (picked) return picked
+    if (thread.id !== store.getState().activeThreadId) return undefined
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch)
+      ? defaultBranch
+      : undefined
+  }
+
+  /** The base branch for the active thread, while it is still blank. */
   function activeBaseBranch(): string | undefined {
     const thread = getActiveThread()
-    if (!thread || !isBlankThread(thread)) return undefined
-    return baseBranchByThread.get(thread.id)
+    return thread ? startBranch(thread) : undefined
   }
 
   function getActiveThreadBranch(): string | undefined {
@@ -210,6 +249,7 @@ export function mountFooterBranchStatus(
     open = next
     trigger.setAttribute('aria-expanded', String(next))
     filterInput.setAttribute('aria-expanded', String(next))
+    schedulePopupBoundary()
     if (next) {
       menu.removeAttribute('hidden')
     } else {
@@ -550,6 +590,7 @@ export function mountFooterBranchStatus(
     const active = list.querySelector<HTMLElement>('.branch-picker-option.is-active')
     if (open && active) filterInput.setAttribute('aria-activedescendant', active.id)
     scrollActiveRowIntoView()
+    schedulePopupBoundary()
   }
 
   /**
@@ -788,9 +829,25 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId: string): string | undefined => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId: string, threadId: string): Promise<string | undefined> => {
+      const thread = getThreadById(store, threadId)
+      if (!thread || !isBlankThread(thread)) return undefined
+      // Capture the explicit pick before any await. Default discovery uses the
+      // submission's owner, never whichever thread becomes active while waiting.
+      const picked = baseBranchByThread.get(threadId)
+      if (picked) return picked
+      const [listed, defaultName] = await Promise.all([
+        api.git.listBranches(projectId, threadId),
+        api.git.getDefaultBranch(projectId, threadId),
+      ])
+      return defaultName && listed.some((branch) => branch.name === defaultName)
+        ? defaultName
+        : undefined
+    },
     destroy: (): void => {
       refreshToken += 1
+      cancelAnimationFrame(popupFrame)
+      popupObserver?.disconnect()
       if (refreshTimer) clearTimeout(refreshTimer)
       unsubs.forEach((u) => {
         u()

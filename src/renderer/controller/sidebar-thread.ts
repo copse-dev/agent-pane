@@ -18,9 +18,10 @@ import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 export interface SidebarThread {
   id: string
   title: string
+  /** For the sidebar's Created sort. A compacted entry keeps it. */
+  createdAt?: number
   status: Thread['status']
   updatedAt?: number
-  createdAt?: number
   gitBranch?: string
   worktree?: Thread['worktree']
   unreadAt?: number
@@ -68,9 +69,9 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
   return {
     id: thread.id,
     title: thread.title,
+    ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
     status: thread.status,
     ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
-    ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
     ...(thread.gitBranch !== undefined ? { gitBranch: thread.gitBranch } : {}),
     ...(thread.worktree !== undefined ? { worktree: thread.worktree } : {}),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),

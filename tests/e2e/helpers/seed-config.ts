@@ -2125,7 +2125,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
  * `hook_run` lines anchored to the message they fired within — exactly the
  * on-disk shape `appendHookRun` produces — so the real fold path is exercised.
  */
-export function seedHookCardsFixture(workspaceRoot: string): void {
+export function seedHookCardsFixture(
+  workspaceRoot: string,
+  options?: { developerMode?: boolean },
+): void {
   const projectId = 'e2e-hook-cards-project'
   const threadId = 'e2e-hook-cards-thread'
   const now = Date.now()
@@ -2301,6 +2304,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     activeProjectId: projectId,
     activeThreadId: threadId,
   })
+  seedDeveloperModeSetting(options?.developerMode ?? true)
 }
 
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
@@ -2385,11 +2389,10 @@ export function seedMermaidDiagramFixture(workspaceRoot: string): void {
 }
 
 /** Seeded thread with context snapshot and token usage for footer doughnut validation. */
-export function seedContextWheelFixture(workspaceRoot: string): void {
+export function seedContextWheelFixture(workspaceRoot: string, conversationTokens = 54_000): void {
   const projectId = 'e2e-context-wheel-project'
   const threadId = 'e2e-context-wheel-thread'
   const conversationBudget = 180_000
-  const conversationTokens = 54_000
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2616,6 +2619,15 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
             createdAt: now + 1,
           },
         ],
+        // 82% of the window: the ring is amber and the hover carries a context
+        // section above the usage and subagent rows.
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 200_000,
+          conversationTokens: 164_000,
+          fillRatio: 0.82,
+          updatedAt: now,
+        },
         usage: {
           inputTokens: 13_300_000,
           outputTokens: 221_000,

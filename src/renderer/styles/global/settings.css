@@ -48,7 +48,7 @@ dialog.settings-overlay::backdrop {
      it; Settings collapses both into one element, so it needs the row plus the
      line. */
   height: calc(var(--titlebar-height) + 1px);
-  padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
+  padding: 0 var(--spacing-lg) 0 var(--titlebar-title-inset);
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
