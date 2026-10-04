@@ -74,6 +74,8 @@ export interface HeadlessAgentProfile {
     readonly maxLlmCalls?: number
     /** False for benchmark/eval profiles whose limits are part of the result contract. */
     readonly adaptiveExtensions?: boolean
+    /** Token cap for the recovery stream after a reasoning circle is cut; the product cap when omitted. */
+    readonly reasoningRecoveryMaxTokens?: number
   }
 }
 
@@ -279,6 +281,12 @@ export async function runHeadlessAgent(
                                   : {}),
                                 ...(profile.limits?.adaptiveExtensions !== undefined
                                   ? { adaptiveExtensions: profile.limits.adaptiveExtensions }
+                                  : {}),
+                                ...(profile.limits?.reasoningRecoveryMaxTokens !== undefined
+                                  ? {
+                                      reasoningRecoveryMaxTokens:
+                                        profile.limits.reasoningRecoveryMaxTokens,
+                                    }
                                   : {}),
                               },
                             )

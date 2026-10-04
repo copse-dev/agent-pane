@@ -37,6 +37,15 @@ const RUN_DIR_ENV = 'COPSE_HARBOR_RUN_DIR'
 const HARBOR_BOUNDARY_LABEL =
   'terminal-bench/harbor task container: harness-provided boundary, not attested by a Copse host'
 
+/**
+ * The product allows one 4,096-token recovery stream after a reasoning circle is
+ * cut, then gives up. On Terminal-Bench `regex-log` the model needs roughly 9,500
+ * tokens of reasoning before it writes the file, so that cap ends the run
+ * unattempted. Raised modestly (3x), for this benchmark entry only; the product
+ * default is unchanged. Revisit when the product cap is reconsidered.
+ */
+const HARBOR_REASONING_RECOVERY_MAX_TOKENS = 12_288
+
 function runDir(): string {
   const configured = process.env[RUN_DIR_ENV]
   return configured !== undefined && configured.length > 0 ? configured : '/run/copse'
@@ -54,6 +63,7 @@ runContainerWorker({
     return Promise.resolve()
   },
   workspace: 'in-place',
+  reasoningRecoveryMaxTokens: HARBOR_REASONING_RECOVERY_MAX_TOKENS,
   toolAvailability: () => ({ rg: present('rg'), git: present('git'), gh: false }),
   environmentNote: () =>
     'Environment: a disposable Linux task container, and you run as root in it. The task container ' +

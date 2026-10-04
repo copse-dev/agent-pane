@@ -116,6 +116,16 @@ describe('benchmark-only external container boundary is unreachable from the pro
     await assert.rejects(bundleHarborWorker(join(tmpdir(), 'worker-harbor.cjs')), /benchmark-only/)
   })
 
+  it('only the Harbor entry raises the recovery-stream cap; the product entry keeps the product cap', () => {
+    const product = readFileSync(resolve(ROOT, PRODUCT_ENTRY), 'utf8')
+    const harbor = readFileSync(
+      resolve(ROOT, 'src/main/services/container-runtime/worker-entry-harbor.ts'),
+      'utf8',
+    )
+    assert.ok(!product.includes('reasoningRecoveryMaxTokens'))
+    assert.match(harbor, /reasoningRecoveryMaxTokens:\s*HARBOR_REASONING_RECOVERY_MAX_TOKENS/)
+  })
+
   it('the product bundle contains no trace of it, and the Harbor bundle does (so the check can see it)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'copse-worker-gating-'))
     const harborDir = mkdtempSync(join(ROOT, 'dist-test', 'gating-'))
