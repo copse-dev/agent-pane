@@ -2,15 +2,17 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 // The sort menu beside the sidebar's thread filter: it lists the sorts, marks the
-// current one, and re-orders a project's threads.
+// current one, and re-orders a project's threads. It belongs to the project
+// manager, which the default thread sidebar opens from "Projects".
+const MANAGER = '.thread-project-manager'
 
 async function titles(): Promise<string[]> {
-  const rows = await $$('.chats-list .chat-title')
+  const rows = await $$(`${MANAGER} .chats-list .chat-title`)
   return rows.map((row) => row.getText())
 }
 
 async function openMenu(): Promise<void> {
-  await $('.projects-sort-btn').click()
+  await $(`${MANAGER} .projects-sort-btn`).click()
   await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
 }
 
@@ -29,7 +31,9 @@ describe('sidebar thread sort', () => {
   before(async () => {
     await browser.url('about:blank')
     await browser.url('/?scenario=sidebar-thread-sort')
-    await $('.projects-sort-btn').waitForExist({ timeout: 30_000 })
+    await $('.thread-browser-manage').waitForClickable({ timeout: 30_000 })
+    await $('.thread-browser-manage').click()
+    await $(`${MANAGER} .projects-sort-btn`).waitForExist({ timeout: 30_000 })
     await browser.waitUntil(async () => (await titles()).includes('Refactor auth'), {
       timeout: 30_000,
       timeoutMsg: 'the scenario threads must be listed',

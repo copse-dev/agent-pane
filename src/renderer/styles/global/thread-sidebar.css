@@ -330,6 +330,21 @@
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
+/* The default view's footer holds Projects and Settings. Split it evenly so
+   each fills its half to the edge (#3431) instead of Settings' full width
+   pushing the pair past the sidebar. */
+.thread-browser .projects-settings-actions > button {
+  flex: 1 1 0;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  height: var(--chrome-action-band-height);
+  padding: 0 var(--spacing-md);
+}
+.thread-browser .thread-browser-manage:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .thread-browser-footer button {
   padding-inline: 0;
 }
