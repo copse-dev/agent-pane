@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedConversationVisualHierarchyFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('conversation visual hierarchy', () => {
   before(async () => {
@@ -188,11 +188,17 @@ describe('conversation visual hierarchy', () => {
 
     await saveAppScreenshot('conversation-visual-hierarchy.png')
 
-    await browser.execute(() => {
+    // The compact trace fits the default frame almost completely. Use a shorter
+    // real app viewport so this reference proves text crossing the fade edge.
+    const scrolledFrame = { width: 1280, height: 600 }
+    await prepareE2eScreenshot(scrolledFrame)
+    const scrollTop = await browser.execute(() => {
       const messagesList = document.querySelector<HTMLElement>('.messages-list')
       messagesList?.scrollTo({ top: 180, behavior: 'instant' })
+      return messagesList?.scrollTop ?? 0
     })
+    expect(scrollTop).toBeGreaterThanOrEqual(150)
     await browser.pause(100)
-    await saveAppScreenshot('conversation-top-fade-scrolled.png')
+    await saveAppScreenshot('conversation-top-fade-scrolled.png', scrolledFrame)
   })
 })
