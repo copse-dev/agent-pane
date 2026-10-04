@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { INTERRUPTED_TURN_CONTINUATION } from '../../src/renderer/controller/turn-recovery.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { e2eWorkspaceDir, resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  e2eWorkspaceDir,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-reopen-recovery-project'
@@ -18,7 +23,7 @@ describe('retry a turn interrupted by closing Copse', function () {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
   })
