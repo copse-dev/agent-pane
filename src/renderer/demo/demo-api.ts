@@ -20,7 +20,7 @@ import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
-import { isRecord } from '@shared/unknown-value.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
@@ -1101,7 +1101,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolved(snapshot)
       },
       update: (changes) => {
-        for (const [key, value] of Object.entries(changes)) settings.set(key, value)
+        const { roleAssignments, ...ordinary } = changes
+        const next = new Map(settings)
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value)
+        if (roleAssignments)
+          next.set('roleModels', {
+            ...stringRecordOrEmpty(settings.get('roleModels')),
+            ...roleAssignments,
+          })
+        settings.clear()
+        for (const [key, value] of next) settings.set(key, value)
         return resolvedVoid()
       },
       get: (key: string) => resolved(settings.get(key)),
