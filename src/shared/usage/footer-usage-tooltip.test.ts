@@ -610,3 +610,69 @@ describe('listSubagentRuns', () => {
     assert.deepEqual(estimated.subagentRuns, [])
   })
 })
+
+describe('buildFooterUsageTooltip subagent headline count', () => {
+  function call(id: string, session: Partial<SubagentSession>): ToolCall {
+    return {
+      id,
+      name: 'explore',
+      args: {},
+      status: 'done',
+      result: 'done',
+      subagent: {
+        id: `sub-${id}`,
+        kind: 'explore',
+        status: 'done',
+        prompt: 'q',
+        summary: null,
+        messages: [],
+        ...session,
+      },
+    }
+  }
+  const withCalls = (toolCalls: ToolCall[]): Message[] => [
+    { id: 'a1', role: 'assistant', content: '', toolCalls, createdAt: 1 },
+  ]
+  const display = { inputTokens: 900, outputTokens: 90, estimated: false }
+  const usage = { inputTokens: 1000, outputTokens: 100 }
+
+  it('counts the same runs the list shows when one has not reported yet', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([
+        call('done', { usage: { inputTokens: 100, outputTokens: 10 } }),
+        call('live', { status: 'running' }),
+      ]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 2)
+    // Two rows below, so the headline says two — tokens sum only the run that reported.
+    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out')
+  })
+
+  it('counts a failed run that never reported usage', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([
+        call('ok', { usage: { inputTokens: 100, outputTokens: 10 } }),
+        call('bad', { status: 'error' }),
+      ]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 2)
+    assert.match(tooltip.subagentRow?.value ?? '', /^2 runs/)
+  })
+
+  it('shows a thread whose only run is still going, without claiming usage was excluded', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([call('live', { status: 'running' })]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 1)
+    assert.equal(tooltip.subagentRow?.value, '1 run · no usage yet')
+    // Nothing was folded out of the headline yet, so the scope labels stay off.
+    assert.equal(tooltip.conversationLabel, null)
+    assert.equal(tooltip.threadLabel, null)
+  })
+})
