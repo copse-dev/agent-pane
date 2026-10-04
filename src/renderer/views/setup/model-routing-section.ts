@@ -9,10 +9,23 @@ import { el } from '../../dom/helpers.ts'
 import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { optionalString, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { uiField } from '../../ui/index.ts'
+import { AGENT_ROLES } from '@copse/llm/agent-roles.ts'
+import { qsRequired } from '../../dom/helpers.ts'
+
+/** Structural subset of a Settings snapshot, also usable during onboarding. */
+export interface ModelRoutingSnapshot {
+  localDefaultModel?: string | undefined
+  subagentModel?: string | undefined
+  safetyModel?: string | undefined
+  reviewModel?: string | undefined
+  roleModels?: Record<string, string> | undefined
+}
 
 export interface ModelRoutingSection {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (snapshot?: ModelRoutingSnapshot) => Promise<void>
+  /** Only user-edited additional roles; parent Save merges these atomically. */
+  readRoleModels: () => Record<string, string> | undefined
   readValues: () => {
     localDefaultModel: string
     subagentModel: string
@@ -142,12 +155,81 @@ export function createModelRoutingSection(
     }),
   }
 
-  async function refresh(): Promise<void> {
-    const localModel = optionalString(await api.settings.get('localDefaultModel'))
-    const subagent = optionalString(await api.settings.get('subagentModel'))
-    const safety = optionalString(await api.settings.get('safetyModel'))
-    const review = optionalString(await api.settings.get('reviewModel'))
-    const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
+  const fieldTargets: Record<string, string> = {
+    coder: 'localDefaultModel',
+    research: 'subagentModel',
+    safety: 'safetyModel',
+    review: 'reviewModel',
+  }
+  for (const [key, picker] of Object.entries(modelPickers)) {
+    const target = fieldTargets[key]
+    if (target)
+      qsRequired(picker.root, '.model-picker-trigger').setAttribute(
+        'data-model-setting-target',
+        target,
+      )
+  }
+  let pendingRoles: Record<string, string> = {}
+  const additionalRoles =
+    modelScope === 'all'
+      ? AGENT_ROLES.filter((role) => !['coder', 'research', 'small-tasks'].includes(role.id)).map(
+          (role) => {
+            const select = el('select', { name: `role:${role.id}` })
+            const field = routingField(
+              role.label,
+              select,
+              `${role.description}. An empty choice inherits the automatic role default.`,
+            )
+            select.addEventListener('change', () => {
+              pendingRoles[role.id] = select.value
+            })
+            const picker = mountModelSelectPicker(select, {
+              loadOptions: (current: string): Promise<ModelOption[]> =>
+                fetchRoleModelOptions(api, current, '(automatic role default)'),
+              ariaLabel: `${role.label} role model`,
+              loadOnMount: false,
+            })
+            qsRequired(picker.root, '.model-picker-trigger').setAttribute(
+              'data-model-setting-target',
+              `role:${role.id}`,
+            )
+            return { role, field, picker }
+          },
+        )
+      : []
+  if (additionalRoles.length) {
+    fields.append(
+      el(
+        'details',
+        { class: 'routing-additional-roles' },
+        disclosureSummary('Additional model roles'),
+        el(
+          'p',
+          { class: 'settings-fieldset-desc' },
+          'These assignments are used by “By role” model rules. The dedicated safety and post-turn review routes above remain separate.',
+        ),
+        ...additionalRoles.map((entry) => entry.field),
+      ),
+    )
+  }
+
+  async function refresh(snapshot?: ModelRoutingSnapshot): Promise<void> {
+    const localModel = optionalString(
+      snapshot ? snapshot.localDefaultModel : await api.settings.get('localDefaultModel'),
+    )
+    const subagent = optionalString(
+      snapshot ? snapshot.subagentModel : await api.settings.get('subagentModel'),
+    )
+    const safety = optionalString(
+      snapshot ? snapshot.safetyModel : await api.settings.get('safetyModel'),
+    )
+    const review = optionalString(
+      snapshot ? snapshot.reviewModel : await api.settings.get('reviewModel'),
+    )
+    const roleModels = stringRecordOrEmpty(
+      snapshot ? snapshot.roleModels : await api.settings.get('roleModels'),
+    )
+    pendingRoles = {}
 
     if (modelScope === 'all') {
       const coder = roleModels['coder'] ?? localModel
@@ -163,6 +245,9 @@ export function createModelRoutingSection(
         // showing a concrete local id here would misreport what actually runs.
         modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
         modelPickers.review.refresh(canonicalRoleSelection(review ?? '')),
+        ...additionalRoles.map((entry) =>
+          entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? '')),
+        ),
       ])
       return
     }
@@ -198,7 +283,13 @@ export function createModelRoutingSection(
     }
   }
 
-  return { root, refresh, readValues }
+  return {
+    root,
+    refresh,
+    readValues,
+    readRoleModels: (): Record<string, string> | undefined =>
+      Object.keys(pendingRoles).length ? { ...pendingRoles } : undefined,
+  }
 }
 
 /** Legacy role settings stored bare LM Studio ids; provider-backed values are canonical. */
