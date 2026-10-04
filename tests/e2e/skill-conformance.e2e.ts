@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
@@ -17,7 +17,10 @@ describe('Agent Skills conformance Sources and picker', () => {
   }
   before(async () => {
     resetUserData()
-    workspace = realpathSync(mkdtempSync(join(tmpdir(), 'copse-skill-conformance-')))
+    const fixture = join(tmpdir(), 'copse-e2e-skill-conformance', 'workspace')
+    rmSync(fixture, { recursive: true, force: true })
+    mkdirSync(fixture, { recursive: true })
+    workspace = realpathSync(fixture)
     extra = join(workspace, 'extra-skills')
     const cursor = join(workspace, '.cursor', 'skills')
     const github = join(workspace, '.github', 'skills')
@@ -77,6 +80,13 @@ describe('Agent Skills conformance Sources and picker', () => {
       )
       const details = row?.querySelector('details')
       if (details) details.open = true
+      row?.setAttribute('data-e2e-skill', 'manual')
+      const invalid = Array.from(
+        document.querySelectorAll('#sources-skills-diagnostics .sources-row'),
+      ).find(
+        (element) => element.querySelector('.sources-row-title')?.textContent === 'e2e-invalid',
+      )
+      invalid?.setAttribute('data-e2e-skill', 'invalid')
     })
     await expect($('#sources-skills-list')).toHaveText('Declared tools (descriptive only)', {
       containing: true,
@@ -85,7 +95,8 @@ describe('Agent Skills conformance Sources and picker', () => {
       await browser.execute(() => document.querySelector('#sources-skills-list script') === null),
       true,
     )
-    await saveElementScreenshot('#sources-skills-fieldset', 'skill-conformance-sources.png')
+    await saveElementScreenshot('[data-e2e-skill="manual"]', 'skill-conformance-sources.png')
+    await saveElementScreenshot('[data-e2e-skill="invalid"]', 'skill-conformance-diagnostics.png')
   })
 
   it('saves extra folders and explicitly reloads changed files', async () => {
@@ -103,7 +114,8 @@ describe('Agent Skills conformance Sources and picker', () => {
     await expect($('#sources-skills-list')).toHaveText('Updated extra folder workflow.', {
       containing: true,
     })
-    await saveElementScreenshot('#sources-skills-fieldset', 'skill-conformance-reload.png')
+    await $('.sources-skill-folders').scrollIntoView()
+    await saveElementScreenshot('.sources-skill-folders', 'skill-conformance-reload.png')
   })
 
   it('hides model-only skills from the slash picker while retaining manual-only skills', async () => {
