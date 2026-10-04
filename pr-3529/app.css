@@ -885,7 +885,7 @@ copse-ui-field input[type=password],
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: auto;
+  width: 100%;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);

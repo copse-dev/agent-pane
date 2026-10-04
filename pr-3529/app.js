@@ -44323,6 +44323,55 @@ var init_disclosure_summary = __esm({
   }
 });
 
+// src/renderer/views/setup/local-detection.ts
+function localServerTargets() {
+  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
+    id: p2.id,
+    label: p2.label,
+    baseUrl: p2.baseUrl
+  }));
+  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
+}
+async function detectLocalServers(api2) {
+  return Promise.all(
+    localServerTargets().map(async (target) => {
+      try {
+        const res = await api2.lmStudio.test(target.baseUrl);
+        return {
+          ...target,
+          reachable: res.ok,
+          models: res.models ?? [],
+          ...res.error ? { error: res.error } : {}
+        };
+      } catch (err2) {
+        return {
+          ...target,
+          reachable: false,
+          models: [],
+          error: err2 instanceof Error ? err2.message : "probe failed"
+        };
+      }
+    })
+  );
+}
+async function importDetectedPreset(api2, result) {
+  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
+  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
+  const existingModels = existing?.models ?? [];
+  const seen = new Set(existingModels.map((m2) => m2.id));
+  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
+  await api2.settings.saveExtraProvider({
+    slug: result.id,
+    models: [...existingModels, ...added]
+  });
+}
+var init_local_detection = __esm({
+  "src/renderer/views/setup/local-detection.ts"() {
+    init_extra_providers();
+    init_lm_studio_defaults();
+  }
+});
+
 // src/renderer/views/setup/custom-providers-section.ts
 function apiStyleSelect(current = "chat-completions") {
   const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
@@ -44501,6 +44550,7 @@ function createCustomProvidersSection(api2, opts = {}) {
   );
   const pendingKeys = /* @__PURE__ */ new Map();
   const configured = /* @__PURE__ */ new Set();
+  const reachable = /* @__PURE__ */ new Set();
   let providers = [];
   let selected = embedded ? "" : defaultSelected;
   let openRouterModelValue = "";
@@ -44542,6 +44592,8 @@ function createCustomProvidersSection(api2, opts = {}) {
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
+      } else if (reachable.has(key)) {
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Server running" }));
       }
       chip2.addEventListener("click", () => {
         selected = key;
@@ -45090,6 +45142,14 @@ function createCustomProvidersSection(api2, opts = {}) {
     renderChips();
     renderForm();
     opts.onChanged?.();
+    if (isLocal) void probeLocalServers();
+  }
+  async function probeLocalServers() {
+    const results = await detectLocalServers(api2);
+    reachable.clear();
+    for (const r2 of results) if (r2.reachable) reachable.add(r2.id);
+    renderChips();
+    opts.onStatusChanged?.();
   }
   async function confirmPlaintextStorage(label) {
     return showConfirmDialog({
@@ -45161,7 +45221,7 @@ function createCustomProvidersSection(api2, opts = {}) {
     return providerIds().includes(id) ? chipLabel(id) : null;
   }
   function isConfigured(id) {
-    if (configured.has(id)) return true;
+    if (configured.has(id) || reachable.has(id)) return true;
     const provider = providers.find((p2) => p2.id === id);
     return provider ? !provider.builtin : false;
   }
@@ -45182,6 +45242,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_api_keys_section();
+    init_local_detection();
     init_confirm_dialog();
     init_unknown_value3();
     FIXED_PROVIDERS = [
@@ -46006,6 +46067,7 @@ function createProvidersPanel(api2, opts = {}) {
     variant: "local",
     embedded: true,
     onChanged: rebuild,
+    onStatusChanged: renderChips,
     ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
   });
   const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
@@ -60573,7 +60635,7 @@ function mountSettingsDialog(store2, api2) {
   });
   qsRequired(overlay, "#settings-ssh-workspace-host").append(sshWorkspaceSection.root);
   const envKeyDetectSection = createEnvKeyDetectSection(api2, {
-    legend: "Detected settings",
+    legend: "Detected API keys",
     onImported: () => {
       void cursorKeySection.refreshKeyStatus();
       void providersPanel.refresh();
@@ -139055,55 +139117,6 @@ var init_vnc_pane = __esm({
     SSH_MACHINE_PREFIX = "ssh:";
     SIMULATOR_MACHINE_PREFIX = "simulator:";
     isVncCredentialType = (type) => type === "username" || type === "password" || type === "target";
-  }
-});
-
-// src/renderer/views/setup/local-detection.ts
-function localServerTargets() {
-  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
-    id: p2.id,
-    label: p2.label,
-    baseUrl: p2.baseUrl
-  }));
-  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
-}
-async function detectLocalServers(api2) {
-  return Promise.all(
-    localServerTargets().map(async (target) => {
-      try {
-        const res = await api2.lmStudio.test(target.baseUrl);
-        return {
-          ...target,
-          reachable: res.ok,
-          models: res.models ?? [],
-          ...res.error ? { error: res.error } : {}
-        };
-      } catch (err2) {
-        return {
-          ...target,
-          reachable: false,
-          models: [],
-          error: err2 instanceof Error ? err2.message : "probe failed"
-        };
-      }
-    })
-  );
-}
-async function importDetectedPreset(api2, result) {
-  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
-  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
-  const existingModels = existing?.models ?? [];
-  const seen = new Set(existingModels.map((m2) => m2.id));
-  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
-  await api2.settings.saveExtraProvider({
-    slug: result.id,
-    models: [...existingModels, ...added]
-  });
-}
-var init_local_detection = __esm({
-  "src/renderer/views/setup/local-detection.ts"() {
-    init_extra_providers();
-    init_lm_studio_defaults();
   }
 });
 
