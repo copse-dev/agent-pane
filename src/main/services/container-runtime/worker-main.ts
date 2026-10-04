@@ -88,6 +88,16 @@ export interface WorkerProfile {
    * a larger one in code.
    */
   reasoningRecoveryMaxTokens?: number
+  /**
+   * Loop bounds an entry states in code. Omitted keeps the run spec's `maxSteps`
+   * behaviour (when set) or the product loop's own limits; a key stated here wins
+   * over the spec's `maxSteps`.
+   */
+  loopLimits?: {
+    maxSteps?: number | undefined
+    maxLlmCalls?: number | undefined
+    adaptiveExtensions?: boolean | undefined
+  }
 }
 
 /**
@@ -559,6 +569,24 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
   // The run's only live signal: tool calls as they happen, text when the
   // agent pauses to act (A14).
   const progress = new GuestProgress(say)
+  // Loop bounds: the spec's `maxSteps`, then whatever the entry states in code.
+  const limits = {
+    ...(spec.maxSteps !== null
+      ? { maxSteps: spec.maxSteps, maxLlmCalls: spec.maxSteps, adaptiveExtensions: false }
+      : {}),
+    ...(profile.loopLimits?.maxSteps !== undefined
+      ? { maxSteps: profile.loopLimits.maxSteps }
+      : {}),
+    ...(profile.loopLimits?.maxLlmCalls !== undefined
+      ? { maxLlmCalls: profile.loopLimits.maxLlmCalls }
+      : {}),
+    ...(profile.loopLimits?.adaptiveExtensions !== undefined
+      ? { adaptiveExtensions: profile.loopLimits.adaptiveExtensions }
+      : {}),
+    ...(profile.reasoningRecoveryMaxTokens !== undefined
+      ? { reasoningRecoveryMaxTokens: profile.reasoningRecoveryMaxTokens }
+      : {}),
+  }
   try {
     process.stderr.write(encodeWorkerPhase('running'))
     const result = await runHeadlessAgent(
@@ -599,22 +627,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
           },
           stagedDiff: () => Promise.resolve(true),
         },
-        ...(spec.maxSteps !== null || profile.reasoningRecoveryMaxTokens !== undefined
-          ? {
-              limits: {
-                ...(spec.maxSteps !== null
-                  ? {
-                      maxSteps: spec.maxSteps,
-                      maxLlmCalls: spec.maxSteps,
-                      adaptiveExtensions: false,
-                    }
-                  : {}),
-                ...(profile.reasoningRecoveryMaxTokens !== undefined
-                  ? { reasoningRecoveryMaxTokens: profile.reasoningRecoveryMaxTokens }
-                  : {}),
-              },
-            }
-          : {}),
+        ...(Object.keys(limits).length > 0 ? { limits } : {}),
       },
       {
         prompt,

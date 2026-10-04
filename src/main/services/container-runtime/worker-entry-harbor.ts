@@ -29,7 +29,15 @@
  *   `git` in general, and the loop trusts the declaration.
  */
 import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { declareExternalContainerBoundary } from '../security/runtime-containment.ts'
+import {
+  HARBOR_TUNING_APPLIED_FILE,
+  HARBOR_TUNING_FILE,
+  decodeHarborWorkerTuning,
+  type HarborWorkerTuning,
+} from './harbor-tuning.mts'
 import { runContainerWorker } from './worker-main.ts'
 
 const RUN_DIR_ENV = 'COPSE_HARBOR_RUN_DIR'
@@ -51,19 +59,54 @@ function runDir(): string {
   return configured !== undefined && configured.length > 0 ? configured : '/run/copse'
 }
 
+/**
+ * The benchmark tuning the host driver wrote beside `run.json`, if any (see
+ * `harbor-tuning.mts`). An invalid file is fatal: a trial must never silently run
+ * a configuration other than the one it was asked to measure.
+ */
+function readTuning(directory: string): HarborWorkerTuning {
+  const path = join(directory, HARBOR_TUNING_FILE)
+  if (!existsSync(path)) return {}
+  const tuning = decodeHarborWorkerTuning(readFileSync(path, 'utf8'))
+  if (tuning === null) throw new Error(`${path} is not a valid Harbor worker tuning`)
+  return tuning
+}
+
 /** Whether `command --version` runs here: a task image may ship neither `rg` nor `git`. */
 function present(command: string): boolean {
   return spawnSync(command, ['--version'], { stdio: 'ignore' }).status === 0
 }
 
+const directory = runDir()
+const tuning = readTuning(directory)
+const recoveryMaxTokens = tuning.reasoningRecoveryMaxTokens ?? HARBOR_REASONING_RECOVERY_MAX_TOKENS
+// What this worker was actually handed, for the host driver to collect next to
+// `result.json`. `loopLimits: null` means the product loop's own limits apply.
+writeFileSync(
+  join(directory, HARBOR_TUNING_APPLIED_FILE),
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      requested: tuning,
+      effective: {
+        loopLimits: tuning.loopLimits ?? null,
+        reasoningRecoveryMaxTokens: recoveryMaxTokens,
+      },
+    },
+    null,
+    2,
+  )}\n`,
+)
+
 runContainerWorker({
-  runDir: runDir(),
+  runDir: directory,
   prepareContainment: () => (): Promise<void> => {
     declareExternalContainerBoundary(HARBOR_BOUNDARY_LABEL)
     return Promise.resolve()
   },
   workspace: 'in-place',
-  reasoningRecoveryMaxTokens: HARBOR_REASONING_RECOVERY_MAX_TOKENS,
+  reasoningRecoveryMaxTokens: recoveryMaxTokens,
+  ...(tuning.loopLimits === undefined ? {} : { loopLimits: tuning.loopLimits }),
   toolAvailability: () => ({ rg: present('rg'), git: present('git'), gh: false }),
   environmentNote: () =>
     'Environment: a disposable Linux task container, and you run as root in it. The task container ' +

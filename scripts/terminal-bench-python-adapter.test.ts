@@ -29,3 +29,20 @@ describe('Terminal-Bench Python adapter', () => {
     )
   })
 })
+
+describe('Harbor container agent tuning hand-off', () => {
+  const container = readFileSync(
+    resolve('benchmarks/terminal_bench/copse_container_agent.py'),
+    'utf8',
+  )
+
+  it('hands COPSE_HARBOR_TUNING to the driver as a file, JSON or @path', () => {
+    assert.match(container, /os\.environ\.get\("COPSE_HARBOR_TUNING"/)
+    assert.match(container, /value\.startswith\("@"\)/)
+    assert.match(container, /driver_args\.extend\(\["--tuning-file", str\(tuning_file\)\]\)/)
+  })
+
+  it('does not interpret the tuning itself: the driver validates it', () => {
+    assert.doesNotMatch(container, /reasoningRecoveryMaxTokens|loopLimits|presencePenalty/)
+  })
+})

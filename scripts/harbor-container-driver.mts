@@ -42,11 +42,19 @@ import type { ThreadContainerRunSpec } from '../src/main/services/container-runt
 import { decodeWorkerPhase } from '../src/main/services/container-runtime/worker-events.ts'
 import { stageSandboxRuntime } from '../src/main/services/container-runtime/thread-container.ts'
 import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
-import {
-  resolveTerminalModelParameters,
-  writeTerminalModelParametersRecord,
-} from './lib/terminal-bench-model-parameters.mts'
+import { writeTerminalModelParametersRecord } from './lib/terminal-bench-model-parameters.mts'
 import { STEP_TIMING_FILE, StepTimingRecorder } from './lib/terminal-bench-step-timing.mts'
+import {
+  DEFAULT_HARBOR_CONTEXT_WINDOW,
+  buildAppliedTuning,
+  readTuningFile,
+  resolveHostTuning,
+  workerTuningFileText,
+} from './lib/harbor-tuning-host.mts'
+import {
+  HARBOR_TUNING_APPLIED_FILE,
+  HARBOR_TUNING_FILE,
+} from '../src/main/services/container-runtime/harbor-tuning.mts'
 
 interface Options {
   /** argv that runs a command in the task container, stdin attached (no TTY). */
@@ -64,6 +72,8 @@ interface Options {
   tokenCeiling: number
   contextWindow: number
   maxSteps: number | null
+  /** Benchmark tuning (`harbor-tuning.mts`): a validated JSON file, or none. */
+  tuningFile: string | null
 }
 
 function parseOptions(argv: readonly string[]): Options {
@@ -101,8 +111,9 @@ function parseOptions(argv: readonly string[]): Options {
     containerWorker: need('container-worker'),
     wallClockMs: Number(flags.get('wall-clock-ms') ?? String(30 * 60_000)),
     tokenCeiling: Number(flags.get('token-ceiling') ?? '50000000'),
-    contextWindow: Number(flags.get('context-window') ?? '262144'),
+    contextWindow: Number(flags.get('context-window') ?? String(DEFAULT_HARBOR_CONTEXT_WINDOW)),
     maxSteps: maxSteps === undefined ? null : Number(maxSteps),
+    tuningFile: flags.get('tuning-file') ?? null,
   }
 }
 
@@ -168,7 +179,22 @@ async function main(): Promise<void> {
   // The key stays in this process; the container never sees it.
   delete process.env['LM_STUDIO_API_KEY']
 
-  const record = resolveTerminalModelParameters('client', options.model)
+  // Benchmark tuning: strictly validated before anything starts, so a bad
+  // configuration fails the trial instead of silently measuring another one.
+  const tuning = options.tuningFile === null ? null : readTuningFile(options.tuningFile)
+  const resolved = resolveHostTuning({
+    tuning,
+    model: options.model,
+    specMaxSteps: options.maxSteps,
+    contextWindowFlag: options.contextWindow,
+  })
+  if (tuning !== null) {
+    writeFileSync(
+      join(options.artifactsDir, HARBOR_TUNING_FILE),
+      `${JSON.stringify(tuning, null, 2)}\n`,
+    )
+  }
+  const record = resolved.record
   writeTerminalModelParametersRecord(options.artifactsDir, record)
   let modelCalls = 0
   const provider = recordTerminalBenchProviderRequests(
@@ -212,7 +238,7 @@ async function main(): Promise<void> {
     prompt: instruction,
     model: options.model,
     provider: null,
-    contextWindow: options.contextWindow,
+    contextWindow: resolved.contextWindow,
     apiKeyOverLink: false,
     hostInference: true,
     acp: null,
@@ -233,6 +259,17 @@ async function main(): Promise<void> {
   )
   if (prepared.code !== 0) {
     throw new Error(`could not prepare the run directory: ${prepared.stderr || prepared.stdout}`)
+  }
+
+  if (tuning !== null) {
+    const written = await execIn(
+      options,
+      ['sh', '-c', `cat > '${runDir}/${HARBOR_TUNING_FILE}'`],
+      workerTuningFileText(tuning),
+    )
+    if (written.code !== 0) {
+      throw new Error(`could not write the tuning file: ${written.stderr || written.stdout}`)
+    }
   }
 
   const [bin, ...prefix] = options.exec
@@ -297,6 +334,23 @@ async function main(): Promise<void> {
       writeFileSync(join(options.artifactsDir, 'out', file), read.stdout)
     }
   }
+  // The configuration this trial actually ran, next to result.json: the host's
+  // resolved sampling and context window, and what the worker reported applying.
+  const workerApplied = await execIn(options, ['cat', `${runDir}/${HARBOR_TUNING_APPLIED_FILE}`])
+  mkdirSync(join(options.artifactsDir, 'out'), { recursive: true })
+  writeFileSync(
+    join(options.artifactsDir, 'out', HARBOR_TUNING_APPLIED_FILE),
+    `${JSON.stringify(
+      buildAppliedTuning({
+        tuning,
+        resolved,
+        specMaxSteps: options.maxSteps,
+        workerAppliedText: workerApplied.code === 0 ? workerApplied.stdout : null,
+      }),
+      null,
+      2,
+    )}\n`,
+  )
   const summary = {
     schemaVersion: 1,
     workerExit: exit,

@@ -59,6 +59,24 @@ async def _run(*argv: str, env: dict[str, str] | None = None) -> str:
     return output
 
 
+def _tuning_file(raw: str, scratch: Path) -> Path:
+    """The benchmark tuning (``COPSE_HARBOR_TUNING``): a JSON object, or ``@path`` to a file
+    holding one. Benchmark-only (benchmarks/terminal_bench/TUNING.md). Only the file path
+    reaches the driver, which validates it against the strict schema in
+    ``src/main/services/container-runtime/harbor-tuning.mts`` and fails the trial on any
+    unknown key or bad value; this function only makes sure there is a file to hand over."""
+    value = raw.strip()
+    if value.startswith("@"):
+        path = Path(value[1:]).expanduser()
+        if not path.is_file():
+            raise RuntimeError(f"COPSE_HARBOR_TUNING names {path}, which is not a file")
+        return path
+    json.loads(value)
+    path = scratch / "tuning.requested.json"
+    path.write_text(value)
+    return path
+
+
 class CopseContainerAgent(BaseAgent):
     """Run the product worker in the task container, inference on the host."""
 
@@ -187,6 +205,9 @@ class CopseContainerAgent(BaseAgent):
             driver_args.extend(["--lm-studio-url", os.environ["LM_STUDIO_URL"]])
         if os.environ.get("COPSE_HARBOR_MAX_STEPS"):
             driver_args.extend(["--max-steps", os.environ["COPSE_HARBOR_MAX_STEPS"]])
+        if os.environ.get("COPSE_HARBOR_TUNING", "").strip():
+            tuning_file = _tuning_file(os.environ["COPSE_HARBOR_TUNING"], self.logs_dir)
+            driver_args.extend(["--tuning-file", str(tuning_file)])
         # Host-only credential: the driver reads it and drops it before it spawns anything.
         driver_env = {
             **os.environ,

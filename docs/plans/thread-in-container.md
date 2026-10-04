@@ -925,6 +925,15 @@ guarantee, and the record must say so.
   A17; the Harbor agent (`benchmarks/terminal_bench/copse_container_agent.py`) uploads the
   bundle and a Node binary and starts the driver. None of this is reachable from the desktop
   app or `thread:container`.
+
+  Benchmark tuning (`benchmarks/terminal_bench/TUNING.md`) follows the same rule. A strictly
+  validated `tuning` object (`harbor-tuning.mts`: loop limits, recovery cap, host sampling,
+  context window) travels `COPSE_HARBOR_TUNING` -> driver flag -> `tuning.json` in the run
+  directory, and is read only by `worker-entry-harbor.ts` and the driver; `worker-entry-gating.test.ts`
+  fails if the product entry, its import graph or the product bundle can see any of those names.
+  The shared worker gained only a neutral code-supplied `loopLimits` profile field. The applied,
+  resolved tuning is recorded as `tuning.applied.json` beside `result.json` in every trial.
+
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
