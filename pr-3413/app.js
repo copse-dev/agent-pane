@@ -20842,11 +20842,23 @@ function mountConfirmDialog() {
   const queue = [];
   let active2 = null;
   let confirming = false;
+  let controller = null;
+  function cancelActive() {
+    if (!active2) return;
+    if (confirming) {
+      if (!active2.cancellable) return;
+      controller?.abort();
+      dialog2.close();
+      return;
+    }
+    finish(false);
+  }
   function finish(confirmed) {
     if (!active2) return;
     const resolve = active2.resolve;
     active2 = null;
     confirming = false;
+    controller = null;
     dialog2.close();
     resolve(confirmed);
     if (queue.length > 0) {
@@ -20880,7 +20892,7 @@ function mountConfirmDialog() {
       confirmLabel
     );
     cancelBtn.addEventListener("click", () => {
-      finish(false);
+      cancelActive();
     });
     async function confirmActive() {
       if (!active2 || confirming) return;
@@ -20890,20 +20902,23 @@ function mountConfirmDialog() {
         return;
       }
       confirming = true;
-      cancelBtn.disabled = true;
+      controller = new AbortController();
+      const signal = controller.signal;
+      cancelBtn.disabled = !request.cancellable;
       confirmBtn.disabled = true;
       confirmBtn.setAttribute("aria-busy", "true");
       confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
       try {
         await request.onConfirm((label) => {
           if (active2 === request) confirmBtn.textContent = label;
-        });
-        if (active2 === request) finish(true);
+        }, signal);
+        if (active2 === request) finish(!signal.aborted);
       } catch (error62) {
         if (active2 !== request) return;
         const reject = request.reject;
         active2 = null;
         confirming = false;
+        controller = null;
         dialog2.close();
         reject(error62);
         if (queue.length > 0) {
@@ -20921,8 +20936,7 @@ function mountConfirmDialog() {
   }
   dialog2.addEventListener("cancel", (event) => {
     event.preventDefault();
-    if (confirming) return;
-    finish(false);
+    cancelActive();
   });
   showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
     const queued = { ...req, resolve, reject };
@@ -61749,12 +61763,23 @@ function mountSettingsDialog(store2, api2) {
     for (const entry of entries2) setEntryPhase(entry, "checking");
     setBulkLabel(entries2.length === 1 ? "Checking\u2026" : "Preparing\u2026", true);
     statusEl.textContent = entries2.length === 1 ? "Looking for package directories\u2026" : `Preparing cleanup for ${String(entries2.length)} worktrees\u2026`;
-    const performCleanup = async (setConfirmProgress) => {
+    const cleanupState = { started: false };
+    const performCleanup = async (setConfirmProgress, signal) => {
+      cleanupState.started = true;
+      signal.addEventListener(
+        "abort",
+        () => {
+          setBulkLabel("Stopping\u2026", true);
+          statusEl.textContent = "Stopping cleanup after the current worktree finishes\u2026";
+        },
+        { once: true }
+      );
       for (const entry of entries2) setEntryPhase(entry, "pending");
       let cleaned = 0;
       let reclaimed = 0;
       let truncated = false;
       for (const [index, entry] of entries2.entries()) {
+        if (signal.aborted) break;
         setEntryPhase(entry, "cleaning");
         const progress = `Cleaning ${String(index + 1)} of ${String(entries2.length)}\u2026`;
         setBulkLabel(progress, true);
@@ -61794,8 +61819,8 @@ function mountSettingsDialog(store2, api2) {
           setEntryPhase(entry, "failed");
         }
       }
-      const summary = cleaned > 0 ? `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).` : "No ignored package-manager directories found.";
-      statusEl.textContent = [summary, ...problems].join("\n");
+      const summary = cleaned > 0 ? `Cleaned up ${String(cleaned)} director${cleaned === 1 ? "y" : "ies"} (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).` : signal.aborted ? "No package directories were removed." : "No ignored package-manager directories found.";
+      statusEl.textContent = [signal.aborted ? "Cleanup stopped." : "", summary, ...problems].filter(Boolean).join("\n");
     };
     try {
       if (entries2.length === 1) {
@@ -61834,15 +61859,18 @@ function mountSettingsDialog(store2, api2) {
 \u2026and ${String(preview.directories.length - shown.length)} more`] : [],
             `
 
-This will reclaim ${size}. Your package manager can recreate these directories.`
+This will reclaim ${size}. Your package manager can recreate these directories.
+
+Cancel closes this dialog; the current worktree will finish cleaning.`
           ),
           confirmLabel: "Clean up",
           confirmPendingLabel: "Cleanup pending\u2026",
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true
         });
         if (!confirmed) {
-          statusEl.textContent = "Kept.";
+          if (!cleanupState.started) statusEl.textContent = "Kept.";
           return;
         }
       } else {
@@ -61855,15 +61883,16 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
             el("code", {}, "node_modules"),
             " and ",
             el("code", {}, ".venv"),
-            ".\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.\n\nYour package manager can recreate these directories."
+            ".\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.\n\nYour package manager can recreate these directories.\n\nCancel closes this dialog and stops after the current worktree finishes."
           ),
           confirmLabel: "Clean up",
           confirmPendingLabel: "Cleanup pending\u2026",
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true
         });
         if (!confirmed) {
-          statusEl.textContent = "Kept.";
+          if (!cleanupState.started) statusEl.textContent = "Kept.";
           return;
         }
       }
@@ -68024,6 +68053,24 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     settings: {
+      getSnapshot: () => {
+        const values = Object.fromEntries(settings);
+        const snapshot = values;
+        return resolved2(snapshot);
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes;
+        const next = new Map(settings);
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value);
+        if (roleAssignments)
+          next.set("roleModels", {
+            ...stringRecordOrEmpty(settings.get("roleModels")),
+            ...roleAssignments
+          });
+        settings.clear();
+        for (const [key, value] of next) settings.set(key, value);
+        return resolvedVoid();
+      },
       get: (key) => resolved2(settings.get(key)),
       set: (key, value) => {
         settings.set(key, value);
@@ -141118,6 +141165,8 @@ function mountAskUserDialog(api2, store2) {
   let active2 = null;
   const changeListeners = /* @__PURE__ */ new Set();
   let arrivals = 0;
+  let escapeHeld = false;
+  let presentationTimer;
   let inputs = [];
   function isShowable(req) {
     return !req.threadId || req.threadId === store2.getState().activeThreadId;
@@ -141195,7 +141244,7 @@ function mountAskUserDialog(api2, store2) {
     active2 = null;
   }
   function showNext() {
-    if (active2) return;
+    if (active2 || escapeHeld || !dialog2.isConnected || isAnyDialogOpen()) return;
     const idx = queue.findIndex(isShowable);
     if (idx === -1) {
       syncAttention();
@@ -141206,6 +141255,43 @@ function mountAskUserDialog(api2, store2) {
     renderActive();
     syncAttention();
   }
+  function scheduleNext() {
+    if (presentationTimer !== void 0 || active2 || queue.length === 0) return;
+    presentationTimer = window.setTimeout(() => {
+      presentationTimer = void 0;
+      showNext();
+    }, 0);
+  }
+  function onKeyDown(event) {
+    if (event.key === "Escape") escapeHeld = true;
+  }
+  function releaseEscape() {
+    escapeHeld = false;
+    scheduleNext();
+  }
+  function onKeyUp(event) {
+    if (event.key === "Escape") releaseEscape();
+  }
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("keyup", onKeyUp, true);
+  window.addEventListener("blur", releaseEscape);
+  const observer = new MutationObserver(() => {
+    if (!dialog2.isConnected) {
+      observer.disconnect();
+      if (presentationTimer !== void 0) window.clearTimeout(presentationTimer);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", releaseEscape);
+      return;
+    }
+    scheduleNext();
+  });
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ["open"],
+    childList: true,
+    subtree: true
+  });
   function respond(answers) {
     const current = active2;
     if (!current) return;
@@ -141289,6 +141375,7 @@ var init_ask_user_dialog = __esm({
     init_dist();
     init_inline_markdown();
     init_attention();
+    init_dialog_shell();
   }
 });
 
