@@ -96,7 +96,7 @@ export function contextPressureChunk(
   prepared: PreparedAgentHistory,
   contextWindow: number,
   toolSchemaReserve = 0,
-): StreamChunk {
+): Extract<StreamChunk, { type: 'context_pressure' }> {
   const promptTokens = Math.max(
     prepared.initialConversationTokens,
     Math.round(prepared.estimatedPromptTokens + toolSchemaReserve),

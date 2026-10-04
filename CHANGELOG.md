@@ -13,6 +13,13 @@ released — rather than copying every published entry.
   then installs only stable releases. It never moves you back to an older
   version. Copse remembers the channel you installed from, so beta testers stay
   on beta after the first stable release unless they choose Stable.
+- The footer's context ring no longer drops to about 0% when a run starts and
+  then jumps back up after the first model call: its first reading now counts
+  the system prompt and tools, as the readings that follow do. Its label also
+  quotes the same figures as the hover beside it. The hover's Subagents line
+  now says "N running" for runs still going and "no usage reported" or "N
+  without usage" for runs that ended without reporting tokens, instead of
+  "no usage yet" beside a run already marked done.
 
 ## 0.1.0-beta.13
 

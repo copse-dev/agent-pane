@@ -29,8 +29,6 @@ describe('contextPressureChunk', () => {
     const messages: LLMMessage[] = [{ role: 'system', content: 'y'.repeat(4000) }, userMessage(80)]
     const prepared = prepareAgentHistory(messages, 128_000, 5000)
     const chunk = contextPressureChunk(prepared, 128_000, 5000)
-    assert.equal(chunk.type, 'context_pressure')
-    if (chunk.type !== 'context_pressure') return
     // ~1000 system + ~20 user + 5000 tool schemas, not just the ~20 conversation tokens.
     assert.ok(chunk.conversationTokens > 6000, String(chunk.conversationTokens))
     assert.ok(chunk.conversationTokens > prepared.initialConversationTokens)
