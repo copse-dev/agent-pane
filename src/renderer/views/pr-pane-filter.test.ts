@@ -8,6 +8,8 @@ import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@sh
 import { mountPrPane } from './pr-pane.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
+import type { AppStore } from '@shared/store/store.ts'
+import type { PrThreadRelationship } from '@shared/git/thread-pr-relations.ts'
 
 const noopUnsub = (): (() => void) => () => {}
 
@@ -79,10 +81,13 @@ function mount(
     workspacePrs?: readonly GhPrSummary[]
     prDetails?: ApiClient['gh']['prDetails']
     prChecks?: ApiClient['gh']['prChecks']
+    gh?: Partial<ApiClient['gh']>
   } = {},
 ): {
   listRoot: HTMLElement
   viewerRoot: HTMLElement
+  store: AppStore
+  dispose: () => void
 } {
   const store = createStore({
     activeProjectId: 'project-1',
@@ -105,13 +110,14 @@ function mount(
       listMyOpenPrs: async () => [...otherPrs],
       prChecks: options.prChecks ?? (async (): Promise<GhPrChecksState> => 'no_checks'),
       prDetails: options.prDetails ?? (async (): Promise<GhPrDetails | null> => null),
+      ...options.gh,
     },
   }
   const listRoot = document.createElement('div')
   const viewerRoot = document.createElement('div')
   document.body.append(listRoot, viewerRoot)
-  mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
-  return { listRoot, viewerRoot }
+  const dispose = mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
+  return { listRoot, viewerRoot, store, dispose }
 }
 
 async function settle(): Promise<void> {
@@ -327,6 +333,47 @@ describe('pr pane filter (issue #2482)', () => {
     assert.ok(linked.querySelector('.pr-list-status.is-merged svg[data-icon="git-merge"]'))
     assert.match(linked.textContent, /Already shipped/)
   })
+  for (const installed of [false, true]) {
+    it(`refreshes selected local relationships with ${installed ? 'unauthenticated' : 'missing'} GitHub CLI`, async () => {
+      let rows: PrThreadRelationship[] = []
+      const { listRoot, viewerRoot, store, dispose } = mount([], {
+        gh: {
+          status: async () => ({ installed, authenticated: false, username: null, message: null }),
+          prThreadRelationships: async () => rows,
+        },
+      })
+      try {
+        await settle()
+        listRoot.querySelector<HTMLElement>('.pr-list-row')?.click()
+        await settle()
+        assert.match(viewerRoot.textContent, /No recorded producing thread/)
+        rows = [
+          {
+            threadId: 'producer',
+            title: 'Newly recorded producer',
+            kinds: ['produced'],
+            productions: [],
+          },
+        ]
+        store.emit('threads_changed')
+        await settle()
+        assert.equal(
+          viewerRoot.querySelector('[data-thread-id="producer"] .pr-thread-title')?.textContent,
+          'Newly recorded producer',
+        )
+        assert.match(
+          viewerRoot.querySelector('.pr-viewer-title')?.textContent ?? '',
+          /#42 acme\/widgets/,
+        )
+        assert.match(
+          viewerRoot.textContent,
+          installed ? /Sign in with GitHub CLI/ : /Install GitHub CLI/,
+        )
+      } finally {
+        dispose()
+      }
+    })
+  }
 
   it('renders a filter input and all three groups unfiltered', async () => {
     const { listRoot } = mount()

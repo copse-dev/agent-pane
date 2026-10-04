@@ -14,6 +14,15 @@ shape changes are needed.
 Draft handoff: publish the spike as a draft PR, retain its evidence and known
 validation gaps, and make the post-redesign rework a merge prerequisite.
 
+Review follow-up acceptance: relationship queries must include legacy active
+chats before their rows become visible, including when an existing projection is
+reopened. Persist the scan result so warm queries do not reread transcripts;
+exclude archived chats and retry failed scans. Forks must derive references only
+from the copied message slice, without inheriting production evidence. A selected
+PR must refresh local relationships on thread changes even without GitHub details.
+Cover these cases with storage/fork/renderer regression tests and a focused visual
+eval, then update the draft with current-head validation.
+
 Acceptance criteria:
 
 - Project metadata loads and both directions of PR relationships use the real index.
@@ -37,6 +46,20 @@ thread-store API. Project opening uses SQLite, with the existing 16-project
 metadata LRU above it. Relationships query SQL directly. There are no new
 dependencies, API payload changes, or visible DOM changes.
 
+Review fixes add a partial SQL index for active chats whose `prRefs` have never
+been scanned. PR-to-chat queries complete those scans through the existing bounded
+backfill queue before answering; chat-to-PR queries scan only the requested chat.
+Metadata-only project opening remains lazy. Completed and empty scan results
+persist, so healthy warm/restart relationship queries do not read transcripts.
+Failed scans reject and remain retryable; unavailable metadata cannot cause an
+endless retry loop. The queue is released during scanning and rechecked before
+querying, including for new chats saved while a backfill is in flight.
+
+Fork construction now records references from only its copied message slice,
+excluding later/queued messages and source-only cached links. It still excludes
+all native PR/commit production evidence. The PR pane refreshes local relationships
+and retains its header even with missing or unauthenticated GitHub CLI.
+
 Pending IDs are durable before source writes. Successful and failed queued
 operations repair their changed rows; reopening repairs interrupted operations.
 Projection update and pending-ID removal share a transaction. Rebuilds remain
@@ -59,6 +82,9 @@ commit per chat, 10% PR producers, and a nonempty spine. One initial run and thr
 fresh-process restarts are recorded per backend/size, with a warm OS page cache.
 Opening here means metadata plus the first PR query; process launch/import,
 Electron IPC, rendering, GitHub requests, and transcript hydration are excluded.
+All benchmark fixtures already have `prRefs`. One-time legacy transcript backfill
+is additional work on a first relationship query and is not included in these
+restart figures.
 Warm operations have five warmups and 50 samples (20 for native writes).
 Warm map lookups are measured directly; SQLite lookups include the native queue
 and path guards. The warm timings therefore do not isolate SQL execution alone.

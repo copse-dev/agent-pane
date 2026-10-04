@@ -601,12 +601,13 @@ async function readThread(
   projectId: string,
   threadId: string,
   options: ThreadLoadOptions = {},
+  strict = false,
 ): Promise<Thread | null> {
   recoverPendingHistoryEdit(projectId, threadId)
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
-    readOrNull(join(dir, META_FILE)),
-    readOrNull(join(dir, EVENTS_FILE)),
+    readOrNull(join(dir, META_FILE), strict),
+    readOrNull(join(dir, EVENTS_FILE), strict),
   ])
   const meta = parseMeta(metaRaw)
   if (meta === null) return null
@@ -814,7 +815,7 @@ async function backfillSelectedThreadPrRefs(
 ): Promise<void> {
   const pending: string[] = []
   for (const threadId of new Set(threadIds)) {
-    const meta = parseMeta(await readOrNull(join(threadDir(projectId, threadId), META_FILE)))
+    const meta = parseMeta(await readOrNull(join(threadDir(projectId, threadId), META_FILE), true))
     if (meta === null || meta.prRefs !== undefined || meta.archivedAt != null) continue
     pending.push(threadId)
   }
@@ -832,7 +833,7 @@ async function backfillSelectedThreadPrRefs(
     pending,
     async (threadId) => {
       try {
-        const thread = await readThread(projectId, threadId)
+        const thread = await readThread(projectId, threadId, {}, true)
         if (!thread) throw new Error(`Could not read thread ${threadId}`)
         const prRefs = collectThreadPrRefs(thread)
         // Transcript scanning stays concurrent and outside the foreground queue,
@@ -841,7 +842,7 @@ async function backfillSelectedThreadPrRefs(
         // update that landed during the scan cannot be overwritten.
         const committedRefs = await runStoreWrite(projectId, async () => {
           const path = join(threadDir(projectId, threadId), META_FILE)
-          const meta = parseMeta(await readOrNull(path))
+          const meta = parseMeta(await readOrNull(path, true))
           if (meta === null) return null
           const merged = mergeGithubPrRefs(meta.prRefs ?? [], prRefs)
           // Write even an empty list: `undefined` means "never scanned", `[]`
@@ -1416,16 +1417,62 @@ async function withThreadIndex<T>(
   }
 }
 
+type CompletePrReferenceRead<T> = { kind: 'unscanned'; ids: string[] } | { kind: 'ready'; value: T }
+
+/**
+ * Metadata-only project opening stays lazy. Relationship queries, however, must
+ * account for legacy transcripts even if their sidebar rows have never appeared.
+ * Release the project queue before backfill: its commits join that same queue.
+ * Recheck and query together so an intervening write cannot publish an unscanned
+ * thread as a complete result. Persisted empty lists make the warm check cheap.
+ */
+async function withCompletePrReferences<T>(
+  projectId: string,
+  threadId: string | undefined,
+  query: (index: SqliteThreadIndex) => T,
+  fallback: (index: ThreadPrRelationshipIndex) => T,
+): Promise<T> {
+  const attempted = new Set<string>()
+  for (;;) {
+    const result = await runSerialized(queueKey(projectId), () =>
+      withThreadIndex<CompletePrReferenceRead<T>>(
+        projectId,
+        (index) => {
+          const ids = index.unscannedPrRefIds(threadId)
+          return ids.length ? { kind: 'unscanned', ids } : { kind: 'ready', value: query(index) }
+        },
+        async () => {
+          const threads = await readProjectThreadMetas(projectId, { includeArchived: false })
+          const ids = threads
+            .filter(
+              (thread) =>
+                thread.prRefs === undefined && (threadId === undefined || thread.id === threadId),
+            )
+            .map((thread) => thread.id)
+          return ids.length
+            ? { kind: 'unscanned', ids }
+            : { kind: 'ready', value: fallback(new ThreadPrRelationshipIndex(threads)) }
+        },
+      ),
+    )
+    if (result.kind === 'ready') return result.value
+    if (result.ids.some((id) => attempted.has(id))) {
+      throw new Error('Could not complete PR reference backfill; source metadata is unavailable')
+    }
+    for (const id of result.ids) attempted.add(id)
+    await backfillThreadPrRefs(projectId, result.ids, () => {})
+  }
+}
+
 export function lookupPrThreadRelationships(
   projectId: string,
   pr: GithubPrRef,
 ): Promise<PrThreadRelationship[]> {
-  return runSerialized(queueKey(projectId), () =>
-    withThreadIndex(
-      projectId,
-      (index) => index.forPr(pr),
-      async () => new ThreadPrRelationshipIndex(await readProjectThreadMetas(projectId)).forPr(pr),
-    ),
+  return withCompletePrReferences(
+    projectId,
+    undefined,
+    (index) => index.forPr(pr),
+    (index) => index.forPr(pr),
   )
 }
 
@@ -1451,13 +1498,11 @@ export function lookupThreadPrRelationships(
   projectId: string,
   threadId: string,
 ): Promise<ReturnType<ThreadPrRelationshipIndex['forThread']>> {
-  return runSerialized(queueKey(projectId), () =>
-    withThreadIndex(
-      projectId,
-      (index) => index.forThread(threadId),
-      async () =>
-        new ThreadPrRelationshipIndex(await readProjectThreadMetas(projectId)).forThread(threadId),
-    ),
+  return withCompletePrReferences(
+    projectId,
+    threadId,
+    (index) => index.forThread(threadId),
+    (index) => index.forThread(threadId),
   )
 }
 

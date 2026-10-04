@@ -28,10 +28,12 @@ import {
   lookupCommitThreadProductions,
   recordThreadPrProduction,
   recordThreadCommitProduction,
+  getThreadMeta,
   saveProjectThread,
   saveProjectThreads,
   updateMeta,
 } from './thread-store.ts'
+import { buildForkedThread } from './fork-thread.ts'
 
 const pr = {
   owner: 'acme',
@@ -72,6 +74,153 @@ describe('persistent SQLite thread projection', () => {
     closeThreadStoreIndexes()
     configureThreadStore()
     rmSync(root, { recursive: true, force: true })
+  })
+
+  for (const reopen of [false, true]) {
+    it(`finds offscreen legacy mentions ${reopen ? 'in an existing projection' : 'on first lookup'} and persists completed scans`, async (t) => {
+      const message = {
+        id: 'm',
+        role: 'user',
+        content: pr.url,
+        toolCalls: [],
+        createdAt: 2,
+      } satisfies Thread['messages'][number]
+      await saveProjectThread('p', thread('legacy', { messages: [message] }))
+      await saveProjectThread('p', thread('empty'))
+      await saveProjectThread('p', thread('archived', { messages: [message], archivedAt: 3 }))
+      if (reopen) {
+        await loadProjectThreadMetas('p')
+        closeThreadStoreIndexes()
+      }
+      assert.equal((await getThreadMeta('p', 'legacy'))?.prRefs, undefined)
+      assert.deepEqual(
+        (await lookupPrThreadRelationships('p', pr)).map((row) => [row.threadId, row.kinds]),
+        [['legacy', ['referenced']]],
+      )
+      assert.deepEqual((await getThreadMeta('p', 'legacy'))?.prRefs, [pr])
+      assert.deepEqual((await getThreadMeta('p', 'empty'))?.prRefs, [])
+      assert.equal((await getThreadMeta('p', 'archived'))?.prRefs, undefined)
+      closeThreadStoreIndexes()
+      t.mock.method(fs, 'open', () => {
+        throw new Error('Warm relationships must not reread source files')
+      })
+      assert.equal((await lookupPrThreadRelationships('p', pr))[0]?.threadId, 'legacy')
+      assert.deepEqual(await lookupThreadPrRelationships('p', 'legacy'), [
+        { pr, kinds: ['referenced'] },
+      ])
+    })
+  }
+
+  it('backfills the requested legacy thread without scanning unrelated transcripts', async () => {
+    const message = {
+      id: 'm',
+      role: 'user',
+      content: pr.url,
+      toolCalls: [],
+      createdAt: 2,
+    } satisfies Thread['messages'][number]
+    await saveProjectThread('p', thread('legacy', { messages: [message] }))
+    await saveProjectThread('p', thread('other', { messages: [message] }))
+    assert.deepEqual(await lookupThreadPrRelationships('p', 'legacy'), [
+      { pr, kinds: ['referenced'] },
+    ])
+    assert.equal((await getThreadMeta('p', 'other'))?.prRefs, undefined)
+  })
+
+  it(
+    'includes an unscanned thread saved during backfill without holding the project write queue',
+    { timeout: 5000 },
+    async (t) => {
+      const message = {
+        id: 'm',
+        role: 'user',
+        content: pr.url,
+        toolCalls: [],
+        createdAt: 2,
+      } satisfies Thread['messages'][number]
+      await saveProjectThread('p', thread('legacy', { messages: [message] }))
+      await loadProjectThreadMetas('p')
+      let release = (): void => {}
+      let started = (): void => {}
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const began = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const open = fs.open
+      t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+        if (String(args[0]) === join(root, 'p', 'legacy', 'events.jsonl')) {
+          started()
+          await gate
+        }
+        return open(...args)
+      })
+      const query = lookupPrThreadRelationships('p', pr)
+      try {
+        await began
+        await saveProjectThread('p', thread('new', { messages: [message] }))
+        release()
+        assert.deepEqual(
+          (await query).map((row) => row.threadId),
+          ['legacy', 'new'],
+        )
+      } finally {
+        release()
+      }
+    },
+  )
+
+  it('rejects failed transcript scans without caching an empty result and retries the next lookup', async (t) => {
+    await saveProjectThread(
+      'p',
+      thread('legacy', {
+        messages: [{ id: 'm', role: 'user', content: pr.url, toolCalls: [], createdAt: 2 }],
+      }),
+    )
+    await loadProjectThreadMetas('p')
+    const open = fs.open
+    const blocked = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+      if (String(args[0]) === join(root, 'p', 'legacy', 'events.jsonl'))
+        throw new Error('Transcript unavailable')
+      return open(...args)
+    })
+    await assert.rejects(lookupPrThreadRelationships('p', pr), /Could not backfill PR refs/)
+    blocked.mock.restore()
+    assert.equal((await getThreadMeta('p', 'legacy'))?.prRefs, undefined)
+    assert.equal((await lookupPrThreadRelationships('p', pr))[0]?.threadId, 'legacy')
+  })
+
+  it('rejects missing unscanned metadata instead of looping on an existing projection', async () => {
+    await saveProjectThread('p', thread('legacy'))
+    await loadProjectThreadMetas('p')
+    rmSync(join(root, 'p', 'legacy', 'meta.json'))
+    await assert.rejects(
+      lookupPrThreadRelationships('p', pr),
+      /Could not complete PR reference backfill/,
+    )
+  })
+
+  it('indexes a persisted fork immediately without inheriting native production', async () => {
+    const source = thread('source', {
+      messages: [{ id: 'm', role: 'user', content: pr.url, toolCalls: [], createdAt: 2 }],
+      prProductions: [{ pr, eventId: 'create', source: 'pr-create', createdAt: 2 }],
+      commitProductions: [commit],
+    })
+    const fork = buildForkedThread(source)
+    assert.ok(fork)
+    await saveProjectThread('p', fork)
+    await loadProjectThreadMetas('p')
+    closeThreadStoreIndexes()
+    assert.deepEqual(await lookupThreadPrRelationships('p', fork.id), [
+      { pr, kinds: ['referenced'] },
+    ])
+    const rows = await lookupPrThreadRelationships('p', pr)
+    assert.deepEqual(
+      rows.map((row) => [row.threadId, row.kinds, row.productions]),
+      [[fork.id, ['referenced'], []]],
+    )
+    assert.deepEqual(await lookupCommitThreadProductions('p', commit.repository, commit.sha), [])
   })
 
   it('preserves metadata and transcript source bytes when building and restarting', async () => {
@@ -233,7 +382,7 @@ describe('persistent SQLite thread projection', () => {
     rmSync(join(root, 'p', 't'), { recursive: true })
     index.close()
     assert.deepEqual(await lookupPrThreadRelationships('p', pr), [])
-    await saveProjectThread('p', thread('t'))
+    await saveProjectThread('p', thread('t', { prRefs: [] }))
     t.mock.method(fs, 'rename', () => {
       throw new Error('injected source failure')
     })

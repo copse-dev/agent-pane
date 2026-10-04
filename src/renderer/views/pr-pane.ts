@@ -238,7 +238,12 @@ export function mountPrPane(
             number: prDetails.number,
             url: prDetails.url,
           }
-        : null)
+        : selectedPr
+          ? {
+              ...selectedPr,
+              url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
+            }
+          : null)
     if (!ref) return null
     const projectId = store.getState().activeProjectId
     const request = ++relationshipRequest
@@ -797,7 +802,36 @@ export function mountPrPane(
 
   function renderMeta(): void {
     clear(metaHost)
-    if (!prDetails || !selectedPr) return
+    if (!selectedPr) return
+    const relationships = prRelationships
+      ? renderPrThreadRelationships(prRelationships, (id) => {
+          switchThread(store, id)
+        })
+      : el(
+          'p',
+          { class: 'pr-thread-empty', role: 'status' },
+          relationshipError ? 'Thread relationships unavailable.' : 'Loading thread relationships…',
+        )
+    if (!prDetails) {
+      metaHost.append(
+        el(
+          'div',
+          { class: 'pr-viewer-title-row' },
+          el(
+            'h4',
+            { class: 'pr-viewer-title' },
+            `#${String(selectedPr.number)} ${selectedPr.owner}/${selectedPr.repo}`,
+          ),
+        ),
+        el(
+          'div',
+          { class: 'pr-viewer-subtitle' },
+          `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
+        ),
+        relationships,
+      )
+      return
+    }
     const openBtn = el(
       'button',
       {
@@ -965,17 +999,7 @@ export function mountPrPane(
       badges,
       actions,
       statusLine,
-      prRelationships
-        ? renderPrThreadRelationships(prRelationships, (id) => {
-            switchThread(store, id)
-          })
-        : el(
-            'p',
-            { class: 'pr-thread-empty', role: 'status' },
-            relationshipError
-              ? 'Thread relationships unavailable.'
-              : 'Loading thread relationships…',
-          ),
+      relationships,
     )
   }
 
@@ -1201,7 +1225,7 @@ export function mountPrPane(
     relationshipRequest++
     prDetails = null
     renderSections()
-    const localRelationships = await loadPrRelationships({
+    await loadPrRelationships({
       owner: ref.owner,
       repo: ref.repo,
       number: ref.number,
@@ -1219,25 +1243,6 @@ export function mountPrPane(
       emptyState.textContent = ghStatus?.installed
         ? 'Sign in with GitHub CLI to load pull request details.'
         : 'Install GitHub CLI to load pull request details.'
-      metaHost.append(
-        el(
-          'div',
-          { class: 'pr-viewer-title-row' },
-          el('h4', { class: 'pr-viewer-title' }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`),
-        ),
-        el(
-          'div',
-          { class: 'pr-viewer-subtitle' },
-          `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
-        ),
-        ...(localRelationships
-          ? [
-              renderPrThreadRelationships(localRelationships, (id) => {
-                switchThread(store, id)
-              }),
-            ]
-          : []),
-      )
       return
     }
 
@@ -1494,7 +1499,7 @@ export function mountPrPane(
       linkedRefs = collectLinkedPrs(store)
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
-      if (selectedPr && prDetails) void loadPrRelationships()
+      if (selectedPr) void loadPrRelationships()
       void loadThreadRelationships()
       // A run that just finished may have recorded a new agent↔PR link; pick it
       // up so the badge appears without waiting for a manual refresh. Guard the

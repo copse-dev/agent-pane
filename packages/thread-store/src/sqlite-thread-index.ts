@@ -60,6 +60,8 @@ export class SqliteThreadIndex {
   #readPr
   #readThread
   #readCommit
+  #readUnscanned
+  #readUnscannedThread
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -78,6 +80,8 @@ export class SqliteThreadIndex {
           id TEXT PRIMARY KEY, meta TEXT NOT NULL, has_messages INTEGER NOT NULL,
           archived INTEGER NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS pr_unscanned ON threads(id)
+          WHERE archived=0 AND json_type(meta,'$.prRefs') IS NULL;
         CREATE TABLE IF NOT EXISTS pr_links (
           thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
           pr_key TEXT NOT NULL, ordinal INTEGER NOT NULL,
@@ -123,6 +127,11 @@ export class SqliteThreadIndex {
       this.#readCommit = this.#db.prepare(
         'SELECT payload FROM commit_links WHERE repository=? AND sha=? ORDER BY thread_id',
       )
+      const unscanned = "archived=0 AND json_type(meta,'$.prRefs') IS NULL"
+      this.#readUnscanned = this.#db.prepare(`SELECT id FROM threads WHERE ${unscanned}`)
+      this.#readUnscannedThread = this.#db.prepare(
+        `SELECT id FROM threads WHERE id=? AND ${unscanned}`,
+      )
     } catch (error) {
       this.#db.close()
       throw error
@@ -150,6 +159,16 @@ export class SqliteThreadIndex {
         if (typeof id !== 'string') throw new Error('Invalid pending thread ID')
         return id
       })
+  }
+
+  unscannedPrRefIds(threadId?: string): string[] {
+    const rows =
+      threadId === undefined ? this.#readUnscanned.all() : this.#readUnscannedThread.all(threadId)
+    return rows.map((row) => {
+      const id = row['id']
+      if (typeof id !== 'string') throw new Error('Invalid unscanned thread ID')
+      return id
+    })
   }
 
   #upsert(thread: Thread): void {
