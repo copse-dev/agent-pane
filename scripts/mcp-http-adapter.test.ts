@@ -8,13 +8,13 @@ describe('HTTP MCP exact-optional transport adapter', () => {
     const source = new StreamableHTTPServerTransport({})
     const transport = mcpHttpProtocolTransport(source)
     const events: unknown[] = []
-    transport.onmessage = (message) => {
+    transport.onmessage = (message): void => {
       events.push(message)
     }
-    transport.onerror = (error) => {
+    transport.onerror = (error): void => {
       events.push(error)
     }
-    transport.onclose = () => {
+    transport.onclose = (): void => {
       events.push('closed')
     }
     const message = { jsonrpc: '2.0', id: 1, method: 'ping' } as const
@@ -28,7 +28,7 @@ describe('HTTP MCP exact-optional transport adapter', () => {
   it('preserves the original close handler for the protocol to chain', () => {
     const source = new StreamableHTTPServerTransport({})
     let closes = 0
-    source.onclose = () => {
+    source.onclose = (): void => {
       closes += 1
     }
     const transport = mcpHttpProtocolTransport(source)

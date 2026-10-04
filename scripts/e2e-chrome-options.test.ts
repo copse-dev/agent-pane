@@ -13,7 +13,7 @@ describe('Chrome session capability boundary', () => {
     const original = structuredClone(capabilities)
     const options = readChromeOptions(capabilities)
     assert.deepEqual(options, original.alwaysMatch['goog:chromeOptions'])
-    options.args?.push('--new')
+    options.args.push('--new')
     assert.deepEqual(capabilities, original)
   })
   it('updates standalone arguments while preserving Chrome metadata', () => {
