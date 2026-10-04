@@ -10,7 +10,7 @@ import {
 } from './parse-skill-frontmatter.ts'
 import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 
-const header = (extra = '') => `name: demo-skill\ndescription: Demo\n${extra}`
+const header = (extra = ''): string => `name: demo-skill\ndescription: Demo\n${extra}`
 
 describe('Agent Skills frontmatter conformance', () => {
   it('loads the standard metadata fixture and round-trips descriptive values', () => {
@@ -105,7 +105,7 @@ describe('Agent Skills frontmatter conformance', () => {
     ]) {
       const result = validateSkillFrontmatter(header(extra))
       assert.equal(result.skill, null, extra)
-      assert.ok(result.reason?.startsWith('frontmatter '), extra)
+      assert.ok(result.reason.startsWith('frontmatter '), extra)
       assert.deepEqual(validateSkillFrontmatter(header(extra)), result, 'diagnostics are stable')
     }
   })
