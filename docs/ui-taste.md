@@ -60,6 +60,9 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   - That includes the small stuff (see "Change marks and status dots" below for which token each
     mark takes). `status-colors.test.ts` keeps raw hex out of component stylesheets, with a
     shrink-only allowlist for the measured light syntax palette and a few glyph colours (#3065).
+    The existing ChatGPT sign-in button preserves its provider branding: black with white text
+    and border, and a `#202020` hover. This exact selector-bound palette is a deliberate
+    provider-brand exception; other Settings controls still use app tokens.
   - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
     button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
     same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
@@ -976,6 +979,16 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   `.msg-machine-origin-marker` with `Machine · automatic continuation`; it must never look like a
   human-authored blue bubble. While any turn is running, the submit action says `Queue`, so typing
   during a machine turn has an explicit destination rather than silently entering the pending queue.
+
+## Footer context ring: colour is the passive signal
+
+The footer's context control is a ring with no text beside it; the percentage lives in its
+`aria-label` and the hover, which also carries token usage, cache, cost and subagent runs. Because
+nothing else says how full the window is, the ring fill carries the state: neutral below 80%, amber
+(`--warning`) from 80%, red (`--danger`) from 95%. Use the theme tokens, never literal colours, and
+keep the thresholds in `context-wheel.ts` (`CONTEXT_WARN_RATIO`, `CONTEXT_DANGER_RATIO`). An ACP
+agent's figure looks the same as a measured one; the hover's source note says where it came from. Do
+not reintroduce a second footer control for tokens; add rows to the shared hover instead.
 
 ## Footer popovers: one boundary, distinct trigger anchors
 

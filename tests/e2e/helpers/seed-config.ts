@@ -2389,11 +2389,10 @@ export function seedMermaidDiagramFixture(workspaceRoot: string): void {
 }
 
 /** Seeded thread with context snapshot and token usage for footer doughnut validation. */
-export function seedContextWheelFixture(workspaceRoot: string): void {
+export function seedContextWheelFixture(workspaceRoot: string, conversationTokens = 54_000): void {
   const projectId = 'e2e-context-wheel-project'
   const threadId = 'e2e-context-wheel-thread'
   const conversationBudget = 180_000
-  const conversationTokens = 54_000
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2620,6 +2619,15 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
             createdAt: now + 1,
           },
         ],
+        // 82% of the window: the ring is amber and the hover carries a context
+        // section above the usage and subagent rows.
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 200_000,
+          conversationTokens: 164_000,
+          fillRatio: 0.82,
+          updatedAt: now,
+        },
         usage: {
           inputTokens: 13_300_000,
           outputTokens: 221_000,

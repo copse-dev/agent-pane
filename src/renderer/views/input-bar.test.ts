@@ -3379,7 +3379,7 @@ describe('input bar footer overflow menu', () => {
   })
 })
 
-describe('input bar footer usage counter', () => {
+describe('input bar footer usage hover', () => {
   function usageThread(): Thread {
     return {
       ...thread(),
@@ -3403,38 +3403,38 @@ describe('input bar footer usage counter', () => {
     return host
   }
 
-  it('shows the total on the counter and the in/out/cost split on hover', async () => {
+  it('has no separate counter: the wheel hover carries the in/out/cost split', async () => {
     const host = await mountWithUsage()
 
-    const counter = host.querySelector<HTMLElement>('.footer-usage')
-    assert.ok(counter)
-    assert.equal(counter.textContent, '13.1M tokens')
+    assert.equal(host.querySelector('.footer-usage'), null)
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    assert.equal(wheel.hidden, false)
 
-    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    const popover = host.querySelector<HTMLElement>('.context-wheel-popover')
     assert.ok(popover)
     assert.equal(popover.hidden, true)
 
-    counter.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
     assert.match(popover.textContent, /Usage · 13\.1M tokens/)
     assert.match(popover.textContent, /Input\s*12\.9M/)
     assert.match(popover.textContent, /Output\s*211\.0k/)
     assert.match(popover.textContent, /Cost/)
 
-    counter.dispatchEvent(new Event('mouseleave'))
+    wheel.dispatchEvent(new Event('mouseleave'))
     assert.equal(popover.hidden, true)
   })
 
-  it('no longer toggles the breakdown on click', async () => {
+  it('does not toggle the popover on click', async () => {
     const host = await mountWithUsage()
 
-    const counter = host.querySelector<HTMLElement>('.footer-usage')
-    assert.ok(counter)
-    counter.click()
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    wheel.click()
     await settle()
 
-    assert.equal(counter.textContent, '13.1M tokens')
-    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    const popover = host.querySelector<HTMLElement>('.context-wheel-popover')
     assert.equal(popover?.hidden, true)
   })
 
@@ -3493,15 +3493,13 @@ describe('input bar footer usage counter', () => {
     mountInputBar(host, store, createApi({ currentBranch: 'main' }))
     await settle()
 
-    const counter = host.querySelector<HTMLElement>('.footer-usage')
-    assert.ok(counter)
-    // Excluding subagents: 12.1M in + 196.0k out, not the raw 13.1M thread total.
-    assert.equal(counter.textContent, '12.3M tokens')
-
-    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    const wheel = host.querySelector<HTMLElement>('.context-wheel')
+    assert.ok(wheel)
+    const popover = host.querySelector<HTMLElement>('.context-wheel-popover')
     assert.ok(popover)
-    counter.dispatchEvent(new Event('mouseenter'))
+    wheel.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
+    // Excluding subagents: 12.1M in + 196.0k out, not the raw 13.1M thread total.
     assert.match(popover.textContent, /Usage · 12\.3M tokens/)
     assert.match(popover.textContent, /Excluding subagents/)
     assert.match(popover.textContent, /Whole thread/)
