@@ -112,6 +112,10 @@
     "label": "Apple Development test profile"
   },
   {
+    "id": "sidebar-thread-sort",
+    "label": "Sidebar thread sort"
+  },
+  {
     "id": "activity-home",
     "label": "Activity home on a new thread"
   },
@@ -154,6 +158,10 @@
   {
     "id": "roadmap-chat-min-width",
     "label": "Roadmap side panel minimum chat width"
+  },
+  {
+    "id": "chatgpt-plan-settings",
+    "label": "ChatGPT plan onboarding and account options"
   },
   {
     "id": "site-fork-resend",
