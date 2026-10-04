@@ -20,7 +20,7 @@ export interface ReleaseExclusion {
   reason: string
   coverage: string
   markers: string[]
-  accountability?: QuarantineAccountability
+  accountability?: QuarantineAccountability | undefined
 }
 
 export const MAX_QUARANTINE_WAIVER_DAYS = 14
