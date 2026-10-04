@@ -309,6 +309,31 @@ describe('portable Actions isolation', () => {
 })
 
 describe('Copse dogfooding of the reusable reviewer', () => {
+  it('names every protected model secret in the caller contract', () => {
+    const workflow = z
+      .object({
+        jobs: z.object({ 'copse-findings': z.unknown() }),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    const caller = z
+      .object({
+        jobs: z.object({ review: z.object({ secrets: z.record(z.string(), z.string()) }) }),
+      })
+      .parse(load(readFileSync('.github/workflows/review-trigger.yml', 'utf8')))
+    const job = JSON.stringify(workflow.jobs['copse-findings'])
+    const secretNames = new Set(
+      Array.from(job.matchAll(/secrets\.([A-Za-z0-9_-]+)/g), (match) => match[1] ?? ''),
+    )
+    assert.ok(secretNames.size > 0)
+    for (const name of secretNames) {
+      assert.ok(
+        name && Object.hasOwn(caller.jobs.review.secrets, name),
+        `${name} is not passed by name`,
+      )
+    }
+    assert.equal(caller.jobs.review.secrets['COPSE_REVIEW_OPENROUTER_API_KEY'], '')
+  })
+
   it('accepts only owner PRs in the Copse profile and obtains its key from the protected job', async () => {
     const options = { preparation: 'copse-pnpm', modelKey: false }
     assert.equal(
