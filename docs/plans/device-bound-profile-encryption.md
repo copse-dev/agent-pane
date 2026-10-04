@@ -123,6 +123,12 @@ Successful migration restarts once to discard cached legacy stores and keys.
 The next startup opens the vault under its selected authentication policy.
 
 Failure before commit preserves the original stores and uses existing storage.
+The enrollment identity is fsynced in `.vault-enrollment.json` before native
+creation. A restart or lost reply resumes the same native record through a
+create-only operation; a duplicate insertion reuses the winner rather than
+replacing its key. File commit/journal replay retires the matching pending identity.
+Failed enrollment also suppresses opportunistic legacy-format rewrites until
+an explicit enrollment retry succeeds.
 Settings explains that migration is incomplete and offers **Retry migration**.
 The next launch also retries. Unsupported machines retain existing storage;
 they must not claim that device encryption was applied. Quit older Copse binaries

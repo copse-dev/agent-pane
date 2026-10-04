@@ -350,12 +350,23 @@ do {
     switch request.operation {
     case "create":
         context.interactionNotAllowed = true
-        guard try readRecord(request) == nil else { throw Failure.corrupt }
-        var key = Data(count: 32)
+        let record = try enrollOnce(read: { try readRecord(request) }, make: {
+            var key = Data(count: 32)
+            defer { key.resetBytes(in: 0..<key.count) }
+            guard key.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }) == errSecSuccess else { throw Failure.unavailable }
+            return try makeRecord(key, request: request, requireAuth: false)
+        }, insert: { record in
+            var attributes = recordAttributes(request)
+            attributes[kSecValueData as String] = try encode(record)
+            let status = SecItemAdd(attributes as CFDictionary, nil)
+            if status == errSecDuplicateItem { return false }
+            guard status == errSecSuccess else { throw Failure.unavailable }
+            return true
+        })
+        // Enrollment retries must never downgrade an existing authenticated vault.
+        guard !record.requireAuth else { throw Failure.unsupported }
+        var key = try unlockRecord(record)
         defer { key.resetBytes(in: 0..<key.count) }
-        guard key.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }) == errSecSuccess else { throw Failure.unavailable }
-        let record = try makeRecord(key, request: request, requireAuth: false)
-        try writeRecord(record, request: request)
         reply = keyReply(key, record: record)
     case "unlock":
         let record = try loadRecord(request)

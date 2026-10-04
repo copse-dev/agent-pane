@@ -14,10 +14,22 @@ import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { decodeVaultManifest, VaultError, type VaultManifest } from './profile-vault-crypto.ts'
+import {
+  decodeVaultManifest,
+  newVaultIdentity,
+  VaultError,
+  type VaultIdentity,
+  type VaultManifest,
+} from './profile-vault-crypto.ts'
 import { assertMigratedVaultStores, type VaultMigrationResult } from './profile-vault-migration.ts'
 
 const FILES = ['settings.json', 'ssh-credentials.json', 'vault-manifest.json'] as const
+const ENROLLMENT = '.vault-enrollment.json'
+const enrollmentSchema = z.strictObject({
+  version: z.literal(1),
+  profileId: z.uuid().regex(/^[a-f0-9-]+$/),
+  keyId: z.uuid().regex(/^[a-f0-9-]+$/),
+})
 const journalSchema = z.strictObject({
   version: z.literal(1),
   hashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).length(3),
@@ -44,7 +56,7 @@ function syncDirectory(path: string): void {
 /** Caller must hold exclusive profile ownership across this write. */
 export function writeVaultFile(
   directoryPath: string,
-  filename: (typeof FILES)[number],
+  filename: (typeof FILES)[number] | typeof ENROLLMENT,
   contents: string,
 ): void {
   directory(directoryPath)
@@ -64,6 +76,34 @@ export function writeVaultFile(
   } finally {
     rmSync(temporary, { force: true })
   }
+}
+/** No key material: retain this identity until enrollment's file commit is durable. */
+export function readVaultEnrollment(userData: string): VaultIdentity | null {
+  const path = join(userData, ENROLLMENT)
+  if (!existsSync(path)) return null
+  regular(path)
+  const pending = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(enrollmentSchema))
+  if (!pending) throw new VaultError('corrupt')
+  return { profileId: pending.profileId, keyId: pending.keyId }
+}
+/** Caller holds the maintenance gate; persist before sending native create. */
+export function prepareVaultEnrollment(userData: string): VaultIdentity {
+  const pending = readVaultEnrollment(userData)
+  if (pending) return pending
+  const identity = newVaultIdentity()
+  writeVaultFile(userData, ENROLLMENT, JSON.stringify({ version: 1, ...identity }))
+  return identity
+}
+/** Retire only after a matching manifest has reached the durable file commit. */
+export function finishVaultEnrollment(userData: string): void {
+  const pending = readVaultEnrollment(userData)
+  if (!pending) return
+  const manifest = readVaultManifest(userData)
+  if (!manifest) return
+  if (pending.profileId !== manifest.profileId || pending.keyId !== manifest.keyId)
+    throw new VaultError('corrupt')
+  rmSync(join(userData, ENROLLMENT))
+  syncDirectory(userData)
 }
 export function readVaultManifest(userData: string): VaultManifest | null {
   const path = join(userData, 'vault-manifest.json')
@@ -158,6 +198,9 @@ export function recoverVaultMigration(userData: string): boolean {
   if (settingsText === undefined || sshText === undefined || manifestText === undefined)
     throw new VaultError('corrupt')
   const manifest = decodeVaultManifest(manifestText)
+  const pending = readVaultEnrollment(userData)
+  if (pending && (pending.profileId !== manifest.profileId || pending.keyId !== manifest.keyId))
+    throw new VaultError('corrupt')
   assertMigratedVaultStores(safeJsonParse(settingsText), safeJsonParse(sshText), manifest)
   for (const [index, file] of FILES.entries()) {
     const text = contents[index]
@@ -170,6 +213,7 @@ export function recoverVaultMigration(userData: string): boolean {
   // Once the journal is retired, cleanup failure cannot make startup replay a
   // partially deleted staging directory. These leftovers contain ciphertext only.
   try {
+    finishVaultEnrollment(userData)
     rmSync(completed, { recursive: true })
   } catch {
     /* Retryable housekeeping only. */

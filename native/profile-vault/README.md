@@ -22,6 +22,13 @@ mirror after interruption. Existing always-authenticated vaults retain their
 policy and are adopted from the older per-device Keychain item after successful
 unlock. Saved records and recovery keys do not change when the policy changes.
 
+Before native enrollment, the desktop durably saves `.vault-enrollment.json`
+with only the profile/key IDs. Lost replies and failures before the ciphertext
+commit reuse that identity. Native creation is create-only and returns an existing
+record on retry; it never replaces a record or downgrades its authentication
+policy. The pending identity is retired after the matching manifest is durable,
+including after journal replay on startup. It contains no key material.
+
 The main process and helper exchange bounded requests over inherited socket fd 3.
 Main verifies the helper's pinned Developer ID and live signature. Native checks
 use the kernel audit token. Silent access requires the exact signed release app,

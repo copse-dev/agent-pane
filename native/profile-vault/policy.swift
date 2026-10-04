@@ -17,6 +17,17 @@ struct Request: Decodable {
 
 let trustedReleaseRequirement = "identifier \"dev.copse.app\" and anchor apple generic and certificate leaf[subject.OU] = \"VRQQV62MK3\" and ! entitlement[\"com.apple.security.cs.disable-library-validation\"] exists and ! entitlement[\"com.apple.security.cs.allow-dyld-environment-variables\"] exists and ! entitlement[\"com.apple.security.get-task-allow\"] exists"
 
+// A durable profile identity makes lost replies retryable. Insertion must be
+// create-only: a concurrent retry must reuse the winning record, never replace it.
+func enrollOnce<Record>(read: () throws -> Record?, make: () throws -> Record,
+                        insert: (Record) throws -> Bool) throws -> Record {
+    if let existing = try read() { return existing }
+    let candidate = try make()
+    if try insert(candidate) { return candidate }
+    guard let existing = try read() else { throw Failure.unavailable }
+    return existing
+}
+
 // Operation policy is independent of whether routine unlock requires presence.
 func sensitiveAuthenticationReason(_ operation: String) -> String? {
     switch operation {

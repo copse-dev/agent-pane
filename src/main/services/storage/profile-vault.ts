@@ -19,6 +19,7 @@ import {
 } from '@copse/store-kit/profile-vault-crypto.ts'
 import {
   commitVaultMigration,
+  prepareVaultEnrollment,
   readVaultManifest,
   readVaultSource,
   writeVaultFile,
@@ -228,11 +229,10 @@ export class AppProfileVault {
       if (!support.ok || !support.automatic) throw new VaultError('unavailable')
       releaseMaintenance = acquireVaultMaintenance(this.#deps.userData)
       await this.#deps.beforeMigration()
-      // Prove every source record decodes before native creates a device key:
-      // there is no native delete, so a failure after `create` would orphan a
-      // Keychain item on every retry.
+      // Reject unreadable sources before claiming a durable enrollment identity.
+      // Later failures retain that identity so native creation can be retried.
       this.#inventorySources()
-      const identity = newVaultIdentity()
+      const identity = prepareVaultEnrollment(this.#deps.userData)
       const reply = await this.#deps.invoke(
         nativeRequest('create', this.#deps.userData, identity),
         operation.signal,

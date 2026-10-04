@@ -11,7 +11,7 @@ import {
   VaultError,
   type VaultManifest,
 } from '@copse/store-kit/profile-vault-crypto.ts'
-import { readVaultManifest } from '@copse/store-kit/profile-vault-files.ts'
+import { readVaultEnrollment, readVaultManifest } from '@copse/store-kit/profile-vault-files.ts'
 import { registerVaultProfileClient } from '@copse/store-kit/profile-vault-access.ts'
 import type { NativeVaultRequest, NativeVaultReply } from '@copse/store-kit/profile-vault-native.ts'
 import { AppProfileVault, type ProfileVaultDependencies } from './profile-vault.ts'
@@ -133,6 +133,83 @@ describe('application vault', () => {
       f.dispose()
     }
   })
+  for (const failure of ['lost native reply', 'post-create work', 'file commit'] as const) {
+    it(`resumes one durable enrollment identity after ${failure} and a restart`, async () => {
+      const f = fixture()
+      try {
+        const original = JSON.stringify({
+          apiKey: {
+            openai: { v: 1, enc: Buffer.from('synthetic').toString('base64'), plain: false },
+          },
+        })
+        writeFileSync(join(f.path, 'settings.json'), original)
+        let preparationCalls = 0
+        let legacyReads = 0
+        const outside = join(f.path, 'untouched.json')
+        writeFileSync(outside, 'untouched')
+        const vault = new AppProfileVault({
+          ...f.deps,
+          legacy: {
+            ...legacy,
+            decryptString: (bytes): string => {
+              legacyReads++
+              // Fail the real file commit after read-only inventory and native create.
+              if (failure === 'file commit' && legacyReads === 2)
+                symlinkSync(outside, join(f.path, 'vault-manifest.json'))
+              return legacy.decryptString(bytes)
+            },
+          },
+          invoke: async (request): Promise<NativeVaultReply> => {
+            if (request.operation === 'create') {
+              assert.deepEqual(readVaultEnrollment(f.path), {
+                profileId: request.profileId,
+                keyId: request.keyId,
+              })
+            }
+            const reply = await f.deps.invoke(request)
+            if (request.operation === 'create' && failure === 'lost native reply')
+              throw new Error('Simulated lost reply after native persistence')
+            return reply
+          },
+          beforeMigration: async (): Promise<void> => {
+            preparationCalls++
+            if (preparationCalls === 2 && failure === 'post-create work')
+              throw new Error('Simulated interruption before file commit')
+          },
+        })
+        await assert.rejects(
+          vault.initialize(),
+          failure === 'file commit' ? { reason: 'corrupt' } : /Simulated/,
+        )
+        assert.equal(readFileSync(join(f.path, 'settings.json'), 'utf8'), original)
+        if (failure === 'file commit') {
+          assert.equal(readFileSync(outside, 'utf8'), 'untouched')
+          rmSync(join(f.path, 'vault-manifest.json'))
+        }
+        assert.equal(readVaultManifest(f.path), null)
+        const pending = readVaultEnrollment(f.path)
+        assert.ok(pending)
+        vault.dispose()
+
+        const restarted = new AppProfileVault(f.deps)
+        assert.equal(await restarted.initialize(), true)
+        const creates = f.calls.filter((request) => request.operation === 'create')
+        assert.equal(creates.length, 2)
+        for (const request of creates) {
+          assert.equal(request.profileId, pending.profileId)
+          assert.equal(request.keyId, pending.keyId)
+        }
+        const manifest = readVaultManifest(f.path)
+        assert.ok(manifest)
+        assert.equal(manifest.profileId, pending.profileId)
+        assert.equal(manifest.keyId, pending.keyId)
+        assert.equal(readVaultEnrollment(f.path), null)
+        restarted.dispose()
+      } finally {
+        f.dispose()
+      }
+    })
+  }
   it('keeps unsupported or development profiles on existing storage without enrollment prompts', async () => {
     const f = fixture()
     try {

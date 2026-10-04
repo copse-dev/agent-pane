@@ -35,6 +35,18 @@ it(
 import Foundation
 import Security
 struct Fixture: Decodable { let key: String; let request: Request }
+var stored: Int?
+var creations = 0
+func enroll() throws -> Int {
+    try enrollOnce(read: { stored }, make: { creations += 1; return creations },
+                   insert: { stored = $0; return true })
+}
+let first = try enroll()
+let retried = try enroll()
+guard first == retried, creations == 1 else { fatalError("Enrollment retry replaced a key") }
+var raced: Int?
+let winner = try enrollOnce(read: { raced }, make: { 1 }, insert: { _ in raced = 2; return false })
+guard winner == 2 else { fatalError("Concurrent enrollment overwrote the winner") }
 for operation in ["backup", "set-auth", "recover"] {
     guard sensitiveAuthenticationReason(operation) != nil else { fatalError("Missing fresh authentication") }
 }

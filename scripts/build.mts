@@ -8,7 +8,6 @@ import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
 import {
   accessSync,
-  existsSync,
   cpSync,
   copyFileSync,
   mkdirSync,
@@ -38,6 +37,7 @@ import { buildMobileAssets } from './mobile-build.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
 import { checkBundledExplainerSyntax } from './lib/explainer-syntax.mts'
+import { removeMissingBuildArtifact } from './lib/missing-build-artifact.mts'
 
 // These scripts are copied, not bundled, so esbuild would otherwise never parse them.
 checkBundledExplainerSyntax()
@@ -457,7 +457,7 @@ if (isServo) {
 // The independently signed helper is prepared once, not re-signed on each
 // Electron rebuild. Unsupported hosts/builds show encryption as unavailable.
 const vaultHelper = 'native/profile-vault/dist/CopseVault'
-if (existsSync(vaultHelper)) {
+if (!removeMissingBuildArtifact(vaultHelper, 'dist/resources/profile-vault')) {
   const expectedVaultBuild =
     JSON.stringify({
       version: PROFILE_VAULT_BUILD_VERSION,
@@ -487,7 +487,7 @@ if (process.platform === 'darwin') {
   const version = readFileSync('.nvmrc', 'utf8').trim()
   for (const arch of ['arm64', 'x64']) {
     const source = `native/node-runtime/dist/${arch}`
-    if (!existsSync(`${source}/node`)) {
+    if (removeMissingBuildArtifact(`${source}/node`, `dist/resources/node/${arch}`)) {
       if (isRelease && arch === process.arch)
         throw new Error('Prepare the packaged worker runtime with pnpm run prepare:node.')
       continue

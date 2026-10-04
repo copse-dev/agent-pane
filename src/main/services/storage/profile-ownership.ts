@@ -8,6 +8,7 @@ import {
 import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import {
   assertVaultProfileState,
+  finishVaultEnrollment,
   readVaultManifest,
   recoverVaultMigration,
 } from '@copse/store-kit/profile-vault-files.ts'
@@ -57,6 +58,7 @@ export function prepareOwnedProfile(userData: string): void {
     }
   }
   assertVaultProfileState(userData)
+  finishVaultEnrollment(userData)
 }
 
 /** User-facing explanation for a profile that cannot be opened safely. */

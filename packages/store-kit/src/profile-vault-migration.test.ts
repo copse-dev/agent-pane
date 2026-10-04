@@ -21,6 +21,7 @@ import {
   assertVaultProfileState,
   commitVaultMigration,
   readVaultManifest,
+  readVaultEnrollment,
   recoverVaultMigration,
 } from './profile-vault-files.ts'
 import type { SecretCipher } from './secret-cipher.ts'
@@ -168,6 +169,10 @@ describe('profile vault migration', () => {
     for (let written = 0; written <= 3; written++) {
       const directory = mkdtempSync(join(tmpdir(), 'copse-vault-replay-'))
       try {
+        writeFileSync(
+          join(directory, '.vault-enrollment.json'),
+          JSON.stringify({ version: 1, profileId: manifest.profileId, keyId: manifest.keyId }),
+        )
         const staging = join(directory, '.vault-migration')
         mkdirSync(staging)
         for (const [index, file] of files.entries()) {
@@ -185,6 +190,7 @@ describe('profile vault migration', () => {
         )
         assert.equal(recoverVaultMigration(directory), true)
         assert.deepEqual(readVaultManifest(directory), manifest)
+        assert.equal(readVaultEnrollment(directory), null)
         assert.equal(readFileSync(join(directory, 'settings.json'), 'utf8'), contents[0])
         assert.equal(recoverVaultMigration(directory), false)
       } finally {
