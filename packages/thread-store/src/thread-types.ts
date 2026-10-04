@@ -2,6 +2,7 @@ import type { ModelParameters, ReasoningLevel } from '@copse/llm/model-parameter
 import type { CanvasArtefactReference } from './canvas-types.ts'
 import type { RemoteAgentLink } from './remote-agent-link.ts'
 import type { GithubPrRef } from './github-pr-url.ts'
+import type { PrProduction, CommitProduction } from './thread-pr-relations.ts'
 import type { HookCard } from './hook-card.ts'
 import type {
   ThreadDeferredWorktree,
@@ -341,6 +342,10 @@ export interface Thread {
    * (on append, and on hydration).
    */
   prRefs?: GithubPrRef[]
+  /** Successful native PR-create results; mentions and legacy links cannot populate this. */
+  prProductions?: PrProduction[]
+  /** Exact successful git_commit object identities, independent of attribution preference. */
+  commitProductions?: CommitProduction[]
   usage: ThreadUsage
   /** Populated when history compaction runs during an agent turn (also in JSONL export). */
   contextTrims?: ContextTrimRecord[]

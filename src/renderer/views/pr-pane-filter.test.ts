@@ -336,7 +336,7 @@ describe('pr pane filter (issue #2482)', () => {
     assert.ok(filter, 'expected a .pr-pane-filter input')
     assert.equal(filter.placeholder, 'Filter pull requests')
     assert.deepEqual(rowTitles(listRoot), ['Fix login flow', 'Improve documentation'])
-    assert.ok(sectionTitles(listRoot).some((t) => /from chat/i.test(t)))
+    assert.ok(sectionTitles(listRoot).some((t) => /related prs/i.test(t)))
     assert.ok(sectionTitles(listRoot).some((t) => /acme\/widgets/i.test(t)))
   })
 

@@ -27,7 +27,7 @@ import type {
 import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import {
   isPlaceholderPr,
@@ -55,6 +55,14 @@ import {
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { renderPrActivity, type PrDetailSection } from './pr-pane-activity.ts'
+import {
+  threadPrRelationships,
+  prRelationKey,
+  type PrThreadRelationship,
+  type ThreadPrRelationship,
+} from '@shared/git/thread-pr-relations.ts'
+import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { renderPrThreadRelationships } from './pr-thread-relationships.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -76,11 +84,11 @@ function agentProviderLabel(provider: string): string {
 /** Index agent-PR links by the same `owner/repo#number` key the pane uses for PRs. */
 function indexAgentLinksByPrKey(
   entries: RemoteAgentPrIndexEntry[],
-): Map<string, RemoteAgentPrIndexEntry> {
-  const map = new Map<string, RemoteAgentPrIndexEntry>()
+): Map<string, RemoteAgentPrIndexEntry[]> {
+  const map = new Map<string, RemoteAgentPrIndexEntry[]>()
   for (const entry of entries) {
     const key = remoteAgentPrIndexKey(entry.prUrl)
-    if (key) map.set(key, entry)
+    if (key) map.set(key, [...(map.get(key) ?? []), entry])
   }
   return map
 }
@@ -93,38 +101,27 @@ function prsModeActive(store: AppStore): boolean {
 function collectLinkedPrs(store: AppStore): PrRef[] {
   const thread = getActiveThread(store)
   if (!thread) return []
-  const seen = new Set<string>()
-  const refs: PrRef[] = []
-  for (const message of thread.messages) {
-    for (const parsed of extractGithubPrUrls(message.content)) {
-      const key = githubPrKey(parsed)
-      if (seen.has(key)) continue
-      seen.add(key)
-      refs.push({ owner: parsed.owner, repo: parsed.repo, number: parsed.number })
-    }
-  }
-  return refs
+  return threadPrRelationships(thread, thread.messages).map(({ pr }) => ({
+    owner: pr.owner,
+    repo: pr.repo,
+    number: pr.number,
+  }))
 }
 
-export function indexThreadLinks(
-  store: AppStore,
-): Map<string, { threadId: string; title: string }> {
-  const links = new Map<string, { threadId: string; title: string }>()
+export function indexThreadLinks(store: AppStore): Map<string, PrThreadRelationship[]> {
+  const links = new Map<string, PrThreadRelationship[]>()
   for (const thread of store.getState().threads) {
-    for (const ref of thread.prRefs ?? []) {
-      const key = githubPrKey(ref)
-      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title })
-    }
-  }
-  const activeThread = getActiveThread(store)
-  if (activeThread) {
-    for (const message of activeThread.messages) {
-      for (const ref of extractGithubPrUrls(message.content)) {
-        const key = githubPrKey(ref)
-        if (!links.has(key)) {
-          links.set(key, { threadId: activeThread.id, title: activeThread.title })
-        }
-      }
+    if (thread.archivedAt != null) continue
+    for (const { pr, kinds } of threadPrRelationships(thread, thread.messages)) {
+      const key = prRelationKey(pr)
+      const rows = links.get(key) ?? []
+      rows.push({
+        threadId: thread.id,
+        title: thread.title,
+        kinds,
+        productions: (thread.prProductions ?? []).filter((item) => prRelationKey(item.pr) === key),
+      })
+      links.set(key, rows)
     }
   }
   return links
@@ -196,9 +193,85 @@ export function mountPrPane(
   let detailsRequestId = 0
 
   let ghStatus: GhCliStatus | null = null
-  // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
-  let agentLinks = new Map<string, RemoteAgentPrIndexEntry>()
+  // Legacy agent links in this project, keyed by `owner/repo#number`.
+  let agentLinks = new Map<string, RemoteAgentPrIndexEntry[]>()
   let threadLinks = indexThreadLinks(store)
+  let prRelationships: PrThreadRelationship[] | null = null
+  let relationshipError = false
+  let relationshipRequest = 0
+  let activeThreadRelations: {
+    projectId: string | null
+    threadId: string
+    rows: ThreadPrRelationship[]
+  } | null = null
+  let threadRelationshipRequest = 0
+  async function loadThreadRelationships(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    const request = ++threadRelationshipRequest
+    if (!thread) {
+      activeThreadRelations = null
+      return
+    }
+    try {
+      const rows = await api.gh.threadPrRelationships(thread.id)
+      if (
+        disposed ||
+        request !== threadRelationshipRequest ||
+        store.getState().activeProjectId !== projectId ||
+        getActiveThread(store)?.id !== thread.id
+      )
+        return
+      activeThreadRelations = { projectId, threadId: thread.id, rows }
+      renderList()
+    } catch {
+      if (request === threadRelationshipRequest) activeThreadRelations = null
+    }
+  }
+  async function loadPrRelationships(input?: GithubPrRef): Promise<PrThreadRelationship[] | null> {
+    const ref =
+      input ??
+      (prDetails
+        ? {
+            owner: prDetails.owner,
+            repo: prDetails.repo,
+            number: prDetails.number,
+            url: prDetails.url,
+          }
+        : null)
+    if (!ref) return null
+    const projectId = store.getState().activeProjectId
+    const request = ++relationshipRequest
+    try {
+      const rows = await api.gh.prThreadRelationships(ref)
+      if (
+        disposed ||
+        request !== relationshipRequest ||
+        store.getState().activeProjectId !== projectId
+      )
+        return null
+      const byThread = new Map(rows.map((row) => [row.threadId, row]))
+      for (const row of threadLinks.get(prRelationKey(ref)) ?? []) {
+        const current = byThread.get(row.threadId)
+        if (current) current.kinds = [...new Set([...current.kinds, ...row.kinds])]
+        else byThread.set(row.threadId, row)
+      }
+      prRelationships = [...byThread.values()]
+      relationshipError = false
+    } catch {
+      if (
+        disposed ||
+        request !== relationshipRequest ||
+        store.getState().activeProjectId !== projectId
+      )
+        return null
+      relationshipError = true
+      prRelationships = null
+    }
+    renderMeta()
+    renderList()
+    return prRelationships
+  }
   // Invalidates an in-flight agentPrLinks fetch across a refresh / workspace
   // switch, so a late resolve can't repopulate the map for the wrong workspace.
   let agentLinksGen = 0
@@ -387,18 +460,35 @@ export function mountPrPane(
     const state = knownChecks(pr)
     applyPrStatus(ci, pr, state ?? 'loading')
     ciEls.set(githubPrKey(pr), ci)
-    const agent = agentLinks.get(githubPrKey(pr))
-    const agentBadge = agent
-      ? el(
-          'span',
-          {
-            class: 'pr-list-agent-badge',
-            'data-tooltip': `Opened by a ${agentProviderLabel(agent.provider)} agent launched from this app`,
-          },
-          '🤖',
-        )
-      : null
+    const agents = agentLinks.get(githubPrKey(pr)) ?? []
+    const agentBadge =
+      agents.length > 0
+        ? el(
+            'span',
+            {
+              class: 'pr-list-agent-badge',
+              'data-tooltip': `Linked to ${String(agents.length)} agent thread${agents.length === 1 ? '' : 's'}: ${[...new Set(agents.map((agent) => agentProviderLabel(agent.provider)))].join(', ')}`,
+            },
+            '🤖',
+          )
+        : null
     const titleText = prListDisplayTitle(pr)
+    const activeThread = getActiveThread(store)
+    const currentKinds = prRelationships?.find((item) => item.threadId === activeThread?.id)?.kinds
+    const producedInNative =
+      activeThreadRelations !== null &&
+      activeThreadRelations.projectId === store.getState().activeProjectId &&
+      activeThreadRelations.threadId === activeThread?.id &&
+      activeThreadRelations.rows.some(
+        (item) => prRelationKey(item.pr) === prRelationKey(pr) && item.kinds.includes('produced'),
+      )
+    const producedHere =
+      (activeThread?.prProductions?.some((item) => prRelationKey(item.pr) === prRelationKey(pr)) ??
+        false) ||
+      producedInNative ||
+      (selectedPr !== null &&
+        githubPrKey(selectedPr) === githubPrKey(pr) &&
+        (currentKinds?.includes('produced') ?? false))
     const row = el(
       'button',
       {
@@ -413,6 +503,18 @@ export function mountPrPane(
         { class: 'pr-list-meta' },
         el('span', { class: 'pr-list-number' }, `#${String(pr.number)}`),
         el('span', { class: 'pr-list-repo', title: `${pr.owner}/${pr.repo}` }, pr.repo),
+        ...(section === 'linked'
+          ? [
+              el(
+                'span',
+                {
+                  class: 'pr-list-relationship',
+                  'data-relationship': producedHere ? 'produced' : 'related',
+                },
+                producedHere ? 'Produced' : 'Related',
+              ),
+            ]
+          : []),
         ...(agentBadge ? [agentBadge] : []),
         ci,
         el(
@@ -519,7 +621,7 @@ export function mountPrPane(
         el(
           'div',
           { class: 'git-changes-section-title' },
-          `From chat (${String(linkedPrs.length)})`,
+          `Related PRs · this thread (${String(linkedPrs.length)})`,
         ),
       )
       for (const pr of linkedPrs) section.append(renderPrRow(pr, 'linked'))
@@ -711,34 +813,6 @@ export function mountPrPane(
       void api.shell.openExternal(prUrl)
     })
 
-    // When this PR was opened by an agent we launched, offer a jump back to the
-    // chat thread that owns it (issue #690 reverse index).
-    const agent = agentLinks.get(githubPrKey(selectedPr))
-    const producingThread = threadLinks.get(githubPrKey(selectedPr))
-    const producingThreadId = agent?.threadId ?? producingThread?.threadId
-    const openThreadBtn = producingThreadId
-      ? el(
-          'button',
-          {
-            type: 'button',
-            class: 'ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn',
-            'data-tooltip': agent
-              ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
-              : 'Go to the thread that opened this pull request',
-          },
-          el(
-            'span',
-            {},
-            agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : 'Open chat',
-          ),
-        )
-      : null
-    if (openThreadBtn && producingThreadId) {
-      openThreadBtn.addEventListener('click', () => {
-        switchThread(store, producingThreadId)
-      })
-    }
-
     // Spin off a fresh local thread about this PR (default checkout + PR URL in
     // the composer), distinct from jumping to an existing agent-owned thread.
     const newThreadBtn = el(
@@ -825,8 +899,7 @@ export function mountPrPane(
     )
     const menu = el('div', { class: 'pr-actions-menu' })
     overflow.append(summary, menu)
-    const actions = el('div', { class: 'pr-viewer-actions' }, openThreadBtn ?? newThreadBtn)
-    if (openThreadBtn) menu.append(newThreadBtn)
+    const actions = el('div', { class: 'pr-viewer-actions' }, newThreadBtn)
     if (prDetails.state === 'OPEN') {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number }
       const approve = actionButton('Approve', `Approve pull request #${String(ref.number)}?`, (r) =>
@@ -892,6 +965,17 @@ export function mountPrPane(
       badges,
       actions,
       statusLine,
+      prRelationships
+        ? renderPrThreadRelationships(prRelationships, (id) => {
+            switchThread(store, id)
+          })
+        : el(
+            'p',
+            { class: 'pr-thread-empty', role: 'status' },
+            relationshipError
+              ? 'Thread relationships unavailable.'
+              : 'Loading thread relationships…',
+          ),
     )
   }
 
@@ -1112,8 +1196,17 @@ export function mountPrPane(
       activeSection = 'overview'
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
+    prRelationships = null
+    relationshipError = false
+    relationshipRequest++
     prDetails = null
     renderSections()
+    const localRelationships = await loadPrRelationships({
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      url: `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
+    })
     selectedFile = null
     renderList()
 
@@ -1137,6 +1230,13 @@ export function mountPrPane(
           { class: 'pr-viewer-subtitle' },
           `https://github.com/${ref.owner}/${ref.repo}/pull/${String(ref.number)}`,
         ),
+        ...(localRelationships
+          ? [
+              renderPrThreadRelationships(localRelationships, (id) => {
+                switchThread(store, id)
+              }),
+            ]
+          : []),
       )
       return
     }
@@ -1188,6 +1288,7 @@ export function mountPrPane(
     renderFiles()
     clearDiff()
     renderSections()
+    await loadPrRelationships()
   }
 
   function resetOther(): void {
@@ -1238,8 +1339,9 @@ export function mountPrPane(
 
     const gen = ++agentLinksGen
     threadLinks = indexThreadLinks(store)
+    await loadThreadRelationships()
     ghStatus = await api.gh.status()
-    // Agent ownership is local (no gh needed), so load it regardless of gh auth.
+    // Agent links are local (no gh needed), so load them regardless of gh auth.
     const entries = await api.gh.agentPrLinks().catch(() => [] as RemoteAgentPrIndexEntry[])
     if (gen !== agentLinksGen) return
     agentLinks = indexAgentLinksByPrKey(entries)
@@ -1355,6 +1457,10 @@ export function mountPrPane(
       if (prsModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
+      threadRelationshipRequest++
+      activeThreadRelations = null
+      relationshipRequest++
+      prRelationships = null
       detailsRequestId++
       selectedPr = null
       prDetails = null
@@ -1388,7 +1494,8 @@ export function mountPrPane(
       linkedRefs = collectLinkedPrs(store)
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
       renderList()
-      if (selectedPr && prDetails) renderMeta()
+      if (selectedPr && prDetails) void loadPrRelationships()
+      void loadThreadRelationships()
       // A run that just finished may have recorded a new agent↔PR link; pick it
       // up so the badge appears without waiting for a manual refresh. Guard the
       // async result against a workspace switch that lands while it's in flight.

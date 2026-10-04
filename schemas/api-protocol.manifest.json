@@ -892,6 +892,13 @@
           4
         ]
       },
+      "gh:pr-thread-relationships": {
+        "api": "gh.prThreadRelationships",
+        "args": [
+          1,
+          1
+        ]
+      },
       "gh:rerun-failed-runs": {
         "api": "gh.rerunFailedRuns",
         "args": [
@@ -918,6 +925,13 @@
         "args": [
           0,
           0
+        ]
+      },
+      "gh:thread-pr-relationships": {
+        "api": "gh.threadPrRelationships",
+        "args": [
+          1,
+          1
         ]
       },
       "git:branch-status": {
