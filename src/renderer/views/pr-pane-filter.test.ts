@@ -76,6 +76,7 @@ function mount(
   otherPrs: readonly GhPrSummary[] = [OTHER_PR],
   options: {
     linkedUrls?: string
+    workspacePrs?: readonly GhPrSummary[]
     prDetails?: ApiClient['gh']['prDetails']
     prChecks?: ApiClient['gh']['prChecks']
   } = {},
@@ -100,7 +101,7 @@ function mount(
       status: async () => READY,
       agentPrLinks: async () => [],
       onListsTick: noopUnsub,
-      listWorkspaceOpenPrs: async () => [LINKED_PR, WORKSPACE_PR],
+      listWorkspaceOpenPrs: async () => [...(options.workspacePrs ?? [LINKED_PR, WORKSPACE_PR])],
       listMyOpenPrs: async () => [...otherPrs],
       prChecks: options.prChecks ?? (async (): Promise<GhPrChecksState> => 'no_checks'),
       prDetails: options.prDetails ?? (async (): Promise<GhPrDetails | null> => null),
@@ -141,20 +142,76 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('loads conflict metadata for titled unselected rows in every visible group', async () => {
+    const linked = { ...LINKED_PR, number: 801, url: 'https://github.com/acme/widgets/pull/801' }
+    const secondLinked = {
+      ...LINKED_PR,
+      number: 804,
+      url: 'https://github.com/acme/widgets/pull/804',
+    }
+    const workspace = { ...WORKSPACE_PR, number: 802 }
+    const other = { ...OTHER_PR, number: 803 }
+    const requests: number[] = []
+    const { listRoot } = mount([other], {
+      linkedUrls: `${linked.url} ${secondLinked.url}`,
+      workspacePrs: [linked, secondLinked, workspace],
+      prDetails: async (owner, repo, number) => {
+        requests.push(number)
+        return {
+          owner,
+          repo,
+          number,
+          title: `Titled PR ${String(number)}`,
+          url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+          state: 'OPEN',
+          mergeStateStatus: 'DIRTY',
+          body: '',
+          files: [],
+        }
+      },
+      prChecks: async () => 'failure',
+    })
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.ok(!requests.includes(803), 'collapsed other group must stay lazy')
+    listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(
+      listRoot.querySelectorAll('.pr-list-row[data-pr-section="linked"] .has-conflicts').length,
+      2,
+    )
+    for (const section of ['linked', 'workspace', 'mine']) {
+      const status = listRoot.querySelector(
+        `.pr-list-row[data-pr-section="${section}"] .pr-list-status`,
+      )
+      assert.ok(status, section)
+      assert.equal(status.classList.contains('has-conflicts'), true, section)
+      assert.match(status.getAttribute('aria-label') ?? '', /merge conflicts; CI failing/)
+    }
+    for (const number of [801, 802, 803, 804]) assert.ok(requests.includes(number))
+    for (const number of [802, 803, 804]) {
+      assert.equal(requests.filter((requested) => requested === number).length, 1)
+    }
+  })
+
   it('shows known conflicts as an X while retaining the failing CI label', async () => {
     const { listRoot } = mount([], {
       linkedUrls: 'https://github.com/acme/widgets/pull/994',
-      prDetails: async (owner, repo, number) => ({
-        owner,
-        repo,
-        number,
-        title: 'Resolve merge conflicts',
-        url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
-        state: 'OPEN',
-        mergeStateStatus: 'DIRTY',
-        body: '',
-        files: [],
-      }),
+      prDetails: async (owner, repo, number) =>
+        number === 994
+          ? {
+              owner,
+              repo,
+              number,
+              title: 'Resolve merge conflicts',
+              url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+              state: 'OPEN',
+              mergeStateStatus: 'DIRTY',
+              body: '',
+              files: [],
+            }
+          : null,
       prChecks: async () => 'failure',
     })
     await settle()
@@ -209,16 +266,19 @@ describe('pr pane filter (issue #2482)', () => {
   it('learns merged lifecycle from details for a chat-linked PR absent from open listings', async () => {
     const { listRoot } = mount([], {
       linkedUrls: 'https://github.com/acme/widgets/pull/993',
-      prDetails: async (owner, repo, number) => ({
-        owner,
-        repo,
-        number,
-        title: 'Already shipped',
-        url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
-        state: 'MERGED',
-        body: '',
-        files: [],
-      }),
+      prDetails: async (owner, repo, number) =>
+        number === 993
+          ? {
+              owner,
+              repo,
+              number,
+              title: 'Already shipped',
+              url: `https://github.com/${owner}/${repo}/pull/${String(number)}`,
+              state: 'MERGED',
+              body: '',
+              files: [],
+            }
+          : null,
     })
     await settle()
     await new Promise((resolve) => setTimeout(resolve, 10))

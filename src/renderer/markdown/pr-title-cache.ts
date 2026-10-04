@@ -51,13 +51,13 @@ export function rememberPrTitle(
   }
 }
 
-/** One details request per PR even when a pane and a hovered link ask together. */
+/** Listings cache titles only; share a details request until conflict metadata is known. */
 export function loadPrTitle(
   ref: PrRef,
   gh: Pick<ApiClient['gh'], 'prDetails'>,
 ): Promise<CachedPrTitle | null> {
   const cached = cachedPrTitle(ref)
-  if (cached) return Promise.resolve(cached)
+  if (cached?.conflicts !== undefined) return Promise.resolve(cached)
   const key = githubPrKey(ref)
   const pending = inFlight.get(key)
   if (pending) return pending

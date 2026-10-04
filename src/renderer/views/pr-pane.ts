@@ -424,12 +424,11 @@ export function mountPrPane(
       const cached = cachedPrTitle(pr)
       if (cached) {
         if (pr.title !== cached.title) pr.title = cached.title
-        continue
+        if (cached.conflicts !== undefined) continue
       }
-      if (!isPlaceholderPr(pr)) {
+      if (!cached && !isPlaceholderPr(pr)) {
         // A pool-enriched title is authoritative — remember it for later merges.
         rememberPrTitle(pr, pr.title, undefined, pr.state)
-        continue
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue
       titleAttempted.add(key)
@@ -512,6 +511,7 @@ export function mountPrPane(
     }
 
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      ensureTitles(repoPrs)
       const firstRepoPr = at(repoPrs, 0)
       const slug = `${firstRepoPr.owner}/${firstRepoPr.repo}`
       const section = el('div', { class: 'git-changes-section' })
@@ -552,6 +552,7 @@ export function mountPrPane(
         if (otherLoading) {
           section.append(el('div', { class: 'git-changes-empty' }, 'Loading…'))
         } else if (otherPrs.length > 0) {
+          ensureTitles(otherPrs)
           for (const pr of otherPrs) section.append(renderPrRow(pr, 'mine'))
         } else {
           section.append(
