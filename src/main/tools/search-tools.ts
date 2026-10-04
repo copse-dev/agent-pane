@@ -48,7 +48,7 @@ export const searchCodeTool = defineTool({
     const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root
 
     if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
-      return slowCodeSearch({
+      const result = await slowCodeSearch({
         searchRoot,
         pattern: searchPattern,
         maxResults: max_results,
@@ -56,6 +56,19 @@ export const searchCodeTool = defineTool({
         caseSensitive: case_sensitive,
         fileGlob: file_glob,
       })
+      if (result === 'No matches found.' && file_glob) {
+        return explainEmptyGlobResult({
+          fileGlob: file_glob,
+          pattern: searchPattern,
+          searchRoot,
+          displayRoot: root,
+          fixedString: fixed_string,
+          caseSensitive: case_sensitive,
+          signal,
+          slow: true,
+        })
+      }
+      return result
     }
 
     const { lines, backend } = await searchCodeContent({
@@ -70,9 +83,87 @@ export const searchCodeTool = defineTool({
       signal,
     })
 
+    if (lines.length === 0 && file_glob) {
+      return explainEmptyGlobResult({
+        fileGlob: file_glob,
+        pattern: searchPattern,
+        searchRoot,
+        displayRoot: root,
+        fixedString: fixed_string,
+        caseSensitive: case_sensitive,
+        signal,
+      })
+    }
+
     return formatCodeSearchResults(lines, max_results, backend)
   },
 })
+
+const GLOB_PROBE_MAX_RESULTS = 5
+
+/**
+ * An empty result under `file_glob` is ambiguous: the pattern may be absent, or
+ * the glob may have filtered out every file that contains it. Agents read the
+ * bare "No matches found." as "absent" and move on, so say which it is. The
+ * probe is best-effort; a failing probe falls back to the plain message.
+ */
+async function explainEmptyGlobResult(opts: {
+  fileGlob: string
+  pattern: string
+  searchRoot: string
+  displayRoot: string
+  fixedString: boolean
+  caseSensitive: boolean
+  signal: AbortSignal
+  slow?: boolean
+}): Promise<string> {
+  const lines: string[] = [`No matches found within file_glob "${opts.fileGlob}".`]
+  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses micromatch.
+  if (!opts.slow && opts.fileGlob.includes('|') && !opts.fileGlob.includes('{')) {
+    lines.push(
+      'file_glob is a glob, not a regex: `|` does not mean "or". Use braces, e.g. "{*a*,*b*}".',
+    )
+  }
+  try {
+    const probeLines = opts.slow
+      ? (
+          await slowCodeSearch({
+            pattern: opts.pattern,
+            searchRoot: opts.searchRoot,
+            fixedString: opts.fixedString,
+            caseSensitive: opts.caseSensitive,
+            maxResults: GLOB_PROBE_MAX_RESULTS,
+          })
+        ).split('\n')
+      : (
+          await searchCodeContent({
+            pattern: opts.pattern,
+            searchRoot: opts.searchRoot,
+            fixedString: opts.fixedString,
+            caseSensitive: opts.caseSensitive,
+            maxResults: GLOB_PROBE_MAX_RESULTS,
+            displayRoot: opts.displayRoot,
+            signal: opts.signal,
+          })
+        ).lines
+    const files = [
+      ...new Set(
+        probeLines.flatMap((line) => {
+          const match = /^(.+?):\d+: /.exec(line)
+          return match?.[1] ? [match[1]] : []
+        }),
+      ),
+    ]
+    if (files.length > 0) {
+      lines.push(
+        `The pattern does match outside that glob (e.g. ${files.join(', ')}); retry without file_glob or widen it.`,
+      )
+    }
+  } catch {
+    // Best-effort diagnostics only.
+  }
+  return lines.join('\n')
+}
 
 export const findFilesTool = defineTool({
   name: 'find_files',
