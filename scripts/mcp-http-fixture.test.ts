@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { it } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { mcpHttpClientProtocolTransport } from '../tests/e2e/helpers/mcp-http-adapter.mts'
 
 function listeningPort(child: ChildProcess): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -75,7 +76,10 @@ it(
         const transport = new StreamableHTTPClientTransport(url, {
           requestInit: { headers: { authorization: `Bearer ${token}` } },
         })
-        await client.connect(transport, { signal: context.signal, timeout: 10_000 })
+        await client.connect(mcpHttpClientProtocolTransport(transport), {
+          signal: context.signal,
+          timeout: 10_000,
+        })
         assert.ok(transport.sessionId, 'the initialized HTTP session must have an id')
         sessionIds.push(transport.sessionId)
         const tools = await client.listTools(undefined, { signal: context.signal, timeout: 10_000 })
