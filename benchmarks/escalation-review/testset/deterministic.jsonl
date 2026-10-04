@@ -406,7 +406,7 @@
 {"id":"au-tail-system-log","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"au-log-show","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-ls-copse-workspace","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
-{"id":"au-jq-copse-config","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"au-jq-copse-config","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"au-cat-npmrc-global-registry","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-brew-list","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-ls-library-caches","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}

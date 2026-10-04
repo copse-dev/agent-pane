@@ -1654,7 +1654,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
-    legend: 'Detected settings',
+    legend: 'Detected API keys',
     onImported: () => {
       void cursorKeySection.refreshKeyStatus()
       void providersPanel.refresh()

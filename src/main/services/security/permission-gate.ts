@@ -33,6 +33,7 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { AutomationPermission } from '@shared/types'
+import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
@@ -301,6 +302,15 @@ async function requestEscalationApproval(
   return approved
 }
 
+/** Whether every path sits under macOS's per-user temp directory (`/var/folders/…/T`). */
+function readsOnlyUserTemp(paths: readonly string[]): boolean {
+  const temp = darwinUserTempDir()
+  if (temp === null || paths.length === 0) return false
+  // `getconf` answers with the canonical `/private/var/…`; commands name `/var/…`.
+  const roots = [temp, temp.replace(/^\/private(?=\/)/, '')]
+  return paths.every((path) => roots.some((root) => path === root || path.startsWith(`${root}/`)))
+}
+
 /**
  * Handle a command that only *reads* paths outside the project, when we can
  * account for every path it touches (see `read-outside-project.ts`).
@@ -337,6 +347,22 @@ async function resolveReadOutsideProject(
   // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
   // and by every command a standing grant later covers, so both read alike.
   const reasons = [`reads outside the project: ${analysis.targets.join(', ')}`]
+
+  // The project seatbelt already lets every command read the per-user temp
+  // directory (only writes there are restricted), so asking would only interrupt
+  // the agent reading its own build and tool logs.
+  if (readsOnlyUserTemp(analysis.resolvedTargets)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'system',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons,
+      source: 'user-temp-read',
+    })
+    return true
+  }
 
   const threadId = getActiveRunThread()
   if (hasReadOutsideProjectGrant(threadId)) {

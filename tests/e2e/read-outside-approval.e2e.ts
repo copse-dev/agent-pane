@@ -34,12 +34,8 @@ describe('read access outside the project approval', () => {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
-    await expect(dialog.$('.approval-heading')).toHaveText(
-      'Allow read access outside of the project?',
-    )
-    const advice = await dialog.$('.approval-advice').getText()
-    expect(advice).toContain('~/.copse')
-    expect(advice).toContain('read from sensitive locations on your computer')
+    await expect(dialog.$('.approval-heading')).toHaveText('Read outside the project?')
+    await expect(dialog.$('.approval-advice')).toHaveText('The agent wants to read ~/.copse.')
 
     // Collapsed: the command is in the DOM but not shown, and the per-command
     // button waits for the details it refers to.
