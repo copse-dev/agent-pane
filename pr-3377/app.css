@@ -11476,7 +11476,8 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex: 1;
   min-width: 0;
 }
-.mcp-permissions-btn {
+.mcp-permissions-btn,
+.mcp-auth-btn {
   flex: none;
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--font-size-sm);
