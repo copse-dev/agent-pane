@@ -120,6 +120,10 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-thread-changes",
+    "label": "Sidebar changes glyph"
+  },
+  {
     "id": "activity-home",
     "label": "Activity home on a new thread"
   },

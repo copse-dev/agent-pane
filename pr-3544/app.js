@@ -67379,10 +67379,6 @@ var init_demo_scenarios = __esm({
           uiTintStrength: "off"
         },
         // Newest-prompted first, as the store keeps them: neither creation nor title order.
-        threadChanges: {
-          "demo-sidebar-sort-d": { dirty: false, unpushed: 2 },
-          "demo-sidebar-sort-a": { dirty: true }
-        },
         threads: [
           {
             id: "demo-sidebar-sort-b",
@@ -67433,6 +67429,64 @@ var init_demo_scenarios = __esm({
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 5,
             updatedAt: FIXED_TIME - 5
+          }
+        ]
+      },
+      {
+        id: "sidebar-thread-changes",
+        label: "Sidebar changes glyph",
+        project: project("demo-sidebar-changes-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Two finished threads with unlanded work, one clean, one still running.
+        threadChanges: {
+          "demo-sidebar-changes-commits": { dirty: false, unpushed: 2 },
+          "demo-sidebar-changes-dirty": { dirty: true },
+          "demo-sidebar-changes-clean": { dirty: false }
+        },
+        threads: [
+          {
+            id: "demo-sidebar-changes-clean",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-changes-commits",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-changes-dirty",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-changes-running",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
           }
         ]
       },
@@ -75041,7 +75095,8 @@ function mountProjectsPane(root, store2, api2) {
   let threadChangeGeneration = 0;
   let threadChangeTimer = null;
   const threadChangeKey = (projectId, threadId) => `${projectId}\0${threadId}`;
-  function refreshThreadChanges(refs) {
+  let threadChangeRendered = [];
+  function refreshThreadChanges(refs, opts = {}) {
     const batch = refs.filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId))).slice(0, THREAD_CHANGE_MAX_PER_PASS);
     if (batch.length === 0) return;
     const generation = threadChangeGeneration;
@@ -75059,7 +75114,7 @@ function mountProjectsPane(root, store2, api2) {
       }
       if (changed && generation === threadChangeGeneration) render(true);
     };
-    void api2.git.threadChangeSummary(batch).then(settle2, () => {
+    void api2.git.threadChangeSummary(batch, opts).then(settle2, () => {
       settle2([]);
     });
   }
@@ -75204,6 +75259,16 @@ function mountProjectsPane(root, store2, api2) {
         if (lifecycleChanged) render();
       });
     }
+  }
+  function recheckStaleThreadChanges() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const now = Date.now();
+    refreshThreadChanges(
+      threadChangeRendered.filter(({ projectId, threadId }) => {
+        const cached2 = threadChangeCache.get(threadChangeKey(projectId, threadId));
+        return !cached2 || now - cached2.at > THREAD_CHANGE_TTL_MS;
+      })
+    );
   }
   function ciFailingForThread(thread) {
     return sidebarPrRefs(thread).some((ref) => {
@@ -75608,6 +75673,8 @@ function mountProjectsPane(root, store2, api2) {
     clear(list);
     const prBackfillRows = [];
     const threadChangeWanted = [];
+    const threadChangeSeen = [];
+    const threadChangeSeenKeys = /* @__PURE__ */ new Set();
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
@@ -75791,6 +75858,8 @@ function mountProjectsPane(root, store2, api2) {
         );
       } else if (thread.status !== "running" && thread.prRefs !== void 0 && !project2.sshHost) {
         const key = threadChangeKey(project2.id, thread.id);
+        threadChangeSeen.push({ projectId: project2.id, threadId: thread.id });
+        threadChangeSeenKeys.add(key);
         const cached2 = threadChangeCache.get(key);
         const changesLabel = describeThreadChanges(cached2?.summary ?? null);
         if (changesLabel) {
@@ -76433,6 +76502,11 @@ function mountProjectsPane(root, store2, api2) {
       prBackfillObserver = observer;
       for (const { row: row2 } of prBackfillRows) observer.observe(row2);
     }
+    threadChangeRendered = threadChangeSeen;
+    const pruneBefore = Date.now() - 2 * THREAD_CHANGE_TTL_MS;
+    for (const [key, entry] of threadChangeCache) {
+      if (entry.at < pruneBefore && !threadChangeSeenKeys.has(key)) threadChangeCache.delete(key);
+    }
     refreshThreadChanges(threadChangeWanted);
     if (preserveScroll) list.scrollTop = scrollTop;
   }
@@ -76443,9 +76517,13 @@ function mountProjectsPane(root, store2, api2) {
       const { activeProjectId, activeThreadId, projects } = store2.getState();
       if (!activeProjectId || !activeThreadId) return;
       if (projects.find((p2) => p2.id === activeProjectId)?.sshHost) return;
-      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }]);
+      refreshThreadChanges([{ projectId: activeProjectId, threadId: activeThreadId }], {
+        fresh: true
+      });
     }, 1500);
   });
+  window.addEventListener("focus", recheckStaleThreadChanges);
+  document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
     unsubWorkingTree,
     store2.on("projects_changed", render),
@@ -76484,6 +76562,10 @@ function mountProjectsPane(root, store2, api2) {
     threadChangeGeneration += 1;
     if (threadChangeTimer !== null) clearTimeout(threadChangeTimer);
     threadChangeTimer = null;
+    window.removeEventListener("focus", recheckStaleThreadChanges);
+    document.removeEventListener("visibilitychange", recheckStaleThreadChanges);
+    threadChangeCache.clear();
+    threadChangeInFlight.clear();
     orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
