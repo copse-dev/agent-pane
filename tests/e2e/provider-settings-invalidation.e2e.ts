@@ -5,7 +5,7 @@ import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-provider-settings-invalidation'
 const STALE_ROUTE = 'acme:model-1'
@@ -31,7 +31,7 @@ describe('stale custom-provider model selection', () => {
     })
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       model: STALE_ROUTE,
       subagentsEnabled: false,
     })

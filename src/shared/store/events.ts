@@ -48,6 +48,7 @@ export interface StoreEvents {
   message_done: [messageId: string]
   tool_call_started: [messageId: string, toolCall: ToolCall]
   tool_call_updated: [messageId: string, toolCallId: string]
+  thread_model_resolved: [threadId: string]
   thread_status_changed: [threadId: string, status: ThreadStatus]
   agent_activity: [threadId: string, label: string | null]
   threads_changed: []
@@ -68,6 +69,8 @@ export interface StoreEvents {
   right_panel_mode_changed: []
   // The right panel was expanded over chat, or restored to the split view.
   right_panel_maximized_changed: []
+  // The projects sidebar was hidden or shown.
+  projects_pane_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).

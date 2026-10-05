@@ -16,10 +16,12 @@ export const BUG_FORM_PLATFORMS = {
 } as const
 
 export interface ReportIssueContext {
-  /** `app.getVersion()`. */
+  /** Copse's version (`getAppVersion()`), not Electron's. */
   version: string
   /** Whether this is a packaged release rather than a source build. */
   packaged: boolean
+  /** Commit the bundle was built from; shown for source builds. */
+  buildCommit?: string | null
   platform: NodeJS.Platform
   arch: string
   /** `process.getSystemVersion()`, e.g. `26.0.1` on macOS. */
@@ -55,7 +57,9 @@ export function reportIssueUrl(context: ReportIssueContext): string {
   url.searchParams.set('template', 'bug.yml')
   url.searchParams.set(
     'version',
-    context.packaged ? context.version : `${context.version} (source build)`,
+    context.packaged
+      ? context.version
+      : `${context.version} (source build${context.buildCommit ? `, ${context.buildCommit.slice(0, 7)}` : ''})`,
   )
   const platform = bugFormPlatform(context)
   if (platform !== undefined) url.searchParams.set('platform', platform)

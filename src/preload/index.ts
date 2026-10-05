@@ -71,6 +71,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
+    scrollPosition: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:scroll-position', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
@@ -556,6 +558,21 @@ const api: ApiClient = {
       }
     },
   },
+  deepLinks: {
+    ready: () => ipcRenderer.invoke('deep-links:ready'),
+    onOpenThread: (handler: (target: { threadId: string; projectId: string | null }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        target: { threadId: string; projectId: string | null },
+      ): void => {
+        handler(target)
+      }
+      ipcRenderer.on('deep-links:open-thread', listener)
+      return (): void => {
+        ipcRenderer.off('deep-links:open-thread', listener)
+      }
+    },
+  },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
@@ -680,6 +697,9 @@ const api: ApiClient = {
     listDeclared: () => ipcRenderer.invoke('mcp:list-declared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:set-curated-enabled', name, enabled),
+    signIn: (name: string) => ipcRenderer.invoke('mcp:sign-in', name),
+    cancelSignIn: (name: string) => ipcRenderer.invoke('mcp:cancel-sign-in', name),
+    signOut: (name: string) => ipcRenderer.invoke('mcp:sign-out', name),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {
@@ -735,10 +755,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    maintenance: () => ipcRenderer.invoke('storage:maintenance'),
+    cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
+      ipcRenderer.invoke('storage:cleanup', area),
+    retention: (policy: import('@shared/types/storage-cleanup.ts').StorageRetention) =>
+      ipcRenderer.invoke('storage:retention', policy),
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
+    archive: (projectId: string, threadId: string, confirmation: string | null) =>
+      ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation),
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
@@ -824,6 +851,15 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    historySnapshot: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
+    editHistory: (
+      projectId: string,
+      threadId: string,
+      request: import('@shared/threads/history-edit.ts').ThreadHistoryEditRequest,
+    ) => ipcRenderer.invoke('threads:edit-history', projectId, threadId, request),
+    undoHistoryEdit: (projectId: string, threadId: string, expectedRevision: string) =>
+      ipcRenderer.invoke('threads:undo-history-edit', projectId, threadId, expectedRevision),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
@@ -897,6 +933,15 @@ const api: ApiClient = {
       ipcRenderer.on('menu:new-thread', listener)
       return (): void => {
         ipcRenderer.off('menu:new-thread', listener)
+      }
+    },
+    onToggleSidebar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:toggle-sidebar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:toggle-sidebar', listener)
       }
     },
     onTogglePanel: (handler: () => void) => {
@@ -1025,6 +1070,8 @@ const api: ApiClient = {
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
+    getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
+    update: (changes) => ipcRenderer.invoke('settings:update', changes),
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
     setSecurity: (prefs: {
@@ -1066,6 +1113,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('settings:fetch-provider-models', baseUrl, apiKey),
     refreshHuggingFaceModels: (apiKey?: string) =>
       ipcRenderer.invoke('settings:refresh-hugging-face-models', apiKey),
+  },
+  chatGptPlan: {
+    status: () => ipcRenderer.invoke('chat-gpt-plan:status'),
+    signIn: (clientId?: string) => ipcRenderer.invoke('chat-gpt-plan:sign-in', clientId),
+    refreshAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:refresh-account', clientId),
+    cancelSignIn: () => ipcRenderer.invoke('chat-gpt-plan:cancel-sign-in'),
+    selectAccount: (clientId: string) =>
+      ipcRenderer.invoke('chat-gpt-plan:select-account', clientId),
+    signOut: (clientId: string) => ipcRenderer.invoke('chat-gpt-plan:sign-out', clientId),
+    models: () => ipcRenderer.invoke('chat-gpt-plan:models'),
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),

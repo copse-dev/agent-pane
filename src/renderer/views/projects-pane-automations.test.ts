@@ -271,6 +271,79 @@ describe('projects pane automation group', () => {
   })
 })
 
+describe('projects pane automation fold', () => {
+  function mountRuns(threads: Thread[]): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+  } {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('chat', 'Regular conversation'), ...threads],
+      activeThreadId: 'chat',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, createFakeApi())
+    host.querySelector('.automation-threads-toggle')?.dispatchEvent(new MouseEvent('click'))
+    return { host, store }
+  }
+  const runIds = (host: HTMLElement): Array<string | null> =>
+    Array.from(host.querySelectorAll('.automation-schedule-runs .chat-row')).map((row) =>
+      row.getAttribute('data-thread-id'),
+    )
+
+  it('keeps a working run in view and folds finished ones into the heading', () => {
+    const working = {
+      ...thread('working', 'Docs', 'schedule-docs', 30),
+      status: 'running' as const,
+    }
+    const { host } = mountRuns([
+      working,
+      thread('done-1', 'Docs', 'schedule-docs', 20),
+      thread('done-2', 'Docs', 'schedule-docs', 10),
+    ])
+    assert.deepEqual(runIds(host), ['working'])
+    assert.equal(host.querySelector('.automation-schedule-count')?.textContent, '3 runs')
+  })
+
+  it('breaks out one failed run and collates two or more into an "N failed" row', () => {
+    const failed = (id: string, at: number): Thread => ({
+      ...thread(id, 'Docs', 'schedule-docs', at),
+      status: 'error',
+    })
+    const one = mountRuns([failed('f1', 30), thread('done', 'Docs', 'schedule-docs', 10)])
+    assert.deepEqual(runIds(one.host), ['f1'])
+    one.host.remove()
+
+    const { host } = mountRuns([
+      failed('f1', 30),
+      failed('f2', 20),
+      thread('d', 'Docs', 'schedule-docs', 10),
+    ])
+    assert.deepEqual(runIds(host), [])
+    const row = host.querySelector('.automation-fold-row.is-failed')
+    assert.ok(row)
+    assert.equal(row.textContent, '2 failed')
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    assert.deepEqual(runIds(host), ['f1', 'f2'])
+  })
+
+  it('collapses more than three waiting runs into one row that opens Activity', () => {
+    const waiting = ['w1', 'w2', 'w3', 'w4'].map((id, i) =>
+      thread(id, 'Docs', 'schedule-docs', 40 - i),
+    )
+    const { host, store } = mountRuns(waiting)
+    setAttentionThreads(store, 'approval', ['w1', 'w2', 'w3', 'w4'])
+    assert.deepEqual(runIds(host), [])
+    const row = host.querySelector('.automation-fold-row.needs-attention')
+    assert.ok(row)
+    assert.ok(row.textContent.startsWith('4 need you'))
+  })
+})
+
 describe('projects pane automation setup links', () => {
   it('right-clicks a schedule heading into Run now and setup', async () => {
     const store = createStore({

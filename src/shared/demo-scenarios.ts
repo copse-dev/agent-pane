@@ -1,10 +1,11 @@
+import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 import type { PluginInstallReview } from './types/plugin-installs.ts'
+import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
-import type { McpServerStatus } from './types/mcp.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
@@ -24,6 +25,7 @@ const DEMO_CODEX_ACP_AGENT = {
 export interface DemoScenario {
   id: string
   label: string
+  chatGptPlan?: ChatGptPlanStatus
   project: Project
   threads: Thread[]
   settings: Readonly<Record<string, unknown>>
@@ -93,6 +95,13 @@ export interface DemoScenario {
     bodyFooter?: string
     type: string
     allowRemember?: boolean
+  }[]
+  /** Seed `ask_user` questions so a browser spec can answer them from the Activity view. */
+  askUserRequests?: readonly {
+    id: string
+    /** The thread the question belongs to, as on a real ask-user event. */
+    threadId?: string
+    questions: readonly { question: string; options?: readonly string[] }[]
   }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
@@ -801,6 +810,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       model: 'claude-sonnet-4-6',
       egressAllowlist: ['api.anthropic.com:443'],
       credential: 'key',
+      settings: {
+        budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
+        installDependencies: false,
+      },
       warnings: [],
       checkout: {
         root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
@@ -909,6 +922,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     id: 'balanced-model-label',
     label: 'Balanced model rule label',
+    trace: {
+      id: 'balanced-model-resolution',
+      label: 'Balanced resolves before the first token',
+      prompt: 'Show the concrete model for this turn.',
+      steps: [
+        {
+          chunk: {
+            type: 'turn_parameters',
+            model: 'claude-sonnet-4-6',
+            parameters: {},
+            requestedModel: 'auto:balanced',
+          },
+        },
+        { delayMs: 5000, chunk: { type: 'text', text: 'This turn runs on Claude Sonnet 4.6.' } },
+        { chunk: { type: 'done', stopReason: 'end_turn' } },
+      ],
+    },
     project: project('demo-balanced-model-label-project'),
     settings: {
       onboardingCompleted: true,
@@ -1654,6 +1684,56 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     },
   },
   {
+    id: 'mcp-sign-in',
+    label: 'MCP servers that sign in with OAuth',
+    project: project('demo-mcp-sign-in-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-mcp-sign-in-thread',
+        title: 'MCP sign-in',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    mcpServers: [
+      {
+        name: 'design-system',
+        transport: 'http',
+        state: 'error',
+        error: 'Sign-in required',
+        auth: 'required',
+        toolCount: 0,
+        tools: [],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
+      },
+      {
+        name: 'issues',
+        transport: 'http',
+        state: 'connected',
+        auth: 'signed-in',
+        toolCount: 3,
+        tools: ['list_issues', 'get_issue', 'create_issue'],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
+      },
+    ],
+  },
+  {
     id: 'automation-permissions',
     label: 'Automation permission preferences',
     project: project('demo-automation-permissions-project', 'Copse', '/demo/copse'),
@@ -1911,6 +1991,377 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     },
   },
   {
+    id: 'sidebar-automation-fold',
+    label: 'Sidebar automation fold',
+    project: project('demo-automation-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // One schedule with every kind of run: four waiting on the user (collapsed into one
+    // row), one working, two failed (collated), and three that finished cleanly.
+    // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+    threads: [
+      {
+        id: 'demo-automation-fold-chat',
+        title: 'A regular conversation',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 1,
+        updatedAt: FIXED_TIME + 1,
+      },
+      ...(
+        [
+          ['wait-1', 'idle'],
+          ['wait-2', 'idle'],
+          ['wait-3', 'idle'],
+          ['wait-4', 'idle'],
+          ['working', 'running'],
+          ['fail-1', 'error'],
+          ['fail-2', 'error'],
+          ['done-1', 'idle'],
+          ['done-2', 'idle'],
+          ['done-3', 'idle'],
+        ] as const
+      ).map(([suffix, status], index) => ({
+        id: `demo-automation-fold-${suffix}`,
+        title: 'Docs freshness',
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        automation: {
+          scheduleId: 'demo-automation-fold-schedule',
+          scheduleName: 'Docs freshness',
+          triggeredAt: FIXED_TIME - index * 3_600_000,
+        },
+        createdAt: FIXED_TIME - index,
+        updatedAt: FIXED_TIME - index,
+      })),
+    ],
+    approvalRequests: ['wait-1', 'wait-2', 'wait-3', 'wait-4'].map((suffix) => ({
+      id: `demo-automation-fold-approval-${suffix}`,
+      threadId: `demo-automation-fold-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: 'node scripts/check-docs.mjs',
+      type: 'shell',
+    })),
+  },
+  {
+    id: 'sidebar-thread-sort',
+    label: 'Sidebar thread sort',
+    project: project('demo-sidebar-sort-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Newest-prompted first, as the store keeps them: neither creation nor title order.
+    threads: [
+      {
+        id: 'demo-sidebar-sort-b',
+        title: 'Fix the flaky sandbox test',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      {
+        id: 'demo-sidebar-sort-c',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-sidebar-sort-a',
+        title: 'Add a retry to uploads',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 3,
+        updatedAt: FIXED_TIME - 3,
+      },
+      {
+        id: 'demo-sidebar-sort-d',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 4,
+        updatedAt: FIXED_TIME - 4,
+      },
+      {
+        id: 'demo-sidebar-sort-e',
+        title: 'Run the schema migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 5,
+        updatedAt: FIXED_TIME - 5,
+      },
+    ],
+  },
+  {
+    id: 'activity-home',
+    label: 'Activity home on a new thread',
+    project: project('demo-activity-home-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the active one and is empty, so the chat pane is the
+    // Activity home. The others give it something to list: one waiting on an
+    // approval, two running, one that finished while the user was elsewhere.
+    threads: [
+      {
+        id: 'demo-activity-home-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-home-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-activity-home-audit',
+        title: 'Dependency audit',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      {
+        id: 'demo-activity-home-flaky',
+        title: 'Fix the flaky sandbox test',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 3,
+        updatedAt: FIXED_TIME - 3,
+      },
+      {
+        id: 'demo-activity-home-copy',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 4,
+        updatedAt: FIXED_TIME - 4,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-home-approval',
+        threadId: 'demo-activity-home-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        bodyAdvice: 'Auto-run for sandbox commands is disabled in Settings',
+        bodyFooter: 'Allow running it once?',
+        type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'activity-home-project-filter',
+    label: 'Activity home after a project finishes waiting',
+    project: project('demo-activity-home-filter-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-activity-filter-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-filter-refactor',
+        title: 'Refactor auth',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-activity-filter-approval',
+        threadId: 'demo-activity-filter-refactor',
+        title: 'Run shell command?',
+        body: "printf 'auth-check-passed\\n'",
+        type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'activity-home-automation-fold',
+    label: 'Activity home with automation runs folded',
+    project: project('demo-activity-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Beside a working thread and one
+    // finished chat, a schedule has settled five clean runs and another three failed
+    // ones: each folds into a single row instead of eight.
+    threads: [
+      {
+        id: 'demo-activity-fold-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-fold-audit',
+        title: 'Dependency audit',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-activity-fold-copy',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      ...(
+        [
+          ['docs', 'Docs freshness', 'idle', 5],
+          ['deps', 'Nightly dependency check', 'error', 3],
+        ] as const
+      ).flatMap(([schedule, name, status, count]) =>
+        Array.from({ length: count }, (_, index) => ({
+          id: `demo-activity-fold-${schedule}-${String(index)}`,
+          title: name,
+          status,
+          messages: [],
+          messagesLoaded: false,
+          unreadAt: FIXED_TIME - (index + 2) * 3_600_000,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          automation: {
+            scheduleId: `demo-activity-fold-${schedule}`,
+            scheduleName: name,
+            triggeredAt: FIXED_TIME - (index + 2) * 3_600_000,
+          },
+          createdAt: FIXED_TIME - 10 - index,
+          updatedAt: FIXED_TIME - 10 - index,
+        })),
+      ),
+    ],
+  },
+  {
+    id: 'activity-home-question',
+    label: 'Activity home with a question waiting',
+    project: project('demo-activity-home-question-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the active, empty one; the second is blocked on a question.
+    threads: [
+      {
+        id: 'demo-activity-home-question-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-home-question-schema',
+        title: 'Schema bump',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+    ],
+    askUserRequests: [
+      {
+        id: 'demo-activity-home-question',
+        threadId: 'demo-activity-home-question-schema',
+        questions: [
+          {
+            question: 'Which migration order should the schema bump use?',
+            options: ['Columns first', 'Backfill first'],
+          },
+          { question: 'Keep the old column until the next release?' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'activity-home-empty',
+    label: 'Activity home with nothing to list',
+    project: project('demo-activity-home-empty-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first-run case: one empty thread and nothing running or waiting.
+    threads: [
+      {
+        id: 'demo-activity-home-empty-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'chat-layout-styling',
     label: 'Chat layout styling',
     project: project('demo-chat-layout-project'),
@@ -1996,6 +2447,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Roadmap layout bounds',
         status: 'idle',
         messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'chatgpt-plan-settings',
+    label: 'ChatGPT plan onboarding and account options',
+    project: project('demo-chatgpt-plan-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    threads: [
+      {
+        id: 'demo-chatgpt-plan-thread',
+        title: 'ChatGPT plan',
+        model: 'chatgpt-plan:demo-plan-account#gpt-5.6-luna',
+        status: 'idle',
+        messages: [
+          {
+            id: 'plan-limit',
+            role: 'assistant',
+            toolCalls: [],
+            content:
+              '> [!CAUTION]\n> ChatGPT plan usage limit reached. Review your plan or Copse’s allowance.\n>\n> [Manage usage](https://chatgpt.com/settings/usage)',
+            createdAt: FIXED_TIME,
+          },
+        ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,

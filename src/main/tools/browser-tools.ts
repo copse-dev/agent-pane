@@ -4,10 +4,7 @@ import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { createBrowserCaptureHandle } from '../services/visual-evidence/capture-handle-store.ts'
-import {
-  getStaticPreviewServer,
-  staticPreviewUrl,
-} from '../services/browser/static-preview-server.ts'
+import { staticPreviewEntryUrl } from '../services/browser/static-preview-server.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { presentVisualEvidenceTool } from './visual-evidence-tools.ts'
@@ -41,8 +38,7 @@ export const browserPreviewTool = defineTool({
   async execute({ path }) {
     const root = getAgentExecutionRoot()
     if (!root) throw new Error('No workspace open.')
-    const preview = await getStaticPreviewServer(root)
-    const url = staticPreviewUrl(preview.url, path ?? '/')
+    const url = await staticPreviewEntryUrl(root, path ?? '/')
     const session = getBrowserSession()
     const result = await session.navigate(url)
     session.showUrl(result.url)

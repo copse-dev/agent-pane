@@ -3,6 +3,7 @@ export type StreamCutReason =
   | 'reasoning_runaway_cap'
   | 'reasoning_circle_detected'
   | 'trailing_reasoning_cap'
+  | 'reasoning_budget_soft'
 
 /** Max reasoning body stored in stream-stats (256 KiB); larger cuts are truncated. */
 export const MAX_STREAM_CUT_REASONING_CHARS = 256 * 1024

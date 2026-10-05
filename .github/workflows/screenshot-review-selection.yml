@@ -12,7 +12,7 @@ name: Screenshot review selection
 # release App token so the new head gets its own `CI Passed` (CI skips e2e for a
 # screenshot-only commit). The unticked candidates are not committed. As with the
 # labels, the decision is recorded on the reviewed head's `Screenshot review`
-# status, and any later push starts a new review.
+# status, clears `screenshots-need-review`, and any later push starts a new review.
 #
 # Nothing in the comment is trusted beyond the ticks. The live comment is
 # re-read, the editor must have write access, the listed head must still be the
@@ -30,6 +30,8 @@ permissions:
 
 concurrency:
   group: screenshot-review-${{ github.event.issue.number }}
+  # Retain queued publications and decisions; the default replaces pending runs.
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -327,6 +329,16 @@ jobs:
                 description: `Accepted by @${actor}; committed ${count} of ${total} screenshots as ${commit12}`,
                 target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
               });
+              // Do not clear the reminder if another push already superseded
+              // the screenshot commit this selection made.
+              const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              if (parent.state === 'open' && parent.head.sha === process.env.COMMIT && parent.head.repo?.full_name === `${owner}/${repo}`) {
+                try {
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+              }
               const decision =
                 `**Reviewed:** accepted by @${actor}. The PR branch was advanced from \`${sha12}\` to ` +
                 `\`${commit12}\`, committing ${count} of ${total} changed screenshot${total === 1 ? '' : 's'}: ` +

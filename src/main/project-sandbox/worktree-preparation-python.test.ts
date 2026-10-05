@@ -65,24 +65,28 @@ async function exercisePipPreparation(
     PIP_INDEX_URL: `http://127.0.0.1:${String(address.port)}/simple`,
     PIP_TRUSTED_HOST: '127.0.0.1',
   }
-  await runPipPreparationFixture(server, parent, root, env)
+  try {
+    await runPipPreparationFixture(root, env)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolvePromise, reject) => {
+      server.close((error) => {
+        if (error) reject(error)
+        else resolvePromise()
+      })
+    })
+    rmSync(parent, { recursive: true, force: true })
+  }
 }
 
-async function runPipPreparationFixture(
-  server: ReturnType<typeof createServer>,
-  parent: string,
-  root: string,
-  env: NodeJS.ProcessEnv,
-): Promise<void> {
-  await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
-  setProjectSandboxEnabled(true)
+async function runPipPreparationFixture(root: string, env: NodeJS.ProcessEnv): Promise<void> {
   try {
+    await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
+    setProjectSandboxEnabled(true)
     await preparePipFixture(root, env)
   } finally {
     setProjectSandboxEnabled(false)
     await SandboxManager.reset()
-    server.close()
-    rmSync(parent, { recursive: true, force: true })
   }
 }
 

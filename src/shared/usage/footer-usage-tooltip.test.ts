@@ -6,6 +6,7 @@ import {
   sumSubagentUsage,
   type FooterUsageTooltipRow,
 } from './footer-usage-tooltip.ts'
+import { listSubagentRuns } from './footer-usage-summary.ts'
 
 function value(rows: FooterUsageTooltipRow[], label: string): string | undefined {
   return rows.find((row) => row.label === label)?.value
@@ -531,5 +532,156 @@ describe('buildFooterUsageTooltip subagent row', () => {
     )
 
     assert.equal(tooltip.subagentRow, null)
+  })
+})
+
+describe('listSubagentRuns', () => {
+  function call(id: string, session: Partial<SubagentSession>): ToolCall {
+    return {
+      id,
+      name: 'explore',
+      args: {},
+      status: 'done',
+      result: 'done',
+      subagent: {
+        id: `sub-${id}`,
+        kind: 'explore',
+        status: 'done',
+        prompt: 'q',
+        summary: null,
+        messages: [],
+        ...session,
+      },
+    }
+  }
+  const assistantWith = (toolCalls: ToolCall[]): Message => ({
+    id: 'a1',
+    role: 'assistant',
+    content: '',
+    toolCalls,
+    createdAt: 1,
+  })
+
+  it('lists runs in transcript order including nested and still-running ones', () => {
+    const nested = call('inner', { prompt: 'inner', usage: { inputTokens: 5, outputTokens: 1 } })
+    const outer = call('outer', {
+      kind: 'delegate',
+      prompt: 'outer',
+      messages: [{ id: 'inner-msg', role: 'assistant', content: '', toolCalls: [nested] }],
+      usage: { inputTokens: 10, outputTokens: 2 },
+    })
+    const running = call('run', { status: 'running', kind: 'custom', agentName: 'reviewer' })
+
+    const runs = listSubagentRuns([assistantWith([outer, running])])
+    assert.deepEqual(
+      runs.map((run) => [run.label, run.status, run.usage?.inputTokens]),
+      [
+        ['Delegate · outer', 'done', 10],
+        ['Explore · inner', 'done', 5],
+        ['reviewer · q', 'running', undefined],
+      ],
+    )
+  })
+
+  it('truncates a long prompt to its first line and skips container runs', () => {
+    const long = call('long', { prompt: `${'x'.repeat(80)}\nsecond line` })
+    const container = call('c', { kind: 'container' })
+    const [only, ...rest] = listSubagentRuns([assistantWith([long, container])])
+    assert.equal(rest.length, 0)
+    assert.ok(only)
+    assert.match(only.label, /^Explore · x+…$/)
+    assert.ok(!only.label.includes('second'))
+  })
+
+  it('surfaces the run rows on the tooltip model and omits them on an estimate', () => {
+    const messages = [assistantWith([call('a', { usage: { inputTokens: 100, outputTokens: 10 } })])]
+    const base = { model: 'claude-sonnet-4-6', messages }
+    const measured = buildFooterUsageTooltip(
+      { inputTokens: 900, outputTokens: 90, estimated: false },
+      { ...base, measuredUsage: { inputTokens: 1000, outputTokens: 100 } },
+    )
+    assert.equal(measured.subagentRuns.length, 1)
+    assert.equal(measured.subagentRuns[0]?.value, '100 in / 10 out')
+
+    const estimated = buildFooterUsageTooltip(
+      { inputTokens: 900, outputTokens: 90, estimated: true },
+      { ...base, measuredUsage: { inputTokens: 0, outputTokens: 0 } },
+    )
+    assert.deepEqual(estimated.subagentRuns, [])
+  })
+})
+
+describe('buildFooterUsageTooltip subagent headline count', () => {
+  function call(id: string, session: Partial<SubagentSession>): ToolCall {
+    return {
+      id,
+      name: 'explore',
+      args: {},
+      status: 'done',
+      result: 'done',
+      subagent: {
+        id: `sub-${id}`,
+        kind: 'explore',
+        status: 'done',
+        prompt: 'q',
+        summary: null,
+        messages: [],
+        ...session,
+      },
+    }
+  }
+  const withCalls = (toolCalls: ToolCall[]): Message[] => [
+    { id: 'a1', role: 'assistant', content: '', toolCalls, createdAt: 1 },
+  ]
+  const display = { inputTokens: 900, outputTokens: 90, estimated: false }
+  const usage = { inputTokens: 1000, outputTokens: 100 }
+
+  it('counts the same runs the list shows when one has not reported yet', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([
+        call('done', { usage: { inputTokens: 100, outputTokens: 10 } }),
+        call('live', { status: 'running' }),
+      ]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 2)
+    // Two rows below, so the headline says two — tokens sum only the run that reported.
+    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out · 1 running')
+  })
+
+  it('counts a failed run that never reported usage', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([
+        call('ok', { usage: { inputTokens: 100, outputTokens: 10 } }),
+        call('bad', { status: 'error' }),
+      ]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 2)
+    assert.equal(tooltip.subagentRow?.value, '2 runs · 100 in / 10 out · 1 without usage')
+  })
+
+  it('says no usage was reported, not "yet", when the only run has ended without any', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([call('quiet', { status: 'done' })]),
+    })
+    assert.equal(tooltip.subagentRow?.value, '1 run · no usage reported')
+  })
+
+  it('shows a thread whose only run is still going, without claiming usage was excluded', () => {
+    const tooltip = buildFooterUsageTooltip(display, {
+      model: 'claude-sonnet-4-6',
+      measuredUsage: usage,
+      messages: withCalls([call('live', { status: 'running' })]),
+    })
+    assert.equal(tooltip.subagentRuns.length, 1)
+    assert.equal(tooltip.subagentRow?.value, '1 run · 1 running')
+    // Nothing was folded out of the headline yet, so the scope labels stay off.
+    assert.equal(tooltip.conversationLabel, null)
+    assert.equal(tooltip.threadLabel, null)
   })
 })

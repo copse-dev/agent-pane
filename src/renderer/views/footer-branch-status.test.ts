@@ -743,8 +743,8 @@ describe('footer branch status', () => {
     // worktrees, so nothing is checked out until `prepareCheckout` runs.
     assert.deepEqual(checkouts, [])
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
-    assert.equal(control.pendingBaseBranch('thread-2'), undefined)
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-2'), undefined)
     assert.match(
       qsRequired(host, '.branch-picker-trigger').title,
       /Start this thread from: feature\/new/,
@@ -780,7 +780,7 @@ describe('footer branch status', () => {
     assert.ok(option)
     option.click()
     await settle()
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
 
     store.setState({ threads: [thread(undefined, true)] })
     store.emit('threads_changed')
@@ -788,7 +788,7 @@ describe('footer branch status', () => {
 
     // The selection was consumed by the first send; the thread now speaks for a
     // real checkout, and a stale preference must not outlive it.
-    assert.equal(control.pendingBaseBranch('thread-1'), undefined)
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
   })
 
   it('keeps the trunk PR out of the branch picker menu too', async () => {
@@ -950,7 +950,7 @@ describe('footer branch status', () => {
     )
 
     assert.equal(host.querySelector('.branch-picker-menu')?.hasAttribute('hidden'), true)
-    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
     assert.ok(
       document.activeElement === host.querySelector('.branch-picker-trigger'),
@@ -1008,6 +1008,58 @@ describe('footer branch status', () => {
     assert.equal(filter.getAttribute('aria-expanded'), 'false')
   })
 
+  it('starts a blank thread from the default branch, not the checkout the last thread left', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'feature/left-behind', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/left-behind', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+  })
+
+  for (const defaultBranch of [null, 'unlisted/default']) {
+    it(`retains checkout fallback when the default is ${String(defaultBranch)}`, async () => {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(
+        host,
+        store,
+        createApi(
+          { currentBranch: 'feature/left-behind', pr: null },
+          [{ name: 'feature/left-behind', lastCommitDate: '2024-01-02' }],
+          defaultBranch,
+        ),
+      )
+      await settle()
+      assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/left-behind')
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
+    })
+  }
+
   it('keeps exactly one option selected while moving from an open PR to a branch', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -1033,7 +1085,7 @@ describe('footer branch status', () => {
           { name: 'main', lastCommitDate: '2024-01-01' },
           { name: 'feature/with-pr', lastCommitDate: '2024-01-02' },
         ],
-        'main',
+        null,
       ),
     )
     await settle()
@@ -1128,4 +1180,114 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/external')
   })
+})
+
+it('clamps the preferred popup to the footer without oscillating and releases observers', async () => {
+  const originalResizeObserver = globalThis.ResizeObserver
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+  const frames = new Map<number, FrameRequestCallback>()
+  const observers: TestResizeObserver[] = []
+  let nextFrame = 0
+  class TestResizeObserver {
+    disconnected = false
+    readonly callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback
+      observers.push(this)
+    }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {
+      this.disconnected = true
+    }
+    resize(): void {
+      this.callback([], this)
+    }
+  }
+  globalThis.ResizeObserver = TestResizeObserver
+  globalThis.requestAnimationFrame = (callback): number => {
+    const id = ++nextFrame
+    frames.set(id, callback)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id): void => {
+    frames.delete(id)
+  }
+  const flush = (): void => {
+    const pending = [...frames.values()]
+    frames.clear()
+    pending.forEach((callback) => {
+      callback(0)
+    })
+  }
+  const footer = document.createElement('div')
+  footer.className = 'input-footer'
+  const host = document.createElement('div')
+  host.className = 'footer-branch-host'
+  footer.append(host)
+  document.body.append(footer)
+  const store = createStore({
+    workspaceRoot: '/repo',
+    activeProjectId: 'project-1',
+    activeThreadId: 'thread-1',
+    threads: [thread()],
+  })
+  let binding: ReturnType<typeof mountFooterBranchStatus> | undefined
+  try {
+    binding = mountFooterBranchStatus(host, store, createApi({ currentBranch: 'work', pr: null }))
+    const menu = qsRequired(host, '.branch-picker-menu')
+    const trigger = qsRequired(host, '.branch-picker-trigger')
+    let footerRight = 500
+    let menuWidth = 180
+    let menuLeft = 320
+    Object.defineProperty(footer, 'getBoundingClientRect', {
+      value: () => ({ left: 0, right: footerRight }),
+    })
+    Object.defineProperty(trigger, 'getBoundingClientRect', { value: () => ({ left: 320 }) })
+    Object.defineProperty(menu, 'getBoundingClientRect', {
+      value: () => ({ left: menuLeft, width: menuWidth }),
+    })
+    await settle()
+    await openBranchMenu(host)
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), false)
+    menuWidth = 300
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    // Moving the popup inside must not undo the clamp on the next measurement.
+    menuLeft = 200
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    menuWidth = 100
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), false)
+    footerRight = 360
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    flush()
+    assert.equal(menu.classList.contains('is-footer-clamped'), true)
+    observers.forEach((observer) => {
+      observer.resize()
+    })
+    binding.destroy()
+    binding = undefined
+    assert.equal(frames.size, 0)
+    assert.ok(observers.every((observer) => observer.disconnected))
+  } finally {
+    binding?.destroy()
+    globalThis.ResizeObserver = originalResizeObserver
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+  }
 })

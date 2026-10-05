@@ -57,6 +57,12 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
     flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
     owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
+  - That includes the small stuff (see "Change marks and status dots" below for which token each
+    mark takes). `status-colors.test.ts` keeps raw hex out of component stylesheets, with a
+    shrink-only allowlist for the measured light syntax palette and a few glyph colours (#3065).
+    The existing ChatGPT sign-in button preserves its provider branding: black with white text
+    and border, and a `#202020` hover. This exact selector-bound palette is a deliberate
+    provider-brand exception; other Settings controls still use app tokens.
   - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
     button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
     same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
@@ -823,15 +829,25 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 **completed** work, not cancelled work. Spec:
 [`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
 
-## Centered new-thread composer: one hairline, not two
+## New-thread screen: the Activity home above a docked composer
 
-Empty threads float `#input-bar` via `.pane-chat.composer-centered`. The docked composer keeps a
-real CSS `border: 1px solid var(--border)`; the centered variant must **clear the full border**
-(`border: none`) and paint its perimeter only with `box-shadow: 0 0 0 1px var(--border)`. Clearing
-just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
-outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
+An empty thread is the **Activity home** (`.pane-chat.is-activity-home`,
+[`activity-home.ts`](../src/renderer/views/activity-home.ts)): the Activity list and detail fill
+the chat pane, and `#input-bar` stays **docked** at the bottom exactly as it is in a conversation.
+The one exception is **idle**: when no thread in any project is running, waiting or recently
+finished there is nothing to list, so the strip, card and caption are not drawn (a lone "All
+clear" card is clutter on a first run). The pane gets `.is-activity-idle` and the composer
+centres in it, with its ring drawn by `box-shadow` instead of the docked border; the first run
+that arrives brings the home back. Otherwise the docked card's own
+`border: 1px solid var(--border)` is the only hairline. The home reserves the
+composer's height with the same `padding-bottom` the conversation uses, so a row is never hidden
+behind it. A thread that is still loading its transcript (`messagesLoaded: false`) is **not**
+empty: it keeps the conversation and its "Loading" / "Couldn't load" notice rather than flashing
+the home. Focus goes to the composer once on entering an empty thread, never again on later store
+events, because the list shares the pane. Specs: `modern-css.test.ts`,
+`tests/e2e/titlebar-workspace.e2e.ts`, `tests/demo/chat-layout-styling.demo.ts`.
 
-The docked (and centered) composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
+The docked composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
 `#input-bar` / `.prompt-input` / `.input-footer` reads as a black bounding box clipping the chat
 gradient and any transcript that passes behind the floating card. Clear those fills, paint a
 semi-transparent wash plus `backdrop-filter` on `#input-bar::before`, and lift direct children so
@@ -974,6 +990,16 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   human-authored blue bubble. While any turn is running, the submit action says `Queue`, so typing
   during a machine turn has an explicit destination rather than silently entering the pending queue.
 
+## Footer context ring: colour is the passive signal
+
+The footer's context control is a ring with no text beside it; the percentage lives in its
+`aria-label` and the hover, which also carries token usage, cache, cost and subagent runs. Because
+nothing else says how full the window is, the ring fill carries the state: neutral below 80%, amber
+(`--warning`) from 80%, red (`--danger`) from 95%. Use the theme tokens, never literal colours, and
+keep the thresholds in `context-wheel.ts` (`CONTEXT_WARN_RATIO`, `CONTEXT_DANGER_RATIO`). An ACP
+agent's figure looks the same as a measured one; the hover's source note says where it came from. Do
+not reintroduce a second footer control for tokens; add rows to the shared hover instead.
+
 ## Footer popovers: one boundary, distinct trigger anchors
 
 Model, checkout, branch, overflow, and context-wheel popovers in `.input-footer` use the
@@ -999,6 +1025,15 @@ regression eval is
 [`footer-overflow-bounds.e2e.ts`](../tests/e2e/footer-overflow-bounds.e2e.ts): it pins every
 trigger/menu anchor pair, checks normal trigger alignment plus narrow-footer containment, and owns
 the model-selector, normal overflow, and constrained overflow reference screenshots.
+
+The branch picker also measures its preferred trigger-aligned left plus popup width against the
+footer's right edge. In this anchored footer, native fallback fitting can keep a popup that fits the
+viewport while crossing the narrower footer. A branch-local resize observer toggles `is-footer-clamped` to
+use the existing footer-right alignment for that case; it measures the preferred position rather
+than the clamped position to avoid toggling back and forth. Compact footers retain their left snap.
+Keep the filter's own minimum width at zero: the popup owns its 180px minimum, and the field needs
+room for its horizontal margins and focus outline. The owning branch-picker visual eval checks
+normal, filtered, long-name and compact layouts, including the final screenshot frame.
 
 ## Context menus (right-click)
 
@@ -1294,6 +1329,27 @@ same color as the plate; the rest of the callout still follows the user's contra
 `tests/e2e/callout-surfaces.e2e.ts` verifies all five glyphs in dark and light forced-colors
 palettes, plus the reduced-transparency and increased-contrast material fallbacks.
 
+## Sidebar thread sort
+
+The sort button sits in the Projects header beside the thread filter and opens the shared context
+menu: **Sort by** Activity order (the store's own newest-prompted-first order, and the default),
+Created, Thread name, then **Reverse order**. Each item is a checked radio-style row, so the menu
+always shows the current choice. The choice is saved per profile (`sidebarThreadSort`,
+`sidebarThreadSortReverse`) and applied when the list is drawn, to a copy: the store's own order
+is relied on elsewhere and stays as it is. It orders the browse list of every open project; the
+thread filter's matches stay newest first, so the button has nothing to change while a filter is
+open. An untitled thread sorts as "New Thread", the name its row shows. Spec:
+`tests/demo/sidebar-thread-sort.demo.ts`.
+
+The same menu opens with **Group by**: Project (the tree, and the default), Status, or None. Status
+drops the tree for Needs you / Working / Recent sections over every project visited this session,
+and None for one flat list; both name each thread's project as the muted `· project` suffix the
+Automations section uses, since the tree no longer does, and an empty section is left out. A thread
+that is running and waiting on the user is under Needs you. The sort applies inside each section,
+and Activity order across projects means last prompted. The choice is saved per profile
+(`sidebarThreadGroup`). A thread search keeps the tree, because it is scoped to the open project.
+Automation runs stay in their own section above whichever layout is chosen.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills, and **the fill is the whole
@@ -1328,6 +1384,15 @@ the actionable run. While the older history is filtered out, the schedule keeps
 the right-facing chevron; the first deliberate click rotates it and expands the
 complete run list.
 
+What a collapsed schedule keeps in view is `foldAutomationRuns`: runs that need you
+or are working stay their own rows, and so does a failure, so none hides inside the
+fold; the heading's run count carries the finished ones. A busy schedule collapses
+rather than filling the list: more than three waiting runs become one "N need you"
+row that opens the Activity list, and two or more failed runs become one "N failed"
+row that opens out into the runs (a single failed run stays its own row). Whether old
+failures age out of that set is undecided; today they stay until the run is archived.
+The section itself still opens on its own only for attention or a selected run.
+
 Do not create a second permanent pane or one sidebar section per schedule. The
 schedule editor owns configuration; the collapsed project disclosure owns task
 history.
@@ -1354,28 +1419,64 @@ Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.
 
 ## Activity panel: attention first, answer in place
 
-The Activity panel ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts),
-[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) is a sibling of the
-Process Manager overlay, not a new surface kind.
+One Activity view ([`activity-view.ts`](../src/renderer/views/activity-view.ts),
+[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) has two hosts: the
+overlay ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts), a sibling of the
+Process Manager, not a new surface kind) and the new-thread screen
+([`activity-home.ts`](../src/renderer/views/activity-home.ts)), which is the default for an empty
+thread. Both prefix their element ids so they can coexist.
+
+The new-thread screen follows `prototypes/new-thread-activity.html`: a strip of project tiles,
+the list-and-detail card, a "Start a new thread" caption, then the composer, which is narrower
+than the card. Differences from the overlay are listed under each point below.
 
 - **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **A schedule's settled runs fold.** In Recently finished, two or more settled runs of one
+  automation schedule become one row (clock glyph, the schedule name, "Done" or "Failed" and
+  the run count) that opens out into the runs; clean finishes and failures fold apart, so a
+  failure is never hidden among successes. A lone run stays its own row. Folds come first, so
+  the cap of ten never hides one. A fold names no thread and opens nothing, so it is never
+  selected and the arrow keys skip it. Needs-you rows are never folded: each is a request
+  that has to be handled. The sidebar applies the same idea in `foldAutomationRuns`.
 - **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
   three dots, triangle, check) and a short label beside it. Colour is a third, redundant
-  channel. The running dots are held still here; the sidebar already animates them.
+  channel. The running dots are held still here; the sidebar already animates them. **On the
+  new-thread screen** the word is dropped where the row's own text follows it (approval, question,
+  working), as in the prototype; it stays on Done and Failed, which have nothing else to say, and
+  in every row's accessible name.
 - **List and detail, not a wide table.** Rows are two lines in a narrow list — the thread
   name leads, age on its right; the state word, what it wants and the project beneath — so
   the eye never crosses the panel to connect a thread to its state. The selected row shows
   in full in the pane beside it.
 - **One action bar per selection.** Open thread sits on the left, the answers on the right
-  (Reject, then `ui-btn-primary` Approve once; outlined chips with `--border-strong`). List
-  rows carry no buttons.
-- **Approve once is the only in-place grant, and only beside the full request.** The detail
+  (Reject, then `ui-btn-primary` **Approve**; outlined chips with `--border-strong`). List
+  rows carry no buttons. The button reads "Approve", the prototype's wording, and still answers
+  once: no remembered grant, no task lease. **On the new-thread screen** Open thread is bold with
+  a trailing arrow and Reject / Approve are pills, as in the prototype.
+- **A question is answered in place, not granted.** A `needs-answer` detail shows each
+  question with its quick answers and a field, and **Send answer** (primary) sits in the action
+  bar beside Open thread. An answer is input to the agent, not a permission: it carries no
+  scope and nothing is remembered, which is why it can live here while Approve stays the only
+  in-place grant. Quick answers fill the field and never send. Cmd/Ctrl+Enter sends, as in the
+  ask dialog.
+- **Approve is the only in-place grant, and only beside the full request.** The detail
   renders the request with the prompt's own advice / body / footer classes and never
   truncates. Broader answers stay on the prompt in the thread.
+- **Group headers fold (new-thread screen).** Each header is a button with a chevron and
+  `aria-expanded`. Working starts folded and names how many it holds; Needs you unfolds when a
+  request new to the view arrives, and stays folded if the user folded one they had seen. Folded
+  rows are not selectable, so selection moves to the nearest visible row. State is session-only.
+- **Project strip (new-thread screen).** All projects, then the projects that need you, most
+  waiting first, plus the chosen one; a tile filters the list. Requests tied to no thread belong
+  to no project and show only under All projects.
 - **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
   selection and focus are restored to the same row, and Approve pauses whenever a request it
-  has not shown yet takes the detail pane or the waiting list changes.
+  has not shown yet takes the detail pane or the waiting list changes. Unchanged rows are the
+  same DOM nodes across redraws. **On the new-thread screen**, until the user picks a row the
+  selection follows the most urgent one, so a screen left open shows what needs them; once they
+  pick, nothing moves it. A narrow pane stacks the list above the detail and the card scrolls as
+  one column with the action bar stuck to its bottom edge.
 
 Spec: [`tests/e2e/activity-panel.e2e.ts`](../tests/e2e/activity-panel.e2e.ts).
 

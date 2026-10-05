@@ -25,6 +25,15 @@ export function chevronDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-down', ['m6 9 6 6 6-6'], className)
 }
 
+/** Clock face — a schedule, or something that ran at a set time. */
+export function clockIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'clock',
+    ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', 'M12 6v6l4 2'],
+    className,
+  )
+}
+
 export function chevronUpIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('chevron-up', ['m18 15-6-6-6 6'], className)
 }
@@ -278,12 +287,12 @@ export function gitBranchIcon(className = DEFAULT): SVGSVGElement {
 }
 
 /** Lucide git-pull-request — sidebar thread GitHub PR status mark. */
-export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
+export function gitPullRequestIcon(className = DEFAULT, conflicts = false): SVGSVGElement {
   return outlineIcon(
     'git-pull-request',
     [
       'M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
-      'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      conflicts ? 'M3 3l6 6m0-6L3 9' : 'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
       'M13 6h3a2 2 0 0 1 2 2v7',
       'M6 9v12',
     ],

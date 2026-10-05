@@ -6,6 +6,7 @@ import {
   decodeModelParametersMap,
   isEmptyModelParameters,
   isReasoningLevel,
+  isVerbosityLevel,
   modelParameterSupport,
   recommendedModelParameters,
   sanitizeModelParameters,
@@ -14,6 +15,7 @@ import {
   type ModelParameters,
   type ReasoningLevel,
   type SamplingField,
+  type VerbosityLevel,
 } from '@copse/llm/model-parameters.ts'
 
 export interface ModelParametersSection {
@@ -47,6 +49,12 @@ const REASONING_LABELS: Record<ReasoningLevel, string> = {
   high: 'High',
   xhigh: 'Extra high',
   max: 'Max',
+}
+
+const VERBOSITY_LABELS: Record<VerbosityLevel, string> = {
+  low: 'Low — terse answers',
+  medium: 'Medium',
+  high: 'High — thorough answers',
 }
 
 const DEFAULT_OPTION_LABEL = "Model default (don't send)"
@@ -201,6 +209,10 @@ export function createModelParametersSection(
   const reasoningSelect = el('select', {
     name: 'modelReasoning',
     'data-testid': 'model-parameter-reasoning',
+  })
+  const verbositySelect = el('select', {
+    name: 'modelVerbosity',
+    'data-testid': 'model-parameter-verbosity',
   })
   const maxOutputTokensInput = el('input', {
     type: 'number',
@@ -406,6 +418,29 @@ export function createModelParametersSection(
       )
     }
 
+    if (support.verbosity.length > 0) {
+      verbositySelect.replaceChildren(
+        el(
+          'option',
+          { value: '' },
+          defaults.verbosity === undefined
+            ? DEFAULT_OPTION_LABEL
+            : `Recommended (${VERBOSITY_LABELS[defaults.verbosity]})`,
+        ),
+        ...support.verbosity.map((level) =>
+          el('option', { value: level }, VERBOSITY_LABELS[level]),
+        ),
+      )
+      verbositySelect.value = params.verbosity ?? ''
+      fields.append(
+        uiField({
+          label: 'Verbosity',
+          control: verbositySelect,
+          hint: 'How much the model writes in its replies, separate from how hard it thinks. Lower saves output tokens; changing it mid-thread misses the prompt cache once.',
+        }),
+      )
+    }
+
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens)
       maxOutputTokensInput.placeholder = samplingPlaceholder(
@@ -448,6 +483,11 @@ export function createModelParametersSection(
     const value = reasoningSelect.value
     const { reasoning: _dropped, ...rest } = selected()
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest)
+  })
+  verbositySelect.addEventListener('change', () => {
+    const value = verbositySelect.value
+    const { verbosity: _dropped, ...rest } = selected()
+    commit(isVerbosityLevel(value) ? { ...rest, verbosity: value } : rest)
   })
   resetBtn.addEventListener('click', () => {
     commit({})

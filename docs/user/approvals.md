@@ -11,12 +11,12 @@ different grants — they are not synonyms.
 
 ## Common dialogs
 
-| Title                                         | What a Yes does                                                                                                                                             |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Run outside sandbox?**                      | This command runs on the host, not inside the project sandbox. Use it when the agent needs network or files outside the project.                            |
-| **Allow read access outside of the project?** | The primary button grants _this read shape_ for the rest of the thread, in memory only. **Approve this command** allows one invocation and stores no grant. |
-| **Guarded YOLO safety check**                 | You turned on an explicit high-autonomy mode. The host still computed a harm verdict; this dialog is that verdict asking you to proceed.                    |
-| A custom-tool or MCP prompt                   | That tool or server runs once, or is remembered, according to the checkbox on the dialog.                                                                   |
+| Title                         | What a Yes does                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Run outside sandbox?**      | This command runs on the host, not inside the project sandbox. Use it when the agent needs network or files outside the project.                            |
+| **Read outside the project?** | The primary button grants _this read shape_ for the rest of the thread, in memory only. **Approve this command** allows one invocation and stores no grant. |
+| **Guarded YOLO safety check** | You turned on an explicit high-autonomy mode. The host still computed a harm verdict; this dialog is that verdict asking you to proceed.                    |
+| A custom-tool or MCP prompt   | That tool or server runs once, or is remembered, according to the checkbox on the dialog.                                                                   |
 
 A read-outside grant never authorizes a write, a shell escape, or a different
 path. Credential-shaped targets (`.env*`, `~/.ssh`, `~/.aws`, and similar) and

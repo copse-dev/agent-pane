@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDirectExecution } from './lib/direct-execution.mts'
 import {
   awaitHostReady,
   type CloudHost,
@@ -37,7 +38,7 @@ import {
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileIds,
+  parseRunnableTerminalBenchProfileIds,
   parseTerminalBenchProfileSelectionId,
   type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
@@ -175,8 +176,8 @@ export function runConfig(options: Options): RunConfig {
   const profiles = option(options, 'profiles')
   if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
   const parsedProfiles = profiles
-    ? parseTerminalBenchProfileIds(profiles)
-    : [parseTerminalBenchProfileSelectionId(profile)]
+    ? parseRunnableTerminalBenchProfileIds(profiles)
+    : parseRunnableTerminalBenchProfileIds(parseTerminalBenchProfileSelectionId(profile))
   const steeredRerun = !hasFlag(options, 'no-steered-rerun')
   if (parsedProfiles.length > 1 && steeredRerun) {
     throw new Error('multi-profile fleet runs require --no-steered-rerun')
@@ -308,7 +309,11 @@ export function workerEnvironment(config: RunConfig, shardIndex: number): string
   if (maxCommandTimeout) {
     values.push(['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC', maxCommandTimeout])
   }
-  for (const name of ['COPSE_TERMINAL_MODEL_PARAMETERS', 'COPSE_TERMINAL_MAX_OUTPUT_TOKENS']) {
+  for (const name of [
+    'COPSE_TERMINAL_MODEL_PARAMETERS',
+    'COPSE_TERMINAL_MAX_OUTPUT_TOKENS',
+    'COPSE_TERMINAL_REASONING_RECOVERY_STRATEGY',
+  ]) {
     const value = process.env[name]?.trim()
     if (value) values.push([name, value])
   }
@@ -693,7 +698,7 @@ async function main(): Promise<void> {
   else await downFleet(options)
 }
 
-if (process.argv[1]?.endsWith('run-terminal-bench-fleet.mts')) {
+if (isDirectExecution(import.meta.url, 'run-terminal-bench-fleet')) {
   void main().catch((error: unknown) => {
     console.error(`terminal-bench fleet: ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1

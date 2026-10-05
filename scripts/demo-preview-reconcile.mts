@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFileSync, writeFileSync } from 'node:fs'
 
 const PREVIEW_TARGET = /^pr-([1-9]\d*)(-preview)?$/
@@ -138,4 +139,4 @@ function main(): void {
   process.stdout.write(`${JSON.stringify(plan)}\n`)
 }
 
-if (process.argv[1]?.endsWith('/demo-preview-reconcile.mts')) main()
+if (isDirectExecution(import.meta.url, 'demo-preview-reconcile')) main()

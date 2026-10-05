@@ -10,6 +10,11 @@ export function installElectronStoreBackend(): void {
       set: (key, value): void => {
         store.set(key, value)
       },
+      setMany: (values): void => {
+        // electron-store replaces the file atomically; preserve keys outside
+        // this patch, including encrypted credentials and dedicated settings.
+        store.store = { ...store.store, ...values }
+      },
       delete: (key): void => {
         store.delete(key)
       },

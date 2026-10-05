@@ -1,3 +1,5 @@
+import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
+import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
@@ -38,7 +40,7 @@ export function mountFooterModelPicker(
   getCurrent: () => string,
   onSelect: (model: string) => void,
   pickerOpts: FooterModelPickerOptions = {},
-): { refresh: () => void; openMenu: () => void; destroy: () => void } {
+): { refresh: () => void; sync: () => void; openMenu: () => void; destroy: () => void } {
   // The agent whose selectors are currently listed. Captured on load so a pick
   // persists against the right agent even if the model value moves on after.
   let optionAgentId: string | null = null
@@ -54,11 +56,29 @@ export function mountFooterModelPicker(
     })
   }
 
+  const usage = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost footer-plan-usage',
+      'aria-label': 'Manage ChatGPT usage',
+      title: 'Manage your ChatGPT plan and Copse’s allowance',
+    },
+    'Manage usage',
+  )
+  usage.addEventListener('click', () => {
+    void api.shell.openExternal('https://chatgpt.com/settings/usage')
+  })
+  function updateUsage(): void {
+    usage.hidden = !getCurrent().startsWith(CHATGPT_PLAN_MODEL_PREFIX)
+  }
+
   const picker = mountModelPicker(
     root,
     getCurrent,
     (model) => {
       onSelect(model)
+      updateUsage()
       void picker.refresh()
     },
     (current) =>
@@ -98,6 +118,9 @@ export function mountFooterModelPicker(
     },
   )
 
+  root.append(usage)
+  updateUsage()
+
   // Selected-plugin models can appear or disappear while this footer remains
   // mounted. Refresh on explicit open so the menu reflects live plugin state.
   picker.root.querySelector('.model-picker-trigger')?.addEventListener('click', () => {
@@ -105,13 +128,20 @@ export function mountFooterModelPicker(
   })
 
   return {
-    refresh: () => void picker.refresh(),
+    refresh: (): void => {
+      updateUsage()
+      void picker.refresh()
+    },
+    sync: picker.sync,
     // Same pairing as an explicit trigger click: refresh live plugin/provider
     // state, then show the menu.
     openMenu: (): void => {
       void picker.refresh()
       picker.openMenu()
     },
-    destroy: picker.destroy,
+    destroy: (): void => {
+      usage.remove()
+      picker.destroy()
+    },
   }
 }

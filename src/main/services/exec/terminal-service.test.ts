@@ -13,6 +13,8 @@ import {
   destroyTerminalSessionsForOwner,
   destroyTerminalSession,
   listTerminalSessions,
+  setTerminalSessionMeta,
+  hasTerminalSessions,
   resizeTerminalSession,
   writeTerminalSession,
   type TerminalOwner,
@@ -556,5 +558,32 @@ describe('terminal history sharing (#2433)', () => {
       if (session1) destroyTerminalSession(session1, OWNER)
       if (session2) destroyTerminalSession(session2, OTHER_OWNER)
     }
+  })
+})
+
+describe('immutable terminal checkout ownership', () => {
+  afterEach(() => {
+    destroyAllTerminalSessions()
+  })
+  it('keeps a detached live terminal counted against its execution thread', async () => {
+    const id = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Shell',
+      threadId: 'owned-thread',
+      outputText: '',
+    })
+    await setTerminalSessionMeta(id, OWNER, { threadId: null })
+    assert.equal(
+      listTerminalSessions('owned-thread').length,
+      0,
+      'editable UI scope remains detached',
+    )
+    assert.equal(
+      hasTerminalSessions('owned-thread'),
+      true,
+      'archive still sees its checkout resource',
+    )
+    assert.deepEqual(await destroyTerminalSessionsForThread('owned-thread'), [id])
+    assert.equal(hasTerminalSessions('owned-thread'), false)
   })
 })

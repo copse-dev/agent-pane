@@ -506,9 +506,9 @@ describe('change-status colours are tokens that stay readable (issue #3065)', ()
       [layout, '.git-change-status-deleted', 'color', 'var(--change-deleted)'],
       [layout, '.git-change-status-removed', 'color', 'var(--change-deleted)'],
       [layout, '.git-change-status-renamed', 'color', 'var(--change-renamed)'],
-      [layout, '.pr-list-ci-success', 'background', 'var(--success)'],
-      [layout, '.pr-list-ci-failure', 'background', 'var(--error)'],
-      [layout, '.pr-list-ci-pending', 'background', 'var(--warning)'],
+      [layout, '.chat-pr-status.is-open', 'color', 'var(--accent)'],
+      [layout, '.chat-pr-status.is-merged', 'color', 'var(--pr-merged)'],
+      [layout, '.chat-pr-status.is-closed', 'color', 'var(--pr-closed)'],
       [layout, '.git-diff-editor-wrap .line-insert', 'background-color', 'var(--diff-insert)'],
       [layout, '.git-diff-editor-wrap .gutter-insert', 'background-color', 'var(--diff-insert)'],
       [layout, '.git-diff-editor-wrap .line-delete', 'background-color', 'var(--diff-delete)'],
@@ -551,9 +551,9 @@ describe('change-status colours are tokens that stay readable (issue #3065)', ()
       assert.deepEqual(failures, [], `${theme}: change marks fall below their bar`)
     })
 
-    it(`keeps PR CI dots at non-text contrast in ${theme}`, () => {
+    it(`keeps PR lifecycle icons at non-text contrast in ${theme}`, () => {
       const failures: string[] = []
-      for (const token of ['--success', '--error', '--warning']) {
+      for (const token of ['--accent', '--pr-merged', '--pr-closed']) {
         for (const surface of [...PANE_SURFACES, '--bg-selected']) {
           const ratio = contrastRatio(tokens.colour(token), tokens.colour(surface))
           if (ratio < AA_NON_TEXT) failures.push(`${token} on ${surface}: ${ratio.toFixed(2)}:1`)

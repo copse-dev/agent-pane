@@ -1,4 +1,8 @@
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
+import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
@@ -48,7 +52,7 @@ async function focusOutsideComposer(): Promise<void> {
 async function closeRightPanelIfOpen(): Promise<void> {
   const pane = await $('#pane-files')
   if (await pane.isDisplayed()) {
-    await pressPanelChord({ ctrl: true, key: 'b' })
+    await pressPanelChord({ ctrl: true, key: 'j' })
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
       timeout: 5_000,
       timeoutMsg: 'expected pane-files to hide before shortcut test',
@@ -104,12 +108,12 @@ describe('right panel toggle and shortcuts', () => {
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
   })
 
-  it('toggles the right panel with Ctrl/Cmd+B and Ctrl/Cmd+J', async () => {
+  it('toggles the right panel with Ctrl/Cmd+J', async () => {
     const pane = await $('#pane-files')
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
 
-    await pressPanelChord({ ctrl: true, key: 'b' })
+    await pressPanelChord({ ctrl: true, key: 'j' })
     await pane.waitForDisplayed({ timeout: 5_000 })
     await expect($('.titlebar-btn[aria-label="Toggle right panel"]')).toHaveElementClass('active')
 
@@ -118,6 +122,62 @@ describe('right panel toggle and shortcuts', () => {
       timeout: 5_000,
       timeoutMsg: 'expected pane-files to hide after Ctrl+J',
     })
+  })
+
+  it('hides and shows the projects sidebar with Ctrl/Cmd+B and the titlebar button', async () => {
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    const sidebar = await $('#pane-projects')
+    const toggle = await $('.titlebar-sidebar-btn')
+    await focusOutsideComposer()
+    await sidebar.waitForDisplayed({ timeout: 5_000 })
+
+    await pressPanelChord({ ctrl: true, key: 'b' })
+    await browser.waitUntil(async () => !(await sidebar.isDisplayed()), {
+      timeout: 5_000,
+      timeoutMsg: 'expected pane-projects to hide after Ctrl+B',
+    })
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden.png'))
+
+    await toggle.click()
+    await sidebar.waitForDisplayed({ timeout: 5_000 })
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-shown.png'))
+  })
+
+  it('lets a maximized right panel cover the hidden projects sidebar', async () => {
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    const sidebarToggle = await $('.titlebar-sidebar-btn')
+    const panel = await $('#pane-files')
+    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    await closeRightPanelIfOpen()
+    await panelToggle.click()
+    await panel.waitForDisplayed({ timeout: 5_000 })
+    await $('.pane-maximize-btn').click()
+    await browser.waitUntil(
+      async () => (await $('.pane-maximize-btn').getAttribute('aria-pressed')) === 'true',
+      { timeout: 5_000, timeoutMsg: 'expected the right panel to maximize' },
+    )
+
+    await sidebarToggle.click()
+    await browser.waitUntil(async () => !(await $('#pane-projects').isDisplayed()), {
+      timeout: 5_000,
+      timeoutMsg: 'expected the projects sidebar to hide',
+    })
+    const bounds = await browser.execute(() => {
+      const body = document.getElementById('body')?.getBoundingClientRect()
+      const pane = document.getElementById('pane-files')?.getBoundingClientRect()
+      return { bodyLeft: body?.left ?? -1, paneLeft: pane?.left ?? -1 }
+    })
+    assert.ok(
+      bounds.paneLeft <= bounds.bodyLeft + 1,
+      `expected maximized pane at body left edge, got ${JSON.stringify(bounds)}`,
+    )
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
+
+    await sidebarToggle.click()
+    await $('.pane-maximize-btn').click()
+    await panelToggle.click()
   })
 
   it('opens explorer with Ctrl/Cmd+Shift+E', async () => {
@@ -152,10 +212,10 @@ describe('right panel toggle and shortcuts', () => {
     const pane = await $('#pane-files')
     const composer = await $('.prompt-input')
     await composer.click()
-    await pressPanelChord({ ctrl: true, key: 'b' }, 'composer')
+    await pressPanelChord({ ctrl: true, key: 'j' }, 'composer')
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
       timeout: 2_000,
-      timeoutMsg: 'expected pane-files to stay hidden when Ctrl+B is pressed in composer',
+      timeoutMsg: 'expected pane-files to stay hidden when Ctrl+J is pressed in composer',
     })
   })
 })

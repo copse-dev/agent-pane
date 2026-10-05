@@ -70,8 +70,6 @@ function gate(overrides: Record<string, string> = {}): number | null {
 describe('required CI gate bindings', () => {
   it('receives cancellation and dependency results directly from Actions, without shell interpolation', () => {
     assert.deepEqual(bindings, {
-      METADATA_ONLY:
-        "${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback' }}",
       FORK_PR:
         "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
       MODE: '${{ needs.precheck.outputs.mode }}',
@@ -96,13 +94,11 @@ describe('required CI gate bindings', () => {
 })
 
 describe('required CI gate decisions', { skip: process.platform === 'win32' }, () => {
-  it('allows the separately named metadata no-op only for the exact trusted true binding', () => {
+  it('cannot authorize untested metadata even if a legacy metadata binding is injected', () => {
     const invalid = { ANY_FAILURE: 'true', PRECHECK_RESULT: 'skipped', CHECK_RESULT: 'skipped' }
-    assert.equal(gate({ ...invalid, METADATA_ONLY: 'true' }), 0)
-    for (const value of ['', 'false', 'TRUE', 'unknown']) {
-      assert.equal(gate({ ...invalid, METADATA_ONLY: value }), 1)
-    }
-    assert.equal(gate(invalid), 1)
+    assert.equal(gate({ ...invalid, METADATA_ONLY: 'true' }), 1)
+    assert.equal(gate({ PRECHECK_RESULT: 'skipped', CHECK_RESULT: 'skipped' }), 1)
+    assert.equal(gate({ ANY_CANCELLED: 'true', METADATA_ONLY: 'true' }), 1)
   })
 
   it('fails the whole-run cancellation step before dependency acceptance can run', () => {

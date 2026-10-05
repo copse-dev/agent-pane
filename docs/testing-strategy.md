@@ -118,6 +118,21 @@ remain available for c8's source-map processing after the tests exit.
 The CI `unit-tests-tap` artifact contains the canonical TAP plus only the
 per-run TAP and metadata files under `.tmp/test-run-*`.
 
+The unit runner compares tracked file contents and Git index entries before and
+after bundling and execution, including the separate coverage phases. A mutation
+fails the command and reports its path, even when every test passes. Existing
+staged/unstaged edits may remain unchanged, and ordinary untracked or ignored
+reports and bundles do not fail the check. Run from a Git checkout; inspection
+errors fail rather than silently disabling the invariant. Leave the reported
+changes intact for review instead of automatically restoring the checkout.
+
+Intentional snapshot updates remain explicit: `UPDATE_GATE_REPLAY=1` permits
+only `benchmarks/escalation-review/testset/gate-replay.jsonl` to change, and
+`UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1` permits only the hook wire-payload snapshot.
+Other tracked mutations and any staging still fail. Review the resulting diff
+before committing. TAP and run metadata describe the test subprocess; the
+runner's final exit status additionally reflects this checkout invariant.
+
 ### Before believing it works: the oracle
 
 The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
@@ -225,6 +240,13 @@ new tests should keep that trend:
   for broad/low-confidence changes; the nightly schedule runs everything. Keep
   selector/DOM coupling honest so the oracle can confidently subset — and keep
   the oracle liveness gate (`npm run check:oracle`) passing.
+- **Base-change refresh planning** is a separate opt-in oracle mode:
+  `pnpm run oracle -- --refresh --tested-base <sha> --tested-candidate <sha> --tested-pr-head <sha>
+--base <sha> --pr-head <sha> --candidate <sha> --json`. It compares affected
+  areas on both sides and emits `skip`, explicit bounded test lists, or `review`.
+  It never requests a full-suite rerun or executes tests, and it does not replace
+  required CI. See [bounded refresh planning](plans/ci-base-freshness.md#bounded-oracle-refresh-planning--3-october-2026)
+  for the snapshot contract, limits and unresolved merge-time enforcement.
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.

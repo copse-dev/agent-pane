@@ -31,6 +31,9 @@ export const LMSTUDIO_MODEL_PREFIX = 'lmstudio:'
  */
 export const ACP_MODEL_PREFIX = 'acp:'
 
+/** A native ChatGPT-plan registration and model (`chatgpt-plan:<clientId>#<model>`). */
+export const CHATGPT_PLAN_MODEL_PREFIX = 'chatgpt-plan:'
+
 /**
  * Model-selection prefix for a plugin-contributed model route
  * (`plugin-model:<pluginId>:<routeId>`, both halves URI-encoded).

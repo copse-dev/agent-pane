@@ -402,6 +402,10 @@ class CopseTerminalAgent(BaseAgent):
                 context.metadata["profile"] = result_message["profile"]
             if result_message.get("profileHash"):
                 context.metadata["profile_hash"] = result_message["profileHash"]
+            if isinstance(result_message.get("runtimeConfiguration"), dict):
+                context.metadata["runtime_configuration"] = result_message[
+                    "runtimeConfiguration"
+                ]
         finally:
             if process.returncode is None:
                 process.terminate()

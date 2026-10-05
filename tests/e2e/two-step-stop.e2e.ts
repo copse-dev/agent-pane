@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -14,7 +14,8 @@ describe('two-step stop shortcut', function () {
 
   it('arms on Escape, then stops on a second Escape without submitting another prompt', async function () {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-two-step-stop', {
+    // First-send checkout needs real local refs, independent of the CI source checkout.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-two-step-stop', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

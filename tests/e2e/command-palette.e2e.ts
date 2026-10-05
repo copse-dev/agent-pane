@@ -139,10 +139,8 @@ describe('command palette and sidebar thread filter', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText(TARGET_TITLE)
   })
 
-  it('filters the sidebar thread list from the header search toggle', async () => {
-    // Reveal the filter input and narrow to the login thread.
-    const toggle = await $('.projects-search-btn')
-    await toggle.click()
+  it('filters the sidebar thread list from the header search field', async () => {
+    // Narrow to the login thread.
     const input = await $('.projects-search-input')
     await input.waitForDisplayed({ timeout: 10_000 })
     await input.setValue('login')

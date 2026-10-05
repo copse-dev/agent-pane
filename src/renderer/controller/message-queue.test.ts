@@ -30,12 +30,14 @@ import {
   resumePendingQueues,
   sendQueuedMessageNow,
   startHumanTurnTree,
+  updateQueuedMessageModel,
   updateQueuedMessageText,
 } from './message-queue.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
@@ -135,8 +137,43 @@ test('enqueueUserMessage appends to thread.pendingMessages and emits message_que
   const pending = thread.pendingMessages ?? []
   assert.equal(pending.length, 1)
   assert.equal(at(pending, 0).messageId, 'msg-1')
+  assert.equal(at(pending, 0).model, DEFAULT_APP_CHAT_MODEL)
   assert.deepEqual(queued, ['msg-1'])
   assert.equal(api.runs.length, 0)
+})
+
+test('enqueueUserMessage snapshots the live thread model for every human queue surface', () => {
+  const store = createStore({ settings: { model: 'claude-sonnet-4-6' } })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((thread) =>
+        thread.id === threadId ? { ...thread, model: 'gpt-5.6-sol' } : thread,
+      ),
+  })
+
+  enqueueUserMessage(store, threadId, {
+    messageId: 'human-queued',
+    payload: { content: 'keep my current model' },
+    createdAt: 1,
+  })
+
+  assert.equal(getThread(store, threadId).pendingMessages?.[0]?.model, 'gpt-5.6-sol')
+})
+
+test('enqueueUserMessage leaves a hook follow-up on the live thread model', () => {
+  const store = createStore({ settings: { model: 'claude-sonnet-4-6' } })
+  const threadId = createThread(store)
+
+  enqueueUserMessage(store, threadId, {
+    messageId: 'hook-queued',
+    payload: { content: 'follow the live selection' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+  })
+
+  assert.equal(getThread(store, threadId).pendingMessages?.[0]?.model, undefined)
 })
 
 test('drainMessageQueue dispatches the next payload when idle', () => {
@@ -242,6 +279,44 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 
   const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
   assert.equal('model' in payload, false)
+})
+
+test('dispatchAgentRun keeps the model chosen for a queued prompt', () => {
+  const store = createStore({ settings: { model: 'claude-sonnet-4-6' } })
+  store.setState({ activeProjectId: 'project-1' })
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'idle')
+  enqueueUserMessage(store, threadId, {
+    messageId: 'queued-1',
+    payload: { content: 'use the faster model' },
+    createdAt: 1,
+    model: 'gpt-5.6-sol',
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['model'], 'gpt-5.6-sol')
+})
+
+test('updateQueuedMessageModel changes one queued prompt without changing the thread model', () => {
+  const store = createStore({ settings: { model: 'claude-sonnet-4-6' } })
+  const threadId = createThread(store)
+  const messageId = 'queued-1'
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'pick a model' },
+    createdAt: 1,
+    model: 'claude-sonnet-4-6',
+  })
+
+  updateQueuedMessageModel(store, threadId, messageId, 'gpt-5.6-sol')
+
+  const thread = store.getState().threads.find((candidate) => candidate.id === threadId)
+  assert.ok(thread)
+  assert.equal(thread.model, 'claude-sonnet-4-6')
+  assert.equal(thread.pendingMessages?.[0]?.model, 'gpt-5.6-sol')
 })
 
 function userReview(overrides: Partial<ThreadReviewReport> = {}): ThreadReviewReport {
@@ -634,6 +709,7 @@ test('resumePendingQueues resets a stale running status when the queue is empty'
 
   const thread = getThread(store, threadId)
   assert.equal(thread.status, 'idle')
+  assert.equal(typeof thread.interruptedTurnAt, 'number')
   assert.equal(api.runs.length, 0)
 })
 
@@ -663,7 +739,9 @@ test('resumePendingQueues (#1406): still resets a different thread whose run is 
   await resumePendingQueues(store, api)
 
   assert.equal(getThread(store, liveId).status, 'running')
+  assert.equal(getThread(store, liveId).interruptedTurnAt, undefined)
   assert.equal(getThread(store, staleId).status, 'idle')
+  assert.equal(typeof getThread(store, staleId).interruptedTurnAt, 'number')
 })
 
 test('resumePendingQueues (#1406): a failed liveness query still resumes, it does not strand the queues', async () => {
@@ -692,6 +770,25 @@ test('resumePendingQueues (#1406): a failed liveness query still resumes, it doe
   const thread = getThread(store, threadId)
   assert.ok(!thread.queuePaused, 'a stale persisted pause is still cleared')
   assert.equal(base.runs.length, 1, 'the pending queue still drains')
+})
+
+test('resumePendingQueues does not offer retry when liveness cannot be checked', async () => {
+  const store = createProjectStore()
+  const base = fakeApi()
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      runningThreadIds: (): Promise<string[]> => Promise.reject(new Error('ipc gone')),
+    },
+  }
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+
+  await resumePendingQueues(store, api)
+
+  assert.equal(getThread(store, threadId).status, 'idle')
+  assert.equal(getThread(store, threadId).interruptedTurnAt, undefined)
 })
 
 // --- C2 contract tests ------------------------------------------------------

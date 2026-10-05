@@ -1,3 +1,4 @@
+import { storageCleanup } from '../storage-cleanup.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -30,6 +31,7 @@ import {
   type ThreadContainerRequest,
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
+import type { ThreadContainerEngine } from './container-engine.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -49,14 +51,20 @@ const LOG_TAIL = 60
 
 interface RunDependencies {
   run: typeof runThreadInContainer
-  ensureImage: () => Promise<void>
+  /** Build the worker image on `engine` unless the one there is this build's. */
+  ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
-   * Reachable Docker daemon for this product path. Injected so tests can
-   * refuse a start without spawning docker; production uses
-   * {@link assertThreadContainerEngine}.
+   * The engine a run will use (Docker, or Apple container on Apple silicon),
+   * or a readable refusal. Asked once per run; the answer is passed on, never
+   * asked again mid-run. Injected so tests can refuse a start without spawning
+   * an engine CLI; production uses {@link assertThreadContainerEngine}.
    */
-  assertEngine: () => void | Promise<void>
-  /** Force-remove a live run's container; the runner's wait then settles. */
+  assertEngine: () => Promise<ThreadContainerEngine>
+  /**
+   * Force-remove a live run's container; the runner's wait then settles.
+   * Without an engine (a run this session did not start) every engine that is
+   * up is asked.
+   */
   stop: typeof teardownRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
@@ -91,10 +99,10 @@ const productionDependencies: RunDependencies = {
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
-  ensureImage: async (): Promise<void> => {
+  ensureImage: async (engine): Promise<void> => {
     const wanted = workerBuildFingerprint()
-    if ((await workerImageFingerprint(WORKER_IMAGE)) === wanted) return
-    await buildWorkerImage({ image: WORKER_IMAGE })
+    if ((await workerImageFingerprint(WORKER_IMAGE, engine)) === wanted) return
+    await buildWorkerImage({ image: WORKER_IMAGE, engine })
   },
   resolveContext: resolveThreadExecutionContext,
 }
@@ -132,8 +140,11 @@ export class ContainerRunService {
   >()
   /** One per live run: aborted on stop, so the runner can refuse to create the container. */
   private readonly stopSignals = new Map<string, AbortController>()
+  /** The engine each run this session started is on, by runtime id, for its stop. */
+  private readonly engines = new Map<string, ThreadContainerEngine>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
+  private readonly imagePreparations = new Map<ThreadContainerEngine, Promise<void>>()
   /** The one start-up sweep; later windows share it rather than sweeping again. */
   private orphanSweep: Promise<OrphanSweep | null> | null = null
 
@@ -149,7 +160,7 @@ export class ContainerRunService {
       if (progress?.runtimeId === task.processHandleId) {
         await this.stopRuntime(task.threadId)
       } else if (task.processHandleId) {
-        await this.deps.stop(task.processHandleId)
+        await this.deps.stop(task.processHandleId, this.engines.get(task.processHandleId))
       }
     })
     this.supervisor = supervisor
@@ -260,7 +271,7 @@ export class ContainerRunService {
       log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
     })
     if (progress.runtimeId !== null && progress.phase !== 'building-image') {
-      const outcome = await this.deps.stop(progress.runtimeId)
+      const outcome = await this.deps.stop(progress.runtimeId, this.engines.get(progress.runtimeId))
       if (outcome === 'failed') {
         this.update(progress, {
           log: [...progress.log, '[thread-container] the container could not be removed'].slice(
@@ -280,6 +291,13 @@ export class ContainerRunService {
    * asking, so one thread cannot pull another's run into its checkout.
    */
   async adopt(projectId: string, threadId: string, runtimeId: string): Promise<CarryOutAdoption> {
+    return storageCleanup().use('runs', () => this.adoptLeased(projectId, threadId, runtimeId))
+  }
+  private async adoptLeased(
+    projectId: string,
+    threadId: string,
+    runtimeId: string,
+  ): Promise<CarryOutAdoption> {
     if (this.isActive(threadId)) {
       throw new Error('This thread has a container run in progress; wait for it to finish')
     }
@@ -351,24 +369,10 @@ export class ContainerRunService {
         ? this.continuationOf(request.threadId, request.continueFrom, request.continueContext)
         : null
     const model = request.model
-    const plan = await resolveContainerProvider(model, {
-      useAgentLogin: request.useAgentLogin === true,
-    })
-    const credential: ContainerRunProgress['credential'] =
-      plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
-    // The registry and GitHub are reachable when the run installs (A9, A11);
-    // the guest's shell commands are off the network either way.
-    const install = request.installDependencies === true
-    const egressAllowlist = [
-      ...new Set([
-        ...plan.egress,
-        ...(install ? DEPENDENCY_INSTALL_ORIGINS : []),
-        ...(request.extraEgress ?? []),
-      ]),
-    ]
-    // Decided before Docker is touched: a down daemon (or Apple-only host) must
-    // fail here with a recovery path, not mid-build as a raw socket error.
-    await this.deps.assertEngine()
+    let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
+    let credential: ContainerRunProgress['credential'] = 'none'
+    let egressAllowlist: string[] = []
+    let engine: ThreadContainerEngine
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -380,6 +384,10 @@ export class ContainerRunService {
       model,
       egressAllowlist,
       credential,
+      settings: {
+        budgets: { ...request.budgets },
+        installDependencies: request.installDependencies === true,
+      },
       log: [],
       warnings: [],
       checkout: null,
@@ -387,6 +395,10 @@ export class ContainerRunService {
       error: null,
       continuedFrom: continuation?.runtimeId ?? null,
     }
+    // A follow-up replaces the finished run it continues; keep that entry so a
+    // follow-up that fails before it starts does not erase the run it built on.
+    const previous = this.runs.get(request.threadId)
+    const previousStop = this.stopSignals.get(request.threadId)
     // Claim the thread's slot before the first await, so two clicks cannot both
     // pass the live-run check and start two containers on one checkout.
     this.runs.set(request.threadId, progress)
@@ -395,6 +407,22 @@ export class ContainerRunService {
 
     let checkout: ThreadExecutionContext
     try {
+      plan = await resolveContainerProvider(model, {
+        useAgentLogin: request.useAgentLogin === true,
+      })
+      credential =
+        plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
+      // Only provider resolution and the explicit install choice admit origins.
+      egressAllowlist = [
+        ...new Set([
+          ...plan.egress,
+          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
+        ]),
+      ]
+      Object.assign(progress, { credential, egressAllowlist })
+      // Check the host engine while the thread is reserved, then release the
+      // reservation through the same failure path if the daemon is unavailable.
+      engine = await this.deps.assertEngine()
       // The thread — not the project — owns the checkout the run must carry in:
       // a thread in an isolated worktree has its own branch and its own
       // uncommitted edits, and snapshotting the project root would silently run
@@ -406,8 +434,10 @@ export class ContainerRunService {
         checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',
       )
     } catch (error) {
-      this.runs.delete(request.threadId)
-      this.stopSignals.delete(request.threadId)
+      if (previous) this.runs.set(request.threadId, previous)
+      else this.runs.delete(request.threadId)
+      if (previousStop) this.stopSignals.set(request.threadId, previousStop)
+      else this.stopSignals.delete(request.threadId)
       throw error
     }
     this.update(progress, {
@@ -447,7 +477,7 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, checkout.root, progress, continuation, stopSignal)
+    void this.drive(request, plan, engine, checkout.root, progress, continuation, stopSignal)
     return first
   }
 
@@ -491,15 +521,29 @@ export class ContainerRunService {
     )
   }
 
+  /** Concurrent threads share preparation of the one worker image. */
+  private async ensureImage(engine: ThreadContainerEngine): Promise<void> {
+    const existing = this.imagePreparations.get(engine)
+    const preparation = existing ?? this.deps.ensureImage(engine)
+    if (existing === undefined) this.imagePreparations.set(engine, preparation)
+    try {
+      await preparation
+    } finally {
+      if (this.imagePreparations.get(engine) === preparation) this.imagePreparations.delete(engine)
+    }
+  }
+
   private async drive(
     request: ContainerRunRequest,
     plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
+    engine: ThreadContainerEngine,
     workspace: string,
     progress: ContainerRunProgress,
     continuation: RunContinuation | null,
     stopSignal: AbortController,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
+    this.engines.set(runtimeId, engine)
     // The key stays in memory: the runner hands it to the guest over the
     // container's stdio link (decision A17). This process's environment, and
     // so every terminal or tool it spawns meanwhile, never holds it.
@@ -542,7 +586,7 @@ export class ContainerRunService {
         taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
-      await this.deps.ensureImage()
+      await this.ensureImage(engine)
       if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
@@ -569,6 +613,7 @@ export class ContainerRunService {
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
+        engine,
       }
       const record = await this.deps.run(runRequest, {
         runtimeId,
@@ -672,7 +717,13 @@ export function continuationPrompt(earlier: RunContinuation, followUp: string): 
 }
 
 function snapshot(progress: ContainerRunProgress): ContainerRunProgress {
-  return { ...progress, log: [...progress.log] }
+  return {
+    ...progress,
+    log: [...progress.log],
+    ...(progress.settings
+      ? { settings: { ...progress.settings, budgets: { ...progress.settings.budgets } } }
+      : {}),
+  }
 }
 
 /**

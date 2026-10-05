@@ -1,4 +1,6 @@
+import { ACP_RETENTION_NOTICE, type AcpRetentionNotice } from '@shared/acp-retention.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { chatGptPlanModelValue, parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { getLocalModelCapability, localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
@@ -23,6 +25,7 @@ import {
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 
 export interface ModelOptionsApi {
+  chatGptPlan?: Pick<ApiClient['chatGptPlan'], 'models'>
   settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
   openRouter: Pick<ApiClient['openRouter'], 'models'>
   remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
@@ -95,6 +98,8 @@ export interface ModelOption {
   coverage?: ModelCoverage
   /** Image-input support when known; absent means the provider did not advertise it. */
   supportsImages?: boolean
+  /** Route-level privacy evidence; ACP does not report account retention controls. */
+  retention?: Readonly<AcpRetentionNotice>
 }
 
 export function modelDisplayLabel(model: string): string {
@@ -173,6 +178,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
         const versioned = acpModelVersionName(model.description)
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
         options.push({
+          retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} — ${hint}` : label,
           group,
@@ -181,7 +187,12 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
     } else {
       // No discovered models (never detected, or the agent has a fixed model):
       // fall back to a single entry that routes to the agent's own default.
-      options.push({ value: acpModelValue(agent.id), label: agent.title, group })
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE,
+      })
     }
   }
   return options
@@ -501,6 +512,20 @@ export async function fetchModelOptions(
   // Hosted Anthropic/OpenAI models. Grouped so they get a heading like every
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
+  try {
+    const catalog = await api.chatGptPlan?.models()
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} · ChatGPT plan`,
+          group: 'ChatGPT plan',
+        })
+      }
+    }
+  } catch {
+    /* A failed/expired plan connection cannot expose API-key models as substitutes. */
+  }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue
     // GPT-6 Astra is a staged OpenAI rollout. A valid provider credential is
@@ -621,6 +646,7 @@ export async function fetchModelOptions(
       // labeling pass exists to stop showing).
       const staleModel = selection?.model ? canonicalModelLabel(selection.model) : 'agent default'
       const stale: ModelOption = {
+        retention: ACP_RETENTION_NOTICE,
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
@@ -633,6 +659,13 @@ export async function fetchModelOptions(
       }
       if (sshWorkspace) stale.disabled = true
       options.push(stale)
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: 'ChatGPT plan',
+        disabled: true,
+      })
     } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,

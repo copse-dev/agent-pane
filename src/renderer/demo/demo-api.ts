@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
@@ -19,7 +20,7 @@ import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
-import { isRecord } from '@shared/unknown-value.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
@@ -418,7 +419,8 @@ function unsupported(): Promise<never> {
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
-  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES
+  let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
+  const pendingMcpSignIns = new Map<string, () => void>()
   const storage = new Map<string, unknown>([
     ['projects', [scenario.project]],
     ['activeProjectId', scenario.project.id],
@@ -577,6 +579,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,
@@ -604,7 +607,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           prompt: request.prompt,
           model: request.model,
           egressAllowlist: ['api.anthropic.com:443'],
-          credential: 'key' as const,
+          credential: request.useAgentLogin ? ('login' as const) : ('key' as const),
+          settings: {
+            budgets: { ...request.budgets },
+            installDependencies: request.installDependencies === true,
+          },
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
           warnings: [],
           checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
@@ -746,7 +753,22 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return (): void => undefined
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...(askUserRequest.threadId === undefined ? {} : { threadId: askUserRequest.threadId }),
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...(question.options === undefined ? {} : { options: [...question.options] }),
+            })),
+          }
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -782,6 +804,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
+    deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe,
@@ -827,6 +850,34 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       listCurated: emptyArray,
       listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
+      // The demo has no browser to finish a sign-in, so it waits like the real
+      // flow does until the visitor cancels.
+      signIn: (name) =>
+        new Promise<McpServerStatus[]>((_resolve, reject) => {
+          pendingMcpSignIns.set(name, () => {
+            reject(new Error('Sign-in cancelled.'))
+          })
+        }),
+      cancelSignIn: (name) => {
+        pendingMcpSignIns.get(name)?.()
+        pendingMcpSignIns.delete(name)
+        return resolvedVoid()
+      },
+      signOut: (name) => {
+        mcpStatuses = mcpStatuses.map((status) =>
+          status.name === name
+            ? {
+                ...status,
+                state: 'error',
+                error: 'Sign-in required',
+                auth: 'required',
+                toolCount: 0,
+                tools: [],
+              }
+            : status,
+        )
+        return resolved(structuredClone([...mcpStatuses]))
+      },
       onStatusChanged: subscribe,
     },
     toolPermissions: {
@@ -854,6 +905,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      maintenance: () =>
+        resolved({
+          retention: { enabled: true, days: 30 },
+          areas: [
+            { area: 'runs', bytes: 0, entries: 0, busy: false },
+            { area: 'builds', bytes: 0, entries: 0, busy: false },
+          ],
+        }),
+      cleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
         storage.set(key, value)
@@ -872,6 +933,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now()
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) thread.archivedAt = archivedAt
+        return resolved({ status: 'archived', archivedAt, worktree: thread?.worktree })
+      },
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -938,6 +1005,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
+      historySnapshot: unsupported,
+      editHistory: unsupported,
+      undoHistoryEdit: unsupported,
       catalog: () =>
         resolved(
           threads.map((thread) => ({
@@ -1024,6 +1094,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,
@@ -1052,7 +1123,40 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       stop: unsupported,
       connect: unsupported,
     },
+    chatGptPlan: {
+      status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      refreshAccount: () => (scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()),
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () =>
+        resolved({
+          clientId: scenario.chatGptPlan?.activeClientId ?? null,
+          models: scenario.chatGptPlan?.activeClientId
+            ? [{ slug: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna' }]
+            : [],
+        }),
+    },
     settings: {
+      getSnapshot: () => {
+        const values: Record<string, unknown> = Object.fromEntries(settings)
+        const snapshot: SettingsSnapshot = values
+        return resolved(snapshot)
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes
+        const next = new Map(settings)
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value)
+        if (roleAssignments)
+          next.set('roleModels', {
+            ...stringRecordOrEmpty(settings.get('roleModels')),
+            ...roleAssignments,
+          })
+        settings.clear()
+        for (const [key, value] of next) settings.set(key, value)
+        return resolvedVoid()
+      },
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {
         settings.set(key, value)

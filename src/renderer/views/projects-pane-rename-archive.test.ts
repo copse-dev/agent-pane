@@ -6,10 +6,21 @@ import { createStore } from '@shared/store/store.ts'
 import type { OrphanProjectStore, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
-import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
+import {
+  resetProjectSwitchStateForTest,
+  getSidebarThreads,
+  setThreadCacheForTest,
+} from '../controller/projects.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 import { isThreadArchived } from '@shared/store/thread-helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import type { ThreadArchiveResult } from '@shared/threads/archive-thread.ts'
+import { __resetPersistenceForTest } from '../controller/persistence.ts'
+import {
+  mountConfirmDialog,
+  clickActiveConfirmDialogCancel,
+  clickActiveConfirmDialogConfirm,
+} from './confirm-dialog.ts'
 
 function thread(id: string, title: string): Thread {
   return {
@@ -27,6 +38,7 @@ afterEach(() => {
   dismissContextMenu()
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
 })
 
 describe('projects pane thread rename + archive (component)', () => {
@@ -102,7 +114,7 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.ok(rowFor('Renamed chat'))
   })
 
-  it('right-click offers Rename, Fork, Archive and Delete; Archive soft-hides the row', () => {
+  it('right-click offers Rename, Fork, Archive and Delete; Archive soft-hides the row', async () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -132,6 +144,7 @@ describe('projects pane thread rename + archive (component)', () => {
     ).find((i) => i.textContent === 'Archive')
     assert.ok(archiveItem)
     archiveItem.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
     assert.equal(document.querySelector('.context-menu'), null)
     assert.deepEqual(
@@ -141,6 +154,174 @@ describe('projects pane thread rename + archive (component)', () => {
     const archived = store.getState().threads.find((t) => t.id === 't2')
     assert.ok(archived)
     assert.equal(isThreadArchived(archived), true)
+  })
+
+  it('keeps a dirty chat visible on Cancel and only discards after confirmation', async () => {
+    const archivedThread = thread('t2', 'Local edits')
+    const worktree = {
+      path: '/worktrees/a/t2',
+      branch: 'copse/local-edits',
+      baseBranch: 'main',
+      baseCommit: 'a'.repeat(40),
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    archivedThread.worktree = worktree
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), archivedThread],
+      activeThreadId: 't1',
+    })
+    const api = makeApi()
+    const calls: (string | null)[] = []
+    api.threads.archive = async (
+      projectId,
+      threadId,
+      discardChanges,
+    ): Promise<ThreadArchiveResult> => {
+      assert.equal(projectId, 'a')
+      assert.equal(threadId, 't2')
+      calls.push(discardChanges)
+      if (discardChanges === 'a'.repeat(64))
+        return {
+          status: 'blocked-dirty',
+          paths: ['README.md', 'fresh-draft.txt'],
+          fingerprint: 'b'.repeat(64),
+        }
+      return discardChanges
+        ? {
+            status: 'archived',
+            archivedAt: 42,
+            worktree: { ...worktree, branch: 'renamed-live', retiredAt: 42 },
+          }
+        : {
+            status: 'blocked-dirty',
+            paths: ['README.md', 'notes/draft.txt', 'local.log'],
+            fingerprint: 'a'.repeat(64),
+          }
+    }
+    mount(store, api)
+    mountConfirmDialog()
+    const openArchive = async (): Promise<void> => {
+      rowFor('Local edits').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((candidate) => candidate.textContent === 'Archive')
+      assert.ok(item)
+      item.click()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+    await openArchive()
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.ok(dialog)
+    assert.match(dialog.textContent, /README.md/)
+    assert.match(dialog.textContent, /notes\/draft.txt/)
+    assert.match(dialog.textContent, /permanently discarded/)
+    assert.match(dialog.textContent, /committed work on its branch will be kept/)
+    assert.equal(isThreadArchived(archivedThread), false)
+    clickActiveConfirmDialogCancel()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [null])
+    assert.ok(rowFor('Local edits'))
+
+    await openArchive()
+    clickActiveConfirmDialogConfirm()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [null, null, 'a'.repeat(64)])
+    assert.match(dialog.textContent, /fresh-draft.txt/)
+    assert.match(dialog.textContent, /Files changed while confirmation was open/)
+    assert.equal(
+      store.getState().threads.find((candidate) => candidate.id === 't2')?.archivedAt,
+      undefined,
+    )
+    clickActiveConfirmDialogConfirm()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [null, null, 'a'.repeat(64), 'b'.repeat(64)])
+    const stored = store.getState().threads.find((candidate) => candidate.id === 't2')
+    assert.equal(stored?.archivedAt, 42)
+    assert.equal(stored.worktree?.retiredAt, 42)
+    assert.equal(
+      stored.gitBranch,
+      'renamed-live',
+      'autosave must not restore stale Git branch metadata',
+    )
+    assert.equal(document.querySelector('[data-thread-id="t2"]'), null)
+  })
+
+  it('keeps the chat visible when archive cleanup fails or activity blocks it', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Busy chat')],
+      activeThreadId: 't1',
+    })
+    const api = makeApi()
+    api.threads.archive = async (): Promise<ThreadArchiveResult> => ({ status: 'blocked-running' })
+    mount(store, api)
+    const archive = async (): Promise<void> => {
+      rowFor('Busy chat').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item'))
+        .find((candidate) => candidate.textContent === 'Archive')
+        ?.click()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+    await archive()
+    assert.ok(rowFor('Busy chat'))
+    api.threads.archive = async (): Promise<never> => {
+      throw new Error('Cannot remove checkout')
+    }
+    await archive()
+    assert.ok(rowFor('Busy chat'))
+    assert.equal(
+      store.getState().threads.find((candidate) => candidate.id === 't2')?.archivedAt,
+      undefined,
+    )
+  })
+
+  it('hides the archived row in its project cache when the user switches projects during removal', async () => {
+    const outgoingThreads = [thread('t1', 'Keep me'), thread('t2', 'Archive me')]
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: outgoingThreads,
+      activeThreadId: 't1',
+    })
+    const api = makeApi()
+    let finish: ((result: ThreadArchiveResult) => void) | undefined
+    api.threads.archive = (): Promise<ThreadArchiveResult> =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    mount(store, api)
+    rowFor('Archive me').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item'))
+      .find((candidate) => candidate.textContent === 'Archive')
+      ?.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.ok(finish)
+    setThreadCacheForTest('a', outgoingThreads)
+    store.setState({
+      activeProjectId: 'b',
+      threads: [thread('t3', 'Beta chat')],
+      activeThreadId: 't3',
+    })
+    finish({ status: 'archived', archivedAt: 42 })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(
+      getSidebarThreads(store, 'a').map((candidate) => candidate.id),
+      ['t1'],
+    )
+    assert.equal(store.getState().activeThreadId, 't3')
   })
 
   it('the vertical-dot button opens the same menu without switching threads; Delete removes its thread', () => {
@@ -202,6 +383,37 @@ describe('projects pane thread rename + archive (component)', () => {
     lastDeleteItem.click()
     assert.equal(store.getState().threads.length, 1)
     assert.deepEqual(cleared, [['a', 't2']])
+  })
+
+  it('keeps same-thread history editing inside the Fork menu', () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Editable chat')],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    rowFor('Editable chat').dispatchEvent(
+      new window.MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 40,
+        clientY: 80,
+      }),
+    )
+    const fork = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Fork')
+    assert.ok(fork)
+    fork.click()
+
+    assert.deepEqual(
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
+      ['Fork a copy', 'Edit thread history…'],
+    )
   })
 
   it('context-menu Rename starts inline editing', () => {

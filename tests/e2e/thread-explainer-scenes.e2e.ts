@@ -7,7 +7,7 @@ import { reviewSceneStory, worktreeSceneStory } from '../fixtures/explainer-scen
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
@@ -56,7 +56,7 @@ describe('composed explainer scenes', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-explainer-scenes', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-explainer-scenes', {
       model: 'claude-sonnet-4-6',
       mcpUiCanvasEnabled: true,
       theme: 'dark',

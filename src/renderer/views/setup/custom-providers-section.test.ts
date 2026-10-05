@@ -178,3 +178,46 @@ describe('custom providers: plaintext storage policy', () => {
     assert.equal(keyWrites, 2)
   })
 })
+
+describe('local providers: running-server detection', () => {
+  it('marks a local server configured when its endpoint answers, with no key saved', async () => {
+    const base = stubApi([], [])
+    const api: ApiClient = {
+      ...base,
+      lmStudio: {
+        ...base.lmStudio,
+        // Only the Ollama default (port 11434) is "running".
+        test: async (url?: string) =>
+          url?.includes(':11434') ? { ok: true, models: ['llama3'] } : { ok: false, error: 'down' },
+      },
+    }
+    const section = createCustomProvidersSection(api, { variant: 'local', embedded: true })
+    await section.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(section.isConfigured('ollama'), true)
+    assert.equal(section.isConfigured('jan'), false)
+  })
+
+  it('reports a landed probe as a status change, never rebuilding forms', async () => {
+    const base = stubApi([], [])
+    const api: ApiClient = {
+      ...base,
+      lmStudio: { ...base.lmStudio, test: async () => ({ ok: true, models: [] }) },
+    }
+    let changed = 0
+    let status = 0
+    const section = createCustomProvidersSection(api, {
+      variant: 'local',
+      embedded: true,
+      onChanged: () => (changed += 1),
+      onStatusChanged: () => (status += 1),
+    })
+    await section.refresh()
+    const changedAfterRefresh = changed
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(status, 1)
+    assert.equal(changed, changedAfterRefresh, 'probe completion must not rebuild the form')
+  })
+})

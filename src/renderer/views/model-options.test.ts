@@ -1,3 +1,4 @@
+import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
@@ -15,6 +16,39 @@ import {
 import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { ModelCoverage } from './model-coverage.ts'
+
+describe('native ChatGPT plan picker', () => {
+  it('offers subscription models without an API key and preserves their registration', async () => {
+    const base = mockApi()
+    const api = {
+      ...base,
+      chatGptPlan: {
+        ...base.chatGptPlan,
+        models: async (): ReturnType<ApiClient['chatGptPlan']['models']> => ({
+          clientId: 'oaiapp_account',
+          models: [{ slug: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }],
+        }),
+      },
+    }
+    const options = await fetchModelOptions(api, '')
+    const plan = options.find((option) => option.group === 'ChatGPT plan')
+    assert.ok(plan)
+    assert.equal(plan.value, 'chatgpt-plan:oaiapp_account#gpt-6.1-sol')
+    assert.equal(plan.label, 'GPT-6.1 Sol · ChatGPT plan')
+    assert.equal(
+      options.some((option) => option.value === 'gpt-6.1-sol'),
+      false,
+    )
+  })
+  it('retains a disconnected selection as disabled instead of substituting API billing', async () => {
+    const current = 'chatgpt-plan:oaiapp_old#gpt-6.1-sol'
+    const options = await fetchModelOptions(mockApi(), current)
+    const plan = options.find((option) => option.value === current)
+    assert.ok(plan)
+    assert.equal(plan.disabled, true)
+    assert.match(plan.label, /ChatGPT plan/)
+  })
+})
 
 interface MockOpts {
   available?: Record<string, boolean>
@@ -270,10 +304,11 @@ describe('fetchModelOptions visibility', () => {
 
   it('offers best-value plus the other automatic selectors when includeBestValue is set (Settings chat model)', async () => {
     const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
-    // best-value + balanced(+ most capable/cheapest) + the empty placeholder
+    // Automatic choices plus the empty placeholder.
     const values = options.map((o) => o.value)
     assert.ok(values.includes('auto:best-value'))
     assert.ok(values.includes('auto:balanced'), 'balanced should be selectable in Settings')
+    assert.ok(values.includes('auto:balanced-included'), 'no-charge balanced should be selectable')
     const bestValue = options.find((o) => o.value === 'auto:best-value')
     assert.ok(bestValue, 'missing best-value row')
     assert.match(bestValue.label, /Best value/)
@@ -683,6 +718,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: 'acp:codex',
       label: 'Codex',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Codex on this device',
       coverage: 'paid',
     })
@@ -708,6 +744,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: staleValue,
       label: 'Cursor — composer-2.5[fast=true] (not currently advertised)',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
     })
@@ -736,6 +773,7 @@ describe('fetchModelOptions visibility', () => {
     assert.deepEqual(current, {
       value: staleValue,
       label: 'Cursor — agent default (not currently advertised)',
+      retention: ACP_RETENTION_NOTICE,
       group: 'Cursor on this device',
       coverage: 'paid',
     })
@@ -1077,5 +1115,32 @@ describe('embedding models are not offered', () => {
     const row = options.find((o) => o.value === 'lmstudio:text-embedding-nomic-embed-text-v1.5')
     assert.ok(row, 'the current selection must stay visible')
     assert.match(row.label, /not available/i)
+  })
+})
+
+describe('ACP retention qualification', () => {
+  it('qualifies advertised, automatic and saved routes without inferring local/ZDR from names or environment', async () => {
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'local',
+        title: 'Local zero-retention agent',
+        command: 'fixture',
+        enabled: true,
+        env: { OPENAI_BASE_URL: 'http://localhost:1234/v1', OPENAI_API_KEY: 'not-a-real-key' },
+        availableModels: [{ value: 'fireworks:model', label: 'Zero retention model' }],
+      },
+      { id: 'default', title: 'Default agent', command: 'fixture', enabled: true },
+      { id: 'disabled', title: 'Disabled agent', command: 'fixture', enabled: false },
+    ]
+    for (const selected of ['acp:local#retired', 'acp:disabled', 'acp:removed']) {
+      const rows = (await fetchModelOptions(mockApi({ acpAgents: agents }), selected)).filter(
+        (row) => row.value.startsWith('acp:'),
+      )
+      assert.ok(rows.some((row) => row.value === 'acp:local#fireworks:model'))
+      assert.ok(rows.some((row) => row.value === 'acp:default'))
+      assert.ok(rows.some((row) => row.value === selected))
+      assert.ok(rows.every((row) => row.retention === ACP_RETENTION_NOTICE))
+      assert.match(ACP_RETENTION_NOTICE.detail, /signed-in account and upstream model provider/)
+    }
   })
 })

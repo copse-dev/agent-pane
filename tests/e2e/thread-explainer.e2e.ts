@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { browser, $ } from '@wdio/globals'
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   prepareE2eScreenshot,
@@ -88,7 +88,7 @@ describe('thread explainer', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-thread-explainer', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-thread-explainer', {
       model: 'claude-sonnet-4-6',
       mcpUiCanvasEnabled: true,
       theme: 'dark',

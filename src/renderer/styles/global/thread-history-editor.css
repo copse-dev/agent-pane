@@ -1,0 +1,214 @@
+.history-editor-overlay {
+  width: min(820px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 48px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.history-editor-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  background: var(--bg-base);
+}
+
+.history-editor-header,
+.history-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background: var(--bg-elevated);
+}
+
+.history-editor-header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.history-editor-footer {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.history-editor-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: 400;
+}
+
+.history-editor-subtitle {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.history-editor-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.history-editor-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.history-editor-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-xl);
+}
+
+.history-editor-notice,
+.history-editor-warning,
+.history-editor-load-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  background: var(--bg-subtle);
+}
+
+.history-editor-warning,
+.history-editor-load-error {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-subtle));
+}
+
+.history-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.history-editor-message {
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  transition:
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.history-editor-message.is-focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.history-editor-message.is-excluded {
+  opacity: 0.55;
+}
+
+.history-editor-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.history-editor-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  cursor: pointer;
+}
+
+.history-editor-include {
+  margin: 0;
+}
+
+.history-editor-role {
+  min-width: 44px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.history-editor-role-user {
+  color: var(--accent);
+}
+
+.history-editor-tool-note {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.history-editor-message-warning {
+  color: var(--warning);
+}
+
+.history-editor-message-input {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  max-height: 240px;
+  resize: vertical;
+  background: var(--bg-input);
+  line-height: var(--line-height-base);
+}
+
+.history-editor-message-input:disabled {
+  cursor: not-allowed;
+}
+
+.history-editor-summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.history-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.history-editor-undo {
+  margin-right: var(--spacing-sm);
+}
+
+.history-editor-loading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 700px) {
+  .history-editor-overlay {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+
+  .history-editor-header,
+  .history-editor-body,
+  .history-editor-footer {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
+
+  .history-editor-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-editor-actions {
+    justify-content: flex-end;
+  }
+}

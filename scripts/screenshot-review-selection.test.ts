@@ -208,3 +208,99 @@ describe('screenshot review selection', () => {
     assert.deepEqual(JSON.parse(outputs.get('selected') ?? ''), [{ name: 'a.png', sha: 'a2' }])
   })
 })
+
+async function recordSelection(
+  env: Record<string, string> = {},
+  liveHead = COMPARE,
+  missingLabel = false,
+): Promise<{ removed: string[]; statuses: string[]; updated: string[]; created: string[] }> {
+  const removed: string[] = []
+  const statuses: string[] = []
+  const updated: string[] = []
+  const created: string[] = []
+  await execute('Record the decision', {
+    context,
+    core: { notice: () => {} },
+    process: {
+      env: {
+        COMMENT_ID: '9',
+        PR_NUMBER: '123',
+        ACTOR: 'maintainer',
+        HEAD_SHA: HEAD,
+        OUTCOME: 'accept',
+        PUSHED: 'true',
+        COMMIT: COMPARE,
+        SELECTED: JSON.stringify([{ name: 'a.png', sha: 'a2' }]),
+        CANDIDATES: '2',
+        ...env,
+      },
+    },
+    github: {
+      rest: {
+        pulls: {
+          get: async () => ({
+            data: {
+              state: 'open',
+              head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
+            },
+          }),
+        },
+        repos: {
+          createCommitStatus: async ({ sha }: { sha: string }) => {
+            statuses.push(sha)
+          },
+        },
+        issues: {
+          getComment: async () => ({ data: { body: commentBody() } }),
+          removeLabel: async ({ name }: { name: string }) => {
+            removed.push(name)
+            if (missingLabel) throw Object.assign(new Error('Not Found'), { status: 404 })
+          },
+          updateComment: async ({ body }: { body: string }) => {
+            updated.push(body)
+          },
+          createComment: async ({ body }: { body: string }) => {
+            created.push(body)
+          },
+        },
+      },
+    },
+  })
+  return { removed, statuses, updated, created }
+}
+
+describe('recording a screenshot checkbox decision', () => {
+  it('clears the reminder after committing the selection and records the reviewed head', async () => {
+    const result = await recordSelection()
+    assert.deepEqual(result.removed, ['screenshots-need-review'])
+    assert.deepEqual(result.statuses, [HEAD])
+    assert.match(result.updated[0] ?? '', /committing 1 of 2 changed screenshots/)
+    assert.deepEqual(result.created, [])
+  })
+
+  it('keeps a later pushed head’s reminder', async () => {
+    const result = await recordSelection({}, 'f'.repeat(40))
+    assert.deepEqual(result.removed, [])
+    assert.deepEqual(result.statuses, [HEAD])
+  })
+
+  it('records the decision when the reminder was already removed', async () => {
+    const result = await recordSelection({}, COMPARE, true)
+    assert.deepEqual(result.statuses, [HEAD])
+    assert.equal(result.updated.length, 1)
+  })
+
+  it('keeps the reminder and resets the trigger when validation or the push fails', async () => {
+    for (const env of [
+      { OUTCOME: 'refuse', REASON: 'stale evidence' },
+      { PUSHED: '', TOKEN_MINTED: 'false' },
+      { PUSHED: '', TOKEN_MINTED: 'true' },
+    ]) {
+      const result = await recordSelection(env)
+      assert.deepEqual(result.removed, [])
+      assert.deepEqual(result.statuses, [])
+      assert.match(result.updated[0] ?? '', /- \[ \] \*\*Commit the ticked screenshots\*\*/)
+      assert.equal(result.created.length, 1)
+    }
+  })
+})

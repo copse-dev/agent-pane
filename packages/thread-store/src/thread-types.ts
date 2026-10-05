@@ -82,6 +82,13 @@ export interface QueuedUserMessage {
   payload: AgentRunPayload
   createdAt: number
   /**
+   * Model selected for this prompt when it was queued. Human-authored queued
+   * prompts keep this snapshot so a later footer-model change does not retarget
+   * them. Hook-authored prompts omit it and follow the thread selection at drain
+   * time until a user picks one in the queued bubble.
+   */
+  model?: string
+  /**
    * Where the message came from (decision 10). Absent = human-authored. A
    * hook-originated message keeps `kind: 'hook'` even after a human edits it
    * (that flips {@link editedByUser} instead), so authorship is never lost.
@@ -303,6 +310,8 @@ export interface Thread {
    */
   autoTitleCount?: number
   status: ThreadStatus
+  /** A run confirmed absent after reopening Copse. Cleared when another run starts. */
+  interruptedTurnAt?: number
   messages: Message[]
   /**
    * `false` means this thread's transcript has not been read off disk yet, so an
@@ -430,6 +439,11 @@ export interface Thread {
     scheduleId: string
     scheduleName: string
     triggeredAt: number
+    /**
+     * Set when the renderer could not start this run, leaving its prompt as an
+     * unsent draft. Such a run no longer blocks the schedule's next trigger.
+     */
+    startFailedAt?: number
   }
   /**
    * Videos the user has attached to this thread, in the order they were sent.

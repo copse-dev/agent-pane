@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, seedDeveloperModeSetting, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { appendHookRun } from '../../packages/thread-store/src/thread-store.ts'
 import { SPINE_SCHEMA_VERSION } from '../../packages/thread-store/src/spine-schema.ts'
@@ -52,6 +52,8 @@ describe('malformed tool-call recovery inspector copy', function () {
         },
       ],
     })
+    // The inspector is reached through a hook card, a developer-mode surface.
+    seedDeveloperModeSetting(true)
     const cases = [
       {
         id: 'recovery-malformed',

@@ -1,3 +1,4 @@
+import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
@@ -234,43 +235,47 @@ export async function startBackgroundProcess(
     !isProjectSandboxEnabled() ||
     (currentRunUsesGuardedYolo(owner.threadId) && shellRunsOutsideSandbox(command))
 
-  const proc = await spawnBackgroundProcess(command, {
-    cwd,
-    env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
-    allowPortBinding: portBinding,
-    unsandboxed,
+  const entry = await createThreadResource(owner, async () => {
+    const proc = await spawnBackgroundProcess(command, {
+      cwd,
+      env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
+      allowPortBinding: portBinding,
+      unsandboxed,
+    })
+
+    const entry: BackgroundProcess = {
+      id: nextBackgroundOperationId(),
+      command,
+      cwd,
+      proc,
+      startedAt: Date.now(),
+      output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
+      portBinding,
+      unsandboxed,
+      url: null,
+      urlRemote: false,
+      exited: false,
+      exitCode: null,
+      timedOut: false,
+      cancelled: false,
+      completionNotified: false,
+      completionTimer: null,
+      ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+      owner,
+    }
+    processes.set(entry.id, entry)
+
+    if (opts.timeoutMs !== undefined) {
+      entry.completionTimer = setTimeout(() => {
+        if (entry.exited || entry.cancelled) return
+        entry.timedOut = true
+        terminateProcessTree(entry.proc)
+      }, opts.timeoutMs)
+    }
+
+    return entry
   })
-
-  const entry: BackgroundProcess = {
-    id: nextBackgroundOperationId(),
-    command,
-    cwd,
-    proc,
-    startedAt: Date.now(),
-    output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
-    portBinding,
-    unsandboxed,
-    url: null,
-    urlRemote: false,
-    exited: false,
-    exitCode: null,
-    timedOut: false,
-    cancelled: false,
-    completionNotified: false,
-    completionTimer: null,
-    ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
-    owner,
-  }
-  processes.set(entry.id, entry)
-
-  if (opts.timeoutMs !== undefined) {
-    entry.completionTimer = setTimeout(() => {
-      if (entry.exited || entry.cancelled) return
-      entry.timedOut = true
-      terminateProcessTree(entry.proc)
-    }, opts.timeoutMs)
-  }
-
+  const proc = entry.proc
   const waitMs = opts.waitMs ?? (portBinding ? DEFAULT_URL_WAIT_MS : DEFAULT_SETTLE_MS)
   await new Promise<void>((resolve) => {
     let settled = false

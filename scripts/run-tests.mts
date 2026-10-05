@@ -15,6 +15,11 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join, relative, resolve } from 'node:path'
 import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
 import { rewriteModuleRelativeTestPaths } from './lib/module-relative-test-paths.mts'
+import {
+  captureTrackedTestTree,
+  changedTrackedTestFiles,
+  intentionalTestUpdates,
+} from './lib/tracked-test-tree.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
@@ -325,7 +330,10 @@ async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Pr
 // of short-lived children in flight and turn fixed 2s safety deadlines into
 // load-dependent failures. Four keeps independent file workers parallel while
 // bounding that shared OS pressure.
-const TEST_FILE_CONCURRENCY = 4
+// Apple integration files each drive the same host builder from a separate
+// process. Apple container 1.5.0 intermittently fails parallel context transfer;
+// the product's in-process image queue cannot serialize these test processes.
+const TEST_FILE_CONCURRENCY = process.env['COPSE_THREAD_CONTAINER_E2E'] === 'apple' ? 1 : 4
 
 // Bound each test so a hang fails fast and names itself. CI's unit job has hung
 // twice with no failing test: dots stopped, the runner waited until the job
@@ -410,13 +418,27 @@ if (filters.length > 0) {
   for (const f of testFiles) console.log(`  ${f}`)
 }
 
-if (isolatedRun) await mkdir(join(repoRoot, '.tmp'), { recursive: true })
-const outputDir = isolatedRun ? await mkdtemp(join(repoRoot, '.tmp/test-run-')) : fixedOutputDir
-if (isolatedRun) console.log(`[run-tests] output directory: ${outputDir}`)
+const trackedBefore = await captureTrackedTestTree(repoRoot)
+const allowedUpdates = intentionalTestUpdates(process.env)
+let status: number
+try {
+  if (isolatedRun) await mkdir(join(repoRoot, '.tmp'), { recursive: true })
+  const outputDir = isolatedRun ? await mkdtemp(join(repoRoot, '.tmp/test-run-')) : fixedOutputDir
+  if (isolatedRun) console.log(`[run-tests] output directory: ${outputDir}`)
 
-if (testOnly) {
-  process.exit(await runTests(testFiles, outputDir))
-} else {
-  await bundleTests(testFiles, outputDir)
-  if (!bundleOnly) process.exit(await runTests(testFiles, outputDir))
+  if (!testOnly) await bundleTests(testFiles, outputDir)
+  status = bundleOnly ? 0 : await runTests(testFiles, outputDir)
+} finally {
+  const changed = changedTrackedTestFiles(
+    trackedBefore,
+    await captureTrackedTestTree(repoRoot),
+    allowedUpdates,
+  )
+  if (changed.length > 0) {
+    console.error('[run-tests] tests changed tracked files:')
+    for (const path of changed) console.error(`  ${path}`)
+    console.error('[run-tests] inspect the diff; source and index changes have been left intact.')
+    status = 1
+  }
 }
+process.exit(status)

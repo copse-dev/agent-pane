@@ -90,7 +90,10 @@ describe('unattended container run (browser-hosted)', () => {
     expect(bannerText).toContain('3 commits back, 1 waiting for review')
     // The run is the thread's own work: its 412,310 in + 38,902 out stay in
     // the footer total rather than being folded out as a subagent's share.
-    await expect($('.footer-usage')).toHaveText('451.2k tokens')
+    await $('.context-wheel').moveTo()
+    await expect($('.context-wheel-popover .footer-usage-popover-header')).toHaveText(
+      'Usage · 451.2k tokens',
+    )
     // Dismiss is the kit's close icon, not a literal "×" glyph.
     await expect(banner.$('.container-run-dismiss svg[data-icon="close"]')).toBeExisting()
     expect((await banner.$('.container-run-dismiss').getText()).trim()).toBe('')
@@ -243,6 +246,54 @@ describe('unattended container run (browser-hosted)', () => {
     await saveElementScreenshot('#container-run-dialog', 'container-run-failed-result.png')
   })
 
+  it('says an Apple container run was isolated by a VM of its own, not seccomp', async () => {
+    await browser.url('/?scenario=container-run')
+    await $('.container-run-banner').waitForDisplayed()
+    await $('.container-run-details').click()
+    await $('.container-run-again').click()
+
+    // The record as the runner writes it under Apple container, injected at
+    // the demo API boundary like the failed run above.
+    await browser.execute(async () => {
+      const run = await window.api.container.getRun('demo-container-thread')
+      if (!run?.record) throw new Error('Expected the container demo record')
+      const apple = {
+        ...run,
+        record: {
+          ...run.record,
+          attestation: {
+            ...run.record.attestation,
+            engine: 'apple' as const,
+            isolation: 'vm' as const,
+            securityProfiles: 'none' as const,
+            processLimit: 'rlimit-nproc' as const,
+            perCommandNetwork: 'token-gated' as const,
+          },
+        },
+      }
+      window.api.container.runThread = () => Promise.resolve(apple)
+    })
+    await $('.container-run-start').click()
+    await $('.container-run-details').click()
+    const dialog = await $('#container-run-dialog')
+    await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'finished')
+    const summary = await dialog.$('.container-run-summary').getText()
+    expect(summary).toMatch(
+      /Containment\s*read-only rootfs, no capabilities, its own VM \(Apple container\), brokered egress, shell commands off the network/,
+    )
+    // No seccomp or AppArmor claim for a guest that has neither.
+    expect(summary).not.toContain('seccomp')
+    // The dialog opens scrolled to the log; bring the row under review into the shot.
+    await browser.execute(() => {
+      const label = [...document.querySelectorAll('#container-run-dialog dt')].find(
+        (dt) => dt.textContent === 'Containment',
+      )
+      if (!label) throw new Error('no Containment row')
+      label.scrollIntoView({ block: 'center' })
+    })
+    await saveElementScreenshot('#container-run-dialog', 'container-run-result-apple.png')
+  })
+
   it('offers the container as the follow-up target and continues the run from the composer', async () => {
     await browser.url('/?scenario=container-run')
     await $('.container-run-banner').waitForDisplayed()
@@ -255,7 +306,24 @@ describe('unattended container run (browser-hosted)', () => {
 
     await $('.prompt-input').setValue('Now add a test for the formatter change')
     await $('.submit-btn').click()
-    // The follow-up is a user message and a new, running card; the composer is empty.
+    const dialog = await $('.container-run-dialog')
+    await dialog.waitForDisplayed()
+    await expect($('.container-run-title')).toHaveText('Review the container follow-up')
+    await expect($('.container-run-minutes')).toHaveValue('3')
+    await expect($('.container-run-tokens')).toHaveValue('20000')
+    await expect($('.container-run-install')).not.toBeChecked()
+    const beforeStart = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+    expect(beforeStart.length).toBe(1)
+    expect(await $('.prompt-input').getText()).toContain('Now add a test')
+    await saveElementScreenshot('.container-run-dialog', 'container-run-follow-up-form.png')
+    await $('.container-run-start').scrollIntoView()
+    await expect($('.container-run-install')).not.toBeChecked()
+    await expect($('.container-run-agent-login')).not.toBeChecked()
+    await expect($('.container-run-start')).toBeEnabled()
+    await saveElementScreenshot('.container-run-dialog', 'container-run-follow-up-confirm.png')
+    await $('.container-run-start').click()
+    await dialog.waitForDisplayed({ reverse: true })
+    // Confirmation adds the follow-up and a running card, then empties the composer.
     await browser.waitUntil(async () => {
       const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
       return cards.length === 2

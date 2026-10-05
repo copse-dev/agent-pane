@@ -1,3 +1,4 @@
+import { createThreadResource } from '../services/thread-resource-fence.ts'
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { runWithRendererPromptTarget } from '../services/renderer-prompt-target.ts'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
@@ -37,7 +38,7 @@ const terminalMetaSchema = z.tuple([
   zSessionId,
   z.object({
     label: z.string().max(200).optional(),
-    threadId: z.string().max(128).nullable().optional(),
+    threadId: zThreadId.nullable().optional(),
   }),
 ])
 
@@ -94,20 +95,28 @@ export function initTerminal(win: BrowserWindow): () => void {
     return runWithRendererPromptTarget(event.sender, async () => {
       const permitted = await ensureTerminalPermitted()
       if (!permitted) throw new Error('Terminal access was not approved')
-      const execution = await resolveTerminalRoot(meta)
-      // Route to the renderer that asked, not to the window captured at init.
-      // Every other terminal op is already keyed on `event.sender.id`; only the
-      // output target was not, so a pane pop-out's shell wrote to the main window
-      // — which had no tab for that session and dropped it (#1705).
-      trackOwnerTeardown(event.sender)
-      const sessionId = await createTerminalSession(
-        event.sender,
-        cols,
-        rows,
-        { ...normalizeMeta(meta), projectId: meta.projectId },
-        execution.root,
-      )
-      return { sessionId, checkoutMode: execution.checkoutMode }
+      const create = async (): Promise<{
+        sessionId: string
+        checkoutMode: Awaited<ReturnType<typeof resolveTerminalRoot>>['checkoutMode']
+      }> => {
+        const execution = await resolveTerminalRoot(meta)
+        // Route to the renderer that asked, not to the window captured at init.
+        // Every other terminal op is already keyed on `event.sender.id`; only the
+        // output target was not, so a pane pop-out's shell wrote to the main window
+        // — which had no tab for that session and dropped it (#1705).
+        trackOwnerTeardown(event.sender)
+        const sessionId = await createTerminalSession(
+          event.sender,
+          cols,
+          rows,
+          { ...normalizeMeta(meta), projectId: meta.projectId },
+          execution.root,
+        )
+        return { sessionId, checkoutMode: execution.checkoutMode }
+      }
+      return meta.threadId
+        ? createThreadResource({ projectId: meta.projectId, threadId: meta.threadId }, create)
+        : create()
     })
   })
 
@@ -137,7 +146,7 @@ export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:set-meta', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [id, meta] = parseIpcArgs(terminalMetaSchema, rawArgs)
-    setTerminalSessionMeta(id, event.sender.id, normalizeMeta(meta))
+    return setTerminalSessionMeta(id, event.sender.id, normalizeMeta(meta))
   })
 
   ipcMain.handle('terminal:set-active', (event, sessionId: unknown) => {

@@ -26,6 +26,7 @@
  * `COPSE_CI_REGISTRY` so `up` skips the on-host bake entirely.
  * Runs need no GitHub credentials and no LLM keys — e2e drives the built-in mock.
  */
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import {
@@ -1338,4 +1339,4 @@ async function main(): Promise<void> {
 
 // Only run the CLI when executed directly — the pure helpers above are
 // imported by remote-e2e.test.ts.
-if (process.argv[1]?.endsWith('remote-e2e.mts')) void main()
+if (isDirectExecution(import.meta.url, 'remote-e2e')) void main()

@@ -39,7 +39,9 @@ import {
   isRefusalStopReason,
   MAX_CONSECUTIVE_MALFORMED_TOOL_CALLS,
   MAX_MALFORMED_TOOL_CALLS_PER_RUN,
+  REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
+  REASONING_RUNAWAY_SUPPRESSED_NUDGE,
   REFUSAL_USER_MESSAGE,
 } from '@copse/llm/provider-stop-reason.ts'
 import {
@@ -77,6 +79,11 @@ import {
   type ReasoningCheckpointRecord,
   type ReasoningCircleSignal,
 } from './reasoning-circle-detector.ts'
+import {
+  REASONING_BUDGET_CARRY_FORWARD_HOOK_ID,
+  buildReasoningBudgetCarryForwardNudge,
+  validateReasoningSoftBudget,
+} from './reasoning-budget.ts'
 
 /**
  * Recent tool-call fingerprints (and per-attempt progress markers) kept for
@@ -97,8 +104,17 @@ const RECENT_FINGERPRINT_WINDOW = 32
  * dedup).
  */
 const RECENT_REASONING_TEXT_WINDOW = 6
-/** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
-const MAX_REASONING_RUNAWAY_STREAK = 2
+/**
+ * Recovery ladder for consecutive reasoning-only runaway streams (no answer, no
+ * tool call). Cut 1: force-answer nudge. Cut 2: a reasoning-suppressed,
+ * tool-enabled recovery turn under a tiny cap. Cut 3 (a suppressed turn that
+ * still ran away): the ladder is exhausted and the run ends terminally. Any
+ * answer or tool call resets the streak, so this is a per-stall bound.
+ */
+const REASONING_SUPPRESSION_STREAK = 2
+const MAX_REASONING_RUNAWAY_STREAK = 3
+/** Reasoning/text cap for the suppressed recovery turn (tool calls are exempt). */
+const DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS = 1_024
 /** Do not compact on the first tool round unless the transcript is critically full. */
 const TRIM_CRITICAL_FILL = 0.95
 /** After this many tool rounds, always allow normal in-loop compaction. */
@@ -184,6 +200,8 @@ export interface AgentLoopOptions {
    * product-wide limit; benchmark hosts may lower it for slower local models.
    */
   maxStreamOutputTokens?: number
+  /** Explicit historical strategy selected by immutable benchmark profiles. */
+  reasoningRunawayRecoveryStrategy?: 'legacy-two-cut-v1' | 'suppression-ladder-v1'
   /**
    * Optional per-stream cap for the single retry after a reasoning-runaway
    * nudge. Hosts may allow that bounded recovery more room to reach a tool call
@@ -195,6 +213,16 @@ export interface AgentLoopOptions {
    * cap. The default remains the product's concise final-answer nudge.
    */
   reasoningRunawayRecoveryNudge?: string
+  /**
+   * Text for the reasoning-suppressed recovery turn (second consecutive runaway).
+   * Defaults to a product nudge asking for one concrete tool call.
+   */
+  reasoningRunawaySuppressedNudge?: string
+  /**
+   * Per-stream reasoning/text cap for that suppressed turn. A tool call is never
+   * cut by it. Defaults to {@link DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS}.
+   */
+  reasoningRunawaySuppressedOutputTokens?: number
   /**
    * Visible-text allowance when classifying a capped stream as reasoning-only.
    * Defaults to zero; terminal hosts may ignore a short planning preamble.
@@ -1113,6 +1141,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     maxStreamOutputTokens,
     reasoningRunawayRecoveryOutputTokens,
     reasoningRunawayRecoveryNudge,
+    reasoningRunawaySuppressedNudge = REASONING_RUNAWAY_SUPPRESSED_NUDGE,
+    reasoningRunawaySuppressedOutputTokens = DEFAULT_REASONING_SUPPRESSED_OUTPUT_TOKENS,
     reasoningRunawayTextToleranceChars = 0,
     reasoningCheckpointPolicy,
     allowForcedTextEscalation = true,
@@ -1131,7 +1161,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     recordStreamCut,
     recordReasoningCheckpoint: reasoningCheckpointSink,
   } = opts
-  if (reasoningCheckpointPolicy) validateReasoningCheckpointPolicy(reasoningCheckpointPolicy)
+  if (reasoningCheckpointPolicy) {
+    validateReasoningCheckpointPolicy(reasoningCheckpointPolicy)
+    if (reasoningCheckpointPolicy.softReasoningBudget) {
+      validateReasoningSoftBudget(reasoningCheckpointPolicy.softReasoningBudget)
+    }
+  }
   const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
     llmCalls: 0,
@@ -1163,8 +1198,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let initialToolChoice = opts.initialToolChoice
   let trimEvents = 0
   // Consecutive streams cut off by the per-stream output cap while producing only
-  // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
-  // second means the model is stuck looping, so the run ends instead of re-priming.
+  // reasoning (no answer, no tool call). Legacy recovery ends after two cuts;
+  // the suppression ladder allows a final answer attempt after disabling reasoning.
+  const legacyRunawayRecovery = opts.reasoningRunawayRecoveryStrategy === 'legacy-two-cut-v1'
   let reasoningRunawayStreak = 0
   // Streams whose tool call the provider could not parse (cut off at the output
   // ceiling, or malformed). Each gets a bounded "emit a smaller call" nudge; past
@@ -1172,6 +1208,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // did before recovery existed, rather than looping to the deadline.
   let consecutiveMalformedToolCalls = 0
   let malformedToolCallsThisRun = 0
+  let reasoningRunawayExhausted = false
+  // Soft reasoning budget (see reasoning-budget.ts): cuts this run, and cuts in a row.
+  let softBudgetCutsInRun = 0
+  let softBudgetCutStreak = 0
   const recentFingerprints: string[] = []
   // One entry per recent tool attempt: a fingerprint means successful,
   // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
@@ -1442,24 +1482,52 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let trailingReasoningCut = false
     let trailingReasoningCutTokens: number | undefined
     let streamCappedAsRunaway = false
+    let softBudgetCut = false
+    const softBudget = reasoningCheckpointPolicy?.softReasoningBudget
+    const softBudgetArmed =
+      softBudget !== undefined &&
+      reasoningRunawayStreak === 0 &&
+      softBudgetCutsInRun < softBudget.maxCutsPerRun &&
+      softBudgetCutStreak < softBudget.maxConsecutiveCuts
     let streamCutReason: StreamCutRecord['cutReason'] = 'reasoning_runaway_cap'
-    const effectiveMaxStreamOutputTokens =
-      reasoningRunawayStreak > 0
+    // Rung 2 of the runaway ladder: this stream is the reasoning-suppressed
+    // recovery turn, so it gets a much tighter cap and a provider hint to skip
+    // thinking. Tool calls are exempt from the cap, so a bare tool call lands.
+    const suppressReasoning =
+      !legacyRunawayRecovery && reasoningRunawayStreak >= REASONING_SUPPRESSION_STREAK
+    const effectiveMaxStreamOutputTokens = suppressReasoning
+      ? reasoningRunawaySuppressedOutputTokens
+      : reasoningRunawayStreak > 0
         ? (reasoningRunawayRecoveryOutputTokens ?? maxStreamOutputTokens)
         : maxStreamOutputTokens
     const reasoningCheckpointHardMax = reasoningCheckpointPolicy
-      ? reasoningRunawayStreak > 0
-        ? reasoningCheckpointPolicy.maxRecoveryTokens
-        : reasoningCheckpointPolicy.maxInitialTokens
+      ? suppressReasoning
+        ? Math.min(
+            reasoningRunawaySuppressedOutputTokens,
+            reasoningCheckpointPolicy.maxRecoveryTokens,
+          )
+        : reasoningRunawayStreak > 0
+          ? reasoningCheckpointPolicy.maxRecoveryTokens
+          : reasoningCheckpointPolicy.maxInitialTokens
       : undefined
-    let nextReasoningCheckpoint = reasoningCheckpointPolicy?.intervalTokens
+    let nextReasoningCheckpoint = reasoningCheckpointPolicy
+      ? suppressReasoning
+        ? Math.min(reasoningCheckpointPolicy.intervalTokens, reasoningRunawaySuppressedOutputTokens)
+        : reasoningCheckpointPolicy.intervalTokens
+      : undefined
     let nextTrailingReasoningCheckpoint = reasoningCheckpointPolicy?.maxTrailingReasoningTokens
       ? reasoningCheckpointPolicy.intervalTokens
       : undefined
 
     budget.deadline.pause()
     try {
-      const streamOptions = initialToolChoice ? { toolChoice: initialToolChoice } : undefined
+      const streamOptions: LLMStreamOptions | undefined =
+        initialToolChoice || suppressReasoning
+          ? {
+              ...(initialToolChoice ? { toolChoice: initialToolChoice } : {}),
+              ...(suppressReasoning ? { suppressReasoning: true } : {}),
+            }
+          : undefined
       initialToolChoice = undefined
       for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
         if (signal?.aborted) break
@@ -1517,6 +1585,32 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // treat the partial turn as truncated so the loop can recover (#489).
         if (!pendingToolCalls.length) {
           if (reasoningCheckpointPolicy && reasoningCheckpointHardMax && nextReasoningCheckpoint) {
+            // Soft budget first: a tool-less, answer-less stream that has spent its
+            // per-step reasoning allowance is cut now and carried forward as a
+            // partial plan (applied after the stream), rather than left to run to
+            // the hard cap and be discarded whole.
+            if (
+              softBudget &&
+              softBudgetArmed &&
+              streamReasoningChars > assistantText.length &&
+              assistantText.trim().length <= reasoningRunawayTextToleranceChars &&
+              isStreamOutputRunaway(streamReasoningChars, softBudget.tokens)
+            ) {
+              recordReasoningCheckpoint(reasoningCheckpointSink, {
+                step: budget.llmCalls,
+                checkpointTokens: softBudget.tokens,
+                hardMaxTokens: reasoningCheckpointHardMax,
+                streamOutputChars,
+                streamReasoningChars,
+                visibleTextChars: assistantText.length,
+                decision: 'cut',
+                signals: [],
+                cause: 'soft_budget',
+              })
+              softBudgetCut = true
+              streamCutReason = 'reasoning_budget_soft'
+              break
+            }
             // Trailing reasoning is checkpointed first and on its own budget: the
             // whole-stream checkpoints below classify any stream carrying a real
             // answer as non-reasoning, so without this a post-answer loop rides
@@ -1715,27 +1809,38 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       streamReasoningChars > assistantText.length &&
       assistantText.trim().length <= reasoningRunawayTextToleranceChars
 
-    if (streamCappedAsRunaway || trailingReasoningCut) {
+    if (streamCappedAsRunaway || trailingReasoningCut || softBudgetCut) {
       emitStreamCutRecord(recordStreamCut, {
         step: budget.llmCalls,
         cutReason: streamCutReason,
-        streamOutputTokenLimit: trailingReasoningCut
-          ? trailingReasoningCutTokens
-          : reasoningCheckpointPolicy && nextReasoningCheckpoint
-            ? nextReasoningCheckpoint
-            : effectiveMaxStreamOutputTokens,
+        streamOutputTokenLimit: softBudgetCut
+          ? softBudget?.tokens
+          : trailingReasoningCut
+            ? trailingReasoningCutTokens
+            : reasoningCheckpointPolicy && nextReasoningCheckpoint
+              ? nextReasoningCheckpoint
+              : effectiveMaxStreamOutputTokens,
         streamOutputChars,
         streamReasoningChars,
         reasoningText: streamReasoningText,
         hasToolCalls: pendingToolCalls.length > 0,
         toolCallCount: pendingToolCalls.length,
-        stopReason: stopReason ?? (trailingReasoningCut ? 'trailing_reasoning' : 'max_tokens'),
+        stopReason:
+          stopReason ??
+          (softBudgetCut
+            ? 'reasoning_budget'
+            : trailingReasoningCut
+              ? 'trailing_reasoning'
+              : 'max_tokens'),
         streamCappedAsRunaway: true,
         reasoningRunawayStreak,
-        willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,
+        willInjectReasoningRunawayNudge: !softBudgetCut && reasoningRunawayNudge !== undefined,
       })
     }
 
+    // Every non-soft-cut stream breaks the streak, including malformed recovery
+    // streams which continue before ordinary assistant/tool history handling.
+    if (!softBudgetCut) softBudgetCutStreak = 0
     if (malformedToolCallNudge !== undefined) {
       // The provider could not parse this stream's tool call. Keep whatever
       // usable output arrived (calls that parsed before the failure still run),
@@ -1771,6 +1876,27 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         hookId: MALFORMED_TOOL_CALL_HOOK_ID,
         mechanism: 'tool-enabled-message',
         text: malformedToolCallNudge,
+      })
+      continue
+    }
+
+    if (softBudgetCut && softBudget && pendingToolCalls.length === 0 && !streamCappedAsRunaway) {
+      // Carry the cut reasoning forward as a bounded partial plan and continue
+      // with a tool-enabled turn. In-loop nudge: it spends a step and an LLM
+      // call but never the continuation budget, and the per-run and consecutive
+      // caps keep it bounded; past them the hard caps and give-up path own it.
+      softBudgetCutsInRun++
+      softBudgetCutStreak++
+      const carryForward = buildReasoningBudgetCarryForwardNudge(streamReasoningText, {
+        carryChars: softBudget.carryChars,
+        cutNumber: softBudgetCutStreak,
+      })
+      messages.push({ role: 'user', content: carryForward })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: REASONING_BUDGET_CARRY_FORWARD_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: carryForward,
       })
       continue
     }
@@ -1835,24 +1961,32 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // the truncation-continue nudge ("continue from where you left off") has
         // nothing to continue and just re-primes the same loop. The
         // `reasoning-runaway` hook fires instead (`reasoningRunawayNudge`),
-        // pushing the model to commit to an answer; if it ignores that and runs
-        // the cap again, it is stuck looping, so the run ends rather than
-        // re-priming until the wall-clock deadline (the streak / give-up terminal
-        // stays a bounded loop mechanism).
+        // pushing the model to commit to an answer. Consecutive cuts climb a
+        // bounded ladder (see REASONING_SUPPRESSION_STREAK): a second cut runs a
+        // reasoning-suppressed, tightly capped, tool-enabled recovery turn, and
+        // only a third ends the run (terminal stop reason), rather than
+        // re-priming until the wall-clock deadline.
         if (reasoningRunawayNudge !== undefined) {
           reasoningRunawayStreak++
-          if (reasoningRunawayStreak >= MAX_REASONING_RUNAWAY_STREAK) {
+          if (
+            reasoningRunawayStreak >= (legacyRunawayRecovery ? 2 : MAX_REASONING_RUNAWAY_STREAK)
+          ) {
             onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             messages.push({ role: 'assistant', content: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             finishedWithAnswer = true
+            reasoningRunawayExhausted = !legacyRunawayRecovery
             break
           }
-          messages.push({ role: 'user', content: reasoningRunawayNudge })
+          const ladderNudge =
+            reasoningRunawayStreak >= REASONING_SUPPRESSION_STREAK
+              ? reasoningRunawaySuppressedNudge
+              : reasoningRunawayNudge
+          messages.push({ role: 'user', content: ladderNudge })
           recordAppliedNudge(appliedNudgeSink, {
             step: budget.llmCalls,
             hookId: REASONING_RUNAWAY_HOOK_ID,
             mechanism: 'tool-enabled-message',
-            text: reasoningRunawayNudge,
+            text: ladderNudge,
           })
           continue
         }
@@ -2037,6 +2171,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
   const terminalRunLimitStopReason =
     runLimitStopReason ?? (isAgentRunTimeoutAbort(signal) ? 'timeout' : null)
+  const terminalStopReason: string | null = reasoningRunawayExhausted
+    ? REASONING_RUNAWAY_EXHAUSTED_STOP_REASON
+    : terminalRunLimitStopReason
   if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
@@ -2050,8 +2187,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   repairToolUseToolResultPairing(messages)
 
   onChunk(
-    terminalRunLimitStopReason === null
+    terminalStopReason === null
       ? { type: 'done' }
-      : { type: 'done', stopReason: terminalRunLimitStopReason },
+      : { type: 'done', stopReason: terminalStopReason },
   )
 }

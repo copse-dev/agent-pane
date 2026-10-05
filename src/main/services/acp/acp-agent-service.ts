@@ -194,8 +194,16 @@ export interface RunAcpAgentResult {
 }
 
 export interface AcpTurnUsage {
+  /**
+   * All input the turn consumed — fresh + cache-read + cache-creation — the same
+   * meaning every in-process provider records (see docs/prompt-caching.md).
+   */
   inputTokens: number
   outputTokens: number
+  /** Portion of `inputTokens` the agent read from its prompt cache. */
+  cacheReadTokens?: number
+  /** Portion of `inputTokens` the agent wrote to its prompt cache. */
+  cacheCreationTokens?: number
   /** True when counts were estimated locally because the agent didn't report usage. */
   estimated: boolean
 }
@@ -205,15 +213,45 @@ export interface AcpTurnUsage {
  * when it has any tokens, else fall back to a ~4 chars/token estimate of the
  * prompt we sent and the text we received (flagged `estimated`). Pure, so the
  * fallback arithmetic is unit-tested without spawning an agent.
+ *
+ * ACP's `inputTokens` excludes cached input: `claude-agent-acp` reports
+ * Anthropic's `input_tokens`, and `codex-acp` subtracts OpenAI's cached input
+ * before reporting it. Copse records input as fresh + cache-read +
+ * cache-creation, so the cache counts are folded in here. ACP defines
+ * `totalTokens` as the sum of every token type, so an agent whose total is below
+ * input + output + cache has already counted cache in its input and is taken
+ * as reported.
  */
 export function acpTurnUsage(
-  reported: { inputTokens?: number | null; outputTokens?: number | null } | null | undefined,
+  reported:
+    | Partial<
+        Pick<
+          Usage,
+          'inputTokens' | 'outputTokens' | 'totalTokens' | 'cachedReadTokens' | 'cachedWriteTokens'
+        >
+      >
+    | null
+    | undefined,
   promptText: string,
   responseText: string,
 ): AcpTurnUsage {
-  const inputTokens = reported?.inputTokens ?? 0
+  const reportedInput = reported?.inputTokens ?? 0
   const outputTokens = reported?.outputTokens ?? 0
-  if (inputTokens || outputTokens) return { inputTokens, outputTokens, estimated: false }
+  const cacheReadTokens = reported?.cachedReadTokens ?? undefined
+  const cacheCreationTokens = reported?.cachedWriteTokens ?? undefined
+  const cached = (cacheReadTokens ?? 0) + (cacheCreationTokens ?? 0)
+  const totalTokens = reported?.totalTokens ?? 0
+  const inputIncludesCache = totalTokens > 0 && totalTokens < reportedInput + outputTokens + cached
+  const inputTokens = inputIncludesCache ? reportedInput : reportedInput + cached
+  if (inputTokens || outputTokens) {
+    return {
+      inputTokens,
+      outputTokens,
+      ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+      ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+      estimated: false,
+    }
+  }
   return {
     inputTokens: Math.ceil(promptText.length / CHARS_PER_TOKEN),
     outputTokens: Math.ceil(responseText.length / CHARS_PER_TOKEN),
@@ -685,8 +723,10 @@ export async function runAcpAgentFromSettings(
       inputTokens: turn.inputTokens,
       outputTokens: turn.outputTokens,
       ...(turn.estimated ? { estimated: true } : {}),
-      ...(usage?.cachedReadTokens != null ? { cacheReadTokens: usage.cachedReadTokens } : {}),
-      ...(usage?.cachedWriteTokens != null ? { cacheCreationTokens: usage.cachedWriteTokens } : {}),
+      ...(turn.cacheReadTokens !== undefined ? { cacheReadTokens: turn.cacheReadTokens } : {}),
+      ...(turn.cacheCreationTokens !== undefined
+        ? { cacheCreationTokens: turn.cacheCreationTokens }
+        : {}),
     })
   }
 

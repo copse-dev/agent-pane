@@ -1,4 +1,9 @@
+import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { storageCleanup } from '../services/storage-cleanup.ts'
+import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
+import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
+import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
@@ -7,7 +12,7 @@ import {
   readThirdPartyLicenseReport,
 } from '../services/about/third-party-licenses.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -25,7 +30,7 @@ import {
 } from '../services/classifiers/classifier-service.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { runCommand } from '../services/exec/command-runner.ts'
+import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
@@ -41,6 +46,7 @@ import {
   captureBrowserPageText,
   exportBrowserPageHtml,
   captureBrowserScreenshot,
+  captureBrowserScrollPosition,
   exportCanvasArtefact,
   exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
@@ -173,6 +179,7 @@ import {
   type ThreadDeletionRuntime,
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
+import { archiveStoredThread } from '../services/thread-archiving.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -189,6 +196,12 @@ import {
   readVideoForPlayback,
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
+import {
+  applyThreadHistoryEdit,
+  loadThreadHistorySnapshot,
+  undoThreadHistoryEdit,
+  type ThreadHistoryEditRuntime,
+} from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -379,8 +392,11 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
+import { signInMcpServer, signOutMcpServer } from '../services/mcp/mcp-oauth.ts'
 import {
   getMcpServerStatuses,
+  getMcpSignInTarget,
+  onMcpStatusesChanged,
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
@@ -504,25 +520,6 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
   })
 }
 
-// Starter guidance written to a newly-created project's AGENT.md. Kept in the
-// main process (not the renderer) so the file is written at the trust boundary
-// alongside the folder itself; the text steers the agent to plan and ask before
-// acting in a codebase it has never seen.
-const STARTER_AGENT_MD = `# Project guide
-
-This is a new project scaffolded in Copse. Add project-specific context here that
-you want the coding agent to follow on every turn.
-
-## Working style
-
-- This project is new and may have no existing conventions yet. Before making
-  changes, explore the codebase, then propose a plan and ask clarifying questions.
-- Prefer plan mode: lay out what you intend to do and confirm the approach before
-  writing code or running destructive commands.
-- Keep changes small and reviewable; prefer to ask rather than assume when an
-  intent is ambiguous.
-`
-
 function processManagerLabels(): Map<number, string> {
   const labels = new Map<number, string>()
   for (const window of BrowserWindow.getAllWindows()) {
@@ -557,6 +554,7 @@ export function registerAllHandlers(
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
+  threadHistoryEditRuntime: ThreadHistoryEditRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
@@ -736,37 +734,7 @@ export function registerAllHandlers(
         projectMissing = true
       }
       if (projectMissing) await mkdir(projectPath, { recursive: true })
-      await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
-      await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
-      // git init -b main keeps the initial branch name stable regardless of the
-      // user's global init.defaultBranch / git template config.
-      //
-      // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
-      // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
-      // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
-      // scaffolding above is main-process `fs` and never hit that wall, which is
-      // why the failure only surfaced once the exit code was checked.
-      const init = await runCommand('git', ['init', '-b', 'main'], {
-        cwd: projectPath,
-        timeout_ms: 0,
-        unsandboxed: true,
-      })
-      // `runCommand` resolves with the exit code rather than rejecting, so an
-      // unchecked call silently accepts a failed `git init`: the folder scaffolds,
-      // the project registers, and the user gets a "project" that is not a
-      // repository — with the reason discarded at the only point that had it.
-      // Everything downstream (branch chip, Changes, worktrees) then fails in ways
-      // that never mention Git.
-      if (init.code !== 0) {
-        // A folder we created ourselves is ours to remove. Leaving it behind would
-        // trap the retry: the emptiness check above rejects the same name on the
-        // second attempt. A pre-existing (empty) folder is the user's, so it stays.
-        if (projectMissing) await rm(projectPath, { recursive: true, force: true })
-        const detail = (init.stderr || init.stdout).trim()
-        throw new Error(
-          `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
-        )
-      }
+      await scaffoldProject(projectPath, name, projectMissing)
       const root = await registerAllowedWorkspaceRoot(projectPath)
       return root
     },
@@ -806,6 +774,10 @@ export function registerAllHandlers(
 
   ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
     return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+  })
+
+  ipcMain.handle('browser:scroll-position', async (event, rawId: unknown) => {
+    return await captureBrowserScrollPosition(interactiveBrowserContents(event, rawId))
   })
 
   ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
@@ -1400,6 +1372,37 @@ export function registerAllHandlers(
     return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
 
+  ipcMain.handle('chat-gpt-plan:status', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().status()
+  })
+  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signIn(
+      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
+    )
+  })
+  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
+    assertMainFrameSender(event, win)
+    getChatGptPlanService().cancelSignIn()
+  })
+  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
+  })
+  ipcMain.handle('chat-gpt-plan:models', (event) => {
+    assertMainFrameSender(event, win)
+    return getChatGptPlanService().models()
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1439,6 +1442,35 @@ export function registerAllHandlers(
         : alertUser
     alert('thread-finished', `${title} is ready.`, threadId)
   })
+  async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
+    if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
+    if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
+      await initSkillsRegistry()
+      registerSkillTools(registry)
+    }
+    if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
+    if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
+      syncOrchestrationStrategyTools(registry)
+    if (changedKeys.has(DEVELOPER_MODE_SETTING)) {
+      const win = getMainWindow()
+      if (win)
+        buildAppMenu(
+          { getFocusedWindow: getFocusedMainWindow, createWindow: createMainWindow },
+          getSetting(DEVELOPER_MODE_SETTING, false),
+        )
+    }
+  }
+
+  ipcMain.handle('settings:get-snapshot', (event) => {
+    assertMainFrameSender(event, win)
+    return getSettingsSnapshot()
+  })
+  ipcMain.handle('settings:update', async (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    const changes = await updateSettings(raw)
+    await syncChangedSettings(new Set(Object.keys(changes)))
+  })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -1446,36 +1478,7 @@ export function registerAllHandlers(
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
-    if (k === 'alertOnInteraction') refreshNeedsInputBadge()
-    if (SKILLS_RELOAD_KEYS.has(k)) {
-      await initSkillsRegistry()
-      registerSkillTools(registry)
-    }
-    if (k === READ_TERMINAL_ENABLED_SETTING) {
-      syncReadTerminalTools(registry)
-    }
-    // Experimental tool toggles: apply live instead of waiting for a restart.
-    if (k === MODEL_CLASSIFIER_ENABLED_SETTING) {
-      syncModelClassifierTools(registry)
-    }
-    if (k === ORCHESTRATION_STRATEGY_ENABLED_SETTING) {
-      syncOrchestrationStrategyTools(registry)
-    }
-    // Keep the native diagnostics menu in sync with Developer mode. The
-    // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
-    if (k === DEVELOPER_MODE_SETTING) {
-      const win = getMainWindow()
-      const enabled = typeof value === 'boolean' && value
-      if (win) {
-        buildAppMenu(
-          {
-            getFocusedWindow: getFocusedMainWindow,
-            createWindow: createMainWindow,
-          },
-          enabled,
-        )
-      }
-    }
+    await syncChangedSettings(new Set([k]))
   })
   ipcMain.handle('settings:set-security', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -1712,6 +1715,18 @@ export function registerAllHandlers(
     if (!resolved) throw new Error('No project to export decisions for.')
     return exportDecisionLog(resolved)
   })
+  ipcMain.handle('storage:maintenance', (event) => {
+    assertMainFrameSender(event, win)
+    return inspectStorageMaintenance()
+  })
+  ipcMain.handle('storage:cleanup', (event, area: unknown) => {
+    assertMainFrameSender(event, win)
+    return storageCleanup().clean(parseIpcArgs(storageAreaSchema, [area]))
+  })
+  ipcMain.handle('storage:retention', (event, policy: unknown) => {
+    assertMainFrameSender(event, win)
+    saveStorageRetention(parseIpcArgs(storageRetentionSchema, [policy]))
+  })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -1779,7 +1794,6 @@ export function registerAllHandlers(
       prompt: parsed.prompt,
       model: parsed.model,
       budgets: parsed.budgets,
-      ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
       ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
       ...(parsed.installDependencies !== undefined
         ? { installDependencies: parsed.installDependencies }
@@ -1938,6 +1952,24 @@ export function registerAllHandlers(
       return recordModelSelection(pid, tid, line).then(() => selection)
     },
   )
+  ipcMain.handle(
+    'threads:archive',
+    (event, projectId: unknown, threadId: unknown, discard: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, discardChanges] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .nullable(),
+        ]),
+        [projectId, threadId, discard],
+      )
+      return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)
+    },
+  )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
@@ -1961,6 +1993,48 @@ export function registerAllHandlers(
         [projectId, sourceThreadId, targetThreadId, throughMessageId],
       )
       return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
+  ipcMain.handle('threads:history-snapshot', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadHistorySnapshot(pid, tid)
+  })
+  ipcMain.handle(
+    'threads:edit-history',
+    (event, projectId: unknown, threadId: unknown, request: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            expectedRevision: z.string().length(64),
+            messages: z
+              .array(
+                z.object({
+                  id: zNonEmptyString.max(256),
+                  content: z.string().max(1_000_000),
+                  included: z.boolean(),
+                }),
+              )
+              .max(10_000),
+          }),
+        ]),
+        [projectId, threadId, request],
+      )
+      return applyThreadHistoryEdit(pid, tid, payload, threadHistoryEditRuntime)
+    },
+  )
+  ipcMain.handle(
+    'threads:undo-history-edit',
+    (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, revision] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().length(64)]),
+        [projectId, threadId, expectedRevision],
+      )
+      return undoThreadHistoryEdit(pid, tid, revision, threadHistoryEditRuntime)
     },
   )
   // The whole thread directory, zipped — the archive counterpart to the
@@ -3097,7 +3171,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
     assertMainFrameSender(event, win)
-    return { version: app.getVersion(), report: await readThirdPartyLicenseReport() }
+    return { version: getElectronAppVersion(), report: await readThirdPartyLicenseReport() }
   })
   ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
     assertMainFrameSender(event, win)
@@ -3217,6 +3291,52 @@ export function registerAllHandlers(
       enabled,
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return statuses
+  })
+  // Status changes the registry makes on its own (a sign-in refused while a
+  // server was connected) reach Settings the same way a reload's do.
+  onMcpStatusesChanged((statuses) => {
+    if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+  })
+  // One browser sign-in per server at a time; starting another cancels the first.
+  const mcpSignIns = new Map<string, AbortController>()
+  const mcpSignInTargetUrl = (name: string): string => {
+    const target = getMcpSignInTarget(name)
+    if (target?.url === undefined) {
+      throw new Error(`"${name}" is not a connected remote MCP server.`)
+    }
+    return target.url
+  }
+  ipcMain.handle('mcp:sign-in', async (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    const serverUrl = mcpSignInTargetUrl(parsedName)
+    mcpSignIns.get(parsedName)?.abort()
+    const controller = new AbortController()
+    mcpSignIns.set(parsedName, controller)
+    try {
+      await signInMcpServer(serverUrl, {
+        signal: controller.signal,
+        openExternal: (url) => shell.openExternal(url),
+      })
+    } finally {
+      if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)
+    }
+    const statuses = await reloadMcpServers(registry)
+    win.webContents.send('mcp:status-changed', statuses)
+    return statuses
+  })
+  ipcMain.handle('mcp:cancel-sign-in', (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    mcpSignIns.get(parsedName)?.abort()
+  })
+  ipcMain.handle('mcp:sign-out', async (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    await signOutMcpServer(mcpSignInTargetUrl(parsedName))
     const statuses = await reloadMcpServers(registry)
     win.webContents.send('mcp:status-changed', statuses)
     return statuses

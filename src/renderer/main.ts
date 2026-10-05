@@ -59,6 +59,7 @@ import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountAlertThreadNavigation } from './controller/alert-navigation.ts'
+import { mountDeepLinkNavigation } from './controller/deep-link-navigation.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { mountProductAnnouncements } from './views/product-announcement-dialog.ts'
@@ -94,7 +95,9 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
+import { mountActivityHome } from './views/activity-home.ts'
 import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts'
+import type { ActivitySources } from './views/activity-view.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
@@ -122,6 +125,7 @@ import {
   openRightPanel,
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
+  toggleProjectsPane,
   syncFilesPaneDom,
   openCanvasArtefact,
   showCanvasArtefact,
@@ -150,6 +154,8 @@ import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
+  isThreadGroupMode,
+  isThreadSortMode,
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
 } from '@shared/types/state.ts'
@@ -239,6 +245,8 @@ let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 let openProcessManager: (() => void) | null = null
+// The two request queues the Activity views read; set once the dialogs are mounted.
+let activitySources: ActivitySources | null = null
 
 async function boot(): Promise<void> {
   // DEBUG BRANCH: the outermost span a user would call "opening the app" —
@@ -272,7 +280,8 @@ async function boot(): Promise<void> {
   openProcessManager = mountProcessManagerDialog(api, store)
   // Lists every pending request the two dialogs above hold, and answers
   // approvals back through the approval dialog's own queue.
-  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests })
+  activitySources = { approvals: approvalRequests, questions: askUserRequests }
+  mountActivityPanel(api, store, activitySources)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -284,6 +293,8 @@ async function boot(): Promise<void> {
   const savedLayout = startupSettings.layout
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel
   const savedRightPanelPosition = startupSettings.rightPanelPosition
+  const savedSidebarThreadSort = startupSettings.sidebarThreadSort
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser
   const savedDeveloperMode = startupSettings.developerMode
   // Theme and editor font size persist too. Restore them here (the store
@@ -338,6 +349,13 @@ async function boot(): Promise<void> {
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
       ? savedRightPanelPosition
       : 'auto',
+    sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort)
+      ? savedSidebarThreadSort
+      : 'activity',
+    sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup)
+      ? savedSidebarThreadGroup
+      : 'project',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
@@ -402,6 +420,10 @@ async function boot(): Promise<void> {
     openNewThread(store)
   })
 
+  api.menu.onToggleSidebar(() => {
+    ensureLayout()
+    toggleProjectsPane(store)
+  })
   api.menu.onTogglePanel(() => {
     ensureLayout()
     toggleFilesPaneWithWorkspace(store, api)
@@ -541,6 +563,11 @@ async function boot(): Promise<void> {
 
   mobileRestored()
 
+  if (!popoutMode) {
+    mountDeepLinkNavigation(store, api)
+    await api.deepLinks.ready()
+  }
+
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
   if (popoutMode && store.getState().workspaceRoot) {
@@ -616,7 +643,12 @@ function mountFullLayout(): void {
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')
   }
-  bindChatComposerLayout(store)
+  // The Activity view is the new-thread screen: shown above the docked composer
+  // while the active thread is empty.
+  const activityHome = activitySources
+    ? mountActivityHome(requireElement('pane-chat'), api, store, activitySources)
+    : null
+  bindChatComposerLayout(store, activityHome?.setShown)
   mountFileTree(requireElement('file-tree-host'), store, api)
   mountRightPanelLayout(store)
   mountTerminalsPane(

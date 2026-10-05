@@ -61,4 +61,13 @@
 // v33 versions machine-turn dispatch and its chunk metadata.
 // v34 versions the per-model availability shape returned by `usage:get-plan-usage`.
 // v35 conservatively versions optional malformed-tool-call metadata on streamed chunks.
-export const API_PROTOCOL_VERSION = 35 as const
+// v36 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+// v37 conservatively versions the optional `verbosity` field on turn model parameters.
+// v38 conservatively versions interrupted-turn recovery metadata.
+// v39 versions the automation lastProblem ledger and startFailedAt provenance.
+// v40 versions the queued-message model snapshot in thread payloads.
+// v41 versions container-run consent fields and terminal state.
+// v42 conservatively versions the persisted sidebar grouping in settings payloads.
+// v43 versions the optional OAuth `auth` state on MCP server statuses.
+export const API_PROTOCOL_VERSION = 43 as const

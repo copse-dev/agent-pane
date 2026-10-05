@@ -175,6 +175,20 @@ export function getSidebarThreads(store: AppStore, projectId: string): SidebarTh
   return list.filter((t) => t.archivedAt == null)
 }
 
+/** An archive completed after the user switched to another project. */
+export function archiveCachedSidebarThread(
+  projectId: string,
+  threadId: string,
+  archivedAt: number,
+): void {
+  const cached = threadCache.get(projectId)
+  if (!cached) return
+  threadCache.set(
+    projectId,
+    cached.map((thread) => (thread.id === threadId ? { ...thread, archivedAt } : thread)),
+  )
+}
+
 /** Apply PR-link discovery to sidebar rows retained from a previously active project. */
 export function applyCachedSidebarPrRefs(
   projectId: string,

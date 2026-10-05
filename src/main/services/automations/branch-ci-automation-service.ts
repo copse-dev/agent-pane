@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { z } from 'zod'
 import type {
   BranchCiAutomation,
@@ -98,10 +99,34 @@ export interface BranchCiSnapshot {
 function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
+function readableDefinitions(raw: unknown): {
+  readable: BranchCiAutomation[]
+  unreadable: unknown[]
+} {
+  const rows: unknown[] = Array.isArray(raw) ? raw : []
+  const readable: BranchCiAutomation[] = []
+  const unreadable: unknown[] = []
+  for (const row of rows) {
+    const parsed = definitionSchema.safeParse(row)
+    if (parsed.success) readable.push(parsed.data)
+    else unreadable.push(row)
+  }
+  return { readable, unreadable }
+}
+
+/** One damaged definition must not hide, stop or block edits to the others. */
 function definitions(): BranchCiAutomation[] {
-  const raw = storageGet(STORAGE_KEY)
-  const parsed = z.array(definitionSchema).safeParse(raw)
-  return parsed.success ? parsed.data : []
+  return readableDefinitions(storageGet(STORAGE_KEY)).readable
+}
+
+/** Rewrite the readable definitions while carrying rows this version cannot read through untouched. */
+function updateDefinitions(
+  update: (current: BranchCiAutomation[]) => BranchCiAutomation[],
+): Promise<void> {
+  return storageUpdate(STORAGE_KEY, (raw) => {
+    const { readable, unreadable } = readableDefinitions(raw)
+    return [...unreadable, ...update(readable)]
+  })
 }
 function binding(definition: BranchCiAutomation): EventAutomationBinding {
   return {
@@ -297,13 +322,13 @@ export function createBranchCiAutomationService(
           threads.filter((thread) => thread.createdAt >= deps.now() - 86_400_000).length >=
           MAX_RUNS_PER_24_HOURS
         )
-          return { allowed: false, reason: 'Daily CI automation run limit reached' }
-        if (
-          threads.some(
-            (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-          )
-        )
-          return { allowed: false, reason: 'A run is already pending or active' }
+          return {
+            allowed: false,
+            reason: 'Daily CI automation run limit reached',
+            retryable: true,
+          }
+        if (threads.some((thread) => automationRunBlock(thread) !== null))
+          return { allowed: false, reason: 'A run is already pending or active', retryable: true }
         let retained = 0
         for (const thread of threads) {
           if (
@@ -314,7 +339,7 @@ export function createBranchCiAutomationService(
             retained++
         }
         if (retained >= definition.maxLiveWorktrees)
-          return { allowed: false, reason: 'Live worktree limit reached' }
+          return { allowed: false, reason: 'Live worktree limit reached', retryable: true }
         return { allowed: true }
       },
       async prepareRun(record: EventInboxRecord & { runId: string }, signal): Promise<void> {
@@ -366,10 +391,8 @@ export function createBranchCiAutomationService(
             }
             if (isAborted()) throw new Error('Event preparation interrupted')
             await deps.createProjectThread(definition.projectId, thread)
-            await storageUpdate(STORAGE_KEY, (raw) => {
-              const parsed = z.array(definitionSchema).safeParse(raw)
-              if (!parsed.success) throw new Error('Invalid CI automation definitions')
-              return parsed.data.map((item) =>
+            await updateDefinitions((definitions) => {
+              return definitions.map((item) =>
                 item.id === definition.id && item.revision === definition.revision
                   ? { ...item, lastRunAt: now, lastCreatedThreadId: record.runId }
                   : item,
@@ -416,12 +439,7 @@ export function createBranchCiAutomationService(
               const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
                 (thread) => thread.automation?.scheduleId === definition.id,
               )
-              if (
-                prior.some(
-                  (thread) => thread.status === 'running' || Boolean(thread.draftPrompt?.trim()),
-                )
-              )
-                continue
+              if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
               const occurredAt = Date.parse(run.updated_at)
               await inbox.admit(definition.id, definition.revision, {
                 sourceId: SOURCE_ID,
@@ -450,12 +468,20 @@ export function createBranchCiAutomationService(
                 }),
               })
               await inbox.reconcile(definition.projectId)
+              // A delivery held back only by a capacity limit stays pending. Marking it
+              // seen would drop a real CI failure the moment the limit clears; leave it
+              // for the next poll, which re-admits it idempotently and checks again.
+              const waiting = (await inboxStore.list(definition.projectId)).some(
+                (record) =>
+                  record.binding.automationId === definition.id &&
+                  record.delivery.deliveryId === id &&
+                  record.state === 'admitted',
+              )
+              if (waiting) continue
             }
             // Persist this observation only after an eligible failure has been admitted.
-            await storageUpdate(STORAGE_KEY, (raw) => {
-              const parsed = z.array(definitionSchema).safeParse(raw)
-              if (!parsed.success) throw new Error('Invalid CI automation definitions')
-              return parsed.data.map((item) =>
+            await updateDefinitions((definitions) => {
+              return definitions.map((item) =>
                 item.id === definition.id && item.revision === definition.revision
                   ? {
                       ...item,
@@ -575,10 +601,8 @@ export function createBranchCiAutomationService(
         const latest = definitions().find((item) => item.id === definition.id)
         if (latest?.revision !== existing?.revision)
           throw new Error('CI automation changed while editing; reload it and try again')
-        await storageUpdate(STORAGE_KEY, (raw) => {
-          const parsed = z.array(definitionSchema).safeParse(raw ?? [])
-          if (!parsed.success) throw new Error('Invalid CI automation definitions')
-          return [...parsed.data.filter((item) => item.id !== definition.id), definition]
+        await updateDefinitions((definitions) => {
+          return [...definitions.filter((item) => item.id !== definition.id), definition]
         })
       })
       if (existing) await inbox.fence(projectId, existing.id, 'Automation changed')
@@ -589,10 +613,8 @@ export function createBranchCiAutomationService(
       const existing = definitions().find((item) => item.id === id && item.projectId === projectId)
       if (!existing) return
       await runSerialized(definitionKey(projectId, id), async () => {
-        await storageUpdate(STORAGE_KEY, (raw) => {
-          const parsed = z.array(definitionSchema).safeParse(raw ?? [])
-          if (!parsed.success) throw new Error('Invalid CI automation definitions')
-          return parsed.data.filter((item) => !(item.id === id && item.projectId === projectId))
+        await updateDefinitions((definitions) => {
+          return definitions.filter((item) => !(item.id === id && item.projectId === projectId))
         })
       })
       await inbox.fence(projectId, id, 'Automation deleted')

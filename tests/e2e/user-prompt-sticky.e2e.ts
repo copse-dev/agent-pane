@@ -91,6 +91,107 @@ describe('latest user prompt anchor', () => {
     await saveAppScreenshot('user-prompt-sticky.png')
   })
 
+  it('shrinks attached previews only while the latest prompt is pinned', async () => {
+    const latest = $('[data-message-id="msg-user-sticky-latest"]')
+    const images = latest.$$('.message-image')
+    await expect(images).toBeElementsArrayOfSize(2)
+
+    async function scrollPromptIntoFlow(): Promise<void> {
+      await browser.execute(() => {
+        const list = document.querySelector<HTMLElement>('.messages-list')
+        const prompt = document.querySelector<HTMLElement>(
+          '[data-message-id="msg-user-sticky-latest"]',
+        )
+        const previous = prompt?.previousElementSibling
+        if (!list || !previous) throw new Error('sticky preview fixture is missing')
+        const gap = Number.parseFloat(getComputedStyle(list).rowGap)
+        list.scrollTop +=
+          previous.getBoundingClientRect().bottom + gap - list.getBoundingClientRect().top - 96
+      })
+    }
+
+    await scrollPromptIntoFlow()
+    await browser.waitUntil(
+      async () => !(await latest.getAttribute('class'))?.includes('is-preview-compact'),
+    )
+    await browser.waitUntil(async () => {
+      const sizes = await browser.execute(() =>
+        [
+          ...document.querySelectorAll<HTMLImageElement>(
+            '[data-message-id="msg-user-sticky-latest"] .message-image',
+          ),
+        ].map((image) => ({
+          width: image.getBoundingClientRect().width,
+          height: image.getBoundingClientRect().height,
+        })),
+      )
+      return sizes.length === 2 && sizes.every((size) => size.width > 100 && size.height > 100)
+    })
+    const fullSize = await browser.execute(() =>
+      [
+        ...document.querySelectorAll<HTMLImageElement>(
+          '[data-message-id="msg-user-sticky-latest"] .message-image',
+        ),
+      ].map((image) => ({
+        width: image.getBoundingClientRect().width,
+        height: image.getBoundingClientRect().height,
+      })),
+    )
+    expect(fullSize.every((size) => size.width > 100 && size.height > 100)).toBe(true)
+    const motion = await browser.execute(() => {
+      const image = document.querySelector<HTMLImageElement>(
+        '[data-message-id="msg-user-sticky-latest"] .message-image',
+      )
+      if (!image) throw new Error('sticky preview image is missing')
+      const style = getComputedStyle(image)
+      return {
+        reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        properties: style.transitionProperty,
+        duration: style.transitionDuration,
+      }
+    })
+    if (!motion.reduced) {
+      expect(motion.properties).toContain('max-width')
+      expect(motion.properties).toContain('max-height')
+      expect(motion.duration).not.toBe('0s')
+    }
+    await saveAppScreenshot('user-prompt-previews-full.png')
+
+    await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (list) list.scrollTop = list.scrollHeight
+    })
+    await browser.waitUntil(
+      async () => (await latest.getAttribute('class'))?.includes('is-preview-compact') === true,
+    )
+    await browser.waitUntil(async () => {
+      const sizes = await browser.execute(() =>
+        [
+          ...document.querySelectorAll<HTMLImageElement>(
+            '[data-message-id="msg-user-sticky-latest"] .message-image',
+          ),
+        ].map((image) => ({
+          width: image.getBoundingClientRect().width,
+          height: image.getBoundingClientRect().height,
+        })),
+      )
+      return sizes.length === 2 && sizes.every((size) => size.width <= 90 && size.height <= 66)
+    })
+    const pinnedText = await latest.$('.message-text').getText()
+    expect(pinnedText).toContain('keep this latest request visible')
+    await saveAppScreenshot('user-prompt-previews-pinned.png')
+
+    await images[0]?.click()
+    await expect($('dialog.attachment-preview-dialog[open]')).toExist()
+    await $('.attachment-preview-close').click()
+
+    await scrollPromptIntoFlow()
+    await browser.waitUntil(
+      async () => !(await latest.getAttribute('class'))?.includes('is-preview-compact'),
+    )
+    await browser.waitUntil(async () => (await images[0]?.getSize('width')) > 100)
+  })
+
   it('returns the latest prompt to the transcript when the chat pane is narrow', async () => {
     await browser.execute(() => {
       const app = document.getElementById('app')
@@ -130,6 +231,9 @@ describe('latest user prompt anchor', () => {
     expect(layout).not.toHaveProperty('error')
     expect(layout.chatWidth).toBeLessThanOrEqual(360)
     expect(layout.latestPosition).toBe('relative')
+    expect(
+      await $('[data-message-id="msg-user-sticky-latest"]').getAttribute('class'),
+    ).not.toContain('is-preview-compact')
     expect(layout.latestBottom).toBeLessThanOrEqual(layout.answerTop)
     expect(layout.answerBottom).toBeGreaterThan(layout.visibleTop)
     expect(layout.answerBottom).toBeLessThanOrEqual(layout.visibleBottom + 1)
