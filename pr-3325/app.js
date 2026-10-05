@@ -64311,6 +64311,1533 @@ var init_image_path = __esm({
   }
 });
 
+// src/renderer/drawing/drauu/emitter.ts
+var Emitter;
+var init_emitter = __esm({
+  "src/renderer/drawing/drauu/emitter.ts"() {
+    Emitter = class {
+      listeners = /* @__PURE__ */ new Map();
+      on(type, fn2) {
+        let set2 = this.listeners.get(type);
+        if (!set2) {
+          set2 = /* @__PURE__ */ new Set();
+          this.listeners.set(type, set2);
+        }
+        set2.add(fn2);
+        return () => {
+          set2.delete(fn2);
+        };
+      }
+      emit(type, ...args) {
+        const set2 = this.listeners.get(type);
+        if (!set2) return;
+        for (const fn2 of [...set2]) {
+          Reflect.apply(fn2, void 0, args);
+        }
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/utils.ts
+function numSort(a3, b4) {
+  return a3 - b4;
+}
+function splitNum(a3) {
+  return [Math.abs(a3), a3 < 0 ? -1 : 1];
+}
+function guid3() {
+  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
+  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
+}
+function createArrowHead(id, fill) {
+  const defs = document.createElementNS(SVG_NS3, "defs");
+  const marker = document.createElementNS(SVG_NS3, "marker");
+  const head = document.createElementNS(SVG_NS3, "path");
+  head.setAttribute("fill", fill);
+  marker.setAttribute("id", id);
+  marker.setAttribute("viewBox", "0 -5 10 10");
+  marker.setAttribute("refX", "5");
+  marker.setAttribute("refY", "0");
+  marker.setAttribute("markerWidth", "4");
+  marker.setAttribute("markerHeight", "4");
+  marker.setAttribute("orient", "auto");
+  head.setAttribute("d", "M0,-5L10,0L0,5");
+  marker.appendChild(head);
+  defs.appendChild(marker);
+  return defs;
+}
+function totalLength(el3) {
+  const candidate = Reflect.get(el3, "getTotalLength");
+  if (typeof candidate !== "function") return null;
+  try {
+    const length = Reflect.apply(candidate, el3, []);
+    return typeof length === "number" ? length : null;
+  } catch {
+    return null;
+  }
+}
+var SVG_NS3, D;
+var init_utils = __esm({
+  "src/renderer/drawing/drauu/utils.ts"() {
+    SVG_NS3 = "http://www.w3.org/2000/svg";
+    D = 2;
+  }
+});
+
+// src/renderer/drawing/drauu/simplify.ts
+function getSqDist(p1, p2) {
+  const dx = p1.x - p2.x;
+  const dy = p1.y - p2.y;
+  return dx * dx + dy * dy;
+}
+function getSqSegDist(p2, p1, p22) {
+  let x2 = p1.x;
+  let y2 = p1.y;
+  let dx = p22.x - x2;
+  let dy = p22.y - y2;
+  if (dx !== 0 || dy !== 0) {
+    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
+    if (t2 > 1) {
+      x2 = p22.x;
+      y2 = p22.y;
+    } else if (t2 > 0) {
+      x2 += dx * t2;
+      y2 += dy * t2;
+    }
+  }
+  dx = p2.x - x2;
+  dy = p2.y - y2;
+  return dx * dx + dy * dy;
+}
+function simplifyRadialDist(points, sqTolerance) {
+  const first = points[0];
+  if (!first) return [];
+  let prevPoint = first;
+  const newPoints = [prevPoint];
+  let point;
+  for (let i2 = 1, len = points.length; i2 < len; i2++) {
+    point = points[i2];
+    if (point && getSqDist(point, prevPoint) > sqTolerance) {
+      newPoints.push(point);
+      prevPoint = point;
+    }
+  }
+  if (point && prevPoint !== point) newPoints.push(point);
+  return newPoints;
+}
+function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+  let maxSqDist = sqTolerance;
+  let index = 0;
+  const a3 = points[first];
+  const b4 = points[last];
+  if (!a3 || !b4) return;
+  for (let i2 = first + 1; i2 < last; i2++) {
+    const p2 = points[i2];
+    if (!p2) continue;
+    const sqDist = getSqSegDist(p2, a3, b4);
+    if (sqDist > maxSqDist) {
+      index = i2;
+      maxSqDist = sqDist;
+    }
+  }
+  if (maxSqDist > sqTolerance) {
+    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+    const mid = points[index];
+    if (mid) simplified.push(mid);
+    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+  }
+}
+function simplifyDouglasPeucker(points, sqTolerance) {
+  const last = points.length - 1;
+  const first = points[0];
+  const end = points[last];
+  if (!first || !end) return points;
+  const simplified = [first];
+  simplifyDPStep(points, 0, last, sqTolerance, simplified);
+  simplified.push(end);
+  return simplified;
+}
+function simplify(points, tolerance, highestQuality = false) {
+  if (points.length <= 2) return points;
+  const sqTolerance = tolerance * tolerance;
+  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
+  return simplifyDouglasPeucker(reduced, sqTolerance);
+}
+var init_simplify = __esm({
+  "src/renderer/drawing/drauu/simplify.ts"() {
+  }
+});
+
+// src/renderer/drawing/drauu/models/base.ts
+var BaseModel;
+var init_base = __esm({
+  "src/renderer/drawing/drauu/models/base.ts"() {
+    init_utils();
+    BaseModel = class {
+      point = null;
+      start = null;
+      el = null;
+      drauu;
+      constructor(drauu) {
+        this.drauu = drauu;
+      }
+      onSelected(_el) {
+      }
+      onUnselected() {
+      }
+      onStart(_point) {
+        return void 0;
+      }
+      onMove(_point) {
+        return false;
+      }
+      onEnd(_point) {
+        return void 0;
+      }
+      get brush() {
+        return this.drauu.brush;
+      }
+      get shiftPressed() {
+        return this.drauu.shiftPressed;
+      }
+      get altPressed() {
+        return this.drauu.altPressed;
+      }
+      get svgElement() {
+        return this.drauu.el;
+      }
+      getMousePosition(event) {
+        const el3 = this.drauu.el;
+        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
+        const svgPoint = this.drauu.svgPoint;
+        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
+        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
+          svgPoint.x = event.clientX;
+          svgPoint.y = event.clientY;
+          const loc = svgPoint.matrixTransform(ctm.inverse());
+          return { x: loc.x, y: loc.y, pressure: event.pressure };
+        }
+        const rect = el3.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
+      }
+      createElement(name, overrides) {
+        const el3 = document.createElementNS(SVG_NS3, name);
+        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
+        el3.setAttribute("fill", brush.fill ?? "transparent");
+        el3.setAttribute("stroke", brush.color);
+        el3.setAttribute("stroke-width", brush.size.toString());
+        el3.setAttribute("stroke-linecap", "round");
+        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
+        return el3;
+      }
+      attr(name, value) {
+        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
+      }
+      setEvent(event) {
+        this.point = this.getMousePosition(event);
+        return this.point;
+      }
+      /** @internal */
+      _eventDown(event) {
+        const point = this.setEvent(event);
+        this.start = point;
+        return this.onStart(point);
+      }
+      /** @internal */
+      _eventMove(event) {
+        return this.onMove(this.setEvent(event));
+      }
+      /** @internal */
+      _eventUp(event) {
+        return this.onEnd(this.setEvent(event));
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/draw.ts
+var DrawModel;
+var init_draw = __esm({
+  "src/renderer/drawing/drauu/models/draw.ts"() {
+    init_utils();
+    init_simplify();
+    init_base();
+    DrawModel = class _DrawModel extends BaseModel {
+      points = [];
+      count = 0;
+      onStart(point) {
+        this.el = this.createElement("path", { fill: "transparent" });
+        this.points = [point];
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          this.el.appendChild(createArrowHead(id, this.brush.color));
+          this.el.setAttribute("marker-end", `url(#${id})`);
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) {
+          this.points.push(point);
+          this.count += 1;
+        }
+        if (this.count > 5) {
+          this.points = simplify(this.points, 1, true);
+          this.count = 0;
+        }
+        this.attr("d", _DrawModel.toSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        if (!path) return false;
+        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
+        const first = this.points[0];
+        if (totalLength(path) === 0 && first) {
+          const r2 = (this.brush.size / 2).toFixed(D);
+          const d22 = this.brush.size.toFixed(D);
+          const x2 = (first.x - this.brush.size / 2).toFixed(D);
+          const y2 = first.y.toFixed(D);
+          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
+          path.setAttribute("fill", this.brush.color);
+          path.setAttribute("stroke-width", "0");
+        }
+        return true;
+      }
+      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
+      static line(a3, b4) {
+        const lengthX = b4.x - a3.x;
+        const lengthY = b4.y - a3.y;
+        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
+      }
+      static controlPoint(current, previous, next, reverse) {
+        const p2 = previous ?? current;
+        const n2 = next ?? current;
+        const smoothing = 0.2;
+        const o3 = _DrawModel.line(p2, n2);
+        const angle = o3.angle + (reverse ? Math.PI : 0);
+        const length = o3.length * smoothing;
+        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
+      }
+      static bezierCommand(point, i2, points) {
+        const prev = points[i2 - 1] ?? point;
+        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
+        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
+        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
+      }
+      static toSvgData(points) {
+        return points.reduce(
+          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
+          ""
+        );
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/ellipse.ts
+var EllipseModel;
+var init_ellipse = __esm({
+  "src/renderer/drawing/drauu/models/ellipse.ts"() {
+    init_utils();
+    init_base();
+    EllipseModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("ellipse");
+        this.attr("cx", point.x);
+        this.attr("cy", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("cx", this.start.x);
+          this.attr("cy", this.start.y);
+          this.attr("rx", dx);
+          this.attr("ry", dy);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("cx", (x1 + x2) / 2);
+          this.attr("cy", (y1 + y2) / 2);
+          this.attr("rx", (x2 - x1) / 2);
+          this.attr("ry", (y2 - y1) / 2);
+        }
+        return true;
+      }
+      onEnd() {
+        const ellipse = this.el;
+        this.el = null;
+        if (!ellipse) return false;
+        const length = totalLength(ellipse);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/eraser.ts
+function measurable(el3) {
+  const getTotalLength = Reflect.get(el3, "getTotalLength");
+  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
+  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
+  return {
+    getTotalLength: () => {
+      const n2 = Reflect.apply(getTotalLength, el3, []);
+      return typeof n2 === "number" ? n2 : 0;
+    },
+    getPointAtLength: (d3) => {
+      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
+      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
+        const { x: x2, y: y2 } = p2;
+        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
+      }
+      return { x: 0, y: 0 };
+    }
+  };
+}
+function intersects(a3, b4) {
+  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
+  if (denom === 0) return false;
+  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const x2 = xNum / denom;
+  const y2 = yNum / denom;
+  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
+  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
+}
+var EraserModel;
+var init_eraser = __esm({
+  "src/renderer/drawing/drauu/models/eraser.ts"() {
+    init_utils();
+    init_base();
+    EraserModel = class extends BaseModel {
+      pathSubFactor = 20;
+      fragments = [];
+      previous = null;
+      erased = [];
+      onSelected(el3) {
+        this.fragments = [];
+        if (el3) this.collect(el3.children, void 0);
+      }
+      collect(children, owner) {
+        for (const child of Array.from(children)) {
+          if (child.namespaceURI !== SVG_NS3) continue;
+          const m2 = measurable(child);
+          if (m2) {
+            const length = m2.getTotalLength();
+            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
+              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
+              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
+              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
+            }
+          } else {
+            this.collect(child.children, owner ?? child);
+          }
+        }
+      }
+      onUnselected() {
+        this.fragments = [];
+      }
+      onStart(point) {
+        this.previous = point;
+        return void 0;
+      }
+      onMove(point) {
+        const previous = this.previous;
+        this.previous = point;
+        if (!previous) return false;
+        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
+        let hit = false;
+        for (const fragment of this.fragments) {
+          if (this.erased.includes(fragment.element)) continue;
+          if (intersects(fragment, stroke)) {
+            this.drauu._removeNode(fragment.element);
+            this.erased.push(fragment.element);
+            hit = true;
+          }
+        }
+        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
+        return hit;
+      }
+      onEnd() {
+        this.previous = null;
+        const erased = this.erased;
+        this.erased = [];
+        return {
+          undo: () => {
+            for (const node2 of erased) this.drauu._restoreNode(node2);
+          },
+          redo: () => {
+            for (const node2 of erased) this.drauu._removeNode(node2);
+          }
+        };
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/line.ts
+var LineModel;
+var init_line = __esm({
+  "src/renderer/drawing/drauu/models/line.ts"() {
+    init_utils();
+    init_base();
+    LineModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("line", { fill: "transparent" });
+        this.attr("x1", point.x);
+        this.attr("y1", point.y);
+        this.attr("x2", point.x);
+        this.attr("y2", point.y);
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          const g2 = document.createElementNS(SVG_NS3, "g");
+          g2.append(createArrowHead(id, this.brush.color));
+          g2.append(this.el);
+          this.attr("marker-end", `url(#${id})`);
+          return g2;
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        let { x: x2, y: y2 } = point;
+        if (this.shiftPressed) {
+          const dx = point.x - this.start.x;
+          const dy = point.y - this.start.y;
+          if (dy !== 0) {
+            const slope = Math.round(dx / dy);
+            if (Math.abs(slope) <= 1) {
+              x2 = this.start.x + dy * slope;
+              y2 = this.start.y + dy;
+            } else {
+              x2 = this.start.x + dx;
+              y2 = this.start.y;
+            }
+          }
+        }
+        if (this.altPressed) {
+          this.attr("x1", this.start.x * 2 - x2);
+          this.attr("y1", this.start.y * 2 - y2);
+        } else {
+          this.attr("x1", this.start.x);
+          this.attr("y1", this.start.y);
+        }
+        this.attr("x2", x2);
+        this.attr("y2", y2);
+        return true;
+      }
+      onEnd() {
+        const line = this.el;
+        this.el = null;
+        if (!line) return false;
+        const length = totalLength(line);
+        return length === null || length >= 5;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/rect.ts
+var RectModel;
+var init_rect = __esm({
+  "src/renderer/drawing/drauu/models/rect.ts"() {
+    init_utils();
+    init_base();
+    RectModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("rect");
+        if (this.brush.cornerRadius) {
+          this.attr("rx", this.brush.cornerRadius);
+          this.attr("ry", this.brush.cornerRadius);
+        }
+        this.attr("x", point.x);
+        this.attr("y", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("x", this.start.x - dx);
+          this.attr("y", this.start.y - dy);
+          this.attr("width", dx * 2);
+          this.attr("height", dy * 2);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("x", x1);
+          this.attr("y", y1);
+          this.attr("width", x2 - x1);
+          this.attr("height", y2 - y1);
+        }
+        return true;
+      }
+      onEnd() {
+        const rect = this.el;
+        this.el = null;
+        if (!rect) return false;
+        const length = totalLength(rect);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
+function i(e3, t2, n2, r2 = (e4) => e4) {
+  return e3 * r2(0.5 - t2 * (0.5 - n2));
+}
+function o(e3, t2, n2) {
+  let r2 = a(1, t2 / n2);
+  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
+}
+function s(e3) {
+  return [-e3[0], -e3[1]];
+}
+function c(e3, t2) {
+  return [e3[0] + t2[0], e3[1] + t2[1]];
+}
+function l(e3, t2, n2) {
+  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
+}
+function u(e3, t2) {
+  return [e3[0] - t2[0], e3[1] - t2[1]];
+}
+function d(e3, t2, n2) {
+  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
+}
+function f(e3, t2) {
+  return [e3[0] * t2, e3[1] * t2];
+}
+function p(e3, t2, n2) {
+  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
+}
+function m(e3, t2) {
+  return [e3[0] / t2, e3[1] / t2];
+}
+function h(e3) {
+  return [e3[1], -e3[0]];
+}
+function g(e3, t2) {
+  let n2 = t2[0];
+  return e3[0] = t2[1], e3[1] = -n2, e3;
+}
+function ee(e3, t2) {
+  return e3[0] * t2[0] + e3[1] * t2[1];
+}
+function _(e3, t2) {
+  return e3[0] === t2[0] && e3[1] === t2[1];
+}
+function v(e3) {
+  return Math.hypot(e3[0], e3[1]);
+}
+function y(e3, t2) {
+  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
+  return n2 * n2 + r2 * r2;
+}
+function b(e3) {
+  return m(e3, v(e3));
+}
+function x(e3, t2) {
+  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
+}
+function S(e3, t2, n2) {
+  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
+  return [s16 + t2[0], c3 + t2[1]];
+}
+function C(e3, t2, n2, r2) {
+  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
+  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
+}
+function w(e3, t2, n2) {
+  return c(e3, f(u(t2, e3), n2));
+}
+function te(e3, t2, n2, r2) {
+  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
+  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
+}
+function T(e3, t2, n2) {
+  return c(e3, f(t2, n2));
+}
+function k(e3, n2) {
+  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
+  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
+  return i2;
+}
+function A2(e3, n2, r2) {
+  let i2 = [], a3 = 1 / r2;
+  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
+  return i2;
+}
+function j(e3, t2, n2) {
+  let r2 = u(t2, n2), i2 = f(r2, 0.5), a3 = f(r2, 0.51);
+  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
+}
+function M(e3, n2, r2, i2) {
+  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
+  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
+  return a3;
+}
+function ne(e3, t2, n2) {
+  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+}
+function N(e3, t2, n2) {
+  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
+}
+function re(e3, t2, n2) {
+  return e3.slice(0, 10).reduce((e4, r2) => {
+    let i2 = r2.pressure;
+    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
+  }, e3[0].pressure);
+}
+function P(e3, n2 = {}) {
+  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
+  if (e3.length === 0 || r2 <= 0) return [];
+  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
+  for (let n3 = 0; n3 < e3.length; n3++) {
+    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
+    if (!x3 && F3 - b5 < 3) continue;
+    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
+    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
+    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
+    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
+    if (j3 || M4) {
+      g(E, W), p(E, E, H2);
+      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
+      G2 = q2, K2 = J2, M4 && (Y3 = true);
+      continue;
+    }
+    if (Y3 = false, x3) {
+      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
+      continue;
+    }
+    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
+  }
+  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
+  if (e3.length === 1) {
+    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
+  } else {
+    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
+    let t2 = h(s(e3[e3.length - 1].vector));
+    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
+  }
+  return z4.concat($2, B3.reverse(), Q3);
+}
+function I(e3) {
+  return e3 != null && e3 >= 0;
+}
+function L(e3, t2 = {}) {
+  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
+  if (e3.length === 0) return [];
+  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
+  if (l2.length === 2) {
+    let e4 = l2[1];
+    l2 = l2.slice(0, -1);
+    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
+  }
+  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
+  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
+  for (let e4 = 1; e4 < l2.length; e4++) {
+    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
+    if (_(m2.point, t3)) continue;
+    let r2 = x(t3, m2.point);
+    if (p2 += r2, e4 < h3 && !f4) {
+      if (p2 < a3) continue;
+      f4 = true;
+    }
+    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
+  }
+  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
+}
+function R(e3, t2 = {}) {
+  return P(L(e3, t2), t2);
+}
+var e, t, n, r, a, E, D2, O, F;
+var init_esm = __esm({
+  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
+    ({ PI: e } = Math);
+    t = e + 1e-4;
+    n = 0.5;
+    r = [1, 1];
+    ({ min: a } = Math);
+    E = [0, 0];
+    D2 = [0, 0];
+    O = [0, 0];
+    F = [0, 0];
+  }
+});
+
+// src/renderer/drawing/drauu/models/stylus.ts
+var StylusModel;
+var init_stylus = __esm({
+  "src/renderer/drawing/drauu/models/stylus.ts"() {
+    init_esm();
+    init_utils();
+    init_base();
+    StylusModel = class _StylusModel extends BaseModel {
+      points = [];
+      onStart(point) {
+        this.el = document.createElementNS(SVG_NS3, "path");
+        this.points = [point];
+        this.attr("fill", this.brush.color);
+        this.attr("d", this.getSvgData(this.points));
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) this.points.push(point);
+        this.attr("d", this.getSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        return path !== null;
+      }
+      getSvgData(points) {
+        return _StylusModel.getSvgData(points, this.brush);
+      }
+      static getSvgData(points, brush) {
+        const stroke = R(points, {
+          size: brush.size,
+          thinning: 0.9,
+          simulatePressure: false,
+          start: { taper: 5 },
+          end: { taper: 5 },
+          ...brush.stylusOptions
+        });
+        const first = stroke[0];
+        if (!first) return "";
+        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
+        for (let i2 = 0; i2 < stroke.length; i2++) {
+          const a3 = stroke[i2];
+          const b4 = stroke[(i2 + 1) % stroke.length];
+          if (!a3 || !b4) continue;
+          const [x0, y0] = a3;
+          const [x1, y1] = b4;
+          parts.push(
+            x0.toFixed(2),
+            y0.toFixed(2),
+            ((x0 + x1) / 2).toFixed(2),
+            ((y0 + y1) / 2).toFixed(2)
+          );
+        }
+        parts.push("Z");
+        return parts.join(" ");
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/index.ts
+function createModels(drauu) {
+  return {
+    draw: new DrawModel(drauu),
+    stylus: new StylusModel(drauu),
+    line: new LineModel(drauu),
+    rectangle: new RectModel(drauu),
+    ellipse: new EllipseModel(drauu),
+    eraseLine: new EraserModel(drauu)
+  };
+}
+var init_models = __esm({
+  "src/renderer/drawing/drauu/models/index.ts"() {
+    init_draw();
+    init_ellipse();
+    init_eraser();
+    init_line();
+    init_rect();
+    init_stylus();
+  }
+});
+
+// src/renderer/drawing/drauu/drauu.ts
+function createDrauu(options) {
+  return new Drauu(options);
+}
+var DEFAULT_BRUSH, Drauu;
+var init_drauu = __esm({
+  "src/renderer/drawing/drauu/drauu.ts"() {
+    init_emitter();
+    init_models();
+    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
+    Drauu = class {
+      el = null;
+      svgPoint = null;
+      shiftPressed = false;
+      altPressed = false;
+      drawing = false;
+      options;
+      emitter = new Emitter();
+      originalPointerId = null;
+      models = createModels(this);
+      currentNode;
+      opStack = [];
+      opIndex = 0;
+      disposables = [];
+      elements = [];
+      constructor(options = {}) {
+        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
+        if (options.el) this.mount(options.el, options.eventTarget, options.window);
+      }
+      get model() {
+        return this.models[this.mode];
+      }
+      get mounted() {
+        return this.el !== null;
+      }
+      get mode() {
+        return this.options.brush.mode ?? "stylus";
+      }
+      set mode(v3) {
+        this.models[this.mode].onUnselected();
+        this.options.brush.mode = v3;
+        this.model.onSelected(this.el);
+      }
+      get brush() {
+        return this.options.brush;
+      }
+      set brush(v3) {
+        this.options.brush = v3;
+      }
+      mount(el3, eventEl, listenWindow = window) {
+        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
+        if (el3.tagName.toLowerCase() !== "svg")
+          throw new Error("[drauu] can only mount to an SVG element");
+        this.el = el3;
+        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
+        const target = eventEl ?? el3;
+        const start = (e3) => {
+          if (e3 instanceof PointerEvent) this.eventStart(e3);
+        };
+        const move = (e3) => {
+          this.eventMove(e3);
+        };
+        const end = (e3) => {
+          this.eventEnd(e3);
+        };
+        const keyboard = (e3) => {
+          this.eventKeyboard(e3);
+        };
+        const touchMove = (e3) => {
+          this.touchMove(e3);
+        };
+        target.addEventListener("pointerdown", start, { passive: false });
+        listenWindow.addEventListener("pointermove", move, { passive: false });
+        listenWindow.addEventListener("pointerup", end, { passive: false });
+        listenWindow.addEventListener("pointercancel", end, { passive: false });
+        listenWindow.addEventListener("keydown", keyboard, false);
+        listenWindow.addEventListener("keyup", keyboard, false);
+        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
+        this.disposables.push(() => {
+          target.removeEventListener("pointerdown", start);
+          listenWindow.removeEventListener("pointermove", move);
+          listenWindow.removeEventListener("pointerup", end);
+          listenWindow.removeEventListener("pointercancel", end);
+          listenWindow.removeEventListener("keydown", keyboard, false);
+          listenWindow.removeEventListener("keyup", keyboard, false);
+          listenWindow.removeEventListener("touchmove", touchMove);
+        });
+        this.model.onSelected(this.el);
+        this.emitter.emit("mounted");
+      }
+      unmount() {
+        for (const dispose of this.disposables) dispose();
+        this.disposables.length = 0;
+        this.elements.length = 0;
+        this.el = null;
+        this.emitter.emit("unmounted");
+      }
+      on(type, fn2) {
+        return this.emitter.on(type, fn2);
+      }
+      undo() {
+        if (!this.canUndo() || this.drawing) return false;
+        this.opIndex -= 1;
+        this.opStack[this.opIndex]?.undo();
+        this.emitter.emit("changed");
+        return true;
+      }
+      redo() {
+        if (!this.canRedo() || this.drawing) return false;
+        this.opStack[this.opIndex]?.redo();
+        this.opIndex += 1;
+        this.emitter.emit("changed");
+        return true;
+      }
+      canRedo() {
+        return this.opIndex < this.opStack.length;
+      }
+      canUndo() {
+        return this.opIndex > 0;
+      }
+      eventMove(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        if (this.model._eventMove(event)) {
+          event.stopPropagation();
+          event.preventDefault();
+          this.emitter.emit("changed");
+        }
+      }
+      eventStart(event) {
+        if (!this.acceptsInput(event)) return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (this.currentNode) this.cancel();
+        this.drawing = true;
+        this.originalPointerId = event.pointerId;
+        this.emitter.emit("start");
+        this.currentNode = this.model._eventDown(event);
+        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
+        this.emitter.emit("changed");
+      }
+      eventEnd(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        const result = this.model._eventUp(event);
+        if (!result) {
+          this.cancel();
+        } else if (result === true) {
+          const node2 = this.currentNode;
+          if (node2) {
+            this._appendNode(node2);
+            this.commit({
+              undo: () => {
+                this._removeNode(node2);
+              },
+              redo: () => {
+                this._restoreNode(node2);
+              }
+            });
+          }
+        } else {
+          this.commit(result);
+        }
+        this.drawing = false;
+        this.emitter.emit("end");
+        this.emitter.emit("changed");
+        this.originalPointerId = null;
+      }
+      touchMove(event) {
+        for (const touch of Array.from(event.touches)) {
+          const touchType = Reflect.get(touch, "touchType");
+          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
+            event.preventDefault();
+            return;
+          }
+        }
+      }
+      acceptsInput(event) {
+        const accepted = this.options.acceptsInputTypes;
+        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
+        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
+      }
+      eventKeyboard(event) {
+        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
+        this.shiftPressed = event.shiftKey;
+        this.altPressed = event.altKey;
+        const point = this.model.point;
+        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
+      }
+      commit(op) {
+        this.opStack.length = this.opIndex;
+        this.opStack.push(op);
+        this.opIndex += 1;
+        const node2 = this.currentNode;
+        this.currentNode = void 0;
+        this.emitter.emit("committed", node2);
+      }
+      clear() {
+        this.opStack.length = 0;
+        this.opIndex = 0;
+        this.elements = [];
+        this.cancel();
+        if (this.el) this.el.innerHTML = "";
+        this.emitter.emit("changed");
+      }
+      cancel() {
+        if (this.currentNode) {
+          this.currentNode.remove();
+          this.currentNode = void 0;
+          this.emitter.emit("canceled");
+        }
+      }
+      dump() {
+        return this.el?.innerHTML ?? "";
+      }
+      load(svg2) {
+        this.clear();
+        if (this.el) this.el.innerHTML = svg2;
+      }
+      /** @internal */
+      _appendNode(node2) {
+        const last = this.elements.at(-1);
+        if (last) last.after(node2);
+        else this.el?.append(node2);
+        const index = this.elements.push(node2) - 1;
+        node2.setAttribute("data-drauu-index", index.toString());
+      }
+      /** @internal */
+      _removeNode(node2) {
+        node2.remove();
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (Number.isInteger(index)) this.elements[index] = null;
+      }
+      /** @internal */
+      _restoreNode(node2) {
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (!Number.isInteger(index)) return;
+        this.elements[index] = node2;
+        for (let i2 = index - 1; i2 >= 0; i2--) {
+          const previous = this.elements[i2];
+          if (previous) {
+            previous.after(node2);
+            return;
+          }
+        }
+        this.el?.prepend(node2);
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/index.ts
+var init_drauu2 = __esm({
+  "src/renderer/drawing/drauu/index.ts"() {
+    init_drauu();
+    init_models();
+  }
+});
+
+// src/renderer/drawing/annotation-layer.ts
+function measureBox(node2) {
+  const getBBox = Reflect.get(node2, "getBBox");
+  if (typeof getBBox !== "function") return null;
+  try {
+    const box = Reflect.apply(getBBox, node2, []);
+    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
+      const { x: x2, y: y2, width, height } = box;
+      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
+        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
+      }
+    }
+  } catch {
+  }
+  return null;
+}
+function toolOf(node2) {
+  const tagged = node2.getAttribute("data-tool");
+  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
+}
+function composeAnnotationPng(svg2, width, height, base) {
+  return new Promise((resolve, reject) => {
+    const scale2 = window.devicePixelRatio || 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale2));
+    canvas.height = Math.max(1, Math.round(height * scale2));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject(new Error("2D canvas unavailable"));
+      return;
+    }
+    const loadImage = (src) => new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => {
+        res(img);
+      };
+      img.onerror = () => {
+        rej(new Error("image failed to decode"));
+      };
+      img.src = src;
+    });
+    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
+    void (async () => {
+      try {
+        if (base) {
+          const baseImage = await loadImage(base);
+          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+        }
+        const marks = await loadImage(marksUrl);
+        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error62) {
+        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+      } finally {
+        URL.revokeObjectURL(marksUrl);
+      }
+    })();
+  });
+}
+function mountAnnotationLayer(host, options) {
+  let root = null;
+  let resizeObserver = null;
+  let svg2 = null;
+  let drauu = null;
+  let active2 = false;
+  let tool = "pen";
+  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
+  const toolButtons = /* @__PURE__ */ new Map();
+  const swatches = /* @__PURE__ */ new Map();
+  let sendBtn = null;
+  let undoBtn = null;
+  let clearBtn = null;
+  let sending = false;
+  let scrollX = 0;
+  let scrollY = 0;
+  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
+  const applyViewBox = () => {
+    if (!svg2) return;
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
+  };
+  const applyBrush = () => {
+    if (!drauu) return;
+    const brush = drauu.brush;
+    brush.color = colour;
+    brush.arrowEnd = tool === "arrow";
+    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
+    const mode = {
+      pen: "stylus",
+      line: "line",
+      arrow: "line",
+      rect: "rectangle",
+      ellipse: "ellipse",
+      eraser: "eraseLine"
+    }[tool];
+    if (drauu.mode !== mode) drauu.mode = mode;
+    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
+    for (const [name, button] of toolButtons)
+      button.setAttribute("aria-pressed", String(name === tool));
+    for (const [value, button] of swatches)
+      button.setAttribute("aria-pressed", String(value === colour));
+  };
+  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
+  const syncButtons = () => {
+    const empty = isEmpty();
+    if (sendBtn) sendBtn.disabled = empty || sending;
+    if (clearBtn) clearBtn.disabled = empty;
+    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
+    if (root) root.hidden = !active2 && empty;
+  };
+  const toolButton = (name, label, icon) => {
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "data-tool": name,
+        "aria-label": label,
+        "data-tooltip": label,
+        "aria-pressed": "false"
+      },
+      icon
+    );
+    button.addEventListener("click", () => {
+      tool = name;
+      applyBrush();
+    });
+    toolButtons.set(name, button);
+    return button;
+  };
+  const ensureMounted = () => {
+    if (root) return;
+    svg2 = document.createElementNS(SVG_NS3, "svg");
+    svg2.setAttribute("class", "annotation-layer-svg");
+    svg2.setAttribute("role", "img");
+    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
+    applyViewBox();
+    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
+    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
+      const button = el("button", {
+        type: "button",
+        class: "annotation-swatch",
+        "aria-label": name,
+        "data-tooltip": name,
+        "aria-pressed": "false"
+      });
+      button.style.setProperty("--annotation-swatch", value);
+      button.addEventListener("click", () => {
+        colour = value;
+        applyBrush();
+      });
+      swatches.set(value, button);
+      return button;
+    });
+    undoBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
+      undoIcon("ui-icon ui-icon-sm")
+    );
+    undoBtn.addEventListener("click", () => {
+      drauu?.undo();
+    });
+    clearBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
+      trashIcon("ui-icon ui-icon-sm")
+    );
+    clearBtn.addEventListener("click", () => {
+      drauu?.clear();
+    });
+    sendBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
+      "Send to agent"
+    );
+    sendBtn.addEventListener("click", () => {
+      if (sending) return;
+      sending = true;
+      sendBtn?.setAttribute("aria-busy", "true");
+      syncButtons();
+      void layer.export().then(async (payload) => {
+        const accepted = await options.onSend(payload);
+        if (!accepted) return;
+        layer.deactivate();
+      }).catch(() => {
+      }).finally(() => {
+        sending = false;
+        sendBtn?.removeAttribute("aria-busy");
+        syncButtons();
+      });
+    });
+    const doneBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "aria-label": "Done",
+        "data-tooltip": "Done (Esc)"
+      },
+      closeIcon("ui-icon ui-icon-sm")
+    );
+    doneBtn.addEventListener("click", () => {
+      layer.deactivate();
+    });
+    const strip = el(
+      "div",
+      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
+      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
+      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
+      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
+      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
+      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
+      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
+      separator(),
+      ...swatchButtons,
+      separator(),
+      undoBtn,
+      clearBtn,
+      separator(),
+      sendBtn,
+      doneBtn
+    );
+    strip.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
+    root.hidden = true;
+    host.append(root);
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver.observe(host);
+    }
+    drauu = createDrauu({
+      el: svg2,
+      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
+    });
+    drauu.on("changed", syncButtons);
+    drauu.on("committed", (node2) => {
+      if (!node2) return;
+      node2.setAttribute("data-tool", tool);
+      node2.setAttribute("data-colour", colour);
+    });
+    applyBrush();
+    syncButtons();
+  };
+  const onKeyDown = (event) => {
+    if (!active2) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      layer.deactivate();
+      return;
+    }
+    const meta3 = event.metaKey || event.ctrlKey;
+    if (meta3 && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) drauu?.redo();
+      else drauu?.undo();
+    }
+  };
+  const layer = {
+    get active() {
+      return active2;
+    },
+    activate() {
+      ensureMounted();
+      if (active2) return;
+      active2 = true;
+      root?.setAttribute("data-active", "true");
+      window.addEventListener("keydown", onKeyDown);
+      syncButtons();
+      toolButtons.get(tool)?.focus({ preventScroll: true });
+    },
+    deactivate() {
+      if (!active2) return;
+      active2 = false;
+      drauu?.cancel();
+      root?.setAttribute("data-active", "false");
+      window.removeEventListener("keydown", onKeyDown);
+      syncButtons();
+      options.onDeactivate?.();
+    },
+    toggle() {
+      if (active2) layer.deactivate();
+      else layer.activate();
+      return active2;
+    },
+    isEmpty,
+    clear() {
+      drauu?.clear();
+      syncButtons();
+    },
+    setTool(next) {
+      ensureMounted();
+      tool = next;
+      applyBrush();
+    },
+    setScrollOffset(x2, y2) {
+      if (Number.isFinite(x2)) scrollX = x2;
+      if (Number.isFinite(y2)) scrollY = y2;
+      applyViewBox();
+    },
+    async export() {
+      ensureMounted();
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const marks = Array.from(svg2?.children ?? []).map((node2) => {
+        return {
+          tool: toolOf(node2),
+          colour: node2.getAttribute("data-colour") ?? colour,
+          box: measureBox(node2)
+        };
+      });
+      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS3, "svg");
+      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
+      clone3.removeAttribute("class");
+      clone3.removeAttribute("role");
+      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone3.setAttribute("width", String(width));
+      clone3.setAttribute("height", String(height));
+      clone3.setAttribute(
+        "viewBox",
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
+      );
+      const serialised = clone3.outerHTML;
+      const base = await options.captureBase?.().catch(() => null);
+      let png = null;
+      let captured = false;
+      if (base) {
+        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
+        captured = png !== null;
+      }
+      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
+      return {
+        svg: serialised,
+        png,
+        captured,
+        width,
+        height,
+        marks
+      };
+    },
+    dispose() {
+      layer.deactivate();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      drauu?.unmount();
+      drauu = null;
+      root?.remove();
+      root = null;
+      svg2 = null;
+    }
+  };
+  return layer;
+}
+var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
+var init_annotation_layer = __esm({
+  "src/renderer/drawing/annotation-layer.ts"() {
+    init_helpers();
+    init_icons();
+    init_drauu2();
+    init_utils();
+    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
+    ANNOTATION_COLOURS = [
+      { name: "Red", value: "#e5484d" },
+      { name: "Blue", value: "#3b82f6" },
+      { name: "Green", value: "#22c55e" },
+      { name: "Yellow", value: "#eab308" }
+    ];
+    SHAPE_SIZE = 3;
+    PEN_SIZE = 6;
+  }
+});
+
+// src/renderer/attachments/prompt-attachments.ts
+function registerPromptAttachments(h3) {
+  handlers = h3;
+  return () => {
+    if (handlers === h3) handlers = null;
+  };
+}
+function getPromptAttachmentHandlers() {
+  return handlers;
+}
+var handlers;
+var init_prompt_attachments = __esm({
+  "src/renderer/attachments/prompt-attachments.ts"() {
+    handlers = null;
+  }
+});
+
+// src/renderer/drawing/attach-annotation.ts
+function attachAnnotation(payload, subject) {
+  const handlers3 = getPromptAttachmentHandlers();
+  if (!handlers3) {
+    showToast("Open a thread before sending an annotation.", { variant: "error" });
+    return false;
+  }
+  if (!payload.png) {
+    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
+    return false;
+  }
+  handlers3.attachImage(payload.png, "image/png");
+  handlers3.focusComposer?.();
+  showToast(
+    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
+    { durationMs: 2500 }
+  );
+  return true;
+}
+var init_attach_annotation = __esm({
+  "src/renderer/drawing/attach-annotation.ts"() {
+    init_prompt_attachments();
+    init_toast();
+  }
+});
+
 // src/renderer/attachments/image-expand.ts
 function pngDataUrlToBlob(dataUrl) {
   if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
@@ -64368,8 +65895,75 @@ function expandableImageSource(image) {
 function imageTitle(item) {
   return item.alt.trim() || "Expanded attachment";
 }
+function annotatableImage(item, closePreview) {
+  const frame = el("div", { class: "image-expand-frame" });
+  const image = el("img", { class: "image-expand-photo image-expand-image", alt: imageTitle(item) });
+  image.src = item.src;
+  attachImageCopyMenu(image);
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-annotate",
+      "aria-label": `Annotate ${imageTitle(item)}`,
+      "aria-pressed": "false"
+    },
+    penLineIcon("ui-icon ui-icon-sm"),
+    "Annotate"
+  );
+  let annotation = null;
+  const captureBase = () => {
+    if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+      return Promise.resolve(null);
+    }
+    const { width, height } = frame.getBoundingClientRect();
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    const context = canvas.getContext("2d");
+    if (!context) return Promise.resolve(null);
+    const scale2 = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+    const drawnWidth = image.naturalWidth * scale2;
+    const drawnHeight = image.naturalHeight * scale2;
+    context.drawImage(
+      image,
+      (canvas.width - drawnWidth) / 2,
+      (canvas.height - drawnHeight) / 2,
+      drawnWidth,
+      drawnHeight
+    );
+    return Promise.resolve(canvas.toDataURL("image/png"));
+  };
+  button.addEventListener("click", () => {
+    annotation ??= mountAnnotationLayer(frame, {
+      label: imageTitle(item),
+      captureBase,
+      onSend: (payload) => {
+        const attached = attachAnnotation(payload, imageTitle(item));
+        if (attached) closePreview();
+        return attached;
+      },
+      onDeactivate: () => {
+        button.setAttribute("aria-pressed", "false");
+      }
+    });
+    button.setAttribute("aria-pressed", String(annotation.toggle()));
+  });
+  frame.append(image);
+  return {
+    frame,
+    image,
+    button,
+    deactivate: () => annotation?.deactivate(),
+    dispose: () => {
+      annotation?.dispose();
+      image.removeAttribute("src");
+    }
+  };
+}
 function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  let session = null;
   const viewer = el("div", {
     class: "image-expand-viewer",
     role: "group",
@@ -64377,8 +65971,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     tabindex: "-1"
   });
   const stage = el("div", { class: "image-expand-stage" });
-  const imageEl = el("img", { class: "image-expand-image", alt: "" });
-  attachImageCopyMenu(imageEl);
+  const images = items.map((item) => annotatableImage(item, () => session?.close()));
   const previousButton = el(
     "button",
     {
@@ -64407,7 +66000,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     { class: "image-expand-nav-zone image-expand-nav-zone-next" },
     nextButton
   );
-  stage.append(imageEl, previousZone, nextZone);
+  stage.append(...images.map(({ frame }) => frame), previousZone, nextZone);
   const thumbnailButtons = items.map((item, index) => {
     const thumbnail2 = el("img", {
       class: "image-expand-thumbnail-image",
@@ -64427,8 +66020,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
       thumbnail2
     );
     button.addEventListener("click", () => {
-      currentIndex = index;
-      render();
+      move(index);
     });
     return button;
   });
@@ -64438,19 +66030,26 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     ...thumbnailButtons
   );
   const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
-  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  const actionSlot = el("div", { class: "image-expand-gallery-action" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip, actionSlot);
   viewer.append(counter, stage, footer);
   const render = () => {
     const item = items[currentIndex];
     if (!item) return;
     const label = imageTitle(item);
-    imageEl.src = item.src;
-    imageEl.alt = label;
-    imageEl.dataset["imageIndex"] = String(currentIndex);
-    imageEl.setAttribute(
+    for (const [index, entry] of images.entries()) {
+      const selected = index === currentIndex;
+      entry.frame.hidden = !selected;
+      entry.image.classList.toggle("image-expand-image", selected);
+    }
+    const selectedImage = images[currentIndex];
+    if (!selectedImage) return;
+    selectedImage.image.dataset["imageIndex"] = String(currentIndex);
+    selectedImage.image.setAttribute(
       "aria-label",
       label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
     );
+    actionSlot.replaceChildren(selectedImage.button);
     viewer.setAttribute(
       "aria-label",
       "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
@@ -64469,15 +66068,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   const move = (nextIndex) => {
-    if (nextIndex < 0 || nextIndex >= items.length) return;
+    if (nextIndex < 0 || nextIndex >= items.length || nextIndex === currentIndex) return;
+    images[currentIndex]?.deactivate();
     currentIndex = nextIndex;
     render();
   };
   previousButton.addEventListener("click", () => {
     move(currentIndex - 1);
+    viewer.focus({ preventScroll: true });
   });
   nextButton.addEventListener("click", () => {
     move(currentIndex + 1);
+    viewer.focus({ preventScroll: true });
   });
   viewer.addEventListener("keydown", (event) => {
     if (event.key === "ArrowLeft") {
@@ -64495,14 +66097,14 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   render();
   const initialItem = items[currentIndex];
   if (!initialItem) return;
-  const session = openAttachmentPreview({
+  session = openAttachmentPreview({
     kind: "image-gallery",
     title: "Attached images \xB7 " + String(items.length),
     ariaLabel: "Image preview: " + imageTitle(initialItem),
     content: viewer,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
+      for (const entry of images) entry.dispose();
       for (const button of thumbnailButtons) {
         button.querySelector("img")?.removeAttribute("src");
       }
@@ -64513,18 +66115,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   });
 }
 function openSingleImage(src, alt, returnFocus2) {
-  const imageEl = el("img", { class: "image-expand-image", alt });
-  imageEl.src = src;
-  attachImageCopyMenu(imageEl);
-  openAttachmentPreview({
+  let session = null;
+  const entry = annotatableImage({ src, alt }, () => session?.close());
+  const content = el("div", { class: "image-expand-single" }, entry.frame, entry.button);
+  session = openAttachmentPreview({
     kind: "image",
     title: alt,
     ariaLabel: "Image preview: " + alt,
-    content: imageEl,
+    content,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
-      imageEl.alt = "Expanded attachment";
+      entry.dispose();
+      entry.image.alt = "Expanded attachment";
     }
   });
 }
@@ -64592,6 +66194,8 @@ var init_image_expand = __esm({
     init_context_menu();
     init_helpers();
     init_icons();
+    init_annotation_layer();
+    init_attach_annotation();
     init_toast();
     init_attachment_preview();
   }
@@ -68677,7 +70281,7 @@ function createDemoApi(scenario, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid },
+    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -74752,7 +76356,7 @@ var init_projects_drag = __esm({
 
 // src/renderer/views/projects-pane.ts
 function attentionBell(label) {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", "14");
@@ -74760,7 +76364,7 @@ function attentionBell(label) {
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute("fill", "currentColor");
   path.setAttribute(
     "d",
@@ -74794,7 +76398,7 @@ function chatPrStatus(rollup, ciFailing, conflicts) {
   );
 }
 function settingsIcon(className = "titlebar-btn-icon") {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", ICON_SIZE2);
@@ -74802,7 +76406,7 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "settings");
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute(
     "d",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
@@ -76539,7 +78143,7 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3, GROUP_MENU_ORDER;
+var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
@@ -76575,7 +78179,7 @@ var init_projects_pane = __esm({
     init_projects_drag();
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
-    SVG_NS3 = "http://www.w3.org/2000/svg";
+    SVG_NS4 = "http://www.w3.org/2000/svg";
     GROUP_MENU_ORDER = ["status", "project", "none"];
   }
 });
@@ -76606,13 +78210,13 @@ function seededDrawing(seed) {
     const first = pts[0];
     if (!first) return "";
     const n2 = pts.length;
-    let d3 = `M${f(first[0])} ${f(first[1])}`;
+    let d3 = `M${f2(first[0])} ${f2(first[1])}`;
     for (let i2 = 0; i2 < n2; i2++) {
       const p0 = pts[(i2 - 1 + n2) % n2] ?? first;
       const p1 = pts[i2] ?? first;
       const p2 = pts[(i2 + 1) % n2] ?? first;
       const p3 = pts[(i2 + 2) % n2] ?? first;
-      d3 += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+      d3 += `C${f2(p1[0] + (p2[0] - p0[0]) / 6)} ${f2(p1[1] + (p2[1] - p0[1]) / 6)} ${f2(p2[0] - (p3[0] - p1[0]) / 6)} ${f2(p2[1] - (p3[1] - p1[1]) / 6)} ${f2(p2[0])} ${f2(p2[1])}`;
     }
     return d3 + "Z";
   };
@@ -76686,9 +78290,9 @@ function risoIconSVG(seed, moving = false) {
           <path d="${main.d}"/>
         </clipPath>
 
-        <pattern id="${id}-dots" width="${f(dotPitch)}" height="${f(dotPitch)}"
-                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f(screenAngle)})">
-          <circle cx="${f(dotPitch / 2)}" cy="${f(dotPitch / 2)}" r="${f(dotRadius)}"
+        <pattern id="${id}-dots" width="${f2(dotPitch)}" height="${f2(dotPitch)}"
+                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(screenAngle)})">
+          <circle cx="${f2(dotPitch / 2)}" cy="${f2(dotPitch / 2)}" r="${f2(dotRadius)}"
                   fill="${pal.ink}" opacity=".55"/>
         </pattern>
 
@@ -76702,7 +78306,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Offset shadow in the third ink -->
       <path d="${main.d}" fill="${shadow}"
-            transform="translate(${f(shadowX)} ${f(shadowY)})"
+            transform="translate(${f2(shadowX)} ${f2(shadowY)})"
             style="mix-blend-mode:multiply"/>
 
       <g clip-path="url(#${id}-clip)">
@@ -76714,7 +78318,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Outline printed slightly off register -->
       <path d="${main.d}" fill="none" stroke="${pal.ink}" stroke-width="5"
-            stroke-linejoin="round" transform="translate(${f(outlineX)} ${f(outlineY)})"/>
+            stroke-linejoin="round" transform="translate(${f2(outlineX)} ${f2(outlineY)})"/>
 
       <!-- Paper grain over everything -->
       <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
@@ -76748,9 +78352,9 @@ function duotoneIconSVG(seed, moving = false) {
     <defs>
       ${moving ? inkMotion([overprint, stripes]) : ""}
       <clipPath id="${id}-clip"><path d="${main.d}"/></clipPath>
-      <pattern id="${id}-lines" width="${f(linePitch)}" height="${f(linePitch)}"
-               patternUnits="userSpaceOnUse" patternTransform="rotate(${f(lineAngle)})">
-        <rect width="${f(linePitch)}" height="${f(linePitch * 0.42)}" fill="${secondInk}"/>
+      <pattern id="${id}-lines" width="${f2(linePitch)}" height="${f2(linePitch)}"
+               patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(lineAngle)})">
+        <rect width="${f2(linePitch)}" height="${f2(linePitch * 0.42)}" fill="${secondInk}"/>
       </pattern>
       <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
         <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
@@ -76766,7 +78370,7 @@ function duotoneIconSVG(seed, moving = false) {
     <!-- Second ink, slightly off register; multiply makes the overlap colour -->
     <g clip-path="url(#${id}-clip)" style="mix-blend-mode:multiply">
       <path class="ink-0" d="${overprint.d}" fill="${secondInk}" opacity=".85"
-            transform="translate(${f(registerX)} ${f(registerY)})"/>
+            transform="translate(${f2(registerX)} ${f2(registerY)})"/>
     </g>
 
     <!-- Striped patch in the second ink -->
@@ -76848,7 +78452,7 @@ function createAgentAvatarMotion() {
     }
   };
 }
-var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f, sources, imageSources, MAX_CACHED_AVATARS;
+var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f2, sources, imageSources, MAX_CACHED_AVATARS;
 var init_agent_avatar = __esm({
   "src/renderer/dom/agent-avatar.ts"() {
     init_helpers();
@@ -76869,7 +78473,7 @@ var init_agent_avatar = __esm({
       ["#765BA7", "#FFE800"]
     ];
     DUOTONE_PAPER = "#F7F4EE";
-    f = (n2) => n2.toFixed(1);
+    f2 = (n2) => n2.toFixed(1);
     sources = /* @__PURE__ */ new Map();
     imageSources = /* @__PURE__ */ new WeakMap();
     MAX_CACHED_AVATARS = 128;
@@ -76917,23 +78521,23 @@ var init_chat_agent_identity = __esm({
 
 // src/renderer/dom/reasoning-activity-icon.ts
 function reasoningActivityIcon(className) {
-  const svg2 = document.createElementNS(SVG_NS4, "svg");
+  const svg2 = document.createElementNS(SVG_NS5, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "-540 -540 1080 1080");
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "reasoning-activity");
-  const path = document.createElementNS(SVG_NS4, "path");
+  const path = document.createElementNS(SVG_NS5, "path");
   path.setAttribute("class", "reasoning-activity-path");
   path.setAttribute("d", SPIRAL_PATH);
   path.setAttribute("pathLength", "1");
   svg2.append(path);
   return svg2;
 }
-var SVG_NS4, SPIRAL_PATH;
+var SVG_NS5, SPIRAL_PATH;
 var init_reasoning_activity_icon = __esm({
   "src/renderer/dom/reasoning-activity-icon.ts"() {
-    SVG_NS4 = "http://www.w3.org/2000/svg";
+    SVG_NS5 = "http://www.w3.org/2000/svg";
     SPIRAL_PATH = "M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093";
   }
 });
@@ -78179,1533 +79783,6 @@ var BROWSER_SESSION_PARTITION;
 var init_browser_session = __esm({
   "src/shared/browser-session.ts"() {
     BROWSER_SESSION_PARTITION = "persist:copse-browser";
-  }
-});
-
-// src/renderer/drawing/drauu/emitter.ts
-var Emitter;
-var init_emitter = __esm({
-  "src/renderer/drawing/drauu/emitter.ts"() {
-    Emitter = class {
-      listeners = /* @__PURE__ */ new Map();
-      on(type, fn2) {
-        let set2 = this.listeners.get(type);
-        if (!set2) {
-          set2 = /* @__PURE__ */ new Set();
-          this.listeners.set(type, set2);
-        }
-        set2.add(fn2);
-        return () => {
-          set2.delete(fn2);
-        };
-      }
-      emit(type, ...args) {
-        const set2 = this.listeners.get(type);
-        if (!set2) return;
-        for (const fn2 of [...set2]) {
-          Reflect.apply(fn2, void 0, args);
-        }
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/utils.ts
-function numSort(a3, b4) {
-  return a3 - b4;
-}
-function splitNum(a3) {
-  return [Math.abs(a3), a3 < 0 ? -1 : 1];
-}
-function guid3() {
-  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
-  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
-}
-function createArrowHead(id, fill) {
-  const defs = document.createElementNS(SVG_NS5, "defs");
-  const marker = document.createElementNS(SVG_NS5, "marker");
-  const head = document.createElementNS(SVG_NS5, "path");
-  head.setAttribute("fill", fill);
-  marker.setAttribute("id", id);
-  marker.setAttribute("viewBox", "0 -5 10 10");
-  marker.setAttribute("refX", "5");
-  marker.setAttribute("refY", "0");
-  marker.setAttribute("markerWidth", "4");
-  marker.setAttribute("markerHeight", "4");
-  marker.setAttribute("orient", "auto");
-  head.setAttribute("d", "M0,-5L10,0L0,5");
-  marker.appendChild(head);
-  defs.appendChild(marker);
-  return defs;
-}
-function totalLength(el3) {
-  const candidate = Reflect.get(el3, "getTotalLength");
-  if (typeof candidate !== "function") return null;
-  try {
-    const length = Reflect.apply(candidate, el3, []);
-    return typeof length === "number" ? length : null;
-  } catch {
-    return null;
-  }
-}
-var SVG_NS5, D;
-var init_utils = __esm({
-  "src/renderer/drawing/drauu/utils.ts"() {
-    SVG_NS5 = "http://www.w3.org/2000/svg";
-    D = 2;
-  }
-});
-
-// src/renderer/drawing/drauu/simplify.ts
-function getSqDist(p1, p2) {
-  const dx = p1.x - p2.x;
-  const dy = p1.y - p2.y;
-  return dx * dx + dy * dy;
-}
-function getSqSegDist(p2, p1, p22) {
-  let x2 = p1.x;
-  let y2 = p1.y;
-  let dx = p22.x - x2;
-  let dy = p22.y - y2;
-  if (dx !== 0 || dy !== 0) {
-    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
-    if (t2 > 1) {
-      x2 = p22.x;
-      y2 = p22.y;
-    } else if (t2 > 0) {
-      x2 += dx * t2;
-      y2 += dy * t2;
-    }
-  }
-  dx = p2.x - x2;
-  dy = p2.y - y2;
-  return dx * dx + dy * dy;
-}
-function simplifyRadialDist(points, sqTolerance) {
-  const first = points[0];
-  if (!first) return [];
-  let prevPoint = first;
-  const newPoints = [prevPoint];
-  let point;
-  for (let i2 = 1, len = points.length; i2 < len; i2++) {
-    point = points[i2];
-    if (point && getSqDist(point, prevPoint) > sqTolerance) {
-      newPoints.push(point);
-      prevPoint = point;
-    }
-  }
-  if (point && prevPoint !== point) newPoints.push(point);
-  return newPoints;
-}
-function simplifyDPStep(points, first, last, sqTolerance, simplified) {
-  let maxSqDist = sqTolerance;
-  let index = 0;
-  const a3 = points[first];
-  const b4 = points[last];
-  if (!a3 || !b4) return;
-  for (let i2 = first + 1; i2 < last; i2++) {
-    const p2 = points[i2];
-    if (!p2) continue;
-    const sqDist = getSqSegDist(p2, a3, b4);
-    if (sqDist > maxSqDist) {
-      index = i2;
-      maxSqDist = sqDist;
-    }
-  }
-  if (maxSqDist > sqTolerance) {
-    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
-    const mid = points[index];
-    if (mid) simplified.push(mid);
-    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
-  }
-}
-function simplifyDouglasPeucker(points, sqTolerance) {
-  const last = points.length - 1;
-  const first = points[0];
-  const end = points[last];
-  if (!first || !end) return points;
-  const simplified = [first];
-  simplifyDPStep(points, 0, last, sqTolerance, simplified);
-  simplified.push(end);
-  return simplified;
-}
-function simplify(points, tolerance, highestQuality = false) {
-  if (points.length <= 2) return points;
-  const sqTolerance = tolerance * tolerance;
-  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
-  return simplifyDouglasPeucker(reduced, sqTolerance);
-}
-var init_simplify = __esm({
-  "src/renderer/drawing/drauu/simplify.ts"() {
-  }
-});
-
-// src/renderer/drawing/drauu/models/base.ts
-var BaseModel;
-var init_base = __esm({
-  "src/renderer/drawing/drauu/models/base.ts"() {
-    init_utils();
-    BaseModel = class {
-      point = null;
-      start = null;
-      el = null;
-      drauu;
-      constructor(drauu) {
-        this.drauu = drauu;
-      }
-      onSelected(_el) {
-      }
-      onUnselected() {
-      }
-      onStart(_point) {
-        return void 0;
-      }
-      onMove(_point) {
-        return false;
-      }
-      onEnd(_point) {
-        return void 0;
-      }
-      get brush() {
-        return this.drauu.brush;
-      }
-      get shiftPressed() {
-        return this.drauu.shiftPressed;
-      }
-      get altPressed() {
-        return this.drauu.altPressed;
-      }
-      get svgElement() {
-        return this.drauu.el;
-      }
-      getMousePosition(event) {
-        const el3 = this.drauu.el;
-        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
-        const svgPoint = this.drauu.svgPoint;
-        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
-        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
-          svgPoint.x = event.clientX;
-          svgPoint.y = event.clientY;
-          const loc = svgPoint.matrixTransform(ctm.inverse());
-          return { x: loc.x, y: loc.y, pressure: event.pressure };
-        }
-        const rect = el3.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
-      }
-      createElement(name, overrides) {
-        const el3 = document.createElementNS(SVG_NS5, name);
-        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
-        el3.setAttribute("fill", brush.fill ?? "transparent");
-        el3.setAttribute("stroke", brush.color);
-        el3.setAttribute("stroke-width", brush.size.toString());
-        el3.setAttribute("stroke-linecap", "round");
-        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
-        return el3;
-      }
-      attr(name, value) {
-        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
-      }
-      setEvent(event) {
-        this.point = this.getMousePosition(event);
-        return this.point;
-      }
-      /** @internal */
-      _eventDown(event) {
-        const point = this.setEvent(event);
-        this.start = point;
-        return this.onStart(point);
-      }
-      /** @internal */
-      _eventMove(event) {
-        return this.onMove(this.setEvent(event));
-      }
-      /** @internal */
-      _eventUp(event) {
-        return this.onEnd(this.setEvent(event));
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/draw.ts
-var DrawModel;
-var init_draw = __esm({
-  "src/renderer/drawing/drauu/models/draw.ts"() {
-    init_utils();
-    init_simplify();
-    init_base();
-    DrawModel = class _DrawModel extends BaseModel {
-      points = [];
-      count = 0;
-      onStart(point) {
-        this.el = this.createElement("path", { fill: "transparent" });
-        this.points = [point];
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          this.el.appendChild(createArrowHead(id, this.brush.color));
-          this.el.setAttribute("marker-end", `url(#${id})`);
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) {
-          this.points.push(point);
-          this.count += 1;
-        }
-        if (this.count > 5) {
-          this.points = simplify(this.points, 1, true);
-          this.count = 0;
-        }
-        this.attr("d", _DrawModel.toSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        if (!path) return false;
-        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
-        const first = this.points[0];
-        if (totalLength(path) === 0 && first) {
-          const r2 = (this.brush.size / 2).toFixed(D);
-          const d22 = this.brush.size.toFixed(D);
-          const x2 = (first.x - this.brush.size / 2).toFixed(D);
-          const y2 = first.y.toFixed(D);
-          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
-          path.setAttribute("fill", this.brush.color);
-          path.setAttribute("stroke-width", "0");
-        }
-        return true;
-      }
-      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
-      static line(a3, b4) {
-        const lengthX = b4.x - a3.x;
-        const lengthY = b4.y - a3.y;
-        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
-      }
-      static controlPoint(current, previous, next, reverse) {
-        const p2 = previous ?? current;
-        const n2 = next ?? current;
-        const smoothing = 0.2;
-        const o3 = _DrawModel.line(p2, n2);
-        const angle = o3.angle + (reverse ? Math.PI : 0);
-        const length = o3.length * smoothing;
-        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
-      }
-      static bezierCommand(point, i2, points) {
-        const prev = points[i2 - 1] ?? point;
-        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
-        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
-        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
-      }
-      static toSvgData(points) {
-        return points.reduce(
-          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
-          ""
-        );
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/ellipse.ts
-var EllipseModel;
-var init_ellipse = __esm({
-  "src/renderer/drawing/drauu/models/ellipse.ts"() {
-    init_utils();
-    init_base();
-    EllipseModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("ellipse");
-        this.attr("cx", point.x);
-        this.attr("cy", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("cx", this.start.x);
-          this.attr("cy", this.start.y);
-          this.attr("rx", dx);
-          this.attr("ry", dy);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("cx", (x1 + x2) / 2);
-          this.attr("cy", (y1 + y2) / 2);
-          this.attr("rx", (x2 - x1) / 2);
-          this.attr("ry", (y2 - y1) / 2);
-        }
-        return true;
-      }
-      onEnd() {
-        const ellipse = this.el;
-        this.el = null;
-        if (!ellipse) return false;
-        const length = totalLength(ellipse);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/eraser.ts
-function measurable(el3) {
-  const getTotalLength = Reflect.get(el3, "getTotalLength");
-  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
-  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
-  return {
-    getTotalLength: () => {
-      const n2 = Reflect.apply(getTotalLength, el3, []);
-      return typeof n2 === "number" ? n2 : 0;
-    },
-    getPointAtLength: (d3) => {
-      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
-      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
-        const { x: x2, y: y2 } = p2;
-        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
-      }
-      return { x: 0, y: 0 };
-    }
-  };
-}
-function intersects(a3, b4) {
-  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
-  if (denom === 0) return false;
-  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const x2 = xNum / denom;
-  const y2 = yNum / denom;
-  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
-  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
-}
-var EraserModel;
-var init_eraser = __esm({
-  "src/renderer/drawing/drauu/models/eraser.ts"() {
-    init_utils();
-    init_base();
-    EraserModel = class extends BaseModel {
-      pathSubFactor = 20;
-      fragments = [];
-      previous = null;
-      erased = [];
-      onSelected(el3) {
-        this.fragments = [];
-        if (el3) this.collect(el3.children, void 0);
-      }
-      collect(children, owner) {
-        for (const child of Array.from(children)) {
-          if (child.namespaceURI !== SVG_NS5) continue;
-          const m2 = measurable(child);
-          if (m2) {
-            const length = m2.getTotalLength();
-            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
-              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
-              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
-              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
-            }
-          } else {
-            this.collect(child.children, owner ?? child);
-          }
-        }
-      }
-      onUnselected() {
-        this.fragments = [];
-      }
-      onStart(point) {
-        this.previous = point;
-        return void 0;
-      }
-      onMove(point) {
-        const previous = this.previous;
-        this.previous = point;
-        if (!previous) return false;
-        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
-        let hit = false;
-        for (const fragment of this.fragments) {
-          if (this.erased.includes(fragment.element)) continue;
-          if (intersects(fragment, stroke)) {
-            this.drauu._removeNode(fragment.element);
-            this.erased.push(fragment.element);
-            hit = true;
-          }
-        }
-        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
-        return hit;
-      }
-      onEnd() {
-        this.previous = null;
-        const erased = this.erased;
-        this.erased = [];
-        return {
-          undo: () => {
-            for (const node2 of erased) this.drauu._restoreNode(node2);
-          },
-          redo: () => {
-            for (const node2 of erased) this.drauu._removeNode(node2);
-          }
-        };
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/line.ts
-var LineModel;
-var init_line = __esm({
-  "src/renderer/drawing/drauu/models/line.ts"() {
-    init_utils();
-    init_base();
-    LineModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("line", { fill: "transparent" });
-        this.attr("x1", point.x);
-        this.attr("y1", point.y);
-        this.attr("x2", point.x);
-        this.attr("y2", point.y);
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          const g2 = document.createElementNS(SVG_NS5, "g");
-          g2.append(createArrowHead(id, this.brush.color));
-          g2.append(this.el);
-          this.attr("marker-end", `url(#${id})`);
-          return g2;
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        let { x: x2, y: y2 } = point;
-        if (this.shiftPressed) {
-          const dx = point.x - this.start.x;
-          const dy = point.y - this.start.y;
-          if (dy !== 0) {
-            const slope = Math.round(dx / dy);
-            if (Math.abs(slope) <= 1) {
-              x2 = this.start.x + dy * slope;
-              y2 = this.start.y + dy;
-            } else {
-              x2 = this.start.x + dx;
-              y2 = this.start.y;
-            }
-          }
-        }
-        if (this.altPressed) {
-          this.attr("x1", this.start.x * 2 - x2);
-          this.attr("y1", this.start.y * 2 - y2);
-        } else {
-          this.attr("x1", this.start.x);
-          this.attr("y1", this.start.y);
-        }
-        this.attr("x2", x2);
-        this.attr("y2", y2);
-        return true;
-      }
-      onEnd() {
-        const line = this.el;
-        this.el = null;
-        if (!line) return false;
-        const length = totalLength(line);
-        return length === null || length >= 5;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/rect.ts
-var RectModel;
-var init_rect = __esm({
-  "src/renderer/drawing/drauu/models/rect.ts"() {
-    init_utils();
-    init_base();
-    RectModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("rect");
-        if (this.brush.cornerRadius) {
-          this.attr("rx", this.brush.cornerRadius);
-          this.attr("ry", this.brush.cornerRadius);
-        }
-        this.attr("x", point.x);
-        this.attr("y", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("x", this.start.x - dx);
-          this.attr("y", this.start.y - dy);
-          this.attr("width", dx * 2);
-          this.attr("height", dy * 2);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("x", x1);
-          this.attr("y", y1);
-          this.attr("width", x2 - x1);
-          this.attr("height", y2 - y1);
-        }
-        return true;
-      }
-      onEnd() {
-        const rect = this.el;
-        this.el = null;
-        if (!rect) return false;
-        const length = totalLength(rect);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
-function i(e3, t2, n2, r2 = (e4) => e4) {
-  return e3 * r2(0.5 - t2 * (0.5 - n2));
-}
-function o(e3, t2, n2) {
-  let r2 = a(1, t2 / n2);
-  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
-}
-function s(e3) {
-  return [-e3[0], -e3[1]];
-}
-function c(e3, t2) {
-  return [e3[0] + t2[0], e3[1] + t2[1]];
-}
-function l(e3, t2, n2) {
-  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
-}
-function u(e3, t2) {
-  return [e3[0] - t2[0], e3[1] - t2[1]];
-}
-function d(e3, t2, n2) {
-  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
-}
-function f2(e3, t2) {
-  return [e3[0] * t2, e3[1] * t2];
-}
-function p(e3, t2, n2) {
-  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
-}
-function m(e3, t2) {
-  return [e3[0] / t2, e3[1] / t2];
-}
-function h(e3) {
-  return [e3[1], -e3[0]];
-}
-function g(e3, t2) {
-  let n2 = t2[0];
-  return e3[0] = t2[1], e3[1] = -n2, e3;
-}
-function ee(e3, t2) {
-  return e3[0] * t2[0] + e3[1] * t2[1];
-}
-function _(e3, t2) {
-  return e3[0] === t2[0] && e3[1] === t2[1];
-}
-function v(e3) {
-  return Math.hypot(e3[0], e3[1]);
-}
-function y(e3, t2) {
-  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
-  return n2 * n2 + r2 * r2;
-}
-function b(e3) {
-  return m(e3, v(e3));
-}
-function x(e3, t2) {
-  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
-}
-function S(e3, t2, n2) {
-  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
-  return [s16 + t2[0], c3 + t2[1]];
-}
-function C(e3, t2, n2, r2) {
-  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
-  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
-}
-function w(e3, t2, n2) {
-  return c(e3, f2(u(t2, e3), n2));
-}
-function te(e3, t2, n2, r2) {
-  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
-  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
-}
-function T(e3, t2, n2) {
-  return c(e3, f2(t2, n2));
-}
-function k(e3, n2) {
-  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
-  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
-  return i2;
-}
-function A2(e3, n2, r2) {
-  let i2 = [], a3 = 1 / r2;
-  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
-  return i2;
-}
-function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i2 = f2(r2, 0.5), a3 = f2(r2, 0.51);
-  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
-}
-function M(e3, n2, r2, i2) {
-  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
-  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
-  return a3;
-}
-function ne(e3, t2, n2) {
-  return [c(e3, f2(t2, n2)), c(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2))];
-}
-function N(e3, t2, n2) {
-  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
-}
-function re(e3, t2, n2) {
-  return e3.slice(0, 10).reduce((e4, r2) => {
-    let i2 = r2.pressure;
-    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
-  }, e3[0].pressure);
-}
-function P(e3, n2 = {}) {
-  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
-  if (e3.length === 0 || r2 <= 0) return [];
-  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
-  for (let n3 = 0; n3 < e3.length; n3++) {
-    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
-    if (!x3 && F3 - b5 < 3) continue;
-    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
-    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
-    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
-    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
-    if (j3 || M4) {
-      g(E, W), p(E, E, H2);
-      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
-      G2 = q2, K2 = J2, M4 && (Y3 = true);
-      continue;
-    }
-    if (Y3 = false, x3) {
-      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
-      continue;
-    }
-    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
-  }
-  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
-  if (e3.length === 1) {
-    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
-  } else {
-    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
-    let t2 = h(s(e3[e3.length - 1].vector));
-    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
-  }
-  return z4.concat($2, B3.reverse(), Q3);
-}
-function I(e3) {
-  return e3 != null && e3 >= 0;
-}
-function L(e3, t2 = {}) {
-  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
-  if (e3.length === 0) return [];
-  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
-  if (l2.length === 2) {
-    let e4 = l2[1];
-    l2 = l2.slice(0, -1);
-    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
-  }
-  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
-  for (let e4 = 1; e4 < l2.length; e4++) {
-    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
-    if (_(m2.point, t3)) continue;
-    let r2 = x(t3, m2.point);
-    if (p2 += r2, e4 < h3 && !f4) {
-      if (p2 < a3) continue;
-      f4 = true;
-    }
-    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
-  }
-  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
-}
-function R(e3, t2 = {}) {
-  return P(L(e3, t2), t2);
-}
-var e, t, n, r, a, E, D2, O, F;
-var init_esm = __esm({
-  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
-    ({ PI: e } = Math);
-    t = e + 1e-4;
-    n = 0.5;
-    r = [1, 1];
-    ({ min: a } = Math);
-    E = [0, 0];
-    D2 = [0, 0];
-    O = [0, 0];
-    F = [0, 0];
-  }
-});
-
-// src/renderer/drawing/drauu/models/stylus.ts
-var StylusModel;
-var init_stylus = __esm({
-  "src/renderer/drawing/drauu/models/stylus.ts"() {
-    init_esm();
-    init_utils();
-    init_base();
-    StylusModel = class _StylusModel extends BaseModel {
-      points = [];
-      onStart(point) {
-        this.el = document.createElementNS(SVG_NS5, "path");
-        this.points = [point];
-        this.attr("fill", this.brush.color);
-        this.attr("d", this.getSvgData(this.points));
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) this.points.push(point);
-        this.attr("d", this.getSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        return path !== null;
-      }
-      getSvgData(points) {
-        return _StylusModel.getSvgData(points, this.brush);
-      }
-      static getSvgData(points, brush) {
-        const stroke = R(points, {
-          size: brush.size,
-          thinning: 0.9,
-          simulatePressure: false,
-          start: { taper: 5 },
-          end: { taper: 5 },
-          ...brush.stylusOptions
-        });
-        const first = stroke[0];
-        if (!first) return "";
-        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
-        for (let i2 = 0; i2 < stroke.length; i2++) {
-          const a3 = stroke[i2];
-          const b4 = stroke[(i2 + 1) % stroke.length];
-          if (!a3 || !b4) continue;
-          const [x0, y0] = a3;
-          const [x1, y1] = b4;
-          parts.push(
-            x0.toFixed(2),
-            y0.toFixed(2),
-            ((x0 + x1) / 2).toFixed(2),
-            ((y0 + y1) / 2).toFixed(2)
-          );
-        }
-        parts.push("Z");
-        return parts.join(" ");
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/index.ts
-function createModels(drauu) {
-  return {
-    draw: new DrawModel(drauu),
-    stylus: new StylusModel(drauu),
-    line: new LineModel(drauu),
-    rectangle: new RectModel(drauu),
-    ellipse: new EllipseModel(drauu),
-    eraseLine: new EraserModel(drauu)
-  };
-}
-var init_models = __esm({
-  "src/renderer/drawing/drauu/models/index.ts"() {
-    init_draw();
-    init_ellipse();
-    init_eraser();
-    init_line();
-    init_rect();
-    init_stylus();
-  }
-});
-
-// src/renderer/drawing/drauu/drauu.ts
-function createDrauu(options) {
-  return new Drauu(options);
-}
-var DEFAULT_BRUSH, Drauu;
-var init_drauu = __esm({
-  "src/renderer/drawing/drauu/drauu.ts"() {
-    init_emitter();
-    init_models();
-    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
-    Drauu = class {
-      el = null;
-      svgPoint = null;
-      shiftPressed = false;
-      altPressed = false;
-      drawing = false;
-      options;
-      emitter = new Emitter();
-      originalPointerId = null;
-      models = createModels(this);
-      currentNode;
-      opStack = [];
-      opIndex = 0;
-      disposables = [];
-      elements = [];
-      constructor(options = {}) {
-        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
-        if (options.el) this.mount(options.el, options.eventTarget, options.window);
-      }
-      get model() {
-        return this.models[this.mode];
-      }
-      get mounted() {
-        return this.el !== null;
-      }
-      get mode() {
-        return this.options.brush.mode ?? "stylus";
-      }
-      set mode(v3) {
-        this.models[this.mode].onUnselected();
-        this.options.brush.mode = v3;
-        this.model.onSelected(this.el);
-      }
-      get brush() {
-        return this.options.brush;
-      }
-      set brush(v3) {
-        this.options.brush = v3;
-      }
-      mount(el3, eventEl, listenWindow = window) {
-        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
-        if (el3.tagName.toLowerCase() !== "svg")
-          throw new Error("[drauu] can only mount to an SVG element");
-        this.el = el3;
-        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
-        const target = eventEl ?? el3;
-        const start = (e3) => {
-          if (e3 instanceof PointerEvent) this.eventStart(e3);
-        };
-        const move = (e3) => {
-          this.eventMove(e3);
-        };
-        const end = (e3) => {
-          this.eventEnd(e3);
-        };
-        const keyboard = (e3) => {
-          this.eventKeyboard(e3);
-        };
-        const touchMove = (e3) => {
-          this.touchMove(e3);
-        };
-        target.addEventListener("pointerdown", start, { passive: false });
-        listenWindow.addEventListener("pointermove", move, { passive: false });
-        listenWindow.addEventListener("pointerup", end, { passive: false });
-        listenWindow.addEventListener("pointercancel", end, { passive: false });
-        listenWindow.addEventListener("keydown", keyboard, false);
-        listenWindow.addEventListener("keyup", keyboard, false);
-        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
-        this.disposables.push(() => {
-          target.removeEventListener("pointerdown", start);
-          listenWindow.removeEventListener("pointermove", move);
-          listenWindow.removeEventListener("pointerup", end);
-          listenWindow.removeEventListener("pointercancel", end);
-          listenWindow.removeEventListener("keydown", keyboard, false);
-          listenWindow.removeEventListener("keyup", keyboard, false);
-          listenWindow.removeEventListener("touchmove", touchMove);
-        });
-        this.model.onSelected(this.el);
-        this.emitter.emit("mounted");
-      }
-      unmount() {
-        for (const dispose of this.disposables) dispose();
-        this.disposables.length = 0;
-        this.elements.length = 0;
-        this.el = null;
-        this.emitter.emit("unmounted");
-      }
-      on(type, fn2) {
-        return this.emitter.on(type, fn2);
-      }
-      undo() {
-        if (!this.canUndo() || this.drawing) return false;
-        this.opIndex -= 1;
-        this.opStack[this.opIndex]?.undo();
-        this.emitter.emit("changed");
-        return true;
-      }
-      redo() {
-        if (!this.canRedo() || this.drawing) return false;
-        this.opStack[this.opIndex]?.redo();
-        this.opIndex += 1;
-        this.emitter.emit("changed");
-        return true;
-      }
-      canRedo() {
-        return this.opIndex < this.opStack.length;
-      }
-      canUndo() {
-        return this.opIndex > 0;
-      }
-      eventMove(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        if (this.model._eventMove(event)) {
-          event.stopPropagation();
-          event.preventDefault();
-          this.emitter.emit("changed");
-        }
-      }
-      eventStart(event) {
-        if (!this.acceptsInput(event)) return;
-        event.stopPropagation();
-        event.preventDefault();
-        if (this.currentNode) this.cancel();
-        this.drawing = true;
-        this.originalPointerId = event.pointerId;
-        this.emitter.emit("start");
-        this.currentNode = this.model._eventDown(event);
-        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
-        this.emitter.emit("changed");
-      }
-      eventEnd(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        const result = this.model._eventUp(event);
-        if (!result) {
-          this.cancel();
-        } else if (result === true) {
-          const node2 = this.currentNode;
-          if (node2) {
-            this._appendNode(node2);
-            this.commit({
-              undo: () => {
-                this._removeNode(node2);
-              },
-              redo: () => {
-                this._restoreNode(node2);
-              }
-            });
-          }
-        } else {
-          this.commit(result);
-        }
-        this.drawing = false;
-        this.emitter.emit("end");
-        this.emitter.emit("changed");
-        this.originalPointerId = null;
-      }
-      touchMove(event) {
-        for (const touch of Array.from(event.touches)) {
-          const touchType = Reflect.get(touch, "touchType");
-          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
-            event.preventDefault();
-            return;
-          }
-        }
-      }
-      acceptsInput(event) {
-        const accepted = this.options.acceptsInputTypes;
-        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
-        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
-      }
-      eventKeyboard(event) {
-        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
-        this.shiftPressed = event.shiftKey;
-        this.altPressed = event.altKey;
-        const point = this.model.point;
-        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
-      }
-      commit(op) {
-        this.opStack.length = this.opIndex;
-        this.opStack.push(op);
-        this.opIndex += 1;
-        const node2 = this.currentNode;
-        this.currentNode = void 0;
-        this.emitter.emit("committed", node2);
-      }
-      clear() {
-        this.opStack.length = 0;
-        this.opIndex = 0;
-        this.elements = [];
-        this.cancel();
-        if (this.el) this.el.innerHTML = "";
-        this.emitter.emit("changed");
-      }
-      cancel() {
-        if (this.currentNode) {
-          this.currentNode.remove();
-          this.currentNode = void 0;
-          this.emitter.emit("canceled");
-        }
-      }
-      dump() {
-        return this.el?.innerHTML ?? "";
-      }
-      load(svg2) {
-        this.clear();
-        if (this.el) this.el.innerHTML = svg2;
-      }
-      /** @internal */
-      _appendNode(node2) {
-        const last = this.elements.at(-1);
-        if (last) last.after(node2);
-        else this.el?.append(node2);
-        const index = this.elements.push(node2) - 1;
-        node2.setAttribute("data-drauu-index", index.toString());
-      }
-      /** @internal */
-      _removeNode(node2) {
-        node2.remove();
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (Number.isInteger(index)) this.elements[index] = null;
-      }
-      /** @internal */
-      _restoreNode(node2) {
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (!Number.isInteger(index)) return;
-        this.elements[index] = node2;
-        for (let i2 = index - 1; i2 >= 0; i2--) {
-          const previous = this.elements[i2];
-          if (previous) {
-            previous.after(node2);
-            return;
-          }
-        }
-        this.el?.prepend(node2);
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/index.ts
-var init_drauu2 = __esm({
-  "src/renderer/drawing/drauu/index.ts"() {
-    init_drauu();
-    init_models();
-  }
-});
-
-// src/renderer/drawing/annotation-layer.ts
-function measureBox(node2) {
-  const getBBox = Reflect.get(node2, "getBBox");
-  if (typeof getBBox !== "function") return null;
-  try {
-    const box = Reflect.apply(getBBox, node2, []);
-    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
-      const { x: x2, y: y2, width, height } = box;
-      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
-        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
-      }
-    }
-  } catch {
-  }
-  return null;
-}
-function toolOf(node2) {
-  const tagged = node2.getAttribute("data-tool");
-  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
-}
-function composeAnnotationPng(svg2, width, height, base) {
-  return new Promise((resolve, reject) => {
-    const scale2 = window.devicePixelRatio || 1;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale2));
-    canvas.height = Math.max(1, Math.round(height * scale2));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject(new Error("2D canvas unavailable"));
-      return;
-    }
-    const loadImage = (src) => new Promise((res, rej) => {
-      const img = new Image();
-      img.onload = () => {
-        res(img);
-      };
-      img.onerror = () => {
-        rej(new Error("image failed to decode"));
-      };
-      img.src = src;
-    });
-    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
-    void (async () => {
-      try {
-        if (base) {
-          const baseImage = await loadImage(base);
-          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-        }
-        const marks = await loadImage(marksUrl);
-        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (error62) {
-        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
-      } finally {
-        URL.revokeObjectURL(marksUrl);
-      }
-    })();
-  });
-}
-function mountAnnotationLayer(host, options) {
-  let root = null;
-  let resizeObserver = null;
-  let svg2 = null;
-  let drauu = null;
-  let active2 = false;
-  let tool = "pen";
-  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
-  const toolButtons = /* @__PURE__ */ new Map();
-  const swatches = /* @__PURE__ */ new Map();
-  let sendBtn = null;
-  let undoBtn = null;
-  let clearBtn = null;
-  let sending = false;
-  let scrollX = 0;
-  let scrollY = 0;
-  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
-  const applyViewBox = () => {
-    if (!svg2) return;
-    const rect = host.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const height = Math.max(1, rect.height);
-    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
-  };
-  const applyBrush = () => {
-    if (!drauu) return;
-    const brush = drauu.brush;
-    brush.color = colour;
-    brush.arrowEnd = tool === "arrow";
-    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
-    const mode = {
-      pen: "stylus",
-      line: "line",
-      arrow: "line",
-      rect: "rectangle",
-      ellipse: "ellipse",
-      eraser: "eraseLine"
-    }[tool];
-    if (drauu.mode !== mode) drauu.mode = mode;
-    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
-    for (const [name, button] of toolButtons)
-      button.setAttribute("aria-pressed", String(name === tool));
-    for (const [value, button] of swatches)
-      button.setAttribute("aria-pressed", String(value === colour));
-  };
-  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
-  const syncButtons = () => {
-    const empty = isEmpty();
-    if (sendBtn) sendBtn.disabled = empty || sending;
-    if (clearBtn) clearBtn.disabled = empty;
-    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
-    if (root) root.hidden = !active2 && empty;
-  };
-  const toolButton = (name, label, icon) => {
-    const button = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "data-tool": name,
-        "aria-label": label,
-        "data-tooltip": label,
-        "aria-pressed": "false"
-      },
-      icon
-    );
-    button.addEventListener("click", () => {
-      tool = name;
-      applyBrush();
-    });
-    toolButtons.set(name, button);
-    return button;
-  };
-  const ensureMounted = () => {
-    if (root) return;
-    svg2 = document.createElementNS(SVG_NS5, "svg");
-    svg2.setAttribute("class", "annotation-layer-svg");
-    svg2.setAttribute("role", "img");
-    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
-    applyViewBox();
-    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el("button", {
-        type: "button",
-        class: "annotation-swatch",
-        "aria-label": name,
-        "data-tooltip": name,
-        "aria-pressed": "false"
-      });
-      button.style.setProperty("--annotation-swatch", value);
-      button.addEventListener("click", () => {
-        colour = value;
-        applyBrush();
-      });
-      swatches.set(value, button);
-      return button;
-    });
-    undoBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
-      undoIcon("ui-icon ui-icon-sm")
-    );
-    undoBtn.addEventListener("click", () => {
-      drauu?.undo();
-    });
-    clearBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
-      trashIcon("ui-icon ui-icon-sm")
-    );
-    clearBtn.addEventListener("click", () => {
-      drauu?.clear();
-    });
-    sendBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      "Send to agent"
-    );
-    sendBtn.addEventListener("click", () => {
-      if (sending) return;
-      sending = true;
-      sendBtn?.setAttribute("aria-busy", "true");
-      syncButtons();
-      void layer.export().then(async (payload) => {
-        const accepted = await options.onSend(payload);
-        if (!accepted) return;
-        layer.deactivate();
-      }).catch(() => {
-      }).finally(() => {
-        sending = false;
-        sendBtn?.removeAttribute("aria-busy");
-        syncButtons();
-      });
-    });
-    const doneBtn = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "aria-label": "Done",
-        "data-tooltip": "Done (Esc)"
-      },
-      closeIcon("ui-icon ui-icon-sm")
-    );
-    doneBtn.addEventListener("click", () => {
-      layer.deactivate();
-    });
-    const strip = el(
-      "div",
-      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
-      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
-      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
-      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
-      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
-      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
-      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
-      separator(),
-      ...swatchButtons,
-      separator(),
-      undoBtn,
-      clearBtn,
-      separator(),
-      sendBtn,
-      doneBtn
-    );
-    strip.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
-    root.hidden = true;
-    host.append(root);
-    if (typeof ResizeObserver === "function") {
-      resizeObserver = new ResizeObserver(applyViewBox);
-      resizeObserver.observe(host);
-    }
-    drauu = createDrauu({
-      el: svg2,
-      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
-    });
-    drauu.on("changed", syncButtons);
-    drauu.on("committed", (node2) => {
-      if (!node2) return;
-      node2.setAttribute("data-tool", tool);
-      node2.setAttribute("data-colour", colour);
-    });
-    applyBrush();
-    syncButtons();
-  };
-  const onKeyDown = (event) => {
-    if (!active2) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      layer.deactivate();
-      return;
-    }
-    const meta3 = event.metaKey || event.ctrlKey;
-    if (meta3 && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      if (event.shiftKey) drauu?.redo();
-      else drauu?.undo();
-    }
-  };
-  const layer = {
-    get active() {
-      return active2;
-    },
-    activate() {
-      ensureMounted();
-      if (active2) return;
-      active2 = true;
-      root?.setAttribute("data-active", "true");
-      window.addEventListener("keydown", onKeyDown);
-      syncButtons();
-      toolButtons.get(tool)?.focus({ preventScroll: true });
-    },
-    deactivate() {
-      if (!active2) return;
-      active2 = false;
-      drauu?.cancel();
-      root?.setAttribute("data-active", "false");
-      window.removeEventListener("keydown", onKeyDown);
-      syncButtons();
-      options.onDeactivate?.();
-    },
-    toggle() {
-      if (active2) layer.deactivate();
-      else layer.activate();
-      return active2;
-    },
-    isEmpty,
-    clear() {
-      drauu?.clear();
-      syncButtons();
-    },
-    setTool(next) {
-      ensureMounted();
-      tool = next;
-      applyBrush();
-    },
-    setScrollOffset(x2, y2) {
-      if (Number.isFinite(x2)) scrollX = x2;
-      if (Number.isFinite(y2)) scrollY = y2;
-      applyViewBox();
-    },
-    async export() {
-      ensureMounted();
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
-      const marks = Array.from(svg2?.children ?? []).map((node2) => {
-        return {
-          tool: toolOf(node2),
-          colour: node2.getAttribute("data-colour") ?? colour,
-          box: measureBox(node2)
-        };
-      });
-      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS5, "svg");
-      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
-      clone3.removeAttribute("class");
-      clone3.removeAttribute("role");
-      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-      clone3.setAttribute("width", String(width));
-      clone3.setAttribute("height", String(height));
-      clone3.setAttribute(
-        "viewBox",
-        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
-      );
-      const serialised = clone3.outerHTML;
-      const base = await options.captureBase?.().catch(() => null);
-      let png = null;
-      let captured = false;
-      if (base) {
-        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
-        captured = png !== null;
-      }
-      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
-      return {
-        svg: serialised,
-        png,
-        captured,
-        width,
-        height,
-        marks
-      };
-    },
-    dispose() {
-      layer.deactivate();
-      resizeObserver?.disconnect();
-      resizeObserver = null;
-      drauu?.unmount();
-      drauu = null;
-      root?.remove();
-      root = null;
-      svg2 = null;
-    }
-  };
-  return layer;
-}
-var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
-var init_annotation_layer = __esm({
-  "src/renderer/drawing/annotation-layer.ts"() {
-    init_helpers();
-    init_icons();
-    init_drauu2();
-    init_utils();
-    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
-    ANNOTATION_COLOURS = [
-      { name: "Red", value: "#e5484d" },
-      { name: "Blue", value: "#3b82f6" },
-      { name: "Green", value: "#22c55e" },
-      { name: "Yellow", value: "#eab308" }
-    ];
-    SHAPE_SIZE = 3;
-    PEN_SIZE = 6;
-  }
-});
-
-// src/renderer/attachments/prompt-attachments.ts
-function registerPromptAttachments(h3) {
-  handlers = h3;
-  return () => {
-    if (handlers === h3) handlers = null;
-  };
-}
-function getPromptAttachmentHandlers() {
-  return handlers;
-}
-var handlers;
-var init_prompt_attachments = __esm({
-  "src/renderer/attachments/prompt-attachments.ts"() {
-    handlers = null;
-  }
-});
-
-// src/renderer/drawing/attach-annotation.ts
-function attachAnnotation(payload, subject) {
-  const handlers3 = getPromptAttachmentHandlers();
-  if (!handlers3) {
-    showToast("Open a thread before sending an annotation.", { variant: "error" });
-    return false;
-  }
-  if (!payload.png) {
-    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
-    return false;
-  }
-  handlers3.attachImage(payload.png, "image/png");
-  handlers3.focusComposer?.();
-  showToast(
-    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
-    { durationMs: 2500 }
-  );
-  return true;
-}
-var init_attach_annotation = __esm({
-  "src/renderer/drawing/attach-annotation.ts"() {
-    init_prompt_attachments();
-    init_toast();
   }
 });
 
@@ -145357,6 +145434,49 @@ var init_automations2 = __esm({
   }
 });
 
+// src/renderer/controller/automation-appearance.ts
+function hasRunningAutomation(threads, backgroundThreads) {
+  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
+    (thread) => thread.automation !== void 0 && thread.status === "running"
+  );
+}
+function attachAutomationAppearance(store2, api2, root = document.documentElement) {
+  let active2 = null;
+  const sync = () => {
+    const state = store2.getState();
+    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
+    if (next === active2) return;
+    active2 = next;
+    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
+    void api2.setAutomationMode(next).catch((error62) => {
+      console.error("[automations] Failed to apply transient appearance:", error62);
+    });
+  };
+  const unsubs = [
+    store2.on("thread_status_changed", sync),
+    store2.on("threads_changed", sync),
+    store2.on("workspace_changed", sync)
+  ];
+  sync();
+  return () => {
+    unsubs.forEach((unsubscribe) => {
+      unsubscribe();
+    });
+    root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
+    if (active2 === true) {
+      void api2.setAutomationMode(false).catch((error62) => {
+        console.error("[automations] Failed to restore the native app icon:", error62);
+      });
+    }
+  };
+}
+var AUTOMATION_ACTIVE_ATTRIBUTE;
+var init_automation_appearance = __esm({
+  "src/renderer/controller/automation-appearance.ts"() {
+    AUTOMATION_ACTIVE_ATTRIBUTE = "data-automation-active";
+  }
+});
+
 // src/renderer/controller/best-value-default.ts
 async function resolveBestValueForActiveBlankThread(store2, api2) {
   const thread = getActiveThread(store2);
@@ -155741,6 +155861,7 @@ async function boot() {
     attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
+    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {
@@ -156144,6 +156265,7 @@ var init_main = __esm({
     init_agent();
     init_diff_state();
     init_automations2();
+    init_automation_appearance();
     init_best_value_default();
     init_persistence();
     init_perf();
