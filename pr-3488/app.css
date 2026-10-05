@@ -4858,6 +4858,15 @@ label {
   border: 1px solid var(--border);
   background: var(--bg-base);
 }
+.msg-user.is-preview-compact .message-image {
+  max-width: min(100%, 88px);
+  max-height: 64px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .msg-user .message-image {
+    transition: max-width 0.22s ease, max-height 0.22s ease;
+  }
+}
 .tool-result-preview {
   margin: 0;
   max-width: 100%;
