@@ -957,14 +957,13 @@ copse-ui-field input[type=password],
 .pane-projects-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md) var(--projects-action-inset) 0 var(--spacing-md);
   font-size: var(--group-header-font-size);
   font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .projects-add-btn {
@@ -981,32 +980,6 @@ copse-ui-field input[type=password],
   margin-left: 6px;
 }
 .projects-add-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.projects-search-btn {
-  display: inline-flex;
-  align-items: center;
-  margin-left: auto;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-}
-.projects-search-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.projects-search-btn.active {
-  color: var(--accent);
-}
-.projects-sort-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-}
-.projects-sort-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
@@ -1029,26 +1002,75 @@ copse-ui-field input[type=password],
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
-.projects-search-row {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.projects-search-input {
-  width: 100%;
+.projects-search {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 0;
   padding: 4px var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-input, var(--bg-elevated));
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.projects-search:focus-within {
+  border-color: var(--accent);
+}
+.projects-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-primary);
+  font: inherit;
   font-size: var(--font-size-sm);
   outline: none;
 }
-.projects-search-input:focus {
-  border-color: var(--accent);
-}
 .projects-search-input::placeholder {
   color: var(--text-muted);
+}
+.projects-filters {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.projects-filter-btn {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 2px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.projects-filter-btn:hover,
+.projects-filter-btn.is-filtering {
+  color: var(--text-primary);
+}
+.projects-sort-dir {
+  color: var(--text-muted);
+}
+.projects-filter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projects-list.is-compact .chat-thread-owner {
+  display: none;
+}
+.projects-list.is-compact .chat-row {
+  padding-block: calc(var(--list-row-padding-block) / 2);
 }
 .projects-list {
   flex: 1;
@@ -1135,6 +1157,41 @@ copse-ui-field input[type=password],
 .context-menu-item-label {
   flex: 1 1 auto;
 }
+.context-menu-item-detail {
+  flex: 0 0 auto;
+  margin-left: var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.context-menu-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  margin-left: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-hover);
+}
+.context-menu-switch i {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.12s;
+}
+.context-menu-switch.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.context-menu-switch.is-on i {
+  background: var(--bg-elevated);
+  transform: translateX(12px);
+}
 .context-menu-item-check {
   flex: 0 0 auto;
   color: var(--accent, var(--text-primary));
@@ -1146,6 +1203,11 @@ copse-ui-field input[type=password],
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
 }
 .context-menu-heading:not(:first-child) {
   margin-top: 2px;
@@ -1351,6 +1413,21 @@ copse-ui-field input[type=password],
 }
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
+}
+.automation-fold-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs) var(--projects-nested-title-indent);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+.automation-fold-row:hover {
+  color: var(--text-primary);
+}
+.automation-fold-row.is-failed .automation-fold-label {
+  color: var(--error);
 }
 .automation-schedule-runs .chat-row {
   padding-left: var(--projects-nested-title-indent);
@@ -13019,6 +13096,14 @@ dialog.activity-panel-overlay {
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
 }
+.activity-fold-run .activity-row-open {
+  padding-left: calc(var(--spacing-lg) + var(--spacing-lg));
+}
+.activity-fold-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
 .activity-glyph {
   grid-area: glyph;
   justify-self: center;
@@ -13098,6 +13183,7 @@ dialog.activity-panel-overlay {
 }
 .activity-detail-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm);
   margin: 0;
@@ -13105,6 +13191,8 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-sm);
 }
 .activity-detail-state {
+  flex: none;
+  white-space: nowrap;
   padding: 2px var(--spacing-sm);
   border-radius: var(--radius);
   background: var(--bg-muted);
@@ -13205,8 +13293,10 @@ dialog.activity-panel-overlay {
   border-top: 1px solid var(--border);
   background: var(--bg-subtle);
 }
-.activity-spacer {
-  flex: 1 1 auto;
+.activity-decide {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
 }
 .activity-detail-actions .ui-btn-secondary {
   border-color: var(--border-strong);
@@ -13255,6 +13345,7 @@ dialog.activity-panel-overlay {
   box-sizing: border-box;
   flex: none;
   width: var(--chat-composer-width);
+  max-width: 100%;
   margin: 14px auto 7px;
   padding-left: 2px;
   color: var(--text-muted);
@@ -13298,6 +13389,7 @@ dialog.activity-panel-overlay {
 }
 .activity-strip-name {
   overflow: hidden;
+  line-height: 1.4;
   font-size: var(--font-size-sm);
   font-weight: 600;
   text-overflow: ellipsis;
@@ -13305,6 +13397,7 @@ dialog.activity-panel-overlay {
 }
 .activity-strip-stats {
   display: flex;
+  line-height: 1.4;
   gap: 6px;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -13319,6 +13412,7 @@ dialog.activity-panel-overlay {
   grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 260px;
+  max-height: 920px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
@@ -13334,6 +13428,7 @@ dialog.activity-panel-overlay {
 .activity-home .activity-group-title {
   display: block;
   padding: 11px 18px 7px;
+  line-height: 1.4;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -13371,6 +13466,10 @@ dialog.activity-panel-overlay {
 .activity-home .activity-row[data-state=needs-answer] .activity-state,
 .activity-home .activity-row[data-state=working] .activity-state {
   display: none;
+}
+.activity-home .activity-glyph {
+  width: calc(16px * var(--ui-scale));
+  height: calc(16px * var(--ui-scale));
 }
 .activity-home .activity-detail-header {
   padding: 26px 30px 0;
@@ -13448,6 +13547,11 @@ dialog.activity-panel-overlay {
   }
   .activity-home .activity-strip {
     margin-bottom: 10px;
+    mask-image:
+      linear-gradient(
+        to right,
+        var(--text-primary) calc(100% - 28px),
+        transparent);
   }
   .activity-home .activity-strip-card,
   .activity-home .activity-strip-card:first-child {
@@ -13457,6 +13561,9 @@ dialog.activity-panel-overlay {
     width: auto;
     padding: 6px 12px;
     border-radius: var(--radius);
+  }
+  .activity-home .activity-strip-working {
+    display: none;
   }
   .activity-home .activity-panel-body {
     grid-template-columns: minmax(0, 1fr);
