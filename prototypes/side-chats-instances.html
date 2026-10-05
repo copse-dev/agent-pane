@@ -1,632 +1,2893 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Copse side chats – many instances</title>
-<style>
-:root{color-scheme:dark;--tint-hue:#244c25;--tint-amount:4%;--tint-light:7.6%;
---bg-base:color-mix(in srgb,var(--tint-hue) var(--tint-amount),#1e1e1e);--bg-elevated:color-mix(in srgb,var(--tint-hue) var(--tint-amount),#252526);--bg-hover:color-mix(in srgb,var(--tint-hue) var(--tint-amount),#2a2d2e);--bg-muted:color-mix(in srgb,var(--tint-hue) var(--tint-amount),#2d2d2d);--bg-subtle:color-mix(in srgb,var(--tint-hue) var(--tint-amount),#232324);
---text-primary:#d4d4d4;--text-secondary:#a6a6a6;--text-muted:#808080;--border:#414141;--border-subtle:#333;--border-strong:#565656;
---accent-color:#ff93d0;--accent:var(--accent-color);--accent-fill:var(--accent-color);--accent-soft:color-mix(in srgb,var(--accent) 14%,var(--bg-elevated));--bg-selected:color-mix(in srgb,var(--accent) 20%,var(--bg-elevated));--text-on-accent:#444;--link:color-mix(in srgb,var(--accent) 65%,white);
---error:#f48771;--danger:#f14c4c;--success:#4ec9b0;--warning:#cca700;--info:#6fb3d9;--important:#9d7cf4;
---change-added:var(--success);--change-deleted:var(--error);--diff-insert:color-mix(in srgb,var(--success) 20%,transparent);--diff-delete:color-mix(in srgb,var(--danger) 26%,transparent);
---shadow-sm:0 1px 2px rgba(0,0,0,.2);--shadow-md:0 8px 24px rgba(0,0,0,.35);
---bg:var(--bg-elevated);--surface:var(--bg-base);--surface2:var(--bg-muted);--line:var(--border-subtle);--text:var(--text-primary);--muted:var(--text-muted);--side:var(--important);--side-soft:color-mix(in srgb,var(--important) 12%,var(--bg-elevated));--code:var(--bg-subtle);--shadow:var(--shadow-md);--radius-sm:4px;--radius:6px;--radius-lg:8px;--band:36px;--titlebar-h:40px;
---mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;--sans:'Pliant',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
-:root[data-theme=light]{color-scheme:light;--bg-base:color-mix(in srgb,var(--tint-hue) var(--tint-light),#fff);--bg-elevated:color-mix(in srgb,var(--tint-hue) var(--tint-light),#f3f3f3);--bg-hover:color-mix(in srgb,var(--tint-hue) var(--tint-light),#e8e8e8);--bg-muted:color-mix(in srgb,var(--tint-hue) var(--tint-light),#ececec);--bg-subtle:color-mix(in srgb,var(--tint-hue) var(--tint-light),#f7f7f7);
---text-primary:#333;--text-secondary:#5f5f5f;--text-muted:#767676;--border:#d4d4d4;--border-subtle:#e4e4e4;--border-strong:#ababab;
---accent:color-mix(in srgb,var(--accent-color) 30%,black);--accent-soft:color-mix(in srgb,var(--accent) 10%,var(--bg-elevated));--bg-selected:color-mix(in srgb,var(--accent-fill) 22%,var(--bg-elevated));--link:var(--accent);
---error:#cf222e;--danger:#cf222e;--success:#1a7f37;--warning:#9a6700;--info:#0969da;--important:#8250df;
---change-added:color-mix(in srgb,var(--success) 80%,black);--change-deleted:color-mix(in srgb,var(--error) 80%,black);--diff-insert:color-mix(in srgb,var(--success) 16%,transparent);--diff-delete:color-mix(in srgb,var(--danger) 14%,transparent);
---shadow-sm:0 1px 2px rgba(0,0,0,.08);--shadow-md:0 8px 24px rgba(0,0,0,.14);}
-@media (prefers-color-scheme:light){:root:not([data-theme=dark]){color-scheme:light;--bg-base:color-mix(in srgb,var(--tint-hue) var(--tint-light),#fff);--bg-elevated:color-mix(in srgb,var(--tint-hue) var(--tint-light),#f3f3f3);--bg-hover:color-mix(in srgb,var(--tint-hue) var(--tint-light),#e8e8e8);--bg-muted:color-mix(in srgb,var(--tint-hue) var(--tint-light),#ececec);--bg-subtle:color-mix(in srgb,var(--tint-hue) var(--tint-light),#f7f7f7);
---text-primary:#333;--text-secondary:#5f5f5f;--text-muted:#767676;--border:#d4d4d4;--border-subtle:#e4e4e4;--border-strong:#ababab;
---accent:color-mix(in srgb,var(--accent-color) 30%,black);--accent-soft:color-mix(in srgb,var(--accent) 10%,var(--bg-elevated));--bg-selected:color-mix(in srgb,var(--accent-fill) 22%,var(--bg-elevated));--link:var(--accent);
---error:#cf222e;--danger:#cf222e;--success:#1a7f37;--warning:#9a6700;--info:#0969da;--important:#8250df;
---change-added:color-mix(in srgb,var(--success) 80%,black);--change-deleted:color-mix(in srgb,var(--error) 80%,black);--diff-insert:color-mix(in srgb,var(--success) 16%,transparent);--diff-delete:color-mix(in srgb,var(--danger) 14%,transparent);
---shadow-sm:0 1px 2px rgba(0,0,0,.08);--shadow-md:0 8px 24px rgba(0,0,0,.14);}}
-*{box-sizing:border-box}html,body{height:100%;margin:0}
-body{font:13px/1.45 var(--sans);background:var(--bg);color:var(--text);display:flex;flex-direction:column}
-button,select,input{font:inherit;color:inherit}button{background:none;border:0;cursor:pointer;padding:0;text-align:left}
-svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.top{padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.top h1{font-size:13px;margin:0;font-weight:600}
-.seg{display:flex;gap:2px;background:var(--surface2);padding:2px;border-radius:8px;flex-wrap:wrap}
-.seg button{padding:3px 9px;border-radius:6px;color:var(--muted);text-align:center}
-.seg button.on{background:var(--bg-selected);color:var(--text)}
-.seg.mini button{padding:1px 8px;display:flex;gap:4px;align-items:center;font-size:12px}
-.seg-l{font-size:11px;color:var(--muted)}
-.tbtn{color:var(--muted);padding:3px 8px;border:1px solid var(--line);border-radius:6px}
-.tbtn.on{color:var(--text);background:var(--surface2)}
-.note{padding:8px 14px;display:grid;grid-template-columns:1.2fr 1.4fr 1fr;gap:16px;border-bottom:1px solid var(--line);font-size:12px}
-.note h4{margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-.note p{margin:0 0 3px}.note ol{margin:0;padding-left:16px}.note li{margin-bottom:1px}
-.con h4{color:var(--warning)}.rules h4{color:var(--text-secondary)}
-@media(max-width:900px){.note{grid-template-columns:1fr}}
-.stage{flex:1;min-height:0;padding:12px 12px 6px;display:flex;flex-direction:column;gap:6px;overflow:auto}
-#status{font-size:12px;color:var(--muted);min-height:20px;text-align:center;flex:none}
-#status b{color:var(--text);font-weight:600}
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse side chats – many instances</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --tint-hue: #244c25;
+        --tint-amount: 4%;
+        --tint-light: 7.6%;
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2a2d2e);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2d2d2d);
+        --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #232324);
+        --text-primary: #d4d4d4;
+        --text-secondary: #a6a6a6;
+        --text-muted: #808080;
+        --border: #414141;
+        --border-subtle: #333;
+        --border-strong: #565656;
+        --accent-color: #ff93d0;
+        --accent: var(--accent-color);
+        --accent-fill: var(--accent-color);
+        --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+        --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+        --text-on-accent: #444;
+        --link: color-mix(in srgb, var(--accent) 65%, white);
+        --error: #f48771;
+        --danger: #f14c4c;
+        --success: #4ec9b0;
+        --warning: #cca700;
+        --info: #6fb3d9;
+        --important: #9d7cf4;
+        --change-added: var(--success);
+        --change-deleted: var(--error);
+        --diff-insert: color-mix(in srgb, var(--success) 20%, transparent);
+        --diff-delete: color-mix(in srgb, var(--danger) 26%, transparent);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+        --bg: var(--bg-elevated);
+        --surface: var(--bg-base);
+        --surface2: var(--bg-muted);
+        --line: var(--border-subtle);
+        --text: var(--text-primary);
+        --muted: var(--text-muted);
+        --side: var(--important);
+        --side-soft: color-mix(in srgb, var(--important) 12%, var(--bg-elevated));
+        --code: var(--bg-subtle);
+        --shadow: var(--shadow-md);
+        --radius-sm: 4px;
+        --radius: 6px;
+        --radius-lg: 8px;
+        --band: 36px;
+        --titlebar-h: 40px;
+        --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        --sans: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-light), #fff);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-light), #f3f3f3);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-light), #e8e8e8);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-light), #ececec);
+        --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-light), #f7f7f7);
+        --text-primary: #333;
+        --text-secondary: #5f5f5f;
+        --text-muted: #767676;
+        --border: #d4d4d4;
+        --border-subtle: #e4e4e4;
+        --border-strong: #ababab;
+        --accent: color-mix(in srgb, var(--accent-color) 30%, black);
+        --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+        --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
+        --link: var(--accent);
+        --error: #cf222e;
+        --danger: #cf222e;
+        --success: #1a7f37;
+        --warning: #9a6700;
+        --info: #0969da;
+        --important: #8250df;
+        --change-added: color-mix(in srgb, var(--success) 80%, black);
+        --change-deleted: color-mix(in srgb, var(--error) 80%, black);
+        --diff-insert: color-mix(in srgb, var(--success) 16%, transparent);
+        --diff-delete: color-mix(in srgb, var(--danger) 14%, transparent);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme='dark']) {
+          color-scheme: light;
+          --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-light), #fff);
+          --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-light), #f3f3f3);
+          --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-light), #e8e8e8);
+          --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-light), #ececec);
+          --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-light), #f7f7f7);
+          --text-primary: #333;
+          --text-secondary: #5f5f5f;
+          --text-muted: #767676;
+          --border: #d4d4d4;
+          --border-subtle: #e4e4e4;
+          --border-strong: #ababab;
+          --accent: color-mix(in srgb, var(--accent-color) 30%, black);
+          --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+          --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
+          --link: var(--accent);
+          --error: #cf222e;
+          --danger: #cf222e;
+          --success: #1a7f37;
+          --warning: #9a6700;
+          --info: #0969da;
+          --important: #8250df;
+          --change-added: color-mix(in srgb, var(--success) 80%, black);
+          --change-deleted: color-mix(in srgb, var(--error) 80%, black);
+          --diff-insert: color-mix(in srgb, var(--success) 16%, transparent);
+          --diff-delete: color-mix(in srgb, var(--danger) 14%, transparent);
+          --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+          --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font: 13px/1.45 var(--sans);
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0;
+        text-align: left;
+      }
+      svg {
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+      .top {
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .top h1 {
+        font-size: 13px;
+        margin: 0;
+        font-weight: 600;
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        background: var(--surface2);
+        padding: 2px;
+        border-radius: 8px;
+        flex-wrap: wrap;
+      }
+      .seg button {
+        padding: 3px 9px;
+        border-radius: 6px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .seg button.on {
+        background: var(--bg-selected);
+        color: var(--text);
+      }
+      .seg.mini button {
+        padding: 1px 8px;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        font-size: 12px;
+      }
+      .seg-l {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .tbtn {
+        color: var(--muted);
+        padding: 3px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .tbtn.on {
+        color: var(--text);
+        background: var(--surface2);
+      }
+      .note {
+        padding: 8px 14px;
+        display: grid;
+        grid-template-columns: 1.2fr 1.4fr 1fr;
+        gap: 16px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      .note h4 {
+        margin: 0 0 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+      .note p {
+        margin: 0 0 3px;
+      }
+      .note ol {
+        margin: 0;
+        padding-left: 16px;
+      }
+      .note li {
+        margin-bottom: 1px;
+      }
+      .con h4 {
+        color: var(--warning);
+      }
+      .rules h4 {
+        color: var(--text-secondary);
+      }
+      @media (max-width: 900px) {
+        .note {
+          grid-template-columns: 1fr;
+        }
+      }
+      .stage {
+        flex: 1;
+        min-height: 0;
+        padding: 12px 12px 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        overflow: auto;
+      }
+      #status {
+        font-size: 12px;
+        color: var(--muted);
+        min-height: 20px;
+        text-align: center;
+        flex: none;
+      }
+      #status b {
+        color: var(--text);
+        font-weight: 600;
+      }
 
-/* window = titlebar + app */
-.win{--pw:380px;flex:1;min-height:0;width:100%;margin:0 auto;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
-.win.sz-M{max-width:960px;--pw:320px}.win.sz-S{max-width:720px;--pw:280px}.win.sz-XS{max-width:520px}.win.sz-T{max-width:760px;--pw:300px}
-.win.short{flex:none;height:520px}
-.titlebar{height:var(--titlebar-h);flex:none;display:flex;align-items:center;gap:6px;padding:0 10px 0 14px;background:var(--bg);border-bottom:1px solid var(--line);user-select:none}
-.lights{display:flex;gap:8px;width:52px;margin-right:12px;flex:none}
-.lights i{width:12px;height:12px;border-radius:50%;display:block;opacity:.92}
-.titlebar .sp{flex:1}
-.tb-btn{display:flex;gap:5px;align-items:center;padding:4px 8px;border-radius:var(--radius);color:var(--text-secondary);font-size:12px}
-.tb-btn:hover{background:var(--bg-hover);color:var(--text)}
-.tb-btn.on{color:var(--text)}
-.app{flex:1;min-height:0;display:flex;position:relative;overflow:hidden}
-.sidebar{width:178px;flex:none;background:var(--bg);border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:2px;min-width:0}
-.sz-M .sidebar{width:150px}.sz-S .sidebar{width:46px;padding:10px 4px;align-items:center}
-.nosb .sidebar{display:none}
-.sz-S .tx,.sz-S .lbl,.sz-S .tgl span{display:none}
-.sidebar .logo{font-weight:700;padding:2px 8px 8px}.sz-S .logo{padding:2px 0 8px}
-.sidebar .item{padding:5px 8px;border-radius:6px;color:var(--muted);display:flex;gap:6px;align-items:center;width:100%;min-width:0}
-.sidebar .item .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.sidebar .item .ab{display:none;width:20px;text-align:center;font-weight:600}.sz-S .item .ab{display:block}
-.sidebar .item.on{background:var(--bg-selected);color:var(--text)}
-.sidebar .sub{padding:3px 8px 3px 22px;color:var(--muted);font-size:12px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
-.sz-S .sub{display:none}
-.sidebar .sub svg{color:var(--side);width:12px;height:12px}
-.sidebar .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:10px 8px 3px}
-.sidebar .tgl{margin-top:auto;font-size:11px;color:var(--muted);padding:6px 8px;display:flex;gap:6px;align-items:center;cursor:pointer}
-.main{flex:1;min-width:0;display:flex;flex-direction:column}
-.mhead{padding:6px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;min-width:0}
-.mhead .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mhead .sp{flex:1}.mhead .xs-only{display:none}.nosb .mhead .xs-only{display:flex}
-.pill{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--surface2);color:var(--muted);white-space:nowrap}
-.chat{flex:1;min-height:0;overflow:auto;padding:14px 16px}
-.msg{position:relative;margin:0 auto 14px;max-width:620px}
-.msg .who{font-size:11px;color:var(--muted);margin-bottom:2px}
-.msg.user .body{background:var(--surface2);padding:7px 11px;border-radius:10px;display:inline-block}
-.msg .body p{margin:0 0 6px}
-.msg .acts{position:absolute;top:-4px;right:0;opacity:0;background:var(--surface);border:1px solid var(--line);border-radius:6px}
-.msg:hover .acts{opacity:1}
-.acts button{padding:3px 7px;display:flex;gap:4px;align-items:center;color:var(--muted);font-size:12px}
-.acts button:hover{color:var(--text)}
-.tool{border:1px solid var(--line);border-radius:7px;padding:5px 9px;margin:4px 0;font-family:var(--mono);font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center;background:var(--code);width:100%}
-.tool b{color:var(--text);font-weight:500}
-.tool.op:hover{border-color:var(--border-strong)}.tool .go{margin-left:auto;color:var(--link);font-family:var(--sans)}
-.ops{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
-.op{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);border-radius:99px;padding:2px 10px;font-size:12px;background:var(--surface)}
-.op:hover{border-color:var(--border-strong);background:var(--bg-hover)}
-.diff{font-family:var(--mono);font-size:11.5px;background:var(--code);border:1px solid var(--line);border-radius:7px;padding:6px 0;margin:6px 0;overflow:auto}
-.diff div{padding:0 10px;white-space:pre}
-.diff .a,.dl.a{background:var(--diff-insert)}.diff .d,.dl.d{background:var(--diff-delete)}
-code{font-family:var(--mono);font-size:12px;background:var(--code);padding:0 4px;border-radius:4px}
-.composer{border-top:1px solid var(--line);padding:8px 14px}
-.composer .box{border:1px solid var(--line);border-radius:10px;padding:7px 10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.btn{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border:1px solid var(--border);border-radius:999px;background:transparent}
-.btn:hover{background:var(--bg-hover)}.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+      /* window = titlebar + app */
+      .win {
+        --pw: 380px;
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .win.sz-M {
+        max-width: 960px;
+        --pw: 320px;
+      }
+      .win.sz-S {
+        max-width: 720px;
+        --pw: 280px;
+      }
+      .win.sz-XS {
+        max-width: 520px;
+      }
+      .win.sz-T {
+        max-width: 760px;
+        --pw: 300px;
+      }
+      .win.short {
+        flex: none;
+        height: 520px;
+      }
+      .titlebar {
+        height: var(--titlebar-h);
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px 0 14px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        user-select: none;
+      }
+      .lights {
+        display: flex;
+        gap: 8px;
+        width: 52px;
+        margin-right: 12px;
+        flex: none;
+      }
+      .lights i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: block;
+        opacity: 0.92;
+      }
+      .titlebar .sp {
+        flex: 1;
+      }
+      .tb-btn {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+      .tb-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text);
+      }
+      .tb-btn.on {
+        color: var(--text);
+      }
+      .app {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        position: relative;
+        overflow: hidden;
+      }
+      .sidebar {
+        width: 178px;
+        flex: none;
+        background: var(--bg);
+        border-right: 1px solid var(--line);
+        padding: 10px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .sz-M .sidebar {
+        width: 150px;
+      }
+      .sz-S .sidebar {
+        width: 46px;
+        padding: 10px 4px;
+        align-items: center;
+      }
+      .nosb .sidebar {
+        display: none;
+      }
+      .sz-S .tx,
+      .sz-S .lbl,
+      .sz-S .tgl span {
+        display: none;
+      }
+      .sidebar .logo {
+        font-weight: 700;
+        padding: 2px 8px 8px;
+      }
+      .sz-S .logo {
+        padding: 2px 0 8px;
+      }
+      .sidebar .item {
+        padding: 5px 8px;
+        border-radius: 6px;
+        color: var(--muted);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+      }
+      .sidebar .item .tx {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .sidebar .item .ab {
+        display: none;
+        width: 20px;
+        text-align: center;
+        font-weight: 600;
+      }
+      .sz-S .item .ab {
+        display: block;
+      }
+      .sidebar .item.on {
+        background: var(--bg-selected);
+        color: var(--text);
+      }
+      .sidebar .sub {
+        padding: 3px 8px 3px 22px;
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+      }
+      .sz-S .sub {
+        display: none;
+      }
+      .sidebar .sub svg {
+        color: var(--side);
+        width: 12px;
+        height: 12px;
+      }
+      .sidebar .lbl {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 10px 8px 3px;
+      }
+      .sidebar .tgl {
+        margin-top: auto;
+        font-size: 11px;
+        color: var(--muted);
+        padding: 6px 8px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        cursor: pointer;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .mhead {
+        padding: 6px 14px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+      }
+      .mhead .t {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .mhead .sp {
+        flex: 1;
+      }
+      .mhead .xs-only {
+        display: none;
+      }
+      .nosb .mhead .xs-only {
+        display: flex;
+      }
+      .pill {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: var(--surface2);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chat {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 14px 16px;
+      }
+      .msg {
+        position: relative;
+        margin: 0 auto 14px;
+        max-width: 620px;
+      }
+      .msg .who {
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 2px;
+      }
+      .msg.user .body {
+        background: var(--surface2);
+        padding: 7px 11px;
+        border-radius: 10px;
+        display: inline-block;
+      }
+      .msg .body p {
+        margin: 0 0 6px;
+      }
+      .msg .acts {
+        position: absolute;
+        top: -4px;
+        right: 0;
+        opacity: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .msg:hover .acts {
+        opacity: 1;
+      }
+      .acts button {
+        padding: 3px 7px;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .acts button:hover {
+        color: var(--text);
+      }
+      .tool {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 5px 9px;
+        margin: 4px 0;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: var(--code);
+        width: 100%;
+      }
+      .tool b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .tool.op:hover {
+        border-color: var(--border-strong);
+      }
+      .tool .go {
+        margin-left: auto;
+        color: var(--link);
+        font-family: var(--sans);
+      }
+      .ops {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 6px 0;
+      }
+      .op {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 2px 10px;
+        font-size: 12px;
+        background: var(--surface);
+      }
+      .op:hover {
+        border-color: var(--border-strong);
+        background: var(--bg-hover);
+      }
+      .diff {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 6px 0;
+        margin: 6px 0;
+        overflow: auto;
+      }
+      .diff div {
+        padding: 0 10px;
+        white-space: pre;
+      }
+      .diff .a,
+      .dl.a {
+        background: var(--diff-insert);
+      }
+      .diff .d,
+      .dl.d {
+        background: var(--diff-delete);
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--code);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .composer {
+        border-top: 1px solid var(--line);
+        padding: 8px 14px;
+      }
+      .composer .box {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 7px 10px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .btn {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        padding: 3px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: transparent;
+      }
+      .btn:hover {
+        background: var(--bg-hover);
+      }
+      .btn.ghost {
+        border-color: transparent;
+        background: none;
+        color: var(--muted);
+      }
 
-/* PR surface */
-.surface{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
-.sf-h{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.sf-h b{margin-right:4px}
-.chip{font-size:12px;padding:1px 10px;border-radius:999px;border:1px solid var(--border);color:var(--text-secondary)}
-.chip.on{background:var(--bg-selected);color:var(--text);border-color:transparent}
-.grp-h{position:sticky;top:0;background:var(--bg);padding:4px 14px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);z-index:1}
-.prrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);width:100%}
-.prrow:hover{background:var(--bg-hover)}.prrow.sel{background:var(--bg-selected)}
-.prm{min-width:0;display:flex;flex-direction:column}
-.prm .ttl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prm .repo{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prr{display:flex;gap:10px;font-size:11px;color:var(--muted);align-items:center}
-.prst{width:9px;height:9px;border-radius:50%;display:block;border:2px solid var(--success)}
-.prst.merged{border-color:var(--important);background:var(--important)}.prst.draft{border-color:var(--text-muted)}
-.chk.pass{color:var(--success)}.chk.fail{color:var(--error)}.chk.pending{color:var(--warning)}
-.pr-top{display:flex;gap:8px;align-items:flex-start;padding:10px 12px 0}
-.pr-top b{font-size:14px}
-.pr-meta{padding:2px 12px 8px;font-size:11px;color:var(--muted)}
-.pr-badge{font-size:11px;padding:0 8px;border-radius:999px;border:1px solid var(--border);color:var(--text-secondary);flex:none;margin-top:2px}
-.pr-badge.merged{color:var(--important);border-color:var(--important)}
-.chkrow{display:flex;gap:8px;align-items:center;padding:3px 0;font-size:12px}
-.mock{font-size:11px;color:var(--muted);margin-top:10px}
+      /* PR surface */
+      .surface {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .sf-h {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .sf-h b {
+        margin-right: 4px;
+      }
+      .chip {
+        font-size: 12px;
+        padding: 1px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+      }
+      .chip.on {
+        background: var(--bg-selected);
+        color: var(--text);
+        border-color: transparent;
+      }
+      .grp-h {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        padding: 4px 14px;
+        font-size: 11px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        z-index: 1;
+      }
+      .prrow {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        width: 100%;
+      }
+      .prrow:hover {
+        background: var(--bg-hover);
+      }
+      .prrow.sel {
+        background: var(--bg-selected);
+      }
+      .prm {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .prm .ttl {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prm .repo {
+        font-size: 11px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prr {
+        display: flex;
+        gap: 10px;
+        font-size: 11px;
+        color: var(--muted);
+        align-items: center;
+      }
+      .prst {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: block;
+        border: 2px solid var(--success);
+      }
+      .prst.merged {
+        border-color: var(--important);
+        background: var(--important);
+      }
+      .prst.draft {
+        border-color: var(--text-muted);
+      }
+      .chk.pass {
+        color: var(--success);
+      }
+      .chk.fail {
+        color: var(--error);
+      }
+      .chk.pending {
+        color: var(--warning);
+      }
+      .pr-top {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 10px 12px 0;
+      }
+      .pr-top b {
+        font-size: 14px;
+      }
+      .pr-meta {
+        padding: 2px 12px 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .pr-badge {
+        font-size: 11px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        flex: none;
+        margin-top: 2px;
+      }
+      .pr-badge.merged {
+        color: var(--important);
+        border-color: var(--important);
+      }
+      .chkrow {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 12px;
+      }
+      .mock {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
 
-.right{width:var(--pw);flex:none;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
-.panel-multi{width:var(--pw);flex:none;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
-.win.sz-XS:not(.stacked) .right,.win.sz-XS:not(.stacked) .panel-multi{flex:1;width:auto}
-.win.sz-XS:not(.stacked):not(.hasopen) .right{display:none}
-.win.sz-XS:not(.stacked).hasopen .main{display:none}
-.back{display:none;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg)}
-.win.sz-XS:not(.stacked) .back{display:flex}
-.mhead .xsp{display:none}.win.sz-XS:not(.stacked) .mhead .xsp{display:flex}
+      .right {
+        width: var(--pw);
+        flex: none;
+        border-left: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .panel-multi {
+        width: var(--pw);
+        flex: none;
+        border-left: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .win.sz-XS:not(.stacked) .right,
+      .win.sz-XS:not(.stacked) .panel-multi {
+        flex: 1;
+        width: auto;
+      }
+      .win.sz-XS:not(.stacked):not(.hasopen) .right {
+        display: none;
+      }
+      .win.sz-XS:not(.stacked).hasopen .main {
+        display: none;
+      }
+      .back {
+        display: none;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .win.sz-XS:not(.stacked) .back {
+        display: flex;
+      }
+      .mhead .xsp {
+        display: none;
+      }
+      .win.sz-XS:not(.stacked) .mhead .xsp {
+        display: flex;
+      }
 
-/* stacked layout (grid as in Copse's is-right-panel-horizontal) */
-.win.stacked .app{display:grid;grid-template-columns:168px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto minmax(0,45fr)}
-.win.stacked.sz-S .app{grid-template-columns:46px minmax(0,1fr)}
-.win.stacked.nosb .app{grid-template-columns:minmax(0,1fr)}
-.stacked .sidebar{width:auto;grid-column:1;grid-row:1/3}
-.stacked .main{grid-column:2;grid-row:1;min-height:80px}
-.win.stacked.nosb .main,.win.stacked.nosb .rail{grid-column:1}
-.stacked .chat{padding:10px 12px}
-.stacked .panel-multi,.stacked .right{grid-column:1/-1;grid-row:3;width:auto;min-height:0;min-width:0;border-left:0}
-.stacked .rail{grid-column:2;grid-row:2;width:auto;min-height:var(--band);flex-direction:row;align-items:center;border:1px solid var(--border);border-bottom:0;border-radius:var(--radius-lg) var(--radius-lg) 0 0;margin:0 10px;padding:0 6px;gap:2px;background:transparent;justify-content:flex-start}
-.stacked .rail button{height:var(--band);width:36px;border-radius:0;background:none;box-shadow:none}
-.stacked .rail button.on{background:none;box-shadow:inset 0 -2px 0 var(--accent)}
-.rail-label{display:none}.stacked .rail-label{display:block;font-weight:600;font-size:12px;margin:0 8px 0 4px}
-.stacked .rail .hint{display:none}.stacked .rail .gap{flex:1}
-.rail .sep{width:20px;height:1px;background:var(--line);margin:2px 0}
-.stacked .rail .sep{width:1px;height:auto;align-self:stretch;margin:8px 3px}
-.dockbar{display:none;flex:none;height:5px;margin-top:-3px;border-top:1px solid var(--border);cursor:ns-resize;position:relative;z-index:2}
-.stacked .dockbar{display:block}
-.dockbar:hover{border-top-color:var(--accent)}
+      /* stacked layout (grid as in Copse's is-right-panel-horizontal) */
+      .win.stacked .app {
+        display: grid;
+        grid-template-columns: 168px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto minmax(0, 45fr);
+      }
+      .win.stacked.sz-S .app {
+        grid-template-columns: 46px minmax(0, 1fr);
+      }
+      .win.stacked.nosb .app {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .stacked .sidebar {
+        width: auto;
+        grid-column: 1;
+        grid-row: 1/3;
+      }
+      .stacked .main {
+        grid-column: 2;
+        grid-row: 1;
+        min-height: 80px;
+      }
+      .win.stacked.nosb .main,
+      .win.stacked.nosb .rail {
+        grid-column: 1;
+      }
+      .stacked .chat {
+        padding: 10px 12px;
+      }
+      .stacked .panel-multi,
+      .stacked .right {
+        grid-column: 1/-1;
+        grid-row: 3;
+        width: auto;
+        min-height: 0;
+        min-width: 0;
+        border-left: 0;
+      }
+      .stacked .rail {
+        grid-column: 2;
+        grid-row: 2;
+        width: auto;
+        min-height: var(--band);
+        flex-direction: row;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-bottom: 0;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        margin: 0 10px;
+        padding: 0 6px;
+        gap: 2px;
+        background: transparent;
+        justify-content: flex-start;
+      }
+      .stacked .rail button {
+        height: var(--band);
+        width: 36px;
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+      }
+      .stacked .rail button.on {
+        background: none;
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      .rail-label {
+        display: none;
+      }
+      .stacked .rail-label {
+        display: block;
+        font-weight: 600;
+        font-size: 12px;
+        margin: 0 8px 0 4px;
+      }
+      .stacked .rail .hint {
+        display: none;
+      }
+      .stacked .rail .gap {
+        flex: 1;
+      }
+      .rail .sep {
+        width: 20px;
+        height: 1px;
+        background: var(--line);
+        margin: 2px 0;
+      }
+      .stacked .rail .sep {
+        width: 1px;
+        height: auto;
+        align-self: stretch;
+        margin: 8px 3px;
+      }
+      .dockbar {
+        display: none;
+        flex: none;
+        height: 5px;
+        margin-top: -3px;
+        border-top: 1px solid var(--border);
+        cursor: ns-resize;
+        position: relative;
+        z-index: 2;
+      }
+      .stacked .dockbar {
+        display: block;
+      }
+      .dockbar:hover {
+        border-top-color: var(--accent);
+      }
 
-.slot{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);position:relative}
-.slot+.slot{border-top:2px solid var(--line)}
-.slot.target::after{content:"";position:absolute;inset:3px;border:1px dashed var(--border-strong);border-radius:var(--radius);pointer-events:none;background:color-mix(in srgb,var(--accent) 6%,transparent)}
-.slot-h{display:flex;align-items:center;gap:2px;padding:4px 6px;border-bottom:1px solid var(--line);background:var(--bg)}
-.slot-h .sw{display:flex;gap:6px;align-items:center;padding:3px 7px;border-radius:6px;font-weight:600;font-size:12px;min-width:0}
-.slot-h .sw:hover{background:var(--surface2)}
-.slot-h .sw .tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.slot-h .sp{flex:1}
-.slot-h button.i{padding:3px 5px;border-radius:5px;color:var(--muted)}
-.slot-h button.i:hover{background:var(--surface2);color:var(--text)}
-.slot-h button.i.on{color:var(--accent)}
-.k-browser,.k-terminal,.k-diff,.k-files,.k-pr{color:var(--text-secondary)}.k-chat{color:var(--side)}
-.pane{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
-.bbar{display:flex;gap:2px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--line)}
-.bbar button{padding:3px 6px;border-radius:5px;color:var(--muted)}.bbar button:hover{background:var(--surface2)}
-.bbar .u{flex:1;min-width:0;background:var(--surface2);border-radius:99px;padding:3px 11px;color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.page{padding:12px;overflow:auto;flex:1}
-.page h5{margin:0 0 4px;font-size:15px}.page p{margin:0 0 8px;color:var(--muted)}
-.page a{color:var(--link);cursor:pointer;text-decoration:underline}
-.page pre{background:var(--code);border:1px solid var(--line);border-radius:7px;padding:8px;font:11.5px var(--mono);overflow:auto;margin:0 0 8px}
-.flow{border:1px dashed var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:5px;margin-bottom:8px}
-.node{border:1px solid var(--border-strong);background:var(--bg-muted);border-radius:6px;padding:3px 12px;font-size:12px}
-.arr{color:var(--muted);line-height:1}
-.kv{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.kv span{background:var(--surface2);border-radius:99px;padding:1px 9px;font-size:11px;color:var(--muted)}
-.pr-meta+.kv{padding:0 12px}
-.term{font:11.5px/1.5 var(--mono);white-space:pre-wrap;color:var(--muted);padding:10px;flex:1;overflow:auto;word-break:break-word}
-.term b{color:var(--success);font-weight:500}.term i{color:var(--error);font-style:normal}
-.tstat{display:flex;gap:6px;align-items:center;padding:4px 10px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
-.tin{display:flex;gap:6px;border-top:1px solid var(--line);padding:6px 10px;font-family:var(--mono);font-size:11.5px;align-items:center}
-.tin input{flex:1;min-width:0;border:0;background:none;outline:0;color:var(--text);font:inherit}
-.dsum{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);font-size:12px;flex-wrap:wrap}
-.dsum .g{color:var(--change-added)}.dsum .r{color:var(--change-deleted)}.dsum .sp{flex:1}
-.df{border-bottom:1px solid var(--line)}.df h6{margin:0;padding:5px 10px;font:11.5px var(--mono);background:var(--bg);position:sticky;top:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dl{display:flex;font:11.5px/1.5 var(--mono);white-space:pre}
-.dl i{width:34px;flex:none;color:var(--muted);text-align:right;padding-right:6px;font-style:normal;user-select:none}
-.dl span{padding-right:10px}
-.split{display:flex;flex-direction:column;flex:1;min-height:0}
-.tree{padding:6px 8px;border-bottom:1px solid var(--line);font:12px/1.7 var(--mono);max-height:42%;overflow:auto;flex:none}
-.tree button{display:block;width:100%;padding:0 6px;border-radius:4px;color:var(--text)}.tree button:hover{background:var(--surface2)}
-.tree button.on{background:var(--bg-selected);color:var(--text)}.tree .dir{color:var(--muted)}
-.code{flex:1;overflow:auto;min-height:60px}
-.code .dl span{padding-right:14px}
-.fhead{display:flex;align-items:center;gap:8px;padding:4px 10px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
-.fhead button{color:var(--link);margin-left:auto}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--side);display:inline-block;flex:none}
-.dot.run{background:var(--success);animation:pulse 1.2s infinite}
-@keyframes pulse{50%{opacity:.3}}
-.rail{width:46px;flex:none;border-left:1px solid var(--line);background:var(--bg);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
-.rail button{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;position:relative;text-align:center}
-.rail button:hover{background:var(--surface2)}.rail button.on{background:var(--bg-selected);color:var(--text)}
-.rail .dot{position:absolute;top:4px;right:4px}.rail .gap{flex:1}
-.rail .hint{font-size:9px;color:var(--muted);text-align:center;line-height:1.2;padding:0 2px}
-.tabs{display:flex;align-items:center;gap:1px;padding:6px 6px 0;border-bottom:1px solid var(--line);background:var(--bg)}
-.tab{padding:6px 8px;border-radius:7px 7px 0 0;color:var(--muted);display:flex;gap:5px;align-items:center;white-space:nowrap;max-width:104px;min-width:0}
-.tab .tt{overflow:hidden;text-overflow:ellipsis}
-.tab.on{background:var(--surface);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
-.tabs .sp{flex:1}
-.tabs .tb{padding:5px 7px;color:var(--muted);align-self:center;border-radius:6px;display:flex;gap:3px;align-items:center}
-.tabs .tb:hover{background:var(--surface2)}
-.strip{display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg);align-items:center}
-.strip .find{flex:1;min-width:0;display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:4px 9px;color:var(--muted);background:var(--surface)}
-.strip .find kbd{margin-left:auto;font:11px var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 4px}
-.strip .live{display:flex;gap:4px}
-.menu{position:absolute;z-index:20;width:min(320px,calc(100% - 12px));background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;max-height:70%}
-.menu input{border:0;border-bottom:1px solid var(--line);padding:9px 12px;background:var(--surface);color:var(--text);outline:0}
-.menu .list{overflow:auto;padding:4px}
-.menu .grp{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 8px 2px}
-.menu .it{display:flex;gap:8px;align-items:center;width:100%;padding:5px 8px;border-radius:6px;cursor:pointer}
-.menu .it:hover{background:var(--surface2)}
-.menu .it .tt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.menu .it small{color:var(--muted);font-size:11px}.menu .it.dim{opacity:.7}
-.menu .it.new{color:var(--muted)}.menu .it.open{background:var(--bg-selected)}
-.menu .it .x{opacity:0;color:var(--muted);padding:0 3px}.menu .it:hover .x{opacity:1}
-.menu .foot{border-top:1px solid var(--line);padding:4px}
-.sc{display:flex;flex-direction:column;min-height:0;flex:1;background:var(--surface)}
-.sc-h{padding:4px 8px 4px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;background:var(--bg)}
-.sc-h select{border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:1px 4px;font-size:11px;color:var(--text-secondary);max-width:100px}
-.sc-h .i{padding:3px;border-radius:5px;color:var(--muted)}.sc-h .i:hover{background:var(--surface2)}
-.ctx{font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;min-width:0;flex:1}
-.ctx span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sc-b{flex:1;min-height:0;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
-.sc-b .m{max-width:92%;padding:6px 10px;border-radius:10px}
-.sc-b .m.u{align-self:flex-end;background:var(--bg-muted);box-shadow:var(--shadow-sm)}.sc-b .m.a{align-self:flex-start;background:none;padding:2px 4px}
-.sc-b .m small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
-.sc-b .empty{margin:auto;text-align:center;color:var(--muted);max-width:220px}
-.sc-b .sug{display:block;width:100%;margin-top:6px;border:1px solid var(--line);border-radius:7px;padding:4px 8px;color:var(--text)}
-.sc-b .sug:hover{border-color:var(--border-strong);background:var(--bg-hover)}
-.typing{align-self:flex-start;color:var(--muted);font-size:11px}
-.sc-f{padding:6px 8px;border-top:1px solid var(--line)}
-.sc-f form{display:flex;gap:6px}
-.sc-f input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--surface);color:var(--text)}
-.sc-f input:focus{outline:0;border-color:var(--accent)}
-.sc-f .go{background:var(--accent-fill);color:var(--text-on-accent);border-radius:999px;padding:0 14px;font-weight:600}
-.sc-f .foot{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}.sc-f .foot .btn{font-size:11.5px;padding:2px 8px}
-.toast{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);box-shadow:var(--shadow-md);padding:8px 14px;border-radius:var(--radius-lg);z-index:99;display:flex;gap:12px;align-items:center;max-width:90vw}
-.toast button{color:var(--link);font-weight:600}
-</style>
-</head>
-<body>
-<div class="top">
-  <h1>Side chats · placement</h1>
-  <div class="seg" id="seg"></div>
-  <span class="seg-l">Window</span><div class="seg" id="sizes"></div>
-  <button class="tbtn" id="short">Short</button>
-  <button class="tbtn on" id="notes">Notes</button>
-  <button class="tbtn" id="theme" style="margin-left:auto">◐ theme</button>
-</div>
-<div class="note" id="note"></div>
-<div class="stage"><div class="win" id="win"><div class="titlebar" id="tb"></div><div class="app" id="app"></div></div><div id="status"></div></div>
-<script>
-const IC={
- chat:'<svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>',
- browser:'<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/></svg>',
- diff:'<svg viewBox="0 0 16 16"><path d="M5 2.5v7M2 6h6M10 13.5h5M10 4h5"/></svg>',
- terminal:'<svg viewBox="0 0 16 16"><path d="M2.5 4l4 4-4 4M8 12.5h5.5"/></svg>',
- files:'<svg viewBox="0 0 16 16"><path d="M2.5 3.5h4l1.5 1.5h5.5v7.5h-11z"/></svg>',
- pr:'<svg viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7.5a2 2 0 00-2-2H8"/></svg>',
- x:'<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
- down:'<svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>',
- plus:'<svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>',
- more:'<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></svg>',
- search:'<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
- out:'<svg viewBox="0 0 16 16"><path d="M9 3h4v4M13 3L7.5 8.5M12 9.5v3h-9v-9h3"/></svg>',
- merge:'<svg viewBox="0 0 16 16"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M4 5.5v5M5.5 4C9 4 12 5 12 6.5M5.5 12C9 12 12 11 12 9.5"/></svg>',
- lock:'<svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
- pin:'<svg viewBox="0 0 16 16"><path d="M9.5 2.5l4 4-2 .5-2.5 2.5.3 3-1 1-3-3-3.5 3.5M6.5 4l.5-.5"/></svg>',
- back:'<svg viewBox="0 0 16 16"><path d="M10 3L5 8l5 5"/></svg>',
- fwd:'<svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5"/></svg>',
- reload:'<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 11-1.6-3.7M13 2.5v3h-3"/></svg>',
- archive:'<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="3" rx="1"/><path d="M3.5 6v6.5h9V6M6.5 9h3"/></svg>',
- panel:'<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M9.5 3v10"/></svg>',
- sidebar:'<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M6.5 3v10"/></svg>',
- layout:'<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 9h11"/></svg>',
- check:'<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>'
-};
-const KIND={browser:{n:'Browser',multi:true},terminal:{n:'Terminal',multi:true},chat:{n:'Side chat',multi:true},pr:{n:'Pull request',multi:true,nonew:true},diff:{n:'Diff',multi:false},files:{n:'Files',multi:false}};
-const KORDER=['browser','terminal','chat','pr','diff','files'];
-const RAIL=['browser','terminal','chat','diff','files'];
-const MODELS=['Haiku 4.5','Sonnet 5.5','Opus 5.5','Fable 5.1'];
-const PRS=[
- {id:'p1',repo:'copse-dev/agent-pane',n:3519,title:'Stop reading a 1% Claude plan window as 100% used',author:'jonathankingston',st:'open',checks:'pass',rev:'Approved',files:3,add:24,del:9,upd:'2h'},
- {id:'p3',repo:'copse-dev/agent-pane',n:3497,title:'Manage saved container runs and temporary build storage',author:'jonathankingston',st:'open',checks:'pending',rev:'Review requested',files:12,add:410,del:96,upd:'1d'},
- {id:'p2',repo:'copse-dev/agent-pane',n:3511,title:'Dogfood the reusable Copse Reviewer workflow',author:'copse-bot',st:'merged',checks:'pass',rev:'Approved',files:5,add:63,del:41,upd:'3d'},
- {id:'p4',repo:'copse-dev/streaming-markdown',n:212,title:'Keep nested list indent when a fence closes',author:'jonathankingston',st:'open',checks:'fail',rev:'Changes requested',files:2,add:18,del:4,upd:'5h'},
- {id:'p5',repo:'copse-dev/streaming-markdown',n:209,title:'Bump the mermaid renderer',author:'copse-bot',st:'draft',checks:'pending',rev:'No reviews',files:1,add:3,del:3,upd:'2d'},
- {id:'p6',repo:'copse-dev/site',n:88,title:'Announce side chats',author:'jonathankingston',st:'draft',checks:'pass',rev:'No reviews',files:4,add:120,del:2,upd:'4d'}
-];
-const prOf=id=>PRS.find(p=>p.id===id);
-const short=s=>s.length>30?s.slice(0,28)+'…':s;
-const REPLIES=['<code>waitForExist</code> only checks the node is in the DOM; <code>waitForDisplayed</code> also needs non-zero size. Mermaid inserts an empty svg first, so the first passes too early.',
- 'I only see the main thread up to the message you branched from, so later edits aren’t visible here.',
- 'Nothing in the main thread changes. “Send summary to main” posts one paragraph there.'];
-const SUGG=['Explain this more simply','What alternatives did you consider?','Is this safe to merge?'];
-const op=(k,txt,arg='')=>`<button class="op" data-act="go" data-k="${k}" data-from="agent" ${arg?`data-arg="${arg}"`:''}>${IC[k]} ${txt}</button>`;
-const card=(k,html,arg='')=>`<button class="tool op" data-act="go" data-k="${k}" data-from="agent" ${arg?`data-arg="${arg}"`:''}>${IC[k]}${html}<span class="go">Open ›</span></button>`;
-const FILES={
- 'mermaid.spec.ts':`import { expect } from '@wdio/globals'\n\ndescribe('mermaid', () => {\n  it('renders a flowchart', async () => {\n    await browser.url('/preview/flow.md')\n    const svg = await $('.mermaid svg')\n    await svg.waitForDisplayed({ timeout: 10_000 })\n    await expect(svg).toBeDisplayedInViewport()\n  })\n})`,
- 'markdown.spec.ts':`describe('markdown', () => {\n  it('keeps list indent', async () => {\n    await browser.url('/preview/lists.md')\n    await expect($('ul ul')).toBeDisplayed()\n  })\n})`,
- 'settings-store.ts':`export function createSettingsStore(io: Io) {\n  const schema = settingsSchema\n  return {\n    get: (k) => schema.parse(io.read())[k],\n    set: (k, v) => io.write({ ...io.read(), [k]: v }),\n  }\n}`,
- 'CHANGELOG.md':`## 0.42.0\n\n- Side chats: branch a question off any message\n- Fix flaky mermaid e2e (wait for displayed svg)\n- Settings store split into schema + io`
-};
-const FPATH={'mermaid.spec.ts':'tests/e2e','markdown.spec.ts':'tests/e2e','settings-store.ts':'src/main','CHANGELOG.md':'.'};
-const DIFFS={
- th1:[{f:'tests/e2e/mermaid.spec.ts',l:[['',6,6,"    await browser.url('/preview/flow.md')"],['d',7,'',"    await $('.mermaid svg').waitForExist()"],['a','',7,"    const svg = await $('.mermaid svg')"],['a','',8,"    await svg.waitForDisplayed({ timeout: 10_000 })"],['',8,9,'  })']]},
-  {f:'tests/e2e/markdown.spec.ts',l:[['',3,3,"    await browser.url('/preview/lists.md')"],['d',4,'',"    await $('ul ul').waitForExist()"],['a','',4,"    await $('ul ul').waitForDisplayed()"]]}],
- th2:[{f:'src/main/settings-store.ts',l:[['',1,1,'export function createSettingsStore(io: Io) {'],['a','',2,'  const schema = settingsSchema'],['d',2,'',"  const schema = z.object({ theme: z.string() })"],['',3,3,'  return {']]}],
- th3:[{f:'CHANGELOG.md',l:[['a','',1,'## 0.42.0'],['a','',2,''],['a','',3,'- Side chats: branch a question off any message']]}]
-};
-const BP={
- flow:{u:'localhost:5173/preview/flow.md',h:`<div class="flow"><div class="node">Prompt</div><div class="arr">↓</div><div class="node">Stream</div><div class="arr">↓</div><div class="node">Render svg</div></div><div class="kv"><span>render 412 ms</span><span>svg 1</span><span>console clean</span></div><p>Preview of <code>flow.md</code>. See <a data-act="nav" data-page="docs">the Mermaid usage docs</a> for the async API.</p>`},
- docs:{u:'mermaid.js.org/config/usage',h:`<h5>Usage · Mermaid</h5><p>Mermaid renders asynchronously. Call <code>mermaid.run()</code> and await the promise before querying the DOM.</p><pre>await mermaid.run({ querySelector: '.mermaid' })</pre><p>Details in the <a data-act="nav" data-page="api">run() API reference</a>, or go <a data-act="nav" data-page="flow">back to the preview</a>.</p>`},
- api:{u:'mermaid.js.org/api/run',h:`<h5>mermaid.run(options)</h5><p>Returns a promise that resolves once every matched node has rendered.</p><pre>run({ nodes, querySelector, suppressErrors })</pre><p><a data-act="nav" data-page="docs">← Usage</a></p>`},
- release:{u:'github.com/copse/copse/releases/new',h:`<h5>New release · v0.42.0</h5><p>Title and description are drafted from <code>CHANGELOG.md</code>.</p><div class="kv"><span>target: main</span><span>pre-release off</span></div>`},
- blank:{u:'about:blank',h:`<p style="text-align:center;margin-top:30px">New tab</p>`}
-};
-const TERMS={
- run:['<b>$</b> npx wdio run wdio.conf.ts --spec mermaid.spec.ts','[chrome] mermaid renders flowchart <b>✓</b>','[chrome] mermaid renders sequence <b>✓</b>','[chrome] mermaid waits for svg <b>✓</b>','','20 passing (41s)'],
- dev:['<b>$</b> pnpm dev','  vite v7 ready in 412 ms','  ➜ Local: http://localhost:5173/','  hmr update /src/renderer/markdown.ts'],
- vt:['<b>$</b> pnpm test -- settings','<b>✓</b> settings-store.test.ts (14)','<i>✗</i> settings-migrate.test.ts (1 failed)','','  expected "dark" received undefined'],
- new:[]
-};
-const MAIN1=[
- {r:'user',t:'<p>The mermaid e2e spec fails about one run in five on CI. Any idea why?</p>'},
- {r:'ai',t:`<p>The spec asserts on the rendered <code>svg</code> right after navigation, but Mermaid renders asynchronously after the stream settles.</p>${card('files','<span><b>read</b> tests/e2e/mermaid.spec.ts</span>','mermaid.spec.ts')}<div class="tool"><span><b>search</b> “waitForExist” · 14 matches</span></div>`},
- {r:'user',t:'<p>Fix it by waiting for the svg to be displayed.</p>'},
- {r:'ai',t:`<p>Done — the spec waits for the diagram to be visible. 20× locally: 20/20 pass.</p><div class="diff"><div class="d">- await $('.mermaid svg').waitForExist()</div><div class="a">+ await svg.waitForDisplayed({ timeout: 10_000 })</div></div><div class="ops">${op('diff','Review diff')}${op('terminal','View wdio run')}${op('browser','Preview','flow')}${op('pr','Open PR 3519','p1')}</div>`}
-];
-const MAIN2=[{r:'user',t:'<p>Split the settings store into schema and persistence.</p>'},{r:'ai',t:`<p>Done. One migration test still fails — the old key isn’t defaulted.</p><div class="ops">${op('diff','Review diff')}${op('terminal','View test run')}</div>`}];
-const MAIN3=[{r:'user',t:'<p>Draft release notes for 0.42.</p>'},{r:'ai',t:`<p>Drafted in the changelog; the release page is open for reference.</p><div class="ops">${op('files','Open CHANGELOG.md','CHANGELOG.md')}${op('browser','Release page','release')}</div>`}];
-const it0=(id,kind,title,o={})=>Object.assign({id,kind,title,used:0,archived:false},o);
-const S={dockPct:45,dockPx:null,size:'L',pos:'auto',sbHidden:false,short:false,notes:true,strat:'rail',cur:'th1',menu:null,showSide:false,tick:10,pending:null,undo:null,n:30,prFilter:'all',
- threads:{
-  th1:{title:'Fix flaky mermaid e2e',model:'Sonnet 5.5',surface:'chat',msgs:MAIN1,open:['b1','t1'],active:'b1',pinned:[],items:[
-   it0('b1','browser','localhost:5173',{page:'flow',hist:[],used:9}),it0('b2','browser','mermaid.js.org',{page:'docs',hist:[],used:3}),
-   it0('t1','terminal','wdio · mermaid.spec',{log:'run',lines:[...TERMS.run],running:true,used:8}),it0('t2','terminal','pnpm dev',{log:'dev',lines:[...TERMS.dev],running:true,used:2}),
-   it0('c1','chat','waitForExist vs waitForDisplayed',{model:'Haiku 4.5',anchor:1,used:5,msgs:[{r:'u',t:'What’s the difference between waitForExist and waitForDisplayed here?'},{r:'a',t:REPLIES[0],m:'Haiku 4.5'}]}),
-   it0('c2','chat','Alternatives to polling',{model:'Opus 5.5',anchor:3,used:4,unread:true,msgs:[{r:'u',t:'Would a MutationObserver be better than waiting?'},{r:'a',t:'Probably over-engineered: the spec needs one signal that the diagram is ready. A data attribute set after render is more robust than either.',m:'Opus 5.5'}]}),
-   it0('c3','chat','Why 10s timeout?',{model:'Haiku 4.5',anchor:3,archived:true,msgs:[{r:'u',t:'Why 10 seconds?'},{r:'a',t:'CI p99 render was ~6s, so 10s leaves headroom without hiding real hangs.',m:'Haiku 4.5'}]}),
-   it0('d','diff','Working tree',{used:6}),it0('f','files','Files',{file:'mermaid.spec.ts',used:7})]},
-  th2:{title:'Refactor settings store',model:'Sonnet 5.5',surface:'chat',msgs:MAIN2,open:['d2','t3'],active:'d2',pinned:[],items:[it0('t3','terminal','vitest settings',{log:'vt',lines:[...TERMS.vt],used:5}),it0('d2','diff','Working tree',{used:6}),it0('f2','files','Files',{file:'settings-store.ts',used:1})]},
-  th3:{title:'Release notes draft',model:'Sonnet 5.5',surface:'chat',msgs:MAIN3,open:['rb'],active:'rb',pinned:[],items:[it0('rb','browser','GitHub release',{page:'release',hist:[],used:4}),it0('f3','files','Files',{file:'CHANGELOG.md',used:3}),it0('d3','diff','Working tree',{used:1})]}
- }};
-const STRATS={
- rail:{n:'Rail',d:'One icon per kind. Up to two slots stack; each slot header has an instance switcher.',con:'One extra click for kinds with several instances.'},
- tabs:{n:'Tabs',d:'Every instance is a tab, with overflow. One slot only — a click always switches the panel.',con:'Only one thing visible; cramped past ~6 items.'},
- palette:{n:'Palette',d:'A “Jump to…” bar (⌘K) reaches any instance. Two slots stack like the rail.',con:'Least discoverable.'}
-};
-const RULES=['<b>Already visible?</b> Just focus it — the layout never changes.','<b>Opened from inside an item</b> (link, file row) → navigates that item in place. ⌥ opens a fresh one.','<b>Agent links, rail, side-chat button</b> → reuse your most recently used instance of that kind; create only if none.','<b>＋ or ⌥-click</b> → always a fresh instance.','<b>Needs a slot?</b> Free slot first, else replace the least recently used <i>unpinned</i> one. Replaced items stay in the list.','<b>Lists are surfaces.</b> The PR list spans repos, so it takes the chat column (threads stay). Picking a PR opens only that PR in the panel.','Every action has an <b>Undo</b>, and hovering any opener previews what it will do.'];
-const $=s=>document.querySelector(s);
-const T=()=>S.threads[S.cur];
-const item=id=>T().items.find(i=>i.id===id);
-const alive=()=>T().items.filter(i=>!i.archived);
-const ofKind=k=>alive().filter(i=>i.kind===k);
-const kic=k=>`<span class="k-${k}">${IC[k]}</span>`;
-const esc=s=>String(s).replace(/</g,'&lt;');
-const stacked=()=>S.pos==='bottom'||(S.pos==='auto'&&S.size==='T');
-const maxSlots=()=>S.strat==='tabs'||stacked()?1:2;
-const stat=i=>i.running?'<span class="dot run" title="running"></span>':i.unread?'<span class="dot" title="new reply"></span>':'';
-const plain=h=>h.replace(/<[^>]+>/g,'').slice(0,34);
-function resolve(it){
- const t=T(),max=maxSlots();let target=null,via='';
- if(it.id){target=alive().find(i=>i.id===it.id)}
- else if(it.fresh&&KIND[it.kind].multi){via='Fresh one requested'}
- else{let c=ofKind(it.kind);if(it.kind==='chat'&&it.anchor!==undefined)c=c.filter(i=>i.anchor===it.anchor);
-  c.sort((a,b)=>b.used-a.used);target=c[0]||null;
-  via=target?(KIND[it.kind].multi?`Reuses your most recent ${KIND[it.kind].n.toLowerCase()}`:`Reuses ${KIND[it.kind].n}`):`No ${KIND[it.kind].n.toLowerCase()} yet`;}
- let label=target?`“${target.title}”`:`a new ${KIND[it.kind].n.toLowerCase()}`;
- const k=target?target.kind:it.kind;const pre=via?via+'. ':'';
- if(it.kind==='pr'&&it.arg){const p=prOf(it.arg);label=`“#${p.n} ${short(p.title)}”`;
-  if(target&&t.open.includes(target.id))return{target,mode:'focus',slot:t.open.indexOf(target.id),text:`${pre}Navigates the open PR panel to ${label} — layout unchanged.`}}
- if(target&&t.open.includes(target.id)&&!(it.kind==='pr'&&it.arg))return{target,mode:'focus',slot:t.open.indexOf(target.id),text:`${pre}${label} is already open — just focuses it, layout unchanged.`};
- const verb=target?'Shows':'Creates';
- if(t.open.length<max)return{target,kind:k,mode:target?'show':'create',text:`${pre}${verb} ${label} in the free slot.`};
- const victim=t.open.map(id=>item(id)).filter(i=>S.strat==='tabs'||!t.pinned.includes(i.id)).sort((a,b)=>a.used-b.used)[0];
- if(!victim)return{blocked:true,text:(t.open.length>1?'Both slots are pinned':'The panel is pinned')+'. Unpin first — nothing happens.'};
- return{target,kind:k,mode:target?'show':'create',victim,slot:t.open.indexOf(victim.id),text:`${pre}${verb} ${label}, replacing “${victim.title}” (${S.strat==='tabs'?'current panel':'least recently used, unpinned'}). It stays in the list.`};
-}
-function intentOf(el,alt){const d=el.dataset,a=d.act;
- if(a==='rail')return{kind:d.kind,from:'rail'};
- if(a==='go')return{kind:d.k,from:d.from,arg:d.arg,fresh:!!d.fresh||alt};
- if(a==='pick'||a==='restore')return{id:d.id,from:'menu'};
- if(a==='new')return{kind:d.kind,fresh:true,from:'plus'};
- if(a==='fork')return{kind:'chat',from:'chat',anchor:+d.i,fresh:alt};
- return null}
-function snapshot(){const t=T();return JSON.stringify({items:t.items,open:t.open,active:t.active,pinned:t.pinned,surface:t.surface})}
-function exec(it,doneText){
- const r=resolve(it);if(r.blocked){status(r.text);toast(r.text);return}
- const snap=snapshot(),t=T();let tgt=r.target;
- if(!tgt){S.n++;const id='n'+S.n;tgt=it0(id,it.kind,'');
-  if(it.kind==='browser')Object.assign(tgt,{title:'New tab',page:'blank',hist:[]});
-  if(it.kind==='terminal')Object.assign(tgt,{title:'zsh '+(ofKind('terminal').length+1),log:'new',lines:[]});
-  if(it.kind==='chat')Object.assign(tgt,{title:'New side chat',model:'Haiku 4.5',anchor:it.anchor??t.msgs.length-1,msgs:[]});
-  if(it.kind==='pr')Object.assign(tgt,{title:'PR',prId:it.arg});
-  t.items.push(tgt)}
- if(it.arg){
-  if(tgt.kind==='files')tgt.file=it.arg;
-  if(tgt.kind==='browser'){tgt.hist.push(tgt.page);tgt.page=it.arg;tgt.title=BP[it.arg].u.split('/')[0]}
-  if(tgt.kind==='pr'){const p=prOf(it.arg);tgt.prId=p.id;tgt.title='#'+p.n+' '+short(p.title)}
-  if(tgt.kind==='chat'&&prOf(it.arg)&&!r.target){tgt.title='About #'+prOf(it.arg).n}}
- if(r.mode!=='focus'){if(r.victim)t.open[t.open.indexOf(r.victim.id)]=tgt.id;else t.open.push(tgt.id)}
- tgt.used=++S.tick;tgt.unread=false;t.active=tgt.id;
- S.undo=snap;S.menu=null;toast(doneText||r.text,true);status(r.text);
-}
-function status(h){$('#status').innerHTML=h||''}
-function content(i){
- if(i.kind==='browser'){const p=BP[i.page];
-  return `<div class="pane"><div class="bbar"><button data-act="back" data-id="${i.id}" title="Back">${IC.back}</button><button data-act="noop" title="Forward">${IC.fwd}</button><button data-act="noop">${IC.reload}</button><span class="u">${p.u}</span></div><div class="page">${p.h}</div></div>`}
- if(i.kind==='terminal')return `<div class="pane">${i.running?`<div class="tstat"><span class="dot run"></span> running · 00:41</div>`:''}<div class="term">${i.lines.join('\n')}${i.lines.length?'\n':''}</div><form class="tin" data-term="${i.id}"><span class="k-terminal">$</span><input placeholder="run a command…" autocomplete="off"></form></div>`;
- if(i.kind==='pr'){const p=prOf(i.prId);const rows=[['Build','pass'],['Unit tests',p.checks==='fail'?'fail':'pass'],['Copse Reviewer',p.checks==='pending'?'pending':'pass']];
-  return `<div class="pane"><div class="pr-top"><span class="pr-badge ${p.st}">${p.st}</span><b>${esc(p.title)}</b></div><div class="pr-meta">${p.repo} · #${p.n} · ${p.author} · ${p.upd}</div>
+      .slot {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--surface);
+        position: relative;
+      }
+      .slot + .slot {
+        border-top: 2px solid var(--line);
+      }
+      .slot.target::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius);
+        pointer-events: none;
+        background: color-mix(in srgb, var(--accent) 6%, transparent);
+      }
+      .slot-h {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .slot-h .sw {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 3px 7px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+        min-width: 0;
+      }
+      .slot-h .sw:hover {
+        background: var(--surface2);
+      }
+      .slot-h .sw .tt {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .slot-h .sp {
+        flex: 1;
+      }
+      .slot-h button.i {
+        padding: 3px 5px;
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .slot-h button.i:hover {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      .slot-h button.i.on {
+        color: var(--accent);
+      }
+      .k-browser,
+      .k-terminal,
+      .k-diff,
+      .k-files,
+      .k-pr {
+        color: var(--text-secondary);
+      }
+      .k-chat {
+        color: var(--side);
+      }
+      .pane {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .bbar {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      .bbar button {
+        padding: 3px 6px;
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .bbar button:hover {
+        background: var(--surface2);
+      }
+      .bbar .u {
+        flex: 1;
+        min-width: 0;
+        background: var(--surface2);
+        border-radius: 99px;
+        padding: 3px 11px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .page {
+        padding: 12px;
+        overflow: auto;
+        flex: 1;
+      }
+      .page h5 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      .page p {
+        margin: 0 0 8px;
+        color: var(--muted);
+      }
+      .page a {
+        color: var(--link);
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .page pre {
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 8px;
+        font: 11.5px var(--mono);
+        overflow: auto;
+        margin: 0 0 8px;
+      }
+      .flow {
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 8px;
+      }
+      .node {
+        border: 1px solid var(--border-strong);
+        background: var(--bg-muted);
+        border-radius: 6px;
+        padding: 3px 12px;
+        font-size: 12px;
+      }
+      .arr {
+        color: var(--muted);
+        line-height: 1;
+      }
+      .kv {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .kv span {
+        background: var(--surface2);
+        border-radius: 99px;
+        padding: 1px 9px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .pr-meta + .kv {
+        padding: 0 12px;
+      }
+      .term {
+        font: 11.5px/1.5 var(--mono);
+        white-space: pre-wrap;
+        color: var(--muted);
+        padding: 10px;
+        flex: 1;
+        overflow: auto;
+        word-break: break-word;
+      }
+      .term b {
+        color: var(--success);
+        font-weight: 500;
+      }
+      .term i {
+        color: var(--error);
+        font-style: normal;
+      }
+      .tstat {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 4px 10px;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .tin {
+        display: flex;
+        gap: 6px;
+        border-top: 1px solid var(--line);
+        padding: 6px 10px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        align-items: center;
+      }
+      .tin input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: none;
+        outline: 0;
+        color: var(--text);
+        font: inherit;
+      }
+      .dsum {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+      .dsum .g {
+        color: var(--change-added);
+      }
+      .dsum .r {
+        color: var(--change-deleted);
+      }
+      .dsum .sp {
+        flex: 1;
+      }
+      .df {
+        border-bottom: 1px solid var(--line);
+      }
+      .df h6 {
+        margin: 0;
+        padding: 5px 10px;
+        font: 11.5px var(--mono);
+        background: var(--bg);
+        position: sticky;
+        top: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dl {
+        display: flex;
+        font: 11.5px/1.5 var(--mono);
+        white-space: pre;
+      }
+      .dl i {
+        width: 34px;
+        flex: none;
+        color: var(--muted);
+        text-align: right;
+        padding-right: 6px;
+        font-style: normal;
+        user-select: none;
+      }
+      .dl span {
+        padding-right: 10px;
+      }
+      .split {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .tree {
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        font: 12px/1.7 var(--mono);
+        max-height: 42%;
+        overflow: auto;
+        flex: none;
+      }
+      .tree button {
+        display: block;
+        width: 100%;
+        padding: 0 6px;
+        border-radius: 4px;
+        color: var(--text);
+      }
+      .tree button:hover {
+        background: var(--surface2);
+      }
+      .tree button.on {
+        background: var(--bg-selected);
+        color: var(--text);
+      }
+      .tree .dir {
+        color: var(--muted);
+      }
+      .code {
+        flex: 1;
+        overflow: auto;
+        min-height: 60px;
+      }
+      .code .dl span {
+        padding-right: 14px;
+      }
+      .fhead {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 10px;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .fhead button {
+        color: var(--link);
+        margin-left: auto;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--side);
+        display: inline-block;
+        flex: none;
+      }
+      .dot.run {
+        background: var(--success);
+        animation: pulse 1.2s infinite;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      .rail {
+        width: 46px;
+        flex: none;
+        border-left: 1px solid var(--line);
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 0;
+      }
+      .rail button {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        position: relative;
+        text-align: center;
+      }
+      .rail button:hover {
+        background: var(--surface2);
+      }
+      .rail button.on {
+        background: var(--bg-selected);
+        color: var(--text);
+      }
+      .rail .dot {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+      }
+      .rail .gap {
+        flex: 1;
+      }
+      .rail .hint {
+        font-size: 9px;
+        color: var(--muted);
+        text-align: center;
+        line-height: 1.2;
+        padding: 0 2px;
+      }
+      .tabs {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 6px 6px 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .tab {
+        padding: 6px 8px;
+        border-radius: 7px 7px 0 0;
+        color: var(--muted);
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        white-space: nowrap;
+        max-width: 104px;
+        min-width: 0;
+      }
+      .tab .tt {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tab.on {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      .tabs .sp {
+        flex: 1;
+      }
+      .tabs .tb {
+        padding: 5px 7px;
+        color: var(--muted);
+        align-self: center;
+        border-radius: 6px;
+        display: flex;
+        gap: 3px;
+        align-items: center;
+      }
+      .tabs .tb:hover {
+        background: var(--surface2);
+      }
+      .strip {
+        display: flex;
+        gap: 6px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+        align-items: center;
+      }
+      .strip .find {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 9px;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      .strip .find kbd {
+        margin-left: auto;
+        font: 11px var(--mono);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      .strip .live {
+        display: flex;
+        gap: 4px;
+      }
+      .menu {
+        position: absolute;
+        z-index: 20;
+        width: min(320px, calc(100% - 12px));
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        max-height: 70%;
+      }
+      .menu input {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 9px 12px;
+        background: var(--surface);
+        color: var(--text);
+        outline: 0;
+      }
+      .menu .list {
+        overflow: auto;
+        padding: 4px;
+      }
+      .menu .grp {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 6px 8px 2px;
+      }
+      .menu .it {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        padding: 5px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .menu .it:hover {
+        background: var(--surface2);
+      }
+      .menu .it .tt {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .menu .it small {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .menu .it.dim {
+        opacity: 0.7;
+      }
+      .menu .it.new {
+        color: var(--muted);
+      }
+      .menu .it.open {
+        background: var(--bg-selected);
+      }
+      .menu .it .x {
+        opacity: 0;
+        color: var(--muted);
+        padding: 0 3px;
+      }
+      .menu .it:hover .x {
+        opacity: 1;
+      }
+      .menu .foot {
+        border-top: 1px solid var(--line);
+        padding: 4px;
+      }
+      .sc {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+        background: var(--surface);
+      }
+      .sc-h {
+        padding: 4px 8px 4px 10px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg);
+      }
+      .sc-h select {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        padding: 1px 4px;
+        font-size: 11px;
+        color: var(--text-secondary);
+        max-width: 100px;
+      }
+      .sc-h .i {
+        padding: 3px;
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .sc-h .i:hover {
+        background: var(--surface2);
+      }
+      .ctx {
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        min-width: 0;
+        flex: 1;
+      }
+      .ctx span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sc-b {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sc-b .m {
+        max-width: 92%;
+        padding: 6px 10px;
+        border-radius: 10px;
+      }
+      .sc-b .m.u {
+        align-self: flex-end;
+        background: var(--bg-muted);
+        box-shadow: var(--shadow-sm);
+      }
+      .sc-b .m.a {
+        align-self: flex-start;
+        background: none;
+        padding: 2px 4px;
+      }
+      .sc-b .m small {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 2px;
+      }
+      .sc-b .empty {
+        margin: auto;
+        text-align: center;
+        color: var(--muted);
+        max-width: 220px;
+      }
+      .sc-b .sug {
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 4px 8px;
+        color: var(--text);
+      }
+      .sc-b .sug:hover {
+        border-color: var(--border-strong);
+        background: var(--bg-hover);
+      }
+      .typing {
+        align-self: flex-start;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .sc-f {
+        padding: 6px 8px;
+        border-top: 1px solid var(--line);
+      }
+      .sc-f form {
+        display: flex;
+        gap: 6px;
+      }
+      .sc-f input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 5px 9px;
+        background: var(--surface);
+        color: var(--text);
+      }
+      .sc-f input:focus {
+        outline: 0;
+        border-color: var(--accent);
+      }
+      .sc-f .go {
+        background: var(--accent-fill);
+        color: var(--text-on-accent);
+        border-radius: 999px;
+        padding: 0 14px;
+        font-weight: 600;
+      }
+      .sc-f .foot {
+        display: flex;
+        gap: 6px;
+        margin-top: 5px;
+        flex-wrap: wrap;
+      }
+      .sc-f .foot .btn {
+        font-size: 11.5px;
+        padding: 2px 8px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 34px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--bg-elevated);
+        color: var(--text);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-md);
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+        z-index: 99;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        max-width: 90vw;
+      }
+      .toast button {
+        color: var(--link);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <h1>Side chats · placement</h1>
+      <div class="seg" id="seg"></div>
+      <span class="seg-l">Window</span>
+      <div class="seg" id="sizes"></div>
+      <button class="tbtn" id="short">Short</button>
+      <button class="tbtn on" id="notes">Notes</button>
+      <button class="tbtn" id="theme" style="margin-left: auto">◐ theme</button>
+    </div>
+    <div class="note" id="note"></div>
+    <div class="stage">
+      <div class="win" id="win">
+        <div class="titlebar" id="tb"></div>
+        <div class="app" id="app"></div>
+      </div>
+      <div id="status"></div>
+    </div>
+    <script>
+      const IC = {
+        chat: '<svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>',
+        browser:
+          '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/></svg>',
+        diff: '<svg viewBox="0 0 16 16"><path d="M5 2.5v7M2 6h6M10 13.5h5M10 4h5"/></svg>',
+        terminal: '<svg viewBox="0 0 16 16"><path d="M2.5 4l4 4-4 4M8 12.5h5.5"/></svg>',
+        files: '<svg viewBox="0 0 16 16"><path d="M2.5 3.5h4l1.5 1.5h5.5v7.5h-11z"/></svg>',
+        pr: '<svg viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7.5a2 2 0 00-2-2H8"/></svg>',
+        x: '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+        down: '<svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>',
+        plus: '<svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>',
+        more: '<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></svg>',
+        search:
+          '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+        out: '<svg viewBox="0 0 16 16"><path d="M9 3h4v4M13 3L7.5 8.5M12 9.5v3h-9v-9h3"/></svg>',
+        merge:
+          '<svg viewBox="0 0 16 16"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M4 5.5v5M5.5 4C9 4 12 5 12 6.5M5.5 12C9 12 12 11 12 9.5"/></svg>',
+        lock: '<svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
+        pin: '<svg viewBox="0 0 16 16"><path d="M9.5 2.5l4 4-2 .5-2.5 2.5.3 3-1 1-3-3-3.5 3.5M6.5 4l.5-.5"/></svg>',
+        back: '<svg viewBox="0 0 16 16"><path d="M10 3L5 8l5 5"/></svg>',
+        fwd: '<svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5"/></svg>',
+        reload: '<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 11-1.6-3.7M13 2.5v3h-3"/></svg>',
+        archive:
+          '<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="3" rx="1"/><path d="M3.5 6v6.5h9V6M6.5 9h3"/></svg>',
+        panel:
+          '<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M9.5 3v10"/></svg>',
+        sidebar:
+          '<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M6.5 3v10"/></svg>',
+        layout:
+          '<svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 9h11"/></svg>',
+        check: '<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>',
+      }
+      const KIND = {
+        browser: { n: 'Browser', multi: true },
+        terminal: { n: 'Terminal', multi: true },
+        chat: { n: 'Side chat', multi: true },
+        pr: { n: 'Pull request', multi: true, nonew: true },
+        diff: { n: 'Diff', multi: false },
+        files: { n: 'Files', multi: false },
+      }
+      const KORDER = ['browser', 'terminal', 'chat', 'pr', 'diff', 'files']
+      const RAIL = ['browser', 'terminal', 'chat', 'diff', 'files']
+      const MODELS = ['Haiku 4.5', 'Sonnet 5.5', 'Opus 5.5', 'Fable 5.1']
+      const PRS = [
+        {
+          id: 'p1',
+          repo: 'copse-dev/agent-pane',
+          n: 3519,
+          title: 'Stop reading a 1% Claude plan window as 100% used',
+          author: 'jonathankingston',
+          st: 'open',
+          checks: 'pass',
+          rev: 'Approved',
+          files: 3,
+          add: 24,
+          del: 9,
+          upd: '2h',
+        },
+        {
+          id: 'p3',
+          repo: 'copse-dev/agent-pane',
+          n: 3497,
+          title: 'Manage saved container runs and temporary build storage',
+          author: 'jonathankingston',
+          st: 'open',
+          checks: 'pending',
+          rev: 'Review requested',
+          files: 12,
+          add: 410,
+          del: 96,
+          upd: '1d',
+        },
+        {
+          id: 'p2',
+          repo: 'copse-dev/agent-pane',
+          n: 3511,
+          title: 'Dogfood the reusable Copse Reviewer workflow',
+          author: 'copse-bot',
+          st: 'merged',
+          checks: 'pass',
+          rev: 'Approved',
+          files: 5,
+          add: 63,
+          del: 41,
+          upd: '3d',
+        },
+        {
+          id: 'p4',
+          repo: 'copse-dev/streaming-markdown',
+          n: 212,
+          title: 'Keep nested list indent when a fence closes',
+          author: 'jonathankingston',
+          st: 'open',
+          checks: 'fail',
+          rev: 'Changes requested',
+          files: 2,
+          add: 18,
+          del: 4,
+          upd: '5h',
+        },
+        {
+          id: 'p5',
+          repo: 'copse-dev/streaming-markdown',
+          n: 209,
+          title: 'Bump the mermaid renderer',
+          author: 'copse-bot',
+          st: 'draft',
+          checks: 'pending',
+          rev: 'No reviews',
+          files: 1,
+          add: 3,
+          del: 3,
+          upd: '2d',
+        },
+        {
+          id: 'p6',
+          repo: 'copse-dev/site',
+          n: 88,
+          title: 'Announce side chats',
+          author: 'jonathankingston',
+          st: 'draft',
+          checks: 'pass',
+          rev: 'No reviews',
+          files: 4,
+          add: 120,
+          del: 2,
+          upd: '4d',
+        },
+      ]
+      const prOf = (id) => PRS.find((p) => p.id === id)
+      const short = (s) => (s.length > 30 ? s.slice(0, 28) + '…' : s)
+      const REPLIES = [
+        '<code>waitForExist</code> only checks the node is in the DOM; <code>waitForDisplayed</code> also needs non-zero size. Mermaid inserts an empty svg first, so the first passes too early.',
+        'I only see the main thread up to the message you branched from, so later edits aren’t visible here.',
+        'Nothing in the main thread changes. “Send summary to main” posts one paragraph there.',
+      ]
+      const SUGG = [
+        'Explain this more simply',
+        'What alternatives did you consider?',
+        'Is this safe to merge?',
+      ]
+      const op = (k, txt, arg = '') =>
+        `<button class="op" data-act="go" data-k="${k}" data-from="agent" ${arg ? `data-arg="${arg}"` : ''}>${IC[k]} ${txt}</button>`
+      const card = (k, html, arg = '') =>
+        `<button class="tool op" data-act="go" data-k="${k}" data-from="agent" ${arg ? `data-arg="${arg}"` : ''}>${IC[k]}${html}<span class="go">Open ›</span></button>`
+      const FILES = {
+        'mermaid.spec.ts': `import { expect } from '@wdio/globals'\n\ndescribe('mermaid', () => {\n  it('renders a flowchart', async () => {\n    await browser.url('/preview/flow.md')\n    const svg = await $('.mermaid svg')\n    await svg.waitForDisplayed({ timeout: 10_000 })\n    await expect(svg).toBeDisplayedInViewport()\n  })\n})`,
+        'markdown.spec.ts': `describe('markdown', () => {\n  it('keeps list indent', async () => {\n    await browser.url('/preview/lists.md')\n    await expect($('ul ul')).toBeDisplayed()\n  })\n})`,
+        'settings-store.ts': `export function createSettingsStore(io: Io) {\n  const schema = settingsSchema\n  return {\n    get: (k) => schema.parse(io.read())[k],\n    set: (k, v) => io.write({ ...io.read(), [k]: v }),\n  }\n}`,
+        'CHANGELOG.md': `## 0.42.0\n\n- Side chats: branch a question off any message\n- Fix flaky mermaid e2e (wait for displayed svg)\n- Settings store split into schema + io`,
+      }
+      const FPATH = {
+        'mermaid.spec.ts': 'tests/e2e',
+        'markdown.spec.ts': 'tests/e2e',
+        'settings-store.ts': 'src/main',
+        'CHANGELOG.md': '.',
+      }
+      const DIFFS = {
+        th1: [
+          {
+            f: 'tests/e2e/mermaid.spec.ts',
+            l: [
+              ['', 6, 6, "    await browser.url('/preview/flow.md')"],
+              ['d', 7, '', "    await $('.mermaid svg').waitForExist()"],
+              ['a', '', 7, "    const svg = await $('.mermaid svg')"],
+              ['a', '', 8, '    await svg.waitForDisplayed({ timeout: 10_000 })'],
+              ['', 8, 9, '  })'],
+            ],
+          },
+          {
+            f: 'tests/e2e/markdown.spec.ts',
+            l: [
+              ['', 3, 3, "    await browser.url('/preview/lists.md')"],
+              ['d', 4, '', "    await $('ul ul').waitForExist()"],
+              ['a', '', 4, "    await $('ul ul').waitForDisplayed()"],
+            ],
+          },
+        ],
+        th2: [
+          {
+            f: 'src/main/settings-store.ts',
+            l: [
+              ['', 1, 1, 'export function createSettingsStore(io: Io) {'],
+              ['a', '', 2, '  const schema = settingsSchema'],
+              ['d', 2, '', '  const schema = z.object({ theme: z.string() })'],
+              ['', 3, 3, '  return {'],
+            ],
+          },
+        ],
+        th3: [
+          {
+            f: 'CHANGELOG.md',
+            l: [
+              ['a', '', 1, '## 0.42.0'],
+              ['a', '', 2, ''],
+              ['a', '', 3, '- Side chats: branch a question off any message'],
+            ],
+          },
+        ],
+      }
+      const BP = {
+        flow: {
+          u: 'localhost:5173/preview/flow.md',
+          h: `<div class="flow"><div class="node">Prompt</div><div class="arr">↓</div><div class="node">Stream</div><div class="arr">↓</div><div class="node">Render svg</div></div><div class="kv"><span>render 412 ms</span><span>svg 1</span><span>console clean</span></div><p>Preview of <code>flow.md</code>. See <a data-act="nav" data-page="docs">the Mermaid usage docs</a> for the async API.</p>`,
+        },
+        docs: {
+          u: 'mermaid.js.org/config/usage',
+          h: `<h5>Usage · Mermaid</h5><p>Mermaid renders asynchronously. Call <code>mermaid.run()</code> and await the promise before querying the DOM.</p><pre>await mermaid.run({ querySelector: '.mermaid' })</pre><p>Details in the <a data-act="nav" data-page="api">run() API reference</a>, or go <a data-act="nav" data-page="flow">back to the preview</a>.</p>`,
+        },
+        api: {
+          u: 'mermaid.js.org/api/run',
+          h: `<h5>mermaid.run(options)</h5><p>Returns a promise that resolves once every matched node has rendered.</p><pre>run({ nodes, querySelector, suppressErrors })</pre><p><a data-act="nav" data-page="docs">← Usage</a></p>`,
+        },
+        release: {
+          u: 'github.com/copse/copse/releases/new',
+          h: `<h5>New release · v0.42.0</h5><p>Title and description are drafted from <code>CHANGELOG.md</code>.</p><div class="kv"><span>target: main</span><span>pre-release off</span></div>`,
+        },
+        blank: { u: 'about:blank', h: `<p style="text-align:center;margin-top:30px">New tab</p>` },
+      }
+      const TERMS = {
+        run: [
+          '<b>$</b> npx wdio run wdio.conf.ts --spec mermaid.spec.ts',
+          '[chrome] mermaid renders flowchart <b>✓</b>',
+          '[chrome] mermaid renders sequence <b>✓</b>',
+          '[chrome] mermaid waits for svg <b>✓</b>',
+          '',
+          '20 passing (41s)',
+        ],
+        dev: [
+          '<b>$</b> pnpm dev',
+          '  vite v7 ready in 412 ms',
+          '  ➜ Local: http://localhost:5173/',
+          '  hmr update /src/renderer/markdown.ts',
+        ],
+        vt: [
+          '<b>$</b> pnpm test -- settings',
+          '<b>✓</b> settings-store.test.ts (14)',
+          '<i>✗</i> settings-migrate.test.ts (1 failed)',
+          '',
+          '  expected "dark" received undefined',
+        ],
+        new: [],
+      }
+      const MAIN1 = [
+        {
+          r: 'user',
+          t: '<p>The mermaid e2e spec fails about one run in five on CI. Any idea why?</p>',
+        },
+        {
+          r: 'ai',
+          t: `<p>The spec asserts on the rendered <code>svg</code> right after navigation, but Mermaid renders asynchronously after the stream settles.</p>${card('files', '<span><b>read</b> tests/e2e/mermaid.spec.ts</span>', 'mermaid.spec.ts')}<div class="tool"><span><b>search</b> “waitForExist” · 14 matches</span></div>`,
+        },
+        { r: 'user', t: '<p>Fix it by waiting for the svg to be displayed.</p>' },
+        {
+          r: 'ai',
+          t: `<p>Done — the spec waits for the diagram to be visible. 20× locally: 20/20 pass.</p><div class="diff"><div class="d">- await $('.mermaid svg').waitForExist()</div><div class="a">+ await svg.waitForDisplayed({ timeout: 10_000 })</div></div><div class="ops">${op('diff', 'Review diff')}${op('terminal', 'View wdio run')}${op('browser', 'Preview', 'flow')}${op('pr', 'Open PR 3519', 'p1')}</div>`,
+        },
+      ]
+      const MAIN2 = [
+        { r: 'user', t: '<p>Split the settings store into schema and persistence.</p>' },
+        {
+          r: 'ai',
+          t: `<p>Done. One migration test still fails — the old key isn’t defaulted.</p><div class="ops">${op('diff', 'Review diff')}${op('terminal', 'View test run')}</div>`,
+        },
+      ]
+      const MAIN3 = [
+        { r: 'user', t: '<p>Draft release notes for 0.42.</p>' },
+        {
+          r: 'ai',
+          t: `<p>Drafted in the changelog; the release page is open for reference.</p><div class="ops">${op('files', 'Open CHANGELOG.md', 'CHANGELOG.md')}${op('browser', 'Release page', 'release')}</div>`,
+        },
+      ]
+      const it0 = (id, kind, title, o = {}) =>
+        Object.assign({ id, kind, title, used: 0, archived: false }, o)
+      const S = {
+        dockPct: 45,
+        dockPx: null,
+        size: 'L',
+        pos: 'auto',
+        sbHidden: false,
+        short: false,
+        notes: true,
+        strat: 'rail',
+        cur: 'th1',
+        menu: null,
+        showSide: false,
+        tick: 10,
+        pending: null,
+        undo: null,
+        n: 30,
+        prFilter: 'all',
+        threads: {
+          th1: {
+            title: 'Fix flaky mermaid e2e',
+            model: 'Sonnet 5.5',
+            surface: 'chat',
+            msgs: MAIN1,
+            open: ['b1', 't1'],
+            active: 'b1',
+            pinned: [],
+            items: [
+              it0('b1', 'browser', 'localhost:5173', { page: 'flow', hist: [], used: 9 }),
+              it0('b2', 'browser', 'mermaid.js.org', { page: 'docs', hist: [], used: 3 }),
+              it0('t1', 'terminal', 'wdio · mermaid.spec', {
+                log: 'run',
+                lines: [...TERMS.run],
+                running: true,
+                used: 8,
+              }),
+              it0('t2', 'terminal', 'pnpm dev', {
+                log: 'dev',
+                lines: [...TERMS.dev],
+                running: true,
+                used: 2,
+              }),
+              it0('c1', 'chat', 'waitForExist vs waitForDisplayed', {
+                model: 'Haiku 4.5',
+                anchor: 1,
+                used: 5,
+                msgs: [
+                  {
+                    r: 'u',
+                    t: 'What’s the difference between waitForExist and waitForDisplayed here?',
+                  },
+                  { r: 'a', t: REPLIES[0], m: 'Haiku 4.5' },
+                ],
+              }),
+              it0('c2', 'chat', 'Alternatives to polling', {
+                model: 'Opus 5.5',
+                anchor: 3,
+                used: 4,
+                unread: true,
+                msgs: [
+                  { r: 'u', t: 'Would a MutationObserver be better than waiting?' },
+                  {
+                    r: 'a',
+                    t: 'Probably over-engineered: the spec needs one signal that the diagram is ready. A data attribute set after render is more robust than either.',
+                    m: 'Opus 5.5',
+                  },
+                ],
+              }),
+              it0('c3', 'chat', 'Why 10s timeout?', {
+                model: 'Haiku 4.5',
+                anchor: 3,
+                archived: true,
+                msgs: [
+                  { r: 'u', t: 'Why 10 seconds?' },
+                  {
+                    r: 'a',
+                    t: 'CI p99 render was ~6s, so 10s leaves headroom without hiding real hangs.',
+                    m: 'Haiku 4.5',
+                  },
+                ],
+              }),
+              it0('d', 'diff', 'Working tree', { used: 6 }),
+              it0('f', 'files', 'Files', { file: 'mermaid.spec.ts', used: 7 }),
+            ],
+          },
+          th2: {
+            title: 'Refactor settings store',
+            model: 'Sonnet 5.5',
+            surface: 'chat',
+            msgs: MAIN2,
+            open: ['d2', 't3'],
+            active: 'd2',
+            pinned: [],
+            items: [
+              it0('t3', 'terminal', 'vitest settings', {
+                log: 'vt',
+                lines: [...TERMS.vt],
+                used: 5,
+              }),
+              it0('d2', 'diff', 'Working tree', { used: 6 }),
+              it0('f2', 'files', 'Files', { file: 'settings-store.ts', used: 1 }),
+            ],
+          },
+          th3: {
+            title: 'Release notes draft',
+            model: 'Sonnet 5.5',
+            surface: 'chat',
+            msgs: MAIN3,
+            open: ['rb'],
+            active: 'rb',
+            pinned: [],
+            items: [
+              it0('rb', 'browser', 'GitHub release', { page: 'release', hist: [], used: 4 }),
+              it0('f3', 'files', 'Files', { file: 'CHANGELOG.md', used: 3 }),
+              it0('d3', 'diff', 'Working tree', { used: 1 }),
+            ],
+          },
+        },
+      }
+      const STRATS = {
+        rail: {
+          n: 'Rail',
+          d: 'One icon per kind. Up to two slots stack; each slot header has an instance switcher.',
+          con: 'One extra click for kinds with several instances.',
+        },
+        tabs: {
+          n: 'Tabs',
+          d: 'Every instance is a tab, with overflow. One slot only — a click always switches the panel.',
+          con: 'Only one thing visible; cramped past ~6 items.',
+        },
+        palette: {
+          n: 'Palette',
+          d: 'A “Jump to…” bar (⌘K) reaches any instance. Two slots stack like the rail.',
+          con: 'Least discoverable.',
+        },
+      }
+      const RULES = [
+        '<b>Already visible?</b> Just focus it — the layout never changes.',
+        '<b>Opened from inside an item</b> (link, file row) → navigates that item in place. ⌥ opens a fresh one.',
+        '<b>Agent links, rail, side-chat button</b> → reuse your most recently used instance of that kind; create only if none.',
+        '<b>＋ or ⌥-click</b> → always a fresh instance.',
+        '<b>Needs a slot?</b> Free slot first, else replace the least recently used <i>unpinned</i> one. Replaced items stay in the list.',
+        '<b>Lists are surfaces.</b> The PR list spans repos, so it takes the chat column (threads stay). Picking a PR opens only that PR in the panel.',
+        'Every action has an <b>Undo</b>, and hovering any opener previews what it will do.',
+      ]
+      const $ = (s) => document.querySelector(s)
+      const T = () => S.threads[S.cur]
+      const item = (id) => T().items.find((i) => i.id === id)
+      const alive = () => T().items.filter((i) => !i.archived)
+      const ofKind = (k) => alive().filter((i) => i.kind === k)
+      const kic = (k) => `<span class="k-${k}">${IC[k]}</span>`
+      const esc = (s) => String(s).replace(/</g, '&lt;')
+      const stacked = () => S.pos === 'bottom' || (S.pos === 'auto' && S.size === 'T')
+      const maxSlots = () => (S.strat === 'tabs' || stacked() ? 1 : 2)
+      const stat = (i) =>
+        i.running
+          ? '<span class="dot run" title="running"></span>'
+          : i.unread
+            ? '<span class="dot" title="new reply"></span>'
+            : ''
+      const plain = (h) => h.replace(/<[^>]+>/g, '').slice(0, 34)
+      function resolve(it) {
+        const t = T(),
+          max = maxSlots()
+        let target = null,
+          via = ''
+        if (it.id) {
+          target = alive().find((i) => i.id === it.id)
+        } else if (it.fresh && KIND[it.kind].multi) {
+          via = 'Fresh one requested'
+        } else {
+          let c = ofKind(it.kind)
+          if (it.kind === 'chat' && it.anchor !== undefined)
+            c = c.filter((i) => i.anchor === it.anchor)
+          c.sort((a, b) => b.used - a.used)
+          target = c[0] || null
+          via = target
+            ? KIND[it.kind].multi
+              ? `Reuses your most recent ${KIND[it.kind].n.toLowerCase()}`
+              : `Reuses ${KIND[it.kind].n}`
+            : `No ${KIND[it.kind].n.toLowerCase()} yet`
+        }
+        let label = target ? `“${target.title}”` : `a new ${KIND[it.kind].n.toLowerCase()}`
+        const k = target ? target.kind : it.kind
+        const pre = via ? via + '. ' : ''
+        if (it.kind === 'pr' && it.arg) {
+          const p = prOf(it.arg)
+          label = `“#${p.n} ${short(p.title)}”`
+          if (target && t.open.includes(target.id))
+            return {
+              target,
+              mode: 'focus',
+              slot: t.open.indexOf(target.id),
+              text: `${pre}Navigates the open PR panel to ${label} — layout unchanged.`,
+            }
+        }
+        if (target && t.open.includes(target.id) && !(it.kind === 'pr' && it.arg))
+          return {
+            target,
+            mode: 'focus',
+            slot: t.open.indexOf(target.id),
+            text: `${pre}${label} is already open — just focuses it, layout unchanged.`,
+          }
+        const verb = target ? 'Shows' : 'Creates'
+        if (t.open.length < max)
+          return {
+            target,
+            kind: k,
+            mode: target ? 'show' : 'create',
+            text: `${pre}${verb} ${label} in the free slot.`,
+          }
+        const victim = t.open
+          .map((id) => item(id))
+          .filter((i) => S.strat === 'tabs' || !t.pinned.includes(i.id))
+          .sort((a, b) => a.used - b.used)[0]
+        if (!victim)
+          return {
+            blocked: true,
+            text:
+              (t.open.length > 1 ? 'Both slots are pinned' : 'The panel is pinned') +
+              '. Unpin first — nothing happens.',
+          }
+        return {
+          target,
+          kind: k,
+          mode: target ? 'show' : 'create',
+          victim,
+          slot: t.open.indexOf(victim.id),
+          text: `${pre}${verb} ${label}, replacing “${victim.title}” (${S.strat === 'tabs' ? 'current panel' : 'least recently used, unpinned'}). It stays in the list.`,
+        }
+      }
+      function intentOf(el, alt) {
+        const d = el.dataset,
+          a = d.act
+        if (a === 'rail') return { kind: d.kind, from: 'rail' }
+        if (a === 'go') return { kind: d.k, from: d.from, arg: d.arg, fresh: !!d.fresh || alt }
+        if (a === 'pick' || a === 'restore') return { id: d.id, from: 'menu' }
+        if (a === 'new') return { kind: d.kind, fresh: true, from: 'plus' }
+        if (a === 'fork') return { kind: 'chat', from: 'chat', anchor: +d.i, fresh: alt }
+        return null
+      }
+      function snapshot() {
+        const t = T()
+        return JSON.stringify({
+          items: t.items,
+          open: t.open,
+          active: t.active,
+          pinned: t.pinned,
+          surface: t.surface,
+        })
+      }
+      function exec(it, doneText) {
+        const r = resolve(it)
+        if (r.blocked) {
+          status(r.text)
+          toast(r.text)
+          return
+        }
+        const snap = snapshot(),
+          t = T()
+        let tgt = r.target
+        if (!tgt) {
+          S.n++
+          const id = 'n' + S.n
+          tgt = it0(id, it.kind, '')
+          if (it.kind === 'browser')
+            Object.assign(tgt, { title: 'New tab', page: 'blank', hist: [] })
+          if (it.kind === 'terminal')
+            Object.assign(tgt, {
+              title: 'zsh ' + (ofKind('terminal').length + 1),
+              log: 'new',
+              lines: [],
+            })
+          if (it.kind === 'chat')
+            Object.assign(tgt, {
+              title: 'New side chat',
+              model: 'Haiku 4.5',
+              anchor: it.anchor ?? t.msgs.length - 1,
+              msgs: [],
+            })
+          if (it.kind === 'pr') Object.assign(tgt, { title: 'PR', prId: it.arg })
+          t.items.push(tgt)
+        }
+        if (it.arg) {
+          if (tgt.kind === 'files') tgt.file = it.arg
+          if (tgt.kind === 'browser') {
+            tgt.hist.push(tgt.page)
+            tgt.page = it.arg
+            tgt.title = BP[it.arg].u.split('/')[0]
+          }
+          if (tgt.kind === 'pr') {
+            const p = prOf(it.arg)
+            tgt.prId = p.id
+            tgt.title = '#' + p.n + ' ' + short(p.title)
+          }
+          if (tgt.kind === 'chat' && prOf(it.arg) && !r.target) {
+            tgt.title = 'About #' + prOf(it.arg).n
+          }
+        }
+        if (r.mode !== 'focus') {
+          if (r.victim) t.open[t.open.indexOf(r.victim.id)] = tgt.id
+          else t.open.push(tgt.id)
+        }
+        tgt.used = ++S.tick
+        tgt.unread = false
+        t.active = tgt.id
+        S.undo = snap
+        S.menu = null
+        toast(doneText || r.text, true)
+        status(r.text)
+      }
+      function status(h) {
+        $('#status').innerHTML = h || ''
+      }
+      function content(i) {
+        if (i.kind === 'browser') {
+          const p = BP[i.page]
+          return `<div class="pane"><div class="bbar"><button data-act="back" data-id="${i.id}" title="Back">${IC.back}</button><button data-act="noop" title="Forward">${IC.fwd}</button><button data-act="noop">${IC.reload}</button><span class="u">${p.u}</span></div><div class="page">${p.h}</div></div>`
+        }
+        if (i.kind === 'terminal')
+          return `<div class="pane">${i.running ? `<div class="tstat"><span class="dot run"></span> running · 00:41</div>` : ''}<div class="term">${i.lines.join('\n')}${i.lines.length ? '\n' : ''}</div><form class="tin" data-term="${i.id}"><span class="k-terminal">$</span><input placeholder="run a command…" autocomplete="off"></form></div>`
+        if (i.kind === 'pr') {
+          const p = prOf(i.prId)
+          const rows = [
+            ['Build', 'pass'],
+            ['Unit tests', p.checks === 'fail' ? 'fail' : 'pass'],
+            ['Copse Reviewer', p.checks === 'pending' ? 'pending' : 'pass'],
+          ]
+          return `<div class="pane"><div class="pr-top"><span class="pr-badge ${p.st}">${p.st}</span><b>${esc(p.title)}</b></div><div class="pr-meta">${p.repo} · #${p.n} · ${p.author} · ${p.upd}</div>
   <div class="kv"><span>${p.rev}</span><span>${p.files} files <span style="padding:0;background:none;color:var(--change-added)">+${p.add}</span> <span style="padding:0;background:none;color:var(--change-deleted)">−${p.del}</span></span></div>
-  <div class="page"><h5>Checks</h5>${rows.map(([n,s])=>`<div class="chkrow"><span class="chk ${s}">●</span>${n}<span style="margin-left:auto;color:var(--muted)">${s}</span></div>`).join('')}
-  <div class="ops">${op('diff','View diff')}<button class="op" data-act="go" data-k="chat" data-from="link" data-fresh="1" data-arg="${p.id}">${IC.chat} Ask in a side chat</button></div><p class="mock">Prototype data — only the PR itself lives in the panel; the list stays in the main area.</p></div></div>`}
- if(i.kind==='diff'){const d=DIFFS[S.cur];let a=0,r=0;d.forEach(f=>f.l.forEach(l=>{if(l[0]==='a')a++;if(l[0]==='d')r++}));
-  return `<div class="pane"><div class="dsum"><b>${d.length} file${d.length>1?'s':''}</b><span class="g">+${a}</span><span class="r">−${r}</span><span class="sp"></span><button class="btn" data-act="noop">Stage all</button></div>${d.map(f=>`<div class="df"><h6>${f.f}</h6>${f.l.map(l=>`<div class="dl ${l[0]}"><i>${l[1]}</i><i>${l[2]}</i><span>${esc((l[0]==='a'?'+ ':l[0]==='d'?'- ':'  ')+l[3])}</span></div>`).join('')}</div>`).join('')}</div>`}
- if(i.kind==='files'){const names=Object.keys(FILES);const src=FILES[i.file]||'';
-  return `<div class="pane split"><div class="tree">${['tests/e2e','src/main','.'].map(d=>`<div class="dir">${d==='.'?'/':d+'/'}</div>${names.filter(n=>FPATH[n]===d).map(n=>`<button class="${n===i.file?'on':''}" data-act="file" data-id="${i.id}" data-file="${n}">  ${n}</button>`).join('')}`).join('')}</div>
-   <div class="fhead"><span>${i.file}</span>${DIFFS[S.cur].some(f=>f.f.endsWith(i.file))?`<button data-act="go" data-k="diff" data-from="link">View diff ›</button>`:''}</div>
-   <div class="code">${src.split('\n').map((l,n)=>`<div class="dl"><i>${n+1}</i><span>${esc(l)}</span></div>`).join('')}</div></div>`}
- return chatHTML(i);
-}
-function chatHTML(c){
- const th=T();const anc=th.msgs[c.anchor];
- const msgs=c.msgs.length?c.msgs.map(m=>`<div class="m ${m.r}">${m.t}${m.m?`<small>${m.m}</small>`:''}</div>`).join(''):
-  `<div class="empty">Ask anything about this message without touching the main thread.${SUGG.map(s=>`<button class="sug" data-act="sug" data-id="${c.id}">${s}</button>`).join('')}</div>`;
- return `<div class="sc"><div class="sc-h"><div class="ctx">${IC.lock}<span>From “${esc(anc?plain(anc.t):'')}…” · read-only</span></div>
-  <select data-act="model" data-id="${c.id}" title="Model for this side chat only">${MODELS.map(m=>`<option ${m===c.model?'selected':''}>${m}</option>`).join('')}</select>
+  <div class="page"><h5>Checks</h5>${rows.map(([n, s]) => `<div class="chkrow"><span class="chk ${s}">●</span>${n}<span style="margin-left:auto;color:var(--muted)">${s}</span></div>`).join('')}
+  <div class="ops">${op('diff', 'View diff')}<button class="op" data-act="go" data-k="chat" data-from="link" data-fresh="1" data-arg="${p.id}">${IC.chat} Ask in a side chat</button></div><p class="mock">Prototype data — only the PR itself lives in the panel; the list stays in the main area.</p></div></div>`
+        }
+        if (i.kind === 'diff') {
+          const d = DIFFS[S.cur]
+          let a = 0,
+            r = 0
+          d.forEach((f) =>
+            f.l.forEach((l) => {
+              if (l[0] === 'a') a++
+              if (l[0] === 'd') r++
+            }),
+          )
+          return `<div class="pane"><div class="dsum"><b>${d.length} file${d.length > 1 ? 's' : ''}</b><span class="g">+${a}</span><span class="r">−${r}</span><span class="sp"></span><button class="btn" data-act="noop">Stage all</button></div>${d.map((f) => `<div class="df"><h6>${f.f}</h6>${f.l.map((l) => `<div class="dl ${l[0]}"><i>${l[1]}</i><i>${l[2]}</i><span>${esc((l[0] === 'a' ? '+ ' : l[0] === 'd' ? '- ' : '  ') + l[3])}</span></div>`).join('')}</div>`).join('')}</div>`
+        }
+        if (i.kind === 'files') {
+          const names = Object.keys(FILES)
+          const src = FILES[i.file] || ''
+          return `<div class="pane split"><div class="tree">${['tests/e2e', 'src/main', '.']
+            .map(
+              (d) =>
+                `<div class="dir">${d === '.' ? '/' : d + '/'}</div>${names
+                  .filter((n) => FPATH[n] === d)
+                  .map(
+                    (n) =>
+                      `<button class="${n === i.file ? 'on' : ''}" data-act="file" data-id="${i.id}" data-file="${n}">  ${n}</button>`,
+                  )
+                  .join('')}`,
+            )
+            .join('')}</div>
+   <div class="fhead"><span>${i.file}</span>${DIFFS[S.cur].some((f) => f.f.endsWith(i.file)) ? `<button data-act="go" data-k="diff" data-from="link">View diff ›</button>` : ''}</div>
+   <div class="code">${src
+     .split('\n')
+     .map((l, n) => `<div class="dl"><i>${n + 1}</i><span>${esc(l)}</span></div>`)
+     .join('')}</div></div>`
+        }
+        return chatHTML(i)
+      }
+      function chatHTML(c) {
+        const th = T()
+        const anc = th.msgs[c.anchor]
+        const msgs = c.msgs.length
+          ? c.msgs
+              .map((m) => `<div class="m ${m.r}">${m.t}${m.m ? `<small>${m.m}</small>` : ''}</div>`)
+              .join('')
+          : `<div class="empty">Ask anything about this message without touching the main thread.${SUGG.map((s) => `<button class="sug" data-act="sug" data-id="${c.id}">${s}</button>`).join('')}</div>`
+        return `<div class="sc"><div class="sc-h"><div class="ctx">${IC.lock}<span>From “${esc(anc ? plain(anc.t) : '')}…” · read-only</span></div>
+  <select data-act="model" data-id="${c.id}" title="Model for this side chat only">${MODELS.map((m) => `<option ${m === c.model ? 'selected' : ''}>${m}</option>`).join('')}</select>
   <button class="i" data-act="archive" data-id="${c.id}" title="Archive (can be restored)">${IC.archive}</button></div>
-  <div class="sc-b">${msgs}${S.pending===c.id?'<div class="typing">Thinking…</div>':''}</div>
+  <div class="sc-b">${msgs}${S.pending === c.id ? '<div class="typing">Thinking…</div>' : ''}</div>
   <div class="sc-f"><form data-id="${c.id}"><input placeholder="Ask a side question…" autocomplete="off"><button class="go">Send</button></form>
-  <div class="foot"><button class="btn" data-act="merge" data-id="${c.id}">${IC.merge} Summary to main</button><button class="btn ghost" data-act="promote" data-id="${c.id}">${IC.out} Promote</button></div></div></div>`;
-}
-function surfaceHTML(){
- const t=T();const repos=[...new Set(PRS.map(p=>p.repo))];
- const prItem=t.open.map(id=>item(id)).find(i=>i&&i.kind==='pr');
- const selPr=prItem?prItem.prId:null;
- const list=PRS.filter(p=>S.prFilter==='all'||p.repo===S.prFilter);
- const groups=[...new Set(list.map(p=>p.repo))];
- return `<div class="surface"><div class="sf-h"><b>Pull requests</b><button class="chip ${S.prFilter==='all'?'on':''}" data-act="prfilter" data-id="all">All repos</button>${repos.map(r=>`<button class="chip ${S.prFilter===r?'on':''}" data-act="prfilter" data-id="${r}">${r.split('/')[1]}</button>`).join('')}</div>
-  ${groups.map(g=>`<div class="grp-h">${g}</div>${list.filter(p=>p.repo===g).map(p=>`<button class="prrow ${selPr===p.id?'sel':''}" data-act="go" data-k="pr" data-from="list" data-arg="${p.id}"><span class="prst ${p.st}" title="${p.st}"></span><span class="prm"><span class="ttl">${esc(p.title)}</span><span class="repo">#${p.n} · ${p.author} · ${p.upd}</span></span><span class="prr"><span class="chk ${p.checks}">● ${p.checks}</span><span>${p.rev}</span></span></button>`).join('')}`).join('')}</div>`;
-}
-function menuListHTML(m){
- const q=(m.q||'').toLowerCase();let out='';
- if(m.mode==='threads')return Object.entries(S.threads).map(([id,t])=>`<div class="it ${id===S.cur?'open':''}" data-act="thread" data-id="${id}" role="button"><span class="tt">${esc(t.title)}</span>${t.items.some(i=>i.unread&&!i.archived)?'<span class="dot"></span>':''}</div>`).join('');
- if(m.mode==='layout'){const o=[['auto','Auto','stacks in tall windows'],['side','Right of chat',''],['bottom','Below chat','']];
-  return `<div class="grp">Panel position</div>`+o.map(([id,n,d])=>`<div class="it" data-act="pos" data-id="${id}" role="button"><span class="tt">${n}${d?` <small>· ${d}</small>`:''}</span>${S.pos===id?IC.check:''}</div>`).join('')+`<div class="grp">Threads</div><div class="it" data-act="sidebar" role="button"><span class="tt">${S.sbHidden?'Show threads':'Hide threads'}</span></div>`}
- for(const k of (m.kind?[m.kind]:KORDER)){
-  const its=ofKind(k).filter(i=>i.title.toLowerCase().includes(q)||KIND[k].n.toLowerCase().includes(q)).sort((a,b)=>b.used-a.used);
-  if(its.length)out+=`<div class="grp">${KIND[k].n}</div>`+its.map(i=>`<div class="it ${T().open.includes(i.id)?'open':''}" data-act="pick" data-id="${i.id}" role="button">${kic(k)}<span class="tt">${esc(i.title)}</span>${i.kind==='chat'?`<small>${i.model}</small>`:''}${stat(i)}${KIND[k].multi?`<button class="x" data-act="kill" data-id="${i.id}" title="${i.kind==='chat'?'Archive':'Close'}">${IC.x}</button>`:''}</div>`).join('');
- }
- if(!m.kind||m.kind==='chat'){const ar=T().items.filter(i=>i.archived&&i.title.toLowerCase().includes(q));
-  if(ar.length)out+=`<div class="grp">Archived</div>`+ar.map(i=>`<div class="it dim" role="button">${kic('chat')}<span class="tt">${esc(i.title)}</span><button class="btn" data-act="restore" data-id="${i.id}">Restore</button></div>`).join('')}
- return out||'<div class="grp">No matches</div>';
-}
-function menuHTML(){
- const m=S.menu;if(!m)return'';
- const nk=(m.mode==='threads'||m.mode==='layout')?[]:(m.kind?[m.kind]:KORDER).filter(k=>KIND[k].multi&&!KIND[k].nonew);
- return `<div class="menu" style="left:0;top:0;visibility:hidden" id="menu">${m.search?`<input id="q" placeholder="Jump to browser, terminal, chat, PR…" value="${esc(m.q||'')}" autocomplete="off">`:''}
-  <div class="list" id="mlist">${m.mode==='new'?'':menuListHTML(m)}</div>
-  ${nk.length?`<div class="foot">${nk.map(k=>`<button class="it new" data-act="new" data-kind="${k}">${IC.plus} New ${KIND[k].n.toLowerCase()}</button>`).join('')}</div>`:''}</div>`;
-}
-function anchorOf(el){const a=$('#app').getBoundingClientRect(),r=el.getBoundingClientRect();return{l:r.left-a.left,t:r.top-a.top,b:r.bottom-a.top,r:r.right-a.left}}
-function placeMenu(){
- const app=$('#app'),m=app.querySelector('.menu');if(!m||!S.menu)return;
- const W=app.clientWidth,H=app.clientHeight,mw=m.offsetWidth,mh=m.offsetHeight,a=S.menu.anchor;let left,top;
- if(!a){left=(W-mw)/2;top=8}
- else{left=Math.max(6,Math.min(a.l,W-mw-6));
-  top=a.b+4;if(top+mh>H-6){top=a.t-mh-4;if(top<6)top=Math.max(6,H-mh-6)}
-  top=Math.max(6,top)}
- m.style.left=left+'px';m.style.top=top+'px';m.style.visibility='visible';
-}
-function slotHTML(id,hdr){
- const i=item(id);if(!i)return'';const pinned=T().pinned.includes(id);
- const h=hdr?`<div class="slot-h"><button class="sw" data-act="menu" data-kind="${i.kind}" title="Switch ${KIND[i.kind].n.toLowerCase()}">${kic(i.kind)}<span class="tt">${esc(i.title)}</span>${IC.down}</button><span class="sp"></span>
-  ${KIND[i.kind].multi&&!KIND[i.kind].nonew?`<button class="i" data-act="new" data-kind="${i.kind}" title="New ${KIND[i.kind].n.toLowerCase()} (fresh)">${IC.plus}</button>`:''}
-  <button class="i ${pinned?'on':''}" data-act="pin" data-id="${id}" title="${pinned?'Unpin — this slot can be replaced':'Pin — never replaced automatically'}">${IC.pin}</button><button class="i" data-act="close" data-id="${id}" title="Hide panel (item stays in list)">${IC.x}</button></div>`:'';
- return `<div class="slot" data-slot="${id}">${h}${content(i)}</div>`;
-}
-const dockbar=()=>`<div class="dockbar" data-grip title="Drag to resize · double-click to cycle height"></div>`;
-function build(){
- const t=T(),strat=S.strat,st=stacked();
- let open=t.open.filter(id=>item(id)&&!item(id).archived).slice(-maxSlots());t.open=open;
- const nosb=S.sbHidden||S.size==='XS';
- const hasUnread=th=>th.items.some(i=>i.unread&&!i.archived);
- const win=$('#win');win.className='win sz-'+S.size+(st?' stacked':'')+(nosb?' nosb':'')+(S.short?' short':'')+(open.length?' hasopen':'');
- $('#tb').innerHTML=`<span class="lights" title="macOS window controls — native, reserved by Copse (--traffic-light-inset: 78px)"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
-  <button class="tb-btn ${S.sbHidden?'':'on'}" data-act="sidebar" title="${S.sbHidden?'Show':'Hide'} threads">${IC.sidebar}</button><span class="sp"></span>
+  <div class="foot"><button class="btn" data-act="merge" data-id="${c.id}">${IC.merge} Summary to main</button><button class="btn ghost" data-act="promote" data-id="${c.id}">${IC.out} Promote</button></div></div></div>`
+      }
+      function surfaceHTML() {
+        const t = T()
+        const repos = [...new Set(PRS.map((p) => p.repo))]
+        const prItem = t.open.map((id) => item(id)).find((i) => i && i.kind === 'pr')
+        const selPr = prItem ? prItem.prId : null
+        const list = PRS.filter((p) => S.prFilter === 'all' || p.repo === S.prFilter)
+        const groups = [...new Set(list.map((p) => p.repo))]
+        return `<div class="surface"><div class="sf-h"><b>Pull requests</b><button class="chip ${S.prFilter === 'all' ? 'on' : ''}" data-act="prfilter" data-id="all">All repos</button>${repos.map((r) => `<button class="chip ${S.prFilter === r ? 'on' : ''}" data-act="prfilter" data-id="${r}">${r.split('/')[1]}</button>`).join('')}</div>
+  ${groups
+    .map(
+      (g) =>
+        `<div class="grp-h">${g}</div>${list
+          .filter((p) => p.repo === g)
+          .map(
+            (p) =>
+              `<button class="prrow ${selPr === p.id ? 'sel' : ''}" data-act="go" data-k="pr" data-from="list" data-arg="${p.id}"><span class="prst ${p.st}" title="${p.st}"></span><span class="prm"><span class="ttl">${esc(p.title)}</span><span class="repo">#${p.n} · ${p.author} · ${p.upd}</span></span><span class="prr"><span class="chk ${p.checks}">● ${p.checks}</span><span>${p.rev}</span></span></button>`,
+          )
+          .join('')}`,
+    )
+    .join('')}</div>`
+      }
+      function menuListHTML(m) {
+        const q = (m.q || '').toLowerCase()
+        let out = ''
+        if (m.mode === 'threads')
+          return Object.entries(S.threads)
+            .map(
+              ([id, t]) =>
+                `<div class="it ${id === S.cur ? 'open' : ''}" data-act="thread" data-id="${id}" role="button"><span class="tt">${esc(t.title)}</span>${t.items.some((i) => i.unread && !i.archived) ? '<span class="dot"></span>' : ''}</div>`,
+            )
+            .join('')
+        if (m.mode === 'layout') {
+          const o = [
+            ['auto', 'Auto', 'stacks in tall windows'],
+            ['side', 'Right of chat', ''],
+            ['bottom', 'Below chat', ''],
+          ]
+          return (
+            `<div class="grp">Panel position</div>` +
+            o
+              .map(
+                ([id, n, d]) =>
+                  `<div class="it" data-act="pos" data-id="${id}" role="button"><span class="tt">${n}${d ? ` <small>· ${d}</small>` : ''}</span>${S.pos === id ? IC.check : ''}</div>`,
+              )
+              .join('') +
+            `<div class="grp">Threads</div><div class="it" data-act="sidebar" role="button"><span class="tt">${S.sbHidden ? 'Show threads' : 'Hide threads'}</span></div>`
+          )
+        }
+        for (const k of m.kind ? [m.kind] : KORDER) {
+          const its = ofKind(k)
+            .filter((i) => i.title.toLowerCase().includes(q) || KIND[k].n.toLowerCase().includes(q))
+            .sort((a, b) => b.used - a.used)
+          if (its.length)
+            out +=
+              `<div class="grp">${KIND[k].n}</div>` +
+              its
+                .map(
+                  (i) =>
+                    `<div class="it ${T().open.includes(i.id) ? 'open' : ''}" data-act="pick" data-id="${i.id}" role="button">${kic(k)}<span class="tt">${esc(i.title)}</span>${i.kind === 'chat' ? `<small>${i.model}</small>` : ''}${stat(i)}${KIND[k].multi ? `<button class="x" data-act="kill" data-id="${i.id}" title="${i.kind === 'chat' ? 'Archive' : 'Close'}">${IC.x}</button>` : ''}</div>`,
+                )
+                .join('')
+        }
+        if (!m.kind || m.kind === 'chat') {
+          const ar = T().items.filter((i) => i.archived && i.title.toLowerCase().includes(q))
+          if (ar.length)
+            out +=
+              `<div class="grp">Archived</div>` +
+              ar
+                .map(
+                  (i) =>
+                    `<div class="it dim" role="button">${kic('chat')}<span class="tt">${esc(i.title)}</span><button class="btn" data-act="restore" data-id="${i.id}">Restore</button></div>`,
+                )
+                .join('')
+        }
+        return out || '<div class="grp">No matches</div>'
+      }
+      function menuHTML() {
+        const m = S.menu
+        if (!m) return ''
+        const nk =
+          m.mode === 'threads' || m.mode === 'layout'
+            ? []
+            : (m.kind ? [m.kind] : KORDER).filter((k) => KIND[k].multi && !KIND[k].nonew)
+        return `<div class="menu" style="left:0;top:0;visibility:hidden" id="menu">${m.search ? `<input id="q" placeholder="Jump to browser, terminal, chat, PR…" value="${esc(m.q || '')}" autocomplete="off">` : ''}
+  <div class="list" id="mlist">${m.mode === 'new' ? '' : menuListHTML(m)}</div>
+  ${nk.length ? `<div class="foot">${nk.map((k) => `<button class="it new" data-act="new" data-kind="${k}">${IC.plus} New ${KIND[k].n.toLowerCase()}</button>`).join('')}</div>` : ''}</div>`
+      }
+      function anchorOf(el) {
+        const a = $('#app').getBoundingClientRect(),
+          r = el.getBoundingClientRect()
+        return { l: r.left - a.left, t: r.top - a.top, b: r.bottom - a.top, r: r.right - a.left }
+      }
+      function placeMenu() {
+        const app = $('#app'),
+          m = app.querySelector('.menu')
+        if (!m || !S.menu) return
+        const W = app.clientWidth,
+          H = app.clientHeight,
+          mw = m.offsetWidth,
+          mh = m.offsetHeight,
+          a = S.menu.anchor
+        let left, top
+        if (!a) {
+          left = (W - mw) / 2
+          top = 8
+        } else {
+          left = Math.max(6, Math.min(a.l, W - mw - 6))
+          top = a.b + 4
+          if (top + mh > H - 6) {
+            top = a.t - mh - 4
+            if (top < 6) top = Math.max(6, H - mh - 6)
+          }
+          top = Math.max(6, top)
+        }
+        m.style.left = left + 'px'
+        m.style.top = top + 'px'
+        m.style.visibility = 'visible'
+      }
+      function slotHTML(id, hdr) {
+        const i = item(id)
+        if (!i) return ''
+        const pinned = T().pinned.includes(id)
+        const h = hdr
+          ? `<div class="slot-h"><button class="sw" data-act="menu" data-kind="${i.kind}" title="Switch ${KIND[i.kind].n.toLowerCase()}">${kic(i.kind)}<span class="tt">${esc(i.title)}</span>${IC.down}</button><span class="sp"></span>
+  ${KIND[i.kind].multi && !KIND[i.kind].nonew ? `<button class="i" data-act="new" data-kind="${i.kind}" title="New ${KIND[i.kind].n.toLowerCase()} (fresh)">${IC.plus}</button>` : ''}
+  <button class="i ${pinned ? 'on' : ''}" data-act="pin" data-id="${id}" title="${pinned ? 'Unpin — this slot can be replaced' : 'Pin — never replaced automatically'}">${IC.pin}</button><button class="i" data-act="close" data-id="${id}" title="Hide panel (item stays in list)">${IC.x}</button></div>`
+          : ''
+        return `<div class="slot" data-slot="${id}">${h}${content(i)}</div>`
+      }
+      const dockbar = () =>
+        `<div class="dockbar" data-grip title="Drag to resize · double-click to cycle height"></div>`
+      function build() {
+        const t = T(),
+          strat = S.strat,
+          st = stacked()
+        let open = t.open.filter((id) => item(id) && !item(id).archived).slice(-maxSlots())
+        t.open = open
+        const nosb = S.sbHidden || S.size === 'XS'
+        const hasUnread = (th) => th.items.some((i) => i.unread && !i.archived)
+        const win = $('#win')
+        win.className =
+          'win sz-' +
+          S.size +
+          (st ? ' stacked' : '') +
+          (nosb ? ' nosb' : '') +
+          (S.short ? ' short' : '') +
+          (open.length ? ' hasopen' : '')
+        $('#tb').innerHTML =
+          `<span class="lights" title="macOS window controls — native, reserved by Copse (--traffic-light-inset: 78px)"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+  <button class="tb-btn ${S.sbHidden ? '' : 'on'}" data-act="sidebar" title="${S.sbHidden ? 'Show' : 'Hide'} threads">${IC.sidebar}</button><span class="sp"></span>
   <button class="tb-btn" data-act="layoutmenu" title="Choose where the panel goes">${IC.layout} Layout</button>
-  <button class="tb-btn ${open.length?'on':''}" data-act="panelToggle" title="${open.length?'Hide':'Show'} panel">${IC.panel} Panel</button>`;
- const side=`<div class="sidebar"><div class="logo">🌲<span class="tx"> Copse</span></div><div class="lbl">Threads</div>
-  ${Object.entries(S.threads).map(([id,th])=>`<button class="item ${id===S.cur?'on':''}" data-act="thread" data-id="${id}" title="${esc(th.title)}"><span class="ab">${th.title[0]}</span><span class="tx">${esc(th.title)}</span>${hasUnread(th)&&!S.showSide?'<span class="dot"></span>':''}</button>${S.showSide&&id===S.cur?th.items.filter(i=>i.kind==='chat'&&!i.archived).map(c=>`<button class="sub" data-act="pick" data-id="${c.id}">${IC.chat} ${esc(c.title)}</button>`).join(''):''}`).join('')}
-  <label class="tgl"><input type="checkbox" data-act="showSide" ${S.showSide?'checked':''}> <span>Show side chats</span></label></div>`;
- const chatPart=t.surface==='prs'?surfaceHTML():`<div class="chat">${t.msgs.map((m,i)=>{const n=ofKind('chat').filter(c=>c.anchor===i);
-   return `<div class="msg ${m.r}"><div class="who">${m.r==='user'?'You':'Copse'}${n.length?` · <span class="k-chat">${IC.chat}</span>${n.some(c=>c.unread)?' <span class="dot"></span>':''}`:''}</div><div class="body">${m.t}</div>
-   <div class="acts"><button data-act="fork" data-i="${i}">${IC.chat} ${n.length?'Open side chat':'Side chat'}</button></div></div>`}).join('')}</div>
-  <div class="composer"><div class="box">Message Copse… · hover a message → Side chat (⌥ = new)</div></div>`;
- const main=`<div class="main"><div class="mhead"><button class="t xs-only" data-act="threads" style="display:none">${esc(t.title)} ${IC.down}</button><span class="t sz-hide">${esc(t.title)}</span><span class="pill">${t.model}</span>
-  <div class="seg mini"><button class="${t.surface==='chat'?'on':''}" data-act="surface" data-id="chat">${IC.chat} Chat</button><button class="${t.surface==='prs'?'on':''}" data-act="surface" data-id="prs">${IC.pr} PRs</button></div><span class="sp"></span>
-  <button class="btn xsp" data-act="showPanel">${IC.panel} Panels</button></div>${chatPart}</div>`;
- let right='';
- const back=`<div class="back"><button class="btn" data-act="hideAll">${IC.back} Chat</button></div>`;
- if(strat==='rail'){
-  right=(open.length?`<div class="panel-multi">${back}${dockbar()}${open.map(id=>slotHTML(id,true)).join('')}</div>`:'')+
-  `<div class="rail"><span class="rail-label">Panel</span>${RAIL.map(k=>{const its=ofKind(k);const anyOpen=its.some(i=>open.includes(i.id));
-   const badge=its.some(i=>i.running)?'<span class="dot run"></span>':its.some(i=>i.unread)?'<span class="dot"></span>':'';
-   return `<button class="${anyOpen?'on':''}" data-act="rail" data-kind="${k}" title="${KIND[k].n}">${kic(k)}${badge}</button>`}).join('')}<span class="sep"></span><button class="${t.surface==='prs'?'on':''}" data-act="surface" data-id="${t.surface==='prs'?'chat':'prs'}" title="Pull requests (multi-repo list)">${IC.pr}</button><span class="gap"></span><div class="hint">${maxSlots()} slot${maxSlots()>1?'s':''}</div></div>`;
- }
- if(strat==='tabs'){
-  const all=alive();const VIS=S.size==='L'?4:(S.size==='M'||S.size==='T')?3:2;let vis=all.slice(0,VIS);
-  if(!vis.some(i=>i.id===t.active)&&item(t.active))vis=[...vis.slice(0,VIS-1),item(t.active)];
-  const hid=all.filter(i=>!vis.includes(i));const flag=hid.some(i=>i.running||i.unread);
-  right=`<div class="right">${back}${dockbar()}<div class="tabs">${vis.map(i=>`<button class="tab ${i.id===t.active?'on':''}" data-act="pick" data-id="${i.id}" title="${esc(i.title)}">${kic(i.kind)}<span class="tt">${esc(i.title)}</span>${stat(i)}</button>`).join('')}<span class="sp"></span>
-   ${hid.length?`<button class="tb" data-act="menu" title="More">${IC.more}${flag?'<span class="dot"></span>':''}</button>`:''}<button class="tb" data-act="menu" data-mode="new" title="New">${IC.plus}</button></div>
-   ${open[0]?slotHTML(open[0],false):'<div class="pane"><div class="page" style="color:var(--muted)">Nothing open</div></div>'}</div>`;
- }
- if(strat==='palette'){
-  const live=alive().filter(i=>i.running||i.unread);
-  right=`<div class="right">${back}${dockbar()}<div class="strip"><button class="find" data-act="menu" data-search="1">${IC.search} Jump to…<kbd>⌘K</kbd></button><div class="live">${live.map(i=>`<button class="btn" style="padding:2px 6px" data-act="pick" data-id="${i.id}" title="${esc(i.title)}">${kic(i.kind)}${stat(i)}</button>`).join('')}</div></div>
-   <div style="display:flex;flex-direction:column;flex:1;min-height:0">${open.map(id=>slotHTML(id,true)).join('')||'<div class="page" style="color:var(--muted)">Nothing open. Press ⌘K.</div>'}</div></div>`;
- }
- const app=$('#app');
- app.style.gridTemplateRows=st?(open.length||strat!=='rail'?(open.length?(S.dockPx?`minmax(0,1fr) auto ${S.dockPx}px`:`minmax(0,${100-S.dockPct}fr) auto minmax(0,${S.dockPct}fr)`):'minmax(0,1fr) auto auto'):'minmax(0,1fr) auto'):'';
- app.innerHTML=side+main+right+menuHTML();
- app.querySelectorAll('.mhead .t.xs-only').forEach(b=>b.style.display='');app.querySelectorAll('.mhead .sz-hide').forEach(b=>{if(nosb)b.style.display='none'});
- placeMenu();
- app.querySelectorAll('.sc-b').forEach(b=>b.scrollTop=b.scrollHeight);
- const a=STRATS[strat];
- $('#note').style.display=S.notes?'':'none';
- $('#note').innerHTML=`<div><h4>${a.n}</h4><p>${a.d}</p><p style="color:var(--muted)">Closing a side chat archives it. Switching threads restores that thread’s panels and surface. Dots only, no counts. The traffic lights are native macOS chrome; the threads toggle sits just after them (Copse reserves <code>--traffic-light-inset</code>).</p><div class="con"><h4>Trade-off</h4><p>${a.con}</p></div></div><div class="rules"><h4>Placement rules</h4><ol>${RULES.map(r=>`<li>${r}</li>`).join('')}</ol></div><div><h4>Try</h4><p><b>Layout</b> in the titlebar picks the panel position (Auto stacks only in the Tall window, like Copse’s auto-portrait). Open the <b>PRs</b> surface, pick a PR, and only that PR opens in the panel. Pickers open where you click. Hover openers to preview what they will do.</p></div>`;
- $('#seg').innerHTML=Object.entries(STRATS).map(([k,x])=>`<button class="${k===strat?'on':''}" data-act="strat" data-id="${k}">${x.n}</button>`).join('');
- $('#sizes').innerHTML=[['L','L'],['M','M'],['S','S'],['XS','XS'],['T','Tall']].map(([k,l])=>`<button class="${k===S.size?'on':''}" data-act="size" data-id="${k}" title="${k==='T'?'Narrow, portrait-aspect window':''}">${l}</button>`).join('');
- $('#short').classList.toggle('on',S.short);$('#notes').classList.toggle('on',S.notes);
-}
-function toast(msg,undo){document.querySelectorAll('.toast').forEach(x=>x.remove());const t=document.createElement('div');t.className='toast';t.innerHTML=`<span>${msg}</span>${undo?'<button data-act="undo">Undo</button>':''}`;document.body.appendChild(t);setTimeout(()=>t.remove(),5500)}
-function focusInput(){const i=document.querySelector('.sc-f input');if(i)i.focus()}
-function send(id,text){
- const c=item(id);if(!c||!text.trim())return;
- if(c.title==='New side chat')c.title=text.length>34?text.slice(0,32)+'…':text;
- c.msgs.push({r:'u',t:esc(text)});S.pending=id;build();const th=S.cur;
- setTimeout(()=>{const ch=S.threads[th].items.find(i=>i.id===id);if(!ch)return;ch.msgs.push({r:'a',t:REPLIES[(ch.msgs.length>>1)%REPLIES.length],m:ch.model});S.pending=null;
-  if(!(S.cur===th&&T().open.includes(id)))ch.unread=true;build();focusInput()},900);
-}
-document.addEventListener('click',e=>{
- const el=e.target.closest('[data-act]');
- if(!el){if(S.menu&&!e.target.closest('.menu')){S.menu=null;build()}return}
- if(el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.dataset.act!=='showSide'))return;
- const a=el.dataset.act,id=el.dataset.id,k=el.dataset.kind,t=T();let skip=false;
- if(a==='undo'){if(S.undo){Object.assign(T(),JSON.parse(S.undo));S.undo=null;status('Undone.')}document.querySelectorAll('.toast').forEach(x=>x.remove())}
- else if(a==='strat'){S.strat=id;S.menu=null;if(id==='tabs')t.open=t.open.slice(-1)}
- else if(a==='size'){S.size=id;S.dockPx=null;S.menu=null}
- else if(a==='pos'){S.pos=id;S.dockPx=null;S.menu=null;status(id==='auto'?'Panel position: Auto — stacks below chat only in tall windows.':id==='side'?'Panel position: always right of chat.':'Panel position: always below chat.')}
- else if(a==='sidebar'){S.sbHidden=!S.sbHidden;S.menu=null}
- else if(a==='layoutmenu')S.menu=S.menu&&S.menu.mode==='layout'?null:{mode:'layout',anchor:anchorOf(el)};
- else if(a==='panelToggle'){if(t.open.length)t.open=[];else{const x=item(t.active)||alive()[0];if(x)exec({id:x.id,from:'menu'})}}
- else if(a==='surface'){t.surface=id;S.menu=null;status(id==='prs'?'PR list shown in the main area — chat is one click away. Picking a PR opens just that PR in the panel.':'Back to chat.')}
- else if(a==='prfilter')S.prFilter=id;
- else if(a==='showSide')S.showSide=el.checked;
- else if(a==='thread'){S.cur=id;S.menu=null;const n=T().open.length;status(`Restored this thread’s layout: ${n} panel${n===1?'':'s'} open${T().surface==='prs'?', PR list shown':''}.`)}
- else if(a==='threads')S.menu=S.menu?null:{mode:'threads',anchor:anchorOf(el)};
- else if(a==='showPanel'){const x=item(t.active)||alive()[0];if(x)exec({id:x.id,from:'menu'})}
- else if(a==='hideAll')t.open=[];
- else if(a==='rail'){S.menu=null;const its=ofKind(k);if(its.length>1)S.menu={kind:k,mode:'list',anchor:anchorOf(el)};else exec(intentOf(el,e.altKey))}
- else if(a==='go'||a==='fork'||a==='pick'||a==='new'||a==='restore'){
-  if(a==='restore')item(id).archived=false;
-  if(a==='pick'&&e.target.closest('.x'))skip=true;
-  if(!skip)exec(intentOf(el,e.altKey))}
- else if(a==='menu')S.menu=S.menu?null:{kind:k||null,mode:el.dataset.mode||'list',search:!!el.dataset.search,q:'',anchor:anchorOf(el)};
- else if(a==='kill'){e.stopPropagation();const i=item(id);const snap=snapshot();if(i.kind==='chat'){i.archived=true;toast(`Archived “${i.title}”. Restore it from the chat list.`,true)}else{t.items=t.items.filter(x=>x.id!==id);toast(`Closed “${i.title}”.`,true)}S.undo=snap;t.open=t.open.filter(x=>x!==id);S.menu=null}
- else if(a==='archive'){const i=item(id),snap=snapshot();i.archived=true;t.open=t.open.filter(x=>x!==id);S.undo=snap;toast(`Archived “${i.title}”. Restore from the chat list.`,true)}
- else if(a==='close')t.open=t.open.filter(x=>x!==id);
- else if(a==='pin'){t.pinned=t.pinned.includes(id)?t.pinned.filter(x=>x!==id):[...t.pinned,id]}
- else if(a==='nav'){const i=item(t.open.find(x=>item(x).kind==='browser'&&el.closest(`[data-slot="${x}"]`)))||item(t.active);
-  if(e.altKey){exec({kind:'browser',fresh:true,arg:el.dataset.page,from:'link'})}else{i.hist.push(i.page);i.page=el.dataset.page;i.title=BP[i.page].u.split('/')[0];i.used=++S.tick;status(`Navigated “${i.title}” in place — layout unchanged.`)}}
- else if(a==='back'){const i=item(id);if(i.hist.length){i.page=i.hist.pop();i.title=BP[i.page].u.split('/')[0]}}
- else if(a==='file'){const i=item(id);i.file=el.dataset.file;i.used=++S.tick}
- else if(a==='sug'){send(id,el.textContent);return}
- else if(a==='merge'){toast(`Posted a one-paragraph summary of “${item(id).title}” to the main thread (prototype).`);return}
- else if(a==='promote'){const c=item(id);toast(`“${c.title}” promoted to its own thread (prototype).`);return}
- else if(a==='noop')return;
- build();
- if(['fork','new','pick','rail','go'].includes(a)&&!skip&&!(el.dataset.k==='pr'))focusInput();
- const q=$('#q');if(q)q.focus();
-});
-document.addEventListener('mouseover',e=>{
- const el=e.target.closest('[data-act="go"],[data-act="rail"],[data-act="fork"],[data-act="pick"],[data-act="new"],[data-act="nav"],[data-act="surface"]');
- document.querySelectorAll('.slot.target').forEach(x=>x.classList.remove('target'));
- if(!el){status('');return}
- if(el.dataset.act==='nav'){status('<b>Navigates this browser in place.</b> ⌥-click opens it in a fresh browser.');return}
- if(el.dataset.act==='surface'){status(el.dataset.id==='prs'?'<b>Shows the PR list across all repos in the main area</b> — chat is one click away. Picking a PR opens just that PR in the panel.':'<b>Back to chat.</b>');return}
- if(el.dataset.act==='rail'&&ofKind(el.dataset.kind).length>1){status(`<b>Choose</b> which ${KIND[el.dataset.kind].n.toLowerCase()} to open (most recent first).`);return}
- const r=resolve(intentOf(el,e.altKey));status('<b>→</b> '+r.text);
- const tgt=r.mode==='focus'||r.victim?T().open[r.slot]:null;if(tgt){const s=document.querySelector(`.slot[data-slot="${tgt}"]`);if(s)s.classList.add('target')}
-});
-document.addEventListener('mousedown',e=>{
- const g=e.target.closest('[data-grip]');
- if(g){e.preventDefault();const app=$('#app'),rect=app.getBoundingClientRect();const mv=ev=>{S.dockPx=Math.max(90,Math.min(rect.height-160,rect.bottom-ev.clientY));app.style.gridTemplateRows=`minmax(0,1fr) auto ${S.dockPx}px`};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up)};document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);return}
- const s=e.target.closest('.slot[data-slot]');if(s){const i=item(s.dataset.slot);if(i){i.used=++S.tick;T().active=i.id}}});
-document.addEventListener('dblclick',e=>{if(e.target.closest('[data-grip]')){S.dockPx=null;S.dockPct=S.dockPct<40?55:S.dockPct<60?80:30;build()}});
-document.addEventListener('change',e=>{const el=e.target;if(el.dataset.act==='model'){item(el.dataset.id).model=el.value;toast(`This side chat now uses ${el.value}; main stays on ${T().model}.`)}});
-document.addEventListener('input',e=>{if(e.target.id==='q'&&S.menu){S.menu.q=e.target.value;$('#mlist').innerHTML=menuListHTML(S.menu);placeMenu()}});
-document.addEventListener('submit',e=>{e.preventDefault();const f=e.target,i=f.querySelector('input'),v=i.value;i.value='';
- if(f.dataset.term){const tm=item(f.dataset.term);if(!v.trim())return;tm.lines.push('<b>$</b> '+esc(v),/test/.test(v)?'<b>✓</b> 42 passed':`zsh: ran “${esc(v)}” (prototype)`);build();const x=document.querySelector(`.slot[data-slot="${tm.id}"] .tin input`);if(x)x.focus();return}
- send(f.dataset.id,v)});
-document.addEventListener('keydown',e=>{
- if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();const f=document.querySelector('.find');S.menu={kind:null,mode:'list',search:true,q:'',anchor:f?anchorOf(f):null};build();const q=$('#q');if(q)q.focus()}
- if(e.key==='Escape'&&S.menu){S.menu=null;build()}
-});
-$('#short').onclick=()=>{S.short=!S.short;build()};
-$('#notes').onclick=()=>{S.notes=!S.notes;build()};
-$('#theme').onclick=()=>{const r=document.documentElement;const light=r.dataset.theme?r.dataset.theme==='light':matchMedia('(prefers-color-scheme:light)').matches;r.dataset.theme=light?'dark':'light'};
-build();
-</script>
-</body>
+  <button class="tb-btn ${open.length ? 'on' : ''}" data-act="panelToggle" title="${open.length ? 'Hide' : 'Show'} panel">${IC.panel} Panel</button>`
+        const side = `<div class="sidebar"><div class="logo">🌲<span class="tx"> Copse</span></div><div class="lbl">Threads</div>
+  ${Object.entries(S.threads)
+    .map(
+      ([id, th]) =>
+        `<button class="item ${id === S.cur ? 'on' : ''}" data-act="thread" data-id="${id}" title="${esc(th.title)}"><span class="ab">${th.title[0]}</span><span class="tx">${esc(th.title)}</span>${hasUnread(th) && !S.showSide ? '<span class="dot"></span>' : ''}</button>${
+          S.showSide && id === S.cur
+            ? th.items
+                .filter((i) => i.kind === 'chat' && !i.archived)
+                .map(
+                  (c) =>
+                    `<button class="sub" data-act="pick" data-id="${c.id}">${IC.chat} ${esc(c.title)}</button>`,
+                )
+                .join('')
+            : ''
+        }`,
+    )
+    .join('')}
+  <label class="tgl"><input type="checkbox" data-act="showSide" ${S.showSide ? 'checked' : ''}> <span>Show side chats</span></label></div>`
+        const chatPart =
+          t.surface === 'prs'
+            ? surfaceHTML()
+            : `<div class="chat">${t.msgs
+                .map((m, i) => {
+                  const n = ofKind('chat').filter((c) => c.anchor === i)
+                  return `<div class="msg ${m.r}"><div class="who">${m.r === 'user' ? 'You' : 'Copse'}${n.length ? ` · <span class="k-chat">${IC.chat}</span>${n.some((c) => c.unread) ? ' <span class="dot"></span>' : ''}` : ''}</div><div class="body">${m.t}</div>
+   <div class="acts"><button data-act="fork" data-i="${i}">${IC.chat} ${n.length ? 'Open side chat' : 'Side chat'}</button></div></div>`
+                })
+                .join('')}</div>
+  <div class="composer"><div class="box">Message Copse… · hover a message → Side chat (⌥ = new)</div></div>`
+        const main = `<div class="main"><div class="mhead"><button class="t xs-only" data-act="threads" style="display:none">${esc(t.title)} ${IC.down}</button><span class="t sz-hide">${esc(t.title)}</span><span class="pill">${t.model}</span>
+  <div class="seg mini"><button class="${t.surface === 'chat' ? 'on' : ''}" data-act="surface" data-id="chat">${IC.chat} Chat</button><button class="${t.surface === 'prs' ? 'on' : ''}" data-act="surface" data-id="prs">${IC.pr} PRs</button></div><span class="sp"></span>
+  <button class="btn xsp" data-act="showPanel">${IC.panel} Panels</button></div>${chatPart}</div>`
+        let right = ''
+        const back = `<div class="back"><button class="btn" data-act="hideAll">${IC.back} Chat</button></div>`
+        if (strat === 'rail') {
+          right =
+            (open.length
+              ? `<div class="panel-multi">${back}${dockbar()}${open.map((id) => slotHTML(id, true)).join('')}</div>`
+              : '') +
+            `<div class="rail"><span class="rail-label">Panel</span>${RAIL.map((k) => {
+              const its = ofKind(k)
+              const anyOpen = its.some((i) => open.includes(i.id))
+              const badge = its.some((i) => i.running)
+                ? '<span class="dot run"></span>'
+                : its.some((i) => i.unread)
+                  ? '<span class="dot"></span>'
+                  : ''
+              return `<button class="${anyOpen ? 'on' : ''}" data-act="rail" data-kind="${k}" title="${KIND[k].n}">${kic(k)}${badge}</button>`
+            }).join(
+              '',
+            )}<span class="sep"></span><button class="${t.surface === 'prs' ? 'on' : ''}" data-act="surface" data-id="${t.surface === 'prs' ? 'chat' : 'prs'}" title="Pull requests (multi-repo list)">${IC.pr}</button><span class="gap"></span><div class="hint">${maxSlots()} slot${maxSlots() > 1 ? 's' : ''}</div></div>`
+        }
+        if (strat === 'tabs') {
+          const all = alive()
+          const VIS = S.size === 'L' ? 4 : S.size === 'M' || S.size === 'T' ? 3 : 2
+          let vis = all.slice(0, VIS)
+          if (!vis.some((i) => i.id === t.active) && item(t.active))
+            vis = [...vis.slice(0, VIS - 1), item(t.active)]
+          const hid = all.filter((i) => !vis.includes(i))
+          const flag = hid.some((i) => i.running || i.unread)
+          right = `<div class="right">${back}${dockbar()}<div class="tabs">${vis.map((i) => `<button class="tab ${i.id === t.active ? 'on' : ''}" data-act="pick" data-id="${i.id}" title="${esc(i.title)}">${kic(i.kind)}<span class="tt">${esc(i.title)}</span>${stat(i)}</button>`).join('')}<span class="sp"></span>
+   ${hid.length ? `<button class="tb" data-act="menu" title="More">${IC.more}${flag ? '<span class="dot"></span>' : ''}</button>` : ''}<button class="tb" data-act="menu" data-mode="new" title="New">${IC.plus}</button></div>
+   ${open[0] ? slotHTML(open[0], false) : '<div class="pane"><div class="page" style="color:var(--muted)">Nothing open</div></div>'}</div>`
+        }
+        if (strat === 'palette') {
+          const live = alive().filter((i) => i.running || i.unread)
+          right = `<div class="right">${back}${dockbar()}<div class="strip"><button class="find" data-act="menu" data-search="1">${IC.search} Jump to…<kbd>⌘K</kbd></button><div class="live">${live.map((i) => `<button class="btn" style="padding:2px 6px" data-act="pick" data-id="${i.id}" title="${esc(i.title)}">${kic(i.kind)}${stat(i)}</button>`).join('')}</div></div>
+   <div style="display:flex;flex-direction:column;flex:1;min-height:0">${open.map((id) => slotHTML(id, true)).join('') || '<div class="page" style="color:var(--muted)">Nothing open. Press ⌘K.</div>'}</div></div>`
+        }
+        const app = $('#app')
+        app.style.gridTemplateRows = st
+          ? open.length || strat !== 'rail'
+            ? open.length
+              ? S.dockPx
+                ? `minmax(0,1fr) auto ${S.dockPx}px`
+                : `minmax(0,${100 - S.dockPct}fr) auto minmax(0,${S.dockPct}fr)`
+              : 'minmax(0,1fr) auto auto'
+            : 'minmax(0,1fr) auto'
+          : ''
+        app.innerHTML = side + main + right + menuHTML()
+        app.querySelectorAll('.mhead .t.xs-only').forEach((b) => (b.style.display = ''))
+        app.querySelectorAll('.mhead .sz-hide').forEach((b) => {
+          if (nosb) b.style.display = 'none'
+        })
+        placeMenu()
+        app.querySelectorAll('.sc-b').forEach((b) => (b.scrollTop = b.scrollHeight))
+        const a = STRATS[strat]
+        $('#note').style.display = S.notes ? '' : 'none'
+        $('#note').innerHTML =
+          `<div><h4>${a.n}</h4><p>${a.d}</p><p style="color:var(--muted)">Closing a side chat archives it. Switching threads restores that thread’s panels and surface. Dots only, no counts. The traffic lights are native macOS chrome; the threads toggle sits just after them (Copse reserves <code>--traffic-light-inset</code>).</p><div class="con"><h4>Trade-off</h4><p>${a.con}</p></div></div><div class="rules"><h4>Placement rules</h4><ol>${RULES.map((r) => `<li>${r}</li>`).join('')}</ol></div><div><h4>Try</h4><p><b>Layout</b> in the titlebar picks the panel position (Auto stacks only in the Tall window, like Copse’s auto-portrait). Open the <b>PRs</b> surface, pick a PR, and only that PR opens in the panel. Pickers open where you click. Hover openers to preview what they will do.</p></div>`
+        $('#seg').innerHTML = Object.entries(STRATS)
+          .map(
+            ([k, x]) =>
+              `<button class="${k === strat ? 'on' : ''}" data-act="strat" data-id="${k}">${x.n}</button>`,
+          )
+          .join('')
+        $('#sizes').innerHTML = [
+          ['L', 'L'],
+          ['M', 'M'],
+          ['S', 'S'],
+          ['XS', 'XS'],
+          ['T', 'Tall'],
+        ]
+          .map(
+            ([k, l]) =>
+              `<button class="${k === S.size ? 'on' : ''}" data-act="size" data-id="${k}" title="${k === 'T' ? 'Narrow, portrait-aspect window' : ''}">${l}</button>`,
+          )
+          .join('')
+        $('#short').classList.toggle('on', S.short)
+        $('#notes').classList.toggle('on', S.notes)
+      }
+      function toast(msg, undo) {
+        document.querySelectorAll('.toast').forEach((x) => x.remove())
+        const t = document.createElement('div')
+        t.className = 'toast'
+        t.innerHTML = `<span>${msg}</span>${undo ? '<button data-act="undo">Undo</button>' : ''}`
+        document.body.appendChild(t)
+        setTimeout(() => t.remove(), 5500)
+      }
+      function focusInput() {
+        const i = document.querySelector('.sc-f input')
+        if (i) i.focus()
+      }
+      function send(id, text) {
+        const c = item(id)
+        if (!c || !text.trim()) return
+        if (c.title === 'New side chat') c.title = text.length > 34 ? text.slice(0, 32) + '…' : text
+        c.msgs.push({ r: 'u', t: esc(text) })
+        S.pending = id
+        build()
+        const th = S.cur
+        setTimeout(() => {
+          const ch = S.threads[th].items.find((i) => i.id === id)
+          if (!ch) return
+          ch.msgs.push({ r: 'a', t: REPLIES[(ch.msgs.length >> 1) % REPLIES.length], m: ch.model })
+          S.pending = null
+          if (!(S.cur === th && T().open.includes(id))) ch.unread = true
+          build()
+          focusInput()
+        }, 900)
+      }
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-act]')
+        if (!el) {
+          if (S.menu && !e.target.closest('.menu')) {
+            S.menu = null
+            build()
+          }
+          return
+        }
+        if (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.dataset.act !== 'showSide'))
+          return
+        const a = el.dataset.act,
+          id = el.dataset.id,
+          k = el.dataset.kind,
+          t = T()
+        let skip = false
+        if (a === 'undo') {
+          if (S.undo) {
+            Object.assign(T(), JSON.parse(S.undo))
+            S.undo = null
+            status('Undone.')
+          }
+          document.querySelectorAll('.toast').forEach((x) => x.remove())
+        } else if (a === 'strat') {
+          S.strat = id
+          S.menu = null
+          if (id === 'tabs') t.open = t.open.slice(-1)
+        } else if (a === 'size') {
+          S.size = id
+          S.dockPx = null
+          S.menu = null
+        } else if (a === 'pos') {
+          S.pos = id
+          S.dockPx = null
+          S.menu = null
+          status(
+            id === 'auto'
+              ? 'Panel position: Auto — stacks below chat only in tall windows.'
+              : id === 'side'
+                ? 'Panel position: always right of chat.'
+                : 'Panel position: always below chat.',
+          )
+        } else if (a === 'sidebar') {
+          S.sbHidden = !S.sbHidden
+          S.menu = null
+        } else if (a === 'layoutmenu')
+          S.menu =
+            S.menu && S.menu.mode === 'layout' ? null : { mode: 'layout', anchor: anchorOf(el) }
+        else if (a === 'panelToggle') {
+          if (t.open.length) t.open = []
+          else {
+            const x = item(t.active) || alive()[0]
+            if (x) exec({ id: x.id, from: 'menu' })
+          }
+        } else if (a === 'surface') {
+          t.surface = id
+          S.menu = null
+          status(
+            id === 'prs'
+              ? 'PR list shown in the main area — chat is one click away. Picking a PR opens just that PR in the panel.'
+              : 'Back to chat.',
+          )
+        } else if (a === 'prfilter') S.prFilter = id
+        else if (a === 'showSide') S.showSide = el.checked
+        else if (a === 'thread') {
+          S.cur = id
+          S.menu = null
+          const n = T().open.length
+          status(
+            `Restored this thread’s layout: ${n} panel${n === 1 ? '' : 's'} open${T().surface === 'prs' ? ', PR list shown' : ''}.`,
+          )
+        } else if (a === 'threads')
+          S.menu = S.menu ? null : { mode: 'threads', anchor: anchorOf(el) }
+        else if (a === 'showPanel') {
+          const x = item(t.active) || alive()[0]
+          if (x) exec({ id: x.id, from: 'menu' })
+        } else if (a === 'hideAll') t.open = []
+        else if (a === 'rail') {
+          S.menu = null
+          const its = ofKind(k)
+          if (its.length > 1) S.menu = { kind: k, mode: 'list', anchor: anchorOf(el) }
+          else exec(intentOf(el, e.altKey))
+        } else if (a === 'go' || a === 'fork' || a === 'pick' || a === 'new' || a === 'restore') {
+          if (a === 'restore') item(id).archived = false
+          if (a === 'pick' && e.target.closest('.x')) skip = true
+          if (!skip) exec(intentOf(el, e.altKey))
+        } else if (a === 'menu')
+          S.menu = S.menu
+            ? null
+            : {
+                kind: k || null,
+                mode: el.dataset.mode || 'list',
+                search: !!el.dataset.search,
+                q: '',
+                anchor: anchorOf(el),
+              }
+        else if (a === 'kill') {
+          e.stopPropagation()
+          const i = item(id)
+          const snap = snapshot()
+          if (i.kind === 'chat') {
+            i.archived = true
+            toast(`Archived “${i.title}”. Restore it from the chat list.`, true)
+          } else {
+            t.items = t.items.filter((x) => x.id !== id)
+            toast(`Closed “${i.title}”.`, true)
+          }
+          S.undo = snap
+          t.open = t.open.filter((x) => x !== id)
+          S.menu = null
+        } else if (a === 'archive') {
+          const i = item(id),
+            snap = snapshot()
+          i.archived = true
+          t.open = t.open.filter((x) => x !== id)
+          S.undo = snap
+          toast(`Archived “${i.title}”. Restore from the chat list.`, true)
+        } else if (a === 'close') t.open = t.open.filter((x) => x !== id)
+        else if (a === 'pin') {
+          t.pinned = t.pinned.includes(id) ? t.pinned.filter((x) => x !== id) : [...t.pinned, id]
+        } else if (a === 'nav') {
+          const i =
+            item(
+              t.open.find((x) => item(x).kind === 'browser' && el.closest(`[data-slot="${x}"]`)),
+            ) || item(t.active)
+          if (e.altKey) {
+            exec({ kind: 'browser', fresh: true, arg: el.dataset.page, from: 'link' })
+          } else {
+            i.hist.push(i.page)
+            i.page = el.dataset.page
+            i.title = BP[i.page].u.split('/')[0]
+            i.used = ++S.tick
+            status(`Navigated “${i.title}” in place — layout unchanged.`)
+          }
+        } else if (a === 'back') {
+          const i = item(id)
+          if (i.hist.length) {
+            i.page = i.hist.pop()
+            i.title = BP[i.page].u.split('/')[0]
+          }
+        } else if (a === 'file') {
+          const i = item(id)
+          i.file = el.dataset.file
+          i.used = ++S.tick
+        } else if (a === 'sug') {
+          send(id, el.textContent)
+          return
+        } else if (a === 'merge') {
+          toast(
+            `Posted a one-paragraph summary of “${item(id).title}” to the main thread (prototype).`,
+          )
+          return
+        } else if (a === 'promote') {
+          const c = item(id)
+          toast(`“${c.title}” promoted to its own thread (prototype).`)
+          return
+        } else if (a === 'noop') return
+        build()
+        if (['fork', 'new', 'pick', 'rail', 'go'].includes(a) && !skip && !(el.dataset.k === 'pr'))
+          focusInput()
+        const q = $('#q')
+        if (q) q.focus()
+      })
+      document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest(
+          '[data-act="go"],[data-act="rail"],[data-act="fork"],[data-act="pick"],[data-act="new"],[data-act="nav"],[data-act="surface"]',
+        )
+        document.querySelectorAll('.slot.target').forEach((x) => x.classList.remove('target'))
+        if (!el) {
+          status('')
+          return
+        }
+        if (el.dataset.act === 'nav') {
+          status('<b>Navigates this browser in place.</b> ⌥-click opens it in a fresh browser.')
+          return
+        }
+        if (el.dataset.act === 'surface') {
+          status(
+            el.dataset.id === 'prs'
+              ? '<b>Shows the PR list across all repos in the main area</b> — chat is one click away. Picking a PR opens just that PR in the panel.'
+              : '<b>Back to chat.</b>',
+          )
+          return
+        }
+        if (el.dataset.act === 'rail' && ofKind(el.dataset.kind).length > 1) {
+          status(
+            `<b>Choose</b> which ${KIND[el.dataset.kind].n.toLowerCase()} to open (most recent first).`,
+          )
+          return
+        }
+        const r = resolve(intentOf(el, e.altKey))
+        status('<b>→</b> ' + r.text)
+        const tgt = r.mode === 'focus' || r.victim ? T().open[r.slot] : null
+        if (tgt) {
+          const s = document.querySelector(`.slot[data-slot="${tgt}"]`)
+          if (s) s.classList.add('target')
+        }
+      })
+      document.addEventListener('mousedown', (e) => {
+        const g = e.target.closest('[data-grip]')
+        if (g) {
+          e.preventDefault()
+          const app = $('#app'),
+            rect = app.getBoundingClientRect()
+          const mv = (ev) => {
+            S.dockPx = Math.max(90, Math.min(rect.height - 160, rect.bottom - ev.clientY))
+            app.style.gridTemplateRows = `minmax(0,1fr) auto ${S.dockPx}px`
+          }
+          const up = () => {
+            document.removeEventListener('mousemove', mv)
+            document.removeEventListener('mouseup', up)
+          }
+          document.addEventListener('mousemove', mv)
+          document.addEventListener('mouseup', up)
+          return
+        }
+        const s = e.target.closest('.slot[data-slot]')
+        if (s) {
+          const i = item(s.dataset.slot)
+          if (i) {
+            i.used = ++S.tick
+            T().active = i.id
+          }
+        }
+      })
+      document.addEventListener('dblclick', (e) => {
+        if (e.target.closest('[data-grip]')) {
+          S.dockPx = null
+          S.dockPct = S.dockPct < 40 ? 55 : S.dockPct < 60 ? 80 : 30
+          build()
+        }
+      })
+      document.addEventListener('change', (e) => {
+        const el = e.target
+        if (el.dataset.act === 'model') {
+          item(el.dataset.id).model = el.value
+          toast(`This side chat now uses ${el.value}; main stays on ${T().model}.`)
+        }
+      })
+      document.addEventListener('input', (e) => {
+        if (e.target.id === 'q' && S.menu) {
+          S.menu.q = e.target.value
+          $('#mlist').innerHTML = menuListHTML(S.menu)
+          placeMenu()
+        }
+      })
+      document.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const f = e.target,
+          i = f.querySelector('input'),
+          v = i.value
+        i.value = ''
+        if (f.dataset.term) {
+          const tm = item(f.dataset.term)
+          if (!v.trim()) return
+          tm.lines.push(
+            '<b>$</b> ' + esc(v),
+            /test/.test(v) ? '<b>✓</b> 42 passed' : `zsh: ran “${esc(v)}” (prototype)`,
+          )
+          build()
+          const x = document.querySelector(`.slot[data-slot="${tm.id}"] .tin input`)
+          if (x) x.focus()
+          return
+        }
+        send(f.dataset.id, v)
+      })
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+          e.preventDefault()
+          const f = document.querySelector('.find')
+          S.menu = { kind: null, mode: 'list', search: true, q: '', anchor: f ? anchorOf(f) : null }
+          build()
+          const q = $('#q')
+          if (q) q.focus()
+        }
+        if (e.key === 'Escape' && S.menu) {
+          S.menu = null
+          build()
+        }
+      })
+      $('#short').onclick = () => {
+        S.short = !S.short
+        build()
+      }
+      $('#notes').onclick = () => {
+        S.notes = !S.notes
+        build()
+      }
+      $('#theme').onclick = () => {
+        const r = document.documentElement
+        const light = r.dataset.theme
+          ? r.dataset.theme === 'light'
+          : matchMedia('(prefers-color-scheme:light)').matches
+        r.dataset.theme = light ? 'dark' : 'light'
+      }
+      build()
+    </script>
+  </body>
 </html>

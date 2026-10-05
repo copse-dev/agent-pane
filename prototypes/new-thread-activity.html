@@ -51,7 +51,8 @@
             } catch (e) {}
           var tag = document.createElement('div')
           tag.textContent = W + 'px window (simulated)'
-          tag.style.cssText = 'position:fixed;left:8px;bottom:6px;font:11px system-ui;color:#888;z-index:99;pointer-events:none'
+          tag.style.cssText =
+            'position:fixed;left:8px;bottom:6px;font:11px system-ui;color:#888;z-index:99;pointer-events:none'
           document.body.appendChild(tag)
         })
       })()
@@ -4423,7 +4424,7 @@
         color: var(--muted);
         font-size: 13px;
       }
-    
+
       /* ===== stacked on #3450: threads toggle, side chats, PR surface ===== */
       .prv-row,
       .prv-chip,
@@ -4792,7 +4793,7 @@
         font-size: 12px;
         color: var(--muted);
       }
-    
+
       /* ===== style options (Prototype menu): side chat entry, PRs entry, scope marker ===== */
       .sb-nav {
         display: none;
@@ -4869,7 +4870,7 @@
       .topbar.is-global .crumb {
         display: none;
       }
-    
+
       /* ===== overall vs individual: top bar grouping, right rail, panel tabs ===== */
       .prv-back {
         background: none;
@@ -5040,7 +5041,7 @@
       html[data-nav='tabs'] .topbar .tgrp.t .tb:not([data-rp='context']) {
         display: none;
       }
-    
+
       /* ===== round 3: rail fixes, rail on the panel, palette, overall destinations by Settings ===== */
       .rprail {
         top: 0;
@@ -5209,7 +5210,7 @@
       .pal-it:hover {
         background: var(--selected);
       }
-    
+
       /* ===== Context panel (default thread panel): access, links, sources ===== */
       .cx {
         padding: 6px 0 24px;
@@ -5301,7 +5302,7 @@
         padding: 4px 8px 8px;
         color: var(--secondary);
       }
-    
+
       /* ===== round 4: panel strip (n at the bottom, C on the side), no highlights ===== */
       .rprail .rpr[aria-pressed='true'],
       html[data-nav='strip'] .pb[aria-pressed='true'] {
@@ -5372,7 +5373,7 @@
       .stripc .pb .tl {
         display: none !important;
       }
-    
+
       /* ===== round 5: message gutter (copy, quote, side chat) next to the side strip ===== */
       .msg {
         position: relative;
@@ -5445,7 +5446,7 @@
         box-shadow: var(--shadow);
         z-index: 70;
       }
-    
+
       /* full PR mode: no thread strip, no message gutter */
       html .app.is-pr .stripc,
       html .app.is-pr #pbar,
@@ -5455,14 +5456,14 @@
       html .app.is-pr .main {
         padding-right: 0 !important;
       }
-    
+
       html .app.is-pr .composer-zone {
         display: none !important;
       }
       html .app.is-pr .prv {
         padding-bottom: 28px;
       }
-    
+
       .cx-row.ag {
         cursor: default;
       }
@@ -5497,7 +5498,7 @@
           opacity: 0.35;
         }
       }
-    
+
       /* open a subagent in the chat */
       button.cx-row.ag {
         cursor: pointer;
@@ -5525,7 +5526,7 @@
       html .app.is-sub .composer-zone {
         display: none !important;
       }
-    
+
       /* prototype menu in columns */
       .menu.menu-cols {
         width: min(1000px, calc(100vw - 16px));
@@ -5561,7 +5562,7 @@
       .menu.menu-cols .menu-head {
         position: static;
       }
-    
+
       /* small windows: icon-only top bar */
       @media (max-width: 860px) {
         .topbar .tgrp::before {
@@ -5590,7 +5591,7 @@
           white-space: nowrap;
         }
       }
-    
+
       /* narrow windows: threads open as a drawer over the chat */
       @media (max-width: 600px) {
         .app.side-open > .sidebar {
@@ -5615,7 +5616,7 @@
           z-index: 39;
         }
       }
-    
+
       /* narrow windows: the bell moves into the threads button as a dot */
       #sbToggle {
         position: relative;
@@ -5639,7 +5640,7 @@
           display: none;
         }
       }
-    
+
       /* C strip also works when the panel is at the bottom / the window is narrow */
       @media (max-width: 600px) {
         html[data-nav='strip'][data-strip='side'] .gut {
@@ -5658,8 +5659,17 @@
     <div class="app">
       <header class="topbar">
         <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span
-        ><button class="icon-btn" id="sbToggle" aria-label="Hide threads" aria-pressed="true" title="Hide threads">
-          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg></button
+        ><button
+          class="icon-btn"
+          id="sbToggle"
+          aria-label="Hide threads"
+          aria-pressed="true"
+          title="Hide threads"
+        >
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg></button
         ><button class="icon-btn mobile-activity-nav" id="mobileNew" aria-label="New thread">
           ＋</button
         ><span class="crumb" id="crumbProj">workspace</span><span class="crumb">⎇ work</span
@@ -5679,7 +5689,10 @@
               <path d="M9 4v16" /></svg
             ><b class="tl">Panel</b></button
           ><button class="tb" data-rp="explorer" aria-pressed="false" aria-label="Files">
-            <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+              /></svg
             ><b class="tl">Files</b></button
           ><button class="tb" data-rp="terminal" aria-pressed="false" aria-label="Terminal">
             <svg viewBox="0 0 24 24">
@@ -5759,7 +5772,11 @@
           </button>
         </div>
         <button class="sb-nav" id="sbPrs" type="button" aria-pressed="false">
-          <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="18" r="3" /><path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7" /></svg>
+          <svg viewBox="0 0 24 24">
+            <circle cx="6" cy="6" r="3" />
+            <circle cx="18" cy="18" r="3" />
+            <path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7" />
+          </svg>
           <span>Pull requests</span><em>All projects</em>
         </button>
         <div class="side-scroll" id="sideThreads"></div>
@@ -5870,7 +5887,8 @@
             <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
-        <div class="rptabs" id="rpTabs"></div><div class="rp-body" id="rpBody"></div>
+        <div class="rptabs" id="rpTabs"></div>
+        <div class="rp-body" id="rpBody"></div>
       </aside>
       <div
         class="rz"
@@ -7691,7 +7709,9 @@
         if (typeof prShow === 'function' && prOn) prShow(false)
         subOpen = null
         document.querySelector('.app').classList.remove('is-sub', 'side-open')
-        document.getElementById('sbToggle').setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
         setTimeout(function () {
           input.focus()
         }, 0)
@@ -7736,7 +7756,9 @@
         if (typeof prShow === 'function' && prOn) prShow(false)
         subOpen = null
         document.querySelector('.app').classList.remove('is-sub', 'side-open')
-        document.getElementById('sbToggle').setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
         setTimeout(function () {
           input.focus()
         }, 0)
@@ -7983,7 +8005,9 @@
             },
             {
               label: 'Panel strip · bottom (n shape)',
-              on: document.documentElement.dataset.nav === 'strip' && document.documentElement.dataset.strip === 'bottom',
+              on:
+                document.documentElement.dataset.nav === 'strip' &&
+                document.documentElement.dataset.strip === 'bottom',
               run: function () {
                 styleSet('strip', 'bottom')
                 styleSet('nav', 'strip')
@@ -9911,8 +9935,7 @@
       /* ===== stacked on #3450: side chats + PR surface ===== */
       RP.sidechat = ['Side chat', '__SIDE__']
       RP.prdetail = ['Pull request', '__PRD__']
-      const SC_ICON =
-        '<svg viewBox="0 0 24 24"><path d="M3 5h18v12H9l-4 3v-3H3z"/></svg>'
+      const SC_ICON = '<svg viewBox="0 0 24 24"><path d="M3 5h18v12H9l-4 3v-3H3z"/></svg>'
       const SC_CHEV = '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
       const SC_LOCK =
         '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
@@ -9924,7 +9947,11 @@
         'I only see the main thread up to the message you branched from, so later edits are not visible here.',
         'Nothing in the main thread changes. “Send summary to main” would post one paragraph there.',
       ]
-      const SC_SUGG = ['Explain this more simply', 'What alternatives did you consider?', 'Is this safe to merge?']
+      const SC_SUGG = [
+        'Explain this more simply',
+        'What alternatives did you consider?',
+        'Is this safe to merge?',
+      ]
       let scN = 10,
         scTick = 10,
         sideCur = null,
@@ -9941,7 +9968,11 @@
           archived: false,
           msgs: [
             { r: 'u', t: 'Why split the schema from the io layer?' },
-            { r: 'a', t: 'So the schema can be validated without touching disk, which keeps the unit tests fast.', m: 'Haiku 4.5' },
+            {
+              r: 'a',
+              t: 'So the schema can be validated without touching disk, which keeps the unit tests fast.',
+              m: 'Haiku 4.5',
+            },
           ],
         },
         {
@@ -9956,7 +9987,11 @@
           archived: false,
           msgs: [
             { r: 'u', t: 'Would a Proxy be simpler than the get/set pair?' },
-            { r: 'a', t: 'Simpler to write, harder to debug: a plain get/set pair keeps the stack traces readable.', m: 'Opus 5.5' },
+            {
+              r: 'a',
+              t: 'Simpler to write, harder to debug: a plain get/set pair keeps the stack traces readable.',
+              m: 'Opus 5.5',
+            },
           ],
         },
         {
@@ -9968,7 +10003,10 @@
           model: 'Haiku 4.5',
           used: 1,
           archived: true,
-          msgs: [{ r: 'u', t: 'Why 10 seconds?' }, { r: 'a', t: 'CI p99 was about 6s, so 10s leaves headroom.', m: 'Haiku 4.5' }],
+          msgs: [
+            { r: 'u', t: 'Why 10 seconds?' },
+            { r: 'a', t: 'CI p99 was about 6s, so 10s leaves headroom.', m: 'Haiku 4.5' },
+          ],
         },
       ]
       const scKey = function () {
@@ -10001,7 +10039,9 @@
           const b = document.createElement('button')
           b.type = 'button'
           b.className = 'sc-act' + (has ? ' has' : '')
-          b.title = has ? 'Open the side chat for this message (⌥ for a new one)' : 'Start a side chat from this message'
+          b.title = has
+            ? 'Open the side chat for this message (⌥ for a new one)'
+            : 'Start a side chat from this message'
           b.innerHTML = SC_ICON + (has ? 'Open side chat' : 'Side chat')
           b.addEventListener('click', function (e) {
             e.stopPropagation()
@@ -10027,7 +10067,14 @@
             anchor: anchor,
             ctx: ctx || '',
             pr: pr || null,
-            title: pr ? 'About #' + (PR_LIST.find(function (p) { return p.id === pr }) || {}).n : 'New side chat',
+            title: pr
+              ? 'About #' +
+                (
+                  PR_LIST.find(function (p) {
+                    return p.id === pr
+                  }) || {}
+                ).n
+              : 'New side chat',
             model: 'Haiku 4.5',
             msgs: [],
             archived: false,
@@ -10049,7 +10096,14 @@
         const msgs = c.msgs.length
           ? c.msgs
               .map(function (m) {
-                return '<div class="sc-m ' + m.r + '">' + escapeText(m.t) + (m.m ? '<small>' + m.m + '</small>' : '') + '</div>'
+                return (
+                  '<div class="sc-m ' +
+                  m.r +
+                  '">' +
+                  escapeText(m.t) +
+                  (m.m ? '<small>' + m.m + '</small>' : '') +
+                  '</div>'
+                )
               })
               .join('')
           : '<div class="sc-empty">Ask without touching the main thread.' +
@@ -10097,7 +10151,11 @@
         scPending = c.id
         scRender()
         setTimeout(function () {
-          c.msgs.push({ r: 'a', t: SC_REPLIES[(c.msgs.length >> 1) % SC_REPLIES.length], m: c.model })
+          c.msgs.push({
+            r: 'a',
+            t: SC_REPLIES[(c.msgs.length >> 1) % SC_REPLIES.length],
+            m: c.model,
+          })
           scPending = null
           if (!(rpMode === 'sidechat' && sideCur === c.id)) c.unread = true
           scRender()
@@ -10186,14 +10244,118 @@
       }
       /* ---- PR surface: a multi-repo list in the middle column; one PR in the panel ---- */
       const PR_LIST = [
-        { id: 'p1', repo: 'copse-dev/agent-pane', n: 3519, t: 'Stop reading a 1% Claude plan window as 100% used', s: 'open', ci: 'passing', by: 'jonathankingston', w: '2h', rev: 'Approved', f: 3, a: 24, d: 9 },
-        { id: 'p2', repo: 'copse-dev/agent-pane', n: 3497, t: 'Manage saved container runs and temporary build storage', s: 'open', ci: 'pending', by: 'jonathankingston', w: '1d', rev: 'Review requested', f: 12, a: 410, d: 96 },
-        { id: 'p3', repo: 'copse-dev/agent-pane', n: 3386, t: 'Make the activity thread browser the default sidebar', s: 'open', ci: 'failing', by: 'jonathankingston', w: '2d', rev: 'Changes requested', f: 9, a: 322, d: 140 },
-        { id: 'p4', repo: 'copse-dev/agent-pane', n: 3431, t: 'Make sidebar Settings button fill footer width', s: 'open', ci: 'passing', by: 'jonathankingston', w: '3d', rev: 'No reviews', f: 2, a: 8, d: 3 },
-        { id: 'p5', repo: 'copse-dev/agent-pane', n: 3371, t: 'Thread PR icon: purple merge glyph, red closed', s: 'merged', ci: '', by: 'jonathankingston', w: '1d', rev: 'Approved', f: 4, a: 61, d: 20 },
-        { id: 'p6', repo: 'copse-dev/streaming-markdown', n: 212, t: 'Keep nested list indent when a fence closes', s: 'open', ci: 'failing', by: 'jonathankingston', w: '5h', rev: 'Changes requested', f: 2, a: 18, d: 4 },
-        { id: 'p7', repo: 'copse-dev/streaming-markdown', n: 209, t: 'Bump the mermaid renderer', s: 'open', ci: 'pending', by: 'copse-bot', w: '2d', rev: 'No reviews', f: 1, a: 3, d: 3 },
-        { id: 'p8', repo: 'copse-dev/site', n: 88, t: 'Announce side chats', s: 'closed', ci: '', by: 'jonathankingston', w: '4d', rev: 'No reviews', f: 4, a: 120, d: 2 },
+        {
+          id: 'p1',
+          repo: 'copse-dev/agent-pane',
+          n: 3519,
+          t: 'Stop reading a 1% Claude plan window as 100% used',
+          s: 'open',
+          ci: 'passing',
+          by: 'jonathankingston',
+          w: '2h',
+          rev: 'Approved',
+          f: 3,
+          a: 24,
+          d: 9,
+        },
+        {
+          id: 'p2',
+          repo: 'copse-dev/agent-pane',
+          n: 3497,
+          t: 'Manage saved container runs and temporary build storage',
+          s: 'open',
+          ci: 'pending',
+          by: 'jonathankingston',
+          w: '1d',
+          rev: 'Review requested',
+          f: 12,
+          a: 410,
+          d: 96,
+        },
+        {
+          id: 'p3',
+          repo: 'copse-dev/agent-pane',
+          n: 3386,
+          t: 'Make the activity thread browser the default sidebar',
+          s: 'open',
+          ci: 'failing',
+          by: 'jonathankingston',
+          w: '2d',
+          rev: 'Changes requested',
+          f: 9,
+          a: 322,
+          d: 140,
+        },
+        {
+          id: 'p4',
+          repo: 'copse-dev/agent-pane',
+          n: 3431,
+          t: 'Make sidebar Settings button fill footer width',
+          s: 'open',
+          ci: 'passing',
+          by: 'jonathankingston',
+          w: '3d',
+          rev: 'No reviews',
+          f: 2,
+          a: 8,
+          d: 3,
+        },
+        {
+          id: 'p5',
+          repo: 'copse-dev/agent-pane',
+          n: 3371,
+          t: 'Thread PR icon: purple merge glyph, red closed',
+          s: 'merged',
+          ci: '',
+          by: 'jonathankingston',
+          w: '1d',
+          rev: 'Approved',
+          f: 4,
+          a: 61,
+          d: 20,
+        },
+        {
+          id: 'p6',
+          repo: 'copse-dev/streaming-markdown',
+          n: 212,
+          t: 'Keep nested list indent when a fence closes',
+          s: 'open',
+          ci: 'failing',
+          by: 'jonathankingston',
+          w: '5h',
+          rev: 'Changes requested',
+          f: 2,
+          a: 18,
+          d: 4,
+        },
+        {
+          id: 'p7',
+          repo: 'copse-dev/streaming-markdown',
+          n: 209,
+          t: 'Bump the mermaid renderer',
+          s: 'open',
+          ci: 'pending',
+          by: 'copse-bot',
+          w: '2d',
+          rev: 'No reviews',
+          f: 1,
+          a: 3,
+          d: 3,
+        },
+        {
+          id: 'p8',
+          repo: 'copse-dev/site',
+          n: 88,
+          t: 'Announce side chats',
+          s: 'closed',
+          ci: '',
+          by: 'jonathankingston',
+          w: '4d',
+          rev: 'No reviews',
+          f: 4,
+          a: 120,
+          d: 2,
+        },
       ]
       const prOf = function (id) {
         return PR_LIST.find(function (p) {
@@ -10219,12 +10381,22 @@
           })
         })
         v.innerHTML =
-          '<div class="prv-h"><button class="prv-back" id="prvBack" type="button" title="Back (Esc)">← ' + escapeText(opened == null ? 'New thread' : threads[opened].title) + '</button><b>Pull requests</b><button class="prv-chip' +
+          '<div class="prv-h"><button class="prv-back" id="prvBack" type="button" title="Back (Esc)">← ' +
+          escapeText(opened == null ? 'New thread' : threads[opened].title) +
+          '</button><b>Pull requests</b><button class="prv-chip' +
           (prFilter === 'all' ? ' on' : '') +
           '" data-f="all">All repos</button>' +
           repos
             .map(function (r) {
-              return '<button class="prv-chip' + (prFilter === r ? ' on' : '') + '" data-f="' + r + '">' + r.split('/')[1] + '</button>'
+              return (
+                '<button class="prv-chip' +
+                (prFilter === r ? ' on' : '') +
+                '" data-f="' +
+                r +
+                '">' +
+                r.split('/')[1] +
+                '</button>'
+              )
             })
             .join('') +
           '</div>' +
@@ -10288,7 +10460,8 @@
       }
       function prdBuild() {
         const p = prOf(prSel)
-        if (!p) return '<div class="prd"><div class="note">Pick a pull request from the list.</div></div>'
+        if (!p)
+          return '<div class="prd"><div class="note">Pick a pull request from the list.</div></div>'
         const rows = [
           ['Build', 'ok'],
           ['Unit tests', p.ci === 'failing' ? 'bad' : 'ok'],
@@ -10296,7 +10469,9 @@
         ]
         return (
           '<div class="prd">' +
-          (prdFrom === 'context' ? '<button class="prv-back" id="prdBack" type="button">← Context</button>' : '') +
+          (prdFrom === 'context'
+            ? '<button class="prv-back" id="prdBack" type="button">← Context</button>'
+            : '') +
           '<h4>' +
           prIcon({ pr: { s: p.s, ci: p.ci } }) +
           '<span>' +
@@ -10320,7 +10495,15 @@
           '</span></div>' +
           rows
             .map(function (r) {
-              return '<div class="ck"><span class="' + r[1] + '">●</span>' + r[0] + '<em>' + (r[1] === 'ok' ? 'passing' : r[1] === 'bad' ? 'failing' : 'running') + '</em></div>'
+              return (
+                '<div class="ck"><span class="' +
+                r[1] +
+                '">●</span>' +
+                r[0] +
+                '<em>' +
+                (r[1] === 'ok' ? 'passing' : r[1] === 'bad' ? 'failing' : 'running') +
+                '</em></div>'
+              )
             })
             .join('') +
           '<div class="acts"><button class="rp-btn" id="prdDiff" type="button">View diff</button><button class="rp-btn" id="prdAsk" type="button">Ask in a side chat</button></div><div class="note">Prototype data. Only this pull request lives in the panel; the list stays in the main area.</div></div>'
@@ -10383,7 +10566,9 @@
           else showThread(opened)
         } else prShow(true)
       }
-      document.getElementById('sbToggle').setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+      document
+        .getElementById('sbToggle')
+        .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
           const a = document.querySelector('.app')
@@ -10404,7 +10589,10 @@
       })
       document.getElementById('sbToggle').addEventListener('click', function () {
         if (matchMedia('(max-width: 600px)').matches) {
-          document.documentElement.style.setProperty('--tbh', document.querySelector('.topbar').offsetHeight + 'px')
+          document.documentElement.style.setProperty(
+            '--tbh',
+            document.querySelector('.topbar').offsetHeight + 'px',
+          )
           const open = document.querySelector('.app').classList.toggle('side-open')
           this.setAttribute('aria-pressed', String(open))
           this.setAttribute('aria-label', open ? 'Hide threads' : 'Show threads')
@@ -10417,7 +10605,15 @@
         this.title = hidden ? 'Show threads' : 'Hide threads'
       })
 
-      const STYLE_DEF = { sc: 'tab', prsnav: 'tab', grp: 'labels', nav: 'top', all: 'side', strip: 'bottom', gut: 'column' }
+      const STYLE_DEF = {
+        sc: 'tab',
+        prsnav: 'tab',
+        grp: 'labels',
+        nav: 'top',
+        all: 'side',
+        strip: 'bottom',
+        gut: 'column',
+      }
       function styleSet(k, v) {
         document.documentElement.dataset[k] = v
         try {
@@ -10471,9 +10667,12 @@
           const br = document.getElementById('branchButton')
           if (host && br) host.insertBefore(b, br.nextSibling)
         }
-        const mine = opened == null ? [] : scOf(scKey()).filter(function (c) {
-          return !c.archived
-        })
+        const mine =
+          opened == null
+            ? []
+            : scOf(scKey()).filter(function (c) {
+                return !c.archived
+              })
         b.classList.toggle('show', opened != null)
         b.setAttribute('aria-pressed', String(rpMode === 'sidechat'))
         b.innerHTML =
@@ -10531,7 +10730,14 @@
         add(GLOBAL_MODES, 'All', 'g')
         document.querySelector('.app').appendChild(rail)
         const tabs = document.getElementById('rpTabs')
-        const names = { context: 'Context', explorer: 'Files', terminal: 'Terminal', changes: 'Changes', sidechat: 'Side chat', browser: 'Browser' }
+        const names = {
+          context: 'Context',
+          explorer: 'Files',
+          terminal: 'Terminal',
+          changes: 'Changes',
+          sidechat: 'Side chat',
+          browser: 'Browser',
+        }
         THREAD_MODES.forEach(function (k) {
           const b = document.createElement('button')
           b.type = 'button'
@@ -10558,9 +10764,10 @@
       /* ---- round 3: rail on the panel, overall destinations by Settings, palette ---- */
       ;(function () {
         const rail = document.getElementById('rpRail')
-        if (rail) rail.querySelectorAll('.cap').forEach(function (c) {
-          c.remove()
-        })
+        if (rail)
+          rail.querySelectorAll('.cap').forEach(function (c) {
+            c.remove()
+          })
         // rail attached to the panel (moves with it)
         const att = document.createElement('nav')
         att.className = 'rprail rprailp'
@@ -10591,12 +10798,15 @@
         pill.type = 'button'
         pill.id = 'palBtn'
         pill.innerHTML = 'Jump to… <kbd>⌘K</kbd>'
-        document.querySelector('.top-actions').insertBefore(pill, document.querySelector('.top-actions').firstChild)
+        document
+          .querySelector('.top-actions')
+          .insertBefore(pill, document.querySelector('.top-actions').firstChild)
         const pal = document.createElement('div')
         pal.className = 'pal'
         pal.id = 'pal'
         pal.hidden = true
-        pal.innerHTML = '<div class="pal-box"><input id="palIn" placeholder="Jump to a panel, side chat or pull request…" autocomplete="off"><div class="pal-list" id="palList"></div></div>'
+        pal.innerHTML =
+          '<div class="pal-box"><input id="palIn" placeholder="Jump to a panel, side chat or pull request…" autocomplete="off"><div class="pal-list" id="palList"></div></div>'
         document.body.appendChild(pal)
         let sel = 0,
           shown = []
@@ -10661,10 +10871,23 @@
             .map(function (x, i) {
               const h =
                 x.g !== g
-                  ? '<div class="pal-h ' + x.g + '">' + (x.g === 't' ? 'This thread' : 'All projects') + '</div>'
+                  ? '<div class="pal-h ' +
+                    x.g +
+                    '">' +
+                    (x.g === 't' ? 'This thread' : 'All projects') +
+                    '</div>'
                   : ''
               g = x.g
-              return h + '<button class="pal-it' + (i === sel ? ' on' : '') + '" data-i="' + i + '">' + escapeText(x.label) + '</button>'
+              return (
+                h +
+                '<button class="pal-it' +
+                (i === sel ? ' on' : '') +
+                '" data-i="' +
+                i +
+                '">' +
+                escapeText(x.label) +
+                '</button>'
+              )
             })
             .join('')
           document.querySelectorAll('#palList .pal-it').forEach(function (b) {
@@ -10712,7 +10935,11 @@
           }
         })
         document.addEventListener('keydown', function (e) {
-          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && document.documentElement.dataset.nav === 'palette') {
+          if (
+            (e.metaKey || e.ctrlKey) &&
+            e.key.toLowerCase() === 'k' &&
+            document.documentElement.dataset.nav === 'palette'
+          ) {
             e.preventDefault()
             open()
           }
@@ -10723,8 +10950,10 @@
       RP.context = ['Context', '__CTX__']
       const CX_ICON = {
         repo: '<svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-8 3-12 6"/></svg>',
-        folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
-        globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+        folder:
+          '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+        globe:
+          '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
         cmd: '<svg viewBox="0 0 24 24"><path d="m7 8 4 4-4 4M13 16h4"/></svg>',
         pr: '<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7"/></svg>',
         file: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
@@ -10752,12 +10981,26 @@
       }
       const CX_SEEDS = {
         'Shrink previews on scroll': {
-          folders: [['copse-panel', 'Primary'], ['docs-site', 'Write'], ['shared-lib', 'Read'], ['infra', 'Write']],
+          folders: [
+            ['copse-panel', 'Primary'],
+            ['docs-site', 'Write'],
+            ['shared-lib', 'Read'],
+            ['infra', 'Write'],
+          ],
           reads: [['Logs/app', 'Read']],
-          net: [['api.github.com', 'Allowed'], ['registry.npmjs.org', 'Allowed']],
+          net: [
+            ['api.github.com', 'Allowed'],
+            ['registry.npmjs.org', 'Allowed'],
+          ],
           cmds: [['git push', 'Allowed']],
           sources: ['github.com/copse-mock/demo.git'],
-          links: [PRL('p1'), PRL('p2'), ['File', 'src/renderer/markdown/preview.ts', 'rp:explorer'], ['Doc', 'docs/shell-permissions.md', null], ['Attachment', 'preview-trace.json · 12 KB', null]],
+          links: [
+            PRL('p1'),
+            PRL('p2'),
+            ['File', 'src/renderer/markdown/preview.ts', 'rp:explorer'],
+            ['Doc', 'docs/shell-permissions.md', null],
+            ['Attachment', 'preview-trace.json · 12 KB', null],
+          ],
           sub: '3 done',
         },
         'Fix box centering and closing': {
@@ -10769,15 +11012,24 @@
           sub: '1 running',
         },
         'Balanced model mode': {
-          folders: [['copse-panel', 'Primary'], ['shared-lib', 'Read']],
+          folders: [
+            ['copse-panel', 'Primary'],
+            ['shared-lib', 'Read'],
+          ],
           sources: ['github.com/copse-mock/demo.git'],
           links: [['Doc', 'docs/models.md', null]],
           sub: 'None yet',
         },
         'Create PR for safe execution': {
-          folders: [['agent-pane', 'Primary'], ['infra', 'Write']],
+          folders: [
+            ['agent-pane', 'Primary'],
+            ['infra', 'Write'],
+          ],
           net: [['api.github.com', 'Allowed']],
-          cmds: [['git push', 'Ask each time'], ['gh pr create', 'Allowed']],
+          cmds: [
+            ['git push', 'Ask each time'],
+            ['gh pr create', 'Allowed'],
+          ],
           sources: ['github.com/copse-dev/agent-pane'],
           links: [PRL('p1')],
           sub: '2 done',
@@ -10790,15 +11042,24 @@
           sub: '1 done',
         },
         'Copse threads not resuming on reopen': {
-          folders: [['agent-pane', 'Primary'], ['shared-lib', 'Read']],
+          folders: [
+            ['agent-pane', 'Primary'],
+            ['shared-lib', 'Read'],
+          ],
           reads: [['~/.copse/workspace', 'Read']],
           cmds: [['pnpm test', 'Allowed']],
           sources: ['github.com/copse-dev/agent-pane'],
-          links: [['File', 'src/main/thread-store.ts', 'rp:explorer'], ['Doc', 'docs/thread-store-format.md', null]],
+          links: [
+            ['File', 'src/main/thread-store.ts', 'rp:explorer'],
+            ['Doc', 'docs/thread-store-format.md', null],
+          ],
           sub: '3 done',
         },
         'Mobile view fixes': {
-          folders: [['docs-site', 'Primary'], ['design-system', 'Read']],
+          folders: [
+            ['docs-site', 'Primary'],
+            ['design-system', 'Read'],
+          ],
           net: [['fonts.googleapis.com', 'Allowed']],
           cmds: [['pnpm build', 'Allowed']],
           sources: ['github.com/copse-mock/docs-site.git'],
@@ -10825,12 +11086,16 @@
           ['edit-preview', 'Apply the IntersectionObserver change', 'done', 'Sonnet 5.5'],
           ['run-tests', 'pnpm test -- preview', 'done', 'Haiku 4.5'],
         ],
-        'Fix box centering and closing': [['trace-resizer', 'Trace the pane-resizer closing logic', 'running', 'Sonnet 5.5']],
+        'Fix box centering and closing': [
+          ['trace-resizer', 'Trace the pane-resizer closing logic', 'running', 'Sonnet 5.5'],
+        ],
         'Create PR for safe execution': [
           ['check-local', 'pnpm run check:local', 'done', 'Haiku 4.5'],
           ['commit', 'Commit the gated auto-run change', 'done', 'Haiku 4.5'],
         ],
-        'Nightly dependency check': [['audit', 'pnpm audit across workspaces', 'done', 'Haiku 4.5']],
+        'Nightly dependency check': [
+          ['audit', 'pnpm audit across workspaces', 'done', 'Haiku 4.5'],
+        ],
         'Copse threads not resuming on reopen': [
           ['repro', 'Reproduce the reopen failure', 'done', 'Sonnet 5.5'],
           ['read-store', 'Read the thread store loader', 'done', 'Haiku 4.5'],
@@ -10893,14 +11158,31 @@
           )
         }
         return (
-          '<div class="cx"><div class="cx-sec" style="border-bottom:0;padding-bottom:0"><div class="cx-sub" style="margin-left:0;margin-top:0">' + escapeText(opened == null ? 'New thread' : threads[opened].title) + '</div></div>' +
+          '<div class="cx"><div class="cx-sec" style="border-bottom:0;padding-bottom:0"><div class="cx-sub" style="margin-left:0;margin-top:0">' +
+          escapeText(opened == null ? 'New thread' : threads[opened].title) +
+          '</div></div>' +
           (c.agents.length
-            ? '<div class="cx-sec"><div class="cx-h">Subagents<span class="v" style="font-size:12px;font-weight:400;color:var(--muted)">' + agentSummary(c.agents) + '</span></div>' +
+            ? '<div class="cx-sec"><div class="cx-h">Subagents<span class="v" style="font-size:12px;font-weight:400;color:var(--muted)">' +
+              agentSummary(c.agents) +
+              '</span></div>' +
               c.agents
                 .map(function (a) {
                   return (
-                    '<button class="cx-row ag' + (subOpen === a[0] ? ' sel' : '') + '" type="button" data-ag="' + escapeText(a[0]) + '"><span class="agd ' + a[2] + '"></span><span class="n">' + escapeText(a[0]) +
-                    ' <small>' + escapeText(a[1]) + '</small></span><span class="v">' + a[2] + ' · ' + a[3] + '</span></button>'
+                    '<button class="cx-row ag' +
+                    (subOpen === a[0] ? ' sel' : '') +
+                    '" type="button" data-ag="' +
+                    escapeText(a[0]) +
+                    '"><span class="agd ' +
+                    a[2] +
+                    '"></span><span class="n">' +
+                    escapeText(a[0]) +
+                    ' <small>' +
+                    escapeText(a[1]) +
+                    '</small></span><span class="v">' +
+                    a[2] +
+                    ' · ' +
+                    a[3] +
+                    '</span></button>'
                   )
                 })
                 .join('') +
@@ -11004,7 +11286,8 @@
                     ctxRender()
                   },
                 })
-              if (items.length === 1) items.push({ label: 'Nothing else to add (prototype)', run: function () {} })
+              if (items.length === 1)
+                items.push({ label: 'Nothing else to add (prototype)', run: function () {} })
               return items
             })
           })
@@ -11014,7 +11297,14 @@
             const g = b.dataset.g,
               i = +b.dataset.i,
               row = c[g][i]
-            const opts = g === 'folders' ? ['Read', 'Write'] : g === 'reads' ? ['Read'] : g === 'net' ? ['Allowed', 'Ask each time'] : ['Allowed', 'Ask each time']
+            const opts =
+              g === 'folders'
+                ? ['Read', 'Write']
+                : g === 'reads'
+                  ? ['Read']
+                  : g === 'net'
+                    ? ['Allowed', 'Ask each time']
+                    : ['Allowed', 'Ask each time']
             openMenu(b, function () {
               const items = []
               if (row[1] === 'Primary') items.push({ head: 'Primary repository' })
@@ -11098,9 +11388,11 @@
           })
           out.push(['PR', '#' + n + (pr ? ' ' + pr.t : ''), pr ? 'pr:' + pr.id : null])
         })
-        ;(text.match(/\b[\w.-]+(?:\/[\w.-]+)+\.(?:ts|tsx|js|md|json|css|html)\b/g) || []).forEach(function (f) {
-          out.push(['File', f, 'rp:explorer'])
-        })
+        ;(text.match(/\b[\w.-]+(?:\/[\w.-]+)+\.(?:ts|tsx|js|md|json|css|html)\b/g) || []).forEach(
+          function (f) {
+            out.push(['File', f, 'rp:explorer'])
+          },
+        )
         return out
       }
       function addLinks(list) {
@@ -11151,7 +11443,8 @@
       /* ---- round 5: gutter actions on each message ---- */
       const GUT_ICON = {
         copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
-        quote: '<svg viewBox="0 0 24 24"><path d="M4 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6M14 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2h-2a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6"/></svg>',
+        quote:
+          '<svg viewBox="0 0 24 24"><path d="M4 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6M14 11h4a1 1 0 0 1 1 1v4a2 2 0 0 1-2 2h-2a1 1 0 0 1-1-1v-6a6 6 0 0 1 6-6"/></svg>',
       }
       function gutToast(t) {
         document.querySelectorAll('.gut-toast').forEach(function (x) {
@@ -11219,7 +11512,10 @@
       let subOpen = null
       const AG_SCRIPT = {
         'explore-previews': {
-          tools: [['search', 'Searched', 'preview height in src/renderer'], ['read', 'Read', 'src/renderer/markdown/preview.ts']],
+          tools: [
+            ['search', 'Searched', 'preview height in src/renderer'],
+            ['read', 'Read', 'src/renderer/markdown/preview.ts'],
+          ],
           body: '<p>The preview height is set in <code>preview.ts</code> and read again in <code>layout.ts</code>. Nothing else depends on it, so a per-preview observer is safe.</p>',
         },
         'edit-preview': {
@@ -11240,8 +11536,16 @@
         if (prOn) prShow(false)
         const th = threads[opened]
         const sc = AG_SCRIPT[a[0]] || {
-          tools: [['read', 'Read', 'src/renderer/main.ts'], ['cmd', 'Ran', 'pnpm test']],
-          body: '<p>' + (a[2] === 'queued' ? 'Waiting for a free slot.' : 'Reported its result back to the parent thread.') + '</p>',
+          tools: [
+            ['read', 'Read', 'src/renderer/main.ts'],
+            ['cmd', 'Ran', 'pnpm test'],
+          ],
+          body:
+            '<p>' +
+            (a[2] === 'queued'
+              ? 'Waiting for a free slot.'
+              : 'Reported its result back to the parent thread.') +
+            '</p>',
         }
         subOpen = a[0]
         document.querySelector('.app').classList.add('is-sub')
@@ -11275,11 +11579,19 @@
         if (subOpen == null) return
         subOpen = null
         document.querySelector('.app').classList.remove('is-sub', 'side-open')
-        document.getElementById('sbToggle').setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
+        document
+          .getElementById('sbToggle')
+          .setAttribute('aria-pressed', String(!matchMedia('(max-width: 600px)').matches))
         if (opened != null) showThread(opened)
       }
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && subOpen != null && !document.querySelector('.menu') && document.getElementById('pal').hidden) subClose()
+        if (
+          e.key === 'Escape' &&
+          subOpen != null &&
+          !document.querySelector('.menu') &&
+          document.getElementById('pal').hidden
+        )
+          subClose()
       })
 
       /* ---- prototype menu: columns + window size ---- */
@@ -11312,7 +11624,8 @@
         const r = anchor.getBoundingClientRect(),
           pad = 8
         m.style.maxHeight = Math.max(240, window.innerHeight - r.bottom - 4 - pad) + 'px'
-        m.style.left = Math.max(pad, Math.min(r.left, window.innerWidth - pad - m.offsetWidth)) + 'px'
+        m.style.left =
+          Math.max(pad, Math.min(r.left, window.innerWidth - pad - m.offsetWidth)) + 'px'
         m.style.top = r.bottom + 4 + 'px'
       }
       let rpMode = null
@@ -11558,7 +11871,10 @@
         app.classList.toggle('rp-open', !!rpMode)
         rp.hidden = !rpMode
         document.querySelectorAll('[data-rp]').forEach(function (b) {
-          b.setAttribute('aria-pressed', String(b.dataset.rp === rpMode || (b.dataset.rp === 'prs' && prOn)))
+          b.setAttribute(
+            'aria-pressed',
+            String(b.dataset.rp === rpMode || (b.dataset.rp === 'prs' && prOn)),
+          )
         })
         document
           .getElementById('rpanel')
@@ -11582,10 +11898,10 @@
                       : RP[rpMode][1] === '__CTX__'
                         ? ctxBuild()
                         : RP[rpMode][1] === '__SIDE__'
-                        ? sideBuild()
-                        : RP[rpMode][1] === '__PRD__'
-                          ? prdBuild()
-                          : RP[rpMode][1]
+                          ? sideBuild()
+                          : RP[rpMode][1] === '__PRD__'
+                            ? prdBuild()
+                            : RP[rpMode][1]
           bd.style.overflow =
             rpMode === 'changes' ||
             rpMode === 'browser' ||
@@ -11634,7 +11950,8 @@
       styleSync()
       if (new URLSearchParams(location.search).get('view') === 'prs') {
         prShow(true)
-        if (new URLSearchParams(location.search).get('pr')) prSelect(new URLSearchParams(location.search).get('pr'))
+        if (new URLSearchParams(location.search).get('pr'))
+          prSelect(new URLSearchParams(location.search).get('pr'))
       }
       document.getElementById('rpClose').addEventListener('click', function () {
         setRP(rpMode)
