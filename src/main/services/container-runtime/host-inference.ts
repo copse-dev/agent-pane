@@ -11,11 +11,26 @@ interface HostInferenceOptions {
   signal?: AbortSignal
 }
 
+/**
+ * How long a new request waits for a cancelled predecessor to let go of the single inference
+ * slot. The guest cancels a reasoning-runaway stream and asks for the recovery stream at once,
+ * but the provider may take a while to stop generating; refusing the new request would end the
+ * whole run on a race the guest cannot see. A predecessor that is still live is never waited for.
+ */
+const CANCELLED_SLOT_RELEASE_MS = 60_000
+
+interface InferenceSlot {
+  /** Aborts when the guest disconnects or the run stops. */
+  readonly signal: AbortSignal
+  readonly released: Promise<void>
+  readonly release: () => void
+}
+
 export class HostInference {
   private readonly controller = new AbortController()
   private readonly timer: NodeJS.Timeout
   private readonly options: HostInferenceOptions
-  private active = false
+  private active: InferenceSlot | null = null
   private used = 0
   private readonly stopRequested = (): void => {
     this.stop()
@@ -49,7 +64,7 @@ export class HostInference {
       stream.destroy()
     }
     signal.addEventListener('abort', abortStream, { once: true })
-    let ownsSlot = false
+    let slot: InferenceSlot | null = null
     const send = (value: unknown): Promise<void> =>
       new Promise((resolve, reject) => {
         const line = JSON.stringify(value) + '\n'
@@ -64,9 +79,20 @@ export class HostInference {
       })
     try {
       signal.throwIfAborted()
-      if (this.active) throw new Error('Only one inference request may run at a time')
-      this.active = true
-      ownsSlot = true
+      const previous = this.active
+      if (previous !== null) {
+        if (!previous.signal.aborted)
+          throw new Error('Only one inference request may run at a time')
+        await this.waitForRelease(previous, signal)
+        signal.throwIfAborted()
+        if (this.active !== null) throw new Error('Only one inference request may run at a time')
+      }
+      let release: () => void = () => {}
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      slot = { signal, released, release }
+      this.active = slot
       const parts: Buffer[] = []
       let bytes = 0
       for await (const part of stream) {
@@ -115,10 +141,26 @@ export class HostInference {
         stream.end()
       }
     } finally {
-      if (ownsSlot) this.active = false
+      if (slot !== null) {
+        this.active = null
+        slot.release()
+      }
       signal.removeEventListener('abort', abortStream)
       stream.removeListener('close', disconnected)
       stream.removeListener('error', disconnected)
     }
+  }
+
+  private async waitForRelease(previous: InferenceSlot, signal: AbortSignal): Promise<void> {
+    let timer: NodeJS.Timeout | undefined
+    const expired = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, CANCELLED_SLOT_RELEASE_MS)
+    })
+    try {
+      await Promise.race([previous.released, expired])
+    } finally {
+      clearTimeout(timer)
+    }
+    signal.throwIfAborted()
   }
 }

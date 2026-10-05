@@ -260,6 +260,48 @@ describe('run-scoped host inference', () => {
     await assert.rejects(first)
     await assert.rejects(collect(f.provider))
   })
+  it('waits for a cancelled stream to release the slot instead of refusing the recovery request', async (t) => {
+    let calls = 0
+    let started: () => void = () => {}
+    const first = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const provider: LLMProvider = {
+      async *stream(_m, _t, signal) {
+        calls += 1
+        if (calls === 1) {
+          started()
+          assert.ok(signal)
+          await new Promise<void>((resolve) => {
+            signal.addEventListener(
+              'abort',
+              () => {
+                resolve()
+              },
+              { once: true },
+            )
+          })
+          // The provider is slow to stop generating after the cancel.
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          signal.throwIfAborted()
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'recovered' }
+        yield { type: 'done', stopReason: 'end_turn' }
+      },
+    }
+    const f = fixture(t, provider),
+      controller = new AbortController()
+    const cancelled = collect(f.provider, controller.signal)
+    await first
+    controller.abort()
+    await assert.rejects(cancelled)
+    // Sent at once, while the cancelled request still holds the slot.
+    const chunks = await collect(f.provider)
+    assert.equal(calls, 2)
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text === 'recovered'))
+  })
   it('keeps the wall-clock budget while a guest stalls before sending its request', async (t) => {
     const f = fixture(t, echo, { wallClockMs: 30 })
     const stream = await f.link.open(HOST_INFERENCE_TARGET)
