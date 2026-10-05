@@ -13,7 +13,7 @@ describe('browser-hosted MCP server sign-in', () => {
 
   // Rows are re-rendered on every state change, so look the row up each time.
   async function row(name: string): Promise<WebdriverIO.Element> {
-    const rows = await $$('#mcp-server-list .mcp-server-row')
+    const rows = await $$('#mcp-server-list .mcp-server-row').getElements()
     for (const candidate of rows) {
       const summary = await candidate.$('.mcp-server-summary').getText()
       if (summary.startsWith(`${name} (`)) return candidate

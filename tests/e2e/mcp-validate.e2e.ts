@@ -361,7 +361,7 @@ describe('MCP HTTP transport with auth', () => {
     })
 
     const settings = await openMcpSettings()
-    const row = await $('.mcp-server-row.mcp-state-error')
+    const row = await $('.mcp-server-row.mcp-state-error').getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await expect(row.$('.mcp-server-summary')).toHaveText(
       expect.stringContaining('sign-in required'),
