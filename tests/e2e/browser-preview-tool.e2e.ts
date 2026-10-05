@@ -83,6 +83,7 @@ describe('browser preview tool', () => {
     await scenario.assertComplete()
     // The server correctly chooses a fresh random port; mask only the displayed
     // value after validating it so the visual reference is deterministic.
+    const previewAddress = await input.getValue()
     await browser.execute(() => {
       const address = document.querySelector<HTMLInputElement>(
         '.browser-tab-panel.is-active .browser-url-input',
@@ -93,6 +94,12 @@ describe('browser preview tool', () => {
       }
     })
     await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
+    await browser.execute((url) => {
+      const address = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (address) address.value = url
+    }, previewAddress)
     // The wide Browser leaves the chat column narrow, which caps each hook
     // chip. The chip's name (`Hook`/`Hooks`) keeps its width; only the counts
     // beside it may ellipsize, and nothing spills past the status glyph.
@@ -120,6 +127,9 @@ describe('browser preview tool', () => {
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
     const panelsBefore = await $$('.browser-tab-panel')
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
+    // Return to the composer through the visible Browser control before sending another turn.
+    await $('[data-panel-control="browser"]').click()
+    await $('.submit-btn').waitForClickable({ timeout: 10_000 })
     const scenario = await prepareMockToolTurn(
       'Preview the build output before it has been written.',
       { name: 'browser_preview', args: { path: 'dist/other/index.html' } },
@@ -141,6 +151,16 @@ describe('browser preview tool', () => {
     await expectAssistantReply('Finish the build before previewing its output.')
     await waitForAgentIdle(15_000)
     await scenario.assertComplete()
+    await expect($('#pane-files')).not.toBeDisplayed()
+    await $('[data-panel-control="browser"]').click()
+    await $('#browser-viewer-host').waitForDisplayed({ timeout: 10_000 })
+    await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(addressBefore)
+    await browser.execute(() => {
+      const address = document.querySelector<HTMLInputElement>(
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      if (address) address.value = 'http://localhost:4321/'
+    })
     await saveThreePaneScreenshot('browser-preview-missing-entry.png', { filesPaneWidth: 480 })
   })
 })
