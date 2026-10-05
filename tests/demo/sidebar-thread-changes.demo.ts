@@ -30,4 +30,13 @@ describe('sidebar thread changes glyph', () => {
     expect(await $$('.chat-pr-status')).toHaveLength(0)
     await saveAppScreenshot('sidebar-thread-changes.png')
   })
+  for (const width of [800, 1600]) {
+    it(`keeps changes glyphs visible at ${width}px`, async () => {
+      await browser.setWindowSize(width, 900)
+      expect(await glyphLabel('Refactor auth')).toBe('2 unpushed commits')
+      expect(await glyphLabel('Add a retry to uploads')).toBe('Uncommitted changes')
+      await expect($('.chat-changes-status')).toBeDisplayed()
+      await saveAppScreenshot(`sidebar-thread-changes-${width}.png`)
+    })
+  }
 })

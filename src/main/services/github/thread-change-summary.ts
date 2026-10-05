@@ -22,6 +22,7 @@ export interface ThreadChangeSummaryDeps {
 interface CacheEntry {
   at: number
   promise: Promise<ThreadChangeSummary | null>
+  pending: boolean
 }
 
 /**
@@ -35,12 +36,41 @@ export function createThreadChangeSummaryReader(deps: ThreadChangeSummaryDeps) {
   const ttlMs = deps.ttlMs ?? 2_000
   const concurrency = Math.max(1, deps.concurrency ?? 3)
   const cache = new Map<string, CacheEntry>()
+  let active = 0
+  const waiting: Array<() => void> = []
+
+  function acquire(): Promise<void> {
+    if (active < concurrency) {
+      active++
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => waiting.push(resolve))
+  }
+
+  function release(): void {
+    const next = waiting.shift()
+    if (next) next()
+    else active--
+  }
 
   function readRoot(root: string, fresh: boolean): Promise<ThreadChangeSummary | null> {
     const hit = cache.get(root)
-    if (hit && !fresh && now() - hit.at < ttlMs) return hit.promise
-    const promise = deps.read(root).catch(() => null)
-    cache.set(root, { at: now(), promise })
+    if (hit && (hit.pending || (!fresh && now() - hit.at < ttlMs))) return hit.promise
+    const promise = acquire().then(async () => {
+      try {
+        return await deps.read(root)
+      } catch {
+        return null
+      } finally {
+        release()
+      }
+    })
+    const entry: CacheEntry = { at: now(), promise, pending: true }
+    cache.set(root, entry)
+    void promise.then(() => {
+      entry.pending = false
+      entry.at = now()
+    })
     return promise
   }
 
@@ -48,7 +78,8 @@ export function createThreadChangeSummaryReader(deps: ThreadChangeSummaryDeps) {
     refs: readonly ThreadChangeRef[],
     opts: { fresh?: boolean } = {},
   ): Promise<Array<ThreadChangeSummary | null>> {
-    for (const [root, entry] of cache) if (now() - entry.at >= ttlMs) cache.delete(root)
+    for (const [root, entry] of cache)
+      if (!entry.pending && now() - entry.at >= ttlMs) cache.delete(root)
     const roots = await Promise.all(
       refs.map((ref) => deps.resolveRoot(ref.projectId, ref.threadId).catch((): null => null)),
     )

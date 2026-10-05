@@ -97,6 +97,42 @@ describe('createThreadChangeSummaryReader', () => {
     assert.deepEqual(reads, ['/r', '/r'])
   })
 
+  it('shares a slow in-flight read after the TTL and for fresh requests', async () => {
+    let clock = 0
+    let reads = 0
+    let finish: (value: ThreadChangeSummary) => void = () => {}
+    const result = new Promise<ThreadChangeSummary>((resolve) => {
+      finish = resolve
+    })
+    const summarize = createThreadChangeSummaryReader({
+      resolveRoot: async () => '/slow',
+      read: async () => {
+        reads++
+        return result
+      },
+      now: () => clock,
+      ttlMs: 100,
+    })
+    const first = summarize([ref('a')])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    clock = 200
+    const second = summarize([ref('b')], { fresh: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(reads, 1)
+    finish({ dirty: true })
+    assert.deepEqual(await first, [{ dirty: true }])
+    assert.deepEqual(await second, [{ dirty: true }])
+    clock = 250
+    await summarize([ref('a')])
+    assert.equal(reads, 1, 'TTL starts when the read completes')
+  })
+
+  it('limits concurrent Git reads across separate IPC requests', async () => {
+    const { summarize, peak } = harness({ a: '/a', b: '/b', c: '/c', d: '/d' })
+    await Promise.all(['a', 'b', 'c', 'd'].map((id) => summarize([ref(id)])))
+    assert.equal(peak(), 2)
+  })
+
   it('lets a fresh request bypass the cache', async () => {
     const { summarize, reads } = harness({ a: '/r' }, { ttlMs: 60_000 })
     await summarize([ref('a')])
