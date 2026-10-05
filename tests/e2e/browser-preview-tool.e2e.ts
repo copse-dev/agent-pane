@@ -10,6 +10,30 @@ import { waitForAgentIdle } from './helpers.ts'
 const PROJECT_ID = 'e2e-browser-preview-project'
 let projectRoot = ''
 
+interface PreviewWebview extends HTMLElement {
+  executeJavaScript(code: string): Promise<unknown>
+}
+
+async function waitForPreviewViewport(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(async () => {
+        const view = document.querySelector<PreviewWebview>('.browser-tab-panel.is-active webview')
+        if (!view) return false
+        const width = await view.executeJavaScript(
+          'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(window.innerWidth))))',
+        )
+        return (
+          typeof width === 'number' && Math.abs(width - view.getBoundingClientRect().width) <= 1
+        )
+      }),
+    {
+      timeout: 10_000,
+      timeoutMsg: 'preview guest viewport must match its framed element before capture',
+    },
+  )
+}
+
 describe('browser preview tool', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -24,6 +48,7 @@ describe('browser preview tool', () => {
       model: 'claude-sonnet-4-6',
       // Hook chips are a developer-mode surface; the chip-sizing check below needs them.
       developerMode: true,
+      windowBounds: { width: 1600, height: 900 },
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -93,7 +118,11 @@ describe('browser preview tool', () => {
         address.blur()
       }
     })
-    await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
+    await saveThreePaneScreenshot('browser-preview-tool-visible.png', {
+      filesPaneWidth: 1_040,
+      beforeCapture: waitForPreviewViewport,
+      captureFromViewport: true,
+    })
     await browser.execute((url) => {
       const address = document.querySelector<HTMLInputElement>(
         '.browser-tab-panel.is-active .browser-url-input',
@@ -161,6 +190,10 @@ describe('browser preview tool', () => {
       )
       if (address) address.value = 'http://localhost:4321/'
     })
-    await saveThreePaneScreenshot('browser-preview-missing-entry.png', { filesPaneWidth: 480 })
+    await saveThreePaneScreenshot('browser-preview-missing-entry.png', {
+      filesPaneWidth: 480,
+      beforeCapture: waitForPreviewViewport,
+      captureFromViewport: true,
+    })
   })
 })

@@ -1,4 +1,6 @@
 import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
@@ -62,44 +64,66 @@ export async function prepareE2eScreenshot(
 /** Wider frame for three-pane reference shots (projects + chat + right panel). */
 export const E2E_THREE_PANE_VIEWPORT = { width: 1600, height: 800 } as const
 
-export async function prepareThreePaneScreenshot(): Promise<void> {
+export async function prepareThreePaneScreenshot(filesPaneWidth = 480): Promise<void> {
   await assertNaturalConversation()
-  await browser.execute((viewport) => {
-    const app = document.getElementById('app')
-    const body = document.getElementById('body')
-    if (app) {
-      app.style.width = `${Math.min(viewport.width, window.innerWidth)}px`
-      app.style.height = `${Math.min(viewport.height, window.innerHeight)}px`
-      app.style.overflow = 'clip'
-      app.style.boxSizing = 'border-box'
-    }
-    if (body) {
-      body.style.setProperty('--projects-width', '260px')
-      body.style.setProperty('--files-width', '480px')
-      body.style.setProperty('--tree-width', '200px')
-    }
-    window.dispatchEvent(new Event('resize'))
-  }, E2E_THREE_PANE_VIEWPORT)
+  await browser.execute(
+    ({ viewport, filesPaneWidth }) => {
+      const app = document.getElementById('app')
+      const body = document.getElementById('body')
+      if (app) {
+        app.style.width = `${Math.min(viewport.width, window.innerWidth)}px`
+        app.style.height = `${Math.min(viewport.height, window.innerHeight)}px`
+        app.style.overflow = 'clip'
+        app.style.boxSizing = 'border-box'
+      }
+      if (body) {
+        body.style.setProperty('--projects-width', '260px')
+        body.style.setProperty('--files-width', `${String(filesPaneWidth)}px`)
+        body.style.setProperty('--tree-width', '200px')
+      }
+      window.dispatchEvent(new Event('resize'))
+    },
+    { viewport: E2E_THREE_PANE_VIEWPORT, filesPaneWidth },
+  )
   await browser.pause(150)
 }
 
 /** Capture the three-pane body with projects sidebar + chat + right panel visible. */
 export async function saveThreePaneScreenshot(
   filename: string,
-  options: { filesPaneWidth?: number } = {},
+  options: {
+    filesPaneWidth?: number
+    beforeCapture?: () => Promise<void>
+    captureFromViewport?: boolean
+  } = {},
 ): Promise<void> {
   await withCaptureFrame(async () => {
-    await prepareThreePaneScreenshot()
-    if (options.filesPaneWidth !== undefined) {
-      await browser.execute((width) => {
-        document.getElementById('body')?.style.setProperty('--files-width', `${String(width)}px`)
-        window.dispatchEvent(new Event('resize'))
-      }, options.filesPaneWidth)
-      await browser.pause(100)
-    }
+    await prepareThreePaneScreenshot(options.filesPaneWidth)
+    // Native guests can finish resizing after their host element has settled.
+    await options.beforeCapture?.()
     const body = await browser.$('#body.three-pane')
     await body.waitForDisplayed({ timeout: 15_000 })
-    await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+    const path = join(E2E_SCREENSHOT_DIR, filename)
+    if (options.captureFromViewport) {
+      // ChromeDriver's element capture can misplace native webview surfaces.
+      // Capture the actual viewport first, then crop to the same body bounds.
+      const bounds = await browser.execute(() => {
+        const rect = document.querySelector('#body.three-pane')?.getBoundingClientRect()
+        if (!rect) throw new Error('Three-pane body is missing')
+        return {
+          x: Math.round(rect.x * devicePixelRatio),
+          y: Math.round(rect.y * devicePixelRatio),
+          width: Math.round(rect.width * devicePixelRatio),
+          height: Math.round(rect.height * devicePixelRatio),
+        }
+      })
+      const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+      const cropped = new PNG({ width: bounds.width, height: bounds.height })
+      PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
+      writeFileSync(path, PNG.sync.write(cropped))
+    } else {
+      await body.saveScreenshot(path)
+    }
   })
 }
 
