@@ -936,9 +936,10 @@ export function createActivityView(
     if (toggled !== undefined) return { area: 'toggle', group: toggled }
     const projectKey = active.dataset['projectKey']
     if (projectKey !== undefined && strip.contains(active)) return { area: 'strip', projectKey }
-    const foldKey = active.matches('.activity-fold-toggle')
-      ? active.closest<HTMLElement>('.activity-fold')?.dataset['rowKey']
-      : undefined
+    const foldKey =
+      list.contains(active) && active.matches('.activity-fold-toggle')
+        ? active.closest<HTMLElement>('.activity-fold')?.dataset['rowKey']
+        : undefined
     if (foldKey !== undefined) return { area: 'fold', key: foldKey }
     if (list.contains(active)) return { area: 'list' }
     if (detail.contains(active)) {

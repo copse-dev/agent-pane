@@ -633,6 +633,29 @@ describe('activity view folding an automation schedule', () => {
     }
   })
 
+  it('leaves another Activity host’s fold focused when this host redraws', () => {
+    const first = setup([thread('chat'), run('a'), run('b')])
+    const second = setup([thread('chat'), run('a'), run('b')])
+    document.body.replaceChildren(first.view.body, second.view.body)
+    try {
+      first.state.shown = true
+      second.state.shown = true
+      first.view.show({ focusFirstRow: false })
+      second.view.show({ focusFirstRow: false })
+      const toggle = second.view.body.querySelector<HTMLButtonElement>('.activity-fold-toggle')
+      assert.ok(toggle)
+      toggle.focus()
+      assert.ok(document.activeElement === toggle)
+      first.store.emit('threads_changed')
+      first.flush()
+      assert.ok(document.activeElement === toggle, 'redraw preserves focus in the other host')
+    } finally {
+      first.view.hide()
+      second.view.hide()
+      document.body.replaceChildren()
+    }
+  })
+
   it('keeps the fold out of the arrow-key rows and never selects it', () => {
     const { view, state } = setup([thread('chat'), run('a'), run('b')])
     state.shown = true
