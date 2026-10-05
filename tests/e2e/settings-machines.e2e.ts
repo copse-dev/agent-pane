@@ -127,7 +127,7 @@ describe('Machines settings', function () {
         'fieldset:has([name="remoteSystemOneModelsEnabled"])',
         'settings-machines-experimental.png',
       )
-    await click('#settings-dialog button[type="submit"]')
+    await click('#settings-dialog .settings-buttons button[type="submit"]')
     await $('#settings-dialog').waitForDisplayed({ reverse: true })
     await openMachines()
     const state = await browser.execute(async () => window.api.machines.state())

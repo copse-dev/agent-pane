@@ -1498,6 +1498,7 @@ export function registerAllHandlers(
     alert('thread-finished', `${title} is ready.`, threadId)
   })
   async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
+    if (changedKeys.has(REMOTE_SYSTEM_ONE_MODELS_SETTING)) await syncMachineService()
     if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
     if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
       await initSkillsRegistry()
@@ -1534,7 +1535,6 @@ export function registerAllHandlers(
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
     await syncChangedSettings(new Set([k]))
-
   })
   ipcMain.handle('settings:set-security', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
