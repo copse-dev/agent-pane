@@ -120,10 +120,6 @@
     "label": "Sidebar thread sort"
   },
   {
-    "id": "sidebar-empty-project",
-    "label": "Sidebar with an empty project in Status grouping"
-  },
-  {
     "id": "activity-home",
     "label": "Activity home on a new thread"
   },

@@ -67433,18 +67433,6 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
-        id: "sidebar-empty-project",
-        label: "Sidebar with an empty project in Status grouping",
-        project: project("demo-sidebar-empty-project"),
-        settings: {
-          onboardingCompleted: true,
-          theme: "dark",
-          uiTintStrength: "off",
-          sidebarThreadGroup: "status"
-        },
-        threads: []
-      },
-      {
         id: "activity-home",
         label: "Activity home on a new thread",
         project: project("demo-activity-home-project"),
