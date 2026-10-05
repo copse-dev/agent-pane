@@ -74,12 +74,22 @@ describe('settings sources hooks (dry-run tester)', () => {
     await expect(sources.$('legend=Hooks')).toBeDisplayed()
 
     const hooksList = sources.$('#sources-hooks-list')
-    await browser.waitUntil(
-      async () => (await hooksList.getText()).toLowerCase().includes('beforeshellexecution'),
-      { timeout: 15_000, timeoutMsg: 'expected the seeded Cursor hook to be listed' },
-    )
+    const seededRowSelector =
+      './/div[@class="sources-row"]' +
+      '[.//span[@class="sources-row-title" and text()="beforeShellExecution"]]' +
+      '[div[@class="sources-row-header"]/span[contains(@class,"sources-badge") and text()="project"]]' +
+      '[div[@class="sources-row-detail" and text()="Cursor · cat"]]'
+    await browser.waitUntil(async () => (await hooksList.$$(seededRowSelector)).length === 1, {
+      timeout: 15_000,
+      timeoutMsg: 'expected the seeded Cursor hook to be listed',
+    })
 
-    const testBtn = hooksList.$('.sources-hook-test-btn')
+    assert.equal((await hooksList.$$(seededRowSelector)).length, 1)
+    const seededRow = hooksList.$(seededRowSelector)
+    await expect(seededRow.$('.sources-row-title')).toHaveText('beforeShellExecution')
+    await expect(seededRow.$('.sources-badge')).toHaveText('project', { ignoreCase: true })
+    await expect(seededRow.$('.sources-row-detail')).toHaveText('Cursor · cat')
+    const testBtn = seededRow.$('.sources-hook-test-btn')
     await expect(testBtn).toBeDisplayed()
     // Scroll the row clear of the sticky Save/Cancel footer before clicking so
     // the button is not intercepted by `.settings-buttons`.
@@ -87,7 +97,7 @@ describe('settings sources hooks (dry-run tester)', () => {
     await testBtn.click()
 
     // The result panel appears once the dry-run resolves.
-    const result = hooksList.$('.hook-test')
+    const result = seededRow.$('.hook-test')
     await browser.waitUntil(
       async () => {
         const text = (await result.getText()).toLowerCase()

@@ -87,7 +87,6 @@ function evaluate(expression: string, github: EventContext): unknown {
 function binding(name: string): z.infer<typeof jobSchema> {
   const job = workflow.jobs[name]
   assert.ok(job, name)
-  assert.ok(job.if, `${name} must have an admission condition`)
   return job
 }
 function admitted(github: EventContext): {
@@ -97,21 +96,14 @@ function admitted(github: EventContext): {
   name: unknown
   group: unknown
   cancels: unknown
-  metadataOnly: unknown
 } {
   return {
-    precheck: evaluate(binding('precheck').if ?? '', github),
+    precheck: evaluate(binding('precheck').if ?? 'true', github),
     autoformat: evaluate(binding('autoformat').if ?? '', github),
     aggregate: evaluate(binding('ci-passed').if ?? '', github),
     name: evaluate(binding('ci-passed').name ?? '', github),
     group: evaluate(workflow.concurrency.group, github),
     cancels: evaluate(workflow.concurrency['cancel-in-progress'], github),
-    metadataOnly: evaluate(
-      workflow.jobs['ci-passed']?.steps?.find((step) => step.env?.['METADATA_ONLY'])?.env?.[
-        'METADATA_ONLY'
-      ] ?? '',
-      github,
-    ),
   }
 }
 
@@ -127,18 +119,16 @@ const cosmetics = [
 ]
 
 describe('cosmetic CI event routing', () => {
-  it('never publishes the required aggregate or executes either independent root for metadata', () => {
+  it('tests metadata candidates without starting the autoformatter or cancelling source CI', () => {
     for (const github of cosmetics) {
       const route = admitted(github)
-      assert.equal(route.precheck, false)
+      assert.equal(route.precheck, true)
       assert.equal(route.autoformat, false)
       assert.equal(route.aggregate, true)
-      assert.equal(route.metadataOnly, true)
-      assert.equal(route.name, 'CI metadata ignored')
+      assert.equal(route.name, 'CI Passed')
       assert.equal(route.cancels, false)
     }
-    // All other candidate jobs have a dependency path to precheck. Their
-    // default success() guard stops them when it skips; screenshot-artifacts
+    // All candidate jobs retain their dependency path to precheck; screenshot-artifacts
     // explicitly requires successful build and e2e results despite !cancelled().
     const rooted = (name: string): boolean => {
       if (name === 'precheck') return true
@@ -160,35 +150,24 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
-  it('cannot turn a red or absent required check green through a successful metadata no-op', () => {
-    for (const original of ['failure', undefined]) {
-      for (const github of cosmetics) {
-        const checks = new Map<string, string>()
-        if (original) checks.set('CI Passed', original)
-        const route = admitted(github)
-        assert.equal(typeof route.name, 'string')
-        if (typeof route.name !== 'string') throw new Error('Missing aggregate name')
-        checks.set(route.name, 'success')
-        assert.equal(checks.get('CI Passed'), original)
-      }
-    }
+  it('has no metadata shortcut in the required aggregate or precheck', () => {
+    const aggregate = binding('ci-passed')
+    assert.equal(binding('precheck').if, undefined)
+    assert.ok(aggregate.steps?.some((step) => step.env?.['PRECHECK_RESULT']))
+    assert.ok(aggregate.steps?.every((step) => !Object.hasOwn(step.env ?? {}, 'METADATA_ONLY')))
+    assert.ok(aggregate.steps?.every((step) => !step.run?.includes('Metadata event ignored')))
+    assert.ok(!aggregate.name?.includes('CI metadata ignored'))
   })
 
-  it('binds one identical metadata predicate at every routing site', () => {
-    const metadataOnly = workflow.jobs['ci-passed']?.steps?.find(
-      (step) => step.env?.['METADATA_ONLY'],
-    )?.env?.['METADATA_ONLY']
-    const predicate = /^\$\{\{ (.+) \}\}$/s.exec(metadataOnly?.trim() ?? '')?.[1]
-    assert.ok(predicate, 'METADATA_ONLY must be a single expression')
+  it('binds one identical metadata predicate for concurrency and autoformat', () => {
+    const group = workflow.concurrency.group.trim()
+    const predicate = /^\$\{\{ \((.+)\) && format\('ci-metadata-/s.exec(group)?.[1]
+    assert.ok(predicate, 'concurrency must isolate the exact metadata predicate')
     assert.ok(predicate.includes("github.event.action == 'edited'"))
-    // A literal `}}` inside an expression could end the `${{` template early.
     assert.doesNotMatch(predicate, /\}\}/)
     for (const [site, text] of [
-      ['concurrency.group', workflow.concurrency.group],
       ['concurrency.cancel-in-progress', workflow.concurrency['cancel-in-progress']],
-      ['precheck.if', binding('precheck').if],
       ['autoformat.if', binding('autoformat').if],
-      ['ci-passed.name', binding('ci-passed').name],
     ] as const) {
       assert.ok(text?.includes(`(${predicate})`), `${site} must use the shared metadata predicate`)
     }
@@ -231,14 +210,18 @@ describe('cosmetic CI event routing', () => {
       const route = admitted(github)
       assert.equal(route.precheck, true, JSON.stringify(github))
       assert.equal(route.aggregate, true)
-      assert.equal(route.metadataOnly, false)
       assert.equal(route.name, 'CI Passed')
       assert.equal(route.group, 'ci-42')
       assert.equal(route.cancels, github.event_name !== 'schedule')
     }
   })
 
-  it('preserves the distinct fork and trunk contexts on real runs', () => {
+  it('preserves the distinct fork and trunk contexts, including metadata', () => {
+    for (const github of cosmetics) {
+      github.event.pull_request.head.repo.full_name = 'external/agent-pane'
+      assert.equal(admitted(github).name, 'Fork CI Passed')
+      github.event.pull_request.head.repo.full_name = 'copse-dev/agent-pane'
+    }
     const fork = context('synchronize')
     fork.event.pull_request.head.repo.full_name = 'external/agent-pane'
     assert.equal(admitted(fork).name, 'Fork CI Passed')

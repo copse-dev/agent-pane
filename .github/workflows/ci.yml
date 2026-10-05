@@ -25,7 +25,7 @@ on:
     # `edited` is required for base-branch retargets. The tier and oracle diff
     # both depend on the current base; without a new run, a head checked against
     # one base can retain stale CI after it is moved to another (#2520).
-    # Title/body-only edits take the metadata path (see `concurrency`).
+    # Title/body-only edits use isolated concurrency but still test the candidate.
     types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
     # No `branches:` filter — PRs into `main` and the promotion PRs into
     # `release` both run this workflow. Which TIER they get is decided per job by
@@ -47,17 +47,14 @@ on:
 permissions:
   contents: read
 
-# Two metadata events skip CI: the Copse feedback label, and an `edited` event
-# whose `changes` hold only `title` and/or `body`. Pushing and then editing
-# the PR description starts both `synchronize` and `edited` for one head a
-# second apart; sharing `ci-<PR>`, the edit cancelled the source run and left
-# a red `CI Passed` on the head. Actions cannot list an object's keys, so the
-# edit test rebuilds `{"title":…,"body":…}` from the event's own values and
-# requires its toJSON to equal the original's: any other key (a retarget's
-# `base`, or one GitHub adds later) or any serialisation drift runs real CI.
-# The same predicate controls concurrency, roots of the job graph, and the
-# aggregate NAME: a skipped required check would otherwise authorize a red head.
-# scripts/ci-cosmetic-events.test.ts pins it as identical at every site.
+# Every dispatched CI run must test its candidate and publish its own aggregate.
+# A later metadata-only suite can leave CI Passed Expected despite an earlier
+# exact-head success. Never fill that gap with a green no-op or copied result.
+# Title/body edits and the Copse feedback label still get isolated concurrency:
+# they cannot cancel or replace a pending source run. Retargets and unknown edit
+# keys keep the normal source group. The edit predicate compares all change keys
+# and defaults to normal routing on unknown keys or serialisation drift.
+# scripts/ci-cosmetic-events.test.ts pins concurrency and autoformat routing.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
   group: >-
@@ -138,14 +135,6 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    if: >-
-      ${{ !(github.event_name == 'pull_request' &&
-      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
-      (github.event.action == 'edited' &&
-      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) }}
     # GitHub-hosted by default; the self-hosted check fleet is opt-in via
     # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
@@ -2071,21 +2060,13 @@ jobs:
     # matches this name for a release SHA, which is never a fork PR.)
     name: >-
       ${{ (github.event_name == 'pull_request' &&
-      ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
-      (github.event.action == 'edited' &&
-      (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
-      toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && 'CI metadata ignored' ||
-      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
       github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
       'CI Passed' }}
     # Evaluate even after cancellation, including cancellation while upstream
     # jobs are queued. The first step turns that state into an explicit failure.
-    # Queue this tiny aggregate even for metadata: GitHub leaves a skipped
-    # job's name expression unevaluated. Metadata gets its separate check name
-    # and exits before candidate-result validation; it never creates CI Passed.
+    # Metadata runs earn this result through the same candidate jobs as source
+    # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
     needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
@@ -2100,14 +2081,6 @@ jobs:
       - name: Check upstream job results
         if: ${{ !cancelled() }}
         env:
-          METADATA_ONLY: >-
-            ${{ github.event_name == 'pull_request' &&
-            ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||
-            (github.event.action == 'edited' &&
-            (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
-            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
-            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
-            toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}')))))) }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           MODE: ${{ needs.precheck.outputs.mode }}
           ANY_FAILURE: ${{ contains(needs.*.result, 'failure') }}
@@ -2126,10 +2099,6 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set -eu
-          if [ "${METADATA_ONLY:-false}" = "true" ]; then
-            echo "Metadata event ignored; this check does not authorize a merge."
-            exit 0
-          fi
           # Supersession explains why work was canceled; it is never evidence
           # that THIS run passed. The new run must earn its own green check.
           # This guard precedes fork and skip-mode acceptance deliberately.
