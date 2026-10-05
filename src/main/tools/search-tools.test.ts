@@ -112,3 +112,88 @@ describe('searchCodeTool pattern/query aliasing', () => {
     assert.match(out, /query/)
   })
 })
+
+describe('searchCodeTool empty results under file_glob', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  async function runSearchCode(args: {
+    pattern: string
+    file_glob?: string
+    path?: string
+  }): Promise<string> {
+    const result = await searchCodeTool.execute(
+      { ...args, fixed_string: false, case_sensitive: false, max_results: 50, context_lines: 0 },
+      noSignal,
+    )
+    return typeof result === 'string' ? result : result.result
+  }
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-search-code-glob-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+    await writeFile(join(tempRoot, 'auth.ts'), 'export function authenticate() {}\n', 'utf-8')
+    await writeFile(join(tempRoot, 'view.tsx'), 'export const other = 1\n', 'utf-8')
+    setRgAvailableForTest(true)
+    setIndexedGrepBackendForTest('rg')
+  })
+
+  afterEach(async () => {
+    setRgAvailableForTest(null)
+    setIndexedGrepBackendForTest(null)
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('says the pattern matches outside a glob that filtered it away', async () => {
+    const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.tsx' })
+    assert.match(out, /^No matches found within file_glob "\*\.tsx"\./)
+    assert.match(out, /does match outside that glob \(e\.g\. auth\.ts\)/)
+  })
+
+  it('does not claim matches outside the glob when the pattern is absent everywhere', async () => {
+    const out = await runSearchCode({ pattern: 'no_such_symbol', file_glob: '*.tsx' })
+    assert.match(out, /^No matches found within file_glob/)
+    assert.doesNotMatch(out, /does match outside/)
+  })
+
+  it('points at brace sets when the glob uses `|` as alternation', async () => {
+    const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*auth*|*view*' })
+    assert.match(out, /not a regex/)
+    assert.match(out, /\{\*a\*,\*b\*\}/)
+  })
+
+  it('leaves the plain message for an empty search without a glob', async () => {
+    assert.equal(await runSearchCode({ pattern: 'no_such_symbol' }), 'No matches found.')
+  })
+
+  it('still returns matches normally when the glob matches', async () => {
+    const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.ts' })
+    assert.match(out, /auth\.ts:1:/)
+  })
+  it('explains excluded hits when ripgrep is unavailable', async () => {
+    setRgAvailableForTest(false)
+    const out = await runSearchCode({ pattern: 'authenticate', file_glob: '*.tsx' })
+    assert.ok(out.startsWith('No matches found within file_glob "*.tsx".'))
+    assert.ok(out.includes('does match outside that glob (e.g. auth.ts)'))
+  })
+
+  it('preserves fallback errors and normal results, and avoids false excluded-hit claims', async () => {
+    setRgAvailableForTest(false)
+    assert.equal(
+      await runSearchCode({ pattern: '[', file_glob: '*.tsx' }),
+      'Invalid regular expression.',
+    )
+    assert.match(await runSearchCode({ pattern: 'authenticate', file_glob: '*.ts' }), /auth\.ts:1:/)
+    const absent = await runSearchCode({ pattern: 'absent', file_glob: '*.tsx' })
+    assert.ok(absent.startsWith('No matches found within file_glob'))
+    assert.doesNotMatch(absent, /does match outside/)
+    assert.equal(await runSearchCode({ pattern: 'absent' }), 'No matches found.')
+    assert.match(
+      await runSearchCode({ pattern: 'authenticate', file_glob: '*auth*|*view*' }),
+      /auth\.ts:1:/,
+    )
+    const pipeEmpty = await runSearchCode({ pattern: 'absent', file_glob: '*auth*|*view*' })
+    assert.doesNotMatch(pipeEmpty, /not a regex|does match outside/)
+  })
+})

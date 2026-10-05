@@ -2018,6 +2018,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
   const projectId = 'e2e-sticky-user-prompt-project'
   const threadId = 'e2e-sticky-user-prompt-thread'
   const now = Date.now()
+  const previewImages = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#375b68"/><rect x="32" y="32" width="576" height="48" rx="8" fill="#a9c5c6"/><rect x="32" y="104" width="260" height="264" rx="8" fill="#789da1"/><rect x="316" y="104" width="292" height="264" rx="8" fill="#1d3540"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="640"><rect width="400" height="640" fill="#584766"/><rect x="28" y="28" width="344" height="72" rx="8" fill="#af8db8"/><rect x="28" y="124" width="344" height="488" rx="8" fill="#392c48"/></svg>',
+  ].map((svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`)
   const firstResult = [
     'The initial pass is complete.',
     '',
@@ -2075,6 +2079,7 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
             id: 'msg-user-sticky-latest',
             role: 'user',
             content: 'Follow-up: keep this latest request visible while the response grows.',
+            images: previewImages,
             toolCalls: [],
             createdAt: now + 2,
           },
@@ -2125,7 +2130,10 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
  * `hook_run` lines anchored to the message they fired within — exactly the
  * on-disk shape `appendHookRun` produces — so the real fold path is exercised.
  */
-export function seedHookCardsFixture(workspaceRoot: string): void {
+export function seedHookCardsFixture(
+  workspaceRoot: string,
+  options?: { developerMode?: boolean },
+): void {
   const projectId = 'e2e-hook-cards-project'
   const threadId = 'e2e-hook-cards-thread'
   const now = Date.now()
@@ -2301,6 +2309,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
     activeProjectId: projectId,
     activeThreadId: threadId,
   })
+  seedDeveloperModeSetting(options?.developerMode ?? true)
 }
 
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
@@ -2385,11 +2394,10 @@ export function seedMermaidDiagramFixture(workspaceRoot: string): void {
 }
 
 /** Seeded thread with context snapshot and token usage for footer doughnut validation. */
-export function seedContextWheelFixture(workspaceRoot: string): void {
+export function seedContextWheelFixture(workspaceRoot: string, conversationTokens = 54_000): void {
   const projectId = 'e2e-context-wheel-project'
   const threadId = 'e2e-context-wheel-thread'
   const conversationBudget = 180_000
-  const conversationTokens = 54_000
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2616,6 +2624,15 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
             createdAt: now + 1,
           },
         ],
+        // 82% of the window: the ring is amber and the hover carries a context
+        // section above the usage and subagent rows.
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 200_000,
+          conversationTokens: 164_000,
+          fillRatio: 0.82,
+          updatedAt: now,
+        },
         usage: {
           inputTokens: 13_300_000,
           outputTokens: 221_000,
@@ -5242,6 +5259,22 @@ export function seedThreadPrStatusFixture(workspaceRoot: string): {
     activeProjectId: projectId,
     activeThreadId: 'e2e-pr-open-thread',
     [`threads:${projectId}`]: [
+      {
+        id: 'e2e-pr-conflict-thread',
+        title: 'Conflicting PR thread',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-conflict-pr',
+            role: 'assistant',
+            content: 'Review https://github.com/copse-dev/copse-panel/pull/100.',
+            createdAt: now - 4000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 4000,
+        updatedAt: now - 4000,
+      },
       {
         id: 'e2e-pr-open-thread',
         title: openThreadTitle,

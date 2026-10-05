@@ -41,6 +41,14 @@ export function arrowDownIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('arrow-down', ['M12 5v14', 'm19 12-7 7-7-7'], className)
 }
 
+export function arrowUpDownIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'arrow-up-down',
+    ['m21 16-4 4-4-4', 'M17 20V4', 'm3 8 4-4 4 4', 'M7 4v16'],
+    className,
+  )
+}
+
 export function refreshIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
     'refresh',
@@ -278,12 +286,12 @@ export function gitBranchIcon(className = DEFAULT): SVGSVGElement {
 }
 
 /** Lucide git-pull-request — sidebar thread GitHub PR status mark. */
-export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
+export function gitPullRequestIcon(className = DEFAULT, conflicts = false): SVGSVGElement {
   return outlineIcon(
     'git-pull-request',
     [
       'M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
-      'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      conflicts ? 'M3 3l6 6m0-6L3 9' : 'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
       'M13 6h3a2 2 0 0 1 2 2v7',
       'M6 9v12',
     ],

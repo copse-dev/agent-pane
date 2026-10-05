@@ -1,4 +1,6 @@
-export type ReleaseChannel = 'stable' | 'beta'
+// Imports nothing: scripts/release-bump.mts runs this in CI with no install.
+export const RELEASE_CHANNELS = ['stable', 'beta'] as const
+export type ReleaseChannel = (typeof RELEASE_CHANNELS)[number]
 export type UpdateChannel = 'latest' | 'beta'
 export type GitHubReleaseType = 'release' | 'prerelease'
 export interface AutoUpdatePolicy {
@@ -31,13 +33,33 @@ export function getUpdateChannel(version: string): UpdateChannel {
   return getReleaseChannel(version) === 'stable' ? 'latest' : 'beta'
 }
 
-export function getAutoUpdatePolicy(version: string): AutoUpdatePolicy {
-  const channel = getUpdateChannel(version)
-  return {
-    channel,
-    allowPrerelease: channel === 'beta',
-    allowDowngrade: false,
-  }
+function policyFor(channel: ReleaseChannel): AutoUpdatePolicy {
+  return channel === 'stable'
+    ? { channel: 'latest', allowPrerelease: false, allowDowngrade: false }
+    : { channel: 'beta', allowPrerelease: true, allowDowngrade: false }
+}
+
+/**
+ * The update checks to run, in order, for the installed version and the
+ * channel the user chose in Settings → About (null: the installed build's own).
+ * Stop at the first that finds an update.
+ *
+ * - Beta follows the beta feed, which also carries every stable release.
+ * - Stable on a stable build follows stable releases only.
+ * - Stable chosen on a beta build first looks for a newer stable release, and
+ *   otherwise keeps taking the newest beta. Switching never stalls updates and
+ *   never downgrades: the move happens at the next stable release, which sorts
+ *   after its betas.
+ */
+export function getUpdateCheckPlan(
+  installedVersion: string,
+  chosenChannel: ReleaseChannel | null,
+): AutoUpdatePolicy[] {
+  const installed = getReleaseChannel(installedVersion)
+  const chosen = chosenChannel ?? installed
+  if (chosen === 'beta') return [policyFor('beta')]
+  if (installed === 'stable') return [policyFor('stable')]
+  return [policyFor('stable'), policyFor('beta')]
 }
 
 /**

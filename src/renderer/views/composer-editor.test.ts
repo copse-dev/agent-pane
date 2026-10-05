@@ -126,6 +126,8 @@ describe('composer editor value serialization', () => {
     editor.value = 'before '
     editor.insertText('> quoted\n> lines\n\n')
     assert.equal(editor.value, 'before > quoted\n> lines\n\n')
+    assert.equal(editor.expandedValue(), 'before > quoted\n> lines\n\n')
+    assert.ok(editor.el.querySelector('br[data-composer-tail]'))
     assert.equal(editor.getBlocks().length, 0, 'inserted text is plain, not a chip block')
   })
 

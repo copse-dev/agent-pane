@@ -164,7 +164,8 @@ export function mountModelPicker(
     },
     '$',
   )
-  trigger.append(labelEl, triggerCost, chevron)
+  const triggerRetention = el('span', { class: 'ui-badge model-picker-retention', hidden: true })
+  trigger.append(labelEl, triggerRetention, triggerCost, chevron)
   const menu = el('div', {
     class: 'model-picker-menu',
     hidden: '',
@@ -533,6 +534,15 @@ export function mountModelPicker(
           title: opt.label,
         },
         el('span', { class: 'model-picker-option-label' }, opt.label),
+        ...(opt.retention
+          ? [
+              el(
+                'span',
+                { class: 'ui-badge model-picker-retention', title: opt.retention.detail },
+                opt.retention.label,
+              ),
+            ]
+          : []),
         ...(opt.coverage
           ? [
               el(
@@ -621,6 +631,9 @@ export function mountModelPicker(
     labelEl.textContent = label
     labelEl.title = current
     triggerCost.hidden = match?.coverage !== 'paid'
+    triggerRetention.hidden = !match?.retention
+    triggerRetention.textContent = match?.retention?.label ?? ''
+    triggerRetention.title = match?.retention?.detail ?? ''
   }
 
   async function refresh(): Promise<void> {

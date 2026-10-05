@@ -1,20 +1,26 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 describe('double submit guard', function () {
   this.timeout(90_000)
+  let previousMockBranch: string | undefined
 
   afterEach(() => {
     resetUserData()
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
   })
 
   it('only sends one message when submit is fired twice in quick succession', async function () {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-double-submit', {
+    previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    // Queued sends must observe the branch the real first checkout committed.
+    writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
+    seedEmptyProject(seedStableWorkspace(), 'e2e-double-submit', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

@@ -1,3 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { before, after } from 'node:test'
+import { saveProjectThread } from '../thread-store.ts'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
@@ -8,6 +13,7 @@ import {
   detectServerUrl,
   startBackgroundProcess,
   listBackgroundProcesses,
+  listBackgroundProcessPids,
   getBackgroundProcessLogs,
   nextBackgroundOperationId,
   stopBackgroundProcess,
@@ -18,6 +24,33 @@ import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
+
+let fixtureRoot: string
+let previousWorkspace: string | undefined
+before(async () => {
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'copse-background-owner-'))
+  previousWorkspace = process.env['COPSE_WORKSPACE_DIR']
+  process.env['COPSE_WORKSPACE_DIR'] = fixtureRoot
+  await seedOwner(OWNER)
+  await seedOwner(OTHER_OWNER)
+})
+after(async () => {
+  if (previousWorkspace === undefined) Reflect.deleteProperty(process.env, 'COPSE_WORKSPACE_DIR')
+  else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspace
+  await rm(fixtureRoot, { recursive: true, force: true })
+})
+
+async function seedOwner(owner: { projectId: string; threadId: string }): Promise<void> {
+  await saveProjectThread(owner.projectId, {
+    id: owner.threadId,
+    title: 'Background process owner',
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  })
+}
 
 const OWNER = { projectId: 'project-a', threadId: 'thread-a' }
 const OTHER_OWNER = { projectId: 'project-b', threadId: 'thread-b' }
@@ -190,8 +223,25 @@ describe('background process manager', () => {
       },
     })
 
+    const processInfo = listBackgroundProcessPids().find((entry) => entry.id === info.id)
+    assert.ok(processInfo)
     assert.equal(stopBackgroundProcess(info.id, OWNER), true)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Observe the real direct child's disappearance instead of assuming exit
+    // callbacks have run after a fixed 100ms sleep.
+    const deadline = Date.now() + 30_000
+    let exited = false
+    while (Date.now() < deadline) {
+      try {
+        process.kill(processInfo.pid, 0)
+      } catch (error: unknown) {
+        assert.ok(error instanceof Error)
+        assert.equal(Object.getOwnPropertyDescriptor(error, 'code')?.value, 'ESRCH')
+        exited = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    assert.equal(exited, true, 'explicitly cancelled child must exit')
 
     assert.equal(notified, false)
   })

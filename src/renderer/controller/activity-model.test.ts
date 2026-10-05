@@ -99,7 +99,13 @@ describe('deriveActivity', () => {
         ],
         approvals: [approval('late', 'waiting', 900), approval('early', 'new-run', 200)],
         questions: [
-          { id: 'q', threadId: 'done', questions: ['Which migration order?'], receivedAt: 500 },
+          {
+            id: 'q',
+            threadId: 'done',
+            questions: ['Which migration order?'],
+            options: [[]],
+            receivedAt: 500,
+          },
         ],
         runs,
       }),
@@ -206,6 +212,7 @@ describe('deriveActivity', () => {
             id: 'q',
             threadId: 'gone',
             questions: ['First?', 'Second?', 'Third?'],
+            options: [[], [], []],
             receivedAt: 3,
           },
         ],

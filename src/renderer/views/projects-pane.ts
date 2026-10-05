@@ -2,7 +2,9 @@ import { openAppRunDialog } from './app-run-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import {
+  arrowUpDownIcon,
   bellIcon,
   chevronRightIcon,
   gitMergeIcon,
@@ -34,6 +36,7 @@ import {
 } from '@shared/git/thread-pr-status.ts'
 import {
   addProject,
+  archiveCachedSidebarThread,
   addRemoteProject,
   createNewProject,
   getSidebarThreads,
@@ -61,12 +64,25 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import {
+  groupRowsByStatus,
+  orderSidebarRows,
+  orderSidebarThreads,
+  type SidebarRow,
+} from '../controller/thread-order.ts'
+import {
+  THREAD_GROUP_MODES,
+  THREAD_SORT_MODES,
+  type ThreadGroupMode,
+  type ThreadSortMode,
+} from '@shared/types/state.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
+import { flushProjectThreads } from '../controller/persistence.ts'
 import {
   buildProjectTree,
   projectGroupId,
@@ -135,16 +151,20 @@ function runningStatus(label: string): SVGSVGElement {
 }
 
 /** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean): HTMLElement {
-  const label = ciFailing
+function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean, conflicts: boolean): HTMLElement {
+  const statusLabel = ciFailing
     ? `${describeThreadPrStatus(rollup)}; checks are failing`
     : describeThreadPrStatus(rollup)
-  const icon = (rollup.kind === 'merged' ? gitMergeIcon : gitPullRequestIcon)('ui-icon ui-icon-sm')
+  const label = conflicts ? `${statusLabel}; merge conflicts` : statusLabel
+  const icon =
+    rollup.kind === 'merged'
+      ? gitMergeIcon('ui-icon ui-icon-sm')
+      : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
   icon.setAttribute('aria-hidden', 'true')
   return el(
     'span',
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? ' has-ci-failure' : ''}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? ' has-conflicts' : ciFailing ? ' has-ci-failure' : ''}`,
       role: 'img',
       'aria-label': label,
       'data-tooltip': label,
@@ -269,6 +289,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     searchIcon('ui-icon ui-icon-sm'),
   )
+  // How each project's threads are ordered. Persisted per profile; the store
+  // keeps its own newest-first order and this only re-sorts what is drawn.
+  const sortBtn = el(
+    'button',
+    {
+      class: 'projects-sort-btn',
+      'aria-label': 'Sort threads',
+      'aria-haspopup': 'menu',
+      'data-tooltip': 'Sort threads',
+    },
+    arrowUpDownIcon('ui-icon ui-icon-sm'),
+  )
   // One "+" entry point for every way to add a project. The remote action is
   // included only while SSH workspaces are enabled.
   const addBtn = el(
@@ -314,6 +346,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'pane-projects-header' },
     title,
     searchToggle,
+    sortBtn,
     activityBtn,
     addBtn,
   )
@@ -394,6 +427,62 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   )
 
   let sshWorkspaceEnabled = false
+
+  const SORT_LABELS: Readonly<Record<ThreadSortMode, string>> = {
+    activity: 'Activity order',
+    created: 'Created',
+    title: 'Thread name',
+  }
+  const GROUP_LABELS: Readonly<Record<ThreadGroupMode, string>> = {
+    project: 'Project',
+    status: 'Status',
+    none: 'None',
+  }
+  // The menu applies the choice at once; a save that fails would otherwise be lost
+  // silently and the order would revert on the next launch.
+  const saveSort = (
+    key: 'sidebarThreadSort' | 'sidebarThreadSortReverse' | 'sidebarThreadGroup',
+    value: ThreadSortMode | ThreadGroupMode | boolean,
+  ): void => {
+    void api.settings.set(key, value).catch((err: unknown) => {
+      showErrorToast('Could not save the thread order', err)
+    })
+  }
+  sortBtn.addEventListener('click', () => {
+    const rect = sortBtn.getBoundingClientRect()
+    const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store.getState()
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: 'Group by' },
+      ...THREAD_GROUP_MODES.map((mode): ContextMenuEntry => ({
+        label: GROUP_LABELS[mode],
+        checked: mode === sidebarThreadGroup,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadGroup: mode })
+          saveSort('sidebarThreadGroup', mode)
+          render()
+        },
+      })),
+      { heading: 'Sort by' },
+      ...THREAD_SORT_MODES.map((mode): ContextMenuEntry => ({
+        label: SORT_LABELS[mode],
+        checked: mode === sidebarThreadSort,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSort: mode })
+          saveSort('sidebarThreadSort', mode)
+          render()
+        },
+      })),
+      {
+        label: 'Reverse order',
+        checked: sidebarThreadSortReverse,
+        onSelect: (): void => {
+          store.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse })
+          saveSort('sidebarThreadSortReverse', !sidebarThreadSortReverse)
+          render()
+        },
+      },
+    ])
+  })
 
   addBtn.addEventListener('click', () => {
     const rect = addBtn.getBoundingClientRect()
@@ -488,7 +577,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; fetchedAt: number }
+    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -532,11 +621,56 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     })
   }
 
-  function archiveProjectThread(projectId: string, threadId: string): void {
+  const archivingThreads = new Set<string>()
+
+  async function archiveProjectThread(projectId: string, threadId: string): Promise<void> {
     // Only the active project's in-memory thread list is mutable here; other
     // projects' rows are cache-backed until switched.
-    if (projectId !== store.getState().activeProjectId) return
-    archiveThread(store, threadId)
+    if (projectId !== store.getState().activeProjectId || archivingThreads.has(threadId)) return
+    archivingThreads.add(threadId)
+    try {
+      await flushProjectThreads(api, projectId, store.getState().threads)
+      if (projectId !== store.getState().activeProjectId) return
+      let result = await api.threads.archive(projectId, threadId, null)
+      let refreshed = false
+      while (result.status === 'blocked-dirty') {
+        const title = store.getState().threads.find((t) => t.id === threadId)?.title ?? 'this chat'
+        const shown = result.paths.slice(0, 10)
+        const remaining = result.paths.length - shown.length
+        const confirmed = await showConfirmDialog({
+          message: `Discard uncommitted files and archive “${title}”?`,
+          detail: [
+            ...(refreshed
+              ? ['Files changed while confirmation was open. Review the current files again.']
+              : []),
+            'The worktree will be removed. These changes and local files will be permanently discarded:',
+            ...shown,
+            ...(remaining > 0 ? [`…and ${String(remaining)} more`] : []),
+            'The chat history and committed work on its branch will be kept.',
+          ].join('\n'),
+          confirmLabel: 'Discard and archive',
+          danger: true,
+        })
+        if (!confirmed || projectId !== store.getState().activeProjectId) return
+        result = await api.threads.archive(projectId, threadId, result.fingerprint)
+        refreshed = true
+      }
+      if (result.status === 'blocked-running') {
+        showToast('Stop the chat’s agent, terminals and background processes before archiving.', {
+          variant: 'error',
+        })
+        return
+      }
+      if (projectId === store.getState().activeProjectId) archiveThread(store, threadId, result)
+      else {
+        archiveCachedSidebarThread(projectId, threadId, result.archivedAt)
+        render()
+      }
+    } catch (error) {
+      showErrorToast('Could not archive chat', error)
+    } finally {
+      archivingThreads.delete(threadId)
+    }
   }
 
   function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
@@ -565,10 +699,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
           const previous = prLifecycleCache.get(key)
-          lifecycleChanged = previous?.state !== state
-          // CI only matters while the PR is open; the dot is the one extra cue.
+          const conflicts = state === 'open' && details !== null && prHasMergeConflicts(details)
+          lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts
+          // CI and merge conflicts only affect open PRs.
           prLifecycleCache.set(key, {
             state,
+            conflicts,
             ...(state === 'open' && previous?.checks ? { checks: previous.checks } : {}),
             fetchedAt: Date.now(),
           })
@@ -586,6 +722,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           const cached = prLifecycleCache.get(key)
           prLifecycleCache.set(key, {
             state: cached?.state ?? 'unknown',
+            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
           })
         })
@@ -601,6 +738,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     return sidebarPrRefs(thread).some((ref) => {
       const entry = prLifecycleCache.get(githubPrKey(ref))
       return entry?.state === 'open' && entry.checks === 'failure'
+    })
+  }
+
+  function conflictsForThread(thread: SidebarThread): boolean {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref))
+      return entry?.state === 'open' && entry.conflicts === true
     })
   }
 
@@ -1207,7 +1351,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 {
                   label: 'Archive',
                   onSelect: (): void => {
-                    archiveProjectThread(project.id, thread.id)
+                    void archiveProjectThread(project.id, thread.id)
                   },
                 },
               ]
@@ -1288,7 +1432,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === 'open' && ciFailingForThread(thread)),
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === 'open' && ciFailingForThread(thread),
+            prRollup.kind === 'open' && conflictsForThread(thread),
+          ),
         )
       }
 
@@ -1738,8 +1886,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         : sidebarThreads
       // Automation runs are collated in the workspace-level Automations section
       // (#2511) instead of rendering inside their project by default.
-      const conversationThreads = matchingThreads.filter(
-        (thread) => thread.automation === undefined,
+      const conversationThreads = orderSidebarThreads(
+        matchingThreads.filter((thread) => thread.automation === undefined),
+        // A filter's matches stay newest first; the chosen order is for the browse list.
+        isFiltering ? 'activity' : store.getState().sidebarThreadSort,
+        !isFiltering && store.getState().sidebarThreadSortReverse,
       )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
@@ -1838,9 +1989,83 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const automationsSection = renderAutomationsSection()
     if (automationsSection) list.append(automationsSection)
 
-    for (const node of buildProjectTree(projects, projectGroups)) {
-      if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
-      else list.append(renderProjectEntry(node.project))
+    /**
+     * Threads from every visited project, laid out without the project tree:
+     * sections by status, or one flat list. Each row names its project, since
+     * the tree that used to say so is gone. A search filter is scoped to the
+     * open project, so it keeps the tree.
+     */
+    function renderThreadSections(mode: Exclude<ThreadGroupMode, 'project'>): HTMLElement[] {
+      const owners = new Map<string, Project>()
+      const rows: SidebarRow[] = []
+      for (const project of projects) {
+        if (project.missing) continue
+        owners.set(project.id, project)
+        for (const thread of getSidebarThreads(store, project.id)) {
+          if (thread.automation === undefined) rows.push({ projectId: project.id, thread })
+        }
+      }
+      const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
+      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse)
+      const sections =
+        mode === 'status'
+          ? groupRowsByStatus(ordered, isThreadAwaitingAttention)
+          : [{ id: 'all', label: '', rows: ordered }]
+      if (ordered.length === 0) {
+        return [el('div', { class: 'sidebar-empty' }, 'No threads yet')]
+      }
+      return sections.map((section) => {
+        const block = el('div', { class: 'thread-section', 'data-section-id': section.id })
+        if (section.label) {
+          block.append(el('div', { class: 'thread-section-heading' }, section.label))
+        }
+        const byThread = new Map(section.rows.map((row) => [row.thread, row]))
+        const countKey = `section:${mode}:${section.id}`
+        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE
+        const activeRow = section.rows.find(
+          (row) => row.projectId === activeProjectId && row.thread.id === activeThreadId,
+        )
+        const paged = paginateSidebarThreads(
+          section.rows.map((row) => row.thread),
+          limit,
+          activeRow?.thread.id,
+        )
+        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount)
+        const chats = el('div', { class: 'chats-list' })
+        for (const thread of paged.visibleThreads) {
+          const project = owners.get(byThread.get(thread)?.projectId ?? '')
+          if (!project) continue
+          const row = renderThreadRow(project, thread)
+          row
+            .querySelector('.chat-title')
+            ?.after(el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`))
+          chats.append(row)
+        }
+        if (paged.hasMore) {
+          const showMoreBtn = el(
+            'button',
+            { type: 'button', class: 'chats-show-more' },
+            'Show more',
+          )
+          showMoreBtn.addEventListener('click', () => {
+            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE)
+            render()
+          })
+          chats.append(showMoreBtn)
+        }
+        block.append(chats)
+        return block
+      })
+    }
+
+    const groupMode = store.getState().sidebarThreadGroup
+    if (groupMode !== 'project' && threadFilter.length === 0) {
+      list.append(...renderThreadSections(groupMode))
+    } else {
+      for (const node of buildProjectTree(projects, projectGroups)) {
+        if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
+        else list.append(renderProjectEntry(node.project))
+      }
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())

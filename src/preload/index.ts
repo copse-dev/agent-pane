@@ -71,6 +71,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
+    scrollPosition: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:scroll-position', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
@@ -753,10 +755,17 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    maintenance: () => ipcRenderer.invoke('storage:maintenance'),
+    cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
+      ipcRenderer.invoke('storage:cleanup', area),
+    retention: (policy: import('@shared/types/storage-cleanup.ts').StorageRetention) =>
+      ipcRenderer.invoke('storage:retention', policy),
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
+    archive: (projectId: string, threadId: string, confirmation: string | null) =>
+      ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation),
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
@@ -926,6 +935,15 @@ const api: ApiClient = {
         ipcRenderer.off('menu:new-thread', listener)
       }
     },
+    onToggleSidebar: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:toggle-sidebar', listener)
+      return (): void => {
+        ipcRenderer.off('menu:toggle-sidebar', listener)
+      }
+    },
     onTogglePanel: (handler: () => void) => {
       const listener = (): void => {
         handler()
@@ -1052,6 +1070,8 @@ const api: ApiClient = {
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
+    getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
+    update: (changes) => ipcRenderer.invoke('settings:update', changes),
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
     setSecurity: (prefs: {

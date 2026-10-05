@@ -10,10 +10,12 @@ export interface ConfirmDialogRequest {
   /** Style the confirm button as destructive (delete, restore, etc.). */
   danger?: boolean
   /**
-   * Run confirmed work while the dialog stays open with disabled controls.
+   * Run confirmed work while the dialog stays open with a disabled primary button.
    * The progress callback updates the primary label for long-running actions.
    */
-  onConfirm?: (setProgressLabel: (label: string) => void) => Promise<void>
+  onConfirm?: (setProgressLabel: (label: string) => void, signal: AbortSignal) => Promise<void>
+  /** Allow Cancel/Escape to dismiss the dialog and request a cooperative stop. */
+  cancellable?: boolean
   confirmPendingLabel?: string
 }
 
@@ -39,12 +41,27 @@ export function mountConfirmDialog(): void {
   const queue: QueuedConfirm[] = []
   let active: QueuedConfirm | null = null
   let confirming = false
+  let controller: AbortController | null = null
+
+  function cancelActive(): void {
+    if (!active) return
+    if (confirming) {
+      if (!active.cancellable) return
+      controller?.abort()
+      dialog.close()
+      // Keep the request active until its work settles so callers cannot start
+      // overlapping mutations and queued dialogs cannot steal its callbacks.
+      return
+    }
+    finish(false)
+  }
 
   function finish(confirmed: boolean): void {
     if (!active) return
     const resolve = active.resolve
     active = null
     confirming = false
+    controller = null
     dialog.close()
     resolve(confirmed)
     if (queue.length > 0) {
@@ -83,7 +100,7 @@ export function mountConfirmDialog(): void {
       confirmLabel,
     )
     cancelBtn.addEventListener('click', () => {
-      finish(false)
+      cancelActive()
     })
     async function confirmActive(): Promise<void> {
       if (!active || confirming) return
@@ -93,20 +110,23 @@ export function mountConfirmDialog(): void {
         return
       }
       confirming = true
-      cancelBtn.disabled = true
+      controller = new AbortController()
+      const signal = controller.signal
+      cancelBtn.disabled = !request.cancellable
       confirmBtn.disabled = true
       confirmBtn.setAttribute('aria-busy', 'true')
       confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}…`
       try {
         await request.onConfirm((label) => {
           if (active === request) confirmBtn.textContent = label
-        })
-        if (active === request) finish(true)
+        }, signal)
+        if (active === request) finish(!signal.aborted)
       } catch (error) {
         if (active !== request) return
         const reject = request.reject
         active = null
         confirming = false
+        controller = null
         dialog.close()
         reject(error)
         if (queue.length > 0) {
@@ -126,8 +146,7 @@ export function mountConfirmDialog(): void {
 
   dialog.addEventListener('cancel', (event) => {
     event.preventDefault()
-    if (confirming) return
-    finish(false)
+    cancelActive()
   })
 
   showConfirmDialogImpl = (req: ConfirmDialogRequest): Promise<boolean> =>

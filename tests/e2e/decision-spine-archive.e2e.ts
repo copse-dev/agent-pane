@@ -2,7 +2,7 @@ import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { inflateRawSync } from 'node:zlib'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 
 function readZipEntries(archive: Uint8Array): Map<string, string> {
   const buffer = Buffer.from(archive.buffer, archive.byteOffset, archive.length)
@@ -32,7 +32,7 @@ function readZipEntries(archive: Uint8Array): Map<string, string> {
 describe('decision spine archive', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-decision-spine-live', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-decision-spine-live', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       autoRunSandboxCommands: false,

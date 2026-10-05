@@ -117,7 +117,7 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      # The same model route as the review; see review-findings.yml.
+      # The same model route as the review; see reviewer.yml and the shared findings Action.
       REVIEW_PROFILE: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
       COPSE_REVIEW_OPENROUTER_PROVIDER: ${{ vars.COPSE_REVIEW_OPENROUTER_PROVIDER || 'openai' }}
       REVIEW_PROVIDER: ${{ vars.COPSE_REVIEW_PROVIDER || 'openai-compatible' }}

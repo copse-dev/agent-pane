@@ -53,7 +53,7 @@ describe('footer index scale guard', () => {
 
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
-    await expect(wheel.$('.context-wheel-label')).toHaveText('40%')
+    await expect(wheel).toHaveAttribute('aria-label', /Context 40% used/)
     const geometry = await browser.execute(() => {
       const chipElement = document.querySelector<HTMLElement>('.footer-indexing')
       const wheelElement = document.querySelector<HTMLElement>('.context-wheel')

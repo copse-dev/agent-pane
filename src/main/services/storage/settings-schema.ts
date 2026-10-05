@@ -94,7 +94,7 @@ export const modelCardProbeCacheSchema = z.record(
   z.object({ ok: z.boolean(), at: z.number() }),
 )
 
-const MAIN_ONLY_SETTING_SCHEMAS = {
+export const MAIN_ONLY_SETTING_SCHEMAS = {
   classifierProviders: z.strictObject({
     version: z.literal(1),
     profiles: z
@@ -159,6 +159,10 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
 const SETTING_SCHEMAS: Record<string, z.ZodType> = {
   ...RENDERER_WRITABLE_SETTING_SCHEMAS,
   ...MAIN_ONLY_SETTING_SCHEMAS,
+}
+
+export function registeredSettingKeys(): string[] {
+  return Object.keys(SETTING_SCHEMAS)
 }
 
 /** The validation schema for a settings key, or `undefined` if none is registered. */

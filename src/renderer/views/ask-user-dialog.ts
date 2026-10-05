@@ -4,6 +4,7 @@ import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { isAnyDialogOpen } from './dialog-shell.ts'
 
 interface AskUserRequest {
   id: string
@@ -22,17 +23,27 @@ export interface PendingQuestionSummary {
   threadId: string | undefined
   /** The question texts, in order, as the agent wrote them (Markdown source). */
   questions: string[]
+  /** The quick answers the agent offered for each question, in question order ([] for none). */
+  options: readonly (readonly string[])[]
   receivedAt: number
 }
 
 /**
- * The dialog's pending questions, read-only. Answering stays in the dialog: a
- * surface that wants a question answered opens its thread, which is exactly
- * what makes the dialog surface it.
+ * The dialog's pending questions. Answering goes through the dialog
+ * ({@link AskUserRequests.answer}), which releases a blocked agent through the
+ * same function its own buttons use, whether the question is on screen or still
+ * queued for another thread; a surface that would rather not answer opens the
+ * thread, which makes the dialog surface the question.
  */
 export interface AskUserRequests {
   /** Every question still waiting — on screen or queued — oldest first. */
   pending(): PendingQuestionSummary[]
+  /**
+   * Answer a pending question from another surface, one answer per question in
+   * order. Returns false, sending nothing, when the request is no longer pending
+   * (answered or withdrawn elsewhere) or the answers do not match its questions.
+   */
+  answer(id: string, answers: readonly string[]): boolean
   /** Called after any change to {@link pending}. Returns an unsubscribe. */
   onChange(listener: () => void): () => void
 }
@@ -46,7 +57,8 @@ export interface AskUserRequests {
  * the first is open can't overwrite the active request's id and mis-route the
  * answer (the same hazard the approval dialog guards against). A question from a
  * thread the user isn't looking at stays queued and is surfaced as a sidebar
- * attention indicator rather than interrupting the focused thread.
+ * attention indicator rather than interrupting the focused thread. Questions
+ * also wait for foreground dialogs, including Settings and cleanup, to close.
  */
 export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequests {
   const form = el('form', { id: 'ask-user-form', method: 'dialog' })
@@ -57,6 +69,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   let active: AskUserRequest | null = null
   const changeListeners = new Set<() => void>()
   let arrivals = 0
+  let escapeHeld = false
+  let presentationTimer: number | undefined
   // One input per question of the active request, kept in question order so
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
@@ -163,7 +177,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   }
 
   function showNext(): void {
-    if (active) return
+    if (active || escapeHeld || !dialog.isConnected || isAnyDialogOpen()) return
     const idx = queue.findIndex(isShowable)
     if (idx === -1) {
       syncAttention()
@@ -175,13 +189,80 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
     syncAttention()
   }
 
-  function respond(answers: string[]): void {
-    const current = active
-    if (!current) return
-    dialog.close()
-    active = null
-    void api.ask.respond(current.id, answers)
+  function scheduleNext(): void {
+    if (presentationTimer !== undefined || active || queue.length === 0) return
+    presentationTimer = window.setTimeout(() => {
+      presentationTimer = undefined
+      showNext()
+    }, 0)
+  }
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') escapeHeld = true
+  }
+
+  function releaseEscape(): void {
+    escapeHeld = false
+    scheduleNext()
+  }
+
+  function onKeyUp(event: KeyboardEvent): void {
+    if (event.key === 'Escape') releaseEscape()
+  }
+
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('keyup', onKeyUp, true)
+  window.addEventListener('blur', releaseEscape)
+  // Native close(), Escape, and removing an overlay all change its DOM state.
+  // Resume on a later task so closing a modal cannot answer the queued prompt
+  // with the same key event. No polling or per-dialog registration is needed.
+  const observer = new MutationObserver(() => {
+    if (!dialog.isConnected) {
+      observer.disconnect()
+      if (presentationTimer !== undefined) window.clearTimeout(presentationTimer)
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', releaseEscape)
+      return
+    }
+    scheduleNext()
+  })
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['open'],
+    childList: true,
+    subtree: true,
+  })
+
+  /**
+   * The one place a question is released: it leaves the screen or the queue, the
+   * agent is told, and whatever is next is shown. The dialog's own buttons and
+   * another surface answering both end here, so there is a single path that
+   * unblocks an agent.
+   */
+  function settle(request: AskUserRequest, answers: string[]): void {
+    if (active === request) {
+      dialog.close()
+      active = null
+    } else {
+      const idx = queue.indexOf(request)
+      if (idx === -1) return
+      queue.splice(idx, 1)
+    }
+    void api.ask.respond(request.id, answers)
     showNext()
+    syncAttention()
+  }
+
+  function respond(answers: string[]): void {
+    if (active) settle(active, answers)
+  }
+
+  function answerFrom(id: string, answers: readonly string[]): boolean {
+    const request = active?.id === id ? active : queue.find((req) => req.id === id)
+    if (request === undefined || answers.length !== request.questions.length) return false
+    settle(request, [...answers])
+    return true
   }
 
   function submit(): void {
@@ -275,8 +356,10 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           id: req.id,
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
+          options: req.questions.map((q) => q.options ?? []),
           receivedAt: req.receivedAt,
         })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener)
       return () => {

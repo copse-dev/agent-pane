@@ -4,8 +4,11 @@ import type {
   ThirdPartyComponent,
   ThirdPartyLicenseReport,
 } from '@shared/third-party-licenses.mts'
+import { chosenUpdateChannel, isReleaseChannel } from '@shared/update-channel-choice.ts'
+import { getReleaseChannel, type ReleaseChannel } from '@shared/release-channel.mts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
+import { setInlineStatus } from '../../dom/inline-status.ts'
 import { uiActions } from '../../ui/index.ts'
 
 export interface AboutSection {
@@ -100,6 +103,76 @@ export function createAboutSection(api: ApiClient): AboutSection {
     uiActions(openButton('View licence', 'copse'), { align: 'start' }),
   )
 
+  const channelSelect = el(
+    'select',
+    { name: 'updateChannel' },
+    el('option', { value: 'beta' }, 'Beta'),
+    el('option', { value: 'stable' }, 'Stable'),
+  )
+  const channelStatus = el('p', {
+    class: 'about-update-status',
+    role: 'status',
+    'aria-live': 'polite',
+  })
+  const updates = el(
+    'fieldset',
+    { class: 'about-updates' },
+    el('legend', {}, 'Updates'),
+    el(
+      'label',
+      { class: 'about-update-channel' },
+      'Update channel',
+      channelSelect,
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases.',
+      ),
+    ),
+    channelStatus,
+  )
+  let savedChannel: ReleaseChannel = 'beta'
+  let installedChannel: ReleaseChannel = 'beta'
+  channelSelect.addEventListener('change', () => {
+    const value = channelSelect.value
+    if (!isReleaseChannel(value)) return
+    channelSelect.disabled = true
+    void api.settings
+      .set('updateChannel', value)
+      .then(
+        () => {
+          savedChannel = value
+          setInlineStatus(
+            channelStatus,
+            'ok',
+            value === 'beta'
+              ? 'Copse now updates to beta releases.'
+              : installedChannel === 'stable'
+                ? 'Copse now updates to stable releases only.'
+                : 'Copse keeps updating to betas until the next stable release.',
+          )
+        },
+        (err: unknown) => {
+          channelSelect.value = savedChannel
+          setInlineStatus(channelStatus, 'error', errorMessage(err))
+        },
+      )
+      .finally(() => {
+        channelSelect.disabled = false
+      })
+  })
+  const showChannel = async (version: string): Promise<void> => {
+    let channel: ReleaseChannel = 'beta'
+    try {
+      installedChannel = getReleaseChannel(version)
+      channel = chosenUpdateChannel(await api.settings.get('updateChannel'), version).channel
+    } catch {
+      // A development build has no release channel of its own; show beta.
+    }
+    savedChannel = channel
+    channelSelect.value = channel
+  }
+
   const countEl = el('span', {}, 'the open-source components')
   const statusEl = el('p', { class: 'field-hint about-licenses-status', 'aria-live': 'polite' })
   const thirdParty = el(
@@ -168,6 +241,7 @@ export function createAboutSection(api: ApiClient): AboutSection {
     loaded ??= api.about.getInfo().then(
       (info) => {
         versionEl.textContent = info.version
+        void showChannel(info.version)
         if (info.report) {
           render(info.report)
         } else {
@@ -185,6 +259,6 @@ export function createAboutSection(api: ApiClient): AboutSection {
     return loaded
   }
 
-  const root = el('div', { class: 'about-section' }, copse, thirdParty, listHost)
+  const root = el('div', { class: 'about-section' }, copse, updates, thirdParty, listHost)
   return { root, refresh }
 }

@@ -14,7 +14,11 @@ import {
   usageServiceTierForCall,
   type UsageServiceTier,
 } from '@copse/llm/service-tier.ts'
-import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
+import {
+  mergeModelUsage,
+  repairLegacyAcpInputTokens,
+  usageAtServiceTier,
+} from '@copse/llm/model-usage.ts'
 
 export const DAY_MS = 24 * 60 * 60 * 1000
 export const MONTH_MS = 30 * DAY_MS
@@ -262,7 +266,14 @@ function parseServiceTierUsage(
   return Object.keys(serviceTierUsage).length > 0 ? serviceTierUsage : undefined
 }
 
-/** Parse persisted ledger JSON; drops malformed entries. */
+/** Same bound the provider applies to the router's label before it reaches a chunk. */
+const MAX_HOSTING_PROVIDER_LENGTH = 80
+
+/**
+ * Parse persisted ledger JSON; drops malformed entries. Legacy ACP events with
+ * fresh-only `inputTokens` are repaired here (see `repairLegacyAcpInputTokens`);
+ * the repair is idempotent, so the next ledger write simply persists it.
+ */
 export function parseUsageEvents(raw: unknown): UsageEvent[] {
   if (!Array.isArray(raw)) return []
   const out: UsageEvent[] = []
@@ -281,7 +292,8 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
       continue
     }
     const serviceTierUsage = parseServiceTierUsage(rec['serviceTierUsage'])
-    out.push({
+    const hostingProvider = rec['hostingProvider']
+    const event: UsageEvent = {
       at: rec['at'],
       model: rec['model'],
       inputTokens: rec['inputTokens'],
@@ -305,7 +317,13 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
         ? { responseServiceTier: rec['responseServiceTier'] }
         : {}),
       ...(serviceTierUsage !== undefined ? { serviceTierUsage } : {}),
-    })
+      ...(typeof hostingProvider === 'string' &&
+      hostingProvider.length > 0 &&
+      hostingProvider.length <= MAX_HOSTING_PROVIDER_LENGTH
+        ? { hostingProvider }
+        : {}),
+    }
+    out.push(repairLegacyAcpInputTokens(event.model, event))
   }
   return out
 }

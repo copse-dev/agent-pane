@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
+import { assignShards } from './test-oracle.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
 
@@ -134,5 +135,46 @@ describe('test oracle base resolution', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('assignShards', () => {
+  const specs = ['a', 'b', 'c', 'd', 'e', 'f']
+
+  it('puts the slow specs on different shards and fills the rest by load', () => {
+    const seconds = new Map([
+      ['a', 1],
+      ['b', 90],
+      ['c', 80],
+      ['d', 10],
+      ['e', 10],
+      ['f', 60],
+    ])
+    // Round-robin by count gives these shards 11s, 100s and 140s.
+    assert.deepEqual(assignShards(specs, 3, seconds), [['b'], ['a', 'c'], ['d', 'e', 'f']])
+  })
+
+  it('weights an unrecorded spec at the median, not zero', () => {
+    const seconds = new Map([
+      ['a', 100],
+      ['b', 40],
+      ['c', 40],
+      ['d', 10],
+    ])
+    // At zero cost `f` would be placed last, leaving shard 2 with b, c, d and f.
+    assert.deepEqual(assignShards(['a', 'b', 'c', 'd', 'f'], 2, seconds), [
+      ['a', 'd'],
+      ['b', 'c', 'f'],
+    ])
+  })
+
+  it('partitions every spec once and falls back to balanced counts with no data', () => {
+    const shards = assignShards(specs, 4, new Map())
+    assert.deepEqual(shards.flat().sort(), specs)
+    assert.deepEqual(
+      shards.map((shard) => shard.length),
+      [2, 2, 1, 1],
+    )
+    assert.deepEqual(assignShards([], 2, new Map()), [[], []])
   })
 })

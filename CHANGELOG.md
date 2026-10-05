@@ -8,6 +8,19 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Settings → About has an update channel. Beta gets new features first; switch
+  to Stable and Copse keeps installing betas until the next stable release,
+  then installs only stable releases. It never moves you back to an older
+  version. Copse remembers the channel you installed from, so beta testers stay
+  on beta after the first stable release unless they choose Stable.
+- The footer's context ring no longer drops to about 0% when a run starts and
+  then jumps back up after the first model call: its first reading now counts
+  the system prompt and tools, as the readings that follow do. Its label also
+  quotes the same figures as the hover beside it. The hover's Subagents line
+  now says "N running" for runs still going and "no usage reported" or "N
+  without usage" for runs that ended without reporting tokens, instead of
+  "no usage yet" beside a run already marked done.
+
 ## 0.1.0-beta.13
 
 - Copse reads another tool's sign-in to show plan usage only for providers you
@@ -22,6 +35,13 @@ released — rather than copying every published entry.
   Copse version and Mac platform already filled in. Nothing about your
   projects, threads, or settings is included, and nothing is filed until you
   submit the form.
+- The footer's context ring and token counter are now one control. The ring is
+  the only thing left in the footer: the percentage and the `N tokens` text are
+  gone, and one hover shows the context breakdown, token usage, cache and cost,
+  and each subagent run with its status and tokens. The ring turns amber from
+  80% of the context window and red from 95%; figures reported by ACP agents
+  keep the same solid track. The footer now needs less width before it
+  collapses into its compact layout.
 - The macOS disk image is now signed and notarized by Apple, as well as the
   app inside it, so macOS can check the download itself before you open it.
 - In the concise thread view, clicking the row for a running turn (for

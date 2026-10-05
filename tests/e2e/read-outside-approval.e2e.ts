@@ -1,7 +1,7 @@
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // A command that only reads outside the project asks the read-access question
@@ -11,7 +11,8 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 describe('read access outside the project approval', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-read-outside-project', {
+    // First-send checkout must use real local refs, independent of the CI source checkout.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-read-outside-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })

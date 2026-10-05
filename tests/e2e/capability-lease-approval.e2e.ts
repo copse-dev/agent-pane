@@ -3,7 +3,7 @@ import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -15,7 +15,7 @@ describe('turn-tree shell replay approval', () => {
     this.timeout(90_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-capability-lease', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-capability-lease', {
       autoRunSandboxCommands: false,
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',

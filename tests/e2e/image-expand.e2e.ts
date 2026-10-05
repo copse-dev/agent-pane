@@ -401,7 +401,7 @@ describe('Screenshot click-to-expand', () => {
     const newThreadBtn = $('.project-new-thread-btn')
     await newThreadBtn.waitForClickable({ timeout: 15_000 })
     await newThreadBtn.click()
-    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+    await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
     await $('.prompt-input').waitForExist({ timeout: 10_000 })
 
     await browser.execute((base64: string) => {

@@ -33,6 +33,17 @@
   background: var(--bg-hover);
 }
 /* ---- three-pane layout ---- */
+/* Cmd/Ctrl+B hides the projects sidebar; chat (and any open panel) take its width. */
+.three-pane.is-projects-collapsed .pane-projects,
+.three-pane.is-projects-collapsed #resizer-projects {
+  display: none;
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.three-pane.is-projects-collapsed.is-right-panel-horizontal .pane-chat {
+  grid-column: 1;
+}
 .three-pane {
   display: flex;
   flex: 1;
@@ -127,6 +138,18 @@
 .projects-search-btn.active {
   color: var(--accent);
 }
+/* Sort menu entry beside the thread filter. */
+.projects-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 /* Activity panel entry: a bell, with a count of waiting threads beside it. */
 .projects-activity-btn {
   display: inline-flex;
@@ -141,7 +164,7 @@
   background: var(--bg-hover);
 }
 .projects-activity-btn.has-attention {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .projects-activity-count {
   font-size: var(--font-size-xs);
@@ -480,6 +503,13 @@
   font-size: var(--font-size-xs);
   white-space: nowrap;
 }
+/* A heading over one status section of the sidebar's thread list (Group by ▸ Status). */
+.thread-section-heading {
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
 /* The label takes the free space instead of the title, so it sits right
    after the title rather than being pushed to the row's far end. */
 .chat-row .chat-title:has(+ .chat-thread-owner) {
@@ -625,6 +655,11 @@
   fill: var(--pr-closed);
   stroke: var(--pr-closed);
 }
+/* Known merge conflicts replace the source node with a red X. */
+.chat-pr-status.has-conflicts svg path:nth-child(2) {
+  fill: none;
+  stroke: var(--pr-closed);
+}
 .chat-pr-status.is-merged {
   color: var(--pr-merged);
 }
@@ -634,7 +669,7 @@
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
-  color: var(--warning, #d29922);
+  color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
 }
 .project-row .chat-attention-bell {
@@ -809,43 +844,54 @@
       var(--chat-gradient-bottom) 100%
     );
 }
-.pane-chat.composer-centered {
-  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
-}
 .conversation,
 .conversation-scroll,
 .messages-list {
   background: transparent;
 }
-.pane-chat.composer-centered .conversation {
-  padding-bottom: 0;
+.pane-chat.is-activity-home {
+  /* Narrower than the Activity card above it, as in the prototype; the caption
+     over the composer uses the same width so the two line up. */
+  --chat-composer-width: min(800px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
 }
-.pane-chat.composer-centered #input-bar {
+.pane-chat.is-activity-idle {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
+}
+.pane-chat.is-activity-idle #input-bar {
   top: 50%;
   bottom: auto;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* Clear the full docked `#input-bar` border — a leftover `border-top: none`
-     left left/right/bottom borders stacked under the hairline shadow ring. */
+  /* The docked card's real border would stack under the hairline ring. */
   border: none;
   border-radius: var(--radius-lg);
-  /* Floats over the chat gradient: keep the hairline ring, add real depth. */
   box-shadow:
     0 0 0 1px var(--border),
     var(--shadow-lg);
-  /* Centered on both axes rather than pinned to the bottom, so the even margin
-     this variant wants is --spacing-xl top and bottom, not the docked card's
-     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
-     card so a long draft can't push past the pane's edges. */
+  /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
-.pane-chat.composer-centered .prompt-input {
+.pane-chat.is-activity-idle .prompt-input {
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-.pane-chat.composer-centered .input-footer {
+.pane-chat.is-activity-idle .input-footer {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.pane-chat.is-activity-home .conversation {
+  /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
+     takes the pane above the docked composer. */
+  display: none;
+}
+.pane-chat.is-activity-home .conversation:has(> .thread-roadmap-origin:not([hidden])) {
+  /* A drafted roadmap thread still needs its back-link above the Activity home. */
+  display: flex;
+  flex: 0 0 auto;
+  padding-bottom: 0;
+}
+.pane-chat.is-activity-home .conversation > :not(.thread-roadmap-origin) {
+  display: none;
 }
 .conversation {
   flex: 1 1 0;
@@ -939,6 +985,9 @@
   grid-row: 1 / -1;
   /* Chat is only hidden by being underneath, so the cover must be opaque. */
   background: var(--bg-base);
+}
+.three-pane.is-projects-collapsed.is-right-panel-maximized > .pane-files {
+  left: 0;
 }
 .pane-files-body {
   flex: 1;
@@ -1369,41 +1418,53 @@
   overflow: hidden;
   min-height: 0;
 }
+.pr-list-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-xs);
+}
 .pr-list-number {
   flex-shrink: 0;
-  width: 36px;
   font-size: var(--font-size-2xs);
-  font-weight: 600;
   font-family: var(--font-mono);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .pr-list-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.pr-list-row.is-selected .pr-list-title {
+  font-weight: 600;
+}
+.pr-list-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-2xs);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.pr-list-repo {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.pr-list-ci {
+.pr-list-checks-label {
   flex-shrink: 0;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  margin-left: var(--spacing-xs);
-  border-radius: 50%;
-  background: transparent;
+  white-space: nowrap;
 }
-.pr-list-ci-success {
-  background: var(--success);
+.pr-list-checks-label[data-state='failure'] {
+  color: var(--error);
 }
-.pr-list-ci-failure {
-  background: var(--error);
+.pr-list-checks-label[data-state='pending'] {
+  color: var(--warning);
 }
-.pr-list-ci-pending {
-  background: var(--warning);
-}
-.pr-list-ci-loading {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-  opacity: 0.5;
-}
-/* no_checks keeps the transparent default — an empty slot, no dot. */
 .pr-list-agent-badge {
   flex-shrink: 0;
   margin-left: var(--spacing-xs);
@@ -1438,26 +1499,47 @@
 }
 .pr-viewer-host {
   gap: 0;
+  container-type: inline-size;
 }
 .pr-detail-sections {
   display: flex;
   flex-shrink: 0;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-md);
+  gap: 0;
+  padding: 0 var(--spacing-xs);
   border-bottom: 1px solid var(--border);
 }
 .pr-detail-sections:empty {
   display: none;
 }
 .pr-detail-section {
-  padding: var(--spacing-sm) 0;
-  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-xs);
+  color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 .pr-detail-section[aria-pressed='true'] {
   color: var(--text-primary);
   border-bottom-color: var(--accent);
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.pr-section-count {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: max-content;
+  min-width: calc(20px * var(--ui-scale));
+  aspect-ratio: 1;
+  line-height: 1;
+  font-size: var(--font-size-2xs);
+  font-weight: 400;
+  padding: 0 var(--spacing-xs);
+  border-radius: 50%;
+  background: var(--bg-muted);
 }
 .pr-activity {
   flex: 1;
@@ -1467,53 +1549,166 @@
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
-.pr-activity-notice,
-.pr-comment-meta {
-  color: var(--text-muted);
+.pr-activity-notice {
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
 }
 .pr-comment {
-  padding: var(--spacing-md) 0;
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--spacing-md);
+  overflow: hidden;
 }
 .pr-comment-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.pr-comment-avatar {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: calc(24px * var(--ui-scale));
+  height: calc(24px * var(--ui-scale));
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-size: var(--font-size-2xs);
+}
+.pr-comment-author {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: var(--spacing-xs) var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+  min-width: 0;
+}
+.pr-comment-author strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.pr-comment-meta time {
+  font-size: var(--font-size-2xs);
+}
+.pr-review-state {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 var(--spacing-xs);
+  font-size: var(--font-size-2xs);
+}
+.pr-review-state-changes_requested {
+  color: var(--error);
+  border-color: var(--error);
+}
+.pr-review-state-approved {
+  color: var(--success);
+  border-color: var(--success);
+}
+.message-text.pr-comment-body {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.pr-comment-body > :first-child {
+  margin-top: 0;
+}
+.pr-comment-body > :last-child {
+  margin-bottom: 0;
+}
+.pr-comment-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.pr-comment-body .code-block-shell {
+  min-width: 0;
+}
+@container (max-width: 380px) {
+  .pr-section-count {
+    display: none;
+  }
+  .pr-comment-meta time {
+    grid-column: 2 / -1;
+  }
 }
 .pr-activity-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
   color: var(--accent);
-  font-size: inherit;
+  font-size: var(--font-size-xs);
   text-align: left;
 }
 .pr-activity-link:hover {
   text-decoration: underline;
 }
+.pr-check-group {
+  margin-top: var(--spacing-md);
+}
+.pr-check-group-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+summary.pr-check-group-heading {
+  cursor: pointer;
+  list-style: none;
+}
+summary.pr-check-group-heading::-webkit-details-marker {
+  display: none;
+}
+.pr-check-group[open] .pr-check-chevron {
+  transform: rotate(90deg);
+}
+.pr-check-count {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
 .pr-check-row {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
-.pr-check-name {
+.pr-check-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
 }
-.pr-check-state {
-  color: var(--text-muted);
+.pr-check-name {
+  overflow-wrap: anywhere;
 }
-.pr-check-state-success {
+.pr-check-state {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.pr-check-icon {
+  display: inline-flex;
+  padding-top: var(--spacing-xs);
+}
+.pr-check-state-success,
+.pr-check-tone-success {
   color: var(--success);
 }
-.pr-check-state-failure {
+.pr-check-state-failure,
+.pr-check-tone-failure {
   color: var(--error);
 }
-.pr-check-state-pending {
+.pr-check-state-pending,
+.pr-check-tone-pending {
   color: var(--warning);
 }
 .pr-viewer-meta {
@@ -1528,31 +1723,93 @@
 .pr-viewer-files:empty {
   display: none;
 }
-.pr-viewer-title-row {
+.pr-viewer-repo-line {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
 }
-/* <h4>: the PR title is a utility heading in a dense side pane, not a page
-   masthead, so it stays in the interface family (docs/ui-taste.md). */
+.pr-viewer-repo-line > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-viewer-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+/* A PR title is a utility heading, so it stays in the interface family. */
 .pr-viewer-title {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
-  line-height: var(--line-height-base);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.pr-viewer-number {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
 }
 .pr-viewer-subtitle {
-  margin-top: 4px;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.pr-viewer-subtitle code {
+  font-size: var(--font-size-2xs);
+}
+.pr-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-right: var(--spacing-xs);
+}
+.pr-lifecycle .chat-pr-status {
+  margin-left: 0;
 }
 .pr-viewer-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+.pr-more-actions {
+  position: relative;
+  margin-left: auto;
+}
+.pr-more-toggle {
+  list-style: none;
+}
+.pr-more-toggle::-webkit-details-marker {
+  display: none;
+}
+.pr-actions-menu {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.pr-actions-menu .ui-btn {
+  justify-content: flex-start;
 }
 /* Open on GitHub / thread links are compact ghost kit buttons and the
    lifecycle actions (Rerun CI, Approve, …) compact secondary ones (ui.css). */
@@ -1567,12 +1824,16 @@
 .pr-viewer-badges {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+.pr-viewer-badges:empty {
+  display: none;
 }
 .pr-badge {
   font-size: var(--font-size-xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1584,6 +1845,13 @@
 .pr-badge-approved {
   color: var(--success);
   border-color: var(--success);
+}
+.pr-description-meta {
+  display: flex;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font: var(--font-size-xs) var(--font-family);
+  margin-bottom: var(--spacing-md);
 }
 .pr-viewer-description {
   flex-shrink: 0;
@@ -1599,6 +1867,11 @@
   flex: 1;
   max-height: none;
   min-height: 0;
+}
+.pr-viewer-files.pr-viewer-files-fill {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 .pr-viewer-files {
   flex-shrink: 0;
@@ -1619,18 +1892,30 @@
   color: var(--text-muted);
   background: none;
   border: none;
-  cursor: pointer;
   font-family: inherit;
   text-align: left;
-}
-.pr-files-header:hover {
-  color: var(--text-primary);
 }
 .pr-files-list {
   padding-bottom: var(--spacing-xs);
 }
 .pr-file-row {
   padding-left: var(--spacing-md);
+}
+.pr-file-row .git-change-path {
+  flex: 1;
+  min-width: 0;
+}
+.pr-file-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: var(--spacing-xs);
+  font: var(--font-size-2xs) var(--font-mono);
+}
+.pr-additions {
+  color: var(--change-added);
+}
+.pr-deletions {
+  color: var(--change-deleted);
 }
 .pr-empty-state {
   line-height: var(--line-height-base);

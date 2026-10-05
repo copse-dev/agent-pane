@@ -30,6 +30,7 @@
 // behind bot protection and are commonly blocked from sandboxes. Both flags are
 // opt-in for exactly that reason — a plain run is offline and deterministic.
 
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
@@ -542,7 +543,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   )
 }
 
-const invokedDirectly = process.argv[1]?.endsWith('sync-model-cards.mts') === true
+const invokedDirectly = isDirectExecution(import.meta.url, 'sync-model-cards')
 if (invokedDirectly) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err))

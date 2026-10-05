@@ -220,6 +220,27 @@ describe('aggregate usage', () => {
     assert.equal(formatPeriodHeadline(summary.day), 'Cost unavailable · 2 cloud models')
   })
 
+  it('round-trips a bounded hosting provider label and drops anything else', () => {
+    const base = {
+      at: NOW,
+      model: 'openrouter:x-ai/grok-4.5',
+      source: 'agent',
+      inputTokens: 5,
+      outputTokens: 1,
+    }
+    const parsed = parseUsageEvents([
+      { ...base, hostingProvider: 'xAI' },
+      { ...base, hostingProvider: 42 },
+      { ...base, hostingProvider: '' },
+      { ...base, hostingProvider: 'x'.repeat(81) },
+    ])
+    assert.equal(parsed.length, 4, 'a bad label never drops the usage itself')
+    assert.deepEqual(
+      parsed.map((e) => e.hostingProvider),
+      ['xAI', undefined, undefined, undefined],
+    )
+  })
+
   it('parseUsageEvents drops malformed records', () => {
     const parsed = parseUsageEvents([
       { at: NOW, model: 'gpt-4o', inputTokens: 1, outputTokens: 2, source: 'agent' },
@@ -256,6 +277,36 @@ describe('aggregate usage', () => {
       },
     ])
     assert.equal(parsed?.serviceTierUsage, undefined)
+  })
+
+  it('repairs legacy fresh-only ACP ledger events on read, idempotently', () => {
+    const raw = [
+      {
+        at: NOW,
+        model: 'acp:claude-acp#opus',
+        source: 'agent',
+        inputTokens: 3,
+        outputTokens: 120,
+        cacheReadTokens: 40_000,
+        cacheCreationTokens: 1_200,
+      },
+      {
+        at: NOW,
+        model: 'acp:claude-acp#opus',
+        source: 'agent',
+        inputTokens: 41_203,
+        outputTokens: 1,
+        cacheReadTokens: 40_000,
+        cacheCreationTokens: 1_200,
+      },
+    ]
+    const parsed = parseUsageEvents(raw)
+    assert.deepEqual(
+      parsed.map((e) => e.inputTokens),
+      [41_203, 41_203],
+    )
+    // A ledger write persists the parsed events; reading them again changes nothing.
+    assert.deepEqual(parseUsageEvents(JSON.parse(JSON.stringify(parsed))), parsed)
   })
 
   it('pruneUsageEvents removes entries older than 90 days', () => {

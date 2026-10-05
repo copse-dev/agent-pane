@@ -57,6 +57,7 @@ export function mountActivityPanel(
   closeButton.addEventListener('click', close)
 
   const view = createActivityView(api, store, sources, deps, {
+    idPrefix: 'activity-panel',
     close,
     isShown: isOpen,
     fallbackFocus: () => {

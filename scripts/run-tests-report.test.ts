@@ -14,6 +14,7 @@ it('publishes the completed coverage-phase report after nested runners finish', 
       'scripts/run-tests.mts',
       'scripts/lib/test-filter.mts',
       'scripts/lib/module-relative-test-paths.mts',
+      'scripts/lib/tracked-test-tree.mts',
     ]) {
       await copyFile(join(process.cwd(), file), join(fixture, file))
     }
@@ -38,6 +39,13 @@ it('completed outer coverage report', () => {
 `,
     )
     const env: NodeJS.ProcessEnv = { ...process.env, CI: '1' }
+    for (const args of [
+      ['init', '-q'],
+      ['add', 'scripts', 'src'],
+    ]) {
+      const result = spawnSync('git', args, { cwd: fixture, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+    }
     delete env['NODE_TEST_CONTEXT']
     for (const phase of ['--bundle-only', '--test-only']) {
       const result = spawnSync(

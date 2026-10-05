@@ -78,16 +78,11 @@ import {
 } from '../export-thread.ts'
 import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { buildDebugTracePrompt, debugTraceThreadTitle } from '@shared/threads/debug-trace-prompt.ts'
-import {
-  formatFooterUsageDetail,
-  formatFooterUsageSummary,
-  resolveFooterUsage,
-} from '@shared/usage/footer-usage-summary.ts'
+import { formatFooterUsageDetail, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import {
   buildFooterUsageTooltip,
   type FooterUsageTooltipModel,
 } from '@shared/usage/footer-usage-tooltip.ts'
-import { createFooterUsagePopover } from './footer-usage-popover.ts'
 import { type ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
@@ -404,23 +399,12 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; recorded subagent
-  // runs are folded out (see `resolveFooterUsage`). Hover (or focus) for the
-  // explicit usage scopes, subagent total, and cost, like the context wheel
-  // next to it.
-  const usageBtn = el('span', {
-    class: 'footer-usage',
-    tabindex: '0',
-    role: 'note',
-    'aria-label': 'Token usage',
-  })
-  const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
+  usageGroup.append(contextWheel.root, queueIndicator)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -665,10 +649,6 @@ export function mountInputBar(
       showErrorToast('Debug trace failed', error)
     })
   }
-  usageBtn.addEventListener('mouseenter', usagePopover.show)
-  usageBtn.addEventListener('mouseleave', usagePopover.hide)
-  usageBtn.addEventListener('focus', usagePopover.show)
-  usageBtn.addEventListener('blur', usagePopover.hide)
 
   const checkoutErrorText = el('span', {
     class: 'composer-checkout-error-text composer-banner-text',
@@ -1449,9 +1429,8 @@ export function mountInputBar(
     queueIndicator.textContent = count === 1 ? '1 queued' : `${String(count)} queued`
   }
 
-  /** Footer label, the one-line detail (compact fallback) and the hover tooltip. */
+  /** The one-line usage detail (tooltip fallback) and the usage rows for the wheel hover. */
   function usageViews(): {
-    label: string
     detail: string
     tooltip: FooterUsageTooltipModel
   } | null {
@@ -1472,7 +1451,6 @@ export function mountInputBar(
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing }
     const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages })
     return {
-      label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
       tooltip,
     }
@@ -1506,10 +1484,7 @@ export function mountInputBar(
     const running = thread?.status === 'running'
     const acpContext = isAcpModel(footerChatModel())
     const usage = usageViews()
-    const compact = footerCompact.isCompact()
     const snapshot = thread?.contextSnapshot
-    const snapshotVisible =
-      !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01)
     const snapshotUsable =
       !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01
     const draftNonEmpty =
@@ -1528,7 +1503,6 @@ export function mountInputBar(
       !!lastBreakdown &&
       lastBreakdown.totalTokens > 0 &&
       (!snapshotUsable || draftNonEmpty)
-    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible
     // Always forward the estimated breakdown so already-run primary chats keep
     // the context-window breakdown on hover; `breakdownRing` controls whether it
     // also replaces the live snapshot fill (pre-send / fresh threads). While the
@@ -1536,24 +1510,13 @@ export function mountInputBar(
     // source then, and subagent/remote windows never produce a breakdown here.
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? (usage?.detail ?? null) : null,
+      usageLine: usage?.detail ?? null,
+      usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource:
         acpContext && snapshot?.source === 'agent-reported' ? 'Reported by ACP agent' : null,
     })
-    contextWheel.root.classList.toggle('is-interactive', tuckUsageIntoWheel)
-    if (!usage) {
-      usageBtn.hidden = true
-      usagePopover.render(null)
-    } else {
-      usageBtn.hidden = tuckUsageIntoWheel
-      usageBtn.textContent = usage.label
-      usageBtn.setAttribute('aria-label', usage.detail)
-      // Compact mode hides the counter and tucks usage into the wheel title —
-      // nothing left to hover, so drop the popover with it.
-      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip)
-    }
     footerOverflow?.update()
     updateContextFitWarning()
     updateCheckoutControl()
@@ -1861,7 +1824,6 @@ export function mountInputBar(
     if (!projectId || !thread) return
     const choice = checkoutChoice(id)
     const model = thread.model ?? store.getState().settings?.model
-    const baseBranch = branchControl.pendingBaseBranch(id)
     // A follow-up to the container (A14): a continuation run, not a turn of
     // the thread's own agent. Prose only — the guest gets no attachments.
     if (!targetSelect.hidden && targetSelect.value === 'container') {
@@ -1870,6 +1832,13 @@ export function mountInputBar(
       if (started) updateState()
       return
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
+    // The footer refresh is supplementary and may still be loading. Capture this
+    // owner's branch decision now and observe errors even on early-return paths;
+    // checkout awaits it before moving HEAD or creating a worktree.
+    const baseBranchResult = requiresCheckoutPreparation
+      ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)])
+      : null
     // Start workspace-scoped lookups while this submission still owns the
     // visible project. allSettled also observes failures on early-return paths.
     const invocationSources = Promise.allSettled([api.skills.list(), api.agents.list()])
@@ -1886,7 +1855,6 @@ export function mountInputBar(
     // carry gitBranch: validate that contract, but still read prompt state after
     // checkout because the transaction can move HEAD. Established threads cannot
     // move checkout here, so start their two independent Git reads together.
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
     const prefetchedGitState = requiresCheckoutPreparation
       ? null
       : await Promise.allSettled([
@@ -2048,6 +2016,9 @@ export function mountInputBar(
       checkoutPreparations.add(id)
       updateCheckoutControl()
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : undefined
+        if (branchDecision?.status === 'rejected') throw branchDecision.reason
+        const baseBranch = branchDecision?.status === 'fulfilled' ? branchDecision.value : undefined
         const prepared = await api.agent.prepareCheckout(
           projectId,
           id,
@@ -2450,12 +2421,23 @@ export function mountInputBar(
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content: string): void => {
+    quoteText: (content: string, reply = ''): void => {
       const quote = formatMarkdownQuote(content)
       const caret = composer.selectionStart
       const prevChar = caret > 0 ? composer.value[caret - 1] : undefined
       const needsLeadingBreak = prevChar !== undefined && prevChar !== '\n'
-      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n`)
+      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n${reply}`)
+      const quoteEnd = composer.selectionStart
+      composer.focus()
+      composer.setSelectionRange(quoteEnd, quoteEnd)
+      composer.el.scrollTop = composer.el.scrollHeight
+    },
+    sendQuotedReply: async (content: string, reply: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      attachmentHandlers.quoteText(content, reply)
+      await submit()
+      // The normal composer now owns any warning, retry or failed-send recovery.
+      return true
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,

@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -15,7 +15,7 @@ import { waitForAgentIdle } from './helpers.ts'
 describe('agent tasks in terminal tab', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-agent-tasks-project', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-agent-tasks-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       autoRunSandboxCommands: false,

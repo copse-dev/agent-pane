@@ -17,6 +17,12 @@ export interface UsageEvent extends ModelUsage {
   requestedServiceTier?: ServiceTier
   /** The OpenAI tier the completed response reports it actually used. */
   responseServiceTier?: ServiceTier
+  /**
+   * The upstream provider a router (OpenRouter) reports actually served this
+   * call; never inferred. Prompt caches are per upstream, so a change between
+   * consecutive calls explains a cache miss Copse's request bytes do not.
+   */
+  hostingProvider?: string
 }
 
 export interface UsageRecordInput extends ModelUsage {
@@ -29,4 +35,5 @@ export interface UsageRecordInput extends ModelUsage {
   estimated?: boolean
   requestedServiceTier?: ServiceTier
   responseServiceTier?: ServiceTier
+  hostingProvider?: string
 }

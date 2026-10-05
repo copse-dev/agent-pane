@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { cpSync, copyFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -94,7 +95,7 @@ export function pointHtmlAtMonacoBase(html: string, baseUrl: string): string {
 
 // `node scripts/copy-monaco-workers.mts <dir>` populates <dir> as a Monaco root.
 // Used by the demo-preview workflow to publish the shared vendor copy.
-if (process.argv[1]?.endsWith('copy-monaco-workers.mts') && process.argv[2] !== undefined) {
+if (isDirectExecution(import.meta.url, 'copy-monaco-workers') && process.argv[2] !== undefined) {
   populateMonacoRoot(resolve(process.argv[2]))
   console.log(`[monaco] populated ${process.argv[2]}`)
 }
