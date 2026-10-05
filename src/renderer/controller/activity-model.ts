@@ -1,7 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ThreadStatus } from '@shared/types'
 import { getSidebarThreads, projectDisplayName } from './projects.ts'
-import type { SidebarThread } from './sidebar-thread.ts'
+import { sidebarHasRun, type RunSignals } from './sidebar-thread.ts'
 import type { PendingApprovalSummary } from '../views/approval-dialog.ts'
 import type { PendingQuestionSummary } from '../views/ask-user-dialog.ts'
 
@@ -329,12 +329,12 @@ export function foldScheduleRuns(
 }
 
 /**
- * `settledAt` for a thread that has been prompted; none for a draft that never ran.
- * Reads the persisted `lastPromptAt`, never the transcript (a thread written before
- * that field existed learns it when first opened).
+ * `settledAt` for a thread that ever ran; none for a draft that never did.
+ * Decided from metadata only (see {@link sidebarHasRun}), never the transcript, so
+ * threads written before `lastPromptAt` existed still list without being opened.
  */
-function settledAtOf(thread: SidebarThread): Pick<ActivityThread, 'settledAt'> {
-  return thread.updatedAt !== undefined && thread.lastPromptAt !== undefined
+function settledAtOf(thread: RunSignals): Pick<ActivityThread, 'settledAt'> {
+  return thread.updatedAt !== undefined && sidebarHasRun(thread)
     ? { settledAt: thread.updatedAt }
     : {}
 }

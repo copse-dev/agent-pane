@@ -2543,6 +2543,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           ['refactor', 'Refactor auth', 'idle', 3_600_000 * 2],
           ['flaky', 'Fix the flaky sandbox test', 'error', 3_600_000 * 30],
           ['copy', 'Update onboarding copy', 'idle', 3_600_000 * 24 * 4],
+          // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+          ['legacy', 'Port the settings page', 'idle', 3_600_000 * 24 * 2],
           ['ancient', 'Rename the config keys', 'idle', 3_600_000 * 24 * 30],
         ] as const
       ).map(([slug, title, status, ago], index) => ({
@@ -2551,10 +2553,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         status,
         messages: [],
         messagesLoaded: false,
-        usage: { inputTokens: 0, outputTokens: 0 },
+        usage: { inputTokens: 1200, outputTokens: 300 },
         createdAt: Date.now() - ago - 60_000,
         updatedAt: Date.now() - ago,
-        lastPromptAt: Date.now() - ago - 30_000 - index,
+        ...(slug === 'legacy' ? {} : { lastPromptAt: Date.now() - ago - 30_000 - index }),
       })),
     ],
   },

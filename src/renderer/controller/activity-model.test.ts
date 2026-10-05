@@ -318,10 +318,16 @@ describe('deriveActivity', () => {
 })
 
 describe('collectActivityThreads', () => {
-  it('carries the persisted write time only for threads that were prompted', () => {
+  it('carries the persisted write time only for threads that ran', () => {
     setThreadCacheForTest('p2', [
       metadataOnly('cached-run', { updatedAt: 40, lastPromptAt: 30 }),
       metadataOnly('cached-draft', { updatedAt: 50 }),
+      // Written before lastPromptAt existed: no prompt time, history on disk. It ran
+      // (usage), so it lists without its transcript being loaded.
+      metadataOnly('cached-legacy', {
+        updatedAt: 45,
+        usage: { inputTokens: 900, outputTokens: 50 },
+      }),
     ])
     const store = createStore({
       projects: [
@@ -337,6 +343,7 @@ describe('collectActivityThreads', () => {
         ['active', 60],
         ['cached-run', 40],
         ['cached-draft', undefined],
+        ['cached-legacy', 45],
       ],
     )
   })

@@ -30,6 +30,11 @@ export interface SidebarThread {
   archivedAt?: number
   automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
+  /**
+   * Whether the thread was ever run, from metadata alone (see {@link sidebarHasRun}).
+   * Set at compaction; a live thread derives it on demand.
+   */
+  everRan?: boolean
   /** The live transcript. Absent once the entry has been compacted. */
   messages?: Message[]
   /** `false` when `messages` is empty only because it was never read off disk. */
@@ -87,11 +92,32 @@ export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
   return undefined
 }
 
+/** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */
+export type RunSignals = SidebarThread &
+  Partial<Pick<Thread, 'usage' | 'workingBrief' | 'autoTitleCount'>>
+
+/**
+ * Whether a thread was ever run, without reading its transcript.
+ *
+ * `lastPromptAt` is the direct signal, but a thread written before it existed has
+ * none until its transcript is first loaded. Those threads still leave marks in
+ * their meta: token usage, the working brief set on the first message, or an
+ * auto-title pass. Any of them says it ran; an untouched draft has none. A thread
+ * that ran without recording any (a zero-usage provider on an old build) is
+ * missed until it is opened.
+ */
+export function sidebarHasRun(thread: RunSignals): boolean {
+  if (thread.everRan !== undefined) return thread.everRan
+  if (thread.lastPromptAt !== undefined) return true
+  if (thread.workingBrief !== undefined || thread.autoTitleCount !== undefined) return true
+  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0
+}
+
 /**
  * Snapshot a thread down to its sidebar row, releasing the transcript. Idempotent
  * — compacting an already-compacted entry returns the same fields.
  */
-export function compactSidebarThread(thread: SidebarThread): SidebarThread {
+export function compactSidebarThread(thread: RunSignals): SidebarThread {
   const lastPromptAt = sidebarLastPromptAt(thread)
   return {
     id: thread.id,
@@ -100,6 +126,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
     ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
+    everRan: sidebarHasRun(thread),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),

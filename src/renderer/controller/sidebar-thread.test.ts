@@ -135,3 +135,21 @@ test('compacting is idempotent', () => {
   )
   assert.deepEqual(compactSidebarThread(once), once)
 })
+
+test('compaction records from metadata alone whether a thread ever ran', () => {
+  const base: SidebarThread = { id: 't', title: 't', status: 'idle', updatedAt: 5 }
+  const usage = { inputTokens: 0, outputTokens: 0 }
+  // An untouched draft: nothing in its meta says it ran.
+  assert.equal(compactSidebarThread({ ...base, usage }).everRan, false)
+  // A legacy thread: no lastPromptAt, but token usage was recorded.
+  assert.equal(
+    compactSidebarThread({ ...base, usage: { inputTokens: 10, outputTokens: 0 } }).everRan,
+    true,
+  )
+  assert.equal(compactSidebarThread({ ...base, workingBrief: 'goal' }).everRan, true)
+  assert.equal(compactSidebarThread({ ...base, lastPromptAt: 3 }).everRan, true)
+  // Idempotent: a compacted entry keeps its answer and its write time.
+  const once = compactSidebarThread({ ...base, lastPromptAt: 3 })
+  assert.deepEqual(compactSidebarThread(once), once)
+  assert.equal(once.updatedAt, 5)
+})

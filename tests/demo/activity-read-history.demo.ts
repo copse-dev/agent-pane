@@ -16,10 +16,12 @@ describe('Activity home recent history', () => {
     const rows = await $$('#activity-home .activity-row')
     const text = await Promise.all(rows.map((row) => row.getText()))
     // The stored failure sits inside the window, so it still shows; failures lead.
-    expect(text).toHaveLength(3)
+    expect(text).toHaveLength(4)
     expect(text[0]).toContain('Fix the flaky sandbox test')
     expect(text[1]).toContain('Refactor auth')
-    expect(text[2]).toContain('Update onboarding copy')
+    // Written before lastPromptAt existed: it lists from its usage, unopened.
+    expect(text[2]).toContain('Port the settings page')
+    expect(text[3]).toContain('Update onboarding copy')
     expect(text.join('\n')).not.toContain('Rename the config keys')
     await saveAppScreenshot('activity-read-history.png')
   })
