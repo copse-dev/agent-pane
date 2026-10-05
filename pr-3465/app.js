@@ -81842,7 +81842,7 @@ function visibleText(node2) {
     const elNode = node2;
     if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
       return CHIP_CHAR;
-    if (elNode.tagName === "BR") return "\n";
+    if (elNode.tagName === "BR") return elNode.hasAttribute("data-composer-tail") ? "" : "\n";
   }
   let out = "";
   for (const child of Array.from(node2.childNodes)) out += visibleText(child);
@@ -81941,6 +81941,7 @@ function mountComposerEditor() {
     return chip2;
   }
   function insertChip(chip2) {
+    root.querySelector("br[data-composer-tail]")?.remove();
     const selection2 = editor.isFocused() ? selectionInRoot() : null;
     if (selection2) {
       const range = selection2.getRangeAt(0);
@@ -82102,6 +82103,7 @@ function mountComposerEditor() {
       insertChip(makeThreadChip(id, state));
     },
     insertText(text2) {
+      root.querySelector("br[data-composer-tail]")?.remove();
       const node2 = document.createTextNode(text2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
@@ -82114,6 +82116,11 @@ function mountComposerEditor() {
         sel.addRange(range);
       } else {
         root.append(node2);
+      }
+      if (visibleText(root).endsWith("\n")) {
+        const tail = document.createElement("br");
+        tail.setAttribute("data-composer-tail", "");
+        root.append(tail);
       }
       emitInput();
     },
@@ -85199,8 +85206,8 @@ function bindSelectionQuote(transcript, actions) {
         const top2 = Number.parseFloat(popup.style.top) || bounds.top;
         const left2 = Number.parseFloat(popup.style.left) || bounds.left;
         const bottom = Math.min(bounds.bottom, window.innerHeight - 8);
-        popup.style.top = `${Math.max(8, Math.min(top2, bottom - size2.height))}px`;
-        popup.style.left = `${Math.max(8, Math.min(left2, window.innerWidth - size2.width - 8))}px`;
+        popup.style.top = `${String(Math.max(8, Math.min(top2, bottom - size2.height)))}px`;
+        popup.style.left = `${String(Math.max(8, Math.min(left2, window.innerWidth - size2.width - 8)))}px`;
       } else {
         dismiss();
       }
@@ -85215,7 +85222,10 @@ function bindSelectionQuote(transcript, actions) {
     if (top < visibleTop) {
       top = selection2.bottom + gap;
       if (top + size.height > visibleBottom) {
-        transcript.style.setProperty("--selection-reply-space", `${size.height + 2 * gap}px`);
+        transcript.style.setProperty(
+          "--selection-reply-space",
+          `${String(size.height + 2 * gap)}px`
+        );
         reservedSpace = true;
         const before = transcript.scrollTop;
         transcript.scrollTop += Math.max(0, selection2.bottom + gap + size.height - visibleBottom);
@@ -85232,8 +85242,8 @@ function bindSelectionQuote(transcript, actions) {
       bounds.left + gap,
       Math.min(selection2.left, bounds.right - size.width - gap)
     );
-    popup.style.left = `${Math.max(gap, Math.min(left, window.innerWidth - size.width - gap))}px`;
-    popup.style.top = `${top}px`;
+    popup.style.left = `${String(Math.max(gap, Math.min(left, window.innerWidth - size.width - gap)))}px`;
+    popup.style.top = `${String(top)}px`;
   };
   const refresh = () => {
     if (hasDraft() || dragging || suppressed || popup.contains(document.activeElement)) return;
@@ -85317,6 +85327,10 @@ function bindSelectionQuote(transcript, actions) {
   sendButton.addEventListener("click", () => void sendReply());
   const onPointerDown = (event) => {
     if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.button === 2) {
+      suppressed = true;
+      return;
+    }
     dragging = event.button === 0;
     if (dragging) suppressed = false;
     if (!hasDraft()) dismiss();
@@ -85335,6 +85349,11 @@ function bindSelectionQuote(transcript, actions) {
     }
   };
   const onContextMenu = () => {
+    const selection2 = document.getSelection();
+    if (selection2 && selectedRange && transcript.contains(selectedRange.startContainer) && transcript.contains(selectedRange.endContainer) && (selection2.isCollapsed || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode))) {
+      selection2.removeAllRanges();
+      selection2.addRange(selectedRange.cloneRange());
+    }
     if (hasDraft()) return;
     suppressed = true;
     dismiss();
@@ -87449,6 +87468,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let stickyImagePrompt = null;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -87571,8 +87591,34 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
+  function syncStickyImagePreview() {
+    const prompt = stickyImagePrompt;
+    if (!prompt?.isConnected) return;
+    const promptStyle = window.getComputedStyle(prompt);
+    if (promptStyle.position !== "sticky") {
+      prompt.classList.remove("is-preview-compact");
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const listStyle = window.getComputedStyle(list);
+    const previous = prompt.previousElementSibling;
+    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+  }
+  function refreshStickyImagePrompt() {
+    const prompts = list.querySelectorAll(
+      ":scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)"
+    );
+    const latest = prompts[prompts.length - 1];
+    const next = latest?.querySelector(".message-images") ? latest : null;
+    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    stickyImagePrompt = next;
+    syncStickyImagePreview();
+  }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
+    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -87593,6 +87639,8 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  listResizeObserver?.observe(list);
   list.addEventListener(
     "wheel",
     (event) => {
@@ -87686,6 +87734,7 @@ function mountConversation(root, store2, api2) {
     const before = list.scrollTop;
     list.scrollTop = top;
     const landed = list.scrollTop;
+    syncStickyImagePreview();
     lastScrollTop = landed;
     if (landed !== before) {
       lastProgrammaticScrollTop = landed;
@@ -88040,6 +88089,7 @@ function mountConversation(root, store2, api2) {
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
     finalizeMessageEl(threadId, msgId);
     if (batched) return;
+    if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
@@ -88426,6 +88476,7 @@ function mountConversation(root, store2, api2) {
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     if (!thread) {
@@ -88449,6 +88500,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -88751,6 +88803,7 @@ function mountConversation(root, store2, api2) {
     selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
+    listResizeObserver?.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
       clearTimeout(timer);
