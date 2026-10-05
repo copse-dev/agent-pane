@@ -8,7 +8,7 @@ import {
   seedEmptyProject,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { composerText, setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -19,6 +19,28 @@ const COMMAND = `node -e "const fs=require('node:fs');fs.writeFileSync(process.a
 
 function removeSignals(): void {
   for (const path of [READY, RELEASE, DONE]) rmSync(path, { force: true })
+}
+
+async function submitPrompt(): Promise<void> {
+  await $('.submit-btn').click()
+  await browser.waitUntil(
+    async () => {
+      const continueHere = $('.composer-branch-continue-btn')
+      if (await continueHere.isDisplayed()) {
+        await continueHere.click()
+        await continueHere.waitForDisplayed({ reverse: true })
+        await $('.submit-btn').click()
+      }
+      const sendAnyway = $('.composer-dirty-send-btn')
+      if (await sendAnyway.isDisplayed()) await sendAnyway.click()
+      return (await composerText()).trim() === ''
+    },
+    {
+      timeout: 30_000,
+      interval: 100,
+      timeoutMsg: 'The prompt did not submit after accepting checkout warnings',
+    },
+  )
 }
 
 describe('Send now preserves a running shell', function () {
@@ -60,7 +82,7 @@ describe('Send now preserves a running shell', function () {
       ],
     })
     await setComposerValue('Run the workspace check.')
-    await submitComposer()
+    await submitPrompt()
     await browser.waitUntil(
       async () => {
         const dialog = $('#approval-dialog')
@@ -72,7 +94,7 @@ describe('Send now preserves a running shell', function () {
     )
     const originalPid = readFileSync(READY, 'utf8')
     await setComposerValue('Please explain what you are checking.')
-    await submitComposer()
+    await submitPrompt()
     await expect($('.conversation-queued .queued-send-now')).toBeDisplayed()
     await $('.prompt-input').click()
     await browser.keys(['Control', 'Enter'])
@@ -121,7 +143,7 @@ describe('Send now preserves a running shell', function () {
         ],
       })
       await setComposerValue('Clean up the temporary build output.')
-      await submitComposer()
+      await submitPrompt()
       const dialog = $('#approval-dialog')
       await browser.waitUntil(
         async () => (await dialog.isExisting()) && (await dialog.getProperty('open')) === true,
