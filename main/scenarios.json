@@ -128,6 +128,10 @@
     "label": "Activity home after a project finishes waiting"
   },
   {
+    "id": "activity-home-automation-fold",
+    "label": "Activity home with automation runs folded"
+  },
+  {
     "id": "activity-home-question",
     "label": "Activity home with a question waiting"
   },

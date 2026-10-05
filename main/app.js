@@ -21110,6 +21110,13 @@ function chevronRightIcon(className = DEFAULT) {
 function chevronDownIcon(className = DEFAULT) {
   return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
 }
+function clockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "clock",
+    ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z", "M12 6v6l4 2"],
+    className
+  );
+}
 function chevronUpIcon(className = DEFAULT) {
   return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
 }
@@ -67539,6 +67546,72 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-automation-fold",
+        label: "Activity home with automation runs folded",
+        project: project("demo-activity-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the empty active one. Beside a working thread and one
+        // finished chat, a schedule has settled five clean runs and another three failed
+        // ones: each folds into a single row instead of eight.
+        threads: [
+          {
+            id: "demo-activity-fold-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-fold-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-fold-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          ...[
+            ["docs", "Docs freshness", "idle", 5],
+            ["deps", "Nightly dependency check", "error", 3]
+          ].flatMap(
+            ([schedule, name, status, count]) => Array.from({ length: count }, (_3, index) => ({
+              id: `demo-activity-fold-${schedule}-${String(index)}`,
+              title: name,
+              status,
+              messages: [],
+              messagesLoaded: false,
+              unreadAt: FIXED_TIME - (index + 2) * 36e5,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              automation: {
+                scheduleId: `demo-activity-fold-${schedule}`,
+                scheduleName: name,
+                triggeredAt: FIXED_TIME - (index + 2) * 36e5
+              },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          )
+        ]
+      },
+      {
         id: "activity-home-question",
         label: "Activity home with a question waiting",
         project: project("demo-activity-home-question-project"),
@@ -71945,6 +72018,7 @@ function deriveActivity(input2) {
     }))
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -71984,17 +72058,57 @@ function deriveActivity(input2) {
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
   working.sort(newestFirst);
   recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const { folds: folded, rest: single } = foldScheduleRuns(recent, scheduleOf);
   const groups = [
     { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
     { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
     {
       id: "recent",
       label: GROUP_LABELS.recent,
-      rows: recent.slice(0, RECENT_ROW_LIMIT),
-      total: recent.length
+      rows: [...folded, ...single.slice(0, RECENT_ROW_LIMIT)],
+      total: folded.length + single.length
     }
   ];
   return groups;
+}
+function foldScheduleRuns(recent, scheduleOf) {
+  const buckets = /* @__PURE__ */ new Map();
+  const keyOf = (row2) => {
+    const schedule = row2.threadId === null ? void 0 : scheduleOf.get(row2.threadId);
+    if (!schedule || row2.projectId === null) return null;
+    return `${row2.state}:${row2.projectId}:${schedule.id}`;
+  };
+  for (const row2 of recent) {
+    const key = keyOf(row2);
+    if (key === null) continue;
+    buckets.set(key, [...buckets.get(key) ?? [], row2]);
+  }
+  const folds = [];
+  const folded = /* @__PURE__ */ new Set();
+  for (const [bucket, runs] of buckets) {
+    const first = runs[0];
+    if (!first || runs.length < SCHEDULE_FOLD_AT) continue;
+    const kind = first.state === "failed" ? "failed" : "finished";
+    const name = first.threadId === null ? void 0 : scheduleOf.get(first.threadId)?.name;
+    for (const run2 of runs) folded.add(run2);
+    folds.push({
+      key: `fold:${bucket}`,
+      state: first.state,
+      threadId: null,
+      threadTitle: name ?? first.threadTitle,
+      projectId: first.projectId,
+      projectName: first.projectName,
+      want: `${String(runs.length)} runs`,
+      detail: null,
+      requestId: null,
+      requestType: null,
+      approval: null,
+      since: first.since,
+      fold: { kind, runs }
+    });
+  }
+  folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
+  return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
@@ -72008,7 +72122,13 @@ function collectActivityThreads(store2) {
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
         projectId: project2.id,
-        projectName
+        projectName,
+        ...thread.automation ? {
+          schedule: {
+            id: thread.automation.scheduleId,
+            name: thread.automation.scheduleName
+          }
+        } : {}
       });
     }
   }
@@ -72021,7 +72141,13 @@ function collectActivityThreads(store2) {
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
       projectId: project2.id,
-      projectName: projectDisplayName(project2)
+      projectName: projectDisplayName(project2),
+      ...carried.thread.automation ? {
+        schedule: {
+          id: carried.thread.automation.scheduleId,
+          name: carried.thread.automation.scheduleName
+        }
+      } : {}
     });
   }
   return [...out.values()];
@@ -72068,11 +72194,12 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_projects();
     RECENT_ROW_LIMIT = 10;
+    SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
     GROUP_LABELS = {
@@ -72662,6 +72789,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let collapsed = defaultCollapsed();
   const seenNeedsYou = /* @__PURE__ */ new Set();
   let projectFilter = null;
+  const expandedFolds = /* @__PURE__ */ new Set();
+  const foldRunKeys = /* @__PURE__ */ new Set();
   let userChose = false;
   let renderScheduled = false;
   let cancelRender = null;
@@ -72740,6 +72869,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const input2 = el("textarea", {
       class: "activity-answer-input",
       rows: "2",
+      placeholder: "Or type an answer\u2026",
       "data-control": `answer-${String(index)}`,
       "aria-labelledby": questionId
     });
@@ -72858,10 +72988,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
-    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    const actions = [openThreadButton(row2)];
+    const decide = [];
     if (row2.state === "needs-approval" && row2.approval) {
       const title = row2.approval.title;
-      actions.push(
+      decide.push(
         button(
           "ui-btn-secondary activity-reject",
           "reject",
@@ -72882,7 +73013,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
         `Approve: ${title} (${row2.threadTitle})`
       );
       approve.disabled = settling;
-      actions.push(approve);
+      decide.push(approve);
     } else if (row2.state === "needs-answer" && row2.requestId) {
       const requestId = row2.requestId;
       const answer = button(
@@ -72896,8 +73027,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       );
       answer.dataset["requestId"] = requestId;
       answer.disabled = settling || !hasAnswer(requestId);
-      actions.push(answer);
+      decide.push(answer);
     }
+    if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
   function renderDetail(row2, at3) {
@@ -72933,7 +73065,58 @@ function createActivityView(api2, store2, sources3, deps, host) {
       detailActions(row2)
     );
   }
+  function drawnRows(group) {
+    return group.rows.flatMap((row2) => {
+      if (!row2.fold || !expandedFolds.has(row2.key)) return [row2];
+      for (const run2 of row2.fold.runs) foldRunKeys.add(run2.key);
+      return [row2, ...row2.fold.runs];
+    });
+  }
+  function foldElement(row2, at3, fold) {
+    const open2 = expandedFolds.has(row2.key);
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-row-open activity-fold-toggle",
+        "aria-expanded": open2 ? "true" : "false",
+        "aria-label": `${STATE_LONG[row2.state]}: ${row2.threadTitle}, ${row2.want}${row2.projectName ? `, ${row2.projectName}` : ""}`
+      },
+      clockIcon("ui-icon ui-icon-sm activity-glyph"),
+      el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
+      elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
+        "time",
+        { class: "activity-age", datetime: new Date(row2.since).toISOString() },
+        formatAge(elapsed)
+      ),
+      el(
+        "span",
+        { class: "activity-row-second" },
+        el("span", { class: "activity-state" }, fold.kind === "failed" ? "Failed" : "Done"),
+        el("span", { class: "activity-want-text" }, row2.want),
+        (open2 ? chevronDownIcon : chevronRightIcon)("ui-icon ui-icon-sm activity-fold-chevron")
+      ),
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
+    );
+    toggle.addEventListener("click", () => {
+      if (expandedFolds.has(row2.key)) expandedFolds.delete(row2.key);
+      else expandedFolds.add(row2.key);
+      renderNow();
+    });
+    return el(
+      "li",
+      {
+        class: "activity-row activity-fold",
+        "data-row-key": row2.key,
+        "data-state": row2.state,
+        "data-fold": fold.kind
+      },
+      toggle
+    );
+  }
   function rowElement(row2, at3) {
+    if (row2.fold) return foldElement(row2, at3, row2.fold);
     const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
     const selected = row2.key === selectedKey;
     const second = el(
@@ -72978,7 +73161,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return el(
       "li",
       {
-        class: "activity-row",
+        class: foldRunKeys.has(row2.key) ? "activity-row activity-fold-run" : "activity-row",
         "data-row-key": row2.key,
         "data-state": row2.state,
         ...selected ? { "data-selected": "true" } : {},
@@ -73002,7 +73185,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       row2.since,
       row2.key === selectedKey,
       elapsed === null ? null : formatAge(elapsed),
-      rowLabel(row2, at3)
+      rowLabel(row2, at3),
+      row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
+      foldRunKeys.has(row2.key)
     ]);
   }
   function cachedRow(row2, at3) {
@@ -73071,7 +73256,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       entry.section.querySelector(".activity-group-toggle")?.setAttribute("aria-expanded", folded ? "false" : "true");
     }
     entry.rows.hidden = folded;
-    patchChildren(entry.rows, folded ? [] : group.rows.map((row2) => cachedRow(row2, at3)));
+    patchChildren(entry.rows, folded ? [] : drawnRows(group).map((row2) => cachedRow(row2, at3)));
     return entry.section;
   }
   function projectStats(groups) {
@@ -73101,7 +73286,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     stats.append(
       need > 0 ? el("span", { class: "activity-strip-need" }, `${String(need)} need you`) : el("span", {}, "All clear")
     );
-    if (working > 0) stats.append(el("span", {}, `${String(working)} working`));
+    if (working > 0) {
+      stats.append(el("span", { class: "activity-strip-working" }, `${String(working)} working`));
+    }
     const node2 = el(
       "button",
       {
@@ -73152,7 +73339,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     );
   }
   function rowOpeners() {
-    return [...list.querySelectorAll(".activity-row-open")];
+    return [
+      ...list.querySelectorAll(".activity-row-open:not(.activity-fold-toggle)")
+    ];
   }
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
@@ -73189,6 +73378,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (toggled !== void 0) return { area: "toggle", group: toggled };
     const projectKey = active2.dataset["projectKey"];
     if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    if (foldKey !== void 0) return { area: "fold", key: foldKey };
     if (list.contains(active2)) return { area: "list" };
     if (detail.contains(active2)) {
       return {
@@ -73206,6 +73397,16 @@ function createActivityView(api2, store2, sources3, deps, host) {
         preventScroll: true
       });
       return;
+    }
+    if (spot.area === "fold") {
+      const fold = [...list.querySelectorAll(".activity-fold")].find(
+        (node2) => node2.dataset["rowKey"] === spot.key
+      );
+      const toggle = fold?.querySelector(".activity-fold-toggle");
+      if (toggle) {
+        toggle.focus({ preventScroll: true });
+        return;
+      }
     }
     if (spot.area === "strip") {
       const card = [...strip.querySelectorAll("[data-project-key]")].find(
@@ -73252,6 +73453,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelRender = null;
     const at3 = now();
     lastRenderAt = at3;
+    foldRunKeys.clear();
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
@@ -73295,7 +73497,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
     const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
     needsYouSignature = signature;
-    const rows = groups.filter((group) => !(host.collapsibleGroups && collapsed.has(group.id))).flatMap((group) => group.rows);
+    const shownGroups = groups.filter(
+      (group) => !(host.collapsibleGroups && collapsed.has(group.id))
+    );
+    const rows = shownGroups.flatMap((group) => drawnRows(group)).filter((row2) => !row2.fold);
     const urgent = rows[0];
     if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key;
     let selected = rows.find((row2) => row2.key === selectedKey);
@@ -73333,7 +73538,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       if (!needsYou || needsYou.rows.length === 0) children.push(quiet);
       children.push(...populated.map((group) => groupElement(group, at3)));
       patchChildren(list, children);
-      const live = new Set(rows.map((row2) => row2.key));
+      const live = new Set(shownGroups.flatMap((group) => drawnRows(group)).map((row2) => row2.key));
       for (const rowKey2 of rowCache.keys()) {
         if (!live.has(rowKey2)) rowCache.delete(rowKey2);
       }
@@ -73425,6 +73630,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     rowCache.clear();
     stripCache.clear();
     collapsed = defaultCollapsed();
+    expandedFolds.clear();
     seenNeedsYou.clear();
     projectFilter = null;
     userChose = false;
