@@ -144,6 +144,43 @@ describe('model skill activation', () => {
     assert.match(await turn.read('small', undefined, signal), /Skill activated by the model: small/)
   })
 
+  it('bounds parallel supporting reads and repeated aliases with the shared UTF-8 context budget', async () => {
+    const meta = await skill('supporting-budget')
+    const body = '🦉'.repeat(10_000)
+    await writeFile(join(meta.skillRoot, 'reference.md'), body)
+    await symlink('reference.md', join(meta.skillRoot, 'alias.md'))
+    const turn = createSkillActivationTurn([], ['read_skill'])
+    await turn.read(meta.name, undefined, signal)
+    const reads = await Promise.allSettled(
+      ['reference.md', 'alias.md', 'reference.md', 'alias.md'].map((path) =>
+        turn.read(meta.name, path, signal),
+      ),
+    )
+    assert.equal(reads.filter((read) => read.status === 'fulfilled').length, 3)
+    const rejected = reads.find((read) => read.status === 'rejected')
+    assert.ok(rejected)
+    assert.match(String(rejected.reason), /context limit/)
+    await assert.rejects(turn.read(meta.name, 'reference.md', signal), /context limit/)
+    // A rejected read must neither clear the activation nor spend the remaining budget.
+    await writeFile(join(meta.skillRoot, 'small.md'), 'small reference')
+    assert.match(await turn.read(meta.name, 'small.md', signal), /small reference/)
+    assert.match(await turn.read(meta.name, undefined, signal), /already active/)
+  })
+
+  it('shares supporting-file and activation budgets across skills, including explicit invocation', async () => {
+    const manual = await skill('manual-budget', { disableModelInvocation: true })
+    await skill('model-budget', {}, 'x'.repeat(41_000))
+    await skill('over-budget', {}, 'x'.repeat(10_000))
+    await writeFile(join(manual.skillRoot, 'reference.md'), 'x'.repeat(41_000))
+    const turn = createSkillActivationTurn([manual.name], ['read_skill'])
+    await turn.read('model-budget', undefined, signal)
+    await turn.read(manual.name, 'reference.md', signal)
+    await turn.read(manual.name, 'reference.md', signal)
+    await assert.rejects(turn.read('over-budget', undefined, signal), /context limit/)
+    await assert.rejects(turn.read(manual.name, 'reference.md', signal), /context limit/)
+    assert.match(await turn.read(manual.name, undefined, signal), /explicitly invoked/)
+  })
+
   it('keeps budgets isolated between turns and rejects skills added or replaced after the catalog snapshot', async () => {
     await skill('first')
     const first = createSkillActivationTurn([], ['read_skill'])

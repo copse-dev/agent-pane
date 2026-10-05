@@ -29,6 +29,18 @@ export function createSkillActivationTurn(
   const active = new Map<string, Promise<void>>()
   let contextBytes = 0
 
+  function chargeContext(block: string): number {
+    const bytes = Buffer.byteLength(block, 'utf-8')
+    if (contextBytes + bytes > MAX_MODEL_SKILL_CONTEXT_BYTES) {
+      throw new Error(
+        `Model skill context limit reached (${String(MAX_MODEL_SKILL_CONTEXT_BYTES)} bytes per turn). Continue with the skills already loaded.`,
+      )
+    }
+    // Charge synchronously after I/O: concurrent reads cannot spend the same remaining bytes.
+    contextBytes += bytes
+    return bytes
+  }
+
   return {
     async read(name: string, path: string | undefined, signal: AbortSignal): Promise<string> {
       signal.throwIfAborted()
@@ -70,7 +82,9 @@ export function createSkillActivationTurn(
         if (file.skillPath === (await realpath(meta.skillPath))) {
           return `Skill "${meta.name}" instructions are already loaded in this turn. Do not load them again through a file alias.`
         }
-        return buildModelActivatedSkillBlock(file, meta, true)
+        const block = buildModelActivatedSkillBlock(file, meta, true)
+        chargeContext(block)
+        return block
       }
       if (active.size >= MAX_MODEL_ACTIVATED_SKILLS) {
         throw new Error(
@@ -93,13 +107,7 @@ export function createSkillActivationTurn(
           )
         }
         const block = buildModelActivatedSkillBlock(file, meta)
-        const bytes = Buffer.byteLength(block, 'utf-8')
-        if (contextBytes + bytes > MAX_MODEL_SKILL_CONTEXT_BYTES) {
-          throw new Error(
-            `Model skill context limit reached (${String(MAX_MODEL_SKILL_CONTEXT_BYTES)} bytes per turn). Continue with the skills already loaded.`,
-          )
-        }
-        contextBytes += bytes
+        const bytes = chargeContext(block)
         return `${block}\n\nContext estimate: approximately ${String(Math.ceil(block.length / 4))} tokens (${String(bytes)} UTF-8 bytes); ${String(contextBytes)} skill-context bytes loaded this turn.`
       } catch (error) {
         active.delete(meta.skillPath)
