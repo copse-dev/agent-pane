@@ -21070,6 +21070,867 @@ var init_storage_maintenance_panel = __esm({
   }
 });
 
+// src/renderer/dom/outline-icon.ts
+function outlineIcon(label, paths, className) {
+  const svg2 = document.createElementNS(SVG_NS, "svg");
+  svg2.setAttribute("class", className);
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("width", ICON_SIZE);
+  svg2.setAttribute("height", ICON_SIZE);
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  svg2.setAttribute("data-icon", label);
+  svg2.setAttribute("fill", "none");
+  svg2.setAttribute("stroke", "currentColor");
+  svg2.setAttribute("stroke-width", "1.75");
+  svg2.setAttribute("stroke-linecap", "round");
+  svg2.setAttribute("stroke-linejoin", "round");
+  for (const d3 of paths) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d3);
+    svg2.append(path);
+  }
+  return svg2;
+}
+var SVG_NS, ICON_SIZE;
+var init_outline_icon = __esm({
+  "src/renderer/dom/outline-icon.ts"() {
+    SVG_NS = "http://www.w3.org/2000/svg";
+    ICON_SIZE = "16";
+  }
+});
+
+// src/renderer/dom/icons.ts
+function playIcon(className = DEFAULT) {
+  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
+}
+function chevronRightIcon(className = DEFAULT) {
+  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
+}
+function chevronDownIcon(className = DEFAULT) {
+  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
+}
+function clockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "clock",
+    ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z", "M12 6v6l4 2"],
+    className
+  );
+}
+function chevronUpIcon(className = DEFAULT) {
+  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
+}
+function arrowLeftIcon(className = DEFAULT) {
+  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
+}
+function arrowRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
+}
+function arrowDownIcon(className = DEFAULT) {
+  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
+}
+function refreshIcon(className = DEFAULT) {
+  return outlineIcon(
+    "refresh",
+    [
+      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+      "M21 3v5h-5",
+      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+      "M8 16H3v5"
+    ],
+    className
+  );
+}
+function externalLinkIcon(className = DEFAULT) {
+  return outlineIcon(
+    "external-link",
+    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
+    className
+  );
+}
+function closeIcon(className = DEFAULT) {
+  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
+}
+function plusIcon(className = DEFAULT) {
+  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
+}
+function monitorIcon(className = DEFAULT) {
+  return outlineIcon(
+    "monitor",
+    [
+      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+      "M8 21h8",
+      "M12 17v4"
+    ],
+    className
+  );
+}
+function downloadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "download",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+    className
+  );
+}
+function uploadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "upload",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
+    className
+  );
+}
+function maximizeIcon(className = DEFAULT) {
+  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
+}
+function minimizeIcon(className = DEFAULT) {
+  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
+}
+function moreHorizontalIcon(className = DEFAULT) {
+  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function moreVerticalIcon(className = DEFAULT) {
+  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
+}
+function runningStatusIcon(className = DEFAULT) {
+  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function checkIcon(className = DEFAULT) {
+  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
+}
+function shieldIcon(className = DEFAULT) {
+  return outlineIcon(
+    "shield",
+    [
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+    ],
+    className
+  );
+}
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    className
+  );
+}
+function banIcon(className = DEFAULT) {
+  return outlineIcon(
+    "ban",
+    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
+    className
+  );
+}
+function dotIcon(className = DEFAULT) {
+  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
+}
+function circleIcon(className = DEFAULT) {
+  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
+}
+function spinnerIcon(className = DEFAULT) {
+  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
+}
+function minusIcon(className = DEFAULT) {
+  return outlineIcon("minus", ["M5 12h14"], className);
+}
+function warningIcon(className = DEFAULT) {
+  return outlineIcon(
+    "triangle-alert",
+    [
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
+      "M12 9v4",
+      "M12 17h.01"
+    ],
+    className
+  );
+}
+function searchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "search",
+    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
+    className
+  );
+}
+function fileTextIcon(className = DEFAULT) {
+  return outlineIcon(
+    "file-text",
+    [
+      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
+      "M14 2v6h6",
+      "M8 13h8",
+      "M8 17h8"
+    ],
+    className
+  );
+}
+function imageIcon(className = DEFAULT) {
+  return outlineIcon(
+    "image",
+    [
+      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
+      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
+      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
+      "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
+    ],
+    className
+  );
+}
+function zapIcon(className = DEFAULT) {
+  return outlineIcon(
+    "zap",
+    [
+      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
+    ],
+    className
+  );
+}
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
+  return outlineIcon(
+    "git-pull-request",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M13 6h3a2 2 0 0 1 2 2v7",
+      "M6 9v12"
+    ],
+    className
+  );
+}
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
+function penLineIcon(className = DEFAULT) {
+  return outlineIcon(
+    "pen-line",
+    [
+      "M12 20h9",
+      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
+    ],
+    className
+  );
+}
+function slashIcon(className = DEFAULT) {
+  return outlineIcon("slash", ["M20 4 4 20"], className);
+}
+function arrowUpRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
+}
+function squareIcon(className = DEFAULT) {
+  return outlineIcon(
+    "square",
+    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+    className
+  );
+}
+function eraserIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eraser",
+    [
+      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
+      "M22 21H7",
+      "m5 11 9 9"
+    ],
+    className
+  );
+}
+function undoIcon(className = DEFAULT) {
+  return outlineIcon(
+    "undo",
+    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
+    className
+  );
+}
+function trashIcon(className = DEFAULT) {
+  return outlineIcon(
+    "trash",
+    [
+      "M3 6h18",
+      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+    ],
+    className
+  );
+}
+var DEFAULT;
+var init_icons = __esm({
+  "src/renderer/dom/icons.ts"() {
+    init_outline_icon();
+    DEFAULT = "ui-icon";
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("h2", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost attachment-preview-close",
+      "aria-label": "Close"
+    },
+    closeIcon()
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
+  dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
+    activeToken += 1;
+    const closedToken = activeToken;
+    releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    init_icons();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    returnFocus = null;
+    activeToken = 0;
+  }
+});
+
+// src/renderer/views/settings/source-row.ts
+function makeSourceRowTitle(title, action) {
+  if (!action) {
+    const span = document.createElement("span");
+    span.className = "sources-row-title";
+    span.textContent = title;
+    return span;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sources-row-title sources-row-title-btn";
+  button.textContent = title;
+  button.title = action.label;
+  button.setAttribute("aria-label", action.label);
+  button.addEventListener("click", action.run);
+  return button;
+}
+function makeSourceRow(title, badge, detail, opts = {}) {
+  const row2 = document.createElement("div");
+  row2.className = "sources-row";
+  if (opts.titleAttr) row2.title = opts.titleAttr;
+  const header = document.createElement("div");
+  header.className = "sources-row-header";
+  const primary = document.createElement("div");
+  primary.className = "sources-row-primary";
+  const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
+  primary.append(titleEl2);
+  if (opts.hoverDetail) {
+    const hoverEl = document.createElement("span");
+    hoverEl.className = "sources-row-hover-detail";
+    const pathEl = document.createElement("bdi");
+    pathEl.textContent = opts.hoverDetail;
+    hoverEl.append(pathEl);
+    primary.append(hoverEl);
+  }
+  header.append(primary);
+  if (badge) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
+    badgeEl.textContent = badge;
+    header.append(badgeEl);
+  }
+  for (const extra of opts.extraBadges ?? []) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = `ui-badge sources-badge ${extra.className}`;
+    badgeEl.textContent = extra.text;
+    header.append(badgeEl);
+  }
+  row2.append(header);
+  if (detail) {
+    const detailEl = document.createElement("div");
+    detailEl.className = "sources-row-detail";
+    detailEl.textContent = detail;
+    row2.append(detailEl);
+  }
+  return row2;
+}
+var init_source_row = __esm({
+  "src/renderer/views/settings/source-row.ts"() {
+  }
+});
+
+// src/renderer/views/settings/sources-section.ts
+function createSourcesSection({
+  root,
+  api: api2,
+  onTrusted,
+  onHeadingsChanged
+}) {
+  let generation = 0;
+  function makeAgentRows(result) {
+    const rows = [];
+    for (const agent of result.agents) {
+      const extraBadges = [
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: "ui-badge-literal" }
+      ];
+      if (agent.unsupportedFields.length > 0) {
+        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
+      }
+      const detail = [
+        agent.description,
+        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
+      ].filter(isNonEmptyString).join(" \xB7 ");
+      rows.push(
+        makeSourceRow(agent.name, agent.source, detail || null, {
+          extraBadges,
+          titleAttr: agent.agentPath,
+          hoverDetail: agent.agentPath
+        })
+      );
+    }
+    for (const shadowed of result.shadowed) {
+      rows.push(
+        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
+          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
+          titleAttr: shadowed.agentPath,
+          hoverDetail: shadowed.agentPath
+        })
+      );
+    }
+    for (const skipped of result.skipped) {
+      rows.push(
+        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
+          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
+          titleAttr: skipped.agentPath,
+          hoverDetail: skipped.agentPath
+        })
+      );
+    }
+    return rows;
+  }
+  function basenameOf(path) {
+    return path.split(/[/\\]/).pop() ?? path;
+  }
+  function makeHookRow(h3) {
+    const extraBadges = [];
+    if (h3.supported === false) {
+      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
+    }
+    if (h3.sandbox === false) {
+      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
+    }
+    if (h3.lastError) {
+      extraBadges.push({ text: "error", className: "sources-badge-error" });
+    }
+    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
+    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
+    const detail = `${familyLabel} \xB7 ${h3.command}`;
+    const row2 = makeSourceRow(title, h3.scope, detail, {
+      extraBadges
+    });
+    if (h3.lastError) {
+      const errorEl = document.createElement("div");
+      errorEl.className = "sources-row-error";
+      errorEl.textContent = `Last run failed: ${h3.lastError}`;
+      row2.append(errorEl);
+    }
+    addHookTester(row2, h3);
+    return row2;
+  }
+  function addHookTester(row2, h3) {
+    const header = row2.querySelector(".sources-row-header");
+    if (!header) return;
+    const testBtn = document.createElement("button");
+    testBtn.type = "button";
+    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
+    testBtn.textContent = "Test";
+    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
+    header.append(testBtn);
+    const result = document.createElement("div");
+    result.className = "hook-test";
+    result.hidden = true;
+    row2.append(result);
+    testBtn.addEventListener("click", () => {
+      void runHookTest(h3, testBtn, result);
+    });
+  }
+  async function runHookTest(h3, btn, result) {
+    btn.disabled = true;
+    btn.textContent = "Testing\u2026";
+    result.hidden = false;
+    result.innerHTML = "";
+    const pending = document.createElement("div");
+    pending.className = "hook-test-summary";
+    pending.textContent = "Running dry-run\u2026";
+    result.append(pending);
+    try {
+      const req = {
+        family: h3.family,
+        event: h3.event,
+        command: h3.command,
+        source: h3.source,
+        scope: h3.scope,
+        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
+      };
+      const res = await api2.hooks.test(req);
+      renderHookTestResult(result, res);
+    } catch {
+      result.innerHTML = "";
+      const err2 = document.createElement("div");
+      err2.className = "hook-test-summary hook-test-error";
+      err2.textContent = "Dry-run failed to start.";
+      result.append(err2);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Test";
+    }
+  }
+  function renderHookTestResult(container, res) {
+    container.innerHTML = "";
+    if (!res.ran) {
+      const notice = document.createElement("div");
+      notice.className = "hook-test-summary hook-test-error";
+      notice.textContent = res.error ?? "This hook could not be dry-run.";
+      container.append(notice);
+      return;
+    }
+    const summary = document.createElement("div");
+    summary.className = "hook-test-summary";
+    const chips = [];
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
+    if (res.timedOut) chips.push("timed out");
+    else if (res.spawnError) chips.push("failed to start");
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
+    );
+    chips.push(`${String(res.durationMs ?? 0)} ms`);
+    chips.push(res.parseOk ? "parsed ok" : "parse failed");
+    if (res.sandboxed) chips.push("sandboxed");
+    for (const text2 of chips) {
+      const chip2 = document.createElement("span");
+      chip2.className = "hook-test-chip";
+      chip2.textContent = text2;
+      summary.append(chip2);
+    }
+    container.append(summary);
+    if (res.outcomeSummary) {
+      const outcome = document.createElement("div");
+      outcome.className = "hook-test-outcome";
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
+      container.append(outcome);
+    }
+    appendHookTestStream(container, "stdin", res.stdin ?? "");
+    appendHookTestStream(container, "stdout", res.stdout ?? "");
+    appendHookTestStream(container, "stderr", res.stderr ?? "");
+  }
+  function appendHookTestStream(container, label, text2) {
+    const block = document.createElement("div");
+    block.className = "hook-test-stream";
+    const heading = document.createElement("div");
+    heading.className = "hook-test-stream-label";
+    heading.textContent = label;
+    const pre = document.createElement("pre");
+    pre.textContent = text2.length > 0 ? text2 : "(empty)";
+    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
+    block.append(heading, pre);
+    container.append(block);
+  }
+  function makeHookWarningRow(w2) {
+    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
+      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
+    });
+    row2.classList.add("sources-row-warning");
+    return row2;
+  }
+  function fillSourceList(selector, rows, emptyText) {
+    const list = qsRequired(root, selector);
+    list.innerHTML = "";
+    if (rows.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "sources-empty";
+      empty.textContent = emptyText;
+      list.append(empty);
+      return;
+    }
+    for (const row2 of rows) list.append(row2);
+  }
+  function openInstructionFile(file2) {
+    const session = openAttachmentPreview({
+      kind: "text",
+      title: file2.name,
+      ariaLabel: `Instruction file: ${file2.path}`,
+      status: `Loading ${file2.name}\u2026`
+    });
+    void api2.instructions.read(file2.path).then((content) => {
+      const text2 = document.createElement("pre");
+      text2.className = "attachment-preview-text";
+      text2.textContent = content;
+      session.setContent(text2);
+    }).catch((error62) => {
+      session.setStatus(errorMessage(error62));
+    });
+  }
+  function applyWorkspaceTrusted(statuses) {
+    onTrusted(statuses);
+    void refreshSources();
+  }
+  async function trustWorkspaceFromBadge(button) {
+    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
+    const detail = [
+      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
+      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
+    ].filter(Boolean).join(" ");
+    const confirmed = await showConfirmDialog({
+      message: "Trust this workspace?",
+      detail,
+      confirmLabel: "Trust workspace"
+    });
+    if (!confirmed) return;
+    button.disabled = true;
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    statusEl.textContent = "Trusting workspace\u2026";
+    const pending = api2.workspace.setTrusted(true).then(
+      (statuses) => ({ statuses }),
+      (error62) => ({ error: error62 })
+    );
+    await refreshSources();
+    const result = await pending;
+    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
+    else statusEl.textContent = errorMessage(result.error);
+  }
+  function makeInstructionRow(file2) {
+    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
+    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
+    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
+    const row2 = makeSourceRow(file2.name, badge, detail, {
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
+      titleAction: {
+        label: `Open ${file2.name}`,
+        run: () => {
+          openInstructionFile(file2);
+        }
+      }
+    });
+    if (file2.trusted) return row2;
+    const badgeEl = row2.querySelector(".sources-badge");
+    if (badgeEl) {
+      const trustBtn = document.createElement("button");
+      trustBtn.type = "button";
+      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
+      trustBtn.textContent = badgeEl.textContent;
+      trustBtn.title = `Trust this workspace to load ${file2.name}`;
+      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
+      trustBtn.addEventListener("click", () => {
+        void trustWorkspaceFromBadge(trustBtn);
+      });
+      badgeEl.replaceWith(trustBtn);
+    }
+    return row2;
+  }
+  async function refreshSources() {
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    const request = ++generation;
+    statusEl.textContent = "Loading\u2026";
+    try {
+      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
+        api2.instructions.list(),
+        api2.cursorRules.list(),
+        api2.skills.list(),
+        api2.agents.list(),
+        api2.hooks.list()
+      ]);
+      if (request !== generation) return;
+      fillSourceList(
+        "#sources-instructions-list",
+        instructions.map((f4) => makeInstructionRow(f4)),
+        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+      );
+      if (instructions.some((f4) => f4.discoveryTruncated)) {
+        const note = document.createElement("span");
+        note.className = "sources-empty";
+        note.id = "sources-instructions-truncated";
+        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
+        qsRequired(root, "#sources-instructions-list").append(note);
+      }
+      const kindLabel2 = {
+        always: "always",
+        auto: "auto",
+        agent: "agent",
+        manual: "manual"
+      };
+      fillSourceList(
+        "#sources-cursor-rules-list",
+        cursorRules.map((r2) => {
+          const bits = [formatByteSize(r2.bytes)];
+          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
+          if (r2.description) bits.push(r2.description);
+          bits.push(r2.path);
+          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
+        }),
+        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
+      );
+      qsRequired(root, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
+      if (!root.querySelector(".settings-content")?.classList.contains("settings-searching"))
+        onHeadingsChanged();
+      fillSourceList(
+        "#sources-skills-list",
+        skills.map(
+          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
+            // Keep the resting list uncluttered: path lives on hover (and as a
+            // native tooltip fallback). Description stays as the always-visible
+            // detail; when a skill has none, the hover line is the only path.
+            titleAttr: s16.skillPath,
+            hoverDetail: s16.skillPath
+          })
+        ),
+        "No skills discovered."
+      );
+      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
+      fillSourceList(
+        "#sources-hooks-list",
+        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
+        "No Cursor or Claude Code hooks configured."
+      );
+      statusEl.textContent = "";
+    } catch {
+      if (request !== generation) return;
+      statusEl.textContent = "Failed to load sources.";
+    }
+  }
+  qsRequired(root, "#sources-reload-btn").addEventListener("click", () => {
+    void refreshSources();
+  });
+  return {
+    refresh: refreshSources,
+    invalidate: () => {
+      generation += 1;
+    }
+  };
+}
+var init_sources_section = __esm({
+  "src/renderer/views/settings/sources-section.ts"() {
+    init_errors4();
+    init_file_bytes();
+    init_nullish2();
+    init_helpers();
+    init_attachment_preview();
+    init_confirm_dialog();
+    init_source_row();
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical2 = CANONICAL_WORDS.get(word);
@@ -21185,7 +22046,7 @@ var init_auto_approval = __esm({
 });
 
 // src/shared/types/state.ts
-var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
+var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THREAD_GROUP_MODES, isThreadGroupMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
 var init_state = __esm({
   "src/shared/types/state.ts"() {
     init_member_of2();
@@ -21193,6 +22054,8 @@ var init_state = __esm({
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
     THREAD_SORT_MODES = ["activity", "created", "title"];
     isThreadSortMode = memberOf(THREAD_SORT_MODES);
+    THREAD_GROUP_MODES = ["project", "status", "none"];
+    isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
     THEME_PREFERENCES = ["system", "light", "dark"];
     DEFAULT_THEME_PREFERENCE = "dark";
     isThemePreference = memberOf(THEME_PREFERENCES);
@@ -34093,443 +34956,6 @@ var init_advisor_strategy_plugin = __esm({
   }
 });
 
-// src/renderer/dom/outline-icon.ts
-function outlineIcon(label, paths, className) {
-  const svg2 = document.createElementNS(SVG_NS, "svg");
-  svg2.setAttribute("class", className);
-  svg2.setAttribute("viewBox", "0 0 24 24");
-  svg2.setAttribute("width", ICON_SIZE);
-  svg2.setAttribute("height", ICON_SIZE);
-  svg2.setAttribute("aria-hidden", "true");
-  svg2.setAttribute("focusable", "false");
-  svg2.setAttribute("data-icon", label);
-  svg2.setAttribute("fill", "none");
-  svg2.setAttribute("stroke", "currentColor");
-  svg2.setAttribute("stroke-width", "1.75");
-  svg2.setAttribute("stroke-linecap", "round");
-  svg2.setAttribute("stroke-linejoin", "round");
-  for (const d3 of paths) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d3);
-    svg2.append(path);
-  }
-  return svg2;
-}
-var SVG_NS, ICON_SIZE;
-var init_outline_icon = __esm({
-  "src/renderer/dom/outline-icon.ts"() {
-    SVG_NS = "http://www.w3.org/2000/svg";
-    ICON_SIZE = "16";
-  }
-});
-
-// src/renderer/dom/icons.ts
-function playIcon(className = DEFAULT) {
-  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
-}
-function chevronRightIcon(className = DEFAULT) {
-  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
-}
-function chevronDownIcon(className = DEFAULT) {
-  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
-}
-function chevronUpIcon(className = DEFAULT) {
-  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
-}
-function arrowLeftIcon(className = DEFAULT) {
-  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
-}
-function arrowRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
-}
-function arrowDownIcon(className = DEFAULT) {
-  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
-}
-function arrowUpDownIcon(className = DEFAULT) {
-  return outlineIcon(
-    "arrow-up-down",
-    ["m21 16-4 4-4-4", "M17 20V4", "m3 8 4-4 4 4", "M7 4v16"],
-    className
-  );
-}
-function refreshIcon(className = DEFAULT) {
-  return outlineIcon(
-    "refresh",
-    [
-      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-      "M21 3v5h-5",
-      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-      "M8 16H3v5"
-    ],
-    className
-  );
-}
-function externalLinkIcon(className = DEFAULT) {
-  return outlineIcon(
-    "external-link",
-    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
-    className
-  );
-}
-function closeIcon(className = DEFAULT) {
-  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
-}
-function plusIcon(className = DEFAULT) {
-  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
-}
-function monitorIcon(className = DEFAULT) {
-  return outlineIcon(
-    "monitor",
-    [
-      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
-      "M8 21h8",
-      "M12 17v4"
-    ],
-    className
-  );
-}
-function downloadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "download",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
-    className
-  );
-}
-function uploadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "upload",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
-    className
-  );
-}
-function maximizeIcon(className = DEFAULT) {
-  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
-}
-function minimizeIcon(className = DEFAULT) {
-  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
-}
-function moreHorizontalIcon(className = DEFAULT) {
-  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function moreVerticalIcon(className = DEFAULT) {
-  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
-}
-function runningStatusIcon(className = DEFAULT) {
-  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function checkIcon(className = DEFAULT) {
-  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
-}
-function shieldIcon(className = DEFAULT) {
-  return outlineIcon(
-    "shield",
-    [
-      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-    ],
-    className
-  );
-}
-function bellIcon(className = DEFAULT) {
-  return outlineIcon(
-    "bell",
-    [
-      "M10.27 21a2 2 0 0 0 3.46 0",
-      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
-    ],
-    className
-  );
-}
-function messageQuestionIcon(className = DEFAULT) {
-  return outlineIcon(
-    "message-circle-question",
-    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
-    className
-  );
-}
-function banIcon(className = DEFAULT) {
-  return outlineIcon(
-    "ban",
-    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
-    className
-  );
-}
-function dotIcon(className = DEFAULT) {
-  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
-}
-function circleIcon(className = DEFAULT) {
-  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
-}
-function spinnerIcon(className = DEFAULT) {
-  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
-}
-function minusIcon(className = DEFAULT) {
-  return outlineIcon("minus", ["M5 12h14"], className);
-}
-function warningIcon(className = DEFAULT) {
-  return outlineIcon(
-    "triangle-alert",
-    [
-      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
-      "M12 9v4",
-      "M12 17h.01"
-    ],
-    className
-  );
-}
-function searchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "search",
-    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
-    className
-  );
-}
-function fileTextIcon(className = DEFAULT) {
-  return outlineIcon(
-    "file-text",
-    [
-      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
-      "M14 2v6h6",
-      "M8 13h8",
-      "M8 17h8"
-    ],
-    className
-  );
-}
-function imageIcon(className = DEFAULT) {
-  return outlineIcon(
-    "image",
-    [
-      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
-      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
-      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
-      "M9 9h.01"
-    ],
-    className
-  );
-}
-function sparkleIcon(className = DEFAULT) {
-  return outlineIcon(
-    "sparkle",
-    [
-      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
-    ],
-    className
-  );
-}
-function zapIcon(className = DEFAULT) {
-  return outlineIcon(
-    "zap",
-    [
-      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
-    ],
-    className
-  );
-}
-function gitBranchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-branch",
-    [
-      "M6 3v12",
-      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M15 6a9 9 0 0 0-9 9"
-    ],
-    className
-  );
-}
-function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
-  return outlineIcon(
-    "git-pull-request",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M13 6h3a2 2 0 0 1 2 2v7",
-      "M6 9v12"
-    ],
-    className
-  );
-}
-function gitMergeIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-merge",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 21V9a9 9 0 0 0 9 9"
-    ],
-    className
-  );
-}
-function penLineIcon(className = DEFAULT) {
-  return outlineIcon(
-    "pen-line",
-    [
-      "M12 20h9",
-      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
-    ],
-    className
-  );
-}
-function slashIcon(className = DEFAULT) {
-  return outlineIcon("slash", ["M20 4 4 20"], className);
-}
-function arrowUpRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
-}
-function squareIcon(className = DEFAULT) {
-  return outlineIcon(
-    "square",
-    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
-    className
-  );
-}
-function eraserIcon(className = DEFAULT) {
-  return outlineIcon(
-    "eraser",
-    [
-      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
-      "M22 21H7",
-      "m5 11 9 9"
-    ],
-    className
-  );
-}
-function undoIcon(className = DEFAULT) {
-  return outlineIcon(
-    "undo",
-    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
-    className
-  );
-}
-function trashIcon(className = DEFAULT) {
-  return outlineIcon(
-    "trash",
-    [
-      "M3 6h18",
-      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
-      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-    ],
-    className
-  );
-}
-var DEFAULT;
-var init_icons = __esm({
-  "src/renderer/dom/icons.ts"() {
-    init_outline_icon();
-    DEFAULT = "ui-icon";
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("h2", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "ui-btn ui-btn-ghost attachment-preview-close",
-      "aria-label": "Close"
-    },
-    closeIcon()
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") event.stopPropagation();
-  });
-  dialog.addEventListener("close", () => {
-    const resolveFocusTarget = returnFocus;
-    returnFocus = null;
-    activeToken += 1;
-    const closedToken = activeToken;
-    releaseCurrent();
-    queueMicrotask(() => {
-      if (activeToken !== closedToken || dialog?.open) return;
-      const focusTarget = resolveFocusTarget?.();
-      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
-    });
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) {
-    const activeElement = document.activeElement;
-    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
-    returnFocus = options.returnFocus ?? defaultReturnFocus;
-    previewDialog.showModal();
-  }
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    init_icons();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    returnFocus = null;
-    activeToken = 0;
-  }
-});
-
 // node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
@@ -43387,10 +43813,16 @@ var init_model_options = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
+function contextMenuClosedByPressOn(anchor2) {
+  const press = outsidePress;
+  outsidePress = null;
+  return press !== null && press.target !== null && anchor2.contains(press.target) && Date.now() - press.at < 1e3;
+}
 function showContextMenu(clientX, clientY, items, withinDialog) {
   dismissOpenContextMenu?.();
-  if (items.every(isHeading)) return;
+  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return;
   const buttons = items.map((entry) => {
+    if (isSeparator(entry)) return el("div", { class: "context-menu-separator", role: "separator" });
     if (isHeading(entry)) {
       return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
     }
@@ -43400,11 +43832,21 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
       {
         type: "button",
         class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
+        role: item.checked === void 0 ? "menuitem" : item.toggle === true ? "menuitemcheckbox" : "menuitemradio",
         ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
       },
       el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+      ...item.detail === void 0 ? [] : [el("span", { class: "context-menu-item-detail" }, item.detail)],
+      ...item.toggle === true && item.checked !== void 0 ? [
+        el(
+          "span",
+          {
+            class: item.checked ? "context-menu-switch is-on" : "context-menu-switch",
+            "aria-hidden": "true"
+          },
+          el("i")
+        )
+      ] : item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
     );
     if (item.checked === true) btn.classList.add("is-checked");
     if (item.disabled) btn.disabled = true;
@@ -43438,7 +43880,9 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
   };
   const onPointerDown = (e3) => {
-    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
+    const target = e3.target instanceof Node ? e3.target : null;
+    if (menu.contains(target)) return;
+    outsidePress = { target, at: Date.now() };
     dismiss();
   };
   const onKeyDown = (e3) => {
@@ -43467,13 +43911,15 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
 function dismissContextMenu() {
   dismissOpenContextMenu?.();
 }
-var isHeading, dismissOpenContextMenu;
+var isHeading, isSeparator, dismissOpenContextMenu, outsidePress;
 var init_context_menu = __esm({
   "src/renderer/dom/context-menu.ts"() {
     init_helpers();
     init_icons();
     isHeading = (entry) => "heading" in entry;
+    isSeparator = (entry) => "separator" in entry;
     dismissOpenContextMenu = null;
+    outsidePress = null;
   }
 });
 
@@ -58547,11 +58993,22 @@ function sidebarPrRefs(thread) {
   }
   return thread.prRefs ?? [];
 }
+function sidebarLastPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  const messages = thread.messages ?? [];
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const message2 = messages[i2];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
 function compactSidebarThread(thread) {
+  const lastPromptAt = sidebarLastPromptAt(thread);
   return {
     id: thread.id,
     title: thread.title,
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
@@ -58564,6 +59021,7 @@ var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
     init_github_pr_url2();
     init_thread_pr_status2();
+    init_thread_sort();
   }
 });
 
@@ -61433,6 +61891,7 @@ function mountSettingsDialog(store2, api2) {
           searchInput.value = "";
           applySearch("");
         }
+        sourcesSection.invalidate();
         showSection(id);
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
@@ -61454,241 +61913,23 @@ function mountSettingsDialog(store2, api2) {
       }
     });
   });
+  const sourcesSection = createSourcesSection({
+    root: overlay,
+    api: api2,
+    onTrusted: (statuses) => {
+      renderMcpServers(statuses);
+    },
+    onHeadingsChanged: () => {
+      renderNavSubheadings(activeSection);
+    }
+  });
+  const refreshSources = sourcesSection.refresh;
+  function applyWorkspaceTrusted(statuses) {
+    renderMcpServers(statuses);
+    void refreshSources();
+  }
   async function refreshLocalModelSelects() {
     await modelRoutingSection.refresh();
-  }
-  function makeSourceRowTitle(title, action) {
-    if (!action) {
-      const span = document.createElement("span");
-      span.className = "sources-row-title";
-      span.textContent = title;
-      return span;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "sources-row-title sources-row-title-btn";
-    button.textContent = title;
-    button.title = action.label;
-    button.setAttribute("aria-label", action.label);
-    button.addEventListener("click", action.run);
-    return button;
-  }
-  function makeAgentRows(result) {
-    const rows = [];
-    for (const agent of result.agents) {
-      const extraBadges = [
-        // The container is a directory name (`.cursor`, `.claude`): a literal,
-        // shown as written rather than as a sentence-case label.
-        { text: agent.container, className: "ui-badge-literal" }
-      ];
-      if (agent.unsupportedFields.length > 0) {
-        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
-      }
-      const detail = [
-        agent.description,
-        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
-      ].filter(isNonEmptyString).join(" \xB7 ");
-      rows.push(
-        makeSourceRow(agent.name, agent.source, detail || null, {
-          extraBadges,
-          titleAttr: agent.agentPath,
-          hoverDetail: agent.agentPath
-        })
-      );
-    }
-    for (const shadowed of result.shadowed) {
-      rows.push(
-        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
-          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
-          titleAttr: shadowed.agentPath,
-          hoverDetail: shadowed.agentPath
-        })
-      );
-    }
-    for (const skipped of result.skipped) {
-      rows.push(
-        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
-          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
-          titleAttr: skipped.agentPath,
-          hoverDetail: skipped.agentPath
-        })
-      );
-    }
-    return rows;
-  }
-  function basenameOf(path) {
-    return path.split(/[/\\]/).pop() ?? path;
-  }
-  function makeSourceRow(title, badge, detail, opts = {}) {
-    const row2 = document.createElement("div");
-    row2.className = "sources-row";
-    if (opts.titleAttr) row2.title = opts.titleAttr;
-    const header = document.createElement("div");
-    header.className = "sources-row-header";
-    const primary = document.createElement("div");
-    primary.className = "sources-row-primary";
-    const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
-    primary.append(titleEl2);
-    if (opts.hoverDetail) {
-      const hoverEl = document.createElement("span");
-      hoverEl.className = "sources-row-hover-detail";
-      const pathEl = document.createElement("bdi");
-      pathEl.textContent = opts.hoverDetail;
-      hoverEl.append(pathEl);
-      primary.append(hoverEl);
-    }
-    header.append(primary);
-    if (badge) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
-      badgeEl.textContent = badge;
-      header.append(badgeEl);
-    }
-    for (const extra of opts.extraBadges ?? []) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = `ui-badge sources-badge ${extra.className}`;
-      badgeEl.textContent = extra.text;
-      header.append(badgeEl);
-    }
-    row2.append(header);
-    if (detail) {
-      const detailEl = document.createElement("div");
-      detailEl.className = "sources-row-detail";
-      detailEl.textContent = detail;
-      row2.append(detailEl);
-    }
-    return row2;
-  }
-  function makeHookRow(h3) {
-    const extraBadges = [];
-    if (h3.supported === false) {
-      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
-    }
-    if (h3.sandbox === false) {
-      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
-    }
-    if (h3.lastError) {
-      extraBadges.push({ text: "error", className: "sources-badge-error" });
-    }
-    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
-    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
-    const detail = `${familyLabel} \xB7 ${h3.command}`;
-    const row2 = makeSourceRow(title, h3.scope, detail, {
-      extraBadges
-    });
-    if (h3.lastError) {
-      const errorEl = document.createElement("div");
-      errorEl.className = "sources-row-error";
-      errorEl.textContent = `Last run failed: ${h3.lastError}`;
-      row2.append(errorEl);
-    }
-    addHookTester(row2, h3);
-    return row2;
-  }
-  function addHookTester(row2, h3) {
-    const header = row2.querySelector(".sources-row-header");
-    if (!header) return;
-    const testBtn = document.createElement("button");
-    testBtn.type = "button";
-    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
-    testBtn.textContent = "Test";
-    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
-    header.append(testBtn);
-    const result = document.createElement("div");
-    result.className = "hook-test";
-    result.hidden = true;
-    row2.append(result);
-    testBtn.addEventListener("click", () => {
-      void runHookTest(h3, testBtn, result);
-    });
-  }
-  async function runHookTest(h3, btn, result) {
-    btn.disabled = true;
-    btn.textContent = "Testing\u2026";
-    result.hidden = false;
-    result.innerHTML = "";
-    const pending = document.createElement("div");
-    pending.className = "hook-test-summary";
-    pending.textContent = "Running dry-run\u2026";
-    result.append(pending);
-    try {
-      const req = {
-        family: h3.family,
-        event: h3.event,
-        command: h3.command,
-        source: h3.source,
-        scope: h3.scope,
-        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
-      };
-      const res = await api2.hooks.test(req);
-      renderHookTestResult(result, res);
-    } catch {
-      result.innerHTML = "";
-      const err2 = document.createElement("div");
-      err2.className = "hook-test-summary hook-test-error";
-      err2.textContent = "Dry-run failed to start.";
-      result.append(err2);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Test";
-    }
-  }
-  function renderHookTestResult(container, res) {
-    container.innerHTML = "";
-    if (!res.ran) {
-      const notice = document.createElement("div");
-      notice.className = "hook-test-summary hook-test-error";
-      notice.textContent = res.error ?? "This hook could not be dry-run.";
-      container.append(notice);
-      return;
-    }
-    const summary = document.createElement("div");
-    summary.className = "hook-test-summary";
-    const chips = [];
-    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
-    if (res.timedOut) chips.push("timed out");
-    else if (res.spawnError) chips.push("failed to start");
-    chips.push(
-      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
-    );
-    chips.push(`${String(res.durationMs ?? 0)} ms`);
-    chips.push(res.parseOk ? "parsed ok" : "parse failed");
-    if (res.sandboxed) chips.push("sandboxed");
-    for (const text2 of chips) {
-      const chip2 = document.createElement("span");
-      chip2.className = "hook-test-chip";
-      chip2.textContent = text2;
-      summary.append(chip2);
-    }
-    container.append(summary);
-    if (res.outcomeSummary) {
-      const outcome = document.createElement("div");
-      outcome.className = "hook-test-outcome";
-      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
-      container.append(outcome);
-    }
-    appendHookTestStream(container, "stdin", res.stdin ?? "");
-    appendHookTestStream(container, "stdout", res.stdout ?? "");
-    appendHookTestStream(container, "stderr", res.stderr ?? "");
-  }
-  function appendHookTestStream(container, label, text2) {
-    const block = document.createElement("div");
-    block.className = "hook-test-stream";
-    const heading = document.createElement("div");
-    heading.className = "hook-test-stream-label";
-    heading.textContent = label;
-    const pre = document.createElement("pre");
-    pre.textContent = text2.length > 0 ? text2 : "(empty)";
-    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
-    block.append(heading, pre);
-    container.append(block);
-  }
-  function makeHookWarningRow(w2) {
-    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
-      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
-    });
-    row2.classList.add("sources-row-warning");
-    return row2;
   }
   function fillSourceList(selector, rows, emptyText) {
     const list = qsRequired(overlay, selector);
@@ -62249,145 +62490,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return;
       fillSourceList("#sources-worktrees-list", [], "Could not list worktrees.");
       statusEl.textContent = errorMessage(error62);
-    }
-  }
-  function openInstructionFile(file2) {
-    const session = openAttachmentPreview({
-      kind: "text",
-      title: file2.name,
-      ariaLabel: `Instruction file: ${file2.path}`,
-      status: `Loading ${file2.name}\u2026`
-    });
-    void api2.instructions.read(file2.path).then((content) => {
-      const text2 = document.createElement("pre");
-      text2.className = "attachment-preview-text";
-      text2.textContent = content;
-      session.setContent(text2);
-    }).catch((error62) => {
-      session.setStatus(errorMessage(error62));
-    });
-  }
-  function applyWorkspaceTrusted(statuses) {
-    renderMcpServers(statuses);
-    void refreshSources();
-  }
-  async function trustWorkspaceFromBadge(button) {
-    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
-    const detail = [
-      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
-      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
-    ].filter(Boolean).join(" ");
-    const confirmed = await showConfirmDialog({
-      message: "Trust this workspace?",
-      detail,
-      confirmLabel: "Trust workspace"
-    });
-    if (!confirmed) return;
-    button.disabled = true;
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Trusting workspace\u2026";
-    const pending = api2.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
-      (error62) => ({ error: error62 })
-    );
-    await refreshSources();
-    const result = await pending;
-    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
-    else statusEl.textContent = errorMessage(result.error);
-  }
-  function makeInstructionRow(file2) {
-    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
-    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
-    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
-    const row2 = makeSourceRow(file2.name, badge, detail, {
-      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
-      titleAction: {
-        label: `Open ${file2.name}`,
-        run: () => {
-          openInstructionFile(file2);
-        }
-      }
-    });
-    if (file2.trusted) return row2;
-    const badgeEl = row2.querySelector(".sources-badge");
-    if (badgeEl) {
-      const trustBtn = document.createElement("button");
-      trustBtn.type = "button";
-      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
-      trustBtn.textContent = badgeEl.textContent;
-      trustBtn.title = `Trust this workspace to load ${file2.name}`;
-      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
-      trustBtn.addEventListener("click", () => {
-        void trustWorkspaceFromBadge(trustBtn);
-      });
-      badgeEl.replaceWith(trustBtn);
-    }
-    return row2;
-  }
-  async function refreshSources() {
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Loading\u2026";
-    try {
-      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
-        api2.instructions.list(),
-        api2.cursorRules.list(),
-        api2.skills.list(),
-        api2.agents.list(),
-        api2.hooks.list()
-      ]);
-      fillSourceList(
-        "#sources-instructions-list",
-        instructions.map((f4) => makeInstructionRow(f4)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
-      );
-      if (instructions.some((f4) => f4.discoveryTruncated)) {
-        const note = document.createElement("span");
-        note.className = "sources-empty";
-        note.id = "sources-instructions-truncated";
-        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
-        qsRequired(overlay, "#sources-instructions-list").append(note);
-      }
-      const kindLabel2 = {
-        always: "always",
-        auto: "auto",
-        agent: "agent",
-        manual: "manual"
-      };
-      fillSourceList(
-        "#sources-cursor-rules-list",
-        cursorRules.map((r2) => {
-          const bits = [formatByteSize(r2.bytes)];
-          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
-          if (r2.description) bits.push(r2.description);
-          bits.push(r2.path);
-          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
-        }),
-        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
-      );
-      qsRequired(overlay, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
-      if (!contentEl.classList.contains("settings-searching")) renderNavSubheadings(activeSection);
-      fillSourceList(
-        "#sources-skills-list",
-        skills.map(
-          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s16.skillPath,
-            hoverDetail: s16.skillPath
-          })
-        ),
-        "No skills discovered."
-      );
-      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
-      fillSourceList(
-        "#sources-hooks-list",
-        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
-        "No Cursor or Claude Code hooks configured."
-      );
-      statusEl.textContent = "";
-    } catch {
-      statusEl.textContent = "Failed to load sources.";
     }
   }
   let advisorModelSelectEl = null;
@@ -63383,9 +63485,6 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
       statusEl.classList.add("err");
     });
   });
-  qsRequired(overlay, "#sources-reload-btn").addEventListener("click", () => {
-    void refreshSources();
-  });
   qsRequired(overlay, "#plugins-reload-btn").addEventListener("click", () => {
     void refreshPlugins();
   });
@@ -63761,6 +63860,7 @@ Cancel closes this dialog; the current worktree will finish cleaning.`
     })();
   });
   overlay.addEventListener("close", () => {
+    sourcesSection.invalidate();
     if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline);
     appearanceBaseline = null;
     resetDirtyState();
@@ -63772,6 +63872,8 @@ var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, 
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_storage_maintenance_panel();
+    init_sources_section();
+    init_source_row();
     init_errors4();
     init_humanize_identifier();
     init_auto_approval();
@@ -63789,7 +63891,6 @@ var init_settings_dialog = __esm({
     init_advisor_strategy_plugin();
     init_icons();
     init_file_bytes();
-    init_attachment_preview();
     init_confirm_dialog();
     init_helpers();
     init_inline_status();
@@ -63827,7 +63928,6 @@ var init_settings_dialog = __esm({
     init_thread_link();
     init_commit_attribution();
     init_appearance();
-    init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
@@ -67337,6 +67437,64 @@ var init_demo_scenarios = __esm({
         }
       },
       {
+        id: "sidebar-automation-fold",
+        label: "Sidebar automation fold",
+        project: project("demo-automation-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // One schedule with every kind of run: four waiting on the user (collapsed into one
+        // row), one working, two failed (collated), and three that finished cleanly.
+        // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+        threads: [
+          {
+            id: "demo-automation-fold-chat",
+            title: "A regular conversation",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME + 1,
+            updatedAt: FIXED_TIME + 1
+          },
+          ...[
+            ["wait-1", "idle"],
+            ["wait-2", "idle"],
+            ["wait-3", "idle"],
+            ["wait-4", "idle"],
+            ["working", "running"],
+            ["fail-1", "error"],
+            ["fail-2", "error"],
+            ["done-1", "idle"],
+            ["done-2", "idle"],
+            ["done-3", "idle"]
+          ].map(([suffix, status], index) => ({
+            id: `demo-automation-fold-${suffix}`,
+            title: "Docs freshness",
+            status,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            automation: {
+              scheduleId: "demo-automation-fold-schedule",
+              scheduleName: "Docs freshness",
+              triggeredAt: FIXED_TIME - index * 36e5
+            },
+            createdAt: FIXED_TIME - index,
+            updatedAt: FIXED_TIME - index
+          }))
+        ],
+        approvalRequests: ["wait-1", "wait-2", "wait-3", "wait-4"].map((suffix) => ({
+          id: `demo-automation-fold-approval-${suffix}`,
+          threadId: `demo-automation-fold-${suffix}`,
+          title: "Run outside sandbox?",
+          body: "node scripts/check-docs.mjs",
+          type: "shell"
+        }))
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -67386,6 +67544,262 @@ var init_demo_scenarios = __esm({
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 4,
             updatedAt: FIXED_TIME - 4
+          },
+          {
+            id: "demo-sidebar-sort-e",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 5,
+            updatedAt: FIXED_TIME - 5
+          }
+        ]
+      },
+      {
+        id: "activity-home",
+        label: "Activity home on a new thread",
+        project: project("demo-activity-home-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active one and is empty, so the chat pane is the
+        // Activity home. The others give it something to list: one waiting on an
+        // approval, two running, one that finished while the user was elsewhere.
+        threads: [
+          {
+            id: "demo-activity-home-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-home-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-activity-home-flaky",
+            title: "Fix the flaky sandbox test",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-activity-home-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-home-approval",
+            threadId: "demo-activity-home-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            bodyAdvice: "Auto-run for sandbox commands is disabled in Settings",
+            bodyFooter: "Allow running it once?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-project-filter",
+        label: "Activity home after a project finishes waiting",
+        project: project("demo-activity-home-filter-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-activity-filter-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-filter-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-filter-approval",
+            threadId: "demo-activity-filter-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-automation-fold",
+        label: "Activity home with automation runs folded",
+        project: project("demo-activity-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the empty active one. Beside a working thread and one
+        // finished chat, a schedule has settled five clean runs and another three failed
+        // ones: each folds into a single row instead of eight.
+        threads: [
+          {
+            id: "demo-activity-fold-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-fold-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-fold-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          ...[
+            ["docs", "Docs freshness", "idle", 5],
+            ["deps", "Nightly dependency check", "error", 3]
+          ].flatMap(
+            ([schedule, name, status, count]) => Array.from({ length: count }, (_3, index) => ({
+              id: `demo-activity-fold-${schedule}-${String(index)}`,
+              title: name,
+              status,
+              messages: [],
+              messagesLoaded: false,
+              unreadAt: FIXED_TIME - (index + 2) * 36e5,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              automation: {
+                scheduleId: `demo-activity-fold-${schedule}`,
+                scheduleName: name,
+                triggeredAt: FIXED_TIME - (index + 2) * 36e5
+              },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          )
+        ]
+      },
+      {
+        id: "activity-home-question",
+        label: "Activity home with a question waiting",
+        project: project("demo-activity-home-question-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active, empty one; the second is blocked on a question.
+        threads: [
+          {
+            id: "demo-activity-home-question-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-question-schema",
+            title: "Schema bump",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        askUserRequests: [
+          {
+            id: "demo-activity-home-question",
+            threadId: "demo-activity-home-question-schema",
+            questions: [
+              {
+                question: "Which migration order should the schema bump use?",
+                options: ["Columns first", "Backfill first"]
+              },
+              { question: "Keep the old column until the next release?" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "activity-home-empty",
+        label: "Activity home with nothing to list",
+        project: project("demo-activity-home-empty-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first-run case: one empty thread and nothing running or waiting.
+        threads: [
+          {
+            id: "demo-activity-home-empty-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
           }
         ]
       },
@@ -67863,7 +68277,22 @@ function createDemoApi(scenario, options = {}) {
         return () => void 0;
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...question.options === void 0 ? {} : { options: [...question.options] }
+            }))
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -69187,6 +69616,7 @@ function createStore(initial) {
     rightPanelPosition: "auto",
     sidebarThreadSort: "activity",
     sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial
@@ -71582,8 +72012,37 @@ function orderSidebarThreads(threads, mode, reverse) {
   }
   return reverse ? ordered.reverse() : ordered;
 }
+function orderSidebarRows(rows, mode, reverse) {
+  const created = (row2) => row2.thread.createdAt ?? 0;
+  const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
+  const name = (row2) => row2.thread.title || "New Thread";
+  const ordered = [...rows];
+  if (mode === "created") {
+    ordered.sort((a3, b4) => created(b4) - created(a3));
+  } else if (mode === "title") {
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
+  } else {
+    ordered.sort((a3, b4) => activity(b4) - activity(a3) || created(b4) - created(a3));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function groupRowsByStatus(rows, needsYou) {
+  const sectionOf = (row2) => needsYou(row2.thread.id) ? "needs-you" : row2.thread.status === "running" ? "working" : "recent";
+  return STATUS_SECTION_LABELS.map(([id, label]) => ({
+    id,
+    label,
+    rows: rows.filter((row2) => sectionOf(row2) === id)
+  })).filter((section) => section.rows.length > 0);
+}
+var STATUS_SECTION_LABELS;
 var init_thread_order = __esm({
   "src/renderer/controller/thread-order.ts"() {
+    init_sidebar_thread();
+    STATUS_SECTION_LABELS = [
+      ["needs-you", "Needs you"],
+      ["working", "Working"],
+      ["recent", "Recent"]
+    ];
   }
 });
 
@@ -71691,6 +72150,7 @@ function deriveActivity(input2) {
     }))
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -71730,17 +72190,57 @@ function deriveActivity(input2) {
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
   working.sort(newestFirst);
   recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const { folds: folded, rest: single } = foldScheduleRuns(recent, scheduleOf);
   const groups = [
     { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
     { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
     {
       id: "recent",
       label: GROUP_LABELS.recent,
-      rows: recent.slice(0, RECENT_ROW_LIMIT),
-      total: recent.length
+      rows: [...folded, ...single.slice(0, RECENT_ROW_LIMIT)],
+      total: folded.length + single.length
     }
   ];
   return groups;
+}
+function foldScheduleRuns(recent, scheduleOf) {
+  const buckets = /* @__PURE__ */ new Map();
+  const keyOf = (row2) => {
+    const schedule = row2.threadId === null ? void 0 : scheduleOf.get(row2.threadId);
+    if (!schedule || row2.projectId === null) return null;
+    return `${row2.state}:${row2.projectId}:${schedule.id}`;
+  };
+  for (const row2 of recent) {
+    const key = keyOf(row2);
+    if (key === null) continue;
+    buckets.set(key, [...buckets.get(key) ?? [], row2]);
+  }
+  const folds = [];
+  const folded = /* @__PURE__ */ new Set();
+  for (const [bucket, runs] of buckets) {
+    const first = runs[0];
+    if (!first || runs.length < SCHEDULE_FOLD_AT) continue;
+    const kind = first.state === "failed" ? "failed" : "finished";
+    const name = first.threadId === null ? void 0 : scheduleOf.get(first.threadId)?.name;
+    for (const run2 of runs) folded.add(run2);
+    folds.push({
+      key: `fold:${bucket}`,
+      state: first.state,
+      threadId: null,
+      threadTitle: name ?? first.threadTitle,
+      projectId: first.projectId,
+      projectName: first.projectName,
+      want: `${String(runs.length)} runs`,
+      detail: null,
+      requestId: null,
+      requestType: null,
+      approval: null,
+      since: first.since,
+      fold: { kind, runs }
+    });
+  }
+  folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
+  return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
@@ -71754,7 +72254,13 @@ function collectActivityThreads(store2) {
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
         projectId: project2.id,
-        projectName
+        projectName,
+        ...thread.automation ? {
+          schedule: {
+            id: thread.automation.scheduleId,
+            name: thread.automation.scheduleName
+          }
+        } : {}
       });
     }
   }
@@ -71767,7 +72273,13 @@ function collectActivityThreads(store2) {
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
       projectId: project2.id,
-      projectName: projectDisplayName(project2)
+      projectName: projectDisplayName(project2),
+      ...carried.thread.automation ? {
+        schedule: {
+          id: carried.thread.automation.scheduleId,
+          name: carried.thread.automation.scheduleName
+        }
+      } : {}
     });
   }
   return [...out.values()];
@@ -71814,11 +72326,12 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_projects();
     RECENT_ROW_LIMIT = 10;
+    SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
     GROUP_LABELS = {
@@ -72383,11 +72896,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const now = deps.now ?? Date.now;
   const setTimer = deps.setTimer ?? defaultTimer2;
   const timings = trackRunTimings(store2, now);
-  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const summary = el("p", { id: `${host.idPrefix}-summary`, class: "activity-panel-summary" });
   const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
   const detail = el("section", {
     class: "activity-detail",
-    "aria-labelledby": "activity-detail-title"
+    "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
   const status = el("p", {
@@ -72398,6 +72911,19 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const rowCache = /* @__PURE__ */ new Map();
   const groupCache = /* @__PURE__ */ new Map();
   const quiet = el("p", { class: "activity-quiet" }, "Nothing needs you right now.");
+  const strip = el("div", {
+    class: "activity-strip",
+    role: "group",
+    "aria-label": "Projects"
+  });
+  const stripCache = /* @__PURE__ */ new Map();
+  const defaultCollapsed = () => new Set(host.collapsibleGroups ? ["working"] : []);
+  let collapsed = defaultCollapsed();
+  const seenNeedsYou = /* @__PURE__ */ new Set();
+  let projectFilter = null;
+  const expandedFolds = /* @__PURE__ */ new Set();
+  const foldRunKeys = /* @__PURE__ */ new Set();
+  let userChose = false;
   let renderScheduled = false;
   let cancelRender = null;
   let lastRenderAt = Number.NEGATIVE_INFINITY;
@@ -72405,6 +72931,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let needsYouSignature = null;
   let cancelSettle = null;
   let settling = false;
+  const drafts = /* @__PURE__ */ new Map();
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
@@ -72446,6 +72973,80 @@ function createActivityView(api2, store2, sources3, deps, host) {
     status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
     scheduleRender();
   }
+  function hasAnswer(requestId) {
+    return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
+  }
+  function sendAnswer(row2) {
+    const requestId = row2.requestId;
+    if (!requestId || settling || !hasAnswer(requestId)) return;
+    const asked = sources3.questions.pending().find((request) => request.id === requestId);
+    if (!asked) return;
+    const typed = drafts.get(requestId) ?? [];
+    for (const control of detail.querySelectorAll(
+      ".activity-answer, .activity-option, .activity-answer-input"
+    )) {
+      control.disabled = true;
+      control.dataset["answered"] = "true";
+    }
+    const sent = sources3.questions.answer(
+      requestId,
+      asked.questions.map((_3, index) => typed[index] ?? "")
+    );
+    if (sent) drafts.delete(requestId);
+    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    scheduleRender();
+  }
+  function answerField(requestId, row2, question, index, options) {
+    const questionId = `${host.idPrefix}-question-${String(index)}`;
+    const input2 = el("textarea", {
+      class: "activity-answer-input",
+      rows: "2",
+      placeholder: "Or type an answer\u2026",
+      "data-control": `answer-${String(index)}`,
+      "aria-labelledby": questionId
+    });
+    input2.value = drafts.get(requestId)?.[index] ?? "";
+    const sync = () => {
+      const next = [...drafts.get(requestId) ?? []];
+      next[index] = input2.value;
+      drafts.set(requestId, next);
+      const send = detail.querySelector(".activity-answer");
+      if (send) send.disabled = !hasAnswer(requestId);
+    };
+    input2.addEventListener("input", sync);
+    input2.addEventListener("keydown", (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+      event.stopPropagation();
+      if (event.isComposing || event.repeat) return;
+      event.preventDefault();
+      sendAnswer(row2);
+    });
+    const asked = el("div", {
+      id: questionId,
+      class: "activity-question streaming-markdown"
+    });
+    asked.innerHTML = renderMarkdown(question);
+    const field = el("div", { class: "activity-answer-field" }, asked);
+    if (options.length > 0) {
+      const choices = el("div", { class: "activity-options" });
+      for (const option of options) {
+        const choice = el("button", {
+          type: "button",
+          class: "ui-btn ui-btn-secondary activity-option"
+        });
+        setInlineMarkdown(choice, option);
+        choice.addEventListener("click", () => {
+          input2.value = choice.textContent;
+          sync();
+          input2.focus();
+        });
+        choices.append(choice);
+      }
+      field.append(choices);
+    }
+    field.append(input2);
+    return field;
+  }
   function button(className, control, label, onClick, ariaLabel) {
     const node2 = el(
       "button",
@@ -72466,6 +73067,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
       openThread(row2);
     });
+    if (host.openThreadArrow)
+      node2.append(arrowUpRightIcon("ui-icon ui-icon-sm activity-open-arrow"));
     node2.disabled = !canOpen(row2);
     return node2;
   }
@@ -72487,17 +73090,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     if (row2.state === "needs-answer") {
       const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
-      const questions = asked?.questions ?? [row2.want];
+      if (!asked || !row2.requestId) {
+        return [
+          el("p", { class: "activity-detail-text" }, row2.want),
+          el(
+            "p",
+            { class: "activity-detail-note" },
+            "Answer in the thread, where the question is waiting for you."
+          )
+        ];
+      }
+      const requestId = row2.requestId;
       return [
         el(
-          "ol",
-          { class: "activity-questions" },
-          ...questions.map((question) => el("li", {}, question))
-        ),
-        el(
-          "p",
-          { class: "activity-detail-note" },
-          "Answer in the thread, where the question is waiting for you."
+          "div",
+          { class: "activity-answer-form" },
+          ...asked.questions.map(
+            (question, index) => answerField(requestId, row2, question, index, asked.options[index] ?? [])
+          )
         )
       ];
     }
@@ -72510,10 +73120,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
-    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    const actions = [openThreadButton(row2)];
+    const decide = [];
     if (row2.state === "needs-approval" && row2.approval) {
       const title = row2.approval.title;
-      actions.push(
+      decide.push(
         button(
           "ui-btn-secondary activity-reject",
           "reject",
@@ -72527,28 +73138,39 @@ function createActivityView(api2, store2, sources3, deps, host) {
       const approve = button(
         "ui-btn-primary activity-approve",
         "approve",
-        "Approve once",
+        "Approve",
         () => {
           answerApproval(row2, true);
         },
-        `Approve once: ${title} (${row2.threadTitle})`
+        `Approve: ${title} (${row2.threadTitle})`
       );
       approve.disabled = settling;
-      actions.push(approve);
-    } else if (row2.state === "needs-answer") {
-      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
-        if (row2.threadId === null) host.close();
-        else openThread(row2);
-      });
-      answer.disabled = row2.threadId !== null && !canOpen(row2);
-      actions.push(answer);
+      decide.push(approve);
+    } else if (row2.state === "needs-answer" && row2.requestId) {
+      const requestId = row2.requestId;
+      const answer = button(
+        "ui-btn-primary activity-answer",
+        "answer",
+        "Send answer",
+        () => {
+          sendAnswer(row2);
+        },
+        `Send answer: ${row2.want} (${row2.threadTitle})`
+      );
+      answer.dataset["requestId"] = requestId;
+      answer.disabled = settling || !hasAnswer(requestId);
+      decide.push(answer);
     }
+    if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
   function renderDetail(row2, at3) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      return;
+    }
+    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
       return;
     }
     detail.hidden = false;
@@ -72565,13 +73187,68 @@ function createActivityView(api2, store2, sources3, deps, host) {
           el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
           meta3
         ),
-        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+        el(
+          "h3",
+          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+          row2.threadTitle
+        )
       ),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
     );
   }
+  function drawnRows(group) {
+    return group.rows.flatMap((row2) => {
+      if (!row2.fold || !expandedFolds.has(row2.key)) return [row2];
+      for (const run2 of row2.fold.runs) foldRunKeys.add(run2.key);
+      return [row2, ...row2.fold.runs];
+    });
+  }
+  function foldElement(row2, at3, fold) {
+    const open2 = expandedFolds.has(row2.key);
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-row-open activity-fold-toggle",
+        "aria-expanded": open2 ? "true" : "false",
+        "aria-label": `${STATE_LONG[row2.state]}: ${row2.threadTitle}, ${row2.want}${row2.projectName ? `, ${row2.projectName}` : ""}`
+      },
+      clockIcon("ui-icon ui-icon-sm activity-glyph"),
+      el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
+      elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
+        "time",
+        { class: "activity-age", datetime: new Date(row2.since).toISOString() },
+        formatAge(elapsed)
+      ),
+      el(
+        "span",
+        { class: "activity-row-second" },
+        el("span", { class: "activity-state" }, fold.kind === "failed" ? "Failed" : "Done"),
+        el("span", { class: "activity-want-text" }, row2.want),
+        (open2 ? chevronDownIcon : chevronRightIcon)("ui-icon ui-icon-sm activity-fold-chevron")
+      ),
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
+    );
+    toggle.addEventListener("click", () => {
+      if (expandedFolds.has(row2.key)) expandedFolds.delete(row2.key);
+      else expandedFolds.add(row2.key);
+      renderNow();
+    });
+    return el(
+      "li",
+      {
+        class: "activity-row activity-fold",
+        "data-row-key": row2.key,
+        "data-state": row2.state,
+        "data-fold": fold.kind
+      },
+      toggle
+    );
+  }
   function rowElement(row2, at3) {
+    if (row2.fold) return foldElement(row2, at3, row2.fold);
     const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
     const selected = row2.key === selectedKey;
     const second = el(
@@ -72616,7 +73293,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return el(
       "li",
       {
-        class: "activity-row",
+        class: foldRunKeys.has(row2.key) ? "activity-row activity-fold-run" : "activity-row",
         "data-row-key": row2.key,
         "data-state": row2.state,
         ...selected ? { "data-selected": "true" } : {},
@@ -72640,7 +73317,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       row2.since,
       row2.key === selectedKey,
       elapsed === null ? null : formatAge(elapsed),
-      rowLabel(row2, at3)
+      rowLabel(row2, at3),
+      row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
+      foldRunKeys.has(row2.key)
     ]);
   }
   function cachedRow(row2, at3) {
@@ -72651,23 +73330,50 @@ function createActivityView(api2, store2, sources3, deps, host) {
     rowCache.set(row2.key, { signature, node: node2 });
     return node2;
   }
+  function toggleGroup(id) {
+    if (collapsed.has(id)) collapsed.delete(id);
+    else collapsed.add(id);
+    renderNow();
+  }
   function groupElement(group, at3) {
     const hidden = group.total - group.rows.length;
     const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
+    const folded = host.collapsibleGroups === true && collapsed.has(group.id);
     let entry = groupCache.get(group.id);
     if (!entry) {
-      const titleId = `activity-group-${group.id}`;
+      const titleId = `${host.idPrefix}-group-${group.id}`;
       const countNode = el("span", { class: "activity-group-count" }, count);
       const rowsNode = el("ul", {
         class: "activity-rows",
         role: "list",
         "aria-labelledby": titleId
       });
+      let heading;
+      if (host.collapsibleGroups) {
+        const toggle = el(
+          "button",
+          {
+            type: "button",
+            class: "activity-group-toggle",
+            "data-group-toggle": group.id,
+            "aria-expanded": "true"
+          },
+          chevronDownIcon("ui-icon ui-icon-sm activity-group-chevron"),
+          el("span", { class: "activity-group-label" }, group.label),
+          countNode
+        );
+        toggle.addEventListener("click", () => {
+          toggleGroup(group.id);
+        });
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, toggle);
+      } else {
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode);
+      }
       entry = {
         section: el(
           "section",
           { class: "activity-group", "data-group": group.id },
-          el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode),
+          heading,
           rowsNode
         ),
         count: countNode,
@@ -72676,11 +73382,81 @@ function createActivityView(api2, store2, sources3, deps, host) {
       groupCache.set(group.id, entry);
     }
     if (entry.count.textContent !== count) entry.count.textContent = count;
-    patchChildren(
-      entry.rows,
-      group.rows.map((row2) => cachedRow(row2, at3))
-    );
+    if (host.collapsibleGroups) {
+      entry.count.hidden = !folded;
+      entry.section.dataset["collapsed"] = folded ? "true" : "false";
+      entry.section.querySelector(".activity-group-toggle")?.setAttribute("aria-expanded", folded ? "false" : "true");
+    }
+    entry.rows.hidden = folded;
+    patchChildren(entry.rows, folded ? [] : drawnRows(group).map((row2) => cachedRow(row2, at3)));
     return entry.section;
+  }
+  function projectStats(groups) {
+    const stats = /* @__PURE__ */ new Map();
+    for (const group of groups) {
+      if (group.id === "recent") continue;
+      for (const row2 of group.rows) {
+        if (!row2.projectId) continue;
+        const entry = stats.get(row2.projectId) ?? {
+          name: row2.projectName ?? row2.projectId,
+          need: 0,
+          working: 0
+        };
+        if (group.id === "needs-you") entry.need += 1;
+        else entry.working += 1;
+        stats.set(row2.projectId, entry);
+      }
+    }
+    return stats;
+  }
+  function stripCard(id, name, need, working) {
+    const selected = projectFilter === id;
+    const signature = JSON.stringify([name, need, working, selected]);
+    const hit = stripCache.get(id);
+    if (hit?.signature === signature) return hit.node;
+    const stats = el("span", { class: "activity-strip-stats" });
+    stats.append(
+      need > 0 ? el("span", { class: "activity-strip-need" }, `${String(need)} need you`) : el("span", {}, "All clear")
+    );
+    if (working > 0) {
+      stats.append(el("span", { class: "activity-strip-working" }, `${String(working)} working`));
+    }
+    const node2 = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-strip-card",
+        "data-project": id ?? "all",
+        "data-project-key": JSON.stringify(id),
+        "aria-pressed": selected ? "true" : "false"
+      },
+      el("span", { class: "activity-strip-name" }, name),
+      stats
+    );
+    node2.addEventListener("click", () => {
+      projectFilter = id;
+      renderNow();
+    });
+    stripCache.set(id, { signature, node: node2 });
+    return node2;
+  }
+  function renderStrip(groups) {
+    const stats = projectStats(groups);
+    if (projectFilter !== null && !stats.has(projectFilter)) {
+      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
+      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
+    }
+    const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
+    const working = groups.find((group) => group.id === "working")?.total ?? 0;
+    const cards = [stripCard(null, "All projects", need, working)];
+    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
+    for (const [id, entry] of shown)
+      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    patchChildren(strip, cards);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    for (const id of stripCache.keys()) {
+      if (!live.has(id)) stripCache.delete(id);
+    }
   }
   function emptyState() {
     return el(
@@ -72695,7 +73471,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     );
   }
   function rowOpeners() {
-    return [...list.querySelectorAll(".activity-row-open")];
+    return [
+      ...list.querySelectorAll(".activity-row-open:not(.activity-fold-toggle)")
+    ];
   }
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
@@ -72728,6 +73506,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
+    const toggled = active2.dataset["groupToggle"];
+    if (toggled !== void 0) return { area: "toggle", group: toggled };
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    if (foldKey !== void 0) return { area: "fold", key: foldKey };
     if (list.contains(active2)) return { area: "list" };
     if (detail.contains(active2)) {
       return {
@@ -72740,8 +73524,33 @@ function createActivityView(api2, store2, sources3, deps, host) {
   }
   function restoreFocus(spot) {
     if (!spot) return;
+    if (spot.area === "toggle") {
+      list.querySelector(`[data-group-toggle="${spot.group}"]`)?.focus({
+        preventScroll: true
+      });
+      return;
+    }
+    if (spot.area === "fold") {
+      const fold = [...list.querySelectorAll(".activity-fold")].find(
+        (node2) => node2.dataset["rowKey"] === spot.key
+      );
+      const toggle = fold?.querySelector(".activity-fold-toggle");
+      if (toggle) {
+        toggle.focus({ preventScroll: true });
+        return;
+      }
+    }
+    if (spot.area === "strip") {
+      const card = [...strip.querySelectorAll("[data-project-key]")].find(
+        (node2) => node2.dataset["projectKey"] === spot.projectKey
+      );
+      card?.focus({ preventScroll: true });
+      return;
+    }
     if (spot.area === "detail" && spot.key === selectedKey) {
-      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      const control = detail.querySelector(
+        `[data-control="${spot.control}"]`
+      );
       if (control && !control.disabled) {
         control.focus();
         return;
@@ -72754,14 +73563,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function armSettle() {
     cancelSettle?.();
     settling = true;
-    for (const approve of detail.querySelectorAll(".activity-approve")) {
-      approve.disabled = true;
+    for (const control of detail.querySelectorAll(
+      ".activity-approve, .activity-answer"
+    )) {
+      control.disabled = true;
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const approve of detail.querySelectorAll(".activity-approve")) {
-        if (!approve.dataset["answered"]) approve.disabled = false;
+      for (const control of detail.querySelectorAll(
+        ".activity-approve, .activity-answer"
+      )) {
+        if (control.dataset["answered"]) continue;
+        const requestId = control.dataset["requestId"];
+        control.disabled = requestId !== void 0 && !hasAnswer(requestId);
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -72770,28 +73585,64 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelRender = null;
     const at3 = now();
     lastRenderAt = at3;
+    foldRunKeys.clear();
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
-    const groups = deriveActivity({
-      threads: collectActivityThreads(store2),
-      approvals: sources3.approvals.pending(),
-      questions: sources3.questions.pending(),
+    const allThreads = collectActivityThreads(store2);
+    const approvals = sources3.approvals.pending();
+    const questions = sources3.questions.pending();
+    const waiting = new Set(questions.map((request) => request.id));
+    for (const requestId of drafts.keys()) {
+      if (!waiting.has(requestId)) drafts.delete(requestId);
+    }
+    const everything = deriveActivity({
+      threads: allThreads,
+      approvals,
+      questions,
       runs: timings.runs
     });
+    let groups = everything;
+    if (projectFilter !== null) {
+      const inProject = allThreads.filter((thread) => thread.projectId === projectFilter);
+      const ids = new Set(inProject.map((thread) => thread.id));
+      groups = deriveActivity({
+        threads: inProject,
+        approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        runs: timings.runs
+      });
+    }
+    if (host.projectStrip) renderStrip(everything);
     const needsYou = groups.find((group) => group.id === "needs-you");
+    const currentNeeds = new Set(needsYou?.rows.map((row2) => row2.key));
+    for (const key of currentNeeds) {
+      if (!seenNeedsYou.has(key)) {
+        seenNeedsYou.add(key);
+        collapsed.delete("needs-you");
+      }
+    }
+    for (const key of seenNeedsYou) {
+      if (!currentNeeds.has(key)) seenNeedsYou.delete(key);
+    }
     const working = groups.find((group) => group.id === "working");
     const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
     const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
     needsYouSignature = signature;
-    const rows = groups.flatMap((group) => group.rows);
+    const shownGroups = groups.filter(
+      (group) => !(host.collapsibleGroups && collapsed.has(group.id))
+    );
+    const rows = shownGroups.flatMap((group) => drawnRows(group)).filter((row2) => !row2.fold);
+    const urgent = rows[0];
+    if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key;
     let selected = rows.find((row2) => row2.key === selectedKey);
     if (!selected) {
       selected = rows[Math.min(selectedIndex, rows.length - 1)];
       selectedKey = selected?.key ?? null;
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0;
-    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+    const releases = selected?.state === "needs-approval" || selected?.state === "needs-answer";
+    if (listChanged || selectedKey !== shownKey && releases) {
       armSettle();
     }
     shownKey = selectedKey;
@@ -72819,7 +73670,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       if (!needsYou || needsYou.rows.length === 0) children.push(quiet);
       children.push(...populated.map((group) => groupElement(group, at3)));
       patchChildren(list, children);
-      const live = new Set(rows.map((row2) => row2.key));
+      const live = new Set(shownGroups.flatMap((group) => drawnRows(group)).map((row2) => row2.key));
       for (const rowKey2 of rowCache.keys()) {
         if (!live.has(rowKey2)) rowCache.delete(rowKey2);
       }
@@ -72827,9 +73678,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
       renderDetail(selected, at3);
     }
     host.onNeedsYou?.(needCount);
+    host.onIdle?.(everything.every((group) => group.rows.length === 0));
     restoreFocus(focus);
   }
   function select(rowKey2) {
+    userChose = true;
     if (rowKey2 !== selectedKey) {
       selectedKey = rowKey2;
       renderNow();
@@ -72907,24 +73760,35 @@ function createActivityView(api2, store2, sources3, deps, host) {
     status.textContent = "";
     for (const entry of groupCache.values()) entry.rows.replaceChildren();
     rowCache.clear();
+    stripCache.clear();
+    collapsed = defaultCollapsed();
+    expandedFolds.clear();
+    seenNeedsYou.clear();
+    projectFilter = null;
+    userChose = false;
   }
-  function show2() {
+  function show2({ focusFirstRow = true } = {}) {
     needsYouSignature = null;
     selectedKey = null;
     selectedIndex = 0;
     shownKey = null;
+    userChose = false;
     render();
-    const first = selectedOpener();
-    if (first) first.focus();
-    else host.fallbackFocus();
+    if (focusFirstRow) {
+      const first = selectedOpener();
+      if (first) first.focus();
+      else host.fallbackFocus();
+    }
     tickAges();
   }
-  return { summary, body, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_dist();
+    init_inline_markdown();
     init_patch_children();
     init_icons();
     init_projects();
@@ -72984,6 +73848,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   );
   closeButton.addEventListener("click", close);
   const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-panel",
     close,
     isShown: isOpen,
     fallbackFocus: () => {
@@ -73320,6 +74185,26 @@ var init_thread_history_editor = __esm({
     init_persistence();
     init_dialog_shell();
     init_toast();
+  }
+});
+
+// src/renderer/controller/automation-fold.ts
+function foldAutomationRuns(runs, needsYou) {
+  const pending = runs.filter((run2) => needsYou(run2.id));
+  const rest = runs.filter((run2) => !needsYou(run2.id));
+  const working = rest.filter((run2) => run2.status === "running");
+  const failed = rest.filter((run2) => run2.status === "error");
+  return [
+    ...pending.length > PENDING_COLLAPSE_ABOVE ? [{ kind: "pending", runs: pending }] : pending.map((run2) => ({ kind: "run", run: run2 })),
+    ...working.map((run2) => ({ kind: "run", run: run2 })),
+    ...failed.length >= FAILED_COLLATE_AT ? [{ kind: "failed", runs: failed }] : failed.map((run2) => ({ kind: "run", run: run2 }))
+  ];
+}
+var PENDING_COLLAPSE_ABOVE, FAILED_COLLATE_AT;
+var init_automation_fold = __esm({
+  "src/renderer/controller/automation-fold.ts"() {
+    PENDING_COLLAPSE_ABOVE = 3;
+    FAILED_COLLATE_AT = 2;
   }
 });
 
@@ -73944,32 +74829,12 @@ function automationMenuEntries(api2, target, openSetup) {
   ];
 }
 function mountProjectsPane(root, store2, api2) {
-  const title = el("span", {}, "Projects");
-  const searchToggle = el(
-    "button",
-    {
-      class: "projects-search-btn",
-      "aria-label": "Search threads",
-      "data-tooltip": "Search threads"
-    },
-    searchIcon("ui-icon ui-icon-sm")
-  );
-  const sortBtn = el(
-    "button",
-    {
-      class: "projects-sort-btn",
-      "aria-label": "Sort threads",
-      "aria-haspopup": "menu",
-      "data-tooltip": "Sort threads"
-    },
-    arrowUpDownIcon("ui-icon ui-icon-sm")
-  );
   const addBtn = el(
     "button",
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New project or open a folder"
+      "data-tooltip": "New thread, new project or open a folder"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -73998,15 +74863,6 @@ function mountProjectsPane(root, store2, api2) {
     );
   };
   syncActivityButton();
-  const header = el(
-    "div",
-    { class: "pane-projects-header" },
-    title,
-    searchToggle,
-    sortBtn,
-    activityBtn,
-    addBtn
-  );
   let threadFilter = "";
   let filteredProjectId = store2.getState().activeProjectId;
   let renderFrameQueued = false;
@@ -74021,29 +74877,47 @@ function mountProjectsPane(root, store2, api2) {
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter titles and requests\u2026",
+    placeholder: "Search\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
-  const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
+  const searchBox = el(
+    "label",
+    { class: "projects-search" },
+    searchIcon("ui-icon ui-icon-sm projects-search-icon"),
+    searchInput
+  );
+  const header = el("div", { class: "pane-projects-header" }, searchBox, activityBtn, addBtn);
   const closeThreadFilter = () => {
     contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
-    searchRow.hidden = true;
-    searchToggle.classList.remove("active");
   };
-  searchToggle.addEventListener("click", () => {
-    if (searchRow.hidden) {
-      searchRow.hidden = false;
-      searchToggle.classList.add("active");
-      searchInput.focus();
-    } else {
-      closeThreadFilter();
-      render();
-    }
-  });
+  let compactRows = false;
+  let projectFilterId = null;
+  const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
+  const projectFilterBtn = el(
+    "button",
+    { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
+    filterLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
+  const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
+  const sortBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-filter-btn projects-sort-btn",
+      "aria-haspopup": "menu",
+      "aria-label": "Group and sort threads"
+    },
+    sortDir,
+    sortLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
@@ -74068,7 +74942,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   root.append(
     header,
-    searchRow,
+    filtersRow,
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
@@ -74078,15 +74952,72 @@ function mountProjectsPane(root, store2, api2) {
     created: "Created",
     title: "Thread name"
   };
+  const GROUP_LABELS2 = {
+    project: "Project",
+    status: "Status",
+    none: "None"
+  };
   const saveSort = (key, value) => {
     void api2.settings.set(key, value).catch((err2) => {
       showErrorToast("Could not save the thread order", err2);
     });
   };
+  function syncFilterControls() {
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === projectFilterId);
+    if (!chosen) projectFilterId = null;
+    const projectName = chosen ? projectDisplayName(chosen) : "All projects";
+    filterLabel.textContent = projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
+    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
+    sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
+  }
+  projectFilterBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(projectFilterBtn)) return;
+    const rect = projectFilterBtn.getBoundingClientRect();
+    const { projects } = store2.getState();
+    const counts = new Map(
+      projects.map((project2) => [project2.id, getSidebarThreads(store2, project2.id).length])
+    );
+    const total2 = [...counts.values()].reduce((sum, n2) => sum + n2, 0);
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { heading: "Show" },
+      {
+        label: "All projects",
+        detail: String(total2),
+        checked: projectFilterId === null,
+        onSelect: () => {
+          projectFilterId = null;
+          render();
+        }
+      },
+      ...projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        detail: String(counts.get(project2.id) ?? 0),
+        checked: project2.id === projectFilterId,
+        onSelect: () => {
+          projectFilterId = project2.id;
+          render();
+        }
+      }))
+    ]);
+  });
   sortBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(sortBtn)) return;
     const rect = sortBtn.getBoundingClientRect();
-    const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store2.getState();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: "Group by" },
+      ...GROUP_MENU_ORDER.map((mode) => ({
+        label: GROUP_LABELS2[mode],
+        checked: mode === sidebarThreadGroup,
+        onSelect: () => {
+          store2.setState({ sidebarThreadGroup: mode });
+          saveSort("sidebarThreadGroup", mode);
+          render();
+        }
+      })),
       { heading: "Sort by" },
       ...THREAD_SORT_MODES.map((mode) => ({
         label: SORT_LABELS[mode],
@@ -74097,20 +75028,43 @@ function mountProjectsPane(root, store2, api2) {
           render();
         }
       })),
+      { separator: true },
       {
         label: "Reverse order",
+        toggle: true,
         checked: sidebarThreadSortReverse,
         onSelect: () => {
           store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
           saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
           render();
         }
+      },
+      {
+        label: "Compact rows",
+        toggle: true,
+        checked: compactRows,
+        onSelect: () => {
+          compactRows = !compactRows;
+          list.classList.toggle("is-compact", compactRows);
+        }
       }
     ]);
   });
   addBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(addBtn)) return;
     const rect = addBtn.getBoundingClientRect();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: "New thread",
+        onSelect: () => {
+          if (!store2.getState().workspaceRoot) {
+            void addProject(store2, api2);
+            return;
+          }
+          openNewThread(store2);
+        }
+      },
+      { separator: true },
       {
         label: "New project",
         onSelect: () => {
@@ -74162,6 +75116,7 @@ function mountProjectsPane(root, store2, api2) {
   let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
+  const expandedFailedSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
   let orphanScanGeneration = 0;
@@ -74212,11 +75167,11 @@ function mountProjectsPane(root, store2, api2) {
       let result = await api2.threads.archive(projectId, threadId, null);
       let refreshed = false;
       while (result.status === "blocked-dirty") {
-        const title2 = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
         const shown = result.paths.slice(0, 10);
         const remaining = result.paths.length - shown.length;
         const confirmed = await showConfirmDialog({
-          message: `Discard uncommitted files and archive \u201C${title2}\u201D?`,
+          message: `Discard uncommitted files and archive \u201C${title}\u201D?`,
           detail: [
             ...refreshed ? ["Files changed while confirmation was open. Review the current files again."] : [],
             "The worktree will be removed. These changes and local files will be permanently discarded:",
@@ -74351,7 +75306,7 @@ function mountProjectsPane(root, store2, api2) {
   function orphanSubtitle(orphan) {
     const count = orphan.threadCount;
     const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
-    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0);
     if (extra.length === 0) return countLabel;
     const shown = extra.slice(0, 2).join(" \xB7 ");
     const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
@@ -74364,8 +75319,8 @@ function mountProjectsPane(root, store2, api2) {
     if (orphan.sampleTitles.length > 0) {
       lines.push("");
       lines.push("Threads in this store:");
-      for (const title2 of orphan.sampleTitles) {
-        lines.push(`\u2022 ${title2}`);
+      for (const title of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title}`);
       }
       if (orphan.threadCount > orphan.sampleTitles.length) {
         lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
@@ -74703,7 +75658,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
+    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
@@ -74717,7 +75674,7 @@ function mountProjectsPane(root, store2, api2) {
       const allowRename = (options.allowRename ?? true) && canMutate;
       const scheduleId = thread.automation?.scheduleId;
       const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
-      let title2;
+      let title;
       if (renameState) {
         const input2 = el("input", {
           type: "text",
@@ -74747,11 +75704,11 @@ function mountProjectsPane(root, store2, api2) {
             e3.stopPropagation();
           });
         }
-        title2 = input2;
+        title = input2;
       } else {
-        title2 = el("span", { class: "chat-title" }, displayTitle);
+        title = el("span", { class: "chat-title" }, displayTitle);
         if (allowRename) {
-          title2.addEventListener("dblclick", (e3) => {
+          title.addEventListener("dblclick", (e3) => {
             e3.stopPropagation();
             beginThreadRename(thread.id, displayTitle);
           });
@@ -74763,7 +75720,7 @@ function mountProjectsPane(root, store2, api2) {
           class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
           "data-thread-id": thread.id
         },
-        title2
+        title
       );
       chatRow.addEventListener("click", () => {
         if (renaming?.threadId === thread.id) return;
@@ -74856,7 +75813,7 @@ function mountProjectsPane(root, store2, api2) {
       });
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
-        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+        chatRow.insertBefore(runningStatus("Agent is working"), title);
       } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
@@ -74865,7 +75822,7 @@ function mountProjectsPane(root, store2, api2) {
             role: "img",
             "aria-label": "Unread agent completion"
           }),
-          title2
+          title
         );
       }
       if (isThreadAwaitingAttention(thread.id)) {
@@ -75005,11 +75962,9 @@ function mountProjectsPane(root, store2, api2) {
           }
           const scheduleKey = `${project2.id}\0${scheduleId}`;
           const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
-          const attentionScheduleRuns = runs.filter(
-            (thread) => isThreadAwaitingAttention(thread.id)
-          );
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
+          const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
           const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
           const scheduleGroup = el("div", {
             class: "automation-schedule-group",
@@ -75077,20 +76032,63 @@ function mountProjectsPane(root, store2, api2) {
           });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
-            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
-            for (const thread of visibleRuns) {
+            const runRow2 = (thread) => {
               const index = runs.indexOf(thread);
               const timestamp = thread.automation?.triggeredAt;
               const when = timestamp ? new Date(timestamp).toLocaleString([], {
                 dateStyle: "medium",
                 timeStyle: "short"
               }) : "Unknown time";
-              runRows.append(
-                renderThreadRow(project2, thread, {
-                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                  allowRename: false
-                })
-              );
+              return renderThreadRow(project2, thread, {
+                displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                allowRename: false
+              });
+            };
+            if (showingAllRuns) {
+              for (const thread of runs) runRows.append(runRow2(thread));
+            } else {
+              for (const entry of foldEntries) {
+                if (entry.kind === "run") {
+                  runRows.append(runRow2(entry.run));
+                } else if (entry.kind === "pending") {
+                  const row2 = el(
+                    "button",
+                    { type: "button", class: "automation-fold-row needs-attention" },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} need you`
+                    ),
+                    el("span", { class: "chat-thread-owner" }, "Open in Activity")
+                  );
+                  row2.addEventListener("click", () => {
+                    openActivityPanel();
+                  });
+                  runRows.append(row2);
+                } else {
+                  const open2 = expandedFailedSchedules.has(scheduleKey);
+                  const row2 = el(
+                    "button",
+                    {
+                      type: "button",
+                      class: "automation-fold-row is-failed",
+                      "aria-expanded": open2 ? "true" : "false"
+                    },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} failed`
+                    )
+                  );
+                  row2.addEventListener("click", () => {
+                    if (open2) expandedFailedSchedules.delete(scheduleKey);
+                    else expandedFailedSchedules.add(scheduleKey);
+                    render();
+                  });
+                  runRows.append(row2);
+                  if (open2) for (const thread of entry.runs) runRows.append(runRow2(thread));
+                }
+              }
             }
             scheduleGroup.append(runRows);
           }
@@ -75345,9 +76343,73 @@ function mountProjectsPane(root, store2, api2) {
     }
     const automationsSection = renderAutomationsSection();
     if (automationsSection) list.append(automationsSection);
-    for (const node2 of buildProjectTree(projects, projectGroups)) {
-      if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
-      else list.append(renderProjectEntry(node2.project));
+    function renderThreadSections(mode) {
+      const owners = /* @__PURE__ */ new Map();
+      const rows = [];
+      for (const project2 of visibleProjects) {
+        if (project2.missing) continue;
+        owners.set(project2.id, project2);
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+        }
+      }
+      const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
+      const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      if (ordered.length === 0) {
+        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+      }
+      return sections.map((section) => {
+        const block = el("div", { class: "thread-section", "data-section-id": section.id });
+        if (section.label) {
+          block.append(el("div", { class: "thread-section-heading" }, section.label));
+        }
+        const byThread = new Map(section.rows.map((row2) => [row2.thread, row2]));
+        const countKey = `section:${mode}:${section.id}`;
+        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE;
+        const activeRow = section.rows.find(
+          (row2) => row2.projectId === activeProjectId && row2.thread.id === activeThreadId
+        );
+        const paged = paginateSidebarThreads(
+          section.rows.map((row2) => row2.thread),
+          limit,
+          activeRow?.thread.id
+        );
+        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount);
+        const chats = el("div", { class: "chats-list" });
+        for (const thread of paged.visibleThreads) {
+          const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
+          if (!project2) continue;
+          const row2 = renderThreadRow(project2, thread);
+          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          chats.append(row2);
+        }
+        if (paged.hasMore) {
+          const showMoreBtn = el(
+            "button",
+            { type: "button", class: "chats-show-more" },
+            "Show more"
+          );
+          showMoreBtn.addEventListener("click", () => {
+            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE);
+            render();
+          });
+          chats.append(showMoreBtn);
+        }
+        block.append(chats);
+        return block;
+      });
+    }
+    const groupMode = store2.getState().sidebarThreadGroup;
+    if (groupMode !== "project" && threadFilter.length === 0) {
+      list.append(...renderThreadSections(groupMode));
+    } else {
+      for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
+        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+          continue;
+        if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
+        else list.append(renderProjectEntry(node2.project));
+      }
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
     prBackfillRowsByKey = new Map(
@@ -75456,7 +76518,7 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3;
+var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
@@ -75483,6 +76545,7 @@ var init_projects_pane = __esm({
     init_attention();
     init_activity_panel();
     init_thread_history_editor();
+    init_automation_fold();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
@@ -75492,6 +76555,7 @@ var init_projects_pane = __esm({
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
     SVG_NS3 = "http://www.w3.org/2000/svg";
+    GROUP_MENU_ORDER = ["status", "project", "none"];
   }
 });
 
@@ -81908,7 +82972,7 @@ function visibleText(node2) {
     const elNode = node2;
     if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
       return CHIP_CHAR;
-    if (elNode.tagName === "BR") return "\n";
+    if (elNode.tagName === "BR") return elNode.hasAttribute("data-composer-tail") ? "" : "\n";
   }
   let out = "";
   for (const child of Array.from(node2.childNodes)) out += visibleText(child);
@@ -82007,6 +83071,7 @@ function mountComposerEditor() {
     return chip2;
   }
   function insertChip(chip2) {
+    root.querySelector("br[data-composer-tail]")?.remove();
     const selection2 = editor.isFocused() ? selectionInRoot() : null;
     if (selection2) {
       const range = selection2.getRangeAt(0);
@@ -82168,6 +83233,7 @@ function mountComposerEditor() {
       insertChip(makeThreadChip(id, state));
     },
     insertText(text2) {
+      root.querySelector("br[data-composer-tail]")?.remove();
       const node2 = document.createTextNode(text2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
@@ -82180,6 +83246,11 @@ function mountComposerEditor() {
         sel.addRange(range);
       } else {
         root.append(node2);
+      }
+      if (visibleText(root).endsWith("\n")) {
+        const tail = document.createElement("br");
+        tail.setAttribute("data-composer-tail", "");
+        root.append(tail);
       }
       emitInput();
     },
@@ -85170,6 +86241,300 @@ var init_markdown_quote = __esm({
   }
 });
 
+// src/renderer/dom/selection-quote.ts
+function bindSelectionQuote(transcript, actions) {
+  const input2 = el("textarea", {
+    class: "transcript-selection-reply",
+    placeholder: "Reply\u2026",
+    "aria-label": "Reply to selected text",
+    rows: "2"
+  });
+  input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
+  const sendLabel = el("span", {}, "Send");
+  const sendButton = el(
+    "button",
+    {
+      class: "transcript-selection-send",
+      type: "button",
+      "aria-keyshortcuts": "Meta+Enter Control+Enter"
+    },
+    sendLabel
+  );
+  const status = el("div", { class: "transcript-selection-status", role: "status", hidden: true });
+  const popup = el(
+    "div",
+    {
+      class: "transcript-selection-quote",
+      hidden: true,
+      role: "group",
+      "aria-label": "Selection reply"
+    },
+    input2,
+    el("div", { class: "transcript-selection-actions" }, sendButton),
+    status
+  );
+  document.body.append(popup);
+  let selectedText = "";
+  let selectedRange = null;
+  const highlights = typeof CSS === "undefined" ? void 0 : CSS.highlights;
+  const highlight = typeof Highlight === "undefined" ? null : new Highlight();
+  let dragging = false;
+  let suppressed = false;
+  let sending = false;
+  let hadText = false;
+  let revision = 0;
+  let reservedSpace = false;
+  let scrollingTo = null;
+  const hasDraft = () => input2.value.length > 0 || sending;
+  const updateControls = () => {
+    input2.disabled = sending;
+    sendButton.disabled = sending || !input2.value.trim();
+    sendLabel.textContent = sending ? "Sending\u2026" : "Send";
+    hadText = input2.value.length > 0;
+  };
+  const dismiss = () => {
+    revision++;
+    popup.hidden = true;
+    selectedText = "";
+    selectedRange = null;
+    scrollingTo = null;
+    if (reservedSpace) {
+      transcript.style.removeProperty("--selection-reply-space");
+      reservedSpace = false;
+    }
+    if (highlight) {
+      if (highlights && highlights.get("transcript-reply-selection") === highlight) {
+        highlights.delete("transcript-reply-selection");
+      }
+      highlight.clear();
+    }
+    input2.value = "";
+    status.hidden = true;
+    status.textContent = "";
+    sending = false;
+    updateControls();
+  };
+  const selectionBounds = () => {
+    if (!selectedRange) return null;
+    const rects = [...selectedRange.getClientRects()].filter(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
+    if (rects.length === 0) return null;
+    return {
+      top: Math.min(...rects.map((rect) => rect.top)),
+      bottom: Math.max(...rects.map((rect) => rect.bottom)),
+      left: Math.min(...rects.map((rect) => rect.left)),
+      right: Math.max(...rects.map((rect) => rect.right))
+    };
+  };
+  const position2 = () => {
+    let selection2 = selectionBounds();
+    const bounds = transcript.getBoundingClientRect();
+    if (!selection2 || selection2.bottom <= bounds.top || selection2.top >= bounds.bottom || selection2.right <= bounds.left || selection2.left >= bounds.right) {
+      if (hasDraft()) {
+        const size2 = popup.getBoundingClientRect();
+        const top2 = Number.parseFloat(popup.style.top) || bounds.top;
+        const left2 = Number.parseFloat(popup.style.left) || bounds.left;
+        const bottom = Math.min(bounds.bottom, window.innerHeight - 8);
+        popup.style.top = `${String(Math.max(8, Math.min(top2, bottom - size2.height)))}px`;
+        popup.style.left = `${String(Math.max(8, Math.min(left2, window.innerWidth - size2.width - 8)))}px`;
+      } else {
+        dismiss();
+      }
+      return;
+    }
+    popup.hidden = false;
+    const size = popup.getBoundingClientRect();
+    const gap = 8;
+    const visibleTop = Math.max(bounds.top, gap);
+    const visibleBottom = Math.min(bounds.bottom, window.innerHeight - gap);
+    let top = selection2.top - size.height - gap;
+    if (top < visibleTop) {
+      top = selection2.bottom + gap;
+      if (top + size.height > visibleBottom) {
+        transcript.style.setProperty(
+          "--selection-reply-space",
+          `${String(size.height + 2 * gap)}px`
+        );
+        reservedSpace = true;
+        const before = transcript.scrollTop;
+        transcript.scrollTop += Math.max(0, selection2.bottom + gap + size.height - visibleBottom);
+        if (transcript.scrollTop !== before) scrollingTo = transcript.scrollTop;
+        selection2 = selectionBounds();
+        if (!selection2) {
+          dismiss();
+          return;
+        }
+        top = selection2.bottom + gap;
+      }
+    }
+    const left = Math.max(
+      bounds.left + gap,
+      Math.min(selection2.left, bounds.right - size.width - gap)
+    );
+    popup.style.left = `${String(Math.max(gap, Math.min(left, window.innerWidth - size.width - gap)))}px`;
+    popup.style.top = `${String(top)}px`;
+  };
+  const refresh = () => {
+    if (hasDraft() || dragging || suppressed || popup.contains(document.activeElement)) return;
+    const selection2 = document.getSelection();
+    if (!transcript.isConnected || !selection2 || selection2.isCollapsed || selection2.rangeCount === 0 || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode)) {
+      dismiss();
+      return;
+    }
+    const text2 = trimSelectionText(selection2.toString());
+    if (!text2) {
+      dismiss();
+      return;
+    }
+    if (text2 !== selectedText) {
+      input2.value = "";
+      status.hidden = true;
+      revision++;
+    }
+    const opening = popup.hidden;
+    selectedText = text2;
+    selectedRange = selection2.getRangeAt(0).cloneRange();
+    if (highlight && highlights) {
+      highlight.clear();
+      highlight.add(selectedRange);
+      highlights.set("transcript-reply-selection", highlight);
+    }
+    updateControls();
+    position2();
+    if (opening && !popup.hidden) input2.focus({ preventScroll: true });
+  };
+  const reposition = () => {
+    if (!popup.hidden) position2();
+  };
+  const addToPrompt = () => {
+    if (!selectedText || sending) return;
+    const text2 = selectedText;
+    const reply = input2.value.trim();
+    dismiss();
+    actions.quote(text2, reply);
+  };
+  const sendReply = async () => {
+    if (!selectedText || !input2.value.trim() || sending) return;
+    const ticket = revision;
+    sending = true;
+    status.hidden = true;
+    updateControls();
+    let handedOff = false;
+    try {
+      handedOff = await actions.send(selectedText, input2.value.trim());
+    } catch {
+    }
+    if (ticket !== revision) return;
+    sending = false;
+    if (handedOff) {
+      dismiss();
+    } else {
+      status.textContent = "Reply not sent. Try again or press Enter to add it to the prompt.";
+      status.hidden = false;
+      updateControls();
+      position2();
+    }
+  };
+  input2.addEventListener("input", () => {
+    if (hadText && input2.value.length === 0) {
+      suppressed = true;
+      dismiss();
+    } else {
+      updateControls();
+    }
+  });
+  input2.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.metaKey || event.ctrlKey) void sendReply();
+    else addToPrompt();
+  });
+  sendButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  sendButton.addEventListener("click", () => void sendReply());
+  const onPointerDown = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.button === 2 && event.target instanceof Node && transcript.contains(event.target)) {
+      suppressed = true;
+      return;
+    }
+    dragging = event.button === 0;
+    if (dragging) suppressed = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onPointerUp = (event) => {
+    if (event.button !== 0 || !dragging) return;
+    dragging = false;
+    refresh();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      suppressed = true;
+      dismiss();
+    } else if (event.shiftKey && event.key.startsWith("Arrow")) {
+      suppressed = false;
+    }
+  };
+  const onContextMenu = () => {
+    const selection2 = document.getSelection();
+    if (selection2 && selectedRange && transcript.contains(selectedRange.startContainer) && transcript.contains(selectedRange.endContainer) && (selection2.isCollapsed || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode))) {
+      selection2.removeAllRanges();
+      selection2.addRange(selectedRange.cloneRange());
+    }
+    if (hasDraft()) return;
+    suppressed = true;
+    dismiss();
+  };
+  const onPointerCancel = () => {
+    dragging = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onScroll = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.target === transcript && scrollingTo !== null && Math.abs(transcript.scrollTop - scrollingTo) < 1) {
+      scrollingTo = null;
+      return;
+    }
+    if (hasDraft()) position2();
+    else dismiss();
+  };
+  document.addEventListener("selectionchange", refresh);
+  document.addEventListener("pointerdown", onPointerDown);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerCancel);
+  document.addEventListener("keydown", onKeyDown);
+  transcript.addEventListener("contextmenu", onContextMenu);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", reposition);
+  window.addEventListener("blur", onPointerCancel);
+  updateControls();
+  return {
+    dismiss,
+    destroy: () => {
+      dismiss();
+      popup.remove();
+      document.removeEventListener("selectionchange", refresh);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+      document.removeEventListener("keydown", onKeyDown);
+      transcript.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("blur", onPointerCancel);
+    }
+  };
+}
+var init_selection_quote = __esm({
+  "src/renderer/dom/selection-quote.ts"() {
+    init_helpers();
+    init_markdown_quote();
+  }
+});
+
 // src/renderer/views/conversation.ts
 function interruptionCause(outcome, next) {
   if (next?.role !== "user" || next.origin !== void 0) return "user";
@@ -86910,6 +88275,10 @@ function mountConversation(root, store2, api2) {
     e3.stopPropagation();
     navigateToChange(store2, path);
   });
+  const selectionQuote = bindSelectionQuote(list, {
+    quote: quoteTranscriptSelection,
+    send: (text2, reply) => getPromptAttachmentHandlers()?.sendQuotedReply?.(text2, reply) ?? Promise.resolve(false)
+  });
   list.addEventListener("contextmenu", (e3) => {
     if (e3.defaultPrevented) return;
     const targetEl = e3.target instanceof Element ? e3.target : null;
@@ -87229,6 +88598,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let stickyImagePrompt = null;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -87351,8 +88721,34 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
+  function syncStickyImagePreview() {
+    const prompt = stickyImagePrompt;
+    if (!prompt?.isConnected) return;
+    const promptStyle = window.getComputedStyle(prompt);
+    if (promptStyle.position !== "sticky") {
+      prompt.classList.remove("is-preview-compact");
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const listStyle = window.getComputedStyle(list);
+    const previous = prompt.previousElementSibling;
+    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+  }
+  function refreshStickyImagePrompt() {
+    const prompts = list.querySelectorAll(
+      ":scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)"
+    );
+    const latest = prompts[prompts.length - 1];
+    const next = latest?.querySelector(".message-images") ? latest : null;
+    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    stickyImagePrompt = next;
+    syncStickyImagePreview();
+  }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
+    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -87373,6 +88769,8 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  listResizeObserver?.observe(list);
   list.addEventListener(
     "wheel",
     (event) => {
@@ -87466,6 +88864,7 @@ function mountConversation(root, store2, api2) {
     const before = list.scrollTop;
     list.scrollTop = top;
     const landed = list.scrollTop;
+    syncStickyImagePreview();
     lastScrollTop = landed;
     if (landed !== before) {
       lastProgrammaticScrollTop = landed;
@@ -87820,6 +89219,7 @@ function mountConversation(root, store2, api2) {
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
     finalizeMessageEl(threadId, msgId);
     if (batched) return;
+    if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
@@ -88202,9 +89602,11 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = 0;
     }
     disclosureElements.clear();
+    if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     if (!thread) {
@@ -88228,6 +89630,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -88527,8 +89930,10 @@ function mountConversation(root, store2, api2) {
   reviewerInput.sync();
   return () => {
     disposed = true;
+    selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
+    listResizeObserver?.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
       clearTimeout(timer);
@@ -88553,10 +89958,10 @@ function mountConversation(root, store2, api2) {
 function messageContentById(store2, msgId) {
   return store2.getState().threads.flatMap((t2) => t2.messages).find((m2) => m2.id === msgId)?.content;
 }
-function quoteTranscriptSelection(text2) {
+function quoteTranscriptSelection(text2, reply) {
   const handlers3 = getPromptAttachmentHandlers();
   if (!handlers3) return;
-  handlers3.quoteText(text2);
+  handlers3.quoteText(text2, reply);
   handlers3.focusComposer?.();
 }
 async function addTranscriptSelectionToRoadmap(api2, text2) {
@@ -88660,6 +90065,7 @@ var init_conversation = __esm({
     init_conversation_search();
     init_thread_history_editor();
     init_markdown_quote();
+    init_selection_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     markedTranscripts = /* @__PURE__ */ new WeakSet();
@@ -105436,14 +106842,24 @@ ${description}
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content) => {
+    quoteText: (content, reply = "") => {
       const quote = formatMarkdownQuote(content);
       const caret = composer.selectionStart;
       const prevChar = caret > 0 ? composer.value[caret - 1] : void 0;
       const needsLeadingBreak = prevChar !== void 0 && prevChar !== "\n";
       composer.insertText(`${needsLeadingBreak ? "\n\n" : ""}${quote}
 
-`);
+${reply}`);
+      const quoteEnd = composer.selectionStart;
+      composer.focus();
+      composer.setSelectionRange(quoteEnd, quoteEnd);
+      composer.el.scrollTop = composer.el.scrollHeight;
+    },
+    sendQuotedReply: async (content, reply) => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false;
+      attachmentHandlers.quoteText(content, reply);
+      await submit();
+      return true;
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
@@ -141303,13 +142719,27 @@ function mountAskUserDialog(api2, store2) {
     childList: true,
     subtree: true
   });
-  function respond(answers) {
-    const current = active2;
-    if (!current) return;
-    dialog2.close();
-    active2 = null;
-    void api2.ask.respond(current.id, answers);
+  function settle2(request, answers) {
+    if (active2 === request) {
+      dialog2.close();
+      active2 = null;
+    } else {
+      const idx = queue.indexOf(request);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+    }
+    void api2.ask.respond(request.id, answers);
     showNext();
+    syncAttention();
+  }
+  function respond(answers) {
+    if (active2) settle2(active2, answers);
+  }
+  function answerFrom(id, answers) {
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    if (request === void 0 || answers.length !== request.questions.length) return false;
+    settle2(request, [...answers]);
+    return true;
   }
   function submit() {
     respond(inputs.map((input2) => input2.value));
@@ -141370,8 +142800,10 @@ function mountAskUserDialog(api2, store2) {
       id: req.id,
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
+      options: req.questions.map((q2) => q2.options ?? []),
       receivedAt: req.receivedAt
     })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener);
       return () => {
@@ -142695,6 +144127,66 @@ var init_process_manager_dialog = __esm({
     init_confirm_dialog();
     init_toast();
     init_dialog_shell();
+  }
+});
+
+// src/renderer/views/activity-home.ts
+function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
+  let shown = false;
+  const root = el("section", {
+    id: "activity-home",
+    class: "activity-home",
+    "aria-labelledby": "activity-home-title",
+    hidden: ""
+  });
+  const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-home",
+    // Nothing to dismiss: opening a row switches thread, which hides this screen.
+    close: () => {
+    },
+    isShown: () => shown,
+    // Focus belongs to the composer on this screen.
+    fallbackFocus: () => {
+      pane.querySelector("#input-bar .prompt-input")?.focus({ preventScroll: true });
+    },
+    onNeedsYou: (count) => {
+      root.dataset["needsYou"] = String(count);
+    },
+    // With nothing to list the strip and card would only say so: the screen steps
+    // aside and the composer takes the middle of the pane, as a first run always had.
+    onIdle: (idle) => {
+      root.dataset["idle"] = String(idle);
+      pane.classList.toggle("is-activity-idle", idle);
+    },
+    collapsibleGroups: true,
+    projectStrip: true,
+    followUrgent: true,
+    openThreadArrow: true
+  });
+  view.status.classList.add("activity-home-sr");
+  root.append(
+    el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
+    view.strip,
+    view.body,
+    view.status,
+    el("p", { class: "activity-home-caption" }, "Start a new thread")
+  );
+  pane.insertBefore(root, pane.querySelector("#input-bar"));
+  return {
+    setShown: (next) => {
+      if (next === shown) return;
+      shown = next;
+      root.hidden = !next;
+      if (!next) pane.classList.remove("is-activity-idle");
+      if (next) view.show({ focusFirstRow: false });
+      else view.hide();
+    }
+  };
+}
+var init_activity_home = __esm({
+  "src/renderer/views/activity-home.ts"() {
+    init_helpers();
+    init_activity_view();
   }
 });
 
@@ -144599,6 +146091,7 @@ async function loadStartupSettings(settings) {
     rightPanelPosition,
     sidebarThreadSort,
     sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -144617,6 +146110,7 @@ async function loadStartupSettings(settings) {
     settings.get("rightPanelPosition"),
     settings.get("sidebarThreadSort"),
     settings.get("sidebarThreadSortReverse"),
+    settings.get("sidebarThreadGroup"),
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
@@ -144636,6 +146130,7 @@ async function loadStartupSettings(settings) {
     rightPanelPosition,
     sidebarThreadSort,
     sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -145129,24 +146624,30 @@ function isActiveThreadEmpty(store2) {
   const { activeThreadId, threads } = store2.getState();
   if (!activeThreadId) return false;
   const thread = threads.find((t2) => t2.id === activeThreadId);
-  return thread ? thread.messages.length === 0 : false;
+  return thread ? thread.messages.length === 0 && !needsHydration(thread) : false;
 }
-function bindChatComposerLayout(store2) {
+function bindChatComposerLayout(store2, onActivityHome) {
   const pane = document.getElementById("pane-chat");
   const input2 = document.getElementById("input-bar");
   const conversation = document.getElementById("conversation");
   if (!pane || !input2 || !conversation) return () => {
   };
+  let focusedFor = null;
   const sync = () => {
-    const centered = isActiveThreadEmpty(store2);
-    pane.classList.toggle("composer-centered", centered);
-    if (centered) {
-      pane.style.setProperty("--chat-composer-height", "0px");
-      if (document.documentElement.dataset["demoEmbedded"] !== "on") {
-        const composer = input2.querySelector(".prompt-input");
-        composer?.focus({ preventScroll: true });
+    const home = isActiveThreadEmpty(store2);
+    pane.classList.toggle("is-activity-home", home);
+    onActivityHome?.(home);
+    if (home) {
+      const threadId = store2.getState().activeThreadId;
+      if (threadId !== focusedFor) {
+        focusedFor = threadId;
+        if (document.documentElement.dataset["demoEmbedded"] !== "on") {
+          const composer = input2.querySelector(".prompt-input");
+          composer?.focus({ preventScroll: true });
+        }
       }
-      return;
+    } else {
+      focusedFor = null;
     }
     const height = Math.max(Math.ceil(input2.getBoundingClientRect().height), 72);
     pane.style.setProperty("--chat-composer-height", `${String(height)}px`);
@@ -145167,6 +146668,7 @@ function bindChatComposerLayout(store2) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+    init_thread_hydration();
   }
 });
 
@@ -154256,7 +155758,8 @@ async function boot() {
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
   openProcessManager = mountProcessManagerDialog(api, store);
-  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests });
+  activitySources = { approvals: approvalRequests, questions: askUserRequests };
+  mountActivityPanel(api, store, activitySources);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -154267,6 +155770,7 @@ async function boot() {
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel;
   const savedRightPanelPosition = startupSettings.rightPanelPosition;
   const savedSidebarThreadSort = startupSettings.sidebarThreadSort;
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup;
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser;
   const savedDeveloperMode = startupSettings.developerMode;
   const savedTheme = startupSettings.theme;
@@ -154305,6 +155809,7 @@ async function boot() {
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort) ? savedSidebarThreadSort : "activity",
     sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup) ? savedSidebarThreadGroup : "project",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === "boolean" ? savedDeveloperMode : false
   });
@@ -154497,7 +156002,8 @@ function mountFullLayout() {
   if (!inputRoot.querySelector(".prompt-input")) {
     throw new Error("Chat composer failed to mount (#input-bar missing .prompt-input)");
   }
-  bindChatComposerLayout(store);
+  const activityHome = activitySources ? mountActivityHome(requireElement("pane-chat"), api, store, activitySources) : null;
+  bindChatComposerLayout(store, activityHome?.setShown);
   mountFileTree(requireElement("file-tree-host"), store, api);
   mountRightPanelLayout(store);
   mountTerminalsPane(
@@ -154675,7 +156181,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, rendererReady;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, activitySources, rendererReady;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_mobile_chat();
@@ -154728,6 +156234,7 @@ var init_main = __esm({
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
     init_process_manager_dialog();
+    init_activity_home();
     init_activity_panel();
     init_agent();
     init_diff_state();
@@ -154796,6 +156303,7 @@ var init_main = __esm({
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
     openProcessManager = null;
+    activitySources = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
