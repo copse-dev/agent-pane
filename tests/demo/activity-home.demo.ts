@@ -114,6 +114,49 @@ describe('browser-hosted Activity home', () => {
     expect(probe.twoColumns).toBe(true)
   })
 
+  it('keeps the selected approval and its heading visible when the list stacks', async () => {
+    const before = await browser.execute(
+      () => document.querySelector('#activity-home .activity-list')?.scrollTop ?? -1,
+    )
+    await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    try {
+      await browser.waitUntil(async () => (await probeHome())?.twoColumns === false)
+      await browser.execute(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      )
+      const geometry = await browser.execute(() => {
+        const list = document.querySelector('#activity-home .activity-list')
+        const row = document.querySelector('#activity-home .activity-row[data-selected="true"]')
+        const heading = document.querySelector(
+          '#activity-home [data-group="needs-you"] .activity-group-title',
+        )
+        if (!list || !row || !heading) return null
+        const frame = list.getBoundingClientRect()
+        const selected = row.getBoundingClientRect()
+        return {
+          scrollTop: list.scrollTop,
+          rowTop: selected.top,
+          rowBottom: selected.bottom,
+          headingTop: heading.getBoundingClientRect().top,
+          listTop: frame.top,
+          listBottom: frame.bottom,
+        }
+      })
+      expect(geometry).not.toBeNull()
+      if (!geometry) throw new Error('Missing selected Activity row')
+      expect(geometry.scrollTop).toBe(before)
+      expect(geometry.rowTop).toBeGreaterThanOrEqual(geometry.listTop)
+      expect(geometry.rowBottom).toBeLessThanOrEqual(geometry.listBottom)
+      expect(geometry.headingTop).toBeGreaterThanOrEqual(geometry.listTop)
+      await saveAppScreenshot('activity-home-stacked-selection.png')
+    } finally {
+      await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
+    }
+  })
+
   it('shows the approval in the detail pane when its row is chosen', async () => {
     // The fixture's approval arrives after the first draw, and a request landing
     // never moves the selection under the user, so choose its row explicitly.
@@ -219,7 +262,7 @@ describe('browser-hosted Activity home', () => {
       const row = document.querySelector('#activity-home .activity-row')
       const list = document.querySelector('#activity-home .activity-list')
       if (!body || !row || !list) return false
-      const frame = body.getBoundingClientRect()
+      const frame = list.getBoundingClientRect()
       const box = row.getBoundingClientRect()
       return (
         list.getBoundingClientRect().height >= 100 &&
