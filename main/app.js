@@ -148453,14 +148453,16 @@ function discoveryHost(machine) {
   if (machine.startsWith(SSH_MACHINE_PREFIX)) {
     return { kind: "ssh", hostId: machine.slice(SSH_MACHINE_PREFIX.length) };
   }
-  if (machine === LOCAL_MACHINE) return { kind: "local" };
-  throw new Error("Choose this machine or a saved SSH machine before scanning ports");
+  throw new Error("Choose a saved SSH machine before scanning ports");
 }
 function sshMachineValue(hostId) {
   return `${SSH_MACHINE_PREFIX}${hostId}`;
 }
 function isNetworkMachine(machine) {
   return machine === MANUAL_MACHINE || machine.startsWith(NEARBY_MACHINE_PREFIX);
+}
+function isExplicitLocalAddress(host) {
+  return host.toLowerCase() === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 function isSimulatorMachine(machine) {
   return machine.startsWith(SIMULATOR_MACHINE_PREFIX);
@@ -148479,7 +148481,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "aria-label": "Desktop machine",
     hidden: true
   });
-  machineSelect.append(el("option", { value: LOCAL_MACHINE }, "This machine"));
   const refreshDevicesButton = el(
     "button",
     {
@@ -148608,7 +148609,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const discoveryStatus = el(
     "div",
     { class: "vnc-discovery-status", role: "status" },
-    "Scanning this machine\u2026"
+    "Checking for screen sharing\u2026"
   );
   const discoveredPorts = el("div", {
     class: "vnc-discovered-ports",
@@ -148836,7 +148837,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   let selectedHasSavedPassword = false;
   let selectedSavedUsername = "";
   function machinePresentation(value) {
-    if (value === LOCAL_MACHINE) return { name: "This machine", meta: "This device" };
     if (value === MANUAL_MACHINE) {
       return { name: "Add device", meta: "Connect with an address" };
     }
@@ -148956,7 +148956,6 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     screen.hidden = !connected;
   }
   function selectedMachineName() {
-    if (machineSelect.value === LOCAL_MACHINE) return "this machine";
     if (machineSelect.value === MANUAL_MACHINE) {
       return parseVncEndpoint(addressInput.value, Number.parseInt(portInput.value, 10))?.host ?? "remote desktop";
     }
@@ -149157,7 +149156,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     return server.addresses.find((address) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)) ?? (host ? host : server.addresses[0] ?? "");
   }
   function rebuildMachineOptions(preferred) {
-    machineSelect.replaceChildren(el("option", { value: LOCAL_MACHINE }, "This machine"));
+    machineSelect.replaceChildren();
     if (simulatorDevices.length > 0) {
       const simulatorGroup = el("optgroup", { label: "Local simulators" });
       for (const device of simulatorDevices) {
@@ -149194,6 +149193,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
     if ([...machineSelect.options].some((option) => option.value === preferred)) {
       machineSelect.value = preferred;
+    } else {
+      machineSelect.selectedIndex = -1;
     }
     renderDeviceList();
   }
@@ -149218,7 +149219,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         sshHostResolutions.filter((resolution) => resolution.hostId === host.id)
       ).length === 0
     );
-    return matchingSsh ? sshMachineValue(matchingSsh.id) : LOCAL_MACHINE;
+    return matchingSsh ? sshMachineValue(matchingSsh.id) : MANUAL_MACHINE;
   }
   async function refreshSshHosts(preferred = machineSelect.value) {
     const generation = ++sshHostsGeneration;
@@ -149249,10 +149250,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const network = isNetworkMachine(machine);
     const simulator = isSimulatorMachine(machine);
     addressField.hidden = machine !== MANUAL_MACHINE;
-    networkWarning.hidden = !network;
+    const manualAddress = parseVncEndpoint(addressInput.value, 5900)?.host ?? "";
+    networkWarning.hidden = !network || machine === MANUAL_MACHINE && (!manualAddress || isExplicitLocalAddress(manualAddress));
     advancedSettings.hidden = simulator;
     discoverButton.hidden = true;
-    discoveryStatus.hidden = network || simulator;
+    discoveryStatus.hidden = !machine.startsWith(SSH_MACHINE_PREFIX);
     if (machineChanged) {
       setupUsernameInput.value = "";
       setupPasswordInput.value = "";
@@ -149294,6 +149296,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (isNetworkMachine(machineSelect.value)) {
       const endpoint = parseVncEndpoint(addressInput.value, port);
       if (!endpoint) return null;
+      if (machineSelect.value === MANUAL_MACHINE && isExplicitLocalAddress(endpoint.host)) {
+        return { kind: "loopback", port: endpoint.port };
+      }
       return {
         kind: "network",
         host: endpoint.host,
@@ -149301,7 +149306,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         confirmedUnencrypted: true
       };
     }
-    return { kind: "loopback", port };
+    return null;
   }
   async function refreshSavedLogin() {
     const generation = ++savedLoginGeneration;
@@ -149376,13 +149381,13 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (ports[0] !== void 0) chooseDiscoveredPort(ports[0]);
   }
   async function discoverSelectedMachine() {
-    if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (!machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) return;
     if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
     discoveryStatus.dataset["kind"] = "working";
-    discoveryStatus.textContent = discoveryHost(machineSelect.value).kind === "ssh" ? "Checking this saved machine for screen sharing\u2026" : "Checking this machine for screen sharing\u2026";
+    discoveryStatus.textContent = "Checking this saved machine for screen sharing\u2026";
     renderDiscoveredPorts([]);
     try {
       const ports = await api2.vnc.discover(discoveryHost(machineSelect.value));
@@ -149605,7 +149610,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const generation = ++connectGeneration;
     connectButton.disabled = true;
     setStatus(
-      target.kind === "network" ? "Opening direct network connection\u2026" : "Opening secure connection\u2026",
+      target.kind === "network" ? "Opening direct network connection\u2026" : target.kind === "loopback" ? "Opening local connection\u2026" : "Opening secure connection\u2026",
       "working"
     );
     try {
@@ -149637,7 +149642,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       pendingDisconnectStatus = null;
       resetControlState();
       const machineName = selectedMachineName();
-      options.onLabelChange(machineName === "this machine" ? "This machine" : machineName);
+      options.onLabelChange(machineName);
       empty.textContent = "Connecting to the remote desktop\u2026";
       setSessionUi(true);
       nextRfb.viewOnly = true;
@@ -149870,6 +149875,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void refreshSavedLogin();
   });
   addressInput.addEventListener("input", () => {
+    const host = parseVncEndpoint(addressInput.value, 5900)?.host ?? "";
+    networkWarning.hidden = !host || isExplicitLocalAddress(host);
     void refreshSavedLogin();
   });
   portInput.addEventListener("keydown", (event) => {
@@ -149936,7 +149943,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void recoverDesktopViewer();
   });
   setSessionUi(false);
-  portInput.value = "5901";
+  portInput.value = "5900";
   void loadMachines();
   return {
     simulatorMatch: (udid) => {
@@ -150166,7 +150173,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -150183,8 +150190,7 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
-    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
-    LOCAL_MACHINE = "local";
+    CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
     SSH_MACHINE_PREFIX = "ssh:";
