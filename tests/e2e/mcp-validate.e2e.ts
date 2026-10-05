@@ -340,4 +340,22 @@ describe('MCP HTTP transport with auth', () => {
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('error'))
     await settings.$('#settings-close').click()
   })
+
+  it('offers a sign-in, not an error, when a remote server answers 401 to a client with no credentials', async function () {
+    this.timeout(60_000)
+    await startWorkspace('mcp-http-sign-in', {
+      remote: { type: 'http', url: `http://127.0.0.1:${String(port)}/mcp` },
+    })
+
+    const settings = await openMcpSettings()
+    const row = await $('.mcp-server-row.mcp-state-error')
+    await row.waitForDisplayed({ timeout: 30_000 })
+    await expect(row.$('.mcp-server-summary')).toHaveText(
+      expect.stringContaining('sign-in required'),
+    )
+    await expect(row.$('.mcp-auth-btn')).toHaveText('Sign in')
+    await expect(row.$('.mcp-server-detail')).toHaveText("Sign in to use this server's tools.")
+    await saveAppScreenshot('mcp-http-sign-in-required.png')
+    await settings.$('#settings-close').click()
+  })
 })

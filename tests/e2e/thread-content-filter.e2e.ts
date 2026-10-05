@@ -22,12 +22,11 @@ function thread(id: string, title: string, date: number, messages: Message[]): T
 }
 
 async function setFilterValue(value: string): Promise<void> {
-  await browser.execute((nextValue) => {
-    const input = document.querySelector<HTMLInputElement>('.projects-search-input')
-    if (!input) throw new Error('Thread filter input is missing')
-    input.value = nextValue
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  }, value)
+  const input = $('.projects-search-input')
+  await input.click()
+  await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'a'])
+  await browser.keys('Backspace')
+  if (value) await input.addValue(value)
 }
 
 describe('sidebar user-request search', () => {
@@ -82,7 +81,6 @@ describe('sidebar user-request search', () => {
 
   it('finds persisted user requests beyond the first page in date order and opens a match', async () => {
     await expect($('.chat-row[data-thread-id="old-request"]')).not.toExist()
-    await $('.projects-search-btn').click()
     await setFilterValue('needle')
     await browser.waitUntil(
       async () =>
@@ -112,16 +110,16 @@ describe('sidebar user-request search', () => {
   it('clears the old search when switching workspaces and searches only the newly opened workspace', async () => {
     await setFilterValue('needle')
     await $('.project-entry[data-project-id="other-workspace"] .project-row').click()
-    await expect($('.projects-search-row')).not.toBeDisplayed()
+    await expect($('.projects-search-input')).toHaveValue('')
     await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
-    await $('.projects-search-btn').click()
     await setFilterValue('needle')
     await expect($('.chat-row .chat-title')).toHaveText('Other workspace request')
     await browser.waitUntil(async () => !(await $('.thread-filter-status').isExisting()), {
       timeout: 15000,
     })
     await expect($$('.chat-row')).toBeElementsArrayOfSize(1)
+    await expect($('.projects-search-input')).toBeFocused()
     await browser.keys('Escape')
-    await expect($('.projects-search-row')).not.toBeDisplayed()
+    await expect($('.projects-search-input')).toHaveValue('')
   })
 })

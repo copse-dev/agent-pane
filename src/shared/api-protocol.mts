@@ -69,5 +69,6 @@
 // v40 versions the queued-message model snapshot in thread payloads.
 // v41 versions container-run consent fields and terminal state.
 // v42 conservatively versions the persisted sidebar grouping in settings payloads.
-// v43 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 43 as const
+// v43 versions the optional OAuth `auth` state on MCP server statuses.
+// v44 versions the context_compacted agent chunk (OpenAI server-side compaction).
+export const API_PROTOCOL_VERSION = 44 as const

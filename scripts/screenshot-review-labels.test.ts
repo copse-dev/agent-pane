@@ -270,6 +270,8 @@ interface Recorded {
 async function record(
   env: Record<string, string>,
   comments = [{ id: 7, user: { type: 'Bot' }, body: EVIDENCE }],
+  liveHead = env['COMPARE_COMMIT'] ?? HEAD,
+  missingLabel = false,
 ): Promise<Recorded> {
   const result: Recorded = { statuses: [], removed: [], created: [], updated: [] }
   const listComments = (): void => {}
@@ -288,6 +290,14 @@ async function record(
     },
     github: {
       rest: {
+        pulls: {
+          get: async () => ({
+            data: {
+              state: 'open',
+              head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
+            },
+          }),
+        },
         repos: {
           createCommitStatus: async (status: Recorded['statuses'][number]) => {
             result.statuses.push(status)
@@ -297,6 +307,8 @@ async function record(
           listComments,
           removeLabel: async ({ name }: { name: string }) => {
             result.removed.push(name)
+            if (missingLabel && name === 'screenshots-need-review')
+              throw Object.assign(new Error('Not Found'), { status: 404 })
           },
           createComment: async ({ body }: { body: string }) => {
             result.created.push(body)
@@ -328,7 +340,7 @@ describe('recording a screenshot review decision', () => {
       ]),
       [[HEAD, 'success', 'Screenshot review', 'Declined by @reviewer; no candidate committed']],
     )
-    assert.deepEqual(result.removed, ['decline-screenshots'])
+    assert.deepEqual(result.removed, ['decline-screenshots', 'screenshots-need-review'])
     assert.deepEqual(result.created, [])
     const body = result.updated[0] ?? ''
     assert.doesNotMatch(body, /Review required/)
@@ -353,11 +365,28 @@ describe('recording a screenshot review decision', () => {
       result.statuses.map(({ sha, description }) => [sha, description]),
       [[HEAD, 'Accepted by @reviewer; committed as def456def456']],
     )
-    assert.deepEqual(result.removed, ['accept-screenshots'])
+    assert.deepEqual(result.removed, ['accept-screenshots', 'screenshots-need-review'])
     assert.match(
       result.updated[0] ?? '',
       /fast-forwarded from `abc123abc123` to `def456def456`, committing 2 screenshots/,
     )
+  })
+
+  it('keeps a newer pushed head’s reminder when recording an older decision', async () => {
+    for (const env of [
+      { OUTCOME: 'decline' },
+      { LABEL: 'accept-screenshots', OUTCOME: 'accept', PUSHED: 'true', COMPARE_COMMIT: COMPARE },
+    ]) {
+      const result = await record(env, undefined, 'f'.repeat(40))
+      assert.deepEqual(result.removed, [env.LABEL ?? 'decline-screenshots'])
+      assert.equal(result.statuses.length, 1)
+    }
+  })
+
+  it('records a decision even when the reminder was already removed', async () => {
+    const result = await record({ OUTCOME: 'decline' }, undefined, HEAD, true)
+    assert.equal(result.statuses.length, 1)
+    assert.equal(result.updated.length, 1)
   })
 
   it('appends the decision when the evidence comment has no review block', async () => {

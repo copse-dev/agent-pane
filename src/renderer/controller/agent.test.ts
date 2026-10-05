@@ -321,6 +321,23 @@ test('a visualization-only answer after tools gets its own assistant bubble', ()
   assert.deepEqual(at(messages(), 1).toolCalls, [])
 })
 
+test('resolved model updates a carried background thread without creating a bubble', () => {
+  const { store, send, unsub } = setup()
+  store.setState({
+    backgroundThreads: [{ projectId: 'other-project', thread: thread('background') }],
+  })
+  const resolved: string[] = []
+  let changed = 0
+  store.on('thread_model_resolved', (id) => resolved.push(id))
+  store.on('threads_changed', () => changed++)
+  send({ type: 'turn_parameters', model: 'gpt-5.6-sol', parameters: {} }, 'background')
+  assert.equal(requireThread(store, 'background').resolvedModel, 'gpt-5.6-sol')
+  assert.equal(requireThread(store, 'background').messages.length, 0)
+  assert.deepEqual(resolved, ['background'])
+  assert.equal(changed, 0)
+  unsub()
+})
+
 test('assistant messages record the requested (picker) model', () => {
   const { send, messages } = setup([
     {

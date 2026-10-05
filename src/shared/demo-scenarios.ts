@@ -2,9 +2,9 @@ import type { ChatGptPlanStatus } from './types/chatgpt-plan.ts'
 import type { Project, Thread } from './types/index.ts'
 import type { AppleProjectState } from './types/apple-development.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
+import type { McpServerStatus } from './types/mcp.ts'
 import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
-import type { McpServerStatus } from './types/mcp.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
@@ -916,6 +916,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     id: 'balanced-model-label',
     label: 'Balanced model rule label',
+    trace: {
+      id: 'balanced-model-resolution',
+      label: 'Balanced resolves before the first token',
+      prompt: 'Show the concrete model for this turn.',
+      steps: [
+        {
+          chunk: {
+            type: 'turn_parameters',
+            model: 'claude-sonnet-4-6',
+            parameters: {},
+            requestedModel: 'auto:balanced',
+          },
+        },
+        { delayMs: 5000, chunk: { type: 'text', text: 'This turn runs on Claude Sonnet 4.6.' } },
+        { chunk: { type: 'done', stopReason: 'end_turn' } },
+      ],
+    },
     project: project('demo-balanced-model-label-project'),
     settings: {
       onboardingCompleted: true,
@@ -1602,6 +1619,56 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'mcp-sign-in',
+    label: 'MCP servers that sign in with OAuth',
+    project: project('demo-mcp-sign-in-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-mcp-sign-in-thread',
+        title: 'MCP sign-in',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    mcpServers: [
+      {
+        name: 'design-system',
+        transport: 'http',
+        state: 'error',
+        error: 'Sign-in required',
+        auth: 'required',
+        toolCount: 0,
+        tools: [],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
+      },
+      {
+        name: 'issues',
+        transport: 'http',
+        state: 'connected',
+        auth: 'signed-in',
+        toolCount: 3,
+        tools: ['list_issues', 'get_issue', 'create_issue'],
+        origin: 'user',
+        source: '/Users/demo/.cursor/mcp.json',
+        originDetail: 'mcp.json',
+        userEnabled: true,
+        configDisabled: false,
+      },
+    ],
+  },
+  {
     id: 'automation-permissions',
     label: 'Automation permission preferences',
     project: project('demo-automation-permissions-project', 'Copse', '/demo/copse'),
@@ -1859,6 +1926,66 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     },
   },
   {
+    id: 'sidebar-automation-fold',
+    label: 'Sidebar automation fold',
+    project: project('demo-automation-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // One schedule with every kind of run: four waiting on the user (collapsed into one
+    // row), one working, two failed (collated), and three that finished cleanly.
+    // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+    threads: [
+      {
+        id: 'demo-automation-fold-chat',
+        title: 'A regular conversation',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME + 1,
+        updatedAt: FIXED_TIME + 1,
+      },
+      ...(
+        [
+          ['wait-1', 'idle'],
+          ['wait-2', 'idle'],
+          ['wait-3', 'idle'],
+          ['wait-4', 'idle'],
+          ['working', 'running'],
+          ['fail-1', 'error'],
+          ['fail-2', 'error'],
+          ['done-1', 'idle'],
+          ['done-2', 'idle'],
+          ['done-3', 'idle'],
+        ] as const
+      ).map(([suffix, status], index) => ({
+        id: `demo-automation-fold-${suffix}`,
+        title: 'Docs freshness',
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        automation: {
+          scheduleId: 'demo-automation-fold-schedule',
+          scheduleName: 'Docs freshness',
+          triggeredAt: FIXED_TIME - index * 3_600_000,
+        },
+        createdAt: FIXED_TIME - index,
+        updatedAt: FIXED_TIME - index,
+      })),
+    ],
+    approvalRequests: ['wait-1', 'wait-2', 'wait-3', 'wait-4'].map((suffix) => ({
+      id: `demo-automation-fold-approval-${suffix}`,
+      threadId: `demo-automation-fold-${suffix}`,
+      title: 'Run outside sandbox?',
+      body: 'node scripts/check-docs.mjs',
+      type: 'shell',
+    })),
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),
@@ -2032,6 +2159,74 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         body: "printf 'auth-check-passed\\n'",
         type: 'shell',
       },
+    ],
+  },
+  {
+    id: 'activity-home-automation-fold',
+    label: 'Activity home with automation runs folded',
+    project: project('demo-activity-fold-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Beside a working thread and one
+    // finished chat, a schedule has settled five clean runs and another three failed
+    // ones: each folds into a single row instead of eight.
+    threads: [
+      {
+        id: 'demo-activity-fold-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      {
+        id: 'demo-activity-fold-audit',
+        title: 'Dependency audit',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 1,
+        updatedAt: FIXED_TIME - 1,
+      },
+      {
+        id: 'demo-activity-fold-copy',
+        title: 'Update onboarding copy',
+        status: 'idle',
+        messages: [],
+        messagesLoaded: false,
+        unreadAt: FIXED_TIME - 60_000,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME - 2,
+        updatedAt: FIXED_TIME - 2,
+      },
+      ...(
+        [
+          ['docs', 'Docs freshness', 'idle', 5],
+          ['deps', 'Nightly dependency check', 'error', 3],
+        ] as const
+      ).flatMap(([schedule, name, status, count]) =>
+        Array.from({ length: count }, (_, index) => ({
+          id: `demo-activity-fold-${schedule}-${String(index)}`,
+          title: name,
+          status,
+          messages: [],
+          messagesLoaded: false,
+          unreadAt: FIXED_TIME - (index + 2) * 3_600_000,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          automation: {
+            scheduleId: `demo-activity-fold-${schedule}`,
+            scheduleName: name,
+            triggeredAt: FIXED_TIME - (index + 2) * 3_600_000,
+          },
+          createdAt: FIXED_TIME - 10 - index,
+          updatedAt: FIXED_TIME - 10 - index,
+        })),
+      ),
     ],
   },
   {

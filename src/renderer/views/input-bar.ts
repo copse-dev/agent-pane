@@ -2629,6 +2629,9 @@ export function mountInputBar(
     store.on('message_queued', (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator()
     }),
+    store.on('thread_model_resolved', (tid) => {
+      if (tid === getActiveThreadId()) modelPicker.sync()
+    }),
     store.on('message_added', (tid) => {
       if (tid === getActiveThreadId()) updateFooter()
     }),

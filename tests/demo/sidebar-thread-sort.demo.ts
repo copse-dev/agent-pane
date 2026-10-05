@@ -37,17 +37,44 @@ describe('sidebar thread sort', () => {
     })
   })
 
+  it('shows the search field and the project and sort buttons under it', async () => {
+    await expect($('.pane-projects-header .projects-search-input')).toBeDisplayed()
+    await expect($('.projects-filters .projects-filter-btn')).toHaveText('All projects')
+    await saveAppScreenshot('sidebar-search-and-filters.png')
+  })
+
+  it('opens the header plus with New thread first, and closes it on a second click', async () => {
+    await $('.projects-add-btn').click()
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    const labels = await (await $$('.context-menu-item')).map((i) => i.getText())
+    expect(labels.slice(0, 2)).toEqual(['New thread', 'New project'])
+    await saveAppScreenshot('sidebar-add-menu.png')
+    await $('.projects-add-btn').click()
+    await $('.context-menu').waitForExist({ timeout: 5_000, reverse: true })
+  })
+
+  it('counts each projects threads in the project menu', async () => {
+    await $('.projects-filters .projects-filter-btn').click()
+    await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    const rows = await (await $$('.context-menu-item')).map((i) => i.getText())
+    expect(rows[0]).toMatch(/^All projects\s+\d+$/)
+    await saveAppScreenshot('sidebar-project-menu.png')
+    await $('.projects-filters .projects-filter-btn').click()
+    await $('.context-menu').waitForExist({ timeout: 5_000, reverse: true })
+  })
+
   it('offers the sorts and marks the current one', async () => {
     await openMenu()
     const labels = await (await $$('.context-menu-item')).map((i) => i.getText())
     expect(labels).toEqual([
-      'Project',
       'Status',
+      'Project',
       'None',
       'Activity order',
       'Created',
       'Thread name',
       'Reverse order',
+      'Compact rows',
     ])
     const checked = await (await $$('.context-menu-item.is-checked')).map((i) => i.getText())
     expect(checked).toEqual(['Project', 'Activity order'])
