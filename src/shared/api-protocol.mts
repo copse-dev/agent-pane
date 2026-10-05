@@ -70,5 +70,8 @@
 // v41 versions container-run consent fields and terminal state.
 // v42 conservatively versions the persisted sidebar grouping in settings payloads.
 // v43 versions the optional OAuth `auth` state on MCP server statuses.
-// v44 versions the context_compacted agent chunk (OpenAI server-side compaction).
-export const API_PROTOCOL_VERSION = 44 as const
+// v45 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
+// threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
+// agent chunk.
+// v46 versions the context_compacted agent chunk (OpenAI server-side compaction).
+export const API_PROTOCOL_VERSION = 46 as const

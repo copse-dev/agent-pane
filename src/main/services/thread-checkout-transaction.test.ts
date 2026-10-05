@@ -56,6 +56,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
   const patches: Array<Partial<Omit<Thread, 'messages'>>> = []
   const checkouts: Array<{ branch: string; root: string }> = []
   const dependencies: ThreadCheckoutTransactionDependencies = {
+    getDeferredWorktreesEnabled: () => false,
     getProject: () => project,
     getThread: async () => thread,
     updateMeta: async (_projectId, _threadId, patch) => {

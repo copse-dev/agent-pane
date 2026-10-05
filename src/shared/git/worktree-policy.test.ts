@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   decideThreadWorktreePolicy,
   initialThreadWorktreeBranchName,
+  isWorktreeDeferralPending,
   isInitialThreadWorktreeBranchName,
   settledCheckoutMode,
   threadWorktreeBranchName,
@@ -42,6 +43,12 @@ describe('decideThreadWorktreePolicy', () => {
       { patch: { isLocal: false }, mode: 'shared', reason: 'not-local' },
       { patch: { projectMode: 'always' }, mode: 'worktree', reason: 'project-always' },
       { patch: { projectMode: 'never' }, mode: 'shared', reason: 'project-disabled' },
+      { patch: { projectMode: 'on-write' }, mode: 'worktree', reason: 'project-always' },
+      {
+        patch: { projectMode: 'on-write', isGitRepository: false },
+        mode: 'shared',
+        reason: 'not-git',
+      },
     ]
 
     for (const row of rows) {
@@ -68,8 +75,41 @@ describe('decideThreadWorktreePolicy', () => {
         checkoutMode: 'worktree',
         reason: 'explicit-worktree',
         seededFromDirtyProject: true,
+        deferAllocation: false,
       },
     )
+  })
+
+  it('defers allocation only for an automatic choice in an on-write project', () => {
+    const deferred = (patch: Partial<WorktreePolicyInput>): boolean | null => {
+      const decision = decideThreadWorktreePolicy({ ...supported, ...patch })
+      return decision.checkoutMode === 'worktree' ? decision.deferAllocation : null
+    }
+    assert.equal(deferred({ projectMode: 'on-write' }), true)
+    assert.equal(deferred({ projectMode: 'on-write', isDirty: true }), true)
+    // Asking for a worktree by name is a request to have one now.
+    assert.equal(deferred({ projectMode: 'on-write', choice: 'worktree' }), false)
+    assert.equal(deferred({ projectMode: 'always' }), false)
+    assert.equal(deferred({}), false)
+  })
+
+  it('honors explicit choices and disabled projects with the global opt-in', () => {
+    for (const choice of ['automatic', 'worktree', 'shared'] as const) {
+      for (const projectMode of [undefined, 'always', 'never'] as const) {
+        const decision = decideThreadWorktreePolicy({
+          ...supported,
+          choice,
+          deferredWorktreesEnabled: true,
+          ...(projectMode ? { projectMode } : {}),
+        })
+        if (choice === 'shared' || (choice === 'automatic' && projectMode === 'never')) {
+          assert.equal(decision.checkoutMode, 'shared')
+        } else {
+          assert.equal(decision.checkoutMode, 'worktree')
+          assert.equal(decision.deferAllocation, choice === 'automatic')
+        }
+      }
+    }
   })
 
   it('seeds dirty project work from the selected local branch', () => {
@@ -148,7 +188,12 @@ const INSPECTIONS: Inspection[] = ((): Inspection[] => {
 })()
 
 const CHOICES: Array<WorktreePolicyInput['choice']> = [undefined, 'automatic', 'shared', 'worktree']
-const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [undefined, 'always', 'never']
+const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [
+  undefined,
+  'always',
+  'never',
+  'on-write',
+]
 
 /** The policy's own view of a (choice, projectMode) pair, before any inspection. */
 function settledFor(
@@ -215,5 +260,25 @@ describe('settledCheckoutMode', () => {
         )
       }
     }
+  })
+})
+
+describe('isWorktreeDeferralPending', () => {
+  const deferredWorktree = { baseBranch: 'main', requestedAt: 1 }
+  const worktree = {
+    path: '/worktrees/p/t',
+    branch: 'copse/x',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+  }
+
+  it('is pending only until the deferred thread owns its checkout', () => {
+    assert.equal(isWorktreeDeferralPending({ deferredWorktree }), true)
+    // The record outlives the wait; the checkout is what ends it.
+    assert.equal(isWorktreeDeferralPending({ deferredWorktree, worktree }), false)
+    assert.equal(isWorktreeDeferralPending({ worktree }), false)
+    assert.equal(isWorktreeDeferralPending({}), false)
   })
 })

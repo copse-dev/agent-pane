@@ -14,7 +14,7 @@ import {
 import { modelCapabilities } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { composeContextBreakdown } from '@copse/agent/context-breakdown.ts'
-import { PARENT_DELEGATED_TOOLS } from './agent-service.ts'
+import { PARENT_DELEGATED_TOOLS, withoutUnofferedWriteAccess } from './agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 
@@ -41,6 +41,12 @@ export interface ContextEstimateInput {
   priorMessages: LLMMessage[]
   /** Per-thread model override; absent means "use the global default setting". */
   model?: string
+  /**
+   * The thread is still a read-only view of the user's checkout (`on-write`
+   * worktree mode, before its first write), so its turns offer
+   * `request_write_access`. Absent means an ordinary thread, which does not.
+   */
+  deferredWorktree?: boolean
 }
 
 /**
@@ -77,8 +83,7 @@ export async function estimateContextBreakdown(
   const systemTokens = Math.max(0, systemPrompt.length / CHARS_PER_TOKEN - skillsTokens)
 
   const delegated = new Set<string>(PARENT_DELEGATED_TOOLS)
-  const tools = registry
-    .toLLMTools()
+  const tools = withoutUnofferedWriteAccess(registry.toLLMTools(), input.deferredWorktree === true)
     .filter((tool) => isAppleDevelopmentToolOffered(tool.name, input.projectId))
     .filter((t) => (subagentsEnabled ? !delegated.has(t.name) : t.name !== 'explore'))
   let toolsTokens = 0

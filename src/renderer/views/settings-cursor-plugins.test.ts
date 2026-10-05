@@ -71,6 +71,7 @@ function stubApi(
     'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
     'plugins.list': () => Promise.resolve(plugins),
+    'plugins.listInstalls': () => Promise.resolve([]),
     'cursorPlugins.list': () => Promise.resolve(cursorPlugins),
     'bundledSkillPlugins.list': () => Promise.resolve(bundledPlugins),
     ...overrides,
