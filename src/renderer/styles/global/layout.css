@@ -503,6 +503,13 @@
   font-size: var(--font-size-xs);
   white-space: nowrap;
 }
+/* A heading over one status section of the sidebar's thread list (Group by ▸ Status). */
+.thread-section-heading {
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
 /* The label takes the free space instead of the title, so it sits right
    after the title rather than being pushed to the row's far end. */
 .chat-row .chat-title:has(+ .chat-thread-owner) {

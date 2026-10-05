@@ -27,6 +27,7 @@ test('loads every first-paint setting concurrently', async () => {
     'rightPanelPosition',
     'sidebarThreadSort',
     'sidebarThreadSortReverse',
+    'sidebarThreadGroup',
     'openLinksInBuiltInBrowser',
     'theme',
     'fontSize',

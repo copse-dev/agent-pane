@@ -105,6 +105,6 @@ describe('projects pane thread sort (component)', () => {
     const checked = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.context-menu-item.is-checked'),
     ).map((button) => button.textContent)
-    assert.deepEqual(checked.sort(), ['Created', 'Reverse order'])
+    assert.deepEqual(checked.sort(), ['Created', 'Project', 'Reverse order'])
   })
 })

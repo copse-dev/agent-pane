@@ -68,6 +68,7 @@
 // v39 versions the automation lastProblem ledger and startFailedAt provenance.
 // v40 versions the queued-message model snapshot in thread payloads.
 // v41 versions container-run consent fields and terminal state.
-// v42 conservatively versions the optional classifier-call latency and token fields on
+// v42 conservatively versions the persisted sidebar grouping in settings payloads.
+// v43 conservatively versions the optional classifier-call latency and token fields on
 // decision events, alongside the new `usage:get-thread-classifier-use` channel.
-export const API_PROTOCOL_VERSION = 42 as const
+export const API_PROTOCOL_VERSION = 43 as const
