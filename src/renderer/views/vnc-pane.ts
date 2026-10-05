@@ -24,15 +24,13 @@ import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulat
 import { openRightPanel } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
 
-const CHOOSE_MACHINE_TEXT =
-  'Choose this machine, a nearby device, another address, or a saved SSH machine.'
+const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   return filesPaneOpen && rightPanelMode === 'vnc'
 }
 
-const LOCAL_MACHINE = 'local'
 const MANUAL_MACHINE = 'network:manual'
 const NEARBY_MACHINE_PREFIX = 'network:nearby:'
 const SSH_MACHINE_PREFIX = 'ssh:'
@@ -42,8 +40,7 @@ function discoveryHost(machine: string): VncDiscoveryHost {
   if (machine.startsWith(SSH_MACHINE_PREFIX)) {
     return { kind: 'ssh', hostId: machine.slice(SSH_MACHINE_PREFIX.length) }
   }
-  if (machine === LOCAL_MACHINE) return { kind: 'local' }
-  throw new Error('Choose this machine or a saved SSH machine before scanning ports')
+  throw new Error('Choose a saved SSH machine before scanning ports')
 }
 
 function sshMachineValue(hostId: string): string {
@@ -52,6 +49,10 @@ function sshMachineValue(hostId: string): string {
 
 function isNetworkMachine(machine: string): boolean {
   return machine === MANUAL_MACHINE || machine.startsWith(NEARBY_MACHINE_PREFIX)
+}
+
+function isExplicitLocalAddress(host: string): boolean {
+  return host.toLowerCase() === 'localhost' || host === '127.0.0.1' || host === '::1'
 }
 
 function isSimulatorMachine(machine: string): boolean {
@@ -117,7 +118,6 @@ function mountVncSession(
     'aria-label': 'Desktop machine',
     hidden: true,
   })
-  machineSelect.append(el('option', { value: LOCAL_MACHINE }, 'This machine'))
   const refreshDevicesButton = el(
     'button',
     {
@@ -246,7 +246,7 @@ function mountVncSession(
   const discoveryStatus = el(
     'div',
     { class: 'vnc-discovery-status', role: 'status' },
-    'Scanning this machine…',
+    'Checking for screen sharing…',
   )
   const discoveredPorts = el('div', {
     class: 'vnc-discovered-ports',
@@ -477,7 +477,6 @@ function mountVncSession(
   let selectedSavedUsername = ''
 
   function machinePresentation(value: string): { name: string; meta: string } {
-    if (value === LOCAL_MACHINE) return { name: 'This machine', meta: 'This device' }
     if (value === MANUAL_MACHINE) {
       return { name: 'Add device', meta: 'Connect with an address' }
     }
@@ -611,7 +610,6 @@ function mountVncSession(
   }
 
   function selectedMachineName(): string {
-    if (machineSelect.value === LOCAL_MACHINE) return 'this machine'
     if (machineSelect.value === MANUAL_MACHINE) {
       return (
         parseVncEndpoint(addressInput.value, Number.parseInt(portInput.value, 10))?.host ??
@@ -866,7 +864,7 @@ function mountVncSession(
   }
 
   function rebuildMachineOptions(preferred: string): void {
-    machineSelect.replaceChildren(el('option', { value: LOCAL_MACHINE }, 'This machine'))
+    machineSelect.replaceChildren()
     if (simulatorDevices.length > 0) {
       const simulatorGroup = el('optgroup', { label: 'Local simulators' })
       for (const device of simulatorDevices) {
@@ -903,6 +901,8 @@ function mountVncSession(
     }
     if ([...machineSelect.options].some((option) => option.value === preferred)) {
       machineSelect.value = preferred
+    } else {
+      machineSelect.selectedIndex = -1
     }
     renderDeviceList()
   }
@@ -935,7 +935,7 @@ function mountVncSession(
           sshHostResolutions.filter((resolution) => resolution.hostId === host.id),
         ).length === 0,
     )
-    return matchingSsh ? sshMachineValue(matchingSsh.id) : LOCAL_MACHINE
+    return matchingSsh ? sshMachineValue(matchingSsh.id) : MANUAL_MACHINE
   }
 
   async function refreshSshHosts(preferred = machineSelect.value): Promise<void> {
@@ -968,10 +968,13 @@ function mountVncSession(
     const network = isNetworkMachine(machine)
     const simulator = isSimulatorMachine(machine)
     addressField.hidden = machine !== MANUAL_MACHINE
-    networkWarning.hidden = !network
+    const manualAddress = parseVncEndpoint(addressInput.value, 5900)?.host ?? ''
+    networkWarning.hidden =
+      !network ||
+      (machine === MANUAL_MACHINE && (!manualAddress || isExplicitLocalAddress(manualAddress)))
     advancedSettings.hidden = simulator
     discoverButton.hidden = true
-    discoveryStatus.hidden = network || simulator
+    discoveryStatus.hidden = !machine.startsWith(SSH_MACHINE_PREFIX)
     if (machineChanged) {
       setupUsernameInput.value = ''
       setupPasswordInput.value = ''
@@ -1014,6 +1017,9 @@ function mountVncSession(
     if (isNetworkMachine(machineSelect.value)) {
       const endpoint = parseVncEndpoint(addressInput.value, port)
       if (!endpoint) return null
+      if (machineSelect.value === MANUAL_MACHINE && isExplicitLocalAddress(endpoint.host)) {
+        return { kind: 'loopback', port: endpoint.port }
+      }
       return {
         kind: 'network',
         host: endpoint.host,
@@ -1021,7 +1027,7 @@ function mountVncSession(
         confirmedUnencrypted: true,
       }
     }
-    return { kind: 'loopback', port }
+    return null
   }
 
   async function refreshSavedLogin(): Promise<void> {
@@ -1103,16 +1109,13 @@ function mountVncSession(
   }
 
   async function discoverSelectedMachine(): Promise<void> {
-    if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return
+    if (!machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) return
     if (await stoppedByViewerOff()) return
     const generation = ++discoveryGeneration
     discoverButton.hidden = true
     discoverButton.disabled = true
     discoveryStatus.dataset['kind'] = 'working'
-    discoveryStatus.textContent =
-      discoveryHost(machineSelect.value).kind === 'ssh'
-        ? 'Checking this saved machine for screen sharing…'
-        : 'Checking this machine for screen sharing…'
+    discoveryStatus.textContent = 'Checking this saved machine for screen sharing…'
     renderDiscoveredPorts([])
     try {
       const ports = await api.vnc.discover(discoveryHost(machineSelect.value))
@@ -1378,7 +1381,9 @@ function mountVncSession(
     setStatus(
       target.kind === 'network'
         ? 'Opening direct network connection…'
-        : 'Opening secure connection…',
+        : target.kind === 'loopback'
+          ? 'Opening local connection…'
+          : 'Opening secure connection…',
       'working',
     )
     try {
@@ -1412,7 +1417,7 @@ function mountVncSession(
       pendingDisconnectStatus = null
       resetControlState()
       const machineName = selectedMachineName()
-      options.onLabelChange(machineName === 'this machine' ? 'This machine' : machineName)
+      options.onLabelChange(machineName)
       empty.textContent = 'Connecting to the remote desktop…'
       setSessionUi(true)
       nextRfb.viewOnly = true
@@ -1670,6 +1675,8 @@ function mountVncSession(
     void refreshSavedLogin()
   })
   addressInput.addEventListener('input', () => {
+    const host = parseVncEndpoint(addressInput.value, 5900)?.host ?? ''
+    networkWarning.hidden = !host || isExplicitLocalAddress(host)
     void refreshSavedLogin()
   })
   portInput.addEventListener('keydown', (event) => {
@@ -1744,7 +1751,7 @@ function mountVncSession(
   })
 
   setSessionUi(false)
-  portInput.value = '5901'
+  portInput.value = '5900'
   void loadMachines()
 
   return {
