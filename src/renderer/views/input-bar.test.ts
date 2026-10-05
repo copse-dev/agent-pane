@@ -354,9 +354,10 @@ describe('input bar selection replies', () => {
     assert.match(payloads[0] ?? '', /> Selected context/)
     assert.match(payloads[0] ?? '', /My reply/)
     assert.match(payloads[0] ?? '', /Existing attachment/)
-    const lastUser = getThreadById(store, 'thread-1')?.messages.findLast(
-      (message) => message.role === 'user',
-    )
+    const lastUser = getThreadById(store, 'thread-1')
+      ?.messages.slice()
+      .reverse()
+      .find((message) => message.role === 'user')
     assert.equal(lastUser?.content, 'Existing draft.\n\n> Selected context\n\nMy reply.')
     assert.equal(composer.textContent, '')
   })

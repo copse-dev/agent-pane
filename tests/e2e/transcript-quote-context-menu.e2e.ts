@@ -1,7 +1,12 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedTranscriptQuoteFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedStableWorkspace,
+  seedTranscriptQuoteFixture,
+} from './helpers/seed-config.ts'
 import { prepareChatMessageScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
 import { composerText, setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
 const MENU_SHOT = 'transcript-quote-context-menu.png'
 const COMPOSER_SHOT = 'transcript-quote-composer-blockquote.png'
@@ -122,7 +127,7 @@ async function expectReplyCaret(expectedText: string): Promise<void> {
 describe('transcript selection: quote into the reply', () => {
   before(async () => {
     resetUserData()
-    seedTranscriptQuoteFixture(process.cwd())
+    seedTranscriptQuoteFixture(seedStableWorkspace())
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-quote"] .message-body').waitForExist({
       timeout: 30_000,
@@ -167,6 +172,35 @@ describe('transcript selection: quote into the reply', () => {
     expect(await composerText()).toBe(`> ${SELECTED_PHRASE}\n\nMy reply.`)
     await prepareChatMessageScreenshot()
     await saveAppScreenshot(COMPOSER_SHOT)
+  })
+
+  it('keeps selected-text menu actions after inline reply autofocus', async () => {
+    for (const draft of ['', 'Keep this reply.']) {
+      await setComposerValue('')
+      await dragSelectText(SELECTED_PHRASE)
+      await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
+      expect(
+        await browser.execute(
+          () => document.activeElement === document.querySelector('.transcript-selection-reply'),
+        ),
+      ).toBe(true)
+      expect(await browser.execute(() => document.getSelection()?.toString())).toBe('')
+      if (draft) await browser.keys(draft)
+      await $('[data-message-id="msg-assistant-quote"] .message-body').click({ button: 'right' })
+      await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+      expect(
+        await browser.execute(() =>
+          [...document.querySelectorAll('.context-menu-item')].map((item) => item.textContent),
+        ),
+      ).toEqual(['Quote in reply', 'Add to roadmap', 'Search', 'Copy'])
+      expect(await browser.execute(() => document.getSelection()?.toString())).toBe(SELECTED_PHRASE)
+      if (draft) {
+        expect(await $('.transcript-selection-reply').getValue()).toBe(draft)
+        await saveAppScreenshot('transcript-quote-autofocus-context-menu.png')
+      }
+      await browser.keys('Escape')
+      await browser.keys('Escape')
+    }
   })
 
   it('offers an inline action after mouse selection and types below a quote after an existing draft', async () => {
@@ -333,6 +367,15 @@ describe('transcript selection: quote into the reply', () => {
 
   it('sends the selected quote and reply immediately with the platform shortcut', async () => {
     await setComposerValue('')
+    await installMockScenario({
+      title: 'Reply to selected transcript text',
+      turns: [
+        {
+          user: `> ${SELECTED_PHRASE}\n\nSend this reply now.`,
+          responses: [{ text: 'I will use those modules.' }],
+        },
+      ],
+    })
     await dragSelectText(SELECTED_PHRASE)
     await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
     await browser.keys('Send this reply now.')
@@ -356,6 +399,7 @@ describe('transcript selection: quote into the reply', () => {
     expect(sent).toContain(SELECTED_PHRASE)
     expect(await composerText()).toBe('')
     await $('.transcript-selection-quote').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await expectAssistantReply('I will use those modules.')
     await prepareChatMessageScreenshot()
     await saveAppScreenshot('transcript-quote-instant-reply.png')
   })

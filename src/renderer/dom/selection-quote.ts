@@ -82,7 +82,7 @@ export function bindSelectionQuote(
     updateControls()
   }
 
-  const selectionBounds = () => {
+  const selectionBounds = (): Pick<DOMRect, 'top' | 'bottom' | 'left' | 'right'> | null => {
     if (!selectedRange) return null
     const rects = [...selectedRange.getClientRects()].filter(
       (rect) => rect.width > 0 && rect.height > 0,
@@ -112,8 +112,8 @@ export function bindSelectionQuote(
         const top = Number.parseFloat(popup.style.top) || bounds.top
         const left = Number.parseFloat(popup.style.left) || bounds.left
         const bottom = Math.min(bounds.bottom, window.innerHeight - 8)
-        popup.style.top = `${Math.max(8, Math.min(top, bottom - size.height))}px`
-        popup.style.left = `${Math.max(8, Math.min(left, window.innerWidth - size.width - 8))}px`
+        popup.style.top = `${String(Math.max(8, Math.min(top, bottom - size.height)))}px`
+        popup.style.left = `${String(Math.max(8, Math.min(left, window.innerWidth - size.width - 8)))}px`
       } else {
         dismiss()
       }
@@ -130,7 +130,10 @@ export function bindSelectionQuote(
       if (top + size.height > visibleBottom) {
         // A selection can fill the viewport. Reserve real scroll space for the
         // reply, then bring the last selected line above it instead of covering text.
-        transcript.style.setProperty('--selection-reply-space', `${size.height + 2 * gap}px`)
+        transcript.style.setProperty(
+          '--selection-reply-space',
+          `${String(size.height + 2 * gap)}px`,
+        )
         reservedSpace = true
         const before = transcript.scrollTop
         transcript.scrollTop += Math.max(0, selection.bottom + gap + size.height - visibleBottom)
@@ -147,9 +150,9 @@ export function bindSelectionQuote(
       bounds.left + gap,
       Math.min(selection.left, bounds.right - size.width - gap),
     )
-    popup.style.left = `${Math.max(gap, Math.min(left, window.innerWidth - size.width - gap))}px`
+    popup.style.left = `${String(Math.max(gap, Math.min(left, window.innerWidth - size.width - gap)))}px`
     // Never clamp vertically into the selected lines.
-    popup.style.top = `${top}px`
+    popup.style.top = `${String(top)}px`
   }
   const refresh = (): void => {
     // A textarea has its own selection; focusing or editing it must keep the passage captured above.
@@ -245,6 +248,11 @@ export function bindSelectionQuote(
 
   const onPointerDown = (event: PointerEvent): void => {
     if (event.target instanceof Node && popup.contains(event.target)) return
+    if (event.button === 2 && event.target instanceof Node && transcript.contains(event.target)) {
+      // Keep the captured range until contextmenu can restore the native selection.
+      suppressed = true
+      return
+    }
     dragging = event.button === 0
     if (dragging) suppressed = false
     if (!hasDraft()) dismiss()
@@ -263,6 +271,21 @@ export function bindSelectionQuote(
     }
   }
   const onContextMenu = (): void => {
+    const selection = document.getSelection()
+    if (
+      selection &&
+      selectedRange &&
+      transcript.contains(selectedRange.startContainer) &&
+      transcript.contains(selectedRange.endContainer) &&
+      (selection.isCollapsed ||
+        !transcript.contains(selection.anchorNode) ||
+        !transcript.contains(selection.focusNode))
+    ) {
+      // Textarea autofocus clears Chromium's document selection. Restore the
+      // highlighted passage before the transcript's delegated menu reads it.
+      selection.removeAllRanges()
+      selection.addRange(selectedRange.cloneRange())
+    }
     if (hasDraft()) return
     suppressed = true
     dismiss()

@@ -24,7 +24,7 @@ function fixture(send = async (): Promise<boolean> => true): {
 } {
   const transcript = document.createElement('div')
   transcript.textContent = 'Selected text for quoting.'
-  transcript.getBoundingClientRect = () => new DOMRect(20, 20, 400, 300)
+  transcript.getBoundingClientRect = (): DOMRect => new DOMRect(20, 20, 400, 300)
   document.body.append(transcript)
   const quotes: { text: string; reply: string }[] = []
   const sends: { text: string; reply: string }[] = []
@@ -57,7 +57,7 @@ function select(
   const range = document.createRange()
   range.setStart(root.firstChild, start)
   range.setEnd(root.firstChild, end)
-  range.getClientRects = () => {
+  range.getClientRects = (): DOMRectList => {
     const visibleRects = rects.map(
       (rect) => new DOMRect(rect.x, rect.y - root.scrollTop, rect.width, rect.height),
     )
@@ -65,7 +65,7 @@ function select(
       item: (index: number) => visibleRects[index] ?? null,
     })
   }
-  range.cloneRange = () => range
+  range.cloneRange = (): Range => range
   const selection = document.getSelection()
   assert.ok(selection)
   selection.removeAllRanges()
@@ -120,7 +120,7 @@ describe('transcript selection reply', () => {
 
   it('pins a drafted reply when its selected passage scrolls out of view', () => {
     const { transcript, popup, input } = fixture()
-    popup.getBoundingClientRect = () => new DOMRect(0, 0, 180, 60)
+    popup.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 180, 60)
     select(transcript, 0, 13)
     input.value = 'Still editing.'
     input.dispatchEvent(new Event('input'))
@@ -181,6 +181,27 @@ describe('transcript selection reply', () => {
     input.value = 'My reply'
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     assert.deepEqual(quotes, [{ text: 'Selected text', reply: 'My reply' }])
+  })
+
+  it('restores the captured passage for a right-click after textarea focus clears it', () => {
+    const { transcript, popup } = fixture()
+    select(transcript, 0, 13)
+    document.getSelection()?.removeAllRanges()
+    transcript.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2 }))
+    document.dispatchEvent(new Event('selectionchange'))
+    assert.equal(popup.hidden, false)
+    transcript.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    assert.equal(document.getSelection()?.toString(), 'Selected text')
+    assert.equal(popup.hidden, true)
+  })
+
+  it('dismisses an empty reply on a right-click outside the transcript', () => {
+    const { transcript, popup } = fixture()
+    select(transcript, 0, 13)
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2 }))
+    assert.equal(popup.hidden, true)
   })
 
   it('adds a bare quote on Enter and leaves Shift+Enter available for a newline', () => {
@@ -277,8 +298,8 @@ describe('transcript selection reply', () => {
 
   it('keeps the popover inside a narrow transcript and places it above the selection when possible', () => {
     const { transcript, popup } = fixture()
-    transcript.getBoundingClientRect = () => new DOMRect(20, 20, 180, 100)
-    popup.getBoundingClientRect = () => new DOMRect(0, 0, 120, 30)
+    transcript.getBoundingClientRect = (): DOMRect => new DOMRect(20, 20, 180, 100)
+    popup.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 120, 30)
     select(transcript, 0, 13, new DOMRect(170, 90, 20, 20))
     assert.equal(popup.hidden, false)
     assert.equal(popup.style.left, '72px')
@@ -287,7 +308,7 @@ describe('transcript selection reply', () => {
 
   it('keeps the reply above every line in a multiline selection', () => {
     const { transcript, popup } = fixture()
-    popup.getBoundingClientRect = () => new DOMRect(0, 0, 180, 80)
+    popup.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 180, 80)
     const rects = [
       new DOMRect(40, 160, 120, 20),
       new DOMRect(40, 180, 260, 20),
@@ -307,8 +328,8 @@ describe('transcript selection reply', () => {
       if (viewport) Object.defineProperty(window, 'innerHeight', viewport)
       else Reflect.deleteProperty(window, 'innerHeight')
     })
-    transcript.getBoundingClientRect = () => new DOMRect(0, 0, 400, 120)
-    popup.getBoundingClientRect = () => new DOMRect(0, 0, 180, 50)
+    transcript.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 400, 120)
+    popup.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 180, 50)
     const rects = [
       new DOMRect(40, 10, 120, 20),
       new DOMRect(40, 50, 260, 20),
