@@ -62022,9 +62022,10 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
   qsRequired(overlay, "#animated-explainers-manage").addEventListener(
     "click",
     () => {
-      onNavigate("customise");
       pluginDetail = { pluginId: MCP_UI_CANVAS_PLUGIN_ID };
-      void revealPluginDetail();
+      void onNavigate("customise").then(async (signal) => {
+        if (signal) await revealPluginDetail(pluginDetail, signal);
+      });
     }
   );
   function makePluginRow(plugin) {
@@ -64349,6 +64350,9 @@ var init_lifecycle = __esm({
         this.owners = owners;
         this.onError = onError;
       }
+      signalFor(id) {
+        return this.visible.get(id)?.controller.signal;
+      }
       reset() {
         this.cancel();
         this.loaded.clear();
@@ -64489,9 +64493,10 @@ function mountSettingsDialog(store2, api2) {
     api2,
     store2,
     () => nav.active(),
-    (id) => {
-      nav.show(id);
-      if (snapshot) void lifecycle.show([id], snapshot);
+    async (id) => {
+      nav.reset(id);
+      if (snapshot) await lifecycle.show([id], snapshot);
+      return lifecycle.signalFor(id);
     },
     () => {
       if (nav.active() === "mcp") void mcp.refreshDeclared();
