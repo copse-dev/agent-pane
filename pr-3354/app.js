@@ -20793,6 +20793,27 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
+// src/shared/file-bytes.ts
+function fileExtension(name) {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot).toLowerCase();
+}
+function formatByteSize(bytes) {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
+}
+var init_file_bytes = __esm({
+  "src/shared/file-bytes.ts"() {
+  }
+});
+
 // packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
@@ -20806,6 +20827,1125 @@ var init_errors3 = __esm({
 var init_errors4 = __esm({
   "src/shared/errors.ts"() {
     init_errors3();
+  }
+});
+
+// src/renderer/views/confirm-dialog.ts
+function mountConfirmDialog() {
+  document.getElementById("confirm-dialog")?.remove();
+  showConfirmDialogImpl = null;
+  const messageEl = el("h3", { class: "confirm-dialog-message" });
+  const detailEl = el("p", { class: "confirm-dialog-detail" });
+  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
+  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
+  document.body.append(dialog2);
+  const queue = [];
+  let active2 = null;
+  let confirming = false;
+  let controller = null;
+  function cancelActive() {
+    if (!active2) return;
+    if (confirming) {
+      if (!active2.cancellable) return;
+      controller?.abort();
+      dialog2.close();
+      return;
+    }
+    finish(false);
+  }
+  function finish(confirmed) {
+    if (!active2) return;
+    const resolve = active2.resolve;
+    active2 = null;
+    confirming = false;
+    controller = null;
+    dialog2.close();
+    resolve(confirmed);
+    if (queue.length > 0) {
+      active2 = queue.shift() ?? null;
+      renderActive();
+    }
+  }
+  function renderActive() {
+    if (!active2) return;
+    messageEl.textContent = active2.message;
+    if (active2.detail) {
+      detailEl.replaceChildren(active2.detail);
+      detailEl.hidden = false;
+    } else {
+      detailEl.textContent = "";
+      detailEl.hidden = true;
+    }
+    const cancelLabel = active2.cancelLabel ?? "Cancel";
+    const confirmLabel = active2.confirmLabel ?? "OK";
+    const cancelBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
+      cancelLabel
+    );
+    const confirmBtn = el(
+      "button",
+      {
+        type: "button",
+        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
+      },
+      confirmLabel
+    );
+    cancelBtn.addEventListener("click", () => {
+      cancelActive();
+    });
+    async function confirmActive() {
+      if (!active2 || confirming) return;
+      const request = active2;
+      if (!request.onConfirm) {
+        finish(true);
+        return;
+      }
+      confirming = true;
+      controller = new AbortController();
+      const signal = controller.signal;
+      cancelBtn.disabled = !request.cancellable;
+      confirmBtn.disabled = true;
+      confirmBtn.setAttribute("aria-busy", "true");
+      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
+      try {
+        await request.onConfirm((label) => {
+          if (active2 === request) confirmBtn.textContent = label;
+        }, signal);
+        if (active2 === request) finish(!signal.aborted);
+      } catch (error62) {
+        if (active2 !== request) return;
+        const reject = request.reject;
+        active2 = null;
+        confirming = false;
+        controller = null;
+        dialog2.close();
+        reject(error62);
+        if (queue.length > 0) {
+          active2 = queue.shift() ?? null;
+          renderActive();
+        }
+      }
+    }
+    confirmBtn.addEventListener("click", () => {
+      void confirmActive();
+    });
+    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
+    dialog2.showModal();
+    confirmBtn.focus();
+  }
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancelActive();
+  });
+  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
+    const queued = { ...req, resolve, reject };
+    if (active2) queue.push(queued);
+    else {
+      active2 = queued;
+      renderActive();
+    }
+  });
+}
+function showConfirmDialog(req) {
+  if (!showConfirmDialogImpl) return Promise.resolve(false);
+  return showConfirmDialogImpl(req);
+}
+var showConfirmDialogImpl;
+var init_confirm_dialog = __esm({
+  "src/renderer/views/confirm-dialog.ts"() {
+    init_helpers();
+    init_ui();
+    showConfirmDialogImpl = null;
+  }
+});
+
+// src/renderer/views/storage-maintenance-panel.ts
+function createStorageMaintenancePanel(api2) {
+  const element = el("fieldset", { id: "storage-maintenance" });
+  element.innerHTML = `
+    <legend>Saved runs and build data</legend>
+    <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
+    <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
+    <div class="settings-action-row"><span>Temporary build data</span><span id="storage-builds-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-builds-clean">Clean up\u2026</button></div>
+    <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
+    <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
+    <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const status = qsRequired(element, "#storage-maintenance-status");
+  const enabled = qsRequired(element, "#storage-expiry-enabled");
+  const days = qsRequired(element, "#storage-expiry-days");
+  let state = null;
+  let working = false;
+  let generation = 0;
+  function controls() {
+    enabled.disabled = working || !state;
+    days.disabled = working || !state;
+    for (const area of ["runs", "builds"]) {
+      const summary = state?.areas.find((entry) => entry.area === area);
+      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+    }
+  }
+  async function refresh() {
+    const token = ++generation;
+    controls();
+    try {
+      const next = await api2.storage.maintenance();
+      if (token !== generation) return;
+      state = next;
+      enabled.checked = next.retention.enabled;
+      if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
+        days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
+      }
+      days.value = String(next.retention.days);
+      for (const summary of next.areas)
+        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+    } catch (error62) {
+      if (token === generation) status.textContent = errorMessage(error62);
+    } finally {
+      if (token === generation) controls();
+    }
+  }
+  async function save() {
+    working = true;
+    generation++;
+    controls();
+    try {
+      const retention = { enabled: enabled.checked, days: Number(days.value) };
+      await api2.storage.retention(retention);
+      if (state) state.retention = retention;
+      status.textContent = "Automatic cleanup updated.";
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+      await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function clean(area) {
+    const confirmed = await showConfirmDialog({
+      message: area === "runs" ? "Remove saved container runs?" : "Remove temporary build data?",
+      detail: area === "runs" ? "Completed run snapshots, outputs and saved state will be permanently removed. Incomplete runs, teardown failures and active runs are kept. Chats remain." : "Apple build outputs and package caches will be removed and recreated on the next build. Active builds and chats are kept.",
+      confirmLabel: "Clean up",
+      danger: true
+    });
+    if (!confirmed) return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api2.storage.cleanup(area);
+      await refresh();
+      status.textContent = `Removed ${String(result.removed)} item${result.removed === 1 ? "" : "s"} (${formatByteSize(result.bytes)}).${result.skipped ? ` Kept ${String(result.skipped)} active, incomplete or protected items.` : ""}`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  enabled.addEventListener("change", () => {
+    void save();
+  });
+  days.addEventListener("change", () => {
+    void save();
+  });
+  for (const area of ["runs", "builds"])
+    qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
+      void clean(area);
+    });
+  controls();
+  return { element, refresh };
+}
+var init_storage_maintenance_panel = __esm({
+  "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_file_bytes();
+    init_errors4();
+    init_helpers();
+    init_confirm_dialog();
+  }
+});
+
+// src/renderer/dom/outline-icon.ts
+function outlineIcon(label, paths, className) {
+  const svg2 = document.createElementNS(SVG_NS, "svg");
+  svg2.setAttribute("class", className);
+  svg2.setAttribute("viewBox", "0 0 24 24");
+  svg2.setAttribute("width", ICON_SIZE);
+  svg2.setAttribute("height", ICON_SIZE);
+  svg2.setAttribute("aria-hidden", "true");
+  svg2.setAttribute("focusable", "false");
+  svg2.setAttribute("data-icon", label);
+  svg2.setAttribute("fill", "none");
+  svg2.setAttribute("stroke", "currentColor");
+  svg2.setAttribute("stroke-width", "1.75");
+  svg2.setAttribute("stroke-linecap", "round");
+  svg2.setAttribute("stroke-linejoin", "round");
+  for (const d3 of paths) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d3);
+    svg2.append(path);
+  }
+  return svg2;
+}
+var SVG_NS, ICON_SIZE;
+var init_outline_icon = __esm({
+  "src/renderer/dom/outline-icon.ts"() {
+    SVG_NS = "http://www.w3.org/2000/svg";
+    ICON_SIZE = "16";
+  }
+});
+
+// src/renderer/dom/icons.ts
+function playIcon(className = DEFAULT) {
+  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
+}
+function chevronRightIcon(className = DEFAULT) {
+  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
+}
+function chevronDownIcon(className = DEFAULT) {
+  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
+}
+function clockIcon(className = DEFAULT) {
+  return outlineIcon(
+    "clock",
+    ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z", "M12 6v6l4 2"],
+    className
+  );
+}
+function chevronUpIcon(className = DEFAULT) {
+  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
+}
+function arrowLeftIcon(className = DEFAULT) {
+  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
+}
+function arrowRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
+}
+function arrowDownIcon(className = DEFAULT) {
+  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
+}
+function refreshIcon(className = DEFAULT) {
+  return outlineIcon(
+    "refresh",
+    [
+      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+      "M21 3v5h-5",
+      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+      "M8 16H3v5"
+    ],
+    className
+  );
+}
+function externalLinkIcon(className = DEFAULT) {
+  return outlineIcon(
+    "external-link",
+    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
+    className
+  );
+}
+function closeIcon(className = DEFAULT) {
+  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
+}
+function plusIcon(className = DEFAULT) {
+  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
+}
+function monitorIcon(className = DEFAULT) {
+  return outlineIcon(
+    "monitor",
+    [
+      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+      "M8 21h8",
+      "M12 17v4"
+    ],
+    className
+  );
+}
+function downloadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "download",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+    className
+  );
+}
+function uploadIcon(className = DEFAULT) {
+  return outlineIcon(
+    "upload",
+    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
+    className
+  );
+}
+function maximizeIcon(className = DEFAULT) {
+  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
+}
+function minimizeIcon(className = DEFAULT) {
+  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
+}
+function moreHorizontalIcon(className = DEFAULT) {
+  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function moreVerticalIcon(className = DEFAULT) {
+  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
+}
+function runningStatusIcon(className = DEFAULT) {
+  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
+}
+function checkIcon(className = DEFAULT) {
+  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
+}
+function shieldIcon(className = DEFAULT) {
+  return outlineIcon(
+    "shield",
+    [
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+    ],
+    className
+  );
+}
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    className
+  );
+}
+function banIcon(className = DEFAULT) {
+  return outlineIcon(
+    "ban",
+    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
+    className
+  );
+}
+function dotIcon(className = DEFAULT) {
+  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
+}
+function circleIcon(className = DEFAULT) {
+  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
+}
+function spinnerIcon(className = DEFAULT) {
+  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
+}
+function minusIcon(className = DEFAULT) {
+  return outlineIcon("minus", ["M5 12h14"], className);
+}
+function warningIcon(className = DEFAULT) {
+  return outlineIcon(
+    "triangle-alert",
+    [
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
+      "M12 9v4",
+      "M12 17h.01"
+    ],
+    className
+  );
+}
+function searchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "search",
+    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
+    className
+  );
+}
+function fileTextIcon(className = DEFAULT) {
+  return outlineIcon(
+    "file-text",
+    [
+      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
+      "M14 2v6h6",
+      "M8 13h8",
+      "M8 17h8"
+    ],
+    className
+  );
+}
+function imageIcon(className = DEFAULT) {
+  return outlineIcon(
+    "image",
+    [
+      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
+      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
+      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
+      "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
+    ],
+    className
+  );
+}
+function zapIcon(className = DEFAULT) {
+  return outlineIcon(
+    "zap",
+    [
+      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
+    ],
+    className
+  );
+}
+function gitPullRequestIcon(className = DEFAULT, conflicts = false) {
+  return outlineIcon(
+    "git-pull-request",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      conflicts ? "M3 3l6 6m0-6L3 9" : "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M13 6h3a2 2 0 0 1 2 2v7",
+      "M6 9v12"
+    ],
+    className
+  );
+}
+function gitMergeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-merge",
+    [
+      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+      "M6 21V9a9 9 0 0 0 9 9"
+    ],
+    className
+  );
+}
+function penLineIcon(className = DEFAULT) {
+  return outlineIcon(
+    "pen-line",
+    [
+      "M12 20h9",
+      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
+    ],
+    className
+  );
+}
+function slashIcon(className = DEFAULT) {
+  return outlineIcon("slash", ["M20 4 4 20"], className);
+}
+function arrowUpRightIcon(className = DEFAULT) {
+  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
+}
+function squareIcon(className = DEFAULT) {
+  return outlineIcon(
+    "square",
+    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+    className
+  );
+}
+function eraserIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eraser",
+    [
+      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
+      "M22 21H7",
+      "m5 11 9 9"
+    ],
+    className
+  );
+}
+function undoIcon(className = DEFAULT) {
+  return outlineIcon(
+    "undo",
+    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
+    className
+  );
+}
+function trashIcon(className = DEFAULT) {
+  return outlineIcon(
+    "trash",
+    [
+      "M3 6h18",
+      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+    ],
+    className
+  );
+}
+var DEFAULT;
+var init_icons = __esm({
+  "src/renderer/dom/icons.ts"() {
+    init_outline_icon();
+    DEFAULT = "ui-icon";
+  }
+});
+
+// src/renderer/attachments/attachment-preview.ts
+function releaseCurrent() {
+  const cleanup = currentCleanup;
+  currentCleanup = null;
+  cleanup?.();
+  bodyEl?.replaceChildren();
+}
+function ensureDialog() {
+  if (dialog) {
+    if (!dialog.isConnected) {
+      if (dialog.open) dialog.close();
+      document.body.append(dialog);
+    }
+    return dialog;
+  }
+  dialog = document.createElement("dialog");
+  dialog.className = "attachment-preview-dialog";
+  titleEl = el("h2", { class: "attachment-preview-title" });
+  bodyEl = el("div", { class: "attachment-preview-body" });
+  const closeBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost attachment-preview-close",
+      "aria-label": "Close"
+    },
+    closeIcon()
+  );
+  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
+  dialog.append(header, bodyEl);
+  document.body.append(dialog);
+  closeBtn.addEventListener("click", () => dialog?.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog?.close();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
+  dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
+    activeToken += 1;
+    const closedToken = activeToken;
+    releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
+  });
+  return dialog;
+}
+function statusNode(message2) {
+  return el("p", { class: "attachment-preview-status" }, message2);
+}
+function openAttachmentPreview(options) {
+  const previewDialog = ensureDialog();
+  const previewBody = bodyEl;
+  const previewTitle = titleEl;
+  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
+  activeToken += 1;
+  const token = activeToken;
+  releaseCurrent();
+  currentCleanup = options.onClose ?? null;
+  previewDialog.dataset["previewKind"] = options.kind;
+  previewDialog.setAttribute(
+    "aria-label",
+    options.ariaLabel ?? `Attachment preview: ${options.title}`
+  );
+  previewTitle.textContent = options.title;
+  if (options.content) previewBody.replaceChildren(options.content);
+  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
+  const isActive = () => token === activeToken && previewDialog.open;
+  return {
+    isActive,
+    setContent(content) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(content);
+      return true;
+    },
+    setStatus(message2) {
+      if (!isActive()) return false;
+      previewBody.replaceChildren(statusNode(message2));
+      return true;
+    },
+    close() {
+      if (isActive()) previewDialog.close();
+    }
+  };
+}
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
+var init_attachment_preview = __esm({
+  "src/renderer/attachments/attachment-preview.ts"() {
+    init_helpers();
+    init_icons();
+    dialog = null;
+    titleEl = null;
+    bodyEl = null;
+    currentCleanup = null;
+    returnFocus = null;
+    activeToken = 0;
+  }
+});
+
+// src/renderer/views/settings/source-row.ts
+function makeSourceRowTitle(title, action) {
+  if (!action) {
+    const span = document.createElement("span");
+    span.className = "sources-row-title";
+    span.textContent = title;
+    return span;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sources-row-title sources-row-title-btn";
+  button.textContent = title;
+  button.title = action.label;
+  button.setAttribute("aria-label", action.label);
+  button.addEventListener("click", action.run);
+  return button;
+}
+function makeSourceRow(title, badge, detail, opts = {}) {
+  const row2 = document.createElement("div");
+  row2.className = "sources-row";
+  if (opts.titleAttr) row2.title = opts.titleAttr;
+  const header = document.createElement("div");
+  header.className = "sources-row-header";
+  const primary = document.createElement("div");
+  primary.className = "sources-row-primary";
+  const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
+  primary.append(titleEl2);
+  if (opts.hoverDetail) {
+    const hoverEl = document.createElement("span");
+    hoverEl.className = "sources-row-hover-detail";
+    const pathEl = document.createElement("bdi");
+    pathEl.textContent = opts.hoverDetail;
+    hoverEl.append(pathEl);
+    primary.append(hoverEl);
+  }
+  header.append(primary);
+  if (badge) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
+    badgeEl.textContent = badge;
+    header.append(badgeEl);
+  }
+  for (const extra of opts.extraBadges ?? []) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = `ui-badge sources-badge ${extra.className}`;
+    badgeEl.textContent = extra.text;
+    header.append(badgeEl);
+  }
+  row2.append(header);
+  if (detail) {
+    const detailEl = document.createElement("div");
+    detailEl.className = "sources-row-detail";
+    detailEl.textContent = detail;
+    row2.append(detailEl);
+  }
+  return row2;
+}
+var init_source_row = __esm({
+  "src/renderer/views/settings/source-row.ts"() {
+  }
+});
+
+// src/renderer/views/settings/sources-section.ts
+function createSourcesSection({
+  root,
+  api: api2,
+  onTrusted,
+  onHeadingsChanged
+}) {
+  let generation = 0;
+  function makeAgentRows(result) {
+    const rows = [];
+    for (const agent of result.agents) {
+      const extraBadges = [
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: "ui-badge-literal" }
+      ];
+      if (agent.unsupportedFields.length > 0) {
+        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
+      }
+      const detail = [
+        agent.description,
+        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
+      ].filter(isNonEmptyString).join(" \xB7 ");
+      rows.push(
+        makeSourceRow(agent.name, agent.source, detail || null, {
+          extraBadges,
+          titleAttr: agent.agentPath,
+          hoverDetail: agent.agentPath
+        })
+      );
+    }
+    for (const shadowed of result.shadowed) {
+      rows.push(
+        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
+          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
+          titleAttr: shadowed.agentPath,
+          hoverDetail: shadowed.agentPath
+        })
+      );
+    }
+    for (const skipped of result.skipped) {
+      rows.push(
+        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
+          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
+          titleAttr: skipped.agentPath,
+          hoverDetail: skipped.agentPath
+        })
+      );
+    }
+    return rows;
+  }
+  function basenameOf(path) {
+    return path.split(/[/\\]/).pop() ?? path;
+  }
+  function makeHookRow(h3) {
+    const extraBadges = [];
+    if (h3.supported === false) {
+      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
+    }
+    if (h3.sandbox === false) {
+      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
+    }
+    if (h3.lastError) {
+      extraBadges.push({ text: "error", className: "sources-badge-error" });
+    }
+    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
+    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
+    const detail = `${familyLabel} \xB7 ${h3.command}`;
+    const row2 = makeSourceRow(title, h3.scope, detail, {
+      extraBadges
+    });
+    if (h3.lastError) {
+      const errorEl = document.createElement("div");
+      errorEl.className = "sources-row-error";
+      errorEl.textContent = `Last run failed: ${h3.lastError}`;
+      row2.append(errorEl);
+    }
+    addHookTester(row2, h3);
+    return row2;
+  }
+  function addHookTester(row2, h3) {
+    const header = row2.querySelector(".sources-row-header");
+    if (!header) return;
+    const testBtn = document.createElement("button");
+    testBtn.type = "button";
+    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
+    testBtn.textContent = "Test";
+    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
+    header.append(testBtn);
+    const result = document.createElement("div");
+    result.className = "hook-test";
+    result.hidden = true;
+    row2.append(result);
+    testBtn.addEventListener("click", () => {
+      void runHookTest(h3, testBtn, result);
+    });
+  }
+  async function runHookTest(h3, btn, result) {
+    btn.disabled = true;
+    btn.textContent = "Testing\u2026";
+    result.hidden = false;
+    result.innerHTML = "";
+    const pending = document.createElement("div");
+    pending.className = "hook-test-summary";
+    pending.textContent = "Running dry-run\u2026";
+    result.append(pending);
+    try {
+      const req = {
+        family: h3.family,
+        event: h3.event,
+        command: h3.command,
+        source: h3.source,
+        scope: h3.scope,
+        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
+      };
+      const res = await api2.hooks.test(req);
+      renderHookTestResult(result, res);
+    } catch {
+      result.innerHTML = "";
+      const err2 = document.createElement("div");
+      err2.className = "hook-test-summary hook-test-error";
+      err2.textContent = "Dry-run failed to start.";
+      result.append(err2);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Test";
+    }
+  }
+  function renderHookTestResult(container, res) {
+    container.innerHTML = "";
+    if (!res.ran) {
+      const notice = document.createElement("div");
+      notice.className = "hook-test-summary hook-test-error";
+      notice.textContent = res.error ?? "This hook could not be dry-run.";
+      container.append(notice);
+      return;
+    }
+    const summary = document.createElement("div");
+    summary.className = "hook-test-summary";
+    const chips = [];
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
+    if (res.timedOut) chips.push("timed out");
+    else if (res.spawnError) chips.push("failed to start");
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
+    );
+    chips.push(`${String(res.durationMs ?? 0)} ms`);
+    chips.push(res.parseOk ? "parsed ok" : "parse failed");
+    if (res.sandboxed) chips.push("sandboxed");
+    for (const text2 of chips) {
+      const chip2 = document.createElement("span");
+      chip2.className = "hook-test-chip";
+      chip2.textContent = text2;
+      summary.append(chip2);
+    }
+    container.append(summary);
+    if (res.outcomeSummary) {
+      const outcome = document.createElement("div");
+      outcome.className = "hook-test-outcome";
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
+      container.append(outcome);
+    }
+    appendHookTestStream(container, "stdin", res.stdin ?? "");
+    appendHookTestStream(container, "stdout", res.stdout ?? "");
+    appendHookTestStream(container, "stderr", res.stderr ?? "");
+  }
+  function appendHookTestStream(container, label, text2) {
+    const block = document.createElement("div");
+    block.className = "hook-test-stream";
+    const heading = document.createElement("div");
+    heading.className = "hook-test-stream-label";
+    heading.textContent = label;
+    const pre = document.createElement("pre");
+    pre.textContent = text2.length > 0 ? text2 : "(empty)";
+    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
+    block.append(heading, pre);
+    container.append(block);
+  }
+  function makeHookWarningRow(w2) {
+    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
+      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
+    });
+    row2.classList.add("sources-row-warning");
+    return row2;
+  }
+  function fillSourceList(selector, rows, emptyText) {
+    const list = qsRequired(root, selector);
+    list.innerHTML = "";
+    if (rows.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "sources-empty";
+      empty.textContent = emptyText;
+      list.append(empty);
+      return;
+    }
+    for (const row2 of rows) list.append(row2);
+  }
+  function openInstructionFile(file2) {
+    const session = openAttachmentPreview({
+      kind: "text",
+      title: file2.name,
+      ariaLabel: `Instruction file: ${file2.path}`,
+      status: `Loading ${file2.name}\u2026`
+    });
+    void api2.instructions.read(file2.path).then((content) => {
+      const text2 = document.createElement("pre");
+      text2.className = "attachment-preview-text";
+      text2.textContent = content;
+      session.setContent(text2);
+    }).catch((error62) => {
+      session.setStatus(errorMessage(error62));
+    });
+  }
+  function applyWorkspaceTrusted(statuses) {
+    onTrusted(statuses);
+    void refreshSources();
+  }
+  async function trustWorkspaceFromBadge(button) {
+    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
+    const detail = [
+      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
+      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
+    ].filter(Boolean).join(" ");
+    const confirmed = await showConfirmDialog({
+      message: "Trust this workspace?",
+      detail,
+      confirmLabel: "Trust workspace"
+    });
+    if (!confirmed) return;
+    button.disabled = true;
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    statusEl.textContent = "Trusting workspace\u2026";
+    const pending = api2.workspace.setTrusted(true).then(
+      (statuses) => ({ statuses }),
+      (error62) => ({ error: error62 })
+    );
+    await refreshSources();
+    const result = await pending;
+    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
+    else statusEl.textContent = errorMessage(result.error);
+  }
+  function makeInstructionRow(file2) {
+    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
+    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
+    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
+    const row2 = makeSourceRow(file2.name, badge, detail, {
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
+      titleAction: {
+        label: `Open ${file2.name}`,
+        run: () => {
+          openInstructionFile(file2);
+        }
+      }
+    });
+    if (file2.trusted) return row2;
+    const badgeEl = row2.querySelector(".sources-badge");
+    if (badgeEl) {
+      const trustBtn = document.createElement("button");
+      trustBtn.type = "button";
+      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
+      trustBtn.textContent = badgeEl.textContent;
+      trustBtn.title = `Trust this workspace to load ${file2.name}`;
+      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
+      trustBtn.addEventListener("click", () => {
+        void trustWorkspaceFromBadge(trustBtn);
+      });
+      badgeEl.replaceWith(trustBtn);
+    }
+    return row2;
+  }
+  async function refreshSources() {
+    const statusEl = qsRequired(root, "#sources-reload-status");
+    const request = ++generation;
+    statusEl.textContent = "Loading\u2026";
+    try {
+      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
+        api2.instructions.list(),
+        api2.cursorRules.list(),
+        api2.skills.list(),
+        api2.agents.list(),
+        api2.hooks.list()
+      ]);
+      if (request !== generation) return;
+      fillSourceList(
+        "#sources-instructions-list",
+        instructions.map((f4) => makeInstructionRow(f4)),
+        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
+      );
+      if (instructions.some((f4) => f4.discoveryTruncated)) {
+        const note = document.createElement("span");
+        note.className = "sources-empty";
+        note.id = "sources-instructions-truncated";
+        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
+        qsRequired(root, "#sources-instructions-list").append(note);
+      }
+      const kindLabel2 = {
+        always: "always",
+        auto: "auto",
+        agent: "agent",
+        manual: "manual"
+      };
+      fillSourceList(
+        "#sources-cursor-rules-list",
+        cursorRules.map((r2) => {
+          const bits = [formatByteSize(r2.bytes)];
+          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
+          if (r2.description) bits.push(r2.description);
+          bits.push(r2.path);
+          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
+        }),
+        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
+      );
+      qsRequired(root, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
+      if (!root.querySelector(".settings-content")?.classList.contains("settings-searching"))
+        onHeadingsChanged();
+      fillSourceList(
+        "#sources-skills-list",
+        skills.map(
+          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
+            // Keep the resting list uncluttered: path lives on hover (and as a
+            // native tooltip fallback). Description stays as the always-visible
+            // detail; when a skill has none, the hover line is the only path.
+            titleAttr: s16.skillPath,
+            hoverDetail: s16.skillPath
+          })
+        ),
+        "No skills discovered."
+      );
+      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
+      fillSourceList(
+        "#sources-hooks-list",
+        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
+        "No Cursor or Claude Code hooks configured."
+      );
+      statusEl.textContent = "";
+    } catch {
+      if (request !== generation) return;
+      statusEl.textContent = "Failed to load sources.";
+    }
+  }
+  qsRequired(root, "#sources-reload-btn").addEventListener("click", () => {
+    void refreshSources();
+  });
+  return {
+    refresh: refreshSources,
+    invalidate: () => {
+      generation += 1;
+    }
+  };
+}
+var init_sources_section = __esm({
+  "src/renderer/views/settings/sources-section.ts"() {
+    init_errors4();
+    init_file_bytes();
+    init_nullish2();
+    init_helpers();
+    init_attachment_preview();
+    init_confirm_dialog();
+    init_source_row();
+  }
+});
+
+// src/renderer/ipc-error-message.ts
+function unwrapIpcErrorText(text2) {
+  let message2 = text2;
+  for (; ; ) {
+    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next === message2) return message2.trim();
+    message2 = next;
+  }
+}
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return unwrapIpcErrorText(err2.message) || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
   }
 });
 
@@ -20924,12 +22064,16 @@ var init_auto_approval = __esm({
 });
 
 // src/shared/types/state.ts
-var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
+var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THREAD_SORT_MODES, isThreadSortMode, THREAD_GROUP_MODES, isThreadGroupMode, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
 var init_state = __esm({
   "src/shared/types/state.ts"() {
     init_member_of2();
     RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
+    THREAD_SORT_MODES = ["activity", "created", "title"];
+    isThreadSortMode = memberOf(THREAD_SORT_MODES);
+    THREAD_GROUP_MODES = ["project", "status", "none"];
+    isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
     THEME_PREFERENCES = ["system", "light", "dark"];
     DEFAULT_THEME_PREFERENCE = "dark";
     isThemePreference = memberOf(THEME_PREFERENCES);
@@ -21232,12 +22376,13 @@ var init_openrouter = __esm({
 });
 
 // packages/llm/src/reserved-prefixes.ts
-var REMOTE_AGENT_MODEL_PREFIX, LMSTUDIO_MODEL_PREFIX, ACP_MODEL_PREFIX, PLUGIN_MODEL_PREFIX, AUTO_MODEL_PREFIX, AGENT_MODEL_SEP;
+var REMOTE_AGENT_MODEL_PREFIX, LMSTUDIO_MODEL_PREFIX, ACP_MODEL_PREFIX, CHATGPT_PLAN_MODEL_PREFIX, PLUGIN_MODEL_PREFIX, AUTO_MODEL_PREFIX, AGENT_MODEL_SEP;
 var init_reserved_prefixes = __esm({
   "packages/llm/src/reserved-prefixes.ts"() {
     REMOTE_AGENT_MODEL_PREFIX = "remote-agent:";
     LMSTUDIO_MODEL_PREFIX = "lmstudio:";
     ACP_MODEL_PREFIX = "acp:";
+    CHATGPT_PLAN_MODEL_PREFIX = "chatgpt-plan:";
     PLUGIN_MODEL_PREFIX = "plugin-model:";
     AUTO_MODEL_PREFIX = "auto:";
     AGENT_MODEL_SEP = "#";
@@ -21284,6 +22429,7 @@ var init_model_selection = __esm({
     AGENT_SHAPED = [
       ["remote-agent", REMOTE_AGENT_MODEL_PREFIX, AGENT_MODEL_SEP],
       ["acp", ACP_MODEL_PREFIX, AGENT_MODEL_SEP],
+      ["chatgpt-plan", CHATGPT_PLAN_MODEL_PREFIX, AGENT_MODEL_SEP],
       // A plugin route separates its two halves with `:` rather than `#`; both are
       // URI-encoded, so an encoded separator cannot be mistaken for the real one.
       ["plugin-model", PLUGIN_MODEL_PREFIX, ":"]
@@ -22065,6 +23211,8 @@ function nonFirstPartyTransport(namespace) {
       return "host-routed";
     case "cloud":
       return "unknown";
+    case "chatgpt-plan":
+      return "openai-responses";
   }
 }
 function routeGated(features, firstParty) {
@@ -22096,7 +23244,7 @@ function resolveModelFamily(model) {
     return {
       ...routeGated(withFeatures(entry.features), direct),
       namespace,
-      transport: direct ? entry.transport : "openai-compatible",
+      transport: namespace === "chatgpt-plan" ? "openai-responses" : direct ? entry.transport : "openai-compatible",
       provider: direct ? entry.provider : null,
       family: entry.match,
       known: true
@@ -22118,7 +23266,7 @@ function resolveModelFamily(model) {
   return {
     ...NO_FEATURES,
     namespace,
-    transport: direct ? "unknown" : "openai-compatible",
+    transport: namespace === "chatgpt-plan" ? "openai-responses" : direct ? "unknown" : "openai-compatible",
     provider: null,
     family: null,
     known: false
@@ -22230,7 +23378,12 @@ var init_model_families = __esm({
       { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
     ];
     BOUNDARY = /^[-.:@]/;
-    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+    CLOUD_ROUTED = /* @__PURE__ */ new Set([
+      "cloud",
+      "openrouter",
+      "extra-provider",
+      "chatgpt-plan"
+    ]);
   }
 });
 
@@ -22834,7 +23987,8 @@ function acpModelDisplayLabel(model, agents) {
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent = agents.find((candidate) => canonicalAcpAgentId(candidate.id) === selectedId);
   const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId);
-  const title = agent?.title ?? retired?.title ?? selection2.id;
+  const known = findAcpCatalogEntry(selectedId);
+  const title = agent?.title ?? retired?.title ?? known?.title ?? selection2.id;
   if (!selection2.model) return title;
   const choice = agent?.availableModels?.find((m2) => m2.value === selection2.model);
   return `${title} \u2014 ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection2.model)}`;
@@ -23055,6 +24209,7 @@ var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
     init_service_tier();
+    init_model_selection();
   }
 });
 
@@ -33557,6 +34712,8 @@ function displayModelLabel(model, context) {
       return `${modelDisplayName(selection2.id)}${LOCAL_MODEL_SUFFIX}`;
     case "acp":
       return acpModelDisplayLabel(model, context?.acpAgents ?? []);
+    case "chatgpt-plan":
+      return `${cloudModelDisplayLabel(selection2.id)} \xB7 ChatGPT plan`;
     case "remote-agent":
       return remoteAgentDisplayLabel(model, context?.remoteCatalog ?? []);
     case "plugin-model":
@@ -33835,573 +34992,6 @@ var init_advisor_strategy_plugin = __esm({
         toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
       }
     );
-  }
-});
-
-// src/renderer/dom/outline-icon.ts
-function outlineIcon(label, paths, className) {
-  const svg2 = document.createElementNS(SVG_NS, "svg");
-  svg2.setAttribute("class", className);
-  svg2.setAttribute("viewBox", "0 0 24 24");
-  svg2.setAttribute("width", ICON_SIZE);
-  svg2.setAttribute("height", ICON_SIZE);
-  svg2.setAttribute("aria-hidden", "true");
-  svg2.setAttribute("focusable", "false");
-  svg2.setAttribute("data-icon", label);
-  svg2.setAttribute("fill", "none");
-  svg2.setAttribute("stroke", "currentColor");
-  svg2.setAttribute("stroke-width", "1.75");
-  svg2.setAttribute("stroke-linecap", "round");
-  svg2.setAttribute("stroke-linejoin", "round");
-  for (const d3 of paths) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d3);
-    svg2.append(path);
-  }
-  return svg2;
-}
-var SVG_NS, ICON_SIZE;
-var init_outline_icon = __esm({
-  "src/renderer/dom/outline-icon.ts"() {
-    SVG_NS = "http://www.w3.org/2000/svg";
-    ICON_SIZE = "16";
-  }
-});
-
-// src/renderer/dom/icons.ts
-function playIcon(className = DEFAULT) {
-  return outlineIcon("play", ["m6 3 14 9-14 9V3Z"], className);
-}
-function chevronRightIcon(className = DEFAULT) {
-  return outlineIcon("chevron-right", ["m9 18 6-6-6-6"], className);
-}
-function chevronDownIcon(className = DEFAULT) {
-  return outlineIcon("chevron-down", ["m6 9 6 6 6-6"], className);
-}
-function chevronUpIcon(className = DEFAULT) {
-  return outlineIcon("chevron-up", ["m18 15-6-6-6 6"], className);
-}
-function arrowLeftIcon(className = DEFAULT) {
-  return outlineIcon("arrow-left", ["M19 12H5", "m12 19-7-7 7-7"], className);
-}
-function arrowRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-right", ["M5 12h14", "m12 5 7 7-7 7"], className);
-}
-function arrowDownIcon(className = DEFAULT) {
-  return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
-}
-function refreshIcon(className = DEFAULT) {
-  return outlineIcon(
-    "refresh",
-    [
-      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-      "M21 3v5h-5",
-      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-      "M8 16H3v5"
-    ],
-    className
-  );
-}
-function externalLinkIcon(className = DEFAULT) {
-  return outlineIcon(
-    "external-link",
-    ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
-    className
-  );
-}
-function closeIcon(className = DEFAULT) {
-  return outlineIcon("close", ["M18 6 6 18", "m6 6 12 12"], className);
-}
-function plusIcon(className = DEFAULT) {
-  return outlineIcon("plus", ["M5 12h14", "M12 5v14"], className);
-}
-function monitorIcon(className = DEFAULT) {
-  return outlineIcon(
-    "monitor",
-    [
-      "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
-      "M8 21h8",
-      "M12 17v4"
-    ],
-    className
-  );
-}
-function downloadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "download",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
-    className
-  );
-}
-function uploadIcon(className = DEFAULT) {
-  return outlineIcon(
-    "upload",
-    ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m17 8-5-5-5 5", "M12 3v12"],
-    className
-  );
-}
-function maximizeIcon(className = DEFAULT) {
-  return outlineIcon("maximize", ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"], className);
-}
-function minimizeIcon(className = DEFAULT) {
-  return outlineIcon("minimize", ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"], className);
-}
-function moreHorizontalIcon(className = DEFAULT) {
-  return outlineIcon("more-horizontal", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function moreVerticalIcon(className = DEFAULT) {
-  return outlineIcon("more-vertical", ["M12 5h.01", "M12 12h.01", "M12 19h.01"], className);
-}
-function runningStatusIcon(className = DEFAULT) {
-  return outlineIcon("running-status", ["M5 12h.01", "M12 12h.01", "M19 12h.01"], className);
-}
-function checkIcon(className = DEFAULT) {
-  return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
-}
-function shieldIcon(className = DEFAULT) {
-  return outlineIcon(
-    "shield",
-    [
-      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
-    ],
-    className
-  );
-}
-function bellIcon(className = DEFAULT) {
-  return outlineIcon(
-    "bell",
-    [
-      "M10.27 21a2 2 0 0 0 3.46 0",
-      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
-    ],
-    className
-  );
-}
-function messageQuestionIcon(className = DEFAULT) {
-  return outlineIcon(
-    "message-circle-question",
-    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
-    className
-  );
-}
-function banIcon(className = DEFAULT) {
-  return outlineIcon(
-    "ban",
-    ["M4.93 4.93a10 10 0 1 0 14.14 14.14A10 10 0 0 0 4.93 4.93Z", "m4.93 4.93 14.14 14.14"],
-    className
-  );
-}
-function dotIcon(className = DEFAULT) {
-  return outlineIcon("dot", ["M12 12h.01"], `${className} ui-icon-dot`);
-}
-function circleIcon(className = DEFAULT) {
-  return outlineIcon("circle", ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"], className);
-}
-function spinnerIcon(className = DEFAULT) {
-  return outlineIcon("loader-circle", ["M21 12a9 9 0 1 1-6.219-8.56"], className);
-}
-function minusIcon(className = DEFAULT) {
-  return outlineIcon("minus", ["M5 12h14"], className);
-}
-function warningIcon(className = DEFAULT) {
-  return outlineIcon(
-    "triangle-alert",
-    [
-      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
-      "M12 9v4",
-      "M12 17h.01"
-    ],
-    className
-  );
-}
-function searchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "search",
-    ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
-    className
-  );
-}
-function fileTextIcon(className = DEFAULT) {
-  return outlineIcon(
-    "file-text",
-    [
-      "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z",
-      "M14 2v6h6",
-      "M8 13h8",
-      "M8 17h8"
-    ],
-    className
-  );
-}
-function imageIcon(className = DEFAULT) {
-  return outlineIcon(
-    "image",
-    [
-      "M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8.3",
-      "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
-      "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
-      "M9 9h.01"
-    ],
-    className
-  );
-}
-function sparkleIcon(className = DEFAULT) {
-  return outlineIcon(
-    "sparkle",
-    [
-      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
-    ],
-    className
-  );
-}
-function zapIcon(className = DEFAULT) {
-  return outlineIcon(
-    "zap",
-    [
-      "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
-    ],
-    className
-  );
-}
-function gitBranchIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-branch",
-    [
-      "M6 3v12",
-      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-      "M15 6a9 9 0 0 0-9 9"
-    ],
-    className
-  );
-}
-function gitPullRequestIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-pull-request",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M13 6h3a2 2 0 0 1 2 2v7",
-      "M6 9v12"
-    ],
-    className
-  );
-}
-function gitMergeIcon(className = DEFAULT) {
-  return outlineIcon(
-    "git-merge",
-    [
-      "M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
-      "M6 21V9a9 9 0 0 0 9 9"
-    ],
-    className
-  );
-}
-function penLineIcon(className = DEFAULT) {
-  return outlineIcon(
-    "pen-line",
-    [
-      "M12 20h9",
-      "M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"
-    ],
-    className
-  );
-}
-function slashIcon(className = DEFAULT) {
-  return outlineIcon("slash", ["M20 4 4 20"], className);
-}
-function arrowUpRightIcon(className = DEFAULT) {
-  return outlineIcon("arrow-up-right", ["M7 7h10v10", "M7 17 17 7"], className);
-}
-function squareIcon(className = DEFAULT) {
-  return outlineIcon(
-    "square",
-    ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
-    className
-  );
-}
-function eraserIcon(className = DEFAULT) {
-  return outlineIcon(
-    "eraser",
-    [
-      "m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21",
-      "M22 21H7",
-      "m5 11 9 9"
-    ],
-    className
-  );
-}
-function undoIcon(className = DEFAULT) {
-  return outlineIcon(
-    "undo",
-    ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
-    className
-  );
-}
-function trashIcon(className = DEFAULT) {
-  return outlineIcon(
-    "trash",
-    [
-      "M3 6h18",
-      "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
-      "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-    ],
-    className
-  );
-}
-var DEFAULT;
-var init_icons = __esm({
-  "src/renderer/dom/icons.ts"() {
-    init_outline_icon();
-    DEFAULT = "ui-icon";
-  }
-});
-
-// src/shared/file-bytes.ts
-function fileExtension(name) {
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? "" : name.slice(dot).toLowerCase();
-}
-function formatByteSize(bytes) {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value).toString()} ${units[unit] ?? "GB"}`;
-}
-var init_file_bytes = __esm({
-  "src/shared/file-bytes.ts"() {
-  }
-});
-
-// src/renderer/attachments/attachment-preview.ts
-function releaseCurrent() {
-  const cleanup = currentCleanup;
-  currentCleanup = null;
-  cleanup?.();
-  bodyEl?.replaceChildren();
-}
-function ensureDialog() {
-  if (dialog) {
-    if (!dialog.isConnected) {
-      if (dialog.open) dialog.close();
-      document.body.append(dialog);
-    }
-    return dialog;
-  }
-  dialog = document.createElement("dialog");
-  dialog.className = "attachment-preview-dialog";
-  titleEl = el("h2", { class: "attachment-preview-title" });
-  bodyEl = el("div", { class: "attachment-preview-body" });
-  const closeBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "ui-btn ui-btn-ghost attachment-preview-close",
-      "aria-label": "Close"
-    },
-    closeIcon()
-  );
-  const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
-  dialog.append(header, bodyEl);
-  document.body.append(dialog);
-  closeBtn.addEventListener("click", () => dialog?.close());
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog?.close();
-  });
-  dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") event.stopPropagation();
-  });
-  dialog.addEventListener("close", () => {
-    const resolveFocusTarget = returnFocus;
-    returnFocus = null;
-    activeToken += 1;
-    const closedToken = activeToken;
-    releaseCurrent();
-    queueMicrotask(() => {
-      if (activeToken !== closedToken || dialog?.open) return;
-      const focusTarget = resolveFocusTarget?.();
-      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
-    });
-  });
-  return dialog;
-}
-function statusNode(message2) {
-  return el("p", { class: "attachment-preview-status" }, message2);
-}
-function openAttachmentPreview(options) {
-  const previewDialog = ensureDialog();
-  const previewBody = bodyEl;
-  const previewTitle = titleEl;
-  if (!previewBody || !previewTitle) throw new Error("Attachment preview dialog failed to mount");
-  activeToken += 1;
-  const token = activeToken;
-  releaseCurrent();
-  currentCleanup = options.onClose ?? null;
-  previewDialog.dataset["previewKind"] = options.kind;
-  previewDialog.setAttribute(
-    "aria-label",
-    options.ariaLabel ?? `Attachment preview: ${options.title}`
-  );
-  previewTitle.textContent = options.title;
-  if (options.content) previewBody.replaceChildren(options.content);
-  else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) {
-    const activeElement = document.activeElement;
-    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
-    returnFocus = options.returnFocus ?? defaultReturnFocus;
-    previewDialog.showModal();
-  }
-  const isActive = () => token === activeToken && previewDialog.open;
-  return {
-    isActive,
-    setContent(content) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(content);
-      return true;
-    },
-    setStatus(message2) {
-      if (!isActive()) return false;
-      previewBody.replaceChildren(statusNode(message2));
-      return true;
-    },
-    close() {
-      if (isActive()) previewDialog.close();
-    }
-  };
-}
-var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
-var init_attachment_preview = __esm({
-  "src/renderer/attachments/attachment-preview.ts"() {
-    init_helpers();
-    init_icons();
-    dialog = null;
-    titleEl = null;
-    bodyEl = null;
-    currentCleanup = null;
-    returnFocus = null;
-    activeToken = 0;
-  }
-});
-
-// src/renderer/views/confirm-dialog.ts
-function mountConfirmDialog() {
-  document.getElementById("confirm-dialog")?.remove();
-  showConfirmDialogImpl = null;
-  const messageEl = el("h3", { class: "confirm-dialog-message" });
-  const detailEl = el("p", { class: "confirm-dialog-detail" });
-  const buttonsEl = uiActions({ className: "confirm-dialog-buttons" });
-  const dialog2 = el("dialog", { id: "confirm-dialog" }, messageEl, detailEl, buttonsEl);
-  document.body.append(dialog2);
-  const queue = [];
-  let active2 = null;
-  let confirming = false;
-  function finish(confirmed) {
-    if (!active2) return;
-    const resolve = active2.resolve;
-    active2 = null;
-    confirming = false;
-    dialog2.close();
-    resolve(confirmed);
-    if (queue.length > 0) {
-      active2 = queue.shift() ?? null;
-      renderActive();
-    }
-  }
-  function renderActive() {
-    if (!active2) return;
-    messageEl.textContent = active2.message;
-    if (active2.detail) {
-      detailEl.replaceChildren(active2.detail);
-      detailEl.hidden = false;
-    } else {
-      detailEl.textContent = "";
-      detailEl.hidden = true;
-    }
-    const cancelLabel = active2.cancelLabel ?? "Cancel";
-    const confirmLabel = active2.confirmLabel ?? "OK";
-    const cancelBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-secondary confirm-dialog-cancel" },
-      cancelLabel
-    );
-    const confirmBtn = el(
-      "button",
-      {
-        type: "button",
-        class: active2.danger ? "ui-btn ui-btn-danger confirm-dialog-confirm" : "ui-btn ui-btn-primary confirm-dialog-confirm"
-      },
-      confirmLabel
-    );
-    cancelBtn.addEventListener("click", () => {
-      finish(false);
-    });
-    async function confirmActive() {
-      if (!active2 || confirming) return;
-      const request = active2;
-      if (!request.onConfirm) {
-        finish(true);
-        return;
-      }
-      confirming = true;
-      cancelBtn.disabled = true;
-      confirmBtn.disabled = true;
-      confirmBtn.setAttribute("aria-busy", "true");
-      confirmBtn.textContent = request.confirmPendingLabel ?? `${confirmLabel}\u2026`;
-      try {
-        await request.onConfirm((label) => {
-          if (active2 === request) confirmBtn.textContent = label;
-        });
-        if (active2 === request) finish(true);
-      } catch (error62) {
-        if (active2 !== request) return;
-        const reject = request.reject;
-        active2 = null;
-        confirming = false;
-        dialog2.close();
-        reject(error62);
-        if (queue.length > 0) {
-          active2 = queue.shift() ?? null;
-          renderActive();
-        }
-      }
-    }
-    confirmBtn.addEventListener("click", () => {
-      void confirmActive();
-    });
-    buttonsEl.replaceChildren(cancelBtn, confirmBtn);
-    dialog2.showModal();
-    confirmBtn.focus();
-  }
-  dialog2.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    if (confirming) return;
-    finish(false);
-  });
-  showConfirmDialogImpl = (req) => new Promise((resolve, reject) => {
-    const queued = { ...req, resolve, reject };
-    if (active2) queue.push(queued);
-    else {
-      active2 = queued;
-      renderActive();
-    }
-  });
-}
-function showConfirmDialog(req) {
-  if (!showConfirmDialogImpl) return Promise.resolve(false);
-  return showConfirmDialogImpl(req);
-}
-var showConfirmDialogImpl;
-var init_confirm_dialog = __esm({
-  "src/renderer/views/confirm-dialog.ts"() {
-    init_helpers();
-    init_ui();
-    showConfirmDialogImpl = null;
   }
 });
 
@@ -42353,6 +42943,34 @@ var init_inline_status = __esm({
   }
 });
 
+// src/shared/acp-retention.ts
+var ACP_RETENTION_NOTICE;
+var init_acp_retention = __esm({
+  "src/shared/acp-retention.ts"() {
+    ACP_RETENTION_NOTICE = {
+      label: "ZDR not verified",
+      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
+    };
+  }
+});
+
+// packages/llm/src/chatgpt-plan.ts
+function chatGptPlanModelValue(clientId, model) {
+  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
+}
+function parseChatGptPlanModel(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "chatgpt-plan") return null;
+  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
+  return { clientId: selection2.agent, model: selection2.id };
+}
+var init_chatgpt_plan = __esm({
+  "packages/llm/src/chatgpt-plan.ts"() {
+    init_model_selection();
+    init_reserved_prefixes();
+  }
+});
+
 // packages/llm/src/composite-intellect.ts
 function compositeIntellect(model) {
   if (model.benchmarks["aa-intelligence"]) return null;
@@ -42794,13 +43412,19 @@ function acpAgentOptions(agents) {
         const versioned = acpModelVersionName(model.description);
         const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
         options.push({
+          retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label} \u2014 ${hint}` : label,
           group
         });
       }
     } else {
-      options.push({ value: acpModelValue(agent.id), label: agent.title, group });
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE
+      });
     }
   }
   return options;
@@ -42985,6 +43609,19 @@ async function fetchModelOptions(api2, current, opts = {}) {
   }
   const isAvailable = (provider) => available[provider] ?? false;
   const cloudGroup = "Cloud models";
+  try {
+    const catalog = await api2.chatGptPlan?.models();
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} \xB7 ChatGPT plan`,
+          group: "ChatGPT plan"
+        });
+      }
+    }
+  } catch {
+  }
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue;
     if (value === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
@@ -43065,12 +43702,20 @@ async function fetchModelOptions(api2, current, opts = {}) {
       const configuredButUnlisted = configuredAgent?.enabled === true;
       const staleModel = selection2?.model ? canonicalModelLabel(selection2.model) : "agent default";
       const stale = {
+        retention: ACP_RETENTION_NOTICE,
         value: current,
         label: sshWorkspace ? `${modelDisplayLabel(current)} (unavailable on SSH)` : configuredButUnlisted ? `${configuredAgent.title} \u2014 ${staleModel} (not currently advertised)` : configuredAgent ? `${configuredAgent.title} (disabled)` : `${modelDisplayLabel(current)} (not configured)`,
         group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP
       };
       if (sshWorkspace) stale.disabled = true;
       options.push(stale);
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: "ChatGPT plan",
+        disabled: true
+      });
     } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
       options.push({
         value: current,
@@ -43173,6 +43818,8 @@ function fetchDynamicModelOptions(current, autoLabel) {
 var ACP_GROUP, OPENROUTER_GROUP, CHAT_DEFAULT_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
 var init_model_options = __esm({
   "src/renderer/views/model-options.ts"() {
+    init_acp_retention();
+    init_chatgpt_plan();
     init_model_catalog();
     init_local_model_catalog();
     init_intellect_hints();
@@ -43205,10 +43852,16 @@ var init_model_options = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
+function contextMenuClosedByPressOn(anchor2) {
+  const press = outsidePress;
+  outsidePress = null;
+  return press !== null && press.target !== null && anchor2.contains(press.target) && Date.now() - press.at < 1e3;
+}
 function showContextMenu(clientX, clientY, items, withinDialog) {
   dismissOpenContextMenu?.();
-  if (items.every(isHeading)) return;
+  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return;
   const buttons = items.map((entry) => {
+    if (isSeparator(entry)) return el("div", { class: "context-menu-separator", role: "separator" });
     if (isHeading(entry)) {
       return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
     }
@@ -43218,11 +43871,21 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
       {
         type: "button",
         class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
+        role: item.checked === void 0 ? "menuitem" : item.toggle === true ? "menuitemcheckbox" : "menuitemradio",
         ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
       },
       el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+      ...item.detail === void 0 ? [] : [el("span", { class: "context-menu-item-detail" }, item.detail)],
+      ...item.toggle === true && item.checked !== void 0 ? [
+        el(
+          "span",
+          {
+            class: item.checked ? "context-menu-switch is-on" : "context-menu-switch",
+            "aria-hidden": "true"
+          },
+          el("i")
+        )
+      ] : item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
     );
     if (item.checked === true) btn.classList.add("is-checked");
     if (item.disabled) btn.disabled = true;
@@ -43256,7 +43919,9 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
   };
   const onPointerDown = (e3) => {
-    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
+    const target = e3.target instanceof Node ? e3.target : null;
+    if (menu.contains(target)) return;
+    outsidePress = { target, at: Date.now() };
     dismiss();
   };
   const onKeyDown = (e3) => {
@@ -43285,13 +43950,15 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
 function dismissContextMenu() {
   dismissOpenContextMenu?.();
 }
-var isHeading, dismissOpenContextMenu;
+var isHeading, isSeparator, dismissOpenContextMenu, outsidePress;
 var init_context_menu = __esm({
   "src/renderer/dom/context-menu.ts"() {
     init_helpers();
     init_icons();
     isHeading = (entry) => "heading" in entry;
+    isSeparator = (entry) => "separator" in entry;
     dismissOpenContextMenu = null;
+    outsidePress = null;
   }
 });
 
@@ -43343,7 +44010,8 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     },
     "$"
   );
-  trigger.append(labelEl, triggerCost, chevron);
+  const triggerRetention = el("span", { class: "ui-badge model-picker-retention", hidden: true });
+  trigger.append(labelEl, triggerRetention, triggerCost, chevron);
   const menu = el("div", {
     class: "model-picker-menu",
     hidden: "",
@@ -43670,6 +44338,13 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
           title: opt.label
         },
         el("span", { class: "model-picker-option-label" }, opt.label),
+        ...opt.retention ? [
+          el(
+            "span",
+            { class: "ui-badge model-picker-retention", title: opt.retention.detail },
+            opt.retention.label
+          )
+        ] : [],
         ...opt.coverage ? [
           el(
             "span",
@@ -43734,6 +44409,9 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     labelEl.textContent = label;
     labelEl.title = current;
     triggerCost.hidden = match?.coverage !== "paid";
+    triggerRetention.hidden = !match?.retention;
+    triggerRetention.textContent = match?.retention?.label ?? "";
+    triggerRetention.title = match?.retention?.detail ?? "";
   }
   async function refresh() {
     const generation = ++refreshGeneration;
@@ -44295,6 +44973,55 @@ var init_disclosure_summary = __esm({
   }
 });
 
+// src/renderer/views/setup/local-detection.ts
+function localServerTargets() {
+  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
+    id: p2.id,
+    label: p2.label,
+    baseUrl: p2.baseUrl
+  }));
+  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
+}
+async function detectLocalServers(api2) {
+  return Promise.all(
+    localServerTargets().map(async (target) => {
+      try {
+        const res = await api2.lmStudio.test(target.baseUrl);
+        return {
+          ...target,
+          reachable: res.ok,
+          models: res.models ?? [],
+          ...res.error ? { error: res.error } : {}
+        };
+      } catch (err2) {
+        return {
+          ...target,
+          reachable: false,
+          models: [],
+          error: err2 instanceof Error ? err2.message : "probe failed"
+        };
+      }
+    })
+  );
+}
+async function importDetectedPreset(api2, result) {
+  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
+  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
+  const existingModels = existing?.models ?? [];
+  const seen = new Set(existingModels.map((m2) => m2.id));
+  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
+  await api2.settings.saveExtraProvider({
+    slug: result.id,
+    models: [...existingModels, ...added]
+  });
+}
+var init_local_detection = __esm({
+  "src/renderer/views/setup/local-detection.ts"() {
+    init_extra_providers();
+    init_lm_studio_defaults();
+  }
+});
+
 // src/renderer/views/setup/custom-providers-section.ts
 function apiStyleSelect(current = "chat-completions") {
   const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
@@ -44473,6 +45200,7 @@ function createCustomProvidersSection(api2, opts = {}) {
   );
   const pendingKeys = /* @__PURE__ */ new Map();
   const configured = /* @__PURE__ */ new Set();
+  const reachable = /* @__PURE__ */ new Set();
   let providers = [];
   let selected = embedded ? "" : defaultSelected;
   let openRouterModelValue = "";
@@ -44514,6 +45242,8 @@ function createCustomProvidersSection(api2, opts = {}) {
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
+      } else if (reachable.has(key)) {
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Server running" }));
       }
       chip2.addEventListener("click", () => {
         selected = key;
@@ -45062,6 +45792,14 @@ function createCustomProvidersSection(api2, opts = {}) {
     renderChips();
     renderForm();
     opts.onChanged?.();
+    if (isLocal) void probeLocalServers();
+  }
+  async function probeLocalServers() {
+    const results = await detectLocalServers(api2);
+    reachable.clear();
+    for (const r2 of results) if (r2.reachable) reachable.add(r2.id);
+    renderChips();
+    opts.onStatusChanged?.();
   }
   async function confirmPlaintextStorage(label) {
     return showConfirmDialog({
@@ -45133,7 +45871,7 @@ function createCustomProvidersSection(api2, opts = {}) {
     return providerIds().includes(id) ? chipLabel(id) : null;
   }
   function isConfigured(id) {
-    if (configured.has(id)) return true;
+    if (configured.has(id) || reachable.has(id)) return true;
     const provider = providers.find((p2) => p2.id === id);
     return provider ? !provider.builtin : false;
   }
@@ -45154,6 +45892,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_api_keys_section();
+    init_local_detection();
     init_confirm_dialog();
     init_unknown_value3();
     FIXED_PROVIDERS = [
@@ -45363,6 +46102,27 @@ var init_acp_registry_browser = __esm({
 });
 
 // src/renderer/views/setup/acp-agents-section.ts
+function retentionNotice(agent) {
+  const known = agent ? findAcpCatalogEntry(agent.id) : void 0;
+  const source = agent && known && launchesAcpCatalogEntry(agent, known) ? AGENT_DATA_POLICY_URLS[known.id] : void 0;
+  return el(
+    "div",
+    { class: "acp-retention-notice" },
+    el("span", { class: "ui-badge provider-privacy-badge unknown" }, ACP_RETENTION_NOTICE.label),
+    el("p", { class: "field-hint" }, ACP_RETENTION_NOTICE.detail),
+    ...source ? [
+      el(
+        "p",
+        { class: "field-hint" },
+        el(
+          "a",
+          { href: source, target: "_blank", rel: "noopener noreferrer" },
+          "Agent data policy"
+        )
+      )
+    ] : []
+  );
+}
 function parseEnvText(text2) {
   const env = {};
   for (const line of text2.split("\n")) {
@@ -45630,15 +46390,20 @@ function createAcpAgentsSection(api2, opts = {}) {
     const modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: (current) => {
         const pickerOptions = [
-          { value: "", label: DEFAULT_MODEL_LABEL },
+          { value: "", label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
           ...detectedModels.map((choice) => ({
             value: choice.value,
             label: acpModelChoiceLabel(choice),
-            group: "Detected models"
+            group: "Detected models",
+            retention: ACP_RETENTION_NOTICE
           }))
         ];
         if (current && !detectedModels.some((choice) => choice.value === current)) {
-          pickerOptions.push({ value: current, label: `${current} (saved)` });
+          pickerOptions.push({
+            value: current,
+            label: `${current} (saved)`,
+            retention: ACP_RETENTION_NOTICE
+          });
         }
         return Promise.resolve(pickerOptions);
       },
@@ -45646,9 +46411,13 @@ function createAcpAgentsSection(api2, opts = {}) {
       loadOnMount: false
     });
     void modelPicker.refresh(initialModel);
-    detectModels.disabled = !isEdit;
+    const canDetectModels = options.initial?.enabled === true;
+    detectModels.disabled = !canDetectModels;
     if (!isEdit) modelStatus.textContent = "Save the agent first, then detect its models.";
+    else if (!canDetectModels)
+      modelStatus.textContent = "Enable and save the agent first, then detect its models.";
     detectModels.addEventListener("click", () => {
+      if (!canDetectModels) return;
       const id = idInput.value.trim();
       detectModels.disabled = true;
       setInlineStatus(modelStatus, "pending", "Detecting\u2026 (starting the agent)");
@@ -45683,7 +46452,7 @@ function createAcpAgentsSection(api2, opts = {}) {
       }).catch((err2) => {
         setInlineStatus(modelStatus, "error", err2 instanceof Error ? err2.message : String(err2));
       }).finally(() => {
-        detectModels.disabled = false;
+        detectModels.disabled = !canDetectModels;
       });
     });
     let idEdited = isEdit || Boolean(options.draft);
@@ -45725,6 +46494,7 @@ function createAcpAgentsSection(api2, opts = {}) {
     const fields = el(
       "div",
       { class: "acp-agent-fields" },
+      retentionNotice(options.initial),
       el("label", {}, "Id", idInput),
       el("label", {}, "Title", titleInput),
       el("label", {}, "Command", commandInput),
@@ -45782,6 +46552,7 @@ function createAcpAgentsSection(api2, opts = {}) {
         )
       );
     }
+    form.append(retentionNotice(known));
     const add2 = el("button", { type: "button", class: "provider-save" }, "Add to my agents");
     add2.addEventListener("click", () => {
       selected = known.id;
@@ -45927,9 +46698,10 @@ function createAcpAgentsSection(api2, opts = {}) {
   }
   return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select };
 }
-var ID_RE;
+var AGENT_DATA_POLICY_URLS, ID_RE;
 var init_acp_agents_section = __esm({
   "src/renderer/views/setup/acp-agents-section.ts"() {
+    init_acp_retention();
     init_acp();
     init_acp_known_agents();
     init_helpers();
@@ -45937,7 +46709,223 @@ var init_acp_agents_section = __esm({
     init_inline_status();
     init_model_picker();
     init_acp_registry_browser();
+    AGENT_DATA_POLICY_URLS = {
+      "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      gemini: "https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md",
+      "qwen-code": "https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md"
+    };
     ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  }
+});
+
+// src/renderer/views/setup/chatgpt-plan-section.ts
+function createChatGptPlanSection(api2, onChanged) {
+  const root = el("div", { "data-testid": "chatgpt-plan-section" });
+  let status = { accounts: [], activeClientId: null };
+  let busy = false;
+  let message2 = "";
+  let signingIn = false;
+  let accountOptionsOpen = false;
+  let welcomeShowing = false;
+  async function act(work, isSignIn = false) {
+    signingIn = isSignIn;
+    busy = true;
+    message2 = "";
+    render();
+    try {
+      await work();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+    } finally {
+      busy = false;
+      render();
+      onChanged();
+      if (isSignIn) await welcome();
+    }
+  }
+  function render() {
+    accountOptionsOpen = root.querySelector("details")?.open ?? accountOptionsOpen;
+    clear(root);
+    const active2 = status.accounts.find((account) => account.clientId === status.activeClientId);
+    if (status.accounts.length) {
+      const picker = el("select", { "aria-label": "ChatGPT account", disabled: busy });
+      picker.append(el("option", { value: "" }, "Choose a ChatGPT account"));
+      for (const [index, account] of status.accounts.entries()) {
+        picker.append(
+          el(
+            "option",
+            { value: account.clientId },
+            `${account.label} \xB7 connection ${String(index + 1)}${account.connected ? "" : " (signed out)"}`
+          )
+        );
+      }
+      picker.value = status.activeClientId ?? "";
+      picker.addEventListener("change", () => {
+        if (picker.value)
+          void act(async () => {
+            status = await api2.chatGptPlan.selectAccount(picker.value);
+          });
+      });
+      root.append(el("label", {}, "ChatGPT account", picker));
+    }
+    if (active2?.connected) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          active2.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
+        )
+      );
+    }
+    const actions = el("div", { class: "provider-actions" });
+    const connect = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn chatgpt-sign-in",
+        disabled: busy,
+        "data-testid": "chatgpt-plan-connect"
+      },
+      el("img", {
+        src: "./chatgpt-logo-white.svg",
+        alt: "",
+        width: "21",
+        height: "21",
+        "aria-hidden": "true"
+      }),
+      "Continue with ChatGPT"
+    );
+    connect.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn(active2?.clientId);
+      }, true);
+    });
+    if (!active2?.connected || !active2.planEnabled) actions.append(connect);
+    const accountActions = el("div", { class: "provider-actions" });
+    if (busy) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          signingIn ? "Finish signing in in your browser." : "Updating connection\u2026"
+        )
+      );
+      const cancel = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Cancel sign-in"
+      );
+      cancel.addEventListener("click", () => {
+        void api2.chatGptPlan.cancelSignIn();
+      });
+      if (signingIn) actions.append(cancel);
+    }
+    if (active2?.connected) {
+      const disconnect = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Sign out"
+      );
+      disconnect.addEventListener("click", () => {
+        void act(async () => {
+          const result = await api2.chatGptPlan.signOut(active2.clientId);
+          status = result.status;
+          if (!result.revoked)
+            message2 = "Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.";
+        });
+      });
+      const renew = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Refresh connection"
+      );
+      renew.addEventListener("click", () => {
+        void act(async () => {
+          status = await api2.chatGptPlan.refreshAccount(active2.clientId);
+          message2 = "Connection refreshed.";
+        });
+      });
+      accountActions.append(renew, disconnect);
+    }
+    const add2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+      "Add another account"
+    );
+    add2.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn();
+      }, true);
+    });
+    if (status.accounts.length) accountActions.append(add2);
+    const usage = el(
+      "button",
+      {
+        type: "button",
+        class: active2?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
+      },
+      "Manage usage"
+    );
+    usage.addEventListener("click", () => {
+      void api2.shell.openExternal(USAGE_URL);
+    });
+    actions.append(usage);
+    root.append(actions);
+    if (status.accounts.length) {
+      const options = el("details", {}, el("summary", {}, "Account options"), accountActions);
+      options.open = accountOptionsOpen;
+      root.append(options);
+    }
+    if (message2)
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint", "data-testid": "chatgpt-plan-message" },
+          message2
+        )
+      );
+  }
+  async function welcome() {
+    if (welcomeShowing || !status.accounts.some((account) => account.connected && account.planEnabled))
+      return;
+    welcomeShowing = true;
+    try {
+      if (await api2.settings.get("chatGptPlanWelcomeSeen") === true) return;
+      await showConfirmDialog({
+        message: "You\u2019re using your ChatGPT plan",
+        detail: "Copse uses your ChatGPT plan or available credits for ChatGPT plan models. Manage Copse\u2019s allowance and credit usage in ChatGPT Settings \u2192 Usage.",
+        confirmLabel: "Got it",
+        cancelLabel: "Close"
+      });
+      await api2.settings.set("chatGptPlanWelcomeSeen", true);
+    } catch {
+    } finally {
+      welcomeShowing = false;
+    }
+  }
+  async function refresh() {
+    try {
+      status = await api2.chatGptPlan.status();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+    }
+    render();
+    await welcome();
+  }
+  render();
+  return {
+    root,
+    refresh,
+    configured: () => status.accounts.some((account) => account.planEnabled && account.connected)
+  };
+}
+var USAGE_URL;
+var init_chatgpt_plan_section = __esm({
+  "src/renderer/views/setup/chatgpt-plan-section.ts"() {
+    init_confirm_dialog();
+    init_helpers();
+    USAGE_URL = "https://chatgpt.com/settings/usage";
   }
 });
 
@@ -45955,10 +46943,15 @@ function createProvidersPanel(api2, opts = {}) {
     embedded: true,
     onChanged: rebuild
   });
+  const chatGptPlan = createChatGptPlanSection(api2, () => {
+    renderChips();
+    if (selected === "openai") renderForm();
+  });
   const localPanel = createCustomProvidersSection(api2, {
     variant: "local",
     embedded: true,
     onChanged: rebuild,
+    onStatusChanged: renderChips,
     ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
   });
   const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
@@ -45982,6 +46975,7 @@ function createProvidersPanel(api2, opts = {}) {
   let selected = "";
   let selectedAgentId = "";
   let selectedAddKind = "api";
+  const expandedConnections = /* @__PURE__ */ new Set();
   let deviceScanned = false;
   let providerPicked = false;
   let autoSetupRun = false;
@@ -46050,7 +47044,7 @@ function createProvidersPanel(api2, opts = {}) {
       el(
         "p",
         { class: "field-hint openai-service-tier-scope" },
-        "Applies to every first-party OpenAI model request. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+        "Applies to OpenAI API-key requests. ChatGPT plan and Codex ACP use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
       )
     );
     tierBlock.dataset["testid"] = "openai-service-tier-block";
@@ -46106,6 +47100,7 @@ function createProvidersPanel(api2, opts = {}) {
     return list;
   }
   function isConfigured(vendor) {
+    if (vendor.id === "openai" && chatGptPlan.configured()) return true;
     const caps = resolve(vendor);
     if (caps.api.some((id) => apiPanel.isConfigured(id))) return true;
     if (caps.local.some((id) => localPanel.isConfigured(id))) return true;
@@ -46193,6 +47188,72 @@ function createProvidersPanel(api2, opts = {}) {
       host
     );
   }
+  function connectionDetails(id, label, ...children) {
+    const details = el("details", { "data-testid": id }, el("summary", {}, label), ...children);
+    details.open = expandedConnections.has(id);
+    details.addEventListener("toggle", () => {
+      if (details.open) expandedConnections.add(id);
+      else expandedConnections.delete(id);
+    });
+    return details;
+  }
+  function openAiCards(agentIds) {
+    const cards = el("div", { class: "provider-vendor openai-connections" });
+    apiPanel.select("openai");
+    const apiDetails = connectionDetails(
+      "openai-api-details",
+      "Configure API access",
+      apiPanel.root,
+      ...opts.showOpenAiServiceTier ? [openAiTierBlock()] : []
+    );
+    const entries2 = [
+      {
+        title: "ChatGPT plan",
+        configured: chatGptPlan.configured(),
+        description: "Copse\u2019s agent and tools, using your ChatGPT plan or available credits.",
+        content: chatGptPlan.root,
+        id: "chatgpt"
+      },
+      {
+        title: "OpenAI API",
+        configured: apiPanel.isConfigured("openai"),
+        description: "Copse\u2019s agent and tools, billed to your OpenAI API account.",
+        content: apiDetails,
+        id: "api"
+      }
+    ];
+    if (agentIds.length) {
+      entries2.push({
+        title: "Codex ACP",
+        configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
+        description: "Codex\u2019s agent, running on this machine through ACP.",
+        content: connectionDetails(
+          "openai-codex-details",
+          "Configure Codex ACP",
+          agentBlock(agentIds)
+        ),
+        id: "codex"
+      });
+    }
+    entries2.sort((a3, b4) => Number(b4.configured) - Number(a3.configured));
+    for (const entry of entries2) {
+      cards.append(
+        el(
+          "section",
+          { class: "openai-connection-card", "data-connection": entry.id },
+          el(
+            "div",
+            { class: "openai-connection-heading" },
+            el("h4", {}, entry.title),
+            el("span", { class: "field-hint" }, entry.configured ? "Set up" : "Not set up")
+          ),
+          el("p", { class: "field-hint" }, entry.description),
+          entry.content
+        )
+      );
+    }
+    return cards;
+  }
   function renderForm() {
     clear(formHost);
     if (cloudAgentOptions) cloudAgentOptions.hidden = true;
@@ -46204,6 +47265,10 @@ function createProvidersPanel(api2, opts = {}) {
     const vendor = vendors().find((entry) => entry.id === selected);
     if (!vendor) return;
     const caps = resolve(vendor);
+    if (vendor.id === "openai") {
+      formHost.append(openAiCards(caps.agents));
+      return;
+    }
     const body = el("div", { class: "provider-vendor" });
     if (caps.api.length) {
       const [first] = caps.api;
@@ -46211,9 +47276,6 @@ function createProvidersPanel(api2, opts = {}) {
         apiPanel.select(first);
         body.append(block("API key", apiPanel.root));
       }
-    }
-    if (vendor.id === "openai" && opts.showOpenAiServiceTier) {
-      body.append(openAiTierBlock());
     }
     if (caps.cloud) {
       body.append(block("Cloud agent", caps.cloud.element));
@@ -46247,6 +47309,7 @@ function createProvidersPanel(api2, opts = {}) {
     await agentsPanel.reload();
     await refreshCloudAgentKeys();
     await refreshOpenAiTier();
+    await chatGptPlan.refresh();
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
@@ -46273,6 +47336,7 @@ var init_providers_section = __esm({
     init_acp_known_agents();
     init_service_tier();
     init_ui();
+    init_chatgpt_plan_section();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -46384,24 +47448,6 @@ var init_presets = __esm({
       }
     ];
     CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
-  }
-});
-
-// src/renderer/ipc-error-message.ts
-function unwrapIpcErrorText(text2) {
-  let message2 = text2;
-  for (; ; ) {
-    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
-    if (next === message2) return message2.trim();
-    message2 = next;
-  }
-}
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return unwrapIpcErrorText(err2.message) || fallback;
-}
-var init_ipc_error_message = __esm({
-  "src/renderer/ipc-error-message.ts"() {
   }
 });
 
@@ -47963,6 +49009,9 @@ function openAiSupport(modelId) {
 }
 function modelParameterSupport(model) {
   const selection2 = parseModelSelection(model);
+  if (selection2.namespace === "chatgpt-plan") {
+    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
+  }
   if (AGENT_NAMESPACES.has(selection2.namespace)) {
     return {
       ...NO_PARAMETERS,
@@ -51319,7 +52368,7 @@ function renderPlanWorthItSection(host, payload, error62, opts) {
   card.append(actions);
   host.append(card);
 }
-function renderModelTable(host, title, rows, emptyText) {
+function renderModelTable(host, title, rows, emptyText, accounts = []) {
   const section = document.createElement("div");
   section.className = "usage-model-group";
   const heading = document.createElement("h4");
@@ -51358,14 +52407,27 @@ function renderModelTable(host, title, rows, emptyText) {
   `;
   const tbody = table.querySelector("tbody");
   if (!tbody) throw new Error("usage table is missing its tbody");
+  const registrations = [
+    ...new Set(
+      rows.flatMap((row2) => {
+        const plan = parseModelSelection(row2.model);
+        return plan.namespace === "chatgpt-plan" && plan.agent ? [plan.agent] : [];
+      })
+    )
+  ];
   for (const row2 of rows) {
     const tr2 = document.createElement("tr");
     const approx = row2.estimatedTokens ? "~" : "";
-    const model = escapeHtml(row2.model);
+    const model = escapeHtml(
+      row2.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel(row2.model) : row2.model
+    );
     const modelLabel2 = row2.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const plan = parseModelSelection(row2.model);
+    const accountIndex = plan.namespace === "chatgpt-plan" ? accounts.findIndex((account) => account.clientId === plan.agent) : -1;
+    const accountLabel = plan.namespace === "chatgpt-plan" && plan.agent && registrations.length > 1 ? accountIndex >= 0 ? `Connection ${String(accountIndex + 1)}` : `Saved connection ${String(registrations.indexOf(plan.agent) + 1)}` : "";
     const costLabel = row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : `${row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}${row2.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
     tr2.innerHTML = `
-      <td><code>${modelLabel2}</code></td>
+      <td><code>${modelLabel2}</code>${accountLabel ? `<br><span class="field-hint">${accountLabel}</span>` : ""}</td>
       <td>${approx}${formatTokenCount(row2.inputTokens)}</td>
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
@@ -51377,7 +52439,7 @@ function renderModelTable(host, title, rows, emptyText) {
   section.append(table);
   host.append(section);
 }
-function renderPeriodSummary(host, summary, period, meta3) {
+function renderPeriodSummary(host, summary, period, meta3, accounts, api2) {
   host.replaceChildren();
   const headline = document.createElement("p");
   headline.className = "usage-headline";
@@ -51394,11 +52456,22 @@ function renderPeriodSummary(host, summary, period, meta3) {
     note.textContent = `Ledger: ${String(meta3.ledgerEventCount)} event(s) tracked (since ${trackedSince}). Time windows include cloud and local models recorded on each agent turn. All-time totals come from saved threads and may include older usage.`;
     host.append(note);
   }
+  if (summary.cloudModels.some((row2) => row2.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX))) {
+    const usage = document.createElement("button");
+    usage.type = "button";
+    usage.className = "ui-btn ui-btn-primary";
+    usage.textContent = "Manage ChatGPT usage";
+    usage.addEventListener("click", () => {
+      void api2.shell.openExternal("https://chatgpt.com/settings/usage");
+    });
+    host.append(usage);
+  }
   renderModelTable(
     host,
     "Cloud models",
     summary.cloudModels,
-    "No cloud model usage in this period."
+    "No cloud model usage in this period.",
+    accounts
   );
   renderModelTable(
     host,
@@ -51465,6 +52538,7 @@ function createUsageSection(api2, store2, onRequestClose) {
   const labelEl = qsRequired(root, "#usage-period-label");
   const tabBtns = root.querySelectorAll(".usage-period-btn");
   let activePeriod = "day";
+  let cachedAccounts = [];
   let cachedSummary = null;
   let cachedPlanSnapshot = null;
   let ledgerRefreshTimer;
@@ -51512,10 +52586,17 @@ function createUsageSection(api2, store2, onRequestClose) {
     });
     labelEl.textContent = PERIOD_LABELS[period];
     if (cachedSummary) {
-      renderPeriodSummary(bodyEl2, cachedSummary[period], period, {
-        ledgerEventCount: cachedSummary.ledgerEventCount,
-        trackingStartedAt: cachedSummary.trackingStartedAt
-      });
+      renderPeriodSummary(
+        bodyEl2,
+        cachedSummary[period],
+        period,
+        {
+          ledgerEventCount: cachedSummary.ledgerEventCount,
+          trackingStartedAt: cachedSummary.trackingStartedAt
+        },
+        cachedAccounts,
+        api2
+      );
     }
   }
   tabBtns.forEach((btn) => {
@@ -51571,6 +52652,11 @@ function createUsageSection(api2, store2, onRequestClose) {
     }, LEDGER_REFRESH_DEBOUNCE_MS);
   }
   async function refresh() {
+    try {
+      cachedAccounts = (await api2.chatGptPlan.status()).accounts;
+    } catch {
+      cachedAccounts = [];
+    }
     if (!cachedSummary) {
       bodyEl2.textContent = "Loading usage\u2026";
     }
@@ -51609,6 +52695,9 @@ var init_usage_section = __esm({
     init_intellect_frontier_panel();
     init_model_options();
     init_acp();
+    init_model_display();
+    init_model_selection();
+    init_reserved_prefixes();
     PERIOD_LABELS = {
       day: "Last 24 hours",
       month: "Last 30 days",
@@ -51629,6 +52718,44 @@ var init_usage_section = __esm({
       insufficient_history: "Need more history",
       needs_fee: "Enter your plan fee"
     };
+  }
+});
+
+// src/shared/release-channel.mts
+function getReleaseChannel(version2) {
+  if (stableVersion.test(version2)) return "stable";
+  if (betaVersion.test(version2)) return "beta";
+  throw new Error(
+    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
+  );
+}
+var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
+var init_release_channel = __esm({
+  "src/shared/release-channel.mts"() {
+    RELEASE_CHANNELS = ["stable", "beta"];
+    numericIdentifier = "(?:0|[1-9]\\d*)";
+    stableVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
+    );
+    betaVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
+    );
+  }
+});
+
+// src/shared/update-channel-choice.ts
+function chosenUpdateChannel(saved, installedVersion) {
+  if (typeof saved === "string" && isReleaseChannel(saved)) {
+    return { channel: saved, remember: false };
+  }
+  return { channel: getReleaseChannel(installedVersion), remember: true };
+}
+var isReleaseChannel;
+var init_update_channel_choice = __esm({
+  "src/shared/update-channel-choice.ts"() {
+    init_member_of2();
+    init_release_channel();
+    isReleaseChannel = memberOf(RELEASE_CHANNELS);
   }
 });
 
@@ -51706,6 +52833,67 @@ function createAboutSection(api2) {
     ),
     uiActions(openButton("View licence", "copse"), { align: "start" })
   );
+  const channelSelect = el(
+    "select",
+    { name: "updateChannel" },
+    el("option", { value: "beta" }, "Beta"),
+    el("option", { value: "stable" }, "Stable")
+  );
+  const channelStatus = el("p", {
+    class: "about-update-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  const updates = el(
+    "fieldset",
+    { class: "about-updates" },
+    el("legend", {}, "Updates"),
+    el(
+      "label",
+      { class: "about-update-channel" },
+      "Update channel",
+      channelSelect,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
+      )
+    ),
+    channelStatus
+  );
+  let savedChannel = "beta";
+  let installedChannel = "beta";
+  channelSelect.addEventListener("change", () => {
+    const value = channelSelect.value;
+    if (!isReleaseChannel(value)) return;
+    channelSelect.disabled = true;
+    void api2.settings.set("updateChannel", value).then(
+      () => {
+        savedChannel = value;
+        setInlineStatus(
+          channelStatus,
+          "ok",
+          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
+        );
+      },
+      (err2) => {
+        channelSelect.value = savedChannel;
+        setInlineStatus(channelStatus, "error", errorMessage(err2));
+      }
+    ).finally(() => {
+      channelSelect.disabled = false;
+    });
+  });
+  const showChannel = async (version2) => {
+    let channel = "beta";
+    try {
+      installedChannel = getReleaseChannel(version2);
+      channel = chosenUpdateChannel(await api2.settings.get("updateChannel"), version2).channel;
+    } catch {
+    }
+    savedChannel = channel;
+    channelSelect.value = channel;
+  };
   const countEl = el("span", {}, "the open-source components");
   const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
   const thirdParty = el(
@@ -51763,6 +52951,7 @@ function createAboutSection(api2) {
     loaded ??= api2.about.getInfo().then(
       (info) => {
         versionEl.textContent = info.version;
+        void showChannel(info.version);
         if (info.report) {
           render(info.report);
         } else {
@@ -51778,14 +52967,17 @@ function createAboutSection(api2) {
     );
     return loaded;
   };
-  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
   return { root, refresh };
 }
 var SHIPPED_AS_LABEL;
 var init_about_section = __esm({
   "src/renderer/views/setup/about-section.ts"() {
     init_errors4();
+    init_update_channel_choice();
+    init_release_channel();
     init_helpers();
+    init_inline_status();
     init_ui();
     SHIPPED_AS_LABEL = {
       bundled: "compiled into Copse",
@@ -53315,7 +54507,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 && schedule.lastProblem === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -53346,6 +54538,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             "div",
             { class: "automation-row-blocked-message" },
             `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
+      if (schedule.lastProblem !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message automation-row-problem-message" },
+            `${schedule.lastProblem.kind === "failed" ? "Last attempt failed" : "Last attempt skipped"} ${new Date(schedule.lastProblem.at).toLocaleString()}: ${schedule.lastProblem.message}`
           )
         );
       }
@@ -54945,6 +56146,31 @@ function collectSubagentUsage(toolCalls, totals) {
     }
   }
 }
+function subagentRunLabel(session) {
+  const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
+  const firstLine = session.prompt.trim().split("\n")[0] ?? "";
+  if (!firstLine) return kind;
+  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
+  return `${kind} \xB7 ${prompt}`;
+}
+function collectSubagentRuns(toolCalls, runs) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session || session.kind === "container") continue;
+    runs.push({
+      label: subagentRunLabel(session),
+      model: session.model,
+      status: session.status,
+      usage: session.usage ? { inputTokens: session.usage.inputTokens, outputTokens: session.usage.outputTokens } : void 0
+    });
+    for (const message2 of session.messages) collectSubagentRuns(message2.toolCalls, runs);
+  }
+}
+function listSubagentRuns(messages) {
+  const runs = [];
+  for (const message2 of messages) collectSubagentRuns(message2.toolCalls, runs);
+  return runs;
+}
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
@@ -55038,11 +56264,20 @@ function formatFooterUsageDetail(display, opts) {
   const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
   return `Usage: ${parts.join(" \xB7 ")}`;
 }
+var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
+    SUBAGENT_KIND_LABEL = {
+      explore: "Explore",
+      investigate_ci: "Investigate CI",
+      delegate: "Delegate",
+      custom: "Custom agent",
+      container: "Container run"
+    };
+    RUN_PROMPT_MAX_CHARS = 36;
   }
 });
 
@@ -55251,12 +56486,22 @@ function deleteThread(store2, id) {
   store2.emit("threads_changed");
   if (activeThreadId === id) store2.emit("panel_changed");
 }
-function archiveThread(store2, id) {
+function archiveThread(store2, id, persisted) {
   const { threads, activeThreadId } = store2.getState();
   const target = threads.find((t2) => t2.id === id);
   if (!target || isThreadArchived(target)) return;
-  const now = Date.now();
-  const updated = threads.map((t2) => t2.id !== id ? t2 : { ...t2, archivedAt: now, updatedAt: now });
+  const now = persisted?.archivedAt ?? Date.now();
+  const updated = threads.map((t2) => {
+    if (t2.id !== id) return t2;
+    const archived = { ...t2, archivedAt: now, updatedAt: now };
+    if (persisted) {
+      if (persisted.worktree) {
+        archived.worktree = persisted.worktree;
+        archived.gitBranch = persisted.worktree.branch;
+      } else delete archived.worktree;
+    }
+    return archived;
+  });
   const visible = updated.filter((t2) => !isThreadArchived(t2));
   if (visible.length === 0) {
     store2.setState({ threads: updated, activeThreadId: null });
@@ -55341,6 +56586,17 @@ function setThreadDraftPrompt(store2, threadId, draftPrompt) {
     });
   }
   store2.emit("thread_draft_changed", threadId);
+}
+function markAutomationStartFailed(store2, threadId) {
+  patchThreadAnywhere(
+    store2,
+    threadId,
+    (t2) => t2.automation ? {
+      ...t2,
+      automation: { ...t2.automation, startFailedAt: Date.now() },
+      updatedAt: Date.now()
+    } : t2
+  );
 }
 function messageLocations(store2) {
   const { threads, backgroundThreads } = store2.getState();
@@ -57233,18 +58489,19 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
+  const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
-    // Send the per-thread model so the run uses the picker's selection rather
-    // than the global default. Read at dispatch time so a change made while the
-    // message was queued still takes effect. Absent → main uses the global default.
-    ...thread?.model !== void 0 ? { model: thread.model } : {},
+    // A queued human prompt carries its own model snapshot; hook-authored
+    // prompts without one follow the live thread selection. Absent → main uses
+    // the global default.
+    ...selectedModel !== void 0 ? { model: selectedModel } : {},
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
@@ -57287,7 +58544,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const run2 = api2.agent.run(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload))
+    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
   );
   if (!queued) {
     void run2;
@@ -57315,12 +58572,28 @@ function requeueBusyMessage(store2, api2, threadId, item) {
   if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
+  const queued = item.model !== void 0 || isMachineContinuation(item) ? item : {
+    ...item,
+    model: getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+  };
   patchThreadAnywhere(store2, threadId, (t2) => ({
     ...t2,
-    pendingMessages: [...t2.pendingMessages ?? [], item],
+    pendingMessages: [...t2.pendingMessages ?? [], queued],
     updatedAt: Date.now()
   }));
-  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("message_queued", threadId, queued.messageId);
+  store2.emit("threads_changed");
+}
+function updateQueuedMessageModel(store2, threadId, messageId, model) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: (t2.pendingMessages ?? []).map(
+      (item) => item.messageId === messageId ? { ...item, model } : item
+    ),
+    updatedAt: Date.now()
+  }));
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
@@ -57550,6 +58823,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
 var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
+    init_lm_studio_defaults();
     init_thread_helpers();
     init_review_reports();
     init_agent_activity();
@@ -57863,10 +59137,22 @@ function sidebarPrRefs(thread) {
   }
   return thread.prRefs ?? [];
 }
+function sidebarLastPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  const messages = thread.messages ?? [];
+  for (let i2 = messages.length - 1; i2 >= 0; i2--) {
+    const message2 = messages[i2];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
 function compactSidebarThread(thread) {
+  const lastPromptAt = sidebarLastPromptAt(thread);
   return {
     id: thread.id,
     title: thread.title,
+    ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
+    ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
     ...thread.archivedAt !== void 0 ? { archivedAt: thread.archivedAt } : {},
@@ -57879,6 +59165,7 @@ var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
     init_github_pr_url2();
     init_thread_pr_status2();
+    init_thread_sort();
   }
 });
 
@@ -58517,6 +59804,14 @@ function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
+}
+function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => thread.id === threadId ? { ...thread, archivedAt } : thread)
+  );
 }
 function applyCachedSidebarPrRefs(projectId, refs) {
   const cached2 = threadCache.get(projectId);
@@ -60376,7 +61671,7 @@ function mountSettingsDialog(store2, api2) {
   });
   qsRequired(overlay, "#settings-ssh-workspace-host").append(sshWorkspaceSection.root);
   const envKeyDetectSection = createEnvKeyDetectSection(api2, {
-    legend: "Detected settings",
+    legend: "Detected API keys",
     onImported: () => {
       void cursorKeySection.refreshKeyStatus();
       void providersPanel.refresh();
@@ -60626,7 +61921,7 @@ function mountSettingsDialog(store2, api2) {
     const list = document.createElement("div");
     list.className = "settings-nav-subheadings";
     for (const block of topLevelBlocks(section)) {
-      if (block.hidden) continue;
+      if (block.closest("[hidden]")) continue;
       const label = block.querySelector("legend")?.textContent.trim();
       if (!label) continue;
       const btn = document.createElement("button");
@@ -60710,6 +62005,7 @@ function mountSettingsDialog(store2, api2) {
           searchInput.value = "";
           applySearch("");
         }
+        sourcesSection.invalidate();
         showSection(id);
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
@@ -60720,7 +62016,10 @@ function mountSettingsDialog(store2, api2) {
           void refreshSources();
         }
         if (id === "customise" || id === "experimental") void refreshPlugins();
-        if (id === "storage") void refreshWorktrees();
+        if (id === "storage") {
+          void refreshWorktrees();
+          void storageMaintenance.refresh();
+        }
         if (id === "mcp") {
           void refreshMcpServers();
           void refreshDeclaredMcpServers();
@@ -60728,241 +62027,23 @@ function mountSettingsDialog(store2, api2) {
       }
     });
   });
+  const sourcesSection = createSourcesSection({
+    root: overlay,
+    api: api2,
+    onTrusted: (statuses) => {
+      renderMcpServers(statuses);
+    },
+    onHeadingsChanged: () => {
+      renderNavSubheadings(activeSection);
+    }
+  });
+  const refreshSources = sourcesSection.refresh;
+  function applyWorkspaceTrusted(statuses) {
+    renderMcpServers(statuses);
+    void refreshSources();
+  }
   async function refreshLocalModelSelects() {
     await modelRoutingSection.refresh();
-  }
-  function makeSourceRowTitle(title, action) {
-    if (!action) {
-      const span = document.createElement("span");
-      span.className = "sources-row-title";
-      span.textContent = title;
-      return span;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "sources-row-title sources-row-title-btn";
-    button.textContent = title;
-    button.title = action.label;
-    button.setAttribute("aria-label", action.label);
-    button.addEventListener("click", action.run);
-    return button;
-  }
-  function makeAgentRows(result) {
-    const rows = [];
-    for (const agent of result.agents) {
-      const extraBadges = [
-        // The container is a directory name (`.cursor`, `.claude`): a literal,
-        // shown as written rather than as a sentence-case label.
-        { text: agent.container, className: "ui-badge-literal" }
-      ];
-      if (agent.unsupportedFields.length > 0) {
-        extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
-      }
-      const detail = [
-        agent.description,
-        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
-      ].filter(isNonEmptyString).join(" \xB7 ");
-      rows.push(
-        makeSourceRow(agent.name, agent.source, detail || null, {
-          extraBadges,
-          titleAttr: agent.agentPath,
-          hoverDetail: agent.agentPath
-        })
-      );
-    }
-    for (const shadowed of result.shadowed) {
-      rows.push(
-        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
-          extraBadges: [{ text: "overridden", className: "sources-badge-warning" }],
-          titleAttr: shadowed.agentPath,
-          hoverDetail: shadowed.agentPath
-        })
-      );
-    }
-    for (const skipped of result.skipped) {
-      rows.push(
-        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
-          extraBadges: [{ text: "skipped", className: "sources-badge-error" }],
-          titleAttr: skipped.agentPath,
-          hoverDetail: skipped.agentPath
-        })
-      );
-    }
-    return rows;
-  }
-  function basenameOf(path) {
-    return path.split(/[/\\]/).pop() ?? path;
-  }
-  function makeSourceRow(title, badge, detail, opts = {}) {
-    const row2 = document.createElement("div");
-    row2.className = "sources-row";
-    if (opts.titleAttr) row2.title = opts.titleAttr;
-    const header = document.createElement("div");
-    header.className = "sources-row-header";
-    const primary = document.createElement("div");
-    primary.className = "sources-row-primary";
-    const titleEl2 = makeSourceRowTitle(title, opts.titleAction);
-    primary.append(titleEl2);
-    if (opts.hoverDetail) {
-      const hoverEl = document.createElement("span");
-      hoverEl.className = "sources-row-hover-detail";
-      const pathEl = document.createElement("bdi");
-      pathEl.textContent = opts.hoverDetail;
-      hoverEl.append(pathEl);
-      primary.append(hoverEl);
-    }
-    header.append(primary);
-    if (badge) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
-      badgeEl.textContent = badge;
-      header.append(badgeEl);
-    }
-    for (const extra of opts.extraBadges ?? []) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = `ui-badge sources-badge ${extra.className}`;
-      badgeEl.textContent = extra.text;
-      header.append(badgeEl);
-    }
-    row2.append(header);
-    if (detail) {
-      const detailEl = document.createElement("div");
-      detailEl.className = "sources-row-detail";
-      detailEl.textContent = detail;
-      row2.append(detailEl);
-    }
-    return row2;
-  }
-  function makeHookRow(h3) {
-    const extraBadges = [];
-    if (h3.supported === false) {
-      extraBadges.push({ text: "unsupported", className: "sources-badge-unsupported" });
-    }
-    if (h3.sandbox === false) {
-      extraBadges.push({ text: "outside sandbox", className: "sources-badge-unsandboxed" });
-    }
-    if (h3.lastError) {
-      extraBadges.push({ text: "error", className: "sources-badge-error" });
-    }
-    const familyLabel = h3.family === "claude" ? "Claude Code" : h3.family === "copse" ? "Copse" : "Cursor";
-    const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
-    const detail = `${familyLabel} \xB7 ${h3.command}`;
-    const row2 = makeSourceRow(title, h3.scope, detail, {
-      extraBadges
-    });
-    if (h3.lastError) {
-      const errorEl = document.createElement("div");
-      errorEl.className = "sources-row-error";
-      errorEl.textContent = `Last run failed: ${h3.lastError}`;
-      row2.append(errorEl);
-    }
-    addHookTester(row2, h3);
-    return row2;
-  }
-  function addHookTester(row2, h3) {
-    const header = row2.querySelector(".sources-row-header");
-    if (!header) return;
-    const testBtn = document.createElement("button");
-    testBtn.type = "button";
-    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
-    testBtn.textContent = "Test";
-    testBtn.title = "Dry-run this hook against a synthetic payload for its event";
-    header.append(testBtn);
-    const result = document.createElement("div");
-    result.className = "hook-test";
-    result.hidden = true;
-    row2.append(result);
-    testBtn.addEventListener("click", () => {
-      void runHookTest(h3, testBtn, result);
-    });
-  }
-  async function runHookTest(h3, btn, result) {
-    btn.disabled = true;
-    btn.textContent = "Testing\u2026";
-    result.hidden = false;
-    result.innerHTML = "";
-    const pending = document.createElement("div");
-    pending.className = "hook-test-summary";
-    pending.textContent = "Running dry-run\u2026";
-    result.append(pending);
-    try {
-      const req = {
-        family: h3.family,
-        event: h3.event,
-        command: h3.command,
-        source: h3.source,
-        scope: h3.scope,
-        ...h3.sandbox !== void 0 ? { sandbox: h3.sandbox } : {}
-      };
-      const res = await api2.hooks.test(req);
-      renderHookTestResult(result, res);
-    } catch {
-      result.innerHTML = "";
-      const err2 = document.createElement("div");
-      err2.className = "hook-test-summary hook-test-error";
-      err2.textContent = "Dry-run failed to start.";
-      result.append(err2);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Test";
-    }
-  }
-  function renderHookTestResult(container, res) {
-    container.innerHTML = "";
-    if (!res.ran) {
-      const notice = document.createElement("div");
-      notice.className = "hook-test-summary hook-test-error";
-      notice.textContent = res.error ?? "This hook could not be dry-run.";
-      container.append(notice);
-      return;
-    }
-    const summary = document.createElement("div");
-    summary.className = "hook-test-summary";
-    const chips = [];
-    if (res.wireEvent) chips.push(`event ${res.wireEvent}`);
-    if (res.timedOut) chips.push("timed out");
-    else if (res.spawnError) chips.push("failed to start");
-    chips.push(
-      `exit ${res.exitCode === null || res.exitCode === void 0 ? "unknown" : String(res.exitCode)}`
-    );
-    chips.push(`${String(res.durationMs ?? 0)} ms`);
-    chips.push(res.parseOk ? "parsed ok" : "parse failed");
-    if (res.sandboxed) chips.push("sandboxed");
-    for (const text2 of chips) {
-      const chip2 = document.createElement("span");
-      chip2.className = "hook-test-chip";
-      chip2.textContent = text2;
-      summary.append(chip2);
-    }
-    container.append(summary);
-    if (res.outcomeSummary) {
-      const outcome = document.createElement("div");
-      outcome.className = "hook-test-outcome";
-      outcome.textContent = `Outcome: ${res.outcomeSummary}`;
-      container.append(outcome);
-    }
-    appendHookTestStream(container, "stdin", res.stdin ?? "");
-    appendHookTestStream(container, "stdout", res.stdout ?? "");
-    appendHookTestStream(container, "stderr", res.stderr ?? "");
-  }
-  function appendHookTestStream(container, label, text2) {
-    const block = document.createElement("div");
-    block.className = "hook-test-stream";
-    const heading = document.createElement("div");
-    heading.className = "hook-test-stream-label";
-    heading.textContent = label;
-    const pre = document.createElement("pre");
-    pre.textContent = text2.length > 0 ? text2 : "(empty)";
-    if (text2.length === 0) pre.classList.add("hook-test-stream-empty");
-    block.append(heading, pre);
-    container.append(block);
-  }
-  function makeHookWarningRow(w2) {
-    const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
-      extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
-    });
-    row2.classList.add("sources-row-warning");
-    return row2;
   }
   function fillSourceList(selector, rows, emptyText) {
     const list = qsRequired(overlay, selector);
@@ -61145,12 +62226,23 @@ function mountSettingsDialog(store2, api2) {
     for (const entry of entries2) setEntryPhase(entry, "checking");
     setBulkLabel(entries2.length === 1 ? "Checking\u2026" : "Preparing\u2026", true);
     statusEl.textContent = entries2.length === 1 ? "Looking for package directories\u2026" : `Preparing cleanup for ${String(entries2.length)} worktrees\u2026`;
-    const performCleanup = async (setConfirmProgress) => {
+    const cleanupState = { started: false };
+    const performCleanup = async (setConfirmProgress, signal) => {
+      cleanupState.started = true;
+      signal.addEventListener(
+        "abort",
+        () => {
+          setBulkLabel("Stopping\u2026", true);
+          statusEl.textContent = "Stopping cleanup after the current worktree finishes\u2026";
+        },
+        { once: true }
+      );
       for (const entry of entries2) setEntryPhase(entry, "pending");
       let cleaned = 0;
       let reclaimed = 0;
       let truncated = false;
       for (const [index, entry] of entries2.entries()) {
+        if (signal.aborted) break;
         setEntryPhase(entry, "cleaning");
         const progress = `Cleaning ${String(index + 1)} of ${String(entries2.length)}\u2026`;
         setBulkLabel(progress, true);
@@ -61190,8 +62282,8 @@ function mountSettingsDialog(store2, api2) {
           setEntryPhase(entry, "failed");
         }
       }
-      const summary = cleaned > 0 ? `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).` : "No ignored package-manager directories found.";
-      statusEl.textContent = [summary, ...problems].join("\n");
+      const summary = cleaned > 0 ? `Cleaned up ${String(cleaned)} director${cleaned === 1 ? "y" : "ies"} (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).` : signal.aborted ? "No package directories were removed." : "No ignored package-manager directories found.";
+      statusEl.textContent = [signal.aborted ? "Cleanup stopped." : "", summary, ...problems].filter(Boolean).join("\n");
     };
     try {
       if (entries2.length === 1) {
@@ -61230,15 +62322,18 @@ function mountSettingsDialog(store2, api2) {
 \u2026and ${String(preview.directories.length - shown.length)} more`] : [],
             `
 
-This will reclaim ${size}. Your package manager can recreate these directories.`
+This will reclaim ${size}. Your package manager can recreate these directories.
+
+Cancel closes this dialog; the current worktree will finish cleaning.`
           ),
           confirmLabel: "Clean up",
           confirmPendingLabel: "Cleanup pending\u2026",
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true
         });
         if (!confirmed) {
-          statusEl.textContent = "Kept.";
+          if (!cleanupState.started) statusEl.textContent = "Kept.";
           return;
         }
       } else {
@@ -61251,15 +62346,16 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
             el("code", {}, "node_modules"),
             " and ",
             el("code", {}, ".venv"),
-            ".\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.\n\nYour package manager can recreate these directories."
+            ".\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.\n\nYour package manager can recreate these directories.\n\nCancel closes this dialog and stops after the current worktree finishes."
           ),
           confirmLabel: "Clean up",
           confirmPendingLabel: "Cleanup pending\u2026",
           onConfirm: performCleanup,
+          cancellable: true,
           danger: true
         });
         if (!confirmed) {
-          statusEl.textContent = "Kept.";
+          if (!cleanupState.started) statusEl.textContent = "Kept.";
           return;
         }
       }
@@ -61508,145 +62604,6 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       if (generation !== worktreeRefreshGeneration || projectId !== storageProjectId) return;
       fillSourceList("#sources-worktrees-list", [], "Could not list worktrees.");
       statusEl.textContent = errorMessage(error62);
-    }
-  }
-  function openInstructionFile(file2) {
-    const session = openAttachmentPreview({
-      kind: "text",
-      title: file2.name,
-      ariaLabel: `Instruction file: ${file2.path}`,
-      status: `Loading ${file2.name}\u2026`
-    });
-    void api2.instructions.read(file2.path).then((content) => {
-      const text2 = document.createElement("pre");
-      text2.className = "attachment-preview-text";
-      text2.textContent = content;
-      session.setContent(text2);
-    }).catch((error62) => {
-      session.setStatus(errorMessage(error62));
-    });
-  }
-  function applyWorkspaceTrusted(statuses) {
-    renderMcpServers(statuses);
-    void refreshSources();
-  }
-  async function trustWorkspaceFromBadge(button) {
-    const unsandboxed = await api2.workspace.unsandboxedProjectHooks().catch(() => []);
-    const detail = [
-      "Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.",
-      unsandboxed.length > 0 ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed.map((h3) => `${h3.event}: ${h3.command}`).join("; ")}` : ""
-    ].filter(Boolean).join(" ");
-    const confirmed = await showConfirmDialog({
-      message: "Trust this workspace?",
-      detail,
-      confirmLabel: "Trust workspace"
-    });
-    if (!confirmed) return;
-    button.disabled = true;
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Trusting workspace\u2026";
-    const pending = api2.workspace.setTrusted(true).then(
-      (statuses) => ({ statuses }),
-      (error62) => ({ error: error62 })
-    );
-    await refreshSources();
-    const result = await pending;
-    if ("statuses" in result) applyWorkspaceTrusted(result.statuses);
-    else statusEl.textContent = errorMessage(result.error);
-  }
-  function makeInstructionRow(file2) {
-    const nestedStatus = file2.scopePath === void 0 ? "" : file2.duplicateOf !== void 0 ? ` \xB7 scope: ${file2.scopePath}/ \xB7 identical to ${file2.duplicateOf}, loaded once through it` : file2.active ? ` \xB7 scope: ${file2.scopePath}/ \xB7 active this turn` : ` \xB7 scope: ${file2.scopePath}/ \xB7 activates when a path under this directory enters context`;
-    const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
-    const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
-    const row2 = makeSourceRow(file2.name, badge, detail, {
-      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
-      titleAction: {
-        label: `Open ${file2.name}`,
-        run: () => {
-          openInstructionFile(file2);
-        }
-      }
-    });
-    if (file2.trusted) return row2;
-    const badgeEl = row2.querySelector(".sources-badge");
-    if (badgeEl) {
-      const trustBtn = document.createElement("button");
-      trustBtn.type = "button";
-      trustBtn.className = `${badgeEl.className} sources-badge-btn`;
-      trustBtn.textContent = badgeEl.textContent;
-      trustBtn.title = `Trust this workspace to load ${file2.name}`;
-      trustBtn.setAttribute("aria-label", `Trust this workspace to load ${file2.name}`);
-      trustBtn.addEventListener("click", () => {
-        void trustWorkspaceFromBadge(trustBtn);
-      });
-      badgeEl.replaceWith(trustBtn);
-    }
-    return row2;
-  }
-  async function refreshSources() {
-    const statusEl = qsRequired(overlay, "#sources-reload-status");
-    statusEl.textContent = "Loading\u2026";
-    try {
-      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
-        api2.instructions.list(),
-        api2.cursorRules.list(),
-        api2.skills.list(),
-        api2.agents.list(),
-        api2.hooks.list()
-      ]);
-      fillSourceList(
-        "#sources-instructions-list",
-        instructions.map((f4) => makeInstructionRow(f4)),
-        "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
-      );
-      if (instructions.some((f4) => f4.discoveryTruncated)) {
-        const note = document.createElement("span");
-        note.className = "sources-empty";
-        note.id = "sources-instructions-truncated";
-        note.textContent = "Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.";
-        qsRequired(overlay, "#sources-instructions-list").append(note);
-      }
-      const kindLabel2 = {
-        always: "always",
-        auto: "auto",
-        agent: "agent",
-        manual: "manual"
-      };
-      fillSourceList(
-        "#sources-cursor-rules-list",
-        cursorRules.map((r2) => {
-          const bits = [formatByteSize(r2.bytes)];
-          if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
-          if (r2.description) bits.push(r2.description);
-          bits.push(r2.path);
-          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
-        }),
-        "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
-      );
-      qsRequired(overlay, "#cursor-rules-fieldset").hidden = cursorRules.length === 0;
-      if (!contentEl.classList.contains("settings-searching")) renderNavSubheadings(activeSection);
-      fillSourceList(
-        "#sources-skills-list",
-        skills.map(
-          (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            // Keep the resting list uncluttered: path lives on hover (and as a
-            // native tooltip fallback). Description stays as the always-visible
-            // detail; when a skill has none, the hover line is the only path.
-            titleAttr: s16.skillPath,
-            hoverDetail: s16.skillPath
-          })
-        ),
-        "No skills discovered."
-      );
-      fillSourceList("#sources-agents-list", makeAgentRows(agents), "No agents discovered.");
-      fillSourceList(
-        "#sources-hooks-list",
-        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
-        "No Cursor or Claude Code hooks configured."
-      );
-      statusEl.textContent = "";
-    } catch {
-      statusEl.textContent = "Failed to load sources.";
     }
   }
   let advisorModelSelectEl = null;
@@ -62371,6 +63328,54 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (fold) fold.open = true;
     row2.scrollIntoView({ block: "start" });
   }
+  const mcpSignInPending = /* @__PURE__ */ new Set();
+  const mcpSignInErrors = /* @__PURE__ */ new Map();
+  function mcpSignInButton(s16) {
+    if (s16.auth === void 0) return null;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn ui-btn-compact mcp-auth-btn";
+    if (mcpSignInPending.has(s16.name)) {
+      button.classList.add("ui-btn-secondary");
+      button.textContent = "Cancel sign-in";
+      button.addEventListener("click", () => {
+        void api2.mcp.cancelSignIn(s16.name);
+      });
+      return button;
+    }
+    if (s16.auth === "signed-in") {
+      button.classList.add("ui-btn-secondary");
+      button.textContent = "Sign out";
+      button.setAttribute("aria-label", `Sign out of ${s16.name}`);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        mcpSignInErrors.delete(s16.name);
+        void api2.mcp.signOut(s16.name).then(renderMcpServers).catch((error62) => {
+          mcpSignInErrors.set(s16.name, ipcErrorMessage(error62, "Sign-out failed."));
+          void refreshMcpServers();
+        });
+      });
+      return button;
+    }
+    button.classList.add("ui-btn-primary");
+    button.textContent = "Sign in";
+    button.setAttribute("aria-label", `Sign in to ${s16.name}`);
+    button.addEventListener("click", () => {
+      mcpSignInPending.add(s16.name);
+      mcpSignInErrors.delete(s16.name);
+      void refreshMcpServers();
+      void api2.mcp.signIn(s16.name).then((next) => {
+        mcpSignInPending.delete(s16.name);
+        renderMcpServers(next);
+      }).catch((error62) => {
+        mcpSignInPending.delete(s16.name);
+        const message2 = ipcErrorMessage(error62, "Sign-in failed.");
+        if (message2 !== "Sign-in cancelled.") mcpSignInErrors.set(s16.name, message2);
+        void refreshMcpServers();
+      });
+    });
+    return button;
+  }
   function renderMcpServers(allStatuses) {
     const listEl = qsRequired(overlay, "#mcp-server-list");
     const statuses = allStatuses.filter((s16) => !s16.curated);
@@ -62427,7 +63432,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       });
     }
     for (const s16 of statuses) {
-      const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
+      const badge = s16.state === "connected" ? inlineStatus("filled", "connected") : s16.auth === "required" ? inlineStatus("warn", "sign-in required") : s16.state === "error" ? inlineStatus("error", "error") : s16.state === "disabled" ? inlineStatus("idle", "disabled") : s16.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row2 = document.createElement("div");
       row2.className = `mcp-server-row mcp-state-${s16.state}`;
       const header = document.createElement("div");
@@ -62469,9 +63474,12 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           qsRequired(overlay, "#tool-permissions-fieldset").scrollIntoView({ block: "start" });
         });
       });
+      const authButton = mcpSignInButton(s16);
+      if (authButton) header.append(authButton);
       header.append(permissionsButton);
       row2.append(header);
-      let detailText = s16.state === "connected" ? `${String(s16.toolCount)} tool(s)${s16.tools.length ? `: ${s16.tools.join(", ")}` : ""}` : s16.error ?? "";
+      const statusDetail = s16.state === "connected" ? `${String(s16.toolCount)} tool(s)${s16.tools.length ? `: ${s16.tools.join(", ")}` : ""}` : s16.auth === "required" ? "Sign in to use this server's tools." : s16.error ?? "";
+      let detailText = mcpSignInPending.has(s16.name) ? "Continue in your browser to finish signing in." : mcpSignInErrors.get(s16.name) ?? statusDetail;
       if (s16.configDisabled) {
         detailText = detailText ? `${detailText} \xB7 disabled in MCP config` : 'Disabled in MCP config ("disabled": true)';
       } else if (!s16.userEnabled && s16.state === "disabled") {
@@ -62488,6 +63496,9 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       listEl.append(row2);
     }
   }
+  api2.mcp.onStatusChanged((statuses) => {
+    renderMcpServers(statuses);
+  });
   async function refreshMcpServers() {
     try {
       renderMcpServers(await api2.mcp.list());
@@ -62630,9 +63641,6 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       statusEl.classList.add("err");
     });
   });
-  qsRequired(overlay, "#sources-reload-btn").addEventListener("click", () => {
-    void refreshSources();
-  });
   qsRequired(overlay, "#plugins-reload-btn").addEventListener("click", () => {
     void refreshPlugins();
   });
@@ -62647,6 +63655,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       button.disabled = false;
     });
   });
+  const storageMaintenance = createStorageMaintenancePanel(api2);
+  qsRequired(overlay, '.settings-section[data-section="storage"]').append(
+    storageMaintenance.element
+  );
   const storageProjectSelect = qsRequired(overlay, "#storage-project-select");
   storageProjectSelect.addEventListener("change", () => {
     storageProjectId = storageProjectSelect.value || null;
@@ -62707,7 +63719,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       void refreshSources();
       void revealPluginDetail();
     }
-    if (openedSection === "storage") void refreshWorktrees("", true);
+    if (openedSection === "storage") {
+      void refreshWorktrees("", true);
+      void storageMaintenance.refresh();
+    }
     searchInput.focus();
     void (async () => {
       failedRefreshStages.length = 0;
@@ -62998,6 +64013,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     })();
   });
   overlay.addEventListener("close", () => {
+    sourcesSection.invalidate();
     if (!appearanceCommitted && appearanceBaseline) applyAppearancePreview(appearanceBaseline);
     appearanceBaseline = null;
     resetDirtyState();
@@ -63008,7 +64024,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
 var isSettingsSection, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
+    init_storage_maintenance_panel();
+    init_sources_section();
+    init_source_row();
     init_errors4();
+    init_ipc_error_message();
     init_humanize_identifier();
     init_auto_approval();
     init_state();
@@ -63025,7 +64045,6 @@ var init_settings_dialog = __esm({
     init_advisor_strategy_plugin();
     init_icons();
     init_file_bytes();
-    init_attachment_preview();
     init_confirm_dialog();
     init_helpers();
     init_inline_status();
@@ -63063,7 +64082,6 @@ var init_settings_dialog = __esm({
     init_thread_link();
     init_commit_attribution();
     init_appearance();
-    init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
@@ -63393,6 +64411,10 @@ function clearMaximizedOnClose(store2) {
   store2.setState({ rightPanelMaximized: false });
   store2.emit("right_panel_maximized_changed");
 }
+function toggleProjectsPane(store2) {
+  store2.setState({ projectsPaneOpen: !store2.getState().projectsPaneOpen });
+  store2.emit("projects_pane_changed");
+}
 function toggleFilesPane(store2) {
   const open2 = !store2.getState().filesPaneOpen;
   store2.setState({
@@ -63507,6 +64529,1533 @@ var init_image_path = __esm({
   }
 });
 
+// src/renderer/drawing/drauu/emitter.ts
+var Emitter;
+var init_emitter = __esm({
+  "src/renderer/drawing/drauu/emitter.ts"() {
+    Emitter = class {
+      listeners = /* @__PURE__ */ new Map();
+      on(type, fn2) {
+        let set2 = this.listeners.get(type);
+        if (!set2) {
+          set2 = /* @__PURE__ */ new Set();
+          this.listeners.set(type, set2);
+        }
+        set2.add(fn2);
+        return () => {
+          set2.delete(fn2);
+        };
+      }
+      emit(type, ...args) {
+        const set2 = this.listeners.get(type);
+        if (!set2) return;
+        for (const fn2 of [...set2]) {
+          Reflect.apply(fn2, void 0, args);
+        }
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/utils.ts
+function numSort(a3, b4) {
+  return a3 - b4;
+}
+function splitNum(a3) {
+  return [Math.abs(a3), a3 < 0 ? -1 : 1];
+}
+function guid3() {
+  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
+  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
+}
+function createArrowHead(id, fill) {
+  const defs = document.createElementNS(SVG_NS3, "defs");
+  const marker = document.createElementNS(SVG_NS3, "marker");
+  const head = document.createElementNS(SVG_NS3, "path");
+  head.setAttribute("fill", fill);
+  marker.setAttribute("id", id);
+  marker.setAttribute("viewBox", "0 -5 10 10");
+  marker.setAttribute("refX", "5");
+  marker.setAttribute("refY", "0");
+  marker.setAttribute("markerWidth", "4");
+  marker.setAttribute("markerHeight", "4");
+  marker.setAttribute("orient", "auto");
+  head.setAttribute("d", "M0,-5L10,0L0,5");
+  marker.appendChild(head);
+  defs.appendChild(marker);
+  return defs;
+}
+function totalLength(el3) {
+  const candidate = Reflect.get(el3, "getTotalLength");
+  if (typeof candidate !== "function") return null;
+  try {
+    const length = Reflect.apply(candidate, el3, []);
+    return typeof length === "number" ? length : null;
+  } catch {
+    return null;
+  }
+}
+var SVG_NS3, D;
+var init_utils = __esm({
+  "src/renderer/drawing/drauu/utils.ts"() {
+    SVG_NS3 = "http://www.w3.org/2000/svg";
+    D = 2;
+  }
+});
+
+// src/renderer/drawing/drauu/simplify.ts
+function getSqDist(p1, p2) {
+  const dx = p1.x - p2.x;
+  const dy = p1.y - p2.y;
+  return dx * dx + dy * dy;
+}
+function getSqSegDist(p2, p1, p22) {
+  let x2 = p1.x;
+  let y2 = p1.y;
+  let dx = p22.x - x2;
+  let dy = p22.y - y2;
+  if (dx !== 0 || dy !== 0) {
+    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
+    if (t2 > 1) {
+      x2 = p22.x;
+      y2 = p22.y;
+    } else if (t2 > 0) {
+      x2 += dx * t2;
+      y2 += dy * t2;
+    }
+  }
+  dx = p2.x - x2;
+  dy = p2.y - y2;
+  return dx * dx + dy * dy;
+}
+function simplifyRadialDist(points, sqTolerance) {
+  const first = points[0];
+  if (!first) return [];
+  let prevPoint = first;
+  const newPoints = [prevPoint];
+  let point;
+  for (let i2 = 1, len = points.length; i2 < len; i2++) {
+    point = points[i2];
+    if (point && getSqDist(point, prevPoint) > sqTolerance) {
+      newPoints.push(point);
+      prevPoint = point;
+    }
+  }
+  if (point && prevPoint !== point) newPoints.push(point);
+  return newPoints;
+}
+function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+  let maxSqDist = sqTolerance;
+  let index = 0;
+  const a3 = points[first];
+  const b4 = points[last];
+  if (!a3 || !b4) return;
+  for (let i2 = first + 1; i2 < last; i2++) {
+    const p2 = points[i2];
+    if (!p2) continue;
+    const sqDist = getSqSegDist(p2, a3, b4);
+    if (sqDist > maxSqDist) {
+      index = i2;
+      maxSqDist = sqDist;
+    }
+  }
+  if (maxSqDist > sqTolerance) {
+    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+    const mid = points[index];
+    if (mid) simplified.push(mid);
+    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+  }
+}
+function simplifyDouglasPeucker(points, sqTolerance) {
+  const last = points.length - 1;
+  const first = points[0];
+  const end = points[last];
+  if (!first || !end) return points;
+  const simplified = [first];
+  simplifyDPStep(points, 0, last, sqTolerance, simplified);
+  simplified.push(end);
+  return simplified;
+}
+function simplify(points, tolerance, highestQuality = false) {
+  if (points.length <= 2) return points;
+  const sqTolerance = tolerance * tolerance;
+  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
+  return simplifyDouglasPeucker(reduced, sqTolerance);
+}
+var init_simplify = __esm({
+  "src/renderer/drawing/drauu/simplify.ts"() {
+  }
+});
+
+// src/renderer/drawing/drauu/models/base.ts
+var BaseModel;
+var init_base = __esm({
+  "src/renderer/drawing/drauu/models/base.ts"() {
+    init_utils();
+    BaseModel = class {
+      point = null;
+      start = null;
+      el = null;
+      drauu;
+      constructor(drauu) {
+        this.drauu = drauu;
+      }
+      onSelected(_el) {
+      }
+      onUnselected() {
+      }
+      onStart(_point) {
+        return void 0;
+      }
+      onMove(_point) {
+        return false;
+      }
+      onEnd(_point) {
+        return void 0;
+      }
+      get brush() {
+        return this.drauu.brush;
+      }
+      get shiftPressed() {
+        return this.drauu.shiftPressed;
+      }
+      get altPressed() {
+        return this.drauu.altPressed;
+      }
+      get svgElement() {
+        return this.drauu.el;
+      }
+      getMousePosition(event) {
+        const el3 = this.drauu.el;
+        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
+        const svgPoint = this.drauu.svgPoint;
+        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
+        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
+          svgPoint.x = event.clientX;
+          svgPoint.y = event.clientY;
+          const loc = svgPoint.matrixTransform(ctm.inverse());
+          return { x: loc.x, y: loc.y, pressure: event.pressure };
+        }
+        const rect = el3.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
+      }
+      createElement(name, overrides) {
+        const el3 = document.createElementNS(SVG_NS3, name);
+        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
+        el3.setAttribute("fill", brush.fill ?? "transparent");
+        el3.setAttribute("stroke", brush.color);
+        el3.setAttribute("stroke-width", brush.size.toString());
+        el3.setAttribute("stroke-linecap", "round");
+        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
+        return el3;
+      }
+      attr(name, value) {
+        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
+      }
+      setEvent(event) {
+        this.point = this.getMousePosition(event);
+        return this.point;
+      }
+      /** @internal */
+      _eventDown(event) {
+        const point = this.setEvent(event);
+        this.start = point;
+        return this.onStart(point);
+      }
+      /** @internal */
+      _eventMove(event) {
+        return this.onMove(this.setEvent(event));
+      }
+      /** @internal */
+      _eventUp(event) {
+        return this.onEnd(this.setEvent(event));
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/draw.ts
+var DrawModel;
+var init_draw = __esm({
+  "src/renderer/drawing/drauu/models/draw.ts"() {
+    init_utils();
+    init_simplify();
+    init_base();
+    DrawModel = class _DrawModel extends BaseModel {
+      points = [];
+      count = 0;
+      onStart(point) {
+        this.el = this.createElement("path", { fill: "transparent" });
+        this.points = [point];
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          this.el.appendChild(createArrowHead(id, this.brush.color));
+          this.el.setAttribute("marker-end", `url(#${id})`);
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) {
+          this.points.push(point);
+          this.count += 1;
+        }
+        if (this.count > 5) {
+          this.points = simplify(this.points, 1, true);
+          this.count = 0;
+        }
+        this.attr("d", _DrawModel.toSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        if (!path) return false;
+        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
+        const first = this.points[0];
+        if (totalLength(path) === 0 && first) {
+          const r2 = (this.brush.size / 2).toFixed(D);
+          const d22 = this.brush.size.toFixed(D);
+          const x2 = (first.x - this.brush.size / 2).toFixed(D);
+          const y2 = first.y.toFixed(D);
+          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
+          path.setAttribute("fill", this.brush.color);
+          path.setAttribute("stroke-width", "0");
+        }
+        return true;
+      }
+      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
+      static line(a3, b4) {
+        const lengthX = b4.x - a3.x;
+        const lengthY = b4.y - a3.y;
+        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
+      }
+      static controlPoint(current, previous, next, reverse) {
+        const p2 = previous ?? current;
+        const n2 = next ?? current;
+        const smoothing = 0.2;
+        const o3 = _DrawModel.line(p2, n2);
+        const angle = o3.angle + (reverse ? Math.PI : 0);
+        const length = o3.length * smoothing;
+        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
+      }
+      static bezierCommand(point, i2, points) {
+        const prev = points[i2 - 1] ?? point;
+        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
+        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
+        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
+      }
+      static toSvgData(points) {
+        return points.reduce(
+          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
+          ""
+        );
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/ellipse.ts
+var EllipseModel;
+var init_ellipse = __esm({
+  "src/renderer/drawing/drauu/models/ellipse.ts"() {
+    init_utils();
+    init_base();
+    EllipseModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("ellipse");
+        this.attr("cx", point.x);
+        this.attr("cy", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("cx", this.start.x);
+          this.attr("cy", this.start.y);
+          this.attr("rx", dx);
+          this.attr("ry", dy);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("cx", (x1 + x2) / 2);
+          this.attr("cy", (y1 + y2) / 2);
+          this.attr("rx", (x2 - x1) / 2);
+          this.attr("ry", (y2 - y1) / 2);
+        }
+        return true;
+      }
+      onEnd() {
+        const ellipse = this.el;
+        this.el = null;
+        if (!ellipse) return false;
+        const length = totalLength(ellipse);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/eraser.ts
+function measurable(el3) {
+  const getTotalLength = Reflect.get(el3, "getTotalLength");
+  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
+  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
+  return {
+    getTotalLength: () => {
+      const n2 = Reflect.apply(getTotalLength, el3, []);
+      return typeof n2 === "number" ? n2 : 0;
+    },
+    getPointAtLength: (d3) => {
+      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
+      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
+        const { x: x2, y: y2 } = p2;
+        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
+      }
+      return { x: 0, y: 0 };
+    }
+  };
+}
+function intersects(a3, b4) {
+  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
+  if (denom === 0) return false;
+  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
+  const x2 = xNum / denom;
+  const y2 = yNum / denom;
+  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
+  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
+}
+var EraserModel;
+var init_eraser = __esm({
+  "src/renderer/drawing/drauu/models/eraser.ts"() {
+    init_utils();
+    init_base();
+    EraserModel = class extends BaseModel {
+      pathSubFactor = 20;
+      fragments = [];
+      previous = null;
+      erased = [];
+      onSelected(el3) {
+        this.fragments = [];
+        if (el3) this.collect(el3.children, void 0);
+      }
+      collect(children, owner) {
+        for (const child of Array.from(children)) {
+          if (child.namespaceURI !== SVG_NS3) continue;
+          const m2 = measurable(child);
+          if (m2) {
+            const length = m2.getTotalLength();
+            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
+              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
+              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
+              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
+            }
+          } else {
+            this.collect(child.children, owner ?? child);
+          }
+        }
+      }
+      onUnselected() {
+        this.fragments = [];
+      }
+      onStart(point) {
+        this.previous = point;
+        return void 0;
+      }
+      onMove(point) {
+        const previous = this.previous;
+        this.previous = point;
+        if (!previous) return false;
+        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
+        let hit = false;
+        for (const fragment of this.fragments) {
+          if (this.erased.includes(fragment.element)) continue;
+          if (intersects(fragment, stroke)) {
+            this.drauu._removeNode(fragment.element);
+            this.erased.push(fragment.element);
+            hit = true;
+          }
+        }
+        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
+        return hit;
+      }
+      onEnd() {
+        this.previous = null;
+        const erased = this.erased;
+        this.erased = [];
+        return {
+          undo: () => {
+            for (const node2 of erased) this.drauu._restoreNode(node2);
+          },
+          redo: () => {
+            for (const node2 of erased) this.drauu._removeNode(node2);
+          }
+        };
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/line.ts
+var LineModel;
+var init_line = __esm({
+  "src/renderer/drawing/drauu/models/line.ts"() {
+    init_utils();
+    init_base();
+    LineModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("line", { fill: "transparent" });
+        this.attr("x1", point.x);
+        this.attr("y1", point.y);
+        this.attr("x2", point.x);
+        this.attr("y2", point.y);
+        if (this.brush.arrowEnd) {
+          const id = guid3();
+          const g2 = document.createElementNS(SVG_NS3, "g");
+          g2.append(createArrowHead(id, this.brush.color));
+          g2.append(this.el);
+          this.attr("marker-end", `url(#${id})`);
+          return g2;
+        }
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        let { x: x2, y: y2 } = point;
+        if (this.shiftPressed) {
+          const dx = point.x - this.start.x;
+          const dy = point.y - this.start.y;
+          if (dy !== 0) {
+            const slope = Math.round(dx / dy);
+            if (Math.abs(slope) <= 1) {
+              x2 = this.start.x + dy * slope;
+              y2 = this.start.y + dy;
+            } else {
+              x2 = this.start.x + dx;
+              y2 = this.start.y;
+            }
+          }
+        }
+        if (this.altPressed) {
+          this.attr("x1", this.start.x * 2 - x2);
+          this.attr("y1", this.start.y * 2 - y2);
+        } else {
+          this.attr("x1", this.start.x);
+          this.attr("y1", this.start.y);
+        }
+        this.attr("x2", x2);
+        this.attr("y2", y2);
+        return true;
+      }
+      onEnd() {
+        const line = this.el;
+        this.el = null;
+        if (!line) return false;
+        const length = totalLength(line);
+        return length === null || length >= 5;
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/rect.ts
+var RectModel;
+var init_rect = __esm({
+  "src/renderer/drawing/drauu/models/rect.ts"() {
+    init_utils();
+    init_base();
+    RectModel = class extends BaseModel {
+      onStart(point) {
+        this.el = this.createElement("rect");
+        if (this.brush.cornerRadius) {
+          this.attr("rx", this.brush.cornerRadius);
+          this.attr("ry", this.brush.cornerRadius);
+        }
+        this.attr("x", point.x);
+        this.attr("y", point.y);
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el || !this.start) return false;
+        const [ax, sx] = splitNum(point.x - this.start.x);
+        const [ay, sy] = splitNum(point.y - this.start.y);
+        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
+        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
+        if (this.altPressed) {
+          this.attr("x", this.start.x - dx);
+          this.attr("y", this.start.y - dy);
+          this.attr("width", dx * 2);
+          this.attr("height", dy * 2);
+        } else {
+          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
+          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
+          this.attr("x", x1);
+          this.attr("y", y1);
+          this.attr("width", x2 - x1);
+          this.attr("height", y2 - y1);
+        }
+        return true;
+      }
+      onEnd() {
+        const rect = this.el;
+        this.el = null;
+        if (!rect) return false;
+        const length = totalLength(rect);
+        return length === null || length > 0;
+      }
+    };
+  }
+});
+
+// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
+function i(e3, t2, n2, r2 = (e4) => e4) {
+  return e3 * r2(0.5 - t2 * (0.5 - n2));
+}
+function o(e3, t2, n2) {
+  let r2 = a(1, t2 / n2);
+  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
+}
+function s(e3) {
+  return [-e3[0], -e3[1]];
+}
+function c(e3, t2) {
+  return [e3[0] + t2[0], e3[1] + t2[1]];
+}
+function l(e3, t2, n2) {
+  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
+}
+function u(e3, t2) {
+  return [e3[0] - t2[0], e3[1] - t2[1]];
+}
+function d(e3, t2, n2) {
+  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
+}
+function f(e3, t2) {
+  return [e3[0] * t2, e3[1] * t2];
+}
+function p(e3, t2, n2) {
+  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
+}
+function m(e3, t2) {
+  return [e3[0] / t2, e3[1] / t2];
+}
+function h(e3) {
+  return [e3[1], -e3[0]];
+}
+function g(e3, t2) {
+  let n2 = t2[0];
+  return e3[0] = t2[1], e3[1] = -n2, e3;
+}
+function ee(e3, t2) {
+  return e3[0] * t2[0] + e3[1] * t2[1];
+}
+function _(e3, t2) {
+  return e3[0] === t2[0] && e3[1] === t2[1];
+}
+function v(e3) {
+  return Math.hypot(e3[0], e3[1]);
+}
+function y(e3, t2) {
+  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
+  return n2 * n2 + r2 * r2;
+}
+function b(e3) {
+  return m(e3, v(e3));
+}
+function x(e3, t2) {
+  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
+}
+function S(e3, t2, n2) {
+  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
+  return [s16 + t2[0], c3 + t2[1]];
+}
+function C(e3, t2, n2, r2) {
+  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
+  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
+}
+function w(e3, t2, n2) {
+  return c(e3, f(u(t2, e3), n2));
+}
+function te(e3, t2, n2, r2) {
+  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
+  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
+}
+function T(e3, t2, n2) {
+  return c(e3, f(t2, n2));
+}
+function k(e3, n2) {
+  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
+  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
+  return i2;
+}
+function A2(e3, n2, r2) {
+  let i2 = [], a3 = 1 / r2;
+  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
+  return i2;
+}
+function j(e3, t2, n2) {
+  let r2 = u(t2, n2), i2 = f(r2, 0.5), a3 = f(r2, 0.51);
+  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
+}
+function M(e3, n2, r2, i2) {
+  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
+  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
+  return a3;
+}
+function ne(e3, t2, n2) {
+  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+}
+function N(e3, t2, n2) {
+  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
+}
+function re(e3, t2, n2) {
+  return e3.slice(0, 10).reduce((e4, r2) => {
+    let i2 = r2.pressure;
+    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
+  }, e3[0].pressure);
+}
+function P(e3, n2 = {}) {
+  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
+  if (e3.length === 0 || r2 <= 0) return [];
+  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
+  for (let n3 = 0; n3 < e3.length; n3++) {
+    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
+    if (!x3 && F3 - b5 < 3) continue;
+    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
+    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
+    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
+    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
+    if (j3 || M4) {
+      g(E, W), p(E, E, H2);
+      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
+      G2 = q2, K2 = J2, M4 && (Y3 = true);
+      continue;
+    }
+    if (Y3 = false, x3) {
+      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
+      continue;
+    }
+    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
+  }
+  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
+  if (e3.length === 1) {
+    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
+  } else {
+    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
+    let t2 = h(s(e3[e3.length - 1].vector));
+    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
+  }
+  return z4.concat($2, B3.reverse(), Q3);
+}
+function I(e3) {
+  return e3 != null && e3 >= 0;
+}
+function L(e3, t2 = {}) {
+  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
+  if (e3.length === 0) return [];
+  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
+  if (l2.length === 2) {
+    let e4 = l2[1];
+    l2 = l2.slice(0, -1);
+    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
+  }
+  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
+  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
+  for (let e4 = 1; e4 < l2.length; e4++) {
+    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
+    if (_(m2.point, t3)) continue;
+    let r2 = x(t3, m2.point);
+    if (p2 += r2, e4 < h3 && !f4) {
+      if (p2 < a3) continue;
+      f4 = true;
+    }
+    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
+  }
+  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
+}
+function R(e3, t2 = {}) {
+  return P(L(e3, t2), t2);
+}
+var e, t, n, r, a, E, D2, O, F;
+var init_esm = __esm({
+  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
+    ({ PI: e } = Math);
+    t = e + 1e-4;
+    n = 0.5;
+    r = [1, 1];
+    ({ min: a } = Math);
+    E = [0, 0];
+    D2 = [0, 0];
+    O = [0, 0];
+    F = [0, 0];
+  }
+});
+
+// src/renderer/drawing/drauu/models/stylus.ts
+var StylusModel;
+var init_stylus = __esm({
+  "src/renderer/drawing/drauu/models/stylus.ts"() {
+    init_esm();
+    init_utils();
+    init_base();
+    StylusModel = class _StylusModel extends BaseModel {
+      points = [];
+      onStart(point) {
+        this.el = document.createElementNS(SVG_NS3, "path");
+        this.points = [point];
+        this.attr("fill", this.brush.color);
+        this.attr("d", this.getSvgData(this.points));
+        return this.el;
+      }
+      onMove(point) {
+        if (!this.el) this.onStart(point);
+        if (this.points.at(-1) !== point) this.points.push(point);
+        this.attr("d", this.getSvgData(this.points));
+        return true;
+      }
+      onEnd() {
+        const path = this.el;
+        this.el = null;
+        return path !== null;
+      }
+      getSvgData(points) {
+        return _StylusModel.getSvgData(points, this.brush);
+      }
+      static getSvgData(points, brush) {
+        const stroke = R(points, {
+          size: brush.size,
+          thinning: 0.9,
+          simulatePressure: false,
+          start: { taper: 5 },
+          end: { taper: 5 },
+          ...brush.stylusOptions
+        });
+        const first = stroke[0];
+        if (!first) return "";
+        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
+        for (let i2 = 0; i2 < stroke.length; i2++) {
+          const a3 = stroke[i2];
+          const b4 = stroke[(i2 + 1) % stroke.length];
+          if (!a3 || !b4) continue;
+          const [x0, y0] = a3;
+          const [x1, y1] = b4;
+          parts.push(
+            x0.toFixed(2),
+            y0.toFixed(2),
+            ((x0 + x1) / 2).toFixed(2),
+            ((y0 + y1) / 2).toFixed(2)
+          );
+        }
+        parts.push("Z");
+        return parts.join(" ");
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/models/index.ts
+function createModels(drauu) {
+  return {
+    draw: new DrawModel(drauu),
+    stylus: new StylusModel(drauu),
+    line: new LineModel(drauu),
+    rectangle: new RectModel(drauu),
+    ellipse: new EllipseModel(drauu),
+    eraseLine: new EraserModel(drauu)
+  };
+}
+var init_models = __esm({
+  "src/renderer/drawing/drauu/models/index.ts"() {
+    init_draw();
+    init_ellipse();
+    init_eraser();
+    init_line();
+    init_rect();
+    init_stylus();
+  }
+});
+
+// src/renderer/drawing/drauu/drauu.ts
+function createDrauu(options) {
+  return new Drauu(options);
+}
+var DEFAULT_BRUSH, Drauu;
+var init_drauu = __esm({
+  "src/renderer/drawing/drauu/drauu.ts"() {
+    init_emitter();
+    init_models();
+    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
+    Drauu = class {
+      el = null;
+      svgPoint = null;
+      shiftPressed = false;
+      altPressed = false;
+      drawing = false;
+      options;
+      emitter = new Emitter();
+      originalPointerId = null;
+      models = createModels(this);
+      currentNode;
+      opStack = [];
+      opIndex = 0;
+      disposables = [];
+      elements = [];
+      constructor(options = {}) {
+        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
+        if (options.el) this.mount(options.el, options.eventTarget, options.window);
+      }
+      get model() {
+        return this.models[this.mode];
+      }
+      get mounted() {
+        return this.el !== null;
+      }
+      get mode() {
+        return this.options.brush.mode ?? "stylus";
+      }
+      set mode(v3) {
+        this.models[this.mode].onUnselected();
+        this.options.brush.mode = v3;
+        this.model.onSelected(this.el);
+      }
+      get brush() {
+        return this.options.brush;
+      }
+      set brush(v3) {
+        this.options.brush = v3;
+      }
+      mount(el3, eventEl, listenWindow = window) {
+        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
+        if (el3.tagName.toLowerCase() !== "svg")
+          throw new Error("[drauu] can only mount to an SVG element");
+        this.el = el3;
+        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
+        const target = eventEl ?? el3;
+        const start = (e3) => {
+          if (e3 instanceof PointerEvent) this.eventStart(e3);
+        };
+        const move = (e3) => {
+          this.eventMove(e3);
+        };
+        const end = (e3) => {
+          this.eventEnd(e3);
+        };
+        const keyboard = (e3) => {
+          this.eventKeyboard(e3);
+        };
+        const touchMove = (e3) => {
+          this.touchMove(e3);
+        };
+        target.addEventListener("pointerdown", start, { passive: false });
+        listenWindow.addEventListener("pointermove", move, { passive: false });
+        listenWindow.addEventListener("pointerup", end, { passive: false });
+        listenWindow.addEventListener("pointercancel", end, { passive: false });
+        listenWindow.addEventListener("keydown", keyboard, false);
+        listenWindow.addEventListener("keyup", keyboard, false);
+        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
+        this.disposables.push(() => {
+          target.removeEventListener("pointerdown", start);
+          listenWindow.removeEventListener("pointermove", move);
+          listenWindow.removeEventListener("pointerup", end);
+          listenWindow.removeEventListener("pointercancel", end);
+          listenWindow.removeEventListener("keydown", keyboard, false);
+          listenWindow.removeEventListener("keyup", keyboard, false);
+          listenWindow.removeEventListener("touchmove", touchMove);
+        });
+        this.model.onSelected(this.el);
+        this.emitter.emit("mounted");
+      }
+      unmount() {
+        for (const dispose of this.disposables) dispose();
+        this.disposables.length = 0;
+        this.elements.length = 0;
+        this.el = null;
+        this.emitter.emit("unmounted");
+      }
+      on(type, fn2) {
+        return this.emitter.on(type, fn2);
+      }
+      undo() {
+        if (!this.canUndo() || this.drawing) return false;
+        this.opIndex -= 1;
+        this.opStack[this.opIndex]?.undo();
+        this.emitter.emit("changed");
+        return true;
+      }
+      redo() {
+        if (!this.canRedo() || this.drawing) return false;
+        this.opStack[this.opIndex]?.redo();
+        this.opIndex += 1;
+        this.emitter.emit("changed");
+        return true;
+      }
+      canRedo() {
+        return this.opIndex < this.opStack.length;
+      }
+      canUndo() {
+        return this.opIndex > 0;
+      }
+      eventMove(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        if (this.model._eventMove(event)) {
+          event.stopPropagation();
+          event.preventDefault();
+          this.emitter.emit("changed");
+        }
+      }
+      eventStart(event) {
+        if (!this.acceptsInput(event)) return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (this.currentNode) this.cancel();
+        this.drawing = true;
+        this.originalPointerId = event.pointerId;
+        this.emitter.emit("start");
+        this.currentNode = this.model._eventDown(event);
+        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
+        this.emitter.emit("changed");
+      }
+      eventEnd(event) {
+        if (!this.acceptsInput(event) || !this.drawing) return;
+        const result = this.model._eventUp(event);
+        if (!result) {
+          this.cancel();
+        } else if (result === true) {
+          const node2 = this.currentNode;
+          if (node2) {
+            this._appendNode(node2);
+            this.commit({
+              undo: () => {
+                this._removeNode(node2);
+              },
+              redo: () => {
+                this._restoreNode(node2);
+              }
+            });
+          }
+        } else {
+          this.commit(result);
+        }
+        this.drawing = false;
+        this.emitter.emit("end");
+        this.emitter.emit("changed");
+        this.originalPointerId = null;
+      }
+      touchMove(event) {
+        for (const touch of Array.from(event.touches)) {
+          const touchType = Reflect.get(touch, "touchType");
+          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
+            event.preventDefault();
+            return;
+          }
+        }
+      }
+      acceptsInput(event) {
+        const accepted = this.options.acceptsInputTypes;
+        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
+        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
+      }
+      eventKeyboard(event) {
+        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
+        this.shiftPressed = event.shiftKey;
+        this.altPressed = event.altKey;
+        const point = this.model.point;
+        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
+      }
+      commit(op) {
+        this.opStack.length = this.opIndex;
+        this.opStack.push(op);
+        this.opIndex += 1;
+        const node2 = this.currentNode;
+        this.currentNode = void 0;
+        this.emitter.emit("committed", node2);
+      }
+      clear() {
+        this.opStack.length = 0;
+        this.opIndex = 0;
+        this.elements = [];
+        this.cancel();
+        if (this.el) this.el.innerHTML = "";
+        this.emitter.emit("changed");
+      }
+      cancel() {
+        if (this.currentNode) {
+          this.currentNode.remove();
+          this.currentNode = void 0;
+          this.emitter.emit("canceled");
+        }
+      }
+      dump() {
+        return this.el?.innerHTML ?? "";
+      }
+      load(svg2) {
+        this.clear();
+        if (this.el) this.el.innerHTML = svg2;
+      }
+      /** @internal */
+      _appendNode(node2) {
+        const last = this.elements.at(-1);
+        if (last) last.after(node2);
+        else this.el?.append(node2);
+        const index = this.elements.push(node2) - 1;
+        node2.setAttribute("data-drauu-index", index.toString());
+      }
+      /** @internal */
+      _removeNode(node2) {
+        node2.remove();
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (Number.isInteger(index)) this.elements[index] = null;
+      }
+      /** @internal */
+      _restoreNode(node2) {
+        const index = Number(node2.getAttribute("data-drauu-index"));
+        if (!Number.isInteger(index)) return;
+        this.elements[index] = node2;
+        for (let i2 = index - 1; i2 >= 0; i2--) {
+          const previous = this.elements[i2];
+          if (previous) {
+            previous.after(node2);
+            return;
+          }
+        }
+        this.el?.prepend(node2);
+      }
+    };
+  }
+});
+
+// src/renderer/drawing/drauu/index.ts
+var init_drauu2 = __esm({
+  "src/renderer/drawing/drauu/index.ts"() {
+    init_drauu();
+    init_models();
+  }
+});
+
+// src/renderer/drawing/annotation-layer.ts
+function measureBox(node2) {
+  const getBBox = Reflect.get(node2, "getBBox");
+  if (typeof getBBox !== "function") return null;
+  try {
+    const box = Reflect.apply(getBBox, node2, []);
+    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
+      const { x: x2, y: y2, width, height } = box;
+      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
+        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
+      }
+    }
+  } catch {
+  }
+  return null;
+}
+function toolOf(node2) {
+  const tagged = node2.getAttribute("data-tool");
+  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
+}
+function composeAnnotationPng(svg2, width, height, base) {
+  return new Promise((resolve, reject) => {
+    const scale2 = window.devicePixelRatio || 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale2));
+    canvas.height = Math.max(1, Math.round(height * scale2));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject(new Error("2D canvas unavailable"));
+      return;
+    }
+    const loadImage = (src) => new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => {
+        res(img);
+      };
+      img.onerror = () => {
+        rej(new Error("image failed to decode"));
+      };
+      img.src = src;
+    });
+    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
+    void (async () => {
+      try {
+        if (base) {
+          const baseImage = await loadImage(base);
+          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+        }
+        const marks = await loadImage(marksUrl);
+        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error62) {
+        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+      } finally {
+        URL.revokeObjectURL(marksUrl);
+      }
+    })();
+  });
+}
+function mountAnnotationLayer(host, options) {
+  let root = null;
+  let resizeObserver = null;
+  let svg2 = null;
+  let drauu = null;
+  let active2 = false;
+  let tool = "pen";
+  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
+  const toolButtons = /* @__PURE__ */ new Map();
+  const swatches = /* @__PURE__ */ new Map();
+  let sendBtn = null;
+  let undoBtn = null;
+  let clearBtn = null;
+  let sending = false;
+  let scrollX = 0;
+  let scrollY = 0;
+  const fmt = (v3) => String(Math.round(v3 * 100) / 100);
+  const applyViewBox = () => {
+    if (!svg2) return;
+    const rect = host.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg2.setAttribute("viewBox", `${fmt(scrollX)} ${fmt(scrollY)} ${fmt(width)} ${fmt(height)}`);
+  };
+  const applyBrush = () => {
+    if (!drauu) return;
+    const brush = drauu.brush;
+    brush.color = colour;
+    brush.arrowEnd = tool === "arrow";
+    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
+    const mode = {
+      pen: "stylus",
+      line: "line",
+      arrow: "line",
+      rect: "rectangle",
+      ellipse: "ellipse",
+      eraser: "eraseLine"
+    }[tool];
+    if (drauu.mode !== mode) drauu.mode = mode;
+    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
+    for (const [name, button] of toolButtons)
+      button.setAttribute("aria-pressed", String(name === tool));
+    for (const [value, button] of swatches)
+      button.setAttribute("aria-pressed", String(value === colour));
+  };
+  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
+  const syncButtons = () => {
+    const empty = isEmpty();
+    if (sendBtn) sendBtn.disabled = empty || sending;
+    if (clearBtn) clearBtn.disabled = empty;
+    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
+    if (root) root.hidden = !active2 && empty;
+  };
+  const toolButton = (name, label, icon) => {
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "data-tool": name,
+        "aria-label": label,
+        "data-tooltip": label,
+        "aria-pressed": "false"
+      },
+      icon
+    );
+    button.addEventListener("click", () => {
+      tool = name;
+      applyBrush();
+    });
+    toolButtons.set(name, button);
+    return button;
+  };
+  const ensureMounted = () => {
+    if (root) return;
+    svg2 = document.createElementNS(SVG_NS3, "svg");
+    svg2.setAttribute("class", "annotation-layer-svg");
+    svg2.setAttribute("role", "img");
+    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
+    applyViewBox();
+    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
+    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
+      const button = el("button", {
+        type: "button",
+        class: "annotation-swatch",
+        "aria-label": name,
+        "data-tooltip": name,
+        "aria-pressed": "false"
+      });
+      button.style.setProperty("--annotation-swatch", value);
+      button.addEventListener("click", () => {
+        colour = value;
+        applyBrush();
+      });
+      swatches.set(value, button);
+      return button;
+    });
+    undoBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
+      undoIcon("ui-icon ui-icon-sm")
+    );
+    undoBtn.addEventListener("click", () => {
+      drauu?.undo();
+    });
+    clearBtn = el(
+      "button",
+      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
+      trashIcon("ui-icon ui-icon-sm")
+    );
+    clearBtn.addEventListener("click", () => {
+      drauu?.clear();
+    });
+    sendBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
+      "Send to agent"
+    );
+    sendBtn.addEventListener("click", () => {
+      if (sending) return;
+      sending = true;
+      sendBtn?.setAttribute("aria-busy", "true");
+      syncButtons();
+      void layer.export().then(async (payload) => {
+        const accepted = await options.onSend(payload);
+        if (!accepted) return;
+        layer.deactivate();
+      }).catch(() => {
+      }).finally(() => {
+        sending = false;
+        sendBtn?.removeAttribute("aria-busy");
+        syncButtons();
+      });
+    });
+    const doneBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool",
+        "aria-label": "Done",
+        "data-tooltip": "Done (Esc)"
+      },
+      closeIcon("ui-icon ui-icon-sm")
+    );
+    doneBtn.addEventListener("click", () => {
+      layer.deactivate();
+    });
+    const strip = el(
+      "div",
+      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
+      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
+      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
+      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
+      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
+      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
+      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
+      separator(),
+      ...swatchButtons,
+      separator(),
+      undoBtn,
+      clearBtn,
+      separator(),
+      sendBtn,
+      doneBtn
+    );
+    strip.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
+    root.hidden = true;
+    host.append(root);
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver.observe(host);
+    }
+    drauu = createDrauu({
+      el: svg2,
+      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
+    });
+    drauu.on("changed", syncButtons);
+    drauu.on("committed", (node2) => {
+      if (!node2) return;
+      node2.setAttribute("data-tool", tool);
+      node2.setAttribute("data-colour", colour);
+    });
+    applyBrush();
+    syncButtons();
+  };
+  const onKeyDown = (event) => {
+    if (!active2) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      layer.deactivate();
+      return;
+    }
+    const meta3 = event.metaKey || event.ctrlKey;
+    if (meta3 && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) drauu?.redo();
+      else drauu?.undo();
+    }
+  };
+  const layer = {
+    get active() {
+      return active2;
+    },
+    activate() {
+      ensureMounted();
+      if (active2) return;
+      active2 = true;
+      root?.setAttribute("data-active", "true");
+      window.addEventListener("keydown", onKeyDown);
+      syncButtons();
+      toolButtons.get(tool)?.focus({ preventScroll: true });
+    },
+    deactivate() {
+      if (!active2) return;
+      active2 = false;
+      drauu?.cancel();
+      root?.setAttribute("data-active", "false");
+      window.removeEventListener("keydown", onKeyDown);
+      syncButtons();
+      options.onDeactivate?.();
+    },
+    toggle() {
+      if (active2) layer.deactivate();
+      else layer.activate();
+      return active2;
+    },
+    isEmpty,
+    clear() {
+      drauu?.clear();
+      syncButtons();
+    },
+    setTool(next) {
+      ensureMounted();
+      tool = next;
+      applyBrush();
+    },
+    setScrollOffset(x2, y2) {
+      if (Number.isFinite(x2)) scrollX = x2;
+      if (Number.isFinite(y2)) scrollY = y2;
+      applyViewBox();
+    },
+    async export() {
+      ensureMounted();
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const marks = Array.from(svg2?.children ?? []).map((node2) => {
+        return {
+          tool: toolOf(node2),
+          colour: node2.getAttribute("data-colour") ?? colour,
+          box: measureBox(node2)
+        };
+      });
+      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS3, "svg");
+      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
+      clone3.removeAttribute("class");
+      clone3.removeAttribute("role");
+      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone3.setAttribute("width", String(width));
+      clone3.setAttribute("height", String(height));
+      clone3.setAttribute(
+        "viewBox",
+        `${fmt(scrollX)} ${fmt(scrollY)} ${String(width)} ${String(height)}`
+      );
+      const serialised = clone3.outerHTML;
+      const base = await options.captureBase?.().catch(() => null);
+      let png = null;
+      let captured = false;
+      if (base) {
+        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
+        captured = png !== null;
+      }
+      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
+      return {
+        svg: serialised,
+        png,
+        captured,
+        width,
+        height,
+        marks
+      };
+    },
+    dispose() {
+      layer.deactivate();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      drauu?.unmount();
+      drauu = null;
+      root?.remove();
+      root = null;
+      svg2 = null;
+    }
+  };
+  return layer;
+}
+var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
+var init_annotation_layer = __esm({
+  "src/renderer/drawing/annotation-layer.ts"() {
+    init_helpers();
+    init_icons();
+    init_drauu2();
+    init_utils();
+    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
+    ANNOTATION_COLOURS = [
+      { name: "Red", value: "#e5484d" },
+      { name: "Blue", value: "#3b82f6" },
+      { name: "Green", value: "#22c55e" },
+      { name: "Yellow", value: "#eab308" }
+    ];
+    SHAPE_SIZE = 3;
+    PEN_SIZE = 6;
+  }
+});
+
+// src/renderer/attachments/prompt-attachments.ts
+function registerPromptAttachments(h3) {
+  handlers = h3;
+  return () => {
+    if (handlers === h3) handlers = null;
+  };
+}
+function getPromptAttachmentHandlers() {
+  return handlers;
+}
+var handlers;
+var init_prompt_attachments = __esm({
+  "src/renderer/attachments/prompt-attachments.ts"() {
+    handlers = null;
+  }
+});
+
+// src/renderer/drawing/attach-annotation.ts
+function attachAnnotation(payload, subject) {
+  const handlers3 = getPromptAttachmentHandlers();
+  if (!handlers3) {
+    showToast("Open a thread before sending an annotation.", { variant: "error" });
+    return false;
+  }
+  if (!payload.png) {
+    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
+    return false;
+  }
+  handlers3.attachImage(payload.png, "image/png");
+  handlers3.focusComposer?.();
+  showToast(
+    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
+    { durationMs: 2500 }
+  );
+  return true;
+}
+var init_attach_annotation = __esm({
+  "src/renderer/drawing/attach-annotation.ts"() {
+    init_prompt_attachments();
+    init_toast();
+  }
+});
+
 // src/renderer/attachments/image-expand.ts
 function pngDataUrlToBlob(dataUrl) {
   if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
@@ -63564,8 +66113,75 @@ function expandableImageSource(image) {
 function imageTitle(item) {
   return item.alt.trim() || "Expanded attachment";
 }
+function annotatableImage(item, closePreview) {
+  const frame = el("div", { class: "image-expand-frame" });
+  const image = el("img", { class: "image-expand-photo image-expand-image", alt: imageTitle(item) });
+  image.src = item.src;
+  attachImageCopyMenu(image);
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost image-expand-annotate",
+      "aria-label": `Annotate ${imageTitle(item)}`,
+      "aria-pressed": "false"
+    },
+    penLineIcon("ui-icon ui-icon-sm"),
+    "Annotate"
+  );
+  let annotation = null;
+  const captureBase = () => {
+    if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+      return Promise.resolve(null);
+    }
+    const { width, height } = frame.getBoundingClientRect();
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    const context = canvas.getContext("2d");
+    if (!context) return Promise.resolve(null);
+    const scale2 = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+    const drawnWidth = image.naturalWidth * scale2;
+    const drawnHeight = image.naturalHeight * scale2;
+    context.drawImage(
+      image,
+      (canvas.width - drawnWidth) / 2,
+      (canvas.height - drawnHeight) / 2,
+      drawnWidth,
+      drawnHeight
+    );
+    return Promise.resolve(canvas.toDataURL("image/png"));
+  };
+  button.addEventListener("click", () => {
+    annotation ??= mountAnnotationLayer(frame, {
+      label: imageTitle(item),
+      captureBase,
+      onSend: (payload) => {
+        const attached = attachAnnotation(payload, imageTitle(item));
+        if (attached) closePreview();
+        return attached;
+      },
+      onDeactivate: () => {
+        button.setAttribute("aria-pressed", "false");
+      }
+    });
+    button.setAttribute("aria-pressed", String(annotation.toggle()));
+  });
+  frame.append(image);
+  return {
+    frame,
+    image,
+    button,
+    deactivate: () => annotation?.deactivate(),
+    dispose: () => {
+      annotation?.dispose();
+      image.removeAttribute("src");
+    }
+  };
+}
 function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  let session = null;
   const viewer = el("div", {
     class: "image-expand-viewer",
     role: "group",
@@ -63573,8 +66189,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     tabindex: "-1"
   });
   const stage = el("div", { class: "image-expand-stage" });
-  const imageEl = el("img", { class: "image-expand-image", alt: "" });
-  attachImageCopyMenu(imageEl);
+  const images = items.map((item) => annotatableImage(item, () => session?.close()));
   const previousButton = el(
     "button",
     {
@@ -63603,7 +66218,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     { class: "image-expand-nav-zone image-expand-nav-zone-next" },
     nextButton
   );
-  stage.append(imageEl, previousZone, nextZone);
+  stage.append(...images.map(({ frame }) => frame), previousZone, nextZone);
   const thumbnailButtons = items.map((item, index) => {
     const thumbnail2 = el("img", {
       class: "image-expand-thumbnail-image",
@@ -63623,8 +66238,7 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
       thumbnail2
     );
     button.addEventListener("click", () => {
-      currentIndex = index;
-      render();
+      move(index);
     });
     return button;
   });
@@ -63634,19 +66248,26 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     ...thumbnailButtons
   );
   const counter = el("span", { class: "image-expand-counter", "aria-live": "polite" });
-  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip);
+  const actionSlot = el("div", { class: "image-expand-gallery-action" });
+  const footer = el("div", { class: "image-expand-gallery-footer" }, thumbnailStrip, actionSlot);
   viewer.append(counter, stage, footer);
   const render = () => {
     const item = items[currentIndex];
     if (!item) return;
     const label = imageTitle(item);
-    imageEl.src = item.src;
-    imageEl.alt = label;
-    imageEl.dataset["imageIndex"] = String(currentIndex);
-    imageEl.setAttribute(
+    for (const [index, entry] of images.entries()) {
+      const selected = index === currentIndex;
+      entry.frame.hidden = !selected;
+      entry.image.classList.toggle("image-expand-image", selected);
+    }
+    const selectedImage = images[currentIndex];
+    if (!selectedImage) return;
+    selectedImage.image.dataset["imageIndex"] = String(currentIndex);
+    selectedImage.image.setAttribute(
       "aria-label",
       label + ", image " + String(currentIndex + 1) + " of " + String(items.length)
     );
+    actionSlot.replaceChildren(selectedImage.button);
     viewer.setAttribute(
       "aria-label",
       "Attached images, image " + String(currentIndex + 1) + " of " + String(items.length)
@@ -63665,15 +66286,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
     thumbnailButtons[currentIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   const move = (nextIndex) => {
-    if (nextIndex < 0 || nextIndex >= items.length) return;
+    if (nextIndex < 0 || nextIndex >= items.length || nextIndex === currentIndex) return;
+    images[currentIndex]?.deactivate();
     currentIndex = nextIndex;
     render();
   };
   previousButton.addEventListener("click", () => {
     move(currentIndex - 1);
+    viewer.focus({ preventScroll: true });
   });
   nextButton.addEventListener("click", () => {
     move(currentIndex + 1);
+    viewer.focus({ preventScroll: true });
   });
   viewer.addEventListener("keydown", (event) => {
     if (event.key === "ArrowLeft") {
@@ -63691,14 +66315,14 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   render();
   const initialItem = items[currentIndex];
   if (!initialItem) return;
-  const session = openAttachmentPreview({
+  session = openAttachmentPreview({
     kind: "image-gallery",
     title: "Attached images \xB7 " + String(items.length),
     ariaLabel: "Image preview: " + imageTitle(initialItem),
     content: viewer,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
+      for (const entry of images) entry.dispose();
       for (const button of thumbnailButtons) {
         button.querySelector("img")?.removeAttribute("src");
       }
@@ -63709,18 +66333,18 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
   });
 }
 function openSingleImage(src, alt, returnFocus2) {
-  const imageEl = el("img", { class: "image-expand-image", alt });
-  imageEl.src = src;
-  attachImageCopyMenu(imageEl);
-  openAttachmentPreview({
+  let session = null;
+  const entry = annotatableImage({ src, alt }, () => session?.close());
+  const content = el("div", { class: "image-expand-single" }, entry.frame, entry.button);
+  session = openAttachmentPreview({
     kind: "image",
     title: alt,
     ariaLabel: "Image preview: " + alt,
-    content: imageEl,
+    content,
     ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
-      imageEl.removeAttribute("src");
-      imageEl.alt = "Expanded attachment";
+      entry.dispose();
+      entry.image.alt = "Expanded attachment";
     }
   });
 }
@@ -63788,6 +66412,8 @@ var init_image_expand = __esm({
     init_context_menu();
     init_helpers();
     init_icons();
+    init_annotation_layer();
+    init_attach_annotation();
     init_toast();
     init_attachment_preview();
   }
@@ -65528,6 +68154,10 @@ var init_demo_scenarios = __esm({
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
           credential: "key",
+          settings: {
+            budgets: { wallClockMs: 18e4, tokenCeiling: 2e4 },
+            installDependencies: false
+          },
           warnings: [],
           checkout: {
             root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
@@ -65634,6 +68264,23 @@ var init_demo_scenarios = __esm({
       {
         id: "balanced-model-label",
         label: "Balanced model rule label",
+        trace: {
+          id: "balanced-model-resolution",
+          label: "Balanced resolves before the first token",
+          prompt: "Show the concrete model for this turn.",
+          steps: [
+            {
+              chunk: {
+                type: "turn_parameters",
+                model: "claude-sonnet-4-6",
+                parameters: {},
+                requestedModel: "auto:balanced"
+              }
+            },
+            { delayMs: 5e3, chunk: { type: "text", text: "This turn runs on Claude Sonnet 4.6." } },
+            { chunk: { type: "done", stopReason: "end_turn" } }
+          ]
+        },
         project: project("demo-balanced-model-label-project"),
         settings: {
           onboardingCompleted: true,
@@ -66306,6 +68953,56 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "mcp-sign-in",
+        label: "MCP servers that sign in with OAuth",
+        project: project("demo-mcp-sign-in-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-mcp-sign-in-thread",
+            title: "MCP sign-in",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        mcpServers: [
+          {
+            name: "design-system",
+            transport: "http",
+            state: "error",
+            error: "Sign-in required",
+            auth: "required",
+            toolCount: 0,
+            tools: [],
+            origin: "user",
+            source: "/Users/demo/.cursor/mcp.json",
+            originDetail: "mcp.json",
+            userEnabled: true,
+            configDisabled: false
+          },
+          {
+            name: "issues",
+            transport: "http",
+            state: "connected",
+            auth: "signed-in",
+            toolCount: 3,
+            tools: ["list_issues", "get_issue", "create_issue"],
+            origin: "user",
+            source: "/Users/demo/.cursor/mcp.json",
+            originDetail: "mcp.json",
+            userEnabled: true,
+            configDisabled: false
+          }
+        ]
+      },
+      {
         id: "automation-permissions",
         label: "Automation permission preferences",
         project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
@@ -66563,6 +69260,373 @@ var init_demo_scenarios = __esm({
         }
       },
       {
+        id: "sidebar-automation-fold",
+        label: "Sidebar automation fold",
+        project: project("demo-automation-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // One schedule with every kind of run: four waiting on the user (collapsed into one
+        // row), one working, two failed (collated), and three that finished cleanly.
+        // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+        threads: [
+          {
+            id: "demo-automation-fold-chat",
+            title: "A regular conversation",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME + 1,
+            updatedAt: FIXED_TIME + 1
+          },
+          ...[
+            ["wait-1", "idle"],
+            ["wait-2", "idle"],
+            ["wait-3", "idle"],
+            ["wait-4", "idle"],
+            ["working", "running"],
+            ["fail-1", "error"],
+            ["fail-2", "error"],
+            ["done-1", "idle"],
+            ["done-2", "idle"],
+            ["done-3", "idle"]
+          ].map(([suffix, status], index) => ({
+            id: `demo-automation-fold-${suffix}`,
+            title: "Docs freshness",
+            status,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            automation: {
+              scheduleId: "demo-automation-fold-schedule",
+              scheduleName: "Docs freshness",
+              triggeredAt: FIXED_TIME - index * 36e5
+            },
+            createdAt: FIXED_TIME - index,
+            updatedAt: FIXED_TIME - index
+          }))
+        ],
+        approvalRequests: ["wait-1", "wait-2", "wait-3", "wait-4"].map((suffix) => ({
+          id: `demo-automation-fold-approval-${suffix}`,
+          threadId: `demo-automation-fold-${suffix}`,
+          title: "Run outside sandbox?",
+          body: "node scripts/check-docs.mjs",
+          type: "shell"
+        }))
+      },
+      {
+        id: "sidebar-thread-sort",
+        label: "Sidebar thread sort",
+        project: project("demo-sidebar-sort-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Newest-prompted first, as the store keeps them: neither creation nor title order.
+        threads: [
+          {
+            id: "demo-sidebar-sort-b",
+            title: "Fix the flaky sandbox test",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-sidebar-sort-c",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-sidebar-sort-a",
+            title: "Add a retry to uploads",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-sidebar-sort-d",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          },
+          {
+            id: "demo-sidebar-sort-e",
+            title: "Run the schema migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 5,
+            updatedAt: FIXED_TIME - 5
+          }
+        ]
+      },
+      {
+        id: "activity-home",
+        label: "Activity home on a new thread",
+        project: project("demo-activity-home-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active one and is empty, so the chat pane is the
+        // Activity home. The others give it something to list: one waiting on an
+        // approval, two running, one that finished while the user was elsewhere.
+        threads: [
+          {
+            id: "demo-activity-home-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-home-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          {
+            id: "demo-activity-home-flaky",
+            title: "Fix the flaky sandbox test",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 3,
+            updatedAt: FIXED_TIME - 3
+          },
+          {
+            id: "demo-activity-home-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 4,
+            updatedAt: FIXED_TIME - 4
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-home-approval",
+            threadId: "demo-activity-home-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            bodyAdvice: "Auto-run for sandbox commands is disabled in Settings",
+            bodyFooter: "Allow running it once?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-project-filter",
+        label: "Activity home after a project finishes waiting",
+        project: project("demo-activity-home-filter-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-activity-filter-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-filter-refactor",
+            title: "Refactor auth",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-activity-filter-approval",
+            threadId: "demo-activity-filter-refactor",
+            title: "Run shell command?",
+            body: "printf 'auth-check-passed\\n'",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "activity-home-automation-fold",
+        label: "Activity home with automation runs folded",
+        project: project("demo-activity-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the empty active one. Beside a working thread and one
+        // finished chat, a schedule has settled five clean runs and another three failed
+        // ones: each folds into a single row instead of eight.
+        threads: [
+          {
+            id: "demo-activity-fold-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-fold-audit",
+            title: "Dependency audit",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          },
+          {
+            id: "demo-activity-fold-copy",
+            title: "Update onboarding copy",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            unreadAt: FIXED_TIME - 6e4,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 2,
+            updatedAt: FIXED_TIME - 2
+          },
+          ...[
+            ["docs", "Docs freshness", "idle", 5],
+            ["deps", "Nightly dependency check", "error", 3]
+          ].flatMap(
+            ([schedule, name, status, count]) => Array.from({ length: count }, (_3, index) => ({
+              id: `demo-activity-fold-${schedule}-${String(index)}`,
+              title: name,
+              status,
+              messages: [],
+              messagesLoaded: false,
+              unreadAt: FIXED_TIME - (index + 2) * 36e5,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              automation: {
+                scheduleId: `demo-activity-fold-${schedule}`,
+                scheduleName: name,
+                triggeredAt: FIXED_TIME - (index + 2) * 36e5
+              },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          )
+        ]
+      },
+      {
+        id: "activity-home-question",
+        label: "Activity home with a question waiting",
+        project: project("demo-activity-home-question-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active, empty one; the second is blocked on a question.
+        threads: [
+          {
+            id: "demo-activity-home-question-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-question-schema",
+            title: "Schema bump",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        askUserRequests: [
+          {
+            id: "demo-activity-home-question",
+            threadId: "demo-activity-home-question-schema",
+            questions: [
+              {
+                question: "Which migration order should the schema bump use?",
+                options: ["Columns first", "Backfill first"]
+              },
+              { question: "Keep the old column until the next release?" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "activity-home-empty",
+        label: "Activity home with nothing to list",
+        project: project("demo-activity-home-empty-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first-run case: one empty thread and nothing running or waiting.
+        threads: [
+          {
+            id: "demo-activity-home-empty-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         id: "chat-layout-styling",
         label: "Chat layout styling",
         project: project("demo-chat-layout-project"),
@@ -66654,6 +69718,43 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-settings",
+        label: "ChatGPT plan onboarding and account options",
+        project: project("demo-chatgpt-plan-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        threads: [
+          {
+            id: "demo-chatgpt-plan-thread",
+            title: "ChatGPT plan",
+            model: "chatgpt-plan:demo-plan-account#gpt-5.6-luna",
+            status: "idle",
+            messages: [
+              {
+                id: "plan-limit",
+                role: "assistant",
+                toolCalls: [],
+                content: "> [!CAUTION]\n> ChatGPT plan usage limit reached. Review your plan or Copse\u2019s allowance.\n>\n> [Manage usage](https://chatgpt.com/settings/usage)",
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS
     ];
@@ -66714,7 +69815,8 @@ function unsupported() {
 function createDemoApi(scenario, options = {}) {
   const settings = new Map(Object.entries(scenario.settings));
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
-  const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
+  let mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
+  const pendingMcpSignIns = /* @__PURE__ */ new Map();
   const storage = /* @__PURE__ */ new Map([
     ["projects", [scenario.project]],
     ["activeProjectId", scenario.project.id]
@@ -66842,6 +69944,7 @@ function createDemoApi(scenario, options = {}) {
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,
@@ -66865,7 +69968,11 @@ function createDemoApi(scenario, options = {}) {
         prompt: request.prompt,
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
-        credential: "key",
+        credential: request.useAgentLogin ? "login" : "key",
+        settings: {
+          budgets: { ...request.budgets },
+          installDependencies: request.installDependencies === true
+        },
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
         warnings: [],
         checkout: { root: "/repo", mode: "shared", branch: "main" },
@@ -66994,7 +70101,22 @@ function createDemoApi(scenario, options = {}) {
         return () => void 0;
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...question.options === void 0 ? {} : { options: [...question.options] }
+            }))
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -67074,6 +70196,31 @@ function createDemoApi(scenario, options = {}) {
       listCurated: emptyArray,
       listDeclared: emptyArray,
       setCuratedEnabled: emptyArray,
+      // The demo has no browser to finish a sign-in, so it waits like the real
+      // flow does until the visitor cancels.
+      signIn: (name) => new Promise((_resolve, reject) => {
+        pendingMcpSignIns.set(name, () => {
+          reject(new Error("Sign-in cancelled."));
+        });
+      }),
+      cancelSignIn: (name) => {
+        pendingMcpSignIns.get(name)?.();
+        pendingMcpSignIns.delete(name);
+        return resolvedVoid();
+      },
+      signOut: (name) => {
+        mcpStatuses = mcpStatuses.map(
+          (status) => status.name === name ? {
+            ...status,
+            state: "error",
+            error: "Sign-in required",
+            auth: "required",
+            toolCount: 0,
+            tools: []
+          } : status
+        );
+        return resolved2(structuredClone([...mcpStatuses]));
+      },
       onStatusChanged: subscribe
     },
     toolPermissions: {
@@ -67101,6 +70248,15 @@ function createDemoApi(scenario, options = {}) {
       reopenArtefact: () => resolved2(false)
     },
     storage: {
+      maintenance: () => resolved2({
+        retention: { enabled: true, days: 30 },
+        areas: [
+          { area: "runs", bytes: 0, entries: 0, busy: false },
+          { area: "builds", bytes: 0, entries: 0, busy: false }
+        ]
+      }),
+      cleanup: () => resolved2({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key) => resolved2(storage.get(key)),
       set: (key, value) => {
         storage.set(key, value);
@@ -67118,6 +70274,12 @@ function createDemoApi(scenario, options = {}) {
       })
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now();
+        const thread = threads.find((candidate) => candidate.id === threadId);
+        if (thread) thread.archivedAt = archivedAt;
+        return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
+      },
       loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
@@ -67170,6 +70332,9 @@ function createDemoApi(scenario, options = {}) {
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved2({ source: "empty", messageCount: 0 }),
+      historySnapshot: unsupported,
+      editHistory: unsupported,
+      undoHistoryEdit: unsupported,
       catalog: () => resolved2(
         threads.map((thread) => ({
           id: thread.id,
@@ -67250,6 +70415,7 @@ function createDemoApi(scenario, options = {}) {
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,
@@ -67278,7 +70444,37 @@ function createDemoApi(scenario, options = {}) {
       stop: unsupported,
       connect: unsupported
     },
+    chatGptPlan: {
+      status: () => resolved2(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      signIn: unsupported,
+      refreshAccount: () => scenario.chatGptPlan ? resolved2(scenario.chatGptPlan) : unsupported(),
+      cancelSignIn: resolvedVoid,
+      selectAccount: unsupported,
+      signOut: unsupported,
+      models: () => resolved2({
+        clientId: scenario.chatGptPlan?.activeClientId ?? null,
+        models: scenario.chatGptPlan?.activeClientId ? [{ slug: "gpt-5.6-luna", displayName: "GPT-5.6-Luna" }] : []
+      })
+    },
     settings: {
+      getSnapshot: () => {
+        const values = Object.fromEntries(settings);
+        const snapshot = values;
+        return resolved2(snapshot);
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes;
+        const next = new Map(settings);
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value);
+        if (roleAssignments)
+          next.set("roleModels", {
+            ...stringRecordOrEmpty(settings.get("roleModels")),
+            ...roleAssignments
+          });
+        settings.clear();
+        for (const [key, value] of next) settings.set(key, value);
+        return resolvedVoid();
+      },
       get: (key) => resolved2(settings.get(key)),
       set: (key, value) => {
         settings.set(key, value);
@@ -68251,6 +71447,7 @@ function createStore(initial) {
     filesPaneOpen: false,
     rightPanelMode: "explorer",
     rightPanelMaximized: false,
+    projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
     theme: "dark",
     themePreference: DEFAULT_THEME_PREFERENCE,
@@ -68260,6 +71457,9 @@ function createStore(initial) {
     conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
     openLinksInBuiltInBrowser: true,
     developerMode: false,
     ...initial
@@ -68275,6 +71475,7 @@ function createStore(initial) {
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
     tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
     thread_status_changed: /* @__PURE__ */ new Set(),
     agent_activity: /* @__PURE__ */ new Set(),
     threads_changed: /* @__PURE__ */ new Set(),
@@ -68289,6 +71490,7 @@ function createStore(initial) {
     files_pane_changed: /* @__PURE__ */ new Set(),
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
+    projects_pane_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     browser_url_requested: /* @__PURE__ */ new Set(),
@@ -69897,6 +73099,124 @@ var init_titlebar_compact = __esm({
   }
 });
 
+// src/renderer/views/keyboard-shortcuts-dialog.ts
+function isMacPlatform() {
+  const platform = navigator.platform || navigator.userAgent || "";
+  return /mac/i.test(platform);
+}
+function keyLabel(token, isMac2) {
+  switch (token) {
+    case "Mod":
+      return isMac2 ? "\u2318" : "Ctrl";
+    case "Shift":
+      return isMac2 ? "\u21E7" : "Shift";
+    case "Alt":
+      return isMac2 ? "\u2325" : "Alt";
+    default:
+      return token;
+  }
+}
+function openKeyboardShortcutsDialog() {
+  if (!dialogEl3 || dialogEl3.open) return;
+  dialogEl3.showModal();
+}
+function closeKeyboardShortcutsDialog() {
+  if (dialogEl3?.open) dialogEl3.close();
+}
+function isKeyboardShortcutsDialogOpen() {
+  return !!dialogEl3?.open;
+}
+function mountKeyboardShortcutsDialog() {
+  const dialog2 = document.createElement("dialog");
+  dialog2.id = "keyboard-shortcuts-dialog";
+  dialog2.className = "keyboard-shortcuts-overlay";
+  const isMac2 = isMacPlatform();
+  const grid = el("div", { class: "keyboard-shortcuts-grid" });
+  for (const section of SECTIONS) {
+    const group = el("div", { class: "keyboard-shortcuts-group" });
+    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
+    for (const shortcut of section.shortcuts) {
+      const keys = el("span", { class: "keyboard-shortcuts-keys" });
+      shortcut.keys.forEach((token) => {
+        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
+      });
+      group.append(
+        el(
+          "div",
+          { class: "keyboard-shortcuts-row" },
+          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
+          keys
+        )
+      );
+    }
+    grid.append(group);
+  }
+  const shell3 = el(
+    "div",
+    { class: "keyboard-shortcuts-shell" },
+    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
+    grid
+  );
+  clear(dialog2);
+  dialog2.append(shell3);
+  document.body.append(dialog2);
+  dialogEl3 = dialog2;
+  dialog2.addEventListener("mousedown", (e3) => {
+    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
+  });
+}
+var SECTIONS, dialogEl3;
+var init_keyboard_shortcuts_dialog = __esm({
+  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
+    init_helpers();
+    SECTIONS = [
+      {
+        title: "General",
+        shortcuts: [
+          { label: "New thread", keys: ["Mod", "N"] },
+          { label: "Open folder\u2026", keys: ["Mod", "O"] },
+          { label: "Settings", keys: ["Mod", ","] },
+          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
+          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
+          { label: "Zoom interface in", keys: ["Mod", "="] },
+          { label: "Zoom interface out", keys: ["Mod", "-"] },
+          { label: "Reset interface zoom", keys: ["Mod", "0"] },
+          { label: "Stop agent / close overlay", keys: ["Esc"] }
+        ]
+      },
+      {
+        title: "Navigation",
+        shortcuts: [
+          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
+          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
+          { label: "Find in conversation", keys: ["Mod", "F"] },
+          { label: "Next thread", keys: ["Ctrl", "Tab"] },
+          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
+          { label: "Close thread", keys: ["Mod", "W"] }
+        ]
+      },
+      {
+        title: "Panels",
+        shortcuts: [
+          { label: "Toggle sidebar", keys: ["Mod", "B"] },
+          { label: "Toggle panel", keys: ["Mod", "J"] },
+          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
+          { label: "Terminal", keys: ["Mod", "`"] },
+          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Browser", keys: ["Mod", "Shift", "B"] },
+          { label: "Focus browser address bar", keys: ["Mod", "L"] },
+          // Same physical key as above: while the browser page itself has focus,
+          // Mod+L shares its selection (or a screenshot) instead of focusing the
+          // address bar — see attachBrowserGuestShareShortcut.
+          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
+        ]
+      }
+    ];
+    dialogEl3 = null;
+  }
+});
+
 // src/renderer/views/titlebar.ts
 function basename2(p2) {
   return p2.split("/").pop() ?? p2;
@@ -69907,7 +73227,31 @@ function mountTitlebar(root, store2, api2) {
   const workspaceName = el("span", { class: "workspace-name" }, "No folder");
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
-  leftCluster.append(workspaceName, sshTarget, workspaceBranch);
+  const sidebarBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost titlebar-sidebar-btn",
+      "aria-label": "Toggle sidebar"
+    },
+    outlineIcon(
+      "sidebar",
+      ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z", "M9 4v16"],
+      "titlebar-btn-icon"
+    )
+  );
+  sidebarBtn.addEventListener("click", () => {
+    toggleProjectsPane(store2);
+  });
+  function syncSidebar() {
+    const open2 = store2.getState().projectsPaneOpen;
+    document.getElementById("body")?.classList.toggle(PROJECTS_COLLAPSED_CLASS, !open2);
+    sidebarBtn.setAttribute("aria-pressed", String(open2));
+    const chord = isMacPlatform() ? "\u2318B" : "Ctrl+B";
+    setTooltip(sidebarBtn, `${open2 ? "Hide" : "Show"} sidebar (${chord})`);
+  }
+  syncSidebar();
+  leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
   const dragRegion = el("div", { class: "titlebar-drag" });
   const panelControls = mountPanelModeControls(store2, api2, {
     alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"])
@@ -70015,6 +73359,7 @@ function mountTitlebar(root, store2, api2) {
   syncName();
   syncBranch();
   const unsubs = [
+    store2.on("projects_pane_changed", syncSidebar),
     store2.on("workspace_changed", () => {
       syncName();
       syncBranchNow();
@@ -70048,16 +73393,21 @@ function mountTitlebar(root, store2, api2) {
     });
   };
 }
+var PROJECTS_COLLAPSED_CLASS;
 var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
     init_helpers();
+    init_outline_icon();
     init_tooltip();
     init_open_in_editor();
     init_panel_mode_controls();
     init_active_thread_owner();
     init_titlebar_compact();
+    init_panels();
+    init_keyboard_shortcuts_dialog();
+    PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
   }
 });
 
@@ -70082,6 +73432,16 @@ var RENAME_BLUR_GRACE_MS;
 var init_rename_blur = __esm({
   "src/renderer/dom/rename-blur.ts"() {
     RENAME_BLUR_GRACE_MS = 200;
+  }
+});
+
+// src/renderer/dom/pr-status.ts
+function prHasMergeConflicts(pr2) {
+  const status = pr2.mergeStateStatus?.toUpperCase();
+  return pr2.mergeable === "CONFLICTING" || status === "DIRTY" || status === "CONFLICTING";
+}
+var init_pr_status = __esm({
+  "src/renderer/dom/pr-status.ts"() {
   }
 });
 
@@ -70485,6 +73845,51 @@ var init_thread_filter = __esm({
   }
 });
 
+// src/renderer/controller/thread-order.ts
+function orderSidebarThreads(threads, mode, reverse) {
+  const ordered = [...threads];
+  if (mode === "created") {
+    ordered.sort((a3, b4) => (b4.createdAt ?? 0) - (a3.createdAt ?? 0));
+  } else if (mode === "title") {
+    const name = (thread) => thread.title || "New Thread";
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function orderSidebarRows(rows, mode, reverse) {
+  const created = (row2) => row2.thread.createdAt ?? 0;
+  const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
+  const name = (row2) => row2.thread.title || "New Thread";
+  const ordered = [...rows];
+  if (mode === "created") {
+    ordered.sort((a3, b4) => created(b4) - created(a3));
+  } else if (mode === "title") {
+    ordered.sort((a3, b4) => name(a3).localeCompare(name(b4), void 0, { sensitivity: "base" }));
+  } else {
+    ordered.sort((a3, b4) => activity(b4) - activity(a3) || created(b4) - created(a3));
+  }
+  return reverse ? ordered.reverse() : ordered;
+}
+function groupRowsByStatus(rows, needsYou) {
+  const sectionOf = (row2) => needsYou(row2.thread.id) ? "needs-you" : row2.thread.status === "running" ? "working" : "recent";
+  return STATUS_SECTION_LABELS.map(([id, label]) => ({
+    id,
+    label,
+    rows: rows.filter((row2) => sectionOf(row2) === id)
+  })).filter((section) => section.rows.length > 0);
+}
+var STATUS_SECTION_LABELS;
+var init_thread_order = __esm({
+  "src/renderer/controller/thread-order.ts"() {
+    init_sidebar_thread();
+    STATUS_SECTION_LABELS = [
+      ["needs-you", "Needs you"],
+      ["working", "Working"],
+      ["recent", "Recent"]
+    ];
+  }
+});
+
 // src/renderer/controller/attention.ts
 function recompute() {
   const next = /* @__PURE__ */ new Set();
@@ -70510,6 +73915,29 @@ var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/dom/patch-children.ts
+function patchChildren(parent, desired) {
+  const wanted = new Set(desired);
+  let stale = parent.firstElementChild;
+  while (stale) {
+    const next = stale.nextElementSibling;
+    if (!wanted.has(stale)) stale.remove();
+    stale = next;
+  }
+  let cursor = parent.firstElementChild;
+  for (const node2 of desired) {
+    if (node2 === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(node2, cursor);
+  }
+}
+var init_patch_children = __esm({
+  "src/renderer/dom/patch-children.ts"() {
   }
 });
 
@@ -70566,6 +73994,7 @@ function deriveActivity(input2) {
     }))
   ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
   const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const scheduleOf = new Map(input2.threads.map((thread) => [thread.id, thread.schedule]));
   const threadRow = (thread, state, want, since) => ({
     key: `thread:${thread.id}`,
     state,
@@ -70605,17 +74034,57 @@ function deriveActivity(input2) {
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
   working.sort(newestFirst);
   recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const { folds: folded, rest: single } = foldScheduleRuns(recent, scheduleOf);
   const groups = [
     { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
     { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
     {
       id: "recent",
       label: GROUP_LABELS.recent,
-      rows: recent.slice(0, RECENT_ROW_LIMIT),
-      total: recent.length
+      rows: [...folded, ...single.slice(0, RECENT_ROW_LIMIT)],
+      total: folded.length + single.length
     }
   ];
   return groups;
+}
+function foldScheduleRuns(recent, scheduleOf) {
+  const buckets = /* @__PURE__ */ new Map();
+  const keyOf = (row2) => {
+    const schedule = row2.threadId === null ? void 0 : scheduleOf.get(row2.threadId);
+    if (!schedule || row2.projectId === null) return null;
+    return `${row2.state}:${row2.projectId}:${schedule.id}`;
+  };
+  for (const row2 of recent) {
+    const key = keyOf(row2);
+    if (key === null) continue;
+    buckets.set(key, [...buckets.get(key) ?? [], row2]);
+  }
+  const folds = [];
+  const folded = /* @__PURE__ */ new Set();
+  for (const [bucket, runs] of buckets) {
+    const first = runs[0];
+    if (!first || runs.length < SCHEDULE_FOLD_AT) continue;
+    const kind = first.state === "failed" ? "failed" : "finished";
+    const name = first.threadId === null ? void 0 : scheduleOf.get(first.threadId)?.name;
+    for (const run2 of runs) folded.add(run2);
+    folds.push({
+      key: `fold:${bucket}`,
+      state: first.state,
+      threadId: null,
+      threadTitle: name ?? first.threadTitle,
+      projectId: first.projectId,
+      projectName: first.projectName,
+      want: `${String(runs.length)} runs`,
+      detail: null,
+      requestId: null,
+      requestType: null,
+      approval: null,
+      since: first.since,
+      fold: { kind, runs }
+    });
+  }
+  folds.sort((a3, b4) => a3.state === b4.state ? 0 : a3.state === "failed" ? -1 : 1);
+  return { folds, rest: recent.filter((row2) => !folded.has(row2)) };
 }
 function collectActivityThreads(store2) {
   const { projects, backgroundThreads } = store2.getState();
@@ -70629,7 +74098,13 @@ function collectActivityThreads(store2) {
         status: thread.status,
         ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
         projectId: project2.id,
-        projectName
+        projectName,
+        ...thread.automation ? {
+          schedule: {
+            id: thread.automation.scheduleId,
+            name: thread.automation.scheduleName
+          }
+        } : {}
       });
     }
   }
@@ -70642,7 +74117,13 @@ function collectActivityThreads(store2) {
       status: carried.thread.status,
       ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
       projectId: project2.id,
-      projectName: projectDisplayName(project2)
+      projectName: projectDisplayName(project2),
+      ...carried.thread.automation ? {
+        schedule: {
+          id: carried.thread.automation.scheduleId,
+          name: carried.thread.automation.scheduleName
+        }
+      } : {}
     });
   }
   return [...out.values()];
@@ -70689,11 +74170,12 @@ function formatAgeLong(elapsedMs) {
   if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
   return unit(Math.floor(elapsedMs / DAY), "day");
 }
-var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var RECENT_ROW_LIMIT, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
     init_projects();
     RECENT_ROW_LIMIT = 10;
+    SCHEDULE_FOLD_AT = 2;
     WANT_MAX_CHARS = 140;
     UNTITLED_THREAD = "New thread";
     GROUP_LABELS = {
@@ -71258,11 +74740,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const now = deps.now ?? Date.now;
   const setTimer = deps.setTimer ?? defaultTimer2;
   const timings = trackRunTimings(store2, now);
-  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const summary = el("p", { id: `${host.idPrefix}-summary`, class: "activity-panel-summary" });
   const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
   const detail = el("section", {
     class: "activity-detail",
-    "aria-labelledby": "activity-detail-title"
+    "aria-labelledby": `${host.idPrefix}-detail-title`
   });
   const body = el("div", { class: "activity-panel-body" }, list, detail);
   const status = el("p", {
@@ -71270,6 +74752,22 @@ function createActivityView(api2, store2, sources3, deps, host) {
     role: "status",
     "aria-live": "polite"
   });
+  const rowCache = /* @__PURE__ */ new Map();
+  const groupCache = /* @__PURE__ */ new Map();
+  const quiet = el("p", { class: "activity-quiet" }, "Nothing needs you right now.");
+  const strip = el("div", {
+    class: "activity-strip",
+    role: "group",
+    "aria-label": "Projects"
+  });
+  const stripCache = /* @__PURE__ */ new Map();
+  const defaultCollapsed = () => new Set(host.collapsibleGroups ? ["working"] : []);
+  let collapsed = defaultCollapsed();
+  const seenNeedsYou = /* @__PURE__ */ new Set();
+  let projectFilter = null;
+  const expandedFolds = /* @__PURE__ */ new Set();
+  const foldRunKeys = /* @__PURE__ */ new Set();
+  let userChose = false;
   let renderScheduled = false;
   let cancelRender = null;
   let lastRenderAt = Number.NEGATIVE_INFINITY;
@@ -71277,6 +74775,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let needsYouSignature = null;
   let cancelSettle = null;
   let settling = false;
+  const drafts = /* @__PURE__ */ new Map();
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
@@ -71318,6 +74817,80 @@ function createActivityView(api2, store2, sources3, deps, host) {
     status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
     scheduleRender();
   }
+  function hasAnswer(requestId) {
+    return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
+  }
+  function sendAnswer(row2) {
+    const requestId = row2.requestId;
+    if (!requestId || settling || !hasAnswer(requestId)) return;
+    const asked = sources3.questions.pending().find((request) => request.id === requestId);
+    if (!asked) return;
+    const typed = drafts.get(requestId) ?? [];
+    for (const control of detail.querySelectorAll(
+      ".activity-answer, .activity-option, .activity-answer-input"
+    )) {
+      control.disabled = true;
+      control.dataset["answered"] = "true";
+    }
+    const sent = sources3.questions.answer(
+      requestId,
+      asked.questions.map((_3, index) => typed[index] ?? "")
+    );
+    if (sent) drafts.delete(requestId);
+    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    scheduleRender();
+  }
+  function answerField(requestId, row2, question, index, options) {
+    const questionId = `${host.idPrefix}-question-${String(index)}`;
+    const input2 = el("textarea", {
+      class: "activity-answer-input",
+      rows: "2",
+      placeholder: "Or type an answer\u2026",
+      "data-control": `answer-${String(index)}`,
+      "aria-labelledby": questionId
+    });
+    input2.value = drafts.get(requestId)?.[index] ?? "";
+    const sync = () => {
+      const next = [...drafts.get(requestId) ?? []];
+      next[index] = input2.value;
+      drafts.set(requestId, next);
+      const send = detail.querySelector(".activity-answer");
+      if (send) send.disabled = !hasAnswer(requestId);
+    };
+    input2.addEventListener("input", sync);
+    input2.addEventListener("keydown", (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+      event.stopPropagation();
+      if (event.isComposing || event.repeat) return;
+      event.preventDefault();
+      sendAnswer(row2);
+    });
+    const asked = el("div", {
+      id: questionId,
+      class: "activity-question streaming-markdown"
+    });
+    asked.innerHTML = renderMarkdown(question);
+    const field = el("div", { class: "activity-answer-field" }, asked);
+    if (options.length > 0) {
+      const choices = el("div", { class: "activity-options" });
+      for (const option of options) {
+        const choice = el("button", {
+          type: "button",
+          class: "ui-btn ui-btn-secondary activity-option"
+        });
+        setInlineMarkdown(choice, option);
+        choice.addEventListener("click", () => {
+          input2.value = choice.textContent;
+          sync();
+          input2.focus();
+        });
+        choices.append(choice);
+      }
+      field.append(choices);
+    }
+    field.append(input2);
+    return field;
+  }
   function button(className, control, label, onClick, ariaLabel) {
     const node2 = el(
       "button",
@@ -71338,6 +74911,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
       openThread(row2);
     });
+    if (host.openThreadArrow)
+      node2.append(arrowUpRightIcon("ui-icon ui-icon-sm activity-open-arrow"));
     node2.disabled = !canOpen(row2);
     return node2;
   }
@@ -71359,17 +74934,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     if (row2.state === "needs-answer") {
       const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
-      const questions = asked?.questions ?? [row2.want];
+      if (!asked || !row2.requestId) {
+        return [
+          el("p", { class: "activity-detail-text" }, row2.want),
+          el(
+            "p",
+            { class: "activity-detail-note" },
+            "Answer in the thread, where the question is waiting for you."
+          )
+        ];
+      }
+      const requestId = row2.requestId;
       return [
         el(
-          "ol",
-          { class: "activity-questions" },
-          ...questions.map((question) => el("li", {}, question))
-        ),
-        el(
-          "p",
-          { class: "activity-detail-note" },
-          "Answer in the thread, where the question is waiting for you."
+          "div",
+          { class: "activity-answer-form" },
+          ...asked.questions.map(
+            (question, index) => answerField(requestId, row2, question, index, asked.options[index] ?? [])
+          )
         )
       ];
     }
@@ -71382,10 +74964,11 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return [el("p", { class: "activity-detail-text" }, row2.want)];
   }
   function detailActions(row2) {
-    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    const actions = [openThreadButton(row2)];
+    const decide = [];
     if (row2.state === "needs-approval" && row2.approval) {
       const title = row2.approval.title;
-      actions.push(
+      decide.push(
         button(
           "ui-btn-secondary activity-reject",
           "reject",
@@ -71399,28 +74982,39 @@ function createActivityView(api2, store2, sources3, deps, host) {
       const approve = button(
         "ui-btn-primary activity-approve",
         "approve",
-        "Approve once",
+        "Approve",
         () => {
           answerApproval(row2, true);
         },
-        `Approve once: ${title} (${row2.threadTitle})`
+        `Approve: ${title} (${row2.threadTitle})`
       );
       approve.disabled = settling;
-      actions.push(approve);
-    } else if (row2.state === "needs-answer") {
-      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
-        if (row2.threadId === null) host.close();
-        else openThread(row2);
-      });
-      answer.disabled = row2.threadId !== null && !canOpen(row2);
-      actions.push(answer);
+      decide.push(approve);
+    } else if (row2.state === "needs-answer" && row2.requestId) {
+      const requestId = row2.requestId;
+      const answer = button(
+        "ui-btn-primary activity-answer",
+        "answer",
+        "Send answer",
+        () => {
+          sendAnswer(row2);
+        },
+        `Send answer: ${row2.want} (${row2.threadTitle})`
+      );
+      answer.dataset["requestId"] = requestId;
+      answer.disabled = settling || !hasAnswer(requestId);
+      decide.push(answer);
     }
+    if (decide.length > 0) actions.push(el("span", { class: "activity-decide" }, ...decide));
     return el("div", { class: "activity-detail-actions" }, ...actions);
   }
   function renderDetail(row2, at3) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      return;
+    }
+    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
       return;
     }
     detail.hidden = false;
@@ -71437,13 +75031,68 @@ function createActivityView(api2, store2, sources3, deps, host) {
           el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
           meta3
         ),
-        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+        el(
+          "h3",
+          { id: `${host.idPrefix}-detail-title`, class: "activity-detail-title" },
+          row2.threadTitle
+        )
       ),
       el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
       detailActions(row2)
     );
   }
+  function drawnRows(group) {
+    return group.rows.flatMap((row2) => {
+      if (!row2.fold || !expandedFolds.has(row2.key)) return [row2];
+      for (const run2 of row2.fold.runs) foldRunKeys.add(run2.key);
+      return [row2, ...row2.fold.runs];
+    });
+  }
+  function foldElement(row2, at3, fold) {
+    const open2 = expandedFolds.has(row2.key);
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    const toggle = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-row-open activity-fold-toggle",
+        "aria-expanded": open2 ? "true" : "false",
+        "aria-label": `${STATE_LONG[row2.state]}: ${row2.threadTitle}, ${row2.want}${row2.projectName ? `, ${row2.projectName}` : ""}`
+      },
+      clockIcon("ui-icon ui-icon-sm activity-glyph"),
+      el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
+      elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
+        "time",
+        { class: "activity-age", datetime: new Date(row2.since).toISOString() },
+        formatAge(elapsed)
+      ),
+      el(
+        "span",
+        { class: "activity-row-second" },
+        el("span", { class: "activity-state" }, fold.kind === "failed" ? "Failed" : "Done"),
+        el("span", { class: "activity-want-text" }, row2.want),
+        (open2 ? chevronDownIcon : chevronRightIcon)("ui-icon ui-icon-sm activity-fold-chevron")
+      ),
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
+    );
+    toggle.addEventListener("click", () => {
+      if (expandedFolds.has(row2.key)) expandedFolds.delete(row2.key);
+      else expandedFolds.add(row2.key);
+      renderNow();
+    });
+    return el(
+      "li",
+      {
+        class: "activity-row activity-fold",
+        "data-row-key": row2.key,
+        "data-state": row2.state,
+        "data-fold": fold.kind
+      },
+      toggle
+    );
+  }
   function rowElement(row2, at3) {
+    if (row2.fold) return foldElement(row2, at3, row2.fold);
     const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
     const selected = row2.key === selectedKey;
     const second = el(
@@ -71488,7 +75137,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     return el(
       "li",
       {
-        class: "activity-row",
+        class: foldRunKeys.has(row2.key) ? "activity-row activity-fold-run" : "activity-row",
         "data-row-key": row2.key,
         "data-state": row2.state,
         ...selected ? { "data-selected": "true" } : {},
@@ -71498,25 +75147,160 @@ function createActivityView(api2, store2, sources3, deps, host) {
       opener
     );
   }
+  function rowSignature(row2, at3) {
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    return JSON.stringify([
+      row2.state,
+      row2.threadId,
+      row2.requestId,
+      row2.requestType,
+      row2.threadTitle,
+      row2.projectName,
+      row2.want,
+      row2.detail,
+      row2.since,
+      row2.key === selectedKey,
+      elapsed === null ? null : formatAge(elapsed),
+      rowLabel(row2, at3),
+      row2.fold ? [row2.fold.kind, row2.fold.runs.length, expandedFolds.has(row2.key)] : null,
+      foldRunKeys.has(row2.key)
+    ]);
+  }
+  function cachedRow(row2, at3) {
+    const signature = rowSignature(row2, at3);
+    const hit = rowCache.get(row2.key);
+    if (hit?.signature === signature) return hit.node;
+    const node2 = rowElement(row2, at3);
+    rowCache.set(row2.key, { signature, node: node2 });
+    return node2;
+  }
+  function toggleGroup(id) {
+    if (collapsed.has(id)) collapsed.delete(id);
+    else collapsed.add(id);
+    renderNow();
+  }
   function groupElement(group, at3) {
-    const titleId = `activity-group-${group.id}`;
     const hidden = group.total - group.rows.length;
     const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
-    return el(
-      "section",
-      { class: "activity-group", "data-group": group.id },
-      el(
-        "h4",
-        { id: titleId, class: "activity-group-title" },
-        group.label,
-        el("span", { class: "activity-group-count" }, count)
-      ),
-      el(
-        "ul",
-        { class: "activity-rows", role: "list", "aria-labelledby": titleId },
-        ...group.rows.map((row2) => rowElement(row2, at3))
-      )
+    const folded = host.collapsibleGroups === true && collapsed.has(group.id);
+    let entry = groupCache.get(group.id);
+    if (!entry) {
+      const titleId = `${host.idPrefix}-group-${group.id}`;
+      const countNode = el("span", { class: "activity-group-count" }, count);
+      const rowsNode = el("ul", {
+        class: "activity-rows",
+        role: "list",
+        "aria-labelledby": titleId
+      });
+      let heading;
+      if (host.collapsibleGroups) {
+        const toggle = el(
+          "button",
+          {
+            type: "button",
+            class: "activity-group-toggle",
+            "data-group-toggle": group.id,
+            "aria-expanded": "true"
+          },
+          chevronDownIcon("ui-icon ui-icon-sm activity-group-chevron"),
+          el("span", { class: "activity-group-label" }, group.label),
+          countNode
+        );
+        toggle.addEventListener("click", () => {
+          toggleGroup(group.id);
+        });
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, toggle);
+      } else {
+        heading = el("h4", { id: titleId, class: "activity-group-title" }, group.label, countNode);
+      }
+      entry = {
+        section: el(
+          "section",
+          { class: "activity-group", "data-group": group.id },
+          heading,
+          rowsNode
+        ),
+        count: countNode,
+        rows: rowsNode
+      };
+      groupCache.set(group.id, entry);
+    }
+    if (entry.count.textContent !== count) entry.count.textContent = count;
+    if (host.collapsibleGroups) {
+      entry.count.hidden = !folded;
+      entry.section.dataset["collapsed"] = folded ? "true" : "false";
+      entry.section.querySelector(".activity-group-toggle")?.setAttribute("aria-expanded", folded ? "false" : "true");
+    }
+    entry.rows.hidden = folded;
+    patchChildren(entry.rows, folded ? [] : drawnRows(group).map((row2) => cachedRow(row2, at3)));
+    return entry.section;
+  }
+  function projectStats(groups) {
+    const stats = /* @__PURE__ */ new Map();
+    for (const group of groups) {
+      if (group.id === "recent") continue;
+      for (const row2 of group.rows) {
+        if (!row2.projectId) continue;
+        const entry = stats.get(row2.projectId) ?? {
+          name: row2.projectName ?? row2.projectId,
+          need: 0,
+          working: 0
+        };
+        if (group.id === "needs-you") entry.need += 1;
+        else entry.working += 1;
+        stats.set(row2.projectId, entry);
+      }
+    }
+    return stats;
+  }
+  function stripCard(id, name, need, working) {
+    const selected = projectFilter === id;
+    const signature = JSON.stringify([name, need, working, selected]);
+    const hit = stripCache.get(id);
+    if (hit?.signature === signature) return hit.node;
+    const stats = el("span", { class: "activity-strip-stats" });
+    stats.append(
+      need > 0 ? el("span", { class: "activity-strip-need" }, `${String(need)} need you`) : el("span", {}, "All clear")
     );
+    if (working > 0) {
+      stats.append(el("span", { class: "activity-strip-working" }, `${String(working)} working`));
+    }
+    const node2 = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-strip-card",
+        "data-project": id ?? "all",
+        "data-project-key": JSON.stringify(id),
+        "aria-pressed": selected ? "true" : "false"
+      },
+      el("span", { class: "activity-strip-name" }, name),
+      stats
+    );
+    node2.addEventListener("click", () => {
+      projectFilter = id;
+      renderNow();
+    });
+    stripCache.set(id, { signature, node: node2 });
+    return node2;
+  }
+  function renderStrip(groups) {
+    const stats = projectStats(groups);
+    if (projectFilter !== null && !stats.has(projectFilter)) {
+      const project2 = store2.getState().projects.find((entry) => entry.id === projectFilter);
+      if (project2) stats.set(project2.id, { name: project2.name, need: 0, working: 0 });
+    }
+    const need = groups.find((group) => group.id === "needs-you")?.total ?? 0;
+    const working = groups.find((group) => group.id === "working")?.total ?? 0;
+    const cards = [stripCard(null, "All projects", need, working)];
+    const shown = [...stats.entries()].filter(([id, entry]) => entry.need > 0 || id === projectFilter).sort((a3, b4) => b4[1].need - a3[1].need || a3[1].name.localeCompare(b4[1].name));
+    for (const [id, entry] of shown)
+      cards.push(stripCard(id, entry.name, entry.need, entry.working));
+    patchChildren(strip, cards);
+    const live = /* @__PURE__ */ new Set([null, ...shown.map(([id]) => id)]);
+    for (const id of stripCache.keys()) {
+      if (!live.has(id)) stripCache.delete(id);
+    }
   }
   function emptyState() {
     return el(
@@ -71531,7 +75315,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     );
   }
   function rowOpeners() {
-    return [...list.querySelectorAll(".activity-row-open")];
+    return [
+      ...list.querySelectorAll(".activity-row-open:not(.activity-fold-toggle)")
+    ];
   }
   function selectedOpener() {
     return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
@@ -71564,6 +75350,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function captureFocus() {
     const active2 = document.activeElement;
     if (!(active2 instanceof HTMLElement)) return null;
+    const toggled = active2.dataset["groupToggle"];
+    if (toggled !== void 0) return { area: "toggle", group: toggled };
+    const projectKey = active2.dataset["projectKey"];
+    if (projectKey !== void 0 && strip.contains(active2)) return { area: "strip", projectKey };
+    const foldKey = list.contains(active2) && active2.matches(".activity-fold-toggle") ? active2.closest(".activity-fold")?.dataset["rowKey"] : void 0;
+    if (foldKey !== void 0) return { area: "fold", key: foldKey };
     if (list.contains(active2)) return { area: "list" };
     if (detail.contains(active2)) {
       return {
@@ -71576,8 +75368,33 @@ function createActivityView(api2, store2, sources3, deps, host) {
   }
   function restoreFocus(spot) {
     if (!spot) return;
+    if (spot.area === "toggle") {
+      list.querySelector(`[data-group-toggle="${spot.group}"]`)?.focus({
+        preventScroll: true
+      });
+      return;
+    }
+    if (spot.area === "fold") {
+      const fold = [...list.querySelectorAll(".activity-fold")].find(
+        (node2) => node2.dataset["rowKey"] === spot.key
+      );
+      const toggle = fold?.querySelector(".activity-fold-toggle");
+      if (toggle) {
+        toggle.focus({ preventScroll: true });
+        return;
+      }
+    }
+    if (spot.area === "strip") {
+      const card = [...strip.querySelectorAll("[data-project-key]")].find(
+        (node2) => node2.dataset["projectKey"] === spot.projectKey
+      );
+      card?.focus({ preventScroll: true });
+      return;
+    }
     if (spot.area === "detail" && spot.key === selectedKey) {
-      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      const control = detail.querySelector(
+        `[data-control="${spot.control}"]`
+      );
       if (control && !control.disabled) {
         control.focus();
         return;
@@ -71590,14 +75407,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function armSettle() {
     cancelSettle?.();
     settling = true;
-    for (const approve of detail.querySelectorAll(".activity-approve")) {
-      approve.disabled = true;
+    for (const control of detail.querySelectorAll(
+      ".activity-approve, .activity-answer"
+    )) {
+      control.disabled = true;
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const approve of detail.querySelectorAll(".activity-approve")) {
-        if (!approve.dataset["answered"]) approve.disabled = false;
+      for (const control of detail.querySelectorAll(
+        ".activity-approve, .activity-answer"
+      )) {
+        if (control.dataset["answered"]) continue;
+        const requestId = control.dataset["requestId"];
+        control.disabled = requestId !== void 0 && !hasAnswer(requestId);
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -71606,28 +75429,64 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelRender = null;
     const at3 = now();
     lastRenderAt = at3;
+    foldRunKeys.clear();
     const focus = captureFocus();
     const previousListScrollTop = list.scrollTop;
     const listScrollAnchor = captureListScrollAnchor();
-    const groups = deriveActivity({
-      threads: collectActivityThreads(store2),
-      approvals: sources3.approvals.pending(),
-      questions: sources3.questions.pending(),
+    const allThreads = collectActivityThreads(store2);
+    const approvals = sources3.approvals.pending();
+    const questions = sources3.questions.pending();
+    const waiting = new Set(questions.map((request) => request.id));
+    for (const requestId of drafts.keys()) {
+      if (!waiting.has(requestId)) drafts.delete(requestId);
+    }
+    const everything = deriveActivity({
+      threads: allThreads,
+      approvals,
+      questions,
       runs: timings.runs
     });
+    let groups = everything;
+    if (projectFilter !== null) {
+      const inProject = allThreads.filter((thread) => thread.projectId === projectFilter);
+      const ids = new Set(inProject.map((thread) => thread.id));
+      groups = deriveActivity({
+        threads: inProject,
+        approvals: approvals.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        questions: questions.filter((req) => req.threadId !== void 0 && ids.has(req.threadId)),
+        runs: timings.runs
+      });
+    }
+    if (host.projectStrip) renderStrip(everything);
     const needsYou = groups.find((group) => group.id === "needs-you");
+    const currentNeeds = new Set(needsYou?.rows.map((row2) => row2.key));
+    for (const key of currentNeeds) {
+      if (!seenNeedsYou.has(key)) {
+        seenNeedsYou.add(key);
+        collapsed.delete("needs-you");
+      }
+    }
+    for (const key of seenNeedsYou) {
+      if (!currentNeeds.has(key)) seenNeedsYou.delete(key);
+    }
     const working = groups.find((group) => group.id === "working");
     const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
     const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
     needsYouSignature = signature;
-    const rows = groups.flatMap((group) => group.rows);
+    const shownGroups = groups.filter(
+      (group) => !(host.collapsibleGroups && collapsed.has(group.id))
+    );
+    const rows = shownGroups.flatMap((group) => drawnRows(group)).filter((row2) => !row2.fold);
+    const urgent = rows[0];
+    if (host.followUrgent && !userChose && urgent) selectedKey = urgent.key;
     let selected = rows.find((row2) => row2.key === selectedKey);
     if (!selected) {
       selected = rows[Math.min(selectedIndex, rows.length - 1)];
       selectedKey = selected?.key ?? null;
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0;
-    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+    const releases = selected?.state === "needs-approval" || selected?.state === "needs-answer";
+    if (listChanged || selectedKey !== shownKey && releases) {
       armSettle();
     }
     shownKey = selectedKey;
@@ -71635,9 +75494,14 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const workCount = working?.total ?? 0;
     summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
+    const populatedIds = new Set(populated.map((group) => group.id));
+    for (const [groupId, entry] of groupCache) {
+      if (!populatedIds.has(groupId)) entry.rows.replaceChildren();
+    }
     if (populated.length === 0) {
       list.hidden = true;
       list.replaceChildren();
+      rowCache.clear();
       body.dataset["empty"] = "true";
       detail.hidden = false;
       detail.replaceChildren(emptyState());
@@ -71647,18 +75511,22 @@ function createActivityView(api2, store2, sources3, deps, host) {
       list.hidden = false;
       delete body.dataset["empty"];
       const children = [];
-      if (!needsYou || needsYou.rows.length === 0) {
-        children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
-      }
+      if (!needsYou || needsYou.rows.length === 0) children.push(quiet);
       children.push(...populated.map((group) => groupElement(group, at3)));
-      list.replaceChildren(...children);
+      patchChildren(list, children);
+      const live = new Set(shownGroups.flatMap((group) => drawnRows(group)).map((row2) => row2.key));
+      for (const rowKey2 of rowCache.keys()) {
+        if (!live.has(rowKey2)) rowCache.delete(rowKey2);
+      }
       restoreListScrollAnchor(listScrollAnchor, previousListScrollTop);
       renderDetail(selected, at3);
     }
     host.onNeedsYou?.(needCount);
+    host.onIdle?.(everything.every((group) => group.rows.length === 0));
     restoreFocus(focus);
   }
   function select(rowKey2) {
+    userChose = true;
     if (rowKey2 !== selectedKey) {
       selectedKey = rowKey2;
       renderNow();
@@ -71734,24 +75602,38 @@ function createActivityView(api2, store2, sources3, deps, host) {
     selectedIndex = 0;
     shownKey = null;
     status.textContent = "";
+    for (const entry of groupCache.values()) entry.rows.replaceChildren();
+    rowCache.clear();
+    stripCache.clear();
+    collapsed = defaultCollapsed();
+    expandedFolds.clear();
+    seenNeedsYou.clear();
+    projectFilter = null;
+    userChose = false;
   }
-  function show2() {
+  function show2({ focusFirstRow = true } = {}) {
     needsYouSignature = null;
     selectedKey = null;
     selectedIndex = 0;
     shownKey = null;
+    userChose = false;
     render();
-    const first = selectedOpener();
-    if (first) first.focus();
-    else host.fallbackFocus();
+    if (focusFirstRow) {
+      const first = selectedOpener();
+      if (first) first.focus();
+      else host.fallbackFocus();
+    }
     tickAges();
   }
-  return { summary, body, status, show: show2, hide: hide3 };
+  return { summary, body, strip, status, show: show2, hide: hide3 };
 }
 var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, defaultTimer2;
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_dist();
+    init_inline_markdown();
+    init_patch_children();
     init_icons();
     init_projects();
     init_activity_model();
@@ -71810,6 +75692,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   );
   closeButton.addEventListener("click", close);
   const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-panel",
     close,
     isShown: isOpen,
     fallbackFocus: () => {
@@ -71861,6 +75744,311 @@ var init_activity_panel = __esm({
     init_dialog_shell();
     init_activity_view();
     openActive = null;
+  }
+});
+
+// src/renderer/views/thread-history-editor.ts
+function replaceThread(store2, projectId, thread) {
+  const state = store2.getState();
+  if (state.activeProjectId !== projectId) return;
+  if (!state.threads.some((candidate) => candidate.id === thread.id)) return;
+  store2.setState({
+    threads: state.threads.map(
+      (candidate) => candidate.id === thread.id ? { ...thread, messagesLoaded: true } : candidate
+    )
+  });
+  store2.emit("threads_changed");
+}
+function errorText(error62) {
+  return error62 instanceof Error ? error62.message : String(error62);
+}
+function openThreadHistoryEditor(store2, api2, options) {
+  document.querySelector("#thread-history-editor")?.close();
+  const overlay = createOverlayDialog({
+    id: "thread-history-editor",
+    className: "history-editor-overlay"
+  });
+  const title = el("h2", { class: "history-editor-title" }, "Edit thread history");
+  const subtitle = el(
+    "p",
+    { class: "history-editor-subtitle" },
+    "Revise what Copse and the model remember from this thread."
+  );
+  const close = el(
+    "button",
+    {
+      class: "ui-btn ui-btn-ghost history-editor-close",
+      type: "button",
+      "aria-label": "Close history editor"
+    },
+    closeIcon("ui-icon")
+  );
+  const body = el("div", { class: "history-editor-body" });
+  const footer = el("div", { class: "history-editor-footer" });
+  const shell3 = el(
+    "section",
+    { class: "history-editor-shell", "aria-labelledby": "history-editor-heading" },
+    el("header", { class: "history-editor-header" }, el("div", {}, title, subtitle), close),
+    body,
+    footer
+  );
+  title.id = "history-editor-heading";
+  overlay.dialog.append(shell3);
+  const closeEditor = () => {
+    overlay.close();
+  };
+  close.addEventListener("click", closeEditor);
+  overlay.dialog.addEventListener(
+    "close",
+    () => {
+      overlay.dialog.remove();
+    },
+    { once: true }
+  );
+  overlay.dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeEditor();
+  });
+  const renderLoading = () => {
+    clear(body);
+    clear(footer);
+    body.append(el("div", { class: "history-editor-loading" }, "Loading thread history\u2026"));
+  };
+  const renderEditor = (source) => {
+    let revision = source.revision;
+    const drafts = source.messages.map((message2) => ({ ...message2 }));
+    let saving = false;
+    const summary = el("span", { class: "history-editor-summary" });
+    const apply3 = el("button", { class: "ui-btn ui-btn-primary", type: "button" }, "Apply changes");
+    const cancel = el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Cancel");
+    const undo = el(
+      "button",
+      { class: "ui-btn ui-btn-secondary history-editor-undo", type: "button" },
+      "Undo last edit"
+    );
+    undo.hidden = !source.canUndo;
+    cancel.addEventListener("click", closeEditor);
+    const updateControls = () => {
+      const included = drafts.filter((message2) => message2.included).length;
+      const changed = drafts.some((message2, index) => {
+        const original = source.messages[index];
+        return original?.content !== message2.content || !message2.included;
+      });
+      const retainsUnrecoverableContext = drafts.some(
+        (message2) => message2.included && message2.reconstructionWarning !== void 0
+      );
+      summary.textContent = `${String(included)} of ${String(drafts.length)} messages kept`;
+      apply3.disabled = saving || !changed || included === 0 || retainsUnrecoverableContext;
+      undo.disabled = saving;
+      cancel.disabled = saving;
+    };
+    const list = el("div", { class: "history-editor-list" });
+    for (const draft of drafts) {
+      const included = el("input", {
+        class: "history-editor-include",
+        type: "checkbox",
+        "aria-label": `Include ${draft.role} message`
+      });
+      included.checked = draft.included;
+      const role = el(
+        "span",
+        { class: `history-editor-role history-editor-role-${draft.role}` },
+        draft.role === "user" ? "You" : draft.role === "assistant" ? "Copse" : "Error"
+      );
+      const textarea = el("textarea", {
+        class: "history-editor-message-input",
+        rows: String(Math.min(8, Math.max(2, draft.content.split("\n").length))),
+        spellcheck: "true",
+        "aria-label": `Edit ${draft.role} message`
+      });
+      textarea.value = draft.content;
+      const row2 = el(
+        "article",
+        {
+          class: "history-editor-message",
+          "data-message-id": draft.id
+        },
+        el(
+          "div",
+          { class: "history-editor-message-head" },
+          el("label", { class: "history-editor-toggle" }, included, role, "Include"),
+          ...draft.reconstructionWarning ? [
+            el(
+              "span",
+              { class: "history-editor-tool-note history-editor-message-warning" },
+              "Exclude this message to reconstruct safely"
+            )
+          ] : draft.hasToolCalls ? [
+            el(
+              "span",
+              { class: "history-editor-tool-note" },
+              "Tool activity stays with this message"
+            )
+          ] : []
+        ),
+        textarea
+      );
+      const syncIncluded = () => {
+        draft.included = included.checked;
+        textarea.disabled = !draft.included;
+        row2.classList.toggle("is-excluded", !draft.included);
+        updateControls();
+      };
+      included.addEventListener("change", syncIncluded);
+      textarea.addEventListener("input", () => {
+        draft.content = textarea.value;
+        updateControls();
+      });
+      syncIncluded();
+      list.append(row2);
+    }
+    clear(body);
+    if (source.blockedReason) {
+      body.append(
+        el(
+          "div",
+          { class: "history-editor-warning", role: "alert" },
+          el("strong", {}, "Some message context cannot be reconstructed."),
+          el("span", {}, `${source.blockedReason} Exclude the marked message to continue.`)
+        )
+      );
+    } else {
+      body.append(
+        el(
+          "div",
+          { class: "history-editor-notice" },
+          "Applying replaces this thread\u2019s visible transcript and future model context. Tool calls remain attached to included messages."
+        )
+      );
+    }
+    body.append(list);
+    clear(footer);
+    footer.append(summary, el("div", { class: "history-editor-actions" }, undo, cancel, apply3));
+    updateControls();
+    const applyChanges = async () => {
+      if (apply3.disabled) return;
+      saving = true;
+      apply3.textContent = "Applying\u2026";
+      updateControls();
+      try {
+        const result = await api2.threads.editHistory(options.projectId, options.threadId, {
+          expectedRevision: revision,
+          messages: drafts.map(({ id, content, included }) => ({ id, content, included }))
+        });
+        replaceThread(store2, options.projectId, result.thread);
+        revision = result.revision;
+        showToast("Thread history updated");
+        renderEditor({
+          revision: result.revision,
+          title: result.thread.title,
+          messages: result.thread.messages.map((message2) => ({
+            id: message2.id,
+            role: message2.role,
+            content: message2.content,
+            included: true,
+            hasToolCalls: message2.toolCalls.length > 0
+          })),
+          canUndo: result.canUndo
+        });
+      } catch (error62) {
+        saving = false;
+        apply3.textContent = "Apply changes";
+        updateControls();
+        showErrorToast("Could not update thread history", error62);
+      }
+    };
+    apply3.addEventListener("click", () => {
+      void applyChanges();
+    });
+    const undoChanges = async () => {
+      saving = true;
+      undo.textContent = "Undoing\u2026";
+      updateControls();
+      try {
+        const result = await api2.threads.undoHistoryEdit(
+          options.projectId,
+          options.threadId,
+          revision
+        );
+        replaceThread(store2, options.projectId, result.thread);
+        showToast("History edit undone");
+        renderEditor({
+          revision: result.revision,
+          title: result.thread.title,
+          messages: result.thread.messages.map((message2) => ({
+            id: message2.id,
+            role: message2.role,
+            content: message2.content,
+            included: true,
+            hasToolCalls: message2.toolCalls.length > 0
+          })),
+          canUndo: false
+        });
+      } catch (error62) {
+        saving = false;
+        undo.textContent = "Undo last edit";
+        updateControls();
+        showErrorToast("Could not undo history edit", errorText(error62));
+      }
+    };
+    undo.addEventListener("click", () => {
+      void undoChanges();
+    });
+    if (options.focusMessageId) {
+      requestAnimationFrame(() => {
+        const focused = list.querySelector(
+          `[data-message-id="${CSS.escape(options.focusMessageId ?? "")}"]`
+        );
+        focused?.classList.add("is-focused");
+        focused?.scrollIntoView({ block: "center" });
+        focused?.querySelector("textarea")?.focus();
+      });
+    }
+  };
+  renderLoading();
+  overlay.open();
+  void awaitPendingThreadPersistence().then(() => api2.threads.historySnapshot(options.projectId, options.threadId)).then(renderEditor).catch((error62) => {
+    clear(body);
+    clear(footer);
+    body.append(
+      el(
+        "div",
+        { class: "history-editor-load-error", role: "alert" },
+        "Could not load this thread\u2019s history.",
+        el("span", {}, errorText(error62))
+      )
+    );
+    footer.append(el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Close"));
+    footer.querySelector("button")?.addEventListener("click", closeEditor);
+  });
+}
+var init_thread_history_editor = __esm({
+  "src/renderer/views/thread-history-editor.ts"() {
+    init_helpers();
+    init_icons();
+    init_persistence();
+    init_dialog_shell();
+    init_toast();
+  }
+});
+
+// src/renderer/controller/automation-fold.ts
+function foldAutomationRuns(runs, needsYou) {
+  const pending = runs.filter((run2) => needsYou(run2.id));
+  const rest = runs.filter((run2) => !needsYou(run2.id));
+  const working = rest.filter((run2) => run2.status === "running");
+  const failed = rest.filter((run2) => run2.status === "error");
+  return [
+    ...pending.length > PENDING_COLLAPSE_ABOVE ? [{ kind: "pending", runs: pending }] : pending.map((run2) => ({ kind: "run", run: run2 })),
+    ...working.map((run2) => ({ kind: "run", run: run2 })),
+    ...failed.length >= FAILED_COLLATE_AT ? [{ kind: "failed", runs: failed }] : failed.map((run2) => ({ kind: "run", run: run2 }))
+  ];
+}
+var PENDING_COLLAPSE_ABOVE, FAILED_COLLATE_AT;
+var init_automation_fold = __esm({
+  "src/renderer/controller/automation-fold.ts"() {
+    PENDING_COLLAPSE_ABOVE = 3;
+    FAILED_COLLATE_AT = 2;
   }
 });
 
@@ -72387,7 +76575,7 @@ var init_projects_drag = __esm({
 
 // src/renderer/views/projects-pane.ts
 function attentionBell(label) {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", "chat-attention-bell");
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", "14");
@@ -72395,7 +76583,7 @@ function attentionBell(label) {
   svg2.setAttribute("role", "img");
   svg2.setAttribute("aria-label", label);
   svg2.setAttribute("data-tooltip", label);
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute("fill", "currentColor");
   path.setAttribute(
     "d",
@@ -72412,14 +76600,15 @@ function runningStatus(label) {
   svg2.removeAttribute("aria-hidden");
   return svg2;
 }
-function chatPrStatus(rollup, ciFailing) {
-  const label = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
-  const icon = (rollup.kind === "merged" ? gitMergeIcon : gitPullRequestIcon)("ui-icon ui-icon-sm");
+function chatPrStatus(rollup, ciFailing, conflicts) {
+  const statusLabel4 = ciFailing ? `${describeThreadPrStatus(rollup)}; checks are failing` : describeThreadPrStatus(rollup);
+  const label = conflicts ? `${statusLabel4}; merge conflicts` : statusLabel4;
+  const icon = rollup.kind === "merged" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts);
   icon.setAttribute("aria-hidden", "true");
   return el(
     "span",
     {
-      class: `chat-pr-status is-${rollup.kind}${ciFailing ? " has-ci-failure" : ""}`,
+      class: `chat-pr-status is-${rollup.kind}${conflicts ? " has-conflicts" : ciFailing ? " has-ci-failure" : ""}`,
       role: "img",
       "aria-label": label,
       "data-tooltip": label
@@ -72428,7 +76617,7 @@ function chatPrStatus(rollup, ciFailing) {
   );
 }
 function settingsIcon(className = "titlebar-btn-icon") {
-  const svg2 = document.createElementNS(SVG_NS3, "svg");
+  const svg2 = document.createElementNS(SVG_NS4, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "0 0 24 24");
   svg2.setAttribute("width", ICON_SIZE2);
@@ -72436,7 +76625,7 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "settings");
-  const path = document.createElementNS(SVG_NS3, "path");
+  const path = document.createElementNS(SVG_NS4, "path");
   path.setAttribute(
     "d",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
@@ -72484,22 +76673,12 @@ function automationMenuEntries(api2, target, openSetup) {
   ];
 }
 function mountProjectsPane(root, store2, api2) {
-  const title = el("span", {}, "Projects");
-  const searchToggle = el(
-    "button",
-    {
-      class: "projects-search-btn",
-      "aria-label": "Search threads",
-      "data-tooltip": "Search threads"
-    },
-    searchIcon("ui-icon ui-icon-sm")
-  );
   const addBtn = el(
     "button",
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New project or open a folder"
+      "data-tooltip": "New thread, new project or open a folder"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -72528,14 +76707,6 @@ function mountProjectsPane(root, store2, api2) {
     );
   };
   syncActivityButton();
-  const header = el(
-    "div",
-    { class: "pane-projects-header" },
-    title,
-    searchToggle,
-    activityBtn,
-    addBtn
-  );
   let threadFilter = "";
   let filteredProjectId = store2.getState().activeProjectId;
   let renderFrameQueued = false;
@@ -72550,29 +76721,47 @@ function mountProjectsPane(root, store2, api2) {
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter titles and requests\u2026",
+    placeholder: "Search\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
-  const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
+  const searchBox = el(
+    "label",
+    { class: "projects-search" },
+    searchIcon("ui-icon ui-icon-sm projects-search-icon"),
+    searchInput
+  );
+  const header = el("div", { class: "pane-projects-header" }, searchBox, activityBtn, addBtn);
   const closeThreadFilter = () => {
     contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
-    searchRow.hidden = true;
-    searchToggle.classList.remove("active");
   };
-  searchToggle.addEventListener("click", () => {
-    if (searchRow.hidden) {
-      searchRow.hidden = false;
-      searchToggle.classList.add("active");
-      searchInput.focus();
-    } else {
-      closeThreadFilter();
-      render();
-    }
-  });
+  let compactRows = false;
+  let projectFilterId = null;
+  const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
+  const projectFilterBtn = el(
+    "button",
+    { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
+    filterLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
+  const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
+  const sortBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-filter-btn projects-sort-btn",
+      "aria-haspopup": "menu",
+      "aria-label": "Group and sort threads"
+    },
+    sortDir,
+    sortLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
@@ -72597,14 +76786,129 @@ function mountProjectsPane(root, store2, api2) {
   });
   root.append(
     header,
-    searchRow,
+    filtersRow,
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
   let sshWorkspaceEnabled = false;
+  const SORT_LABELS = {
+    activity: "Activity order",
+    created: "Created",
+    title: "Thread name"
+  };
+  const GROUP_LABELS2 = {
+    project: "Project",
+    status: "Status",
+    none: "None"
+  };
+  const saveSort = (key, value) => {
+    void api2.settings.set(key, value).catch((err2) => {
+      showErrorToast("Could not save the thread order", err2);
+    });
+  };
+  function syncFilterControls() {
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === projectFilterId);
+    if (!chosen) projectFilterId = null;
+    const projectName = chosen ? projectDisplayName(chosen) : "All projects";
+    filterLabel.textContent = projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
+    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
+    sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
+  }
+  projectFilterBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(projectFilterBtn)) return;
+    const rect = projectFilterBtn.getBoundingClientRect();
+    const { projects } = store2.getState();
+    const counts = new Map(
+      projects.map((project2) => [project2.id, getSidebarThreads(store2, project2.id).length])
+    );
+    const total2 = [...counts.values()].reduce((sum, n2) => sum + n2, 0);
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { heading: "Show" },
+      {
+        label: "All projects",
+        detail: String(total2),
+        checked: projectFilterId === null,
+        onSelect: () => {
+          projectFilterId = null;
+          render();
+        }
+      },
+      ...projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        detail: String(counts.get(project2.id) ?? 0),
+        checked: project2.id === projectFilterId,
+        onSelect: () => {
+          projectFilterId = project2.id;
+          render();
+        }
+      }))
+    ]);
+  });
+  sortBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(sortBtn)) return;
+    const rect = sortBtn.getBoundingClientRect();
+    const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store2.getState();
+    showContextMenu(rect.right - 4, rect.bottom + 4, [
+      { heading: "Group by" },
+      ...GROUP_MENU_ORDER.map((mode) => ({
+        label: GROUP_LABELS2[mode],
+        checked: mode === sidebarThreadGroup,
+        onSelect: () => {
+          store2.setState({ sidebarThreadGroup: mode });
+          saveSort("sidebarThreadGroup", mode);
+          render();
+        }
+      })),
+      { heading: "Sort by" },
+      ...THREAD_SORT_MODES.map((mode) => ({
+        label: SORT_LABELS[mode],
+        checked: mode === sidebarThreadSort,
+        onSelect: () => {
+          store2.setState({ sidebarThreadSort: mode });
+          saveSort("sidebarThreadSort", mode);
+          render();
+        }
+      })),
+      { separator: true },
+      {
+        label: "Reverse order",
+        toggle: true,
+        checked: sidebarThreadSortReverse,
+        onSelect: () => {
+          store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
+          saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
+          render();
+        }
+      },
+      {
+        label: "Compact rows",
+        toggle: true,
+        checked: compactRows,
+        onSelect: () => {
+          compactRows = !compactRows;
+          list.classList.toggle("is-compact", compactRows);
+        }
+      }
+    ]);
+  });
   addBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(addBtn)) return;
     const rect = addBtn.getBoundingClientRect();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: "New thread",
+        onSelect: () => {
+          if (!store2.getState().workspaceRoot) {
+            void addProject(store2, api2);
+            return;
+          }
+          openNewThread(store2);
+        }
+      },
+      { separator: true },
       {
         label: "New project",
         onSelect: () => {
@@ -72656,6 +76960,7 @@ function mountProjectsPane(root, store2, api2) {
   let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
+  const expandedFailedSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
   let orphanScanGeneration = 0;
@@ -72696,9 +77001,51 @@ function mountProjectsPane(root, store2, api2) {
       showToast("Forked into a new thread.");
     });
   }
-  function archiveProjectThread(projectId, threadId) {
-    if (projectId !== store2.getState().activeProjectId) return;
-    archiveThread(store2, threadId);
+  const archivingThreads = /* @__PURE__ */ new Set();
+  async function archiveProjectThread(projectId, threadId) {
+    if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
+    archivingThreads.add(threadId);
+    try {
+      await flushProjectThreads(api2, projectId, store2.getState().threads);
+      if (projectId !== store2.getState().activeProjectId) return;
+      let result = await api2.threads.archive(projectId, threadId, null);
+      let refreshed = false;
+      while (result.status === "blocked-dirty") {
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const shown = result.paths.slice(0, 10);
+        const remaining = result.paths.length - shown.length;
+        const confirmed = await showConfirmDialog({
+          message: `Discard uncommitted files and archive \u201C${title}\u201D?`,
+          detail: [
+            ...refreshed ? ["Files changed while confirmation was open. Review the current files again."] : [],
+            "The worktree will be removed. These changes and local files will be permanently discarded:",
+            ...shown,
+            ...remaining > 0 ? [`\u2026and ${String(remaining)} more`] : [],
+            "The chat history and committed work on its branch will be kept."
+          ].join("\n"),
+          confirmLabel: "Discard and archive",
+          danger: true
+        });
+        if (!confirmed || projectId !== store2.getState().activeProjectId) return;
+        result = await api2.threads.archive(projectId, threadId, result.fingerprint);
+        refreshed = true;
+      }
+      if (result.status === "blocked-running") {
+        showToast("Stop the chat\u2019s agent, terminals and background processes before archiving.", {
+          variant: "error"
+        });
+        return;
+      }
+      if (projectId === store2.getState().activeProjectId) archiveThread(store2, threadId, result);
+      else {
+        archiveCachedSidebarThread(projectId, threadId, result.archivedAt);
+        render();
+      }
+    } catch (error62) {
+      showErrorToast("Could not archive chat", error62);
+    } finally {
+      archivingThreads.delete(threadId);
+    }
   }
   function cachedPrLifecycle(key) {
     return prLifecycleCache.get(key)?.state;
@@ -72722,9 +77069,11 @@ function mountProjectsPane(root, store2, api2) {
         if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
         const previous = prLifecycleCache.get(key);
-        lifecycleChanged = previous?.state !== state;
+        const conflicts = state === "open" && details !== null && prHasMergeConflicts(details);
+        lifecycleChanged = previous?.state !== state || previous.conflicts !== conflicts;
         prLifecycleCache.set(key, {
           state,
+          conflicts,
           ...state === "open" && previous?.checks ? { checks: previous.checks } : {},
           fetchedAt: Date.now()
         });
@@ -72741,6 +77090,7 @@ function mountProjectsPane(root, store2, api2) {
         const cached2 = prLifecycleCache.get(key);
         prLifecycleCache.set(key, {
           state: cached2?.state ?? "unknown",
+          ...cached2?.conflicts !== void 0 ? { conflicts: cached2.conflicts } : {},
           fetchedAt: Date.now()
         });
       }).finally(() => {
@@ -72754,6 +77104,12 @@ function mountProjectsPane(root, store2, api2) {
     return sidebarPrRefs(thread).some((ref) => {
       const entry = prLifecycleCache.get(githubPrKey(ref));
       return entry?.state === "open" && entry.checks === "failure";
+    });
+  }
+  function conflictsForThread(thread) {
+    return sidebarPrRefs(thread).some((ref) => {
+      const entry = prLifecycleCache.get(githubPrKey(ref));
+      return entry?.state === "open" && entry.conflicts === true;
     });
   }
   function rollupForThread(thread) {
@@ -72794,7 +77150,7 @@ function mountProjectsPane(root, store2, api2) {
   function orphanSubtitle(orphan) {
     const count = orphan.threadCount;
     const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
-    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0);
     if (extra.length === 0) return countLabel;
     const shown = extra.slice(0, 2).join(" \xB7 ");
     const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
@@ -72807,8 +77163,8 @@ function mountProjectsPane(root, store2, api2) {
     if (orphan.sampleTitles.length > 0) {
       lines.push("");
       lines.push("Threads in this store:");
-      for (const title2 of orphan.sampleTitles) {
-        lines.push(`\u2022 ${title2}`);
+      for (const title of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title}`);
       }
       if (orphan.threadCount > orphan.sampleTitles.length) {
         lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
@@ -73146,7 +77502,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
+    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
@@ -73160,7 +77518,7 @@ function mountProjectsPane(root, store2, api2) {
       const allowRename = (options.allowRename ?? true) && canMutate;
       const scheduleId = thread.automation?.scheduleId;
       const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
-      let title2;
+      let title;
       if (renameState) {
         const input2 = el("input", {
           type: "text",
@@ -73190,11 +77548,11 @@ function mountProjectsPane(root, store2, api2) {
             e3.stopPropagation();
           });
         }
-        title2 = input2;
+        title = input2;
       } else {
-        title2 = el("span", { class: "chat-title" }, displayTitle);
+        title = el("span", { class: "chat-title" }, displayTitle);
         if (allowRename) {
-          title2.addEventListener("dblclick", (e3) => {
+          title.addEventListener("dblclick", (e3) => {
             e3.stopPropagation();
             beginThreadRename(thread.id, displayTitle);
           });
@@ -73206,7 +77564,7 @@ function mountProjectsPane(root, store2, api2) {
           class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
           "data-thread-id": thread.id
         },
-        title2
+        title
       );
       chatRow.addEventListener("click", () => {
         if (renaming?.threadId === thread.id) return;
@@ -73226,13 +77584,30 @@ function mountProjectsPane(root, store2, api2) {
             {
               label: "Fork",
               onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
+                showContextMenu(x2, y2, [
+                  { heading: "Fork" },
+                  {
+                    label: "Fork a copy",
+                    onSelect: () => {
+                      forkProjectThread(project2.id, thread.id);
+                    }
+                  },
+                  {
+                    label: "Edit thread history\u2026",
+                    onSelect: () => {
+                      openThreadHistoryEditor(store2, api2, {
+                        projectId: project2.id,
+                        threadId: thread.id
+                      });
+                    }
+                  }
+                ]);
               }
             },
             {
               label: "Archive",
               onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
+                void archiveProjectThread(project2.id, thread.id);
               }
             }
           ] : [],
@@ -73282,7 +77657,7 @@ function mountProjectsPane(root, store2, api2) {
       });
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
-        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+        chatRow.insertBefore(runningStatus("Agent is working"), title);
       } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
@@ -73291,7 +77666,7 @@ function mountProjectsPane(root, store2, api2) {
             role: "img",
             "aria-label": "Unread agent completion"
           }),
-          title2
+          title
         );
       }
       if (isThreadAwaitingAttention(thread.id)) {
@@ -73302,7 +77677,11 @@ function mountProjectsPane(root, store2, api2) {
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
         chatRow.append(
-          chatPrStatus(prRollup, prRollup.kind === "open" && ciFailingForThread(thread))
+          chatPrStatus(
+            prRollup,
+            prRollup.kind === "open" && ciFailingForThread(thread),
+            prRollup.kind === "open" && conflictsForThread(thread)
+          )
         );
       }
       if (thread.prRefs === void 0) {
@@ -73427,11 +77806,9 @@ function mountProjectsPane(root, store2, api2) {
           }
           const scheduleKey = `${project2.id}\0${scheduleId}`;
           const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
-          const attentionScheduleRuns = runs.filter(
-            (thread) => isThreadAwaitingAttention(thread.id)
-          );
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
+          const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
           const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
           const scheduleGroup = el("div", {
             class: "automation-schedule-group",
@@ -73499,20 +77876,63 @@ function mountProjectsPane(root, store2, api2) {
           });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
-            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
-            for (const thread of visibleRuns) {
+            const runRow2 = (thread) => {
               const index = runs.indexOf(thread);
               const timestamp = thread.automation?.triggeredAt;
               const when = timestamp ? new Date(timestamp).toLocaleString([], {
                 dateStyle: "medium",
                 timeStyle: "short"
               }) : "Unknown time";
-              runRows.append(
-                renderThreadRow(project2, thread, {
-                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                  allowRename: false
-                })
-              );
+              return renderThreadRow(project2, thread, {
+                displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                allowRename: false
+              });
+            };
+            if (showingAllRuns) {
+              for (const thread of runs) runRows.append(runRow2(thread));
+            } else {
+              for (const entry of foldEntries) {
+                if (entry.kind === "run") {
+                  runRows.append(runRow2(entry.run));
+                } else if (entry.kind === "pending") {
+                  const row2 = el(
+                    "button",
+                    { type: "button", class: "automation-fold-row needs-attention" },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} need you`
+                    ),
+                    el("span", { class: "chat-thread-owner" }, "Open in Activity")
+                  );
+                  row2.addEventListener("click", () => {
+                    openActivityPanel();
+                  });
+                  runRows.append(row2);
+                } else {
+                  const open2 = expandedFailedSchedules.has(scheduleKey);
+                  const row2 = el(
+                    "button",
+                    {
+                      type: "button",
+                      class: "automation-fold-row is-failed",
+                      "aria-expanded": open2 ? "true" : "false"
+                    },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} failed`
+                    )
+                  );
+                  row2.addEventListener("click", () => {
+                    if (open2) expandedFailedSchedules.delete(scheduleKey);
+                    else expandedFailedSchedules.add(scheduleKey);
+                    render();
+                  });
+                  runRows.append(row2);
+                  if (open2) for (const thread of entry.runs) runRows.append(runRow2(thread));
+                }
+              }
             }
             scheduleGroup.append(runRows);
           }
@@ -73684,8 +78104,11 @@ function mountProjectsPane(root, store2, api2) {
       const matchingThreads = isFiltering ? sidebarThreads.filter(
         (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
-      const conversationThreads = matchingThreads.filter(
-        (thread) => thread.automation === void 0
+      const conversationThreads = orderSidebarThreads(
+        matchingThreads.filter((thread) => thread.automation === void 0),
+        // A filter's matches stay newest first; the chosen order is for the browse list.
+        isFiltering ? "activity" : store2.getState().sidebarThreadSort,
+        !isFiltering && store2.getState().sidebarThreadSortReverse
       );
       const visibleLimit = visibleThreadCounts.get(project2.id) ?? SIDEBAR_THREADS_PAGE_SIZE;
       const activeId = project2.id === activeProjectId ? activeThreadId : null;
@@ -73764,9 +78187,73 @@ function mountProjectsPane(root, store2, api2) {
     }
     const automationsSection = renderAutomationsSection();
     if (automationsSection) list.append(automationsSection);
-    for (const node2 of buildProjectTree(projects, projectGroups)) {
-      if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
-      else list.append(renderProjectEntry(node2.project));
+    function renderThreadSections(mode) {
+      const owners = /* @__PURE__ */ new Map();
+      const rows = [];
+      for (const project2 of visibleProjects) {
+        if (project2.missing) continue;
+        owners.set(project2.id, project2);
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          if (thread.automation === void 0) rows.push({ projectId: project2.id, thread });
+        }
+      }
+      const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
+      const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
+      if (ordered.length === 0) {
+        return [el("div", { class: "sidebar-empty" }, "No threads yet")];
+      }
+      return sections.map((section) => {
+        const block = el("div", { class: "thread-section", "data-section-id": section.id });
+        if (section.label) {
+          block.append(el("div", { class: "thread-section-heading" }, section.label));
+        }
+        const byThread = new Map(section.rows.map((row2) => [row2.thread, row2]));
+        const countKey = `section:${mode}:${section.id}`;
+        const limit = visibleThreadCounts.get(countKey) ?? SIDEBAR_THREADS_PAGE_SIZE;
+        const activeRow = section.rows.find(
+          (row2) => row2.projectId === activeProjectId && row2.thread.id === activeThreadId
+        );
+        const paged = paginateSidebarThreads(
+          section.rows.map((row2) => row2.thread),
+          limit,
+          activeRow?.thread.id
+        );
+        if (paged.visibleCount > limit) visibleThreadCounts.set(countKey, paged.visibleCount);
+        const chats = el("div", { class: "chats-list" });
+        for (const thread of paged.visibleThreads) {
+          const project2 = owners.get(byThread.get(thread)?.projectId ?? "");
+          if (!project2) continue;
+          const row2 = renderThreadRow(project2, thread);
+          row2.querySelector(".chat-title")?.after(el("span", { class: "chat-thread-owner" }, `\xB7 ${projectDisplayName(project2)}`));
+          chats.append(row2);
+        }
+        if (paged.hasMore) {
+          const showMoreBtn = el(
+            "button",
+            { type: "button", class: "chats-show-more" },
+            "Show more"
+          );
+          showMoreBtn.addEventListener("click", () => {
+            visibleThreadCounts.set(countKey, paged.visibleCount + SIDEBAR_THREADS_PAGE_SIZE);
+            render();
+          });
+          chats.append(showMoreBtn);
+        }
+        block.append(chats);
+        return block;
+      });
+    }
+    const groupMode = store2.getState().sidebarThreadGroup;
+    if (groupMode !== "project" && threadFilter.length === 0) {
+      list.append(...renderThreadSections(groupMode));
+    } else {
+      for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
+        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+          continue;
+        if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
+        else list.append(renderProjectEntry(node2.project));
+      }
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
     prBackfillRowsByKey = new Map(
@@ -73875,13 +78362,14 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3;
+var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
     init_helpers();
     init_context_menu();
     init_rename_blur();
+    init_pr_status();
     init_icons();
     init_thread_helpers();
     init_github_pr_url2();
@@ -73895,17 +78383,23 @@ var init_projects_pane = __esm({
     init_fork_thread3();
     init_thread_filter();
     init_thread_sort();
+    init_thread_order();
+    init_state();
     init_sidebar_thread();
     init_attention();
     init_activity_panel();
+    init_thread_history_editor();
+    init_automation_fold();
     init_ssh_workspace_ui();
     init_thread_naming();
+    init_persistence();
     init_project_tree();
     init_project_groups();
     init_projects_drag();
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
-    SVG_NS3 = "http://www.w3.org/2000/svg";
+    SVG_NS4 = "http://www.w3.org/2000/svg";
+    GROUP_MENU_ORDER = ["status", "project", "none"];
   }
 });
 
@@ -73935,13 +78429,13 @@ function seededDrawing(seed) {
     const first = pts[0];
     if (!first) return "";
     const n2 = pts.length;
-    let d3 = `M${f(first[0])} ${f(first[1])}`;
+    let d3 = `M${f2(first[0])} ${f2(first[1])}`;
     for (let i2 = 0; i2 < n2; i2++) {
       const p0 = pts[(i2 - 1 + n2) % n2] ?? first;
       const p1 = pts[i2] ?? first;
       const p2 = pts[(i2 + 1) % n2] ?? first;
       const p3 = pts[(i2 + 2) % n2] ?? first;
-      d3 += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+      d3 += `C${f2(p1[0] + (p2[0] - p0[0]) / 6)} ${f2(p1[1] + (p2[1] - p0[1]) / 6)} ${f2(p2[0] - (p3[0] - p1[0]) / 6)} ${f2(p2[1] - (p3[1] - p1[1]) / 6)} ${f2(p2[0])} ${f2(p2[1])}`;
     }
     return d3 + "Z";
   };
@@ -74015,9 +78509,9 @@ function risoIconSVG(seed, moving = false) {
           <path d="${main.d}"/>
         </clipPath>
 
-        <pattern id="${id}-dots" width="${f(dotPitch)}" height="${f(dotPitch)}"
-                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f(screenAngle)})">
-          <circle cx="${f(dotPitch / 2)}" cy="${f(dotPitch / 2)}" r="${f(dotRadius)}"
+        <pattern id="${id}-dots" width="${f2(dotPitch)}" height="${f2(dotPitch)}"
+                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(screenAngle)})">
+          <circle cx="${f2(dotPitch / 2)}" cy="${f2(dotPitch / 2)}" r="${f2(dotRadius)}"
                   fill="${pal.ink}" opacity=".55"/>
         </pattern>
 
@@ -74031,7 +78525,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Offset shadow in the third ink -->
       <path d="${main.d}" fill="${shadow}"
-            transform="translate(${f(shadowX)} ${f(shadowY)})"
+            transform="translate(${f2(shadowX)} ${f2(shadowY)})"
             style="mix-blend-mode:multiply"/>
 
       <g clip-path="url(#${id}-clip)">
@@ -74043,7 +78537,7 @@ function risoIconSVG(seed, moving = false) {
 
       <!-- Outline printed slightly off register -->
       <path d="${main.d}" fill="none" stroke="${pal.ink}" stroke-width="5"
-            stroke-linejoin="round" transform="translate(${f(outlineX)} ${f(outlineY)})"/>
+            stroke-linejoin="round" transform="translate(${f2(outlineX)} ${f2(outlineY)})"/>
 
       <!-- Paper grain over everything -->
       <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
@@ -74077,9 +78571,9 @@ function duotoneIconSVG(seed, moving = false) {
     <defs>
       ${moving ? inkMotion([overprint, stripes]) : ""}
       <clipPath id="${id}-clip"><path d="${main.d}"/></clipPath>
-      <pattern id="${id}-lines" width="${f(linePitch)}" height="${f(linePitch)}"
-               patternUnits="userSpaceOnUse" patternTransform="rotate(${f(lineAngle)})">
-        <rect width="${f(linePitch)}" height="${f(linePitch * 0.42)}" fill="${secondInk}"/>
+      <pattern id="${id}-lines" width="${f2(linePitch)}" height="${f2(linePitch)}"
+               patternUnits="userSpaceOnUse" patternTransform="rotate(${f2(lineAngle)})">
+        <rect width="${f2(linePitch)}" height="${f2(linePitch * 0.42)}" fill="${secondInk}"/>
       </pattern>
       <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
         <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
@@ -74095,7 +78589,7 @@ function duotoneIconSVG(seed, moving = false) {
     <!-- Second ink, slightly off register; multiply makes the overlap colour -->
     <g clip-path="url(#${id}-clip)" style="mix-blend-mode:multiply">
       <path class="ink-0" d="${overprint.d}" fill="${secondInk}" opacity=".85"
-            transform="translate(${f(registerX)} ${f(registerY)})"/>
+            transform="translate(${f2(registerX)} ${f2(registerY)})"/>
     </g>
 
     <!-- Striped patch in the second ink -->
@@ -74177,7 +78671,7 @@ function createAgentAvatarMotion() {
     }
   };
 }
-var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f, sources, imageSources, MAX_CACHED_AVATARS;
+var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f2, sources, imageSources, MAX_CACHED_AVATARS;
 var init_agent_avatar = __esm({
   "src/renderer/dom/agent-avatar.ts"() {
     init_helpers();
@@ -74198,7 +78692,7 @@ var init_agent_avatar = __esm({
       ["#765BA7", "#FFE800"]
     ];
     DUOTONE_PAPER = "#F7F4EE";
-    f = (n2) => n2.toFixed(1);
+    f2 = (n2) => n2.toFixed(1);
     sources = /* @__PURE__ */ new Map();
     imageSources = /* @__PURE__ */ new WeakMap();
     MAX_CACHED_AVATARS = 128;
@@ -74246,23 +78740,23 @@ var init_chat_agent_identity = __esm({
 
 // src/renderer/dom/reasoning-activity-icon.ts
 function reasoningActivityIcon(className) {
-  const svg2 = document.createElementNS(SVG_NS4, "svg");
+  const svg2 = document.createElementNS(SVG_NS5, "svg");
   svg2.setAttribute("class", className);
   svg2.setAttribute("viewBox", "-540 -540 1080 1080");
   svg2.setAttribute("aria-hidden", "true");
   svg2.setAttribute("focusable", "false");
   svg2.setAttribute("data-icon", "reasoning-activity");
-  const path = document.createElementNS(SVG_NS4, "path");
+  const path = document.createElementNS(SVG_NS5, "path");
   path.setAttribute("class", "reasoning-activity-path");
   path.setAttribute("d", SPIRAL_PATH);
   path.setAttribute("pathLength", "1");
   svg2.append(path);
   return svg2;
 }
-var SVG_NS4, SPIRAL_PATH;
+var SVG_NS5, SPIRAL_PATH;
 var init_reasoning_activity_icon = __esm({
   "src/renderer/dom/reasoning-activity-icon.ts"() {
-    SVG_NS4 = "http://www.w3.org/2000/svg";
+    SVG_NS5 = "http://www.w3.org/2000/svg";
     SPIRAL_PATH = "M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093";
   }
 });
@@ -74576,7 +79070,7 @@ var init_preview_csp = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/domain.js
 function shareSameDomainSuffix(hostname3, vhost) {
   if (hostname3.endsWith(vhost)) {
     return hostname3.length === vhost.length || hostname3[hostname3.length - vhost.length - 1] === ".";
@@ -74618,20 +79112,20 @@ function getDomain(suffix, hostname3, options) {
   );
 }
 var init_domain = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/domain.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js
 function getDomainWithoutSuffix(domain2, suffix) {
   return domain2.slice(0, -suffix.length - 1);
 }
 var init_domain_without_suffix = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/domain-without-suffix.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/extract-hostname.js
 function isValidHostnameChar(code) {
   return code >= 97 && code <= 122 || // a-z
   code >= 48 && code <= 57 || // 0-9
@@ -74820,8 +79314,12 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
     let vLastCode = -1;
     if (validate2 && start < end) {
       const c0 = url2.charCodeAt(start);
-      if (!/*@__INLINE__*/
-      (isValidHostnameChar(c0) || c0 === 46 || c0 === 95) || c0 === 45) {
+      if (
+        // Keep these parens: they scope /*@__INLINE__*/ for terser.
+        // prettier-ignore
+        !/*@__INLINE__*/
+        (isValidHostnameChar(c0) || c0 === 46 || c0 === 95) || c0 === 45
+      ) {
         vValid = false;
       }
     }
@@ -74905,13 +79403,13 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
 }
 var CONTROL_CHARS2, extractedHostnameValidated;
 var init_extract_hostname = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
     CONTROL_CHARS2 = /[\t\n\r]/g;
     extractedHostnameValidated = false;
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-ip.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-ip.js
 function isProbablyIpv4(hostname3) {
   if (hostname3.length < 7) {
     return false;
@@ -74959,11 +79457,11 @@ function isIp(hostname3) {
   return isProbablyIpv6(hostname3) || isProbablyIpv4(hostname3);
 }
 var init_is_ip = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-ip.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-ip.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-special-use.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-special-use.js
 function isSpecialUse(hostname3) {
   for (const name of SPECIAL_USE_DOMAINS) {
     if (hostname3.endsWith(name) && (hostname3.length === name.length || hostname3.charCodeAt(hostname3.length - name.length - 1) === 46)) {
@@ -74974,7 +79472,7 @@ function isSpecialUse(hostname3) {
 }
 var SPECIAL_USE_DOMAINS;
 var init_is_special_use = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-special-use.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-special-use.js"() {
     SPECIAL_USE_DOMAINS = [
       "test",
       // RFC 6761
@@ -75012,7 +79510,7 @@ var init_is_special_use = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-valid.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-valid.js
 function isValidAscii(code) {
   return code >= 97 && code <= 122 || code >= 48 && code <= 57 || code > 127;
 }
@@ -75049,6 +79547,8 @@ function is_valid_default(hostname3) {
       lastDotIndex = i2;
     } else if (
       // A forbidden character in the label...
+      // Keep these parens: they scope /*@__INLINE__*/ for terser.
+      // prettier-ignore
       !/*@__INLINE__*/
       (isValidAscii(code) || code === 45 || code === 95) || // ...or a '-' starting a label (the byte right after a '.'). A label must
       // not begin with a hyphen (RFC 1034 §3.5 / RFC 1035 §2.3.1 LDH, as amended
@@ -75069,11 +79569,11 @@ function is_valid_default(hostname3) {
   );
 }
 var init_is_valid = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/is-valid.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/is-valid.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/options.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/options.js
 function setDefaultsImpl({ allowIcannDomains = true, allowPrivateDomains = false, detectIp = true, detectSpecialUse = false, extractHostname: extractHostname2 = true, mixedInputs = true, validHosts = null, validateHostname = true }) {
   return {
     allowIcannDomains,
@@ -75097,13 +79597,13 @@ function setDefaults(options) {
 }
 var DEFAULT_OPTIONS;
 var init_options = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/options.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/options.js"() {
     DEFAULT_OPTIONS = /*@__INLINE__*/
     setDefaultsImpl({});
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/subdomain.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/subdomain.js
 function getSubdomain(hostname3, domain2) {
   if (domain2.length === hostname3.length) {
     return "";
@@ -75111,11 +79611,11 @@ function getSubdomain(hostname3, domain2) {
   return hostname3.slice(0, -domain2.length - 1);
 }
 var init_subdomain = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/subdomain.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/subdomain.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/factory.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/factory.js
 function getEmptyResult() {
   return {
     domain: null,
@@ -75182,7 +79682,7 @@ function parseImpl(url2, step, suffixLookup2, partialOptions, result) {
   return result;
 }
 var init_factory = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/factory.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/factory.js"() {
     init_domain();
     init_domain_without_suffix();
     init_extract_hostname();
@@ -75194,7 +79694,7 @@ var init_factory = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js
 function fast_path_default(hostname3, options, out) {
   if (!options.allowPrivateDomains && hostname3.length > 3) {
     const last = hostname3.length - 1;
@@ -75237,34 +79737,34 @@ function fast_path_default(hostname3, options, out) {
   return false;
 }
 var init_fast_path = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/src/lookup/fast-path.js"() {
   }
 });
 
-// node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/index.js
+// node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/index.js
 var init_es6 = __esm({
-  "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/index.js"() {
+  "node_modules/.pnpm/tldts-core@7.4.16/node_modules/tldts-core/dist/es6/index.js"() {
     init_factory();
     init_fast_path();
     init_options();
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/data/trie.js
+// node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/src/data/trie.js
 var nodeFlags, edgeStart, edgeLength, edgeChild, labelText, rulesRoot, exceptionsRoot;
 var init_trie = __esm({
-  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/data/trie.js"() {
-    nodeFlags = /* @__PURE__ */ new Uint8Array([1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 0, 2, 2, 0, 2, 0, 0, 1, 0, 0, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 2, 2, 0, 0, 0, 2, 0, 1, 1, 0, 2, 0, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 2, 2, 0, 2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
-    edgeStart = /* @__PURE__ */ new Uint16Array([0, 0, 0, 10, 11, 18, 106, 111, 117, 124, 130, 136, 145, 146, 147, 148, 149, 150, 151, 153, 154, 155, 157, 159, 226, 239, 241, 242, 243, 258, 265, 266, 269, 270, 271, 274, 276, 295, 296, 298, 307, 312, 329, 330, 333, 335, 336, 338, 372, 373, 375, 378, 379, 383, 385, 389, 392, 424, 427, 440, 441, 449, 450, 452, 462, 476, 477, 478, 487, 488, 525, 530, 546, 566, 572, 614, 615, 642, 669, 670, 818, 824, 827, 828, 829, 834, 839, 848, 870, 871, 872, 873, 874, 875, 876, 894, 896, 897, 900, 902, 903, 905, 907, 922, 937, 942, 943, 945, 946, 947, 948, 949, 951, 954, 959, 960, 961, 963, 964, 967, 970, 971, 972, 985, 987, 999, 1010, 1018, 1020, 1061, 1064, 1068, 1069, 1071, 1074, 1085, 1087, 1097, 1099, 1105, 1107, 1108, 1110, 1113, 1114, 1115, 1168, 1170, 1172, 1192, 1193, 1194, 1195, 1197, 1208, 1239, 1250, 1262, 1271, 1278, 1283, 1296, 1307, 1320, 1321, 1332, 1366, 1367, 1368, 1383, 1398, 1470, 1471, 1473, 1474, 1508, 1509, 1510, 1511, 1514, 1518, 1520, 1549, 1550, 1558, 1559, 1560, 1562, 1564, 1565, 1567, 1568, 1569, 1580, 1581, 1582, 1583, 1584, 1585, 1586, 1587, 1588, 1589, 1590, 1591, 1592, 1593, 1595, 1596, 1597, 2051, 2054, 2055, 2057, 2064, 2071, 2081, 2085, 2096, 2097, 2098, 2110, 2111, 2113, 2115, 2116, 2123, 2124, 2126, 2127, 2129, 2130, 2131, 2132, 2133, 2207, 2209, 2230, 2231, 2232, 2234, 2260, 2261, 2312, 2313, 2315, 2322, 2328, 2338, 2348, 2401, 2402, 2403, 2413, 2427, 2428, 2431, 2438, 2439, 2447, 2448, 2449, 2450, 2451, 2462, 2463, 2464, 2466, 2467, 2468, 2477, 2489, 2495, 2527, 2531, 2533, 2534, 2536, 2537, 2548, 2549, 2551, 2559, 2566, 2572, 2577, 2578, 2584, 2587, 2593, 2600, 2601, 2608, 2616, 2617, 2618, 2656, 2662, 2677, 2678, 2683, 2701, 2732, 2750, 2752, 2755, 2763, 2765, 2772, 2824, 2848, 2849, 2850, 2851, 2852, 2853, 2854, 2861, 2862, 2863, 2864, 2865, 2866, 2868, 2869, 2873, 2953, 2966, 2967, 3404, 3408, 3422, 3474, 3502, 3524, 3582, 3604, 3619, 3682, 3733, 3771, 3807, 3832, 3974, 4020, 4071, 4090, 4124, 4139, 4159, 4189, 4220, 4243, 4274, 4304, 4336, 4363, 4438, 4460, 4498, 4508, 4542, 4561, 4587, 4629, 4679, 4705, 4774, 4775, 4777, 4800, 4823, 4859, 4890, 4907, 4964, 4977, 5001, 5030, 5032, 5066, 5082, 5110, 5415, 5424, 5433, 5440, 5457, 5461, 5467, 5506, 5508, 5515, 5522, 5531, 5538, 5539, 5540, 5552, 5555, 5570, 5571, 5580, 5581, 5590, 5599, 5605, 5607, 5608, 5609, 5646, 5647, 5649, 5657, 5664, 5677, 5681, 5683, 5684, 5690, 5697, 5711, 5721, 5726, 5734, 5742, 5748, 5749, 5753, 5755, 5756, 5768, 5840, 5841, 5842, 5843, 5845, 5846, 5849, 5851, 5854, 5858, 5859, 5860, 5866, 5867, 5868, 5870, 5872, 5874, 5875, 5876, 5879, 5881, 5884, 5885, 5887, 6085, 6092, 6093, 6094, 6104, 6109, 6126, 6140, 6149, 6150, 6151, 6155, 6156, 6158, 6160, 6166, 6167, 6170, 6171, 6173, 6174, 6175, 7075, 7078, 7082, 7100, 7109, 7112, 7119, 7120, 7122, 7123, 7124, 7126, 7178, 7179, 7182, 7183, 7300, 7301, 7312, 7323, 7330, 7333, 7342, 7343, 7344, 7359, 7414, 7605, 7607, 7608, 7610, 7615, 7628, 7643, 7650, 7659, 7662, 7665, 7672, 7680, 7684, 7685, 7686, 7700, 7704, 7713, 7714, 7715, 7719, 7754, 7755, 7773, 7780, 7788, 7789, 7794, 7802, 7846, 7847, 7853, 7856, 7867, 7872, 7873, 7876, 7878, 7913, 7914, 7920, 7927, 7928, 7937, 7946, 7961, 7965, 7966, 8018, 8019, 8024, 8026, 8029, 8031, 8032, 8033, 8042, 8056, 8064, 8078, 8090, 8091, 8093, 8095, 8117, 8128, 8134, 8135, 8147, 8159, 8246, 8258, 8266, 8269, 8275, 8300, 8303, 8304, 8305, 8307, 8310, 8313, 8324, 8326, 8328, 8356, 8430, 8437, 8441, 8442, 8451, 8473, 8474, 8479, 8480, 8559, 8561, 8563, 8572, 8576, 8582, 8588, 8594, 8604, 8609, 8610, 8628, 8639, 8644, 8649, 8659, 8665, 8669, 8675, 8681, 10290, 10291, 10292, 10299, 10301]);
-    edgeLength = /* @__PURE__ */ new Uint8Array([3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 8, 2, 2, 3, 3, 3, 3, 3, 8, 5, 5, 5, 5, 5, 3, 3, 5, 5, 9, 12, 19, 8, 19, 8, 11, 9, 9, 8, 7, 7, 6, 8, 9, 16, 10, 7, 7, 11, 8, 6, 6, 9, 7, 11, 7, 14, 4, 4, 4, 4, 4, 4, 10, 7, 6, 6, 6, 6, 10, 10, 6, 10, 10, 22, 11, 9, 10, 10, 10, 9, 10, 8, 7, 7, 7, 8, 21, 13, 11, 11, 9, 10, 9, 13, 10, 8, 8, 9, 12, 9, 7, 10, 7, 7, 13, 7, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 7, 2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 7, 8, 5, 2, 2, 7, 2, 2, 1, 4, 1, 11, 9, 9, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 11, 9, 9, 13, 7, 14, 7, 6, 6, 6, 7, 6, 6, 6, 6, 6, 10, 7, 11, 9, 4, 4, 4, 4, 4, 6, 6, 6, 6, 13, 6, 8, 7, 10, 9, 9, 9, 8, 9, 8, 7, 10, 6, 9, 8, 10, 10, 7, 8, 1, 9, 10, 12, 12, 12, 10, 9, 9, 10, 10, 9, 9, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 4, 3, 3, 3, 7, 4, 4, 4, 3, 3, 6, 7, 3, 4, 1, 2, 2, 2, 6, 1, 2, 2, 2, 2, 2, 12, 5, 3, 8, 9, 13, 4, 4, 13, 9, 9, 11, 7, 3, 12, 9, 2, 2, 2, 3, 3, 3, 3, 3, 8, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 7, 10, 15, 7, 15, 15, 20, 15, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 7, 8, 6, 8, 8, 6, 8, 13, 8, 8, 6, 13, 8, 11, 13, 8, 6, 13, 8, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 9, 9, 9, 10, 14, 14, 11, 13, 13, 9, 9, 9, 9, 9, 9, 2, 6, 9, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 3, 3, 3, 3, 3, 3, 7, 7, 2, 3, 2, 2, 5, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 5, 7, 2, 2, 12, 8, 10, 8, 10, 7, 18, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 2, 2, 3, 3, 3, 5, 5, 3, 8, 8, 6, 8, 6, 6, 4, 6, 7, 7, 7, 10, 11, 2, 5, 5, 3, 3, 3, 3, 3, 3, 5, 5, 6, 11, 10, 7, 7, 7, 4, 4, 4, 2, 3, 3, 3, 3, 3, 2, 2, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 11, 7, 6, 9, 6, 6, 8, 10, 8, 6, 8, 13, 4, 4, 4, 4, 4, 10, 8, 11, 8, 8, 8, 10, 10, 7, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 10, 13, 7, 8, 7, 11, 8, 8, 6, 9, 8, 8, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 9, 7, 6, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 9, 7, 8, 10, 8, 8, 2, 3, 3, 3, 3, 3, 2, 8, 9, 9, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 9, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 5, 5, 3, 5, 4, 2, 3, 2, 4, 3, 9, 2, 2, 2, 2, 2, 5, 5, 3, 8, 8, 13, 6, 10, 9, 4, 7, 9, 11, 2, 3, 7, 3, 3, 4, 1, 3, 4, 2, 9, 3, 3, 12, 5, 3, 7, 10, 10, 7, 4, 4, 6, 14, 7, 9, 7, 13, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 8, 15, 4, 4, 2, 3, 3, 3, 7, 4, 9, 9, 2, 3, 3, 3, 5, 3, 2, 2, 7, 2, 7, 6, 6, 7, 2, 4, 2, 2, 2, 2, 2, 2, 8, 8, 8, 9, 5, 2, 3, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 4, 2, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 2, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 9, 6, 6, 6, 9, 13, 9, 2, 2, 2, 8, 7, 9, 5, 3, 3, 3, 5, 5, 13, 12, 9, 10, 7, 8, 7, 6, 8, 6, 11, 12, 7, 9, 10, 4, 4, 7, 8, 11, 6, 7, 9, 8, 7, 10, 8, 9, 15, 7, 8, 5, 4, 7, 2, 3, 3, 3, 2, 14, 10, 2, 14, 10, 2, 14, 3, 9, 13, 13, 10, 14, 16, 17, 11, 2, 14, 2, 14, 3, 9, 13, 10, 14, 16, 17, 11, 14, 10, 14, 2, 7, 3, 10, 7, 14, 10, 2, 14, 10, 9, 9, 17, 6, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 10, 10, 10, 12, 9, 4, 10, 10, 11, 8, 8, 8, 7, 9, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 4, 4, 4, 4, 4, 4, 6, 16, 3, 3, 14, 3, 14, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 9, 9, 9, 9, 9, 9, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 17, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 14, 16, 17, 11, 2, 14, 9, 13, 10, 16, 11, 2, 14, 10, 19, 7, 2, 14, 9, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 19, 7, 14, 16, 17, 11, 2, 14, 9, 13, 17, 13, 10, 10, 14, 16, 17, 11, 6, 3, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 14, 10, 10, 10, 14, 9, 9, 9, 9, 14, 14, 14, 13, 13, 14, 9, 9, 9, 9, 9, 9, 4, 11, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 9, 10, 10, 7, 17, 3, 3, 12, 12, 16, 15, 15, 12, 14, 14, 14, 20, 20, 13, 12, 12, 12, 12, 12, 12, 20, 25, 14, 14, 12, 12, 10, 10, 10, 10, 9, 9, 9, 25, 4, 9, 17, 10, 7, 14, 16, 21, 13, 13, 14, 20, 14, 13, 17, 24, 9, 12, 13, 25, 13, 21, 20, 17, 9, 9, 9, 9, 9, 9, 12, 17, 4, 4, 9, 9, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 1, 5, 8, 7, 11, 11, 1, 3, 3, 3, 4, 8, 9, 10, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 7, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 12, 6, 14, 4, 12, 7, 2, 2, 1, 2, 7, 6, 4, 4, 4, 6, 8, 8, 7, 4, 5, 6, 3, 3, 3, 3, 4, 16, 8, 5, 4, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 12, 7, 7, 13, 9, 10, 17, 12, 8, 9, 7, 8, 5, 12, 10, 13, 14, 5, 5, 5, 13, 5, 5, 5, 3, 3, 3, 5, 16, 5, 5, 5, 5, 7, 12, 14, 8, 12, 8, 10, 12, 9, 11, 7, 9, 7, 10, 7, 13, 9, 7, 12, 8, 17, 7, 7, 16, 10, 13, 13, 8, 10, 10, 14, 17, 7, 16, 16, 15, 8, 10, 10, 12, 17, 17, 7, 17, 14, 7, 10, 17, 8, 7, 7, 7, 8, 15, 15, 7, 14, 10, 10, 10, 11, 11, 7, 7, 13, 8, 10, 7, 16, 7, 8, 7, 14, 17, 12, 10, 11, 21, 8, 9, 7, 13, 9, 8, 13, 6, 12, 7, 6, 13, 10, 10, 10, 8, 18, 9, 17, 13, 10, 12, 6, 13, 6, 11, 8, 13, 10, 13, 18, 13, 11, 13, 8, 16, 7, 10, 8, 16, 12, 10, 8, 8, 14, 11, 8, 15, 8, 8, 7, 7, 12, 7, 8, 9, 14, 15, 8, 9, 10, 9, 15, 7, 8, 8, 12, 13, 9, 10, 15, 15, 13, 7, 10, 10, 20, 7, 6, 9, 6, 6, 14, 11, 14, 11, 12, 9, 10, 16, 16, 12, 7, 11, 28, 8, 11, 10, 7, 21, 8, 7, 9, 4, 4, 4, 17, 7, 8, 6, 9, 6, 6, 13, 6, 6, 6, 6, 18, 20, 14, 8, 11, 12, 9, 10, 13, 15, 19, 8, 9, 12, 7, 10, 16, 12, 9, 9, 9, 14, 12, 11, 9, 12, 11, 18, 9, 9, 9, 10, 7, 7, 16, 8, 9, 7, 13, 12, 10, 18, 7, 8, 11, 7, 7, 8, 8, 13, 7, 7, 7, 11, 15, 13, 11, 7, 8, 15, 11, 7, 8, 18, 14, 13, 18, 15, 10, 12, 12, 9, 7, 11, 11, 8, 7, 10, 8, 14, 12, 10, 18, 7, 10, 9, 7, 8, 13, 10, 14, 10, 8, 8, 23, 7, 7, 11, 12, 12, 17, 7, 7, 11, 11, 17, 16, 16, 7, 8, 11, 14, 14, 8, 10, 7, 7, 16, 16, 13, 9, 11, 9, 15, 15, 11, 11, 7, 7, 14, 7, 9, 7, 7, 16, 10, 13, 10, 11, 14, 7, 11, 10, 11, 7, 11, 10, 11, 15, 11, 15, 10, 12, 17, 10, 14, 13, 11, 11, 12, 13, 10, 7, 13, 10, 16, 12, 21, 9, 10, 10, 7, 11, 14, 17, 7, 7, 8, 11, 12, 8, 15, 14, 14, 8, 17, 12, 10, 10, 7, 9, 11, 7, 10, 7, 11, 18, 7, 11, 7, 12, 11, 8, 8, 14, 12, 7, 8, 15, 3, 7, 7, 5, 2, 9, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 3, 5, 11, 6, 4, 7, 10, 7, 7, 11, 1, 10, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 3, 5, 6, 3, 3, 5, 2, 2, 5, 3, 4, 13, 11, 3, 3, 6, 3, 5, 14, 2, 2, 3, 8, 2, 2, 12, 5, 18, 5, 3, 3, 3, 16, 5, 5, 5, 10, 7, 13, 12, 13, 9, 12, 14, 19, 9, 9, 21, 9, 9, 10, 6, 9, 6, 15, 10, 6, 12, 8, 6, 10, 15, 4, 4, 6, 6, 9, 9, 12, 16, 14, 23, 7, 7, 7, 14, 9, 7, 7, 11, 14, 10, 7, 10, 10, 10, 12, 6, 11, 10, 13, 11, 15, 11, 7, 12, 10, 3, 7, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 3, 7, 2, 5, 5, 3, 3, 5, 5, 5, 5, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 7, 10, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 5, 10, 9, 11, 8, 7, 12, 8, 9, 7, 6, 13, 11, 6, 13, 7, 9, 9, 4, 4, 4, 4, 4, 6, 10, 7, 8, 13, 8, 8, 9, 14, 7, 8, 10, 7, 7, 7, 9, 6, 9, 7, 2, 12, 5, 3, 3, 13, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 1, 7, 6, 4, 12, 3, 3, 3, 3, 3, 8, 7, 3, 3, 3, 3, 3, 3, 4, 4, 11, 14, 2, 8, 3, 5, 5, 8, 10, 8, 6, 4, 7, 17, 7, 4, 5, 2, 6, 3, 2, 2, 12, 5, 5, 3, 15, 13, 8, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 3, 3, 3, 3, 4, 18, 2, 12, 5, 3, 3, 3, 3, 3, 5, 16, 8, 8, 9, 6, 6, 4, 4, 4, 4, 31, 6, 6, 10, 11, 21, 10, 9, 7, 10, 7, 7, 2, 4, 4, 4, 4, 6, 5, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 2, 2, 2, 5, 3, 3, 3, 7, 7, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 8, 2, 3, 3, 3, 3, 3, 5, 9, 11, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 5, 10, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 11, 10, 10, 10, 10, 10, 11, 10, 11, 10, 11, 10, 9, 9, 11, 3, 3, 3, 3, 3, 3, 5, 3, 7, 8, 8, 7, 6, 6, 11, 4, 4, 4, 7, 8, 9, 9, 2, 3, 7, 4, 4, 2, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 2, 2, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 7, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 6, 9, 12, 3, 7, 10, 7, 2, 2, 3, 3, 3, 3, 3, 4, 3, 3, 2, 2, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 6, 6, 8, 6, 7, 4, 4, 4, 4, 4, 4, 6, 7, 5, 5, 20, 19, 8, 10, 9, 7, 10, 6, 8, 11, 6, 6, 6, 6, 13, 12, 8, 6, 7, 14, 11, 9, 2, 5, 3, 6, 2, 3, 2, 2, 2, 2, 2, 2, 2, 5, 4, 3, 7, 6, 4, 7, 4, 3, 6, 4, 7, 2, 7, 7, 7, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 9, 10, 10, 11, 7, 8, 20, 7, 8, 9, 8, 12, 6, 6, 6, 8, 9, 8, 12, 6, 6, 8, 13, 10, 12, 6, 6, 7, 7, 9, 6, 4, 4, 4, 4, 4, 4, 10, 6, 6, 6, 7, 14, 11, 10, 7, 8, 10, 8, 11, 14, 11, 11, 9, 7, 9, 8, 11, 9, 17, 10, 9, 2, 2, 2, 9, 3, 3, 3, 3, 15, 14, 9, 5, 5, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 15, 12, 22, 19, 17, 18, 18, 19, 21, 7, 16, 16, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 16, 11, 11, 7, 7, 7, 7, 17, 7, 8, 12, 15, 9, 19, 7, 19, 8, 21, 11, 12, 19, 14, 22, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 16, 16, 19, 24, 12, 7, 14, 7, 12, 7, 8, 10, 10, 13, 7, 12, 12, 7, 7, 10, 18, 15, 12, 16, 7, 14, 12, 17, 10, 16, 17, 12, 17, 25, 7, 7, 7, 13, 6, 9, 6, 9, 18, 6, 6, 11, 20, 10, 6, 6, 6, 6, 6, 6, 17, 6, 6, 6, 15, 6, 6, 6, 6, 6, 8, 14, 11, 12, 11, 15, 13, 19, 17, 21, 7, 18, 8, 13, 13, 8, 12, 8, 6, 6, 13, 6, 15, 15, 16, 6, 6, 16, 6, 6, 6, 14, 6, 18, 6, 6, 6, 17, 18, 9, 13, 15, 8, 19, 8, 15, 15, 18, 14, 16, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 11, 10, 11, 6, 21, 23, 12, 17, 12, 11, 14, 13, 22, 15, 15, 11, 12, 14, 12, 7, 12, 8, 12, 14, 12, 18, 10, 8, 16, 19, 17, 12, 14, 15, 8, 19, 17, 12, 13, 13, 15, 18, 13, 23, 24, 23, 21, 17, 24, 8, 21, 8, 14, 14, 16, 20, 14, 8, 8, 15, 20, 8, 19, 21, 9, 8, 13, 12, 13, 15, 11, 8, 11, 9, 9, 8, 11, 8, 21, 14, 21, 15, 15, 13, 7, 19, 7, 7, 7, 7, 7, 7, 16, 12, 17, 18, 7, 7, 11, 11, 7, 9, 9, 2, 2, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 10, 10, 7, 9, 7, 7, 7, 6, 8, 6, 6, 6, 6, 6, 6, 6, 7, 6, 8, 6, 6, 9, 7, 7, 7, 4, 4, 4, 4, 4, 4, 4, 4, 8, 9, 8, 7, 8, 7, 8, 10, 7, 5, 5, 5, 5, 5, 5, 3, 9, 7, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 9, 11, 13, 7, 8, 9, 9, 5, 5, 5, 7, 8, 6, 6, 6, 6, 6, 6, 6, 7, 8, 9, 7, 10, 9, 10, 7, 8, 5, 5, 5, 5, 5, 5, 7, 7, 9, 8, 7, 7, 6, 6, 6, 6, 6, 6, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 10, 4, 4, 4, 4, 8, 7, 7, 10, 10, 9, 8, 8, 15, 9, 8, 8, 8, 8, 8, 9, 10, 9, 10, 7, 8, 13, 5, 5, 5, 5, 5, 3, 3, 7, 7, 8, 6, 6, 6, 4, 4, 11, 9, 7, 8, 9, 10, 7, 5, 5, 5, 5, 5, 3, 3, 7, 6, 6, 13, 7, 9, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 7, 8, 7, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 6, 7, 6, 7, 6, 6, 9, 7, 4, 4, 4, 4, 4, 4, 4, 7, 8, 7, 8, 9, 8, 8, 8, 7, 10, 7, 8, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 7, 9, 7, 10, 9, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 7, 6, 6, 6, 9, 9, 4, 4, 13, 7, 10, 9, 9, 12, 7, 8, 8, 10, 8, 8, 8, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 11, 7, 9, 8, 8, 6, 6, 10, 6, 8, 8, 8, 6, 7, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 8, 16, 8, 9, 8, 7, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 10, 15, 8, 9, 8, 9, 9, 6, 6, 6, 6, 6, 6, 7, 4, 8, 7, 8, 8, 7, 8, 11, 8, 5, 5, 5, 5, 5, 3, 7, 7, 6, 11, 16, 7, 6, 4, 4, 4, 4, 9, 9, 8, 8, 8, 13, 12, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 7, 8, 8, 9, 13, 7, 7, 7, 9, 8, 8, 9, 12, 7, 12, 7, 12, 8, 7, 10, 12, 9, 9, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 9, 11, 8, 6, 6, 6, 6, 6, 12, 7, 6, 6, 6, 9, 7, 7, 6, 6, 6, 6, 6, 11, 9, 6, 6, 6, 6, 6, 7, 9, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 7, 7, 7, 7, 7, 11, 7, 7, 8, 8, 8, 8, 8, 8, 9, 8, 9, 9, 7, 7, 11, 11, 7, 12, 8, 8, 8, 8, 8, 7, 8, 8, 8, 8, 8, 13, 12, 8, 8, 8, 8, 7, 7, 7, 9, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 11, 7, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 10, 11, 6, 7, 9, 4, 4, 4, 4, 4, 4, 9, 9, 8, 9, 8, 8, 8, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 11, 7, 7, 7, 9, 6, 6, 11, 8, 10, 6, 6, 6, 12, 8, 8, 7, 6, 6, 8, 7, 4, 4, 4, 4, 4, 4, 4, 4, 9, 10, 9, 9, 8, 10, 9, 11, 8, 5, 5, 5, 7, 6, 6, 8, 7, 4, 4, 4, 4, 8, 7, 7, 8, 7, 8, 8, 5, 5, 5, 5, 7, 7, 8, 8, 8, 6, 6, 6, 6, 6, 10, 8, 9, 13, 6, 7, 6, 6, 8, 7, 8, 4, 4, 4, 4, 11, 8, 8, 8, 10, 5, 5, 8, 7, 8, 13, 8, 7, 6, 8, 6, 9, 7, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 6, 4, 8, 10, 10, 8, 12, 9, 13, 2, 7, 5, 5, 5, 5, 5, 7, 7, 10, 6, 6, 6, 6, 6, 6, 6, 8, 4, 4, 9, 8, 8, 8, 14, 8, 8, 8, 9, 8, 5, 5, 5, 5, 5, 3, 3, 9, 6, 6, 6, 6, 10, 12, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 4, 11, 8, 7, 8, 8, 8, 5, 5, 3, 3, 3, 3, 7, 7, 6, 8, 6, 8, 11, 7, 6, 6, 6, 7, 4, 8, 11, 9, 10, 5, 5, 5, 3, 3, 3, 7, 7, 8, 9, 8, 15, 9, 6, 6, 6, 6, 6, 6, 11, 11, 4, 4, 4, 4, 4, 7, 9, 9, 10, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 7, 4, 4, 4, 4, 4, 9, 9, 8, 8, 10, 13, 5, 5, 5, 3, 17, 7, 7, 7, 7, 7, 8, 6, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 9, 10, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 7, 8, 8, 6, 6, 6, 8, 8, 8, 9, 10, 8, 4, 8, 10, 9, 8, 8, 8, 9, 13, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 9, 7, 7, 7, 10, 9, 9, 8, 9, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 12, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 11, 8, 8, 9, 9, 10, 8, 9, 7, 7, 5, 5, 5, 5, 5, 5, 3, 7, 8, 7, 6, 6, 8, 6, 6, 10, 4, 7, 8, 9, 12, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 14, 7, 9, 8, 8, 6, 6, 8, 12, 12, 6, 6, 7, 7, 10, 4, 4, 4, 4, 4, 9, 9, 14, 9, 13, 8, 7, 5, 5, 5, 6, 6, 6, 7, 4, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 8, 6, 6, 6, 6, 6, 6, 12, 6, 6, 6, 6, 4, 4, 9, 9, 8, 8, 11, 7, 7, 7, 5, 5, 5, 3, 9, 8, 6, 6, 7, 4, 4, 4, 4, 4, 4, 8, 8, 11, 5, 5, 5, 7, 7, 7, 9, 6, 6, 6, 6, 6, 6, 9, 8, 4, 4, 4, 4, 7, 12, 9, 8, 8, 8, 7, 10, 10, 5, 5, 5, 5, 5, 5, 5, 3, 11, 14, 8, 7, 8, 8, 6, 6, 6, 6, 6, 8, 7, 6, 6, 6, 7, 6, 8, 9, 4, 4, 4, 7, 8, 9, 7, 9, 7, 7, 9, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 9, 7, 7, 12, 14, 8, 6, 6, 12, 11, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 15, 7, 4, 4, 4, 16, 9, 9, 9, 8, 9, 9, 9, 9, 9, 8, 8, 8, 13, 11, 8, 5, 5, 5, 5, 3, 7, 6, 6, 8, 8, 8, 6, 6, 7, 10, 7, 4, 4, 4, 4, 9, 7, 8, 7, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 9, 6, 6, 6, 6, 6, 8, 8, 7, 7, 9, 6, 6, 6, 7, 6, 6, 6, 6, 6, 15, 4, 4, 4, 4, 4, 8, 8, 7, 8, 12, 9, 8, 8, 8, 8, 8, 9, 8, 8, 10, 8, 8, 8, 8, 16, 9, 10, 2, 5, 5, 5, 5, 5, 5, 5, 9, 7, 6, 8, 9, 4, 4, 4, 4, 4, 7, 8, 8, 8, 9, 8, 11, 10, 5, 5, 5, 5, 3, 7, 8, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 4, 12, 10, 12, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 3, 3, 7, 7, 10, 8, 9, 7, 6, 10, 7, 6, 6, 4, 4, 8, 9, 7, 9, 9, 9, 9, 8, 8, 8, 8, 10, 5, 5, 5, 5, 5, 5, 8, 7, 6, 6, 6, 10, 6, 7, 10, 7, 4, 4, 4, 4, 4, 4, 4, 12, 9, 10, 7, 7, 10, 8, 10, 5, 12, 9, 6, 6, 6, 6, 6, 7, 6, 4, 4, 4, 10, 9, 9, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 13, 7, 7, 9, 7, 7, 7, 8, 9, 9, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 15, 15, 4, 4, 4, 4, 4, 10, 10, 9, 8, 9, 8, 8, 9, 7, 8, 7, 8, 5, 5, 7, 6, 6, 6, 4, 4, 4, 7, 8, 11, 8, 5, 5, 5, 5, 5, 5, 5, 7, 6, 6, 6, 6, 6, 6, 9, 11, 10, 7, 4, 4, 4, 9, 8, 8, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 6, 6, 6, 9, 9, 4, 4, 4, 4, 8, 8, 8, 9, 9, 8, 8, 8, 13, 2, 4, 2, 7, 5, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 10, 8, 8, 8, 6, 6, 6, 4, 4, 9, 8, 10, 8, 9, 8, 8, 8, 9, 8, 8, 5, 3, 3, 3, 11, 6, 6, 6, 7, 6, 6, 6, 4, 4, 9, 8, 5, 5, 5, 5, 5, 3, 11, 8, 6, 6, 6, 6, 6, 9, 7, 4, 4, 14, 10, 9, 8, 12, 8, 8, 8, 11, 15, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 11, 11, 10, 10, 7, 7, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 7, 11, 7, 7, 11, 11, 7, 8, 9, 10, 7, 7, 9, 9, 9, 9, 7, 7, 10, 8, 13, 8, 8, 8, 8, 11, 10, 6, 6, 8, 10, 11, 14, 14, 6, 6, 6, 6, 6, 6, 9, 11, 7, 7, 6, 8, 12, 11, 11, 6, 6, 10, 6, 6, 6, 6, 6, 10, 7, 7, 6, 6, 11, 6, 6, 6, 11, 8, 9, 7, 6, 10, 11, 9, 10, 11, 7, 11, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 6, 6, 8, 9, 10, 9, 6, 6, 6, 10, 6, 6, 6, 6, 11, 10, 11, 10, 9, 8, 7, 7, 7, 7, 11, 14, 8, 10, 9, 9, 8, 8, 7, 11, 8, 8, 8, 11, 11, 10, 10, 9, 10, 8, 11, 10, 8, 11, 9, 12, 8, 10, 8, 11, 8, 9, 9, 11, 11, 10, 11, 13, 8, 7, 8, 8, 9, 7, 8, 8, 8, 8, 7, 8, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 4, 4, 4, 11, 7, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 8, 7, 7, 8, 8, 4, 8, 7, 7, 7, 9, 7, 8, 9, 8, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 4, 5, 5, 3, 3, 8, 8, 6, 9, 4, 4, 10, 7, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 2, 2, 2, 3, 3, 3, 3, 3, 4, 10, 2, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 5, 2, 4, 2, 6, 2, 2, 9, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 9, 8, 7, 9, 6, 6, 11, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 7, 7, 11, 8, 8, 6, 5, 11, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 3, 3, 3, 3, 5, 7, 2, 3, 3, 3, 3, 3, 8, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 6, 3, 3, 8, 10, 3, 4, 4, 1, 1, 1, 1, 1, 1, 1, 8, 9, 10, 7, 7, 1, 14, 18, 13, 18, 13, 10, 10, 16, 13, 18, 16, 13, 16, 18, 13, 22, 16, 16, 16, 14, 21, 16, 9, 14, 16, 9, 9, 14, 10, 10, 14, 12, 14, 19, 12, 11, 18, 13, 17, 15, 15, 15, 15, 16, 14, 13, 19, 18, 15, 19, 18, 12, 18, 12, 11, 20, 14, 15, 10, 17, 17, 16, 19, 20, 21, 15, 13, 16, 15, 15, 15, 1, 1, 3, 8, 7, 7, 8, 8, 8, 1, 6, 1, 1, 6, 3, 3, 4, 7, 3, 3, 5, 5, 4, 4, 4, 4, 4, 2, 7, 7, 8, 12, 3, 4, 5, 1, 3, 4, 4, 10, 4, 3, 3, 3, 8, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 9, 20, 7, 5, 5, 5, 9, 13, 5, 5, 5, 5, 5, 3, 3, 3, 16, 5, 5, 5, 13, 7, 8, 8, 11, 8, 7, 9, 7, 11, 12, 9, 9, 8, 8, 11, 10, 14, 7, 12, 10, 11, 13, 7, 9, 11, 17, 17, 14, 13, 7, 8, 7, 10, 10, 7, 16, 13, 7, 8, 17, 12, 9, 8, 6, 7, 10, 6, 6, 12, 6, 8, 10, 8, 8, 8, 6, 8, 6, 14, 6, 6, 6, 13, 6, 10, 6, 6, 7, 14, 8, 6, 6, 10, 11, 10, 9, 9, 7, 7, 6, 6, 6, 9, 9, 7, 9, 10, 9, 13, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 6, 8, 9, 10, 9, 7, 10, 10, 8, 7, 8, 7, 10, 12, 9, 8, 15, 8, 7, 8, 8, 7, 7, 15, 13, 7, 10, 9, 14, 18, 16, 7, 24, 7, 8, 10, 11, 16, 8, 14, 7, 9, 9, 9, 13, 19, 14, 15, 14, 11, 7, 13, 9, 10, 7, 13, 9, 10, 11, 12, 8, 9, 2, 3, 5, 8, 7, 4, 4, 15, 10, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 12, 5, 3, 8, 10, 15, 6, 7, 2, 3, 2, 5, 5, 12, 2, 5, 5, 5, 5, 2, 2, 5, 5, 12, 9, 5, 2, 2, 9, 5, 5, 12, 12, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 12, 5, 8, 8, 9, 5, 5, 5, 8, 19, 7, 16, 15, 14, 9, 9, 9, 9, 7, 11, 11, 11, 7, 14, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 12, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 12, 9, 9, 12, 12, 12, 15, 7, 11, 7, 14, 11, 18, 13, 8, 18, 15, 18, 12, 14, 12, 8, 8, 8, 8, 9, 9, 9, 12, 7, 10, 10, 8, 8, 12, 12, 12, 7, 12, 12, 9, 7, 7, 7, 7, 7, 8, 15, 12, 9, 10, 10, 7, 10, 10, 13, 11, 10, 9, 22, 11, 9, 8, 8, 8, 8, 8, 13, 18, 13, 9, 15, 19, 9, 7, 7, 10, 7, 7, 7, 11, 8, 13, 17, 7, 7, 10, 10, 10, 7, 20, 16, 7, 7, 7, 7, 7, 7, 11, 21, 12, 12, 13, 11, 14, 16, 8, 8, 13, 11, 7, 7, 13, 7, 7, 14, 15, 15, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 13, 10, 18, 6, 6, 6, 6, 6, 6, 6, 6, 6, 11, 8, 8, 12, 12, 11, 11, 8, 12, 9, 9, 9, 13, 13, 9, 9, 9, 9, 9, 9, 6, 10, 12, 6, 6, 6, 6, 17, 11, 7, 7, 7, 7, 14, 14, 12, 6, 7, 7, 6, 6, 15, 10, 13, 10, 6, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 9, 15, 13, 6, 12, 12, 6, 19, 11, 10, 7, 7, 16, 8, 19, 17, 9, 9, 9, 9, 9, 6, 6, 6, 10, 8, 16, 8, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 14, 6, 6, 6, 6, 20, 6, 9, 6, 14, 9, 9, 9, 6, 9, 8, 8, 12, 9, 8, 8, 8, 8, 7, 8, 12, 7, 8, 8, 8, 6, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 8, 6, 6, 13, 9, 12, 13, 12, 14, 13, 12, 11, 11, 6, 8, 8, 8, 6, 13, 12, 11, 11, 12, 6, 11, 12, 11, 13, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 15, 6, 6, 6, 6, 6, 6, 6, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 6, 18, 6, 12, 13, 13, 13, 9, 10, 15, 9, 12, 6, 6, 6, 6, 6, 6, 6, 6, 9, 15, 10, 9, 10, 13, 9, 19, 8, 18, 17, 10, 10, 8, 8, 6, 6, 6, 6, 6, 6, 10, 14, 8, 16, 16, 9, 8, 15, 8, 8, 10, 12, 14, 7, 7, 8, 8, 7, 7, 7, 7, 8, 13, 13, 11, 9, 9, 9, 12, 10, 17, 8, 11, 9, 7, 7, 14, 8, 14, 14, 7, 7, 7, 7, 7, 7, 14, 7, 7, 7, 7, 7, 10, 10, 8, 14, 7, 7, 7, 7, 8, 8, 8, 8, 8, 17, 9, 7, 15, 7, 8, 12, 7, 9, 14, 7, 7, 7, 9, 13, 8, 14, 7, 16, 18, 13, 15, 14, 12, 13, 10, 15, 9, 7, 7, 7, 10, 13, 15, 15, 9, 9, 9, 9, 19, 11, 7, 11, 11, 13, 8, 8, 8, 8, 7, 12, 19, 17, 9, 9, 13, 7, 7, 7, 9, 7, 7, 7, 12, 13, 15, 10, 8, 8, 14, 15, 12, 13, 13, 8, 12, 14, 7, 11, 7, 14, 15, 13, 12, 8, 8, 8, 8, 11, 13, 15, 15, 8, 13, 12, 8, 8, 8, 13, 10, 16, 14, 11, 8, 8, 12, 12, 9, 15, 15, 12, 12, 13, 8, 8, 9, 12, 13, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 12, 11, 7, 14, 7, 13, 13, 13, 12, 18, 16, 7, 12, 11, 10, 10, 15, 9, 9, 9, 21, 7, 7, 7, 11, 16, 8, 8, 11, 11, 7, 7, 7, 7, 7, 19, 7, 7, 7, 7, 7, 7, 7, 7, 7, 12, 8, 9, 12, 14, 11, 9, 9, 9, 22, 12, 3, 3, 4, 8, 8, 15, 4, 2, 2, 5, 5, 3, 3, 3, 3, 3, 3, 6, 6, 4, 4, 4, 12, 7, 10, 2, 3, 3, 3, 3, 3, 3, 3, 6, 7, 3, 7, 5, 14, 4, 4, 7, 8, 10, 4, 1, 3, 3, 6, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 2, 2, 5, 3, 4, 2, 2, 2, 2, 2, 2, 11, 5, 5, 5, 11, 5, 5, 3, 5, 5, 5, 5, 11, 14, 13, 9, 11, 9, 12, 8, 11, 11, 8, 11, 16, 9, 9, 7, 10, 9, 12, 8, 15, 6, 7, 6, 6, 13, 10, 8, 11, 8, 6, 6, 6, 12, 16, 6, 11, 7, 8, 9, 18, 6, 6, 9, 4, 4, 6, 13, 6, 6, 6, 6, 8, 8, 9, 16, 7, 7, 14, 7, 8, 8, 8, 7, 7, 7, 7, 7, 7, 15, 13, 7, 10, 7, 7, 10, 12, 16, 15, 7, 9, 9, 14, 11, 11, 10, 9, 10, 8, 12, 7, 8, 7, 7, 10, 12, 7, 12, 8, 7, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 5, 5, 5, 10, 4, 8, 7, 10, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 7, 4, 5, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 2, 2, 2, 8, 12, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 11, 9, 8, 8, 8, 7, 8, 9, 7, 7, 9, 7, 7, 7, 10, 7, 7, 10, 9, 10, 6, 6, 6, 6, 6, 6, 15, 7, 8, 9, 9, 8, 6, 6, 10, 9, 6, 8, 13, 9, 7, 6, 6, 6, 6, 6, 6, 12, 6, 6, 7, 6, 7, 6, 6, 6, 10, 10, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 14, 6, 6, 7, 7, 9, 6, 6, 6, 6, 9, 9, 8, 9, 10, 9, 8, 9, 12, 7, 7, 7, 8, 7, 10, 12, 11, 9, 10, 7, 7, 7, 9, 10, 10, 8, 12, 9, 7, 7, 9, 8, 8, 8, 10, 7, 7, 8, 9, 9, 7, 7, 7, 8, 2, 4, 6, 3, 4, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 6, 4, 7, 3, 3, 3, 3, 3, 3, 3, 12, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 5, 3, 4, 7, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 6, 4, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 4, 7, 6, 8, 9, 2, 2, 2, 2, 3, 3, 3, 5, 7, 2, 3, 3, 8, 7, 7, 2, 2, 8, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 7, 7, 6, 10, 6, 9, 7, 11, 4, 6, 8, 8, 7, 8, 4, 5, 5, 5, 5, 3, 3, 11, 8, 9, 6, 6, 8, 7, 4, 4, 7, 8, 7, 2, 2, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 7, 2, 2, 5, 3, 3, 2, 3, 3, 3, 3, 3, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 12, 5, 5, 3, 3, 3, 5, 10, 12, 6, 15, 4, 6, 6, 7, 14, 9, 3, 3, 3, 3, 3, 8, 2, 2, 3, 5, 3, 3, 3, 3, 3, 3, 8, 8, 8, 7, 5, 8, 4, 6, 11, 2, 2, 6, 7, 3, 3, 2, 9, 8, 5, 5, 3, 3, 3, 5, 5, 7, 7, 6, 6, 10, 6, 8, 6, 8, 9, 7, 4, 4, 4, 4, 7, 6, 6, 7, 7, 10, 9, 8, 11, 8, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 7, 6, 2, 5, 6, 7, 6, 4, 8, 9, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 5, 3, 3, 3, 3, 3, 9, 9, 6, 4, 8, 7, 7, 5, 9, 8, 6, 2, 8, 7, 8, 5, 5, 5, 5, 5, 3, 3, 3, 16, 8, 7, 7, 7, 8, 7, 7, 7, 7, 9, 6, 9, 6, 10, 7, 7, 7, 6, 10, 8, 9, 11, 11, 8, 4, 4, 10, 8, 8, 6, 9, 6, 11, 8, 8, 8, 15, 7, 8, 9, 5, 3, 3, 3, 3, 3, 5, 11, 2, 2, 3, 8, 9, 10, 3, 2, 2, 2, 2, 2, 2, 3, 6, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 11, 5, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 12, 7, 4, 12, 4, 6, 5, 4, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 11, 10, 6, 4, 6, 10, 8, 3, 3, 3, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 4, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 8, 8, 7, 13, 12, 10, 10, 8, 8, 7, 7, 9, 12, 11, 6, 6, 8, 8, 9, 7, 7, 7, 10, 15, 10, 4, 4, 4, 4, 4, 11, 8, 8, 9, 7, 9, 14, 14, 12, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 12, 5, 5, 5, 11, 10, 7, 9, 3, 8, 7, 3, 15, 13, 11, 4, 4, 2, 2, 2, 19, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 22, 18, 6, 14, 17, 4, 4, 19, 16, 18, 2, 3, 3, 2, 3, 2, 3, 3, 6, 4, 2, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 9, 9, 2, 3, 2, 2, 2, 3, 3, 3, 5, 7, 14, 7, 7, 12, 9, 13, 6, 11, 6, 10, 9, 7, 7, 8, 12, 12, 8, 8, 8, 10, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 5, 8, 10, 7, 8, 11, 8, 12, 9, 4, 7, 7, 9, 13, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 1, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 3, 2, 3, 3, 3, 3, 5, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 12, 9, 8, 8, 9, 8, 6, 17, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 4, 4, 8, 8, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 7, 8, 8, 8, 10, 7, 13, 10, 8, 9, 3, 3, 5, 13, 3, 3, 3, 3, 3, 7, 7, 6, 6, 10, 13, 11, 11, 8, 8, 9, 8, 9, 9, 10, 10, 10, 11, 10, 10, 13, 13, 16, 15, 11, 12, 9, 9, 10, 9, 11, 10, 9, 9, 14, 7, 8, 3, 10, 7, 7, 3, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 11, 6, 7, 4, 6, 2, 2, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 6, 4, 4, 2, 2, 2, 3, 3, 3, 3, 4, 4, 6, 6, 6, 6, 5, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 11, 6, 10, 9, 12, 7, 7, 11, 14, 9, 7, 12, 3, 3, 7, 12, 11, 12, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 10, 3, 3, 3, 11, 3, 5, 9, 11, 8, 12, 14, 9, 7, 8, 7, 7, 11, 11, 7, 7, 10, 9, 8, 10, 9, 7, 7, 7, 7, 7, 7, 8, 8, 7, 11, 8, 8, 8, 7, 7, 10, 8, 7, 13, 12, 7, 17, 10, 8, 8, 11, 7, 11, 11, 14, 7, 11, 7, 8, 6, 9, 20, 8, 7, 9, 16, 7, 10, 6, 11, 10, 8, 9, 7, 16, 11, 11, 9, 8, 9, 8, 8, 8, 11, 8, 15, 8, 8, 9, 7, 8, 8, 11, 10, 7, 5, 7, 10, 10, 15, 7, 7, 7, 8, 7, 8, 8, 10, 11, 10, 10, 10, 11, 11, 7, 8, 6, 8, 8, 8, 10, 6, 8, 6, 6, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 6, 15, 6, 7, 11, 11, 7, 9, 10, 11, 13, 10, 6, 16, 8, 10, 12, 11, 6, 6, 6, 6, 6, 6, 6, 10, 6, 10, 7, 7, 7, 7, 11, 7, 11, 6, 6, 6, 6, 6, 6, 17, 7, 7, 6, 6, 12, 22, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 7, 6, 6, 5, 6, 6, 8, 11, 6, 9, 14, 11, 9, 11, 7, 7, 8, 6, 6, 6, 8, 10, 9, 6, 6, 6, 6, 9, 7, 6, 6, 6, 6, 6, 15, 6, 4, 4, 4, 6, 4, 17, 8, 11, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 6, 6, 6, 6, 10, 6, 10, 6, 6, 6, 6, 12, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 6, 6, 18, 6, 6, 6, 8, 9, 10, 7, 8, 9, 10, 11, 7, 13, 6, 8, 8, 6, 6, 14, 7, 7, 7, 7, 10, 7, 14, 9, 6, 6, 9, 15, 9, 7, 14, 6, 11, 14, 13, 7, 12, 8, 7, 7, 7, 7, 7, 12, 7, 10, 9, 16, 6, 8, 6, 5, 17, 6, 8, 10, 4, 6, 4, 10, 15, 17, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 11, 7, 4, 4, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 19, 17, 6, 10, 11, 6, 6, 6, 6, 18, 6, 6, 11, 4, 4, 4, 5, 6, 6, 6, 9, 5, 6, 4, 6, 6, 4, 6, 6, 6, 6, 10, 6, 6, 4, 6, 6, 10, 6, 10, 6, 6, 6, 6, 11, 6, 6, 10, 6, 6, 8, 6, 6, 6, 8, 6, 11, 4, 11, 9, 10, 9, 11, 4, 8, 4, 11, 12, 7, 9, 8, 6, 7, 7, 8, 12, 12, 11, 13, 10, 11, 7, 7, 7, 9, 7, 11, 10, 7, 7, 7, 16, 11, 10, 11, 17, 9, 9, 8, 8, 7, 7, 7, 9, 7, 7, 7, 14, 7, 13, 9, 11, 10, 14, 10, 10, 12, 11, 10, 7, 10, 5, 14, 8, 8, 8, 9, 7, 8, 7, 7, 9, 8, 7, 8, 7, 7, 7, 7, 7, 7, 7, 11, 8, 10, 8, 7, 8, 14, 11, 8, 9, 9, 9, 8, 24, 10, 10, 12, 7, 7, 15, 11, 8, 8, 12, 11, 8, 9, 9, 7, 8, 9, 10, 11, 10, 11, 7, 12, 7, 7, 11, 9, 8, 14, 13, 12, 8, 11, 10, 8, 8, 7, 7, 14, 9, 10, 8, 9, 11, 7, 14, 8, 8, 13, 8, 8, 12, 7, 10, 14, 14, 11, 9, 10, 9, 9, 7, 7, 11, 11, 13, 9, 13, 5, 5, 5, 7, 9, 5, 11, 12, 14, 8, 7, 7, 11, 10, 9, 7, 8, 8, 7, 10, 11, 11, 5, 5, 7, 5, 5, 5, 7, 7, 15, 7, 7, 8, 7, 15, 12, 12, 10, 7, 8, 7, 11, 7, 7, 7, 23, 11, 8, 8, 11, 10, 7, 8, 11, 7, 19, 7, 7, 6, 9, 9, 9, 11, 3, 4, 7, 8, 6, 6, 4, 10, 8, 2, 2]);
-    edgeChild = /* @__PURE__ */ new Uint16Array([0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 17, 1, 1, 1, 12, 1, 12, 1, 12, 13, 1, 1, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 14, 21, 1, 1, 1, 1, 1, 1, 1, 19, 12, 1, 1, 1, 1, 1, 1, 1, 20, 1, 1, 1, 16, 18, 1, 1, 15, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 22, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 24, 25, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 12, 12, 12, 12, 1, 32, 0, 0, 0, 1, 1, 1, 1, 35, 34, 1, 1, 1, 1, 1, 33, 1, 1, 1, 1, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 39, 40, 0, 0, 0, 0, 12, 1, 1, 12, 1, 1, 1, 1, 43, 44, 44, 44, 43, 44, 43, 43, 45, 44, 43, 44, 43, 43, 43, 43, 43, 43, 45, 43, 43, 43, 43, 43, 43, 44, 46, 46, 44, 43, 43, 43, 43, 43, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 49, 51, 49, 49, 49, 51, 49, 50, 49, 52, 49, 50, 50, 49, 49, 49, 50, 52, 50, 52, 49, 50, 50, 12, 54, 54, 53, 55, 50, 52, 49, 49, 47, 48, 56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 59, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 66, 1, 12, 1, 1, 65, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 12, 1, 1, 1, 1, 88, 1, 90, 1, 1, 1, 1, 1, 1, 1, 1, 93, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 96, 96, 1, 1, 12, 1, 99, 1, 1, 1, 1, 1, 1, 1, 97, 1, 98, 1, 100, 1, 1, 1, 1, 1, 101, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 109, 110, 1, 1, 1, 1, 1, 1, 112, 112, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 120, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 1, 1, 1, 1, 1, 1, 1, 1, 1, 125, 122, 124, 119, 1, 123, 1, 1, 113, 1, 1, 1, 1, 116, 1, 126, 1, 1, 1, 1, 1, 1, 118, 1, 107, 1, 108, 1, 12, 127, 105, 1, 111, 1, 1, 1, 1, 1, 106, 114, 1, 12, 12, 12, 117, 115, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 12, 12, 1, 1, 1, 1, 1, 12, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 135, 1, 1, 1, 1, 1, 1, 1, 1, 136, 137, 12, 12, 134, 132, 44, 44, 139, 49, 49, 138, 141, 140, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 142, 0, 0, 0, 0, 1, 0, 143, 131, 1, 0, 1, 1, 12, 12, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 147, 146, 20, 1, 1, 12, 12, 1, 20, 12, 12, 1, 1, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 152, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 1, 135, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 159, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 133, 1, 1, 1, 1, 151, 1, 1, 1, 1, 152, 1, 1, 1, 133, 1, 1, 151, 1, 1, 1, 1, 163, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 166, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 1, 159, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 152, 1, 153, 157, 157, 12, 1, 12, 165, 1, 1, 1, 1, 1, 157, 157, 157, 153, 1, 1, 1, 156, 157, 160, 164, 1, 1, 1, 1, 156, 156, 1, 1, 155, 153, 153, 156, 169, 155, 169, 1, 1, 167, 1, 155, 154, 156, 1, 1, 1, 1, 156, 1, 158, 1, 1, 1, 12, 1, 161, 1, 161, 1, 1, 1, 161, 160, 162, 168, 155, 153, 1, 1, 1, 1, 1, 1, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 171, 172, 171, 172, 171, 171, 171, 171, 173, 173, 171, 172, 171, 172, 171, 171, 12, 1, 12, 12, 12, 12, 1, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 193, 1, 1, 1, 1, 12, 199, 200, 201, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 150, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 196, 1, 1, 1, 184, 1, 1, 1, 1, 207, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 176, 190, 1, 1, 1, 186, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 182, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 195, 1, 1, 1, 1, 170, 1, 1, 189, 1, 1, 1, 192, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 180, 1, 12, 1, 1, 12, 1, 1, 1, 1, 183, 1, 1, 1, 188, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 208, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 194, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 175, 12, 1, 1, 1, 178, 12, 1, 1, 1, 1, 1, 1, 1, 198, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 177, 1, 1, 1, 1, 1, 1, 203, 1, 1, 1, 181, 1, 1, 1, 187, 1, 12, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 191, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 174, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 205, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 206, 1, 1, 12, 1, 1, 1, 1, 179, 1, 1, 1, 185, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 197, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 202, 1, 1, 12, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 218, 0, 0, 0, 0, 0, 219, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 223, 1, 1, 1, 0, 224, 221, 222, 1, 1, 1, 1, 1, 1, 229, 1, 231, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 227, 1, 1, 1, 1, 1, 233, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 232, 1, 1, 1, 12, 1, 1, 1, 1, 228, 1, 1, 1, 226, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 230, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 239, 13, 1, 1, 1, 12, 12, 236, 237, 1, 1, 1, 1, 238, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 240, 1, 1, 12, 16, 1, 1, 1, 1, 1, 1, 241, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 241, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 254, 254, 1, 0, 0, 0, 0, 0, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 171, 259, 260, 1, 12, 1, 1, 1, 1, 12, 262, 1, 1, 261, 1, 1, 264, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 268, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 12, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 279, 0, 0, 280, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 59, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 304, 0, 0, 0, 0, 0, 0, 0, 0, 0, 306, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 322, 322, 323, 322, 0, 185, 1, 1, 13, 318, 1, 316, 0, 0, 0, 0, 0, 0, 0, 319, 1, 1, 324, 1, 204, 1, 1, 1, 1, 317, 1, 314, 1, 320, 1, 312, 1, 321, 1, 313, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 315, 315, 1, 1, 1, 184, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 1, 1, 1, 311, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 327, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 264, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 367, 367, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 359, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 335, 346, 1, 1, 334, 369, 1, 340, 1, 1, 332, 364, 1, 1, 350, 331, 336, 1, 1, 1, 343, 374, 352, 1, 1, 1, 1, 1, 1, 353, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 362, 366, 0, 0, 78, 1, 1, 0, 360, 337, 373, 338, 341, 348, 1, 363, 0, 1, 0, 78, 357, 355, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 376, 1, 1, 347, 1, 78, 1, 0, 1, 1, 1, 379, 1, 0, 0, 78, 354, 0, 1, 333, 1, 1, 1, 0, 1, 1, 356, 1, 0, 1, 1, 1, 0, 1, 381, 344, 1, 1, 0, 1, 0, 0, 372, 0, 1, 1, 1, 78, 365, 1, 1, 361, 358, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 339, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 371, 0, 78, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 375, 1, 1, 1, 0, 0, 378, 0, 0, 0, 1, 351, 1, 0, 78, 377, 1, 0, 0, 0, 0, 380, 1, 1, 0, 0, 1, 0, 1, 0, 349, 0, 345, 0, 1, 1, 1, 0, 1, 1, 0, 368, 342, 370, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 12, 1, 1, 1, 12, 396, 396, 1, 1, 12, 12, 1, 396, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 408, 1, 1, 0, 1, 1, 1, 1, 204, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 426, 426, 1, 1, 0, 0, 312, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 439, 1, 438, 1, 1, 1, 1, 1, 1, 1, 1, 1, 443, 1, 12, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 451, 1, 1, 1, 453, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 450, 1, 445, 1, 1, 1, 1, 432, 1, 1, 1, 1, 1, 1, 1, 1, 446, 12, 1, 1, 1, 1, 452, 1, 1, 1, 447, 441, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 312, 1, 429, 1, 1, 12, 449, 1, 1, 312, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 434, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 452, 1, 1, 1, 1, 312, 1, 448, 1, 1, 1, 442, 436, 1, 1, 1, 1, 1, 437, 1, 454, 440, 1, 1, 1, 1, 1, 435, 1, 1, 1, 1, 1, 1, 1, 1, 1, 430, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 444, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 433, 1, 1, 1, 1, 1, 431, 1, 218, 455, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 461, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 465, 465, 465, 465, 465, 465, 465, 0, 465, 465, 465, 465, 465, 1, 465, 465, 465, 0, 465, 465, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 470, 469, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 474, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 467, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 476, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 473, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 466, 0, 0, 477, 472, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 471, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 466, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 465, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 475, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 487, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 198, 198, 1, 491, 1, 1, 1, 490, 1, 1, 1, 1, 486, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 488, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 492, 1, 1, 489, 1, 1, 1, 1, 1, 1, 1, 1, 367, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 493, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 504, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 12, 1, 506, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 12, 12, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 59, 1, 1, 12, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 525, 1, 1, 1, 1, 1, 1, 1, 526, 1, 1, 1, 1, 1, 1, 1, 524, 1, 1, 12, 1, 1, 528, 237, 1, 1, 12, 12, 1, 1, 12, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 532, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 538, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 131, 1, 12, 543, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 106, 1, 1, 12, 1, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 548, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 143, 1, 1, 1, 226, 1, 1, 12, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 573, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 218, 1, 323, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 578, 1, 1, 1, 1, 0, 580, 0, 78, 0, 579, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 12, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 586, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 582, 582, 0, 585, 583, 582, 582, 582, 582, 582, 587, 582, 582, 591, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 588, 585, 582, 582, 585, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 582, 583, 582, 582, 582, 582, 582, 589, 582, 582, 582, 582, 582, 582, 0, 0, 0, 1, 590, 1, 1, 1, 1, 584, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 595, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 12, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 12, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 64, 276, 302, 407, 534, 0, 4, 67, 234, 252, 278, 303, 329, 383, 409, 0, 498, 518, 535, 597, 9, 0, 60, 87, 393, 405, 425, 576, 0, 496, 517, 531, 612, 0, 30, 6, 0, 460, 499, 602, 561, 69, 0, 7, 281, 253, 384, 462, 412, 537, 78, 598, 0, 577, 305, 414, 464, 9, 104, 284, 505, 6, 30, 0, 307, 78, 386, 78, 482, 10, 6, 130, 246, 271, 0, 613, 508, 0, 564, 0, 63, 6, 6, 249, 94, 2, 428, 394, 406, 596, 0, 6, 0, 6, 282, 102, 6, 562, 500, 539, 0, 463, 385, 269, 283, 8, 70, 103, 599, 542, 387, 308, 296, 415, 145, 73, 286, 546, 509, 601, 565, 330, 325, 478, 6, 74, 148, 11, 0, 247, 521, 547, 566, 513, 551, 571, 611, 36, 6, 258, 291, 328, 300, 216, 30, 527, 554, 216, 41, 214, 263, 292, 301, 402, 419, 480, 270, 0, 72, 563, 0, 399, 413, 295, 78, 245, 78, 0, 581, 545, 503, 288, 417, 78, 388, 382, 0, 0, 0, 9, 556, 572, 215, 0, 420, 403, 530, 515, 574, 615, 84, 216, 42, 293, 391, 421, 570, 0, 510, 289, 272, 78, 213, 79, 28, 385, 30, 6, 389, 326, 299, 604, 592, 523, 550, 512, 0, 256, 80, 30, 401, 418, 0, 30, 422, 0, 217, 593, 516, 9, 404, 423, 216, 246, 85, 220, 594, 575, 558, 481, 424, 392, 248, 225, 86, 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 620, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 0, 0, 0, 0, 81, 0, 128, 0, 0, 83, 549, 0, 0, 0, 0, 0, 0, 0, 27, 0, 552, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 502, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 290, 0, 0, 0, 0, 0, 0, 0, 617, 0, 0, 0, 0, 0, 616, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 390, 0, 0, 0, 483, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 0, 0, 0, 494, 0, 0, 0, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 209, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 514, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 495, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 267, 277, 0, 0, 0, 0, 0, 529, 273, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 511, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 456, 0, 0, 0, 310, 0, 0, 0, 0, 0, 0, 251, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 569, 0, 0, 0, 0, 600, 520, 0, 0, 0, 0, 242, 0, 0, 0, 0, 0, 0, 458, 0, 0, 479, 0, 0, 0, 0, 0, 61, 0, 0, 0, 265, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 244, 0, 0, 0, 0, 0, 275, 610, 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 619, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 149, 0, 274, 0, 0, 0, 0, 0, 0, 568, 0, 0, 0, 0, 0, 0, 522, 0, 0, 0, 0, 0, 0, 0, 0, 0, 567, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 211, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 501, 0, 0, 0, 0, 0, 555, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 82, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 485, 0, 484, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 257, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 457, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 285, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 536, 0, 0, 0, 0, 0, 0, 0, 0, 294, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 68, 235, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 83, 0, 606, 0, 0, 553, 0, 0, 0, 0, 0, 0, 0, 0, 0, 243, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 609, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 519, 0, 0, 0, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 497, 0, 614, 0, 0, 427, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 398, 0, 0, 0, 544, 0, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 29, 91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 287, 0, 0, 0, 212, 0, 0, 0, 0, 0, 0, 559, 0, 0, 0, 0, 129, 0, 0, 0, 0, 0, 560, 0, 0, 0, 0, 0, 0, 0, 410, 416, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 395, 0, 309, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 297, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 533, 0, 0, 0, 411, 0, 0, 397, 0, 0, 0, 0, 0, 0, 603, 0, 0, 0, 540, 0, 0, 89, 0, 541, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 507, 459, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 266, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 608, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 607, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 618, 0, 0, 0, 0, 0, 557, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 298, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 605, 0, 0, 210, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 623, 623, 623, 623, 623, 623, 623, 622, 624]);
-    labelText = "orgmilcomschnetedugovdrrformsfeedbackofficialaccoorgmilschnetgovmagazinemediaunioncargopilotgroupcaarespressworksaerodromeworkinggroupair-traffic-controlaircraftaccident-preventioneducatormarketplaceambulanceinsurancecateringairportrepbodyenginesoftwaremodellingair-surveillanceconsultingchartertrainermaintenanceservicesdesignflightskydivingfreightassociationstudentgroundhandlingdgcafuelclubtaxicrewshowballooningexpresstraderbrokerauthoragentsairtrafficjournalistsafetyconsultantmicrolightaccident-investigationparachutingequipmentproductionfederationrecreationscientistnavigationengineertradingglidingleasingresearchpassenger-associationentertainmentparaglidinghangglidingaerobaticrotorcraftemergencycertificationgovernmentaeroclubexchangelogisticschampionshiphomebuiltcouncilconferencecontrolairlinecivilaviationjournalorgcomnetedugovcoorgcomnomnetobjofforgcomnetuwukiloappsframerorgmilcomnetedugovcoradioorgcomnetcommuneedogpbcoitgvorgedugov*spreviewfrontendrelayononstagingupid*mtls*privatelinktypedreamdeveloperbravemochawindsurfaivenmirenupsunwnextbegetngrokclerkwale2bwebcsbrunputerflutterflowspawnbaseshiptodaymagicpatternsnetlifyondigitaloceanrailwayhostedclaudehasurabotdashvercelgithubluyanigadgetreplitcloudflaretelebitedgecomputeevervaultexponyatnoopencrpplxzeaburwasmerframerzeropsrocketpreviewconvexmedusajsspritesonherculeseasypanelstreamlitsnowflakemesserliloginlinehackclubcodepennorthflankbase44corespeedleapcellngrok-freeclerkstagelovableon-fleek*us-west-3ap-south-2us-central-2us-central-1eu-central-1ap-south-1us-west-2us-east-2eu-north-1ap-north-1us-west-1us-east-1*rcloudintsegorgmilcomgobbetnetintedugovturmusicasenasamutualcoopip6uriurnin-addre164homeirisgovdixdaemoncloudnssthwien*inexexkunden4accogvormymyspreadshop4lima2ixortsinfofuturecmsfuturehosting12hpprivfuturemailinglima-cityfunkfeuer123webseitednshomemelmyspreadshopcloudletswasantqldvicactnswtascatholicwasaqldvictasidwasantozqldorgcomvicasnactnetedugovnswtasconfcomairflowlambda-urltransfer-webappairflowtransfer-webapptransfer-webapptransfer-webapp-fipstransfer-webappeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1privatenotebookstudiolabelingnotebookstudionotebooknotebook-fipslabelingnotebookstudionotebook-fipsnotebookstudio-fipsnotebook-fipsnotebookstudionotebook-fipsnotebookstudioeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2experimentsus-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1onrepostsagemakercopporgmilcompronetintedugovbiznameinfoshoprsorgmilcomnetedugovbrendlyresolvenzauscotvstoreorgcomnetedugovbizinfoidacaicoittvorgmilcomschnetedugovinfocloudezproxyacmymyspreadshopkuleuvenwebhostingtransurl123websitecloudnsinterhostsolutionsddns5476103298edgfacbmlonihkjutwvqpsryxzbarsycoororgcomedumyftpno-iporxcloud-ipfor-somemmafanfor-morewebhopselfipjozidyndnscloudnsdscloudfor-thefor-betteractivetrailcoeconorestooteorgcomeconeteduassurmoneyafricaarchitectesrestaurantloisirstourismavocatsinfoagrounivcoorgcomnetedugoviatvdeportesaludtksatorgmilcomwebgobnetinteducienciaboliviarevistacooperativaempresanombreindustriamusicapatriamedicinademocraciapoliticapuebloindigenaplurinacionalarteblogwikiinfoagrotransportenoticiasprofesionalacademiaeconomiaecologiamovimientotecnologianaturalsimplesitecepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesmscepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesms*biaamfmtcmptvfeirasampajampanatalbelemananiradiog12medindfndbmdtrdthepoaggfjdfdefinfenflegsegongengcngorgzlgslglogppgmillelqslcimcomnomadmjabimbbibbsbabcrectecsjcetcpscpvhudieticriapipsiecnbiorioecogeoteoodoproatoartfstmatvetdetbetnetcntnotfotgrueduajuespappreptmpemparqsrvadvdevgovntrturagrjorfarjusmusdesvixxyzcozfozslzbhzmaringasantamariacampinagrandegoianiasorocabafloripasaobernardocuritibaboavistarecifeaparecidasaogoncasalvadorcuiabamorenamacapalondrinacontagemsocialfortalmaceioleilaoosascoriobranconiteroi9guacutcheblogflogvlogwikitaxicoopmanauspalmascaxiasjoinvillebaruericampinassantoandreribeiraoriopretoweorgcomnetedugovv0windsurfshiptodaycloudsitecoaccoorgnetgovofmilcomgovmediatechzacoorgcomnetedugsjgovmydnspenfnlabnbmbgcbcqconcontnuyksknsmyspreadshopno-ipawdevboxbarsyonidatemfuinabusavinstanceseceuguukussryzespawncsxcloud-ipmyphotosfantasyleaguetwmailcleverappsscrappingccwucloudnsftpaccessgame-serverccgovobjectsrmalpgcust*svcalp1aeappenginermalpgmyspreadshop4lima2ixsquare7cloudscale123websitefirenet12hpflowgotdnslinkyard-cloudcloudnslima-citydnskingobjectstorageedaccogoorusorgcomnetintedua\xE9roportxn--aroport-byaassogouvcomilgobgovcloudnses-1eu-west-1us-east-1euvipit1eurarubait1s3lbwebsites3websiteru-spbru-mskelasticcsrunstnukukcaukusnl-ams-1fr-par-1fr-par-2functionsnodess3ddlwhmrdbfnck8sifrs3-websitecockpitscblmgdbdtwhkafkpubprivs3ddlwhmrdbk8sifrs3-websitecockpitscblmgdbdtwhkafks3ddlrdbk8sifrs3-websitecockpitscblmgdbdtwhkafkk8sscalebookpl-wawfr-parnl-amsbaremetalsmartlabelinginstancesdechk2kuleuvenlaravelvoorloperurownoxazapscwhstgrvaporonline-serverobservablehqelementorantagonistreclaimjoteluluencowaydiademjelasticmatlabmagentositetrendhostingaxarnetperspectajenv-arubajelejoteravendbemergenttrafficplexconvexkeliwebserveboltbegetcdnstaticson-rancherprimetelonstackitunison-servicesdnshomelinkyardbarsyjelecloudnscocomnetgovmycn-northwest-1cn-north-1s3s3-accesspoints3-websites3s3-accesspointrdsdualstacks3-deprecatedemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspoints3s3-accesspointrdsdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicn-northwest-1cn-north-1cn-northwest-1ebcomputeelbcn-north-1airflowcn-northwest-1cn-north-1oncn-northwest-1cn-north-1amazonawssagemakeramazonwebservicesdirectasgdsdhehahljlnmhbacscahqhshhihnlnynsnmofjbjzjxjtjhkcqtwgsjssxnxjxgxxzgz\u7DB2\u7D61\u7F51\u7EDC\u516C\u53F8orgmilcomnetedugovxn--55qx5dcanva-appsxn--io0a7iquickconnectcanvasitekhsjxn--od0algcanva-codemyqnapcloudsrvrlessclustersrealtimestorageleadpagescarrdcrdorgmilcomnomnetedugovhidnssupabaserdpareplmypiumsoxmitotaplpagesfirewalledreplitowodevwebview-assetsvfswebview-assetss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecateds3-websites3-object-lambdaexecute-apis3s3-accesspoints3-websites3-accesspoint-fipss3-fipss3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipss3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9vfss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1us-northeast-1ap-southeast-1me-south-1af-south-1ap-south-1ap-southeast-7us-west-2eu-west-2ap-east-2us-east-2ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ap-southeast-6ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1mrapaccesspoints3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3eu-west-3ap-south-2eu-south-2computes3-ap-northeast-2elbrdss3-ap-east-1s3-sa-east-1s3-us-gov-west-1s3-eu-central-1s3-ca-central-1eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3s3-website-us-west-2s3-website-eu-west-1s3-external-1eu-central-1me-central-1ca-central-1il-central-1s3-us-west-1s3-eu-west-1s3-website-sa-east-1s3-website-ap-southeast-2ap-northeast-1ap-southeast-1s3-us-west-2s3-eu-west-2me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2s3-website-ap-southeast-1s3-1s3-globals3-ap-northeast-3eu-north-1airflowap-southeast-2s3-us-gov-east-1s3-fips-us-gov-east-1s3-me-south-1s3-ap-south-1ap-northeast-2s3-website-us-west-1ap-southeast-5s3-eu-north-1s3-ap-southeast-1s3-website-us-gov-west-1compute-1s3-eu-west-3us-gov-west-1s3-website-ap-northeast-1us-gov-east-1s3-fips-us-gov-west-1s3-website-us-east-1s3-ap-southeast-2ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3-us-east-2s3-ap-northeast-1authauthauth-fipsauth-fipseu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1rframeservicesbuilderstg-builderdev-builder*ociocpocsdemoinstanceeu-west-3eu-south-2ap-southeast-3ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1previeweu-4us-4us-1eu-1us-2eu-2us-3eu-3appspaasrag-cloudrag-cloud-chjcloudjcloud-ver-jpcdemonodebalancermembersipeuxvsoncillaocelotonzayalilynxsphinxfentigercustomercaracalo365cloudstaticxendevapp001testcode-builder-stgplatformmediasiteprojedrydpagesjsx0desazacncoitrueu4uhkukgrbrushatenadiarymyspreadshopfrom-flfrom-wvwebspace-hosttheworkpchatenablogcursorusercontentservesarcasmapplinzisakuratanwixsiteappchizigiizeis-into-carsdnsiskinkyadobeaemcloudis-a-therapistpgfogmyvncdojinis-an-actress1kappfldrvkozowqa2jpnmexprgmrfirewall-gatewaydynnscafjsfbsbxooguyfrom-gawoltlab-demois-a-anarchistwiardwebteaches-yogadattowebtb-hostinglive-websiteservegamegotpantheonfrom-nhsubsc-payfrom-ohvipsinaappfrom-cadyndns-officehomelinuxfrom-mahercules-appservebbsstreakusercontentfrom-okfrom-wyfastly-terrariumis-a-llamaqualyhqportalserveexchangeon-vaporvivenushopciscofreakgrayjayleaguesmetaaiusercontentfrom-iais-a-libertariansaves-the-whalestaveusercontentyolasiteoperaunitepoint2thisis-a-catererclaudeusercontentlinodeusercontentfrom-vagithubusercontentsells-for-lesshosteurcanva-appsplaystation-cloudddnsfreefrom-pafrom-prfrom-waddnskingoutsystemscloudhotelwithflightmydattois-a-nascarfanmydbserverminiserverdamnserverservehumouris-a-playerfrom-nvfrom-nmemergentagentgentappsamplifyappfrom-kyis-an-accountantnfshostserveircfrom-akpythonanywherestackhero-networkpostman-echolikescandydyndns-mailobservableusercontentserveftpfreeboxosfrom-utcdn77-storageamazonawsneat-urldyndns-serverlinodeis-a-teacherfrom-vtgleezemythic-beastsus1-pleniteu1-plenitla1-plenitpaywhirlservecounterstrikejdevcloudhealth-carereformis-into-animegoogleapisis-a-painterafricaisa-hockeynutatmetais-an-actora2hostedis-a-democratdatadetectest-le-patrondigitaloceanspacesis-a-designeris-a-hunterlinodeobjectstemp-dnsissmarterthanyoufrom-arsimplesiteevennodetownnews-stagingis-a-liberalgooglecodejelasticservemp3qualyhqpartnerdyndns-free1cooldnsest-a-la-masiondrayddnsdynuddnsfrom-orfrom-miis-a-bloggerfrom-himydobisscanvacodeis-an-engineerest-a-la-maisonupsunappdevinappswafflecellmyasustorwpenginepoweredfrom-ctservep2psame-appmyshopblocksthingdustdatalikes-piediscordsezis-with-thebanddev-myqnapcloudlpusercontentis-leetshopitsite3utilitiesis-a-personaltrainersinaappladeskis-a-cheflogoipselfipbase44-sandboxnospamproxyalibabacloudcsmesswithdnsauthgearappsiamallamawithgooglelutrausercontentmochausercontentframercanvasmytabitdyndns-homew-credentialless-staticblitzcpserverdiscordsaysis-a-nurseappspotatlassian-isolated-3premotewdfrom-mtwixstudiocode0emm180rmyactivedirectoryawsappsmytuleapdnsabrpolyspaceqbuserrenderbuiltwithdarkboutirgotdnsabrdnsdopaascanva-hosted-embedawsglobalacceleratorhomesecuritypcmyiphostditchyouripclever-clouddyndns-ipon-aptibleis-a-musiciansecuritytacticsappspaceusercontenthomeunixstrapiappsame-previewcf-ipfsmycloudnaselasticbeanstalkis-certifieddontexistkasserverik-serverdrive-platformatlassian-3pfirebaseappherokuappawsapprunnerbarsycenteris-a-cubicle-slaveservehttpmyshopifyis-a-guruquicksytessiiitesorsitesmagicpatternsappis-a-cpameteorappfrom-wiis-a-rockstarbumbleshrimpdattolocalreadthedocs-hostedfrom-rifamilydsdyndns-picsplesknsbplaceddnsaliasdynaliasdyndns-remotedoomdnsip-ddnsblogdnsis-a-doctorroutingthecloudamazoncognitobarsyonlinedsmynasddnsgurucloudflare-ipfsdeus-canvasfrom-idsmushcdnpagespeedmobilizerdyndns-at-homeunusualpersonhosted-by-previderis-a-republicandyn-o-saurstreamlitappworkisboringonthewificprapidqualifioappis-uberleetis-slickgetmyipwpdevcloudtypeformdyndns-at-workgentlentapismynascloudw-corp-staticblitzfrom-ingeekgalaxyservebeerfrom-mdonrenderspace-to-rentaivencloudappspacehostedwafaicloudcodespotblogspotatlassian-3p-us-gov-modfrom-ndfrom-msis-a-techieis-a-studentcustomer-ociis-a-photographerdurumisfrom-ksmassivegriddyndns-wikiis-an-entertaineris-a-hard-workermysecuritycamerafrom-mnrackmazedyndns-blogis-a-bulls-fanwritesthisblogfreemyipsimple-urlfrom-sdreservdauthgear-stagingest-mon-blogueuris-into-gamesrice-labsxtooldevicesakurawebis-an-anarchistoraclecloudappsdyndns-worksells-for-urhcloudfrom-dcfastvps-serverwpmucdnis-a-geekscrysecfrom-txis-into-cartoonsmodelscapetrycloudflarelocaltonetstreak-linkbalena-devicesfrom-njforgeblocksfreebox-oswebadorsitefrom-ncdoesntexisthobby-sitestreaklinkshomesecuritymacownprovidertuleap-partnersdattorelaywphostedmailalpha-myqnapcloudservequakeis-a-socialistservehalflifepivohostingdynuhostingquipelementsw-staticblitzdyndns-webfrom-deproject-studyaliases121is-not-certifiedhercules-devis-a-financialadvisorservepicsis-a-greenloseyouripfrom-ilwithyoutubemwcloudnonprodwiredbladehostingdnsdojofrom-tnpixolinomyqnapcloudis-an-artisthostedpiis-a-landscaperauiusercontentoaiusercontenton-forgeis-a-conservativedreamhostersnet-freaksapps-1and1is-goneencoreapifastly-edgefrom-nesalesforcefrom-scdeployagentoraclegovcloudappsfrom-alis-a-lawyercechirevultrobjectsstufftoreadisa-geekddnsgeeklovableprojecttry-snowplowfrom-moblogsyteis-a-bookkeepernogmyforumravendbmyboxdeelementoredsaacficogoorinforgcomgobnatneteduidstoreorgcomnetintedudevnomepublorgcomneteduathgovtestscalculatorspaynowinfoquizzesresearchedcloudnsfunnelsassessmentsjscaleforcetmacltdorgmilcompronetgovbizpresseklogesrsccloudcustomfltusrcloude4corealmgovmunicontentproxy9metacentrumdyndyndyndnsdynpagespages-researchitionoccustomercomymyspreadshopipv64diskussionsbereich4limacomrub2ixfirewall-gatewayddnssspdnsbarsykeymachinesquare7myhome-serverspeedpartnercommunity-proschuldockxenonconnectg\xFCnstigliefernbwcloud-os-instancedyndnssecmy-routerxn--gnstigliefern-wobin-butterl-o-g-i-nisteingeekin-dslin-berlinin-brbfuettertdasnetzleitungsenin-vpnlcube-serverdyn-ip24logoipdyn-berlinruhr-uni-bochum12hpgoipsrvdnsfruskygit-repossvn-reposinternet-dnsg\xFCnstigbestellenhome-webserverxn--gnstigbestellen-zvbbplacedheimdnscosidnswebspaceconfiglima-citydyndns1istmeinvirtualuserschulplattformmy-gatewayddnsseclebtimnetztest-iservmein-iservvirtual-userhome64iservschuletaifun-dnstraeumtgeradeschulserverdynamisches-dns123webseitednshomehs-heilbronndnsupdaterbssgraphicdwadpdwdaepeweaawapaafpfwfabwbpbacwcpcciwebuserapiobjectsidsiskospockkimodorikerbonesteamsparisjanewaypicardglobaltarpitreedpikekiraworfsulukirkarchertuckerhackercanarywesleystagingprereleaset3r2lpbravepanelngrokiservstglclcrmerpflypagesbarsyvivenushoplocalcertlocalplayerbearbloggatewaydeno-stagingis-not-ais-a-goodbotdashvercelmocha-sandboxplatter-appreplitgithubpreviewworkersinbrowserevervaultis-ahrsndenoxmitmodxmyaddrstorageapipayloadgrebedocruncontainersstgstagelclstageloginlineis-a-fullstackcodepenleapcellngrok-freeis-coolstoragewebharemediatechlibp2pdiscourseimaginecomyspreadshopstoreregbiz123hjemmesidefirmcoorgcomnetedugovsldorgmilcomwebgobartnetedugovtmorgpolcomsocartnetedugovassoagrondiscoodontk12medcuegyecpaabgengorgmilgalsaltulcomadmesmgobpubdocmonfindgnriouioproartlatvetnetfotedulojgovntrturibrbarxxxofficialbasechefprofmktgpsictechinfoarqtcontdentrrpppsiqgit-pagesritmedfieorgcomlibprieduaipgovriikmeactvsportorgmilcomscieunnetedugovnameinfopintouchtawktotawkmyspreadshoporgcomnomgobedu123miwebcomputeorgcomnetedugovbiznameinfocognito-idpeusc-de-east-1onjelasticnxaspdnsbarsydirectwpdeuxfleurstransurldogadoprvwcloudnsamazonwebservicesdnshomeuserpartycokoobinmkmfidymyspreadshopalandkapsiikixn--hkkinen-5wacloudplatformh\xE4kkinen123kotisivuidacorgmilcompronetedugovbiznameinforadioorgcomneteduuserexperts-comptablestmmyspreadshopgretaprdcomnomynhccifbxoshuissier-justicenotairesaeroportfreeboxoson-webavocatassoportgouvkdnschirurgiens-dentistes-en-franceavouesfbx-os123sitewebveterinairechirurgiens-dentistespharmacienchambagrimedecinfreebox-osdediboxgoupilemszicpyicpvicppleysheezypagesedugovcnpyorgcomcybllcpvtnetedugovtnxonlineschooldaemond6atcopanelorgnetplybotdashstackitkaasorgmilcomnetedugovbizmodltdorgcomedugovcoorgcomneteduappwriteacorgcomnetedugovcloudtranslateusercontentorgcomnetedumobiassoorgcomnetedugovbarsysimplesitediscourseindorgmilcomgobneteduorgcomwebnetedugovguaminfonxhra\u6559\u80B2\u654E\u80B2\u7DB2\u7D61\u7F51\u7D61\u7EC4\u7E54\u7D44\u7E54\u7F51\u7EDC\u7DB2\u7EDC\u7EC4\u7EC7\u7D44\u7EC7\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\u4E2A\u4EBA\u7B87\u4EBAltdorgcomincneteduidvgovxn--uc0ay4axn--55qx5dxn--mk0axixn--io0a7ixn--uc0atvxn--zf0avxxn--lcvr32dxn--od0algxn--wcvs22dxn--gmqw5axn--od0aq3bxn--mxtq1mxn--ciqpnxn--tn0agxn--gmq050iorgmilcomgobneteduiservwp2tempurlmircloudfreesitewpmudevmyfastgadgetcloudaccessjelehalfboltfastvpsemergenteasypanelopencraftizcombrendlynamefromrtpersoadultmedorgpolrelcomproartnetedufirminfoassoshopcoopgouvtmcomediahotelforumvideosportorgsexagrargameslakaseroticaerotikatozsdereklamcasino2000filmsuliinfoboltshopprivnewsszexcityutazasjogaszkonyveloingatlaneacaicogoormy\u1B29\u1B2E\u1B36milwebschnetkopbizzonedesaponpesxn--9tfkymyspreadshopgovmytabittabitorderravpageaccok12idforgnetgovmuniltdplcaccotttvorgcomnetmeca6g5gpgamubacaicniocoukuptverdruscsdelhiindorgmilcomwebnicfingenpronetintedugovresbizbiharbarsyinternetbusinessschooltravelsupabasealumnigujaratfirminfoaeropostbankcoopindevscloudnsno-ipbarsybarrell-of-knowledgebarrel-of-knowledgensupdategroks-thisdnsupdatefor-ourknowsitalldvrcammittwalddynamic-dnsv-infowebhopselfipdyndnshere-for-moreilovecollegemayfirstforumzcloudnsmittwaldservertypo3servergroks-theeusekd1cdndyndnsidrawsainaueuapjpusstagemocksysdevicesclientcustreservdcustdevdisrecprodtestingcobeebyteutwenteboxfusebravepstmndedynngrokorgmilcomnomnetedugovqcxqzzbarsythingdustmo-siemensrb-hostingfh-muenstergitbookbluebitecloudbeesusercontentnodeartkiloappsforgerockdarklangresinstagingapigeebubbleb-datascryptedhypernodedappnodepantheonsitegitlabgithubkeeneticvirtualservercleverappshostyhostingon-rioedugitticketstelebitwixstudioon-k3sicp0icp12038jeleqotolairbubbleappsmyaddrstolosmyrdbxwebflowdrive-platformbeagleboardhasura-applolipopdefinimavaporcloudmusicianwebflowtestazurecontainerresindevicereadthedocsloginlineeditorxmoonscalesandcatsbasicserverwebthingsbrowsersafetymarkbeebyteappbitbucketidaccovistablogorgschnetgovxn--mgba3a4f16axn--mgba3a4fraarvanedge\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646jclaspeziapdudcefegelemeperetevebacanatavaparasabgagfgogrgpgalclblimfmrmcbmbvbfclcmcvcrcpcchlimifibicivipirisimncnbnanenrnpntnnolomobocoaogorosopotoptvtatctbtmtltotpusulunutpspapaqsvpvvvtvavvrtrsrprgrfrcrbrarorkrvstsssbscsmsispzczbzbozen-suedtirolmyspreadshopxn--bulsan-sdtirol-nsbxn--valledaoste-ebbtrentinoaltoadigetrentin-sued-tirolxn--forlcesena-c8axn--forl-cesena-fcbxn--bozen-sdtirol-2obtriestetrentinsuedtiroltrentino-s-tirollecceudineaostesienaparmaluccapaviagenoapaduaaostamonzaabruzzoternirietiturinmilanbozenlaziofermoleccocuneonuoropratola-speziavdataaligfvgpugmolcalcamlomumbsicpmnvenvaoedugovabrsarmaremrbastoslazibxosfirenzetrentinos\xFCdtirolval-d-aostavalle-aostamessinacremonaravennatoscanatrentin-suedtirolbolognacalabriaurbinopesarofriuli-v-giuliaogliastraxn--valle-aoste-ebblaquilaandriatranibarlettasyncloudxn--valle-d-aoste-ehbaostavalleyvalled-aostatrentino-alto-adigevallee-d-aostexn--balsan-sdtirol-nsbpistoiasicilialucaniacataniaiserniaperugiabresciaveneziagorizialiguriaimperiabulsan-suedtirolbalsan-suedtirolbarlettatraniandriaxn--trentino-sdtirol-szbforl\xEC-cesenatuscanyvall\xE9e-d-aostemantovavall\xE9e-aostecasertapiemontevalleaostaval-daostafriulivgiuliatrevisoforli-cesenavall\xE9edaosteferrarapescaravald-aostatrentino-altoadigefriuli-vegiuliavallee-aostecarboniaiglesiastarantomediocampidanovalleedaostetrentinosud-tirolcampobassotrentins\xFCd-tiroltrentinos\xFCd-tirolmonzabrianzatrentino-s\xFCdtirolxn--trentino-sd-tirol-c3bpotenzacosenzavicenzaemiliaromagnavenicefrosinonemarchepordenonetrentinosued-tirolvaresemolisevall\xE9eaostefriuli-veneziagiuliabasilicatalatinaanconasavonaveronamodenabiellabolzano-altoadigepugliafoggiaumbriatrentino-stirolgenovapadovamateranovararagusapiacenzatrentinostirolvalleeaostetempio-olbiasudsardegnatrentinsudtirolmassa-carrarafriuliveneziagiuliatrentinosuedtirolandria-barletta-tranitrapanixn--cesenaforl-i8amaceratacaltanissettaascoli-picenobrindisicarraramassacagliaririmininapolivibo-valentiachietibulsan-sudtirolbalsan-sudtiroltrentino-a-adigebulsanbalsaniglesiascarboniamilanotorinoteramodell-ogliastraarezzotrentinoalto-adigerovigotrentovenetoiglesias-carboniatrentino-sud-tirolaltoadigereggio-emiliareggio-calabriasardegnatranibarlettaandriapiedmontxn--sdtirol-n2amedio-campidanotrentino-s\xFCd-tirolfriuli-vgiuliafriuli-ve-giuliaromeennaromapisa32-b16-b64-blodiastibarineencomonaplesforlicesenailiadboxosalessandriasicilytrani-barletta-andriaxn--trentin-sdtirol-7vbpesarourbinotrentinsued-tirolcesena-forliforl\xECcesenaemilia-romagnamonzaebrianzaxn--trentinsdtirol-nsbtrentinos-tiroltrentins\xFCdtirolvalledaostaolbia-tempiocampidanomediovibovalentiasassarivalle-daostalombardysud-sardegnafriulivegiuliareggioemiliamonzaedellabrianzaalto-adigevercellitrentin-sudtiroltraniandriabarlettatrentino-sudtirolascolipicenobozen-s\xFCdtirolfriulive-giuliaflorencexn--cesena-forl-mcbcarbonia-iglesiasaosta-valleycarrara-massadellogliastratrentinoa-adigexn--valleaoste-e7apesaro-urbinoxn--trentinosdtirol-7vbxn--trentin-sd-tirol-rzbxn--trentinsd-tirol-6vbtrani-andria-barlettatrentin-s\xFCd-tirolxn--trentinosd-tirol-rzbgrossetomonza-e-della-brianzas\xFCdtirolreggiocalabriatrentinoaadigetrentin-s\xFCdtirolverbano-cusio-ossolafriuliv-giuliaverbaniacampaniatrentino-aadigefriulivenezia-giuliasardiniaandriabarlettatranibarletta-trani-andriacatanzarooristanourbino-pesarocesena-forl\xECvalle-d-aostacampidano-medio123homepagesiracusatempioolbiasuedtirollombardiaavellinocesenaforl\xECtrentinofriuli-venezia-giuliabozen-sudtirolandria-trani-barlettabulsan-s\xFCdtirolbalsan-s\xFCdtirolmonza-brianzabolzanotrentino-sued-tirolbellunosalernolivornocrotonesondriodnshometrentinsud-tirolmassacarraratrentin-sud-tiroltrentino-suedtirolviterbobergamocesenaforliolbiatempiopalermobeneventoagrigentoofcoorgnetfmaitvphdengorgmilcomschnetedugovperagrikanieasukehandachitatokaiaisaikonanoharuamaobuhigashiuraowariasahiinuyamatobishimaiwakurashitarainazawatoyonegamagorimihamatoyotataharakariyayatomioguchikomakimiyoshinishiotokonamekiyosuchiryutoyohashiokazakiisshikikasugaikotakiratoeianjotogofusosetohazutsushimashinshirotakahamanisshinshikatsuhekinantoyokawaichinomiyatoyoakeodateogataakitaikawakyowahonjoogayurihonjonoshirokamiokakatagamimitanegojomeyokotekosakadaisenkazunonikahohonjyomoriyoshimisatohappoukamikoanihachirogatahigashinarusesembokufujisatokitaakitaitayanagiowanitakkomutsutsurutahirosakigonoheoirasetowadamisawanohejiaomorishingohiranairokunohehashikamitsugarushichinohehachinohenakadomarisannohekuroishisakaeisumiasahiotakiinzaiabikomatsudoyachiyomutsuzawakujukuriomigawakashiwatoganemihamanaritasakuranagaramobarahanamigawachoshishiroichoseikozakishisuikatorimidorichonankyonanfuttsuonjukufunabashinagareyamanodasosatakochuotohnoshourayasukimitsuyokaichibayotsukaidosodegauratateyamakamagayayokoshibahikariyachimatakatsuuratomisatokisarazukamogawaichikawanarashinoichinomiyashimofusaminamibososhirakoichiharaoamishirasatoikatahonaiainansaijoseiyoiyoozuuwajimaniihamanamikatamasakiuchikokihokutobetoonshikokuchuomatsuyamaimabarikamijimakumakogenyawatahamamatsunosabaeikedaobamasakaifukuiohionotsurugamihamawakasaminamiechizeneiheijikatsuyamatakahamaechizensoedaukihaomutaokawanishiogoribuzenonojosueumiokiotochikugosasagurisaigawamizumakishinyoshitomikurumekurateyamadakasuganakamamiyamanogatatakatahakataiizukakawaratagawakasuyaashiyainatsukimunakataminamitsuikishonaikurogifukuchikeisenhigashimiyakoshinguyukuhashiokagakiyamekogaongausuikahotohochuotoyotsumiyawakadazaifuhisayamatachiaraiyanagawanakagawahirokawachikujochikushinochikuhochikuzennamieotamaokumashowateneiiwakikoorinangoononishigoshimogoomotegomishimafukushimaasakawakagamiishishirakawaiitatefutabahiratayugawahanawakitakatakawamatakunimiyabukibandaihigashihironoyamatomiharuyamatsuriaizubangedatesomaaizuwakamatsuyanaizuaizumisatonishiaizuizumizakikitashiobarataishinkaneyamakoriyamainawashirotanagurafurudonosamegawasukagawaishikawatamakawaikedaogakitaruiginanenahashimahichisonakatsugawaibigawashirakawamizunamiminokamomitakekawauesekigaharatomikasakahogikitagatayamagatatajimianpachimotosuyaotsukakamigaharahidakanisekitokigujominogodoyorogifukasamatsutakayamawanouchihigashishirakawakasaharashimonitatsumagoichiyodakannakanrashowameiwakiryuotaoratomiokafujiokaitakuranaganoharahigashiagatsumatakasakishibukawaminakamikatashinatsukiyonokawabanumataannakaoizumimidorishintoisesakiuenoyoshiokakusatsutakayamanakanojonanmokutamamuratatebayashimaebashiotakekaitadaiwahongofuchukuietajimashobaramiharahatsukaichihigashihiroshimamiyoshikumanokurenakasakaseraseranishiasaminamifukuyamashinichionomichiosakikamijimajinsekikogentakeharaotobenanaeikedatohmaozoraobiraabirakyowaeniwataikibibaisharirebunerimohiroooketootarupippunishiokoppechitosefurubirahakodateshiranukakitahiroshimakushiroobihironanporoiwamizawaniikappukunneppufukushimanakasatsunaitoyourakuromatsunaiakabirakamisunagawashibechaurakawakamifuranonakatombetsuasahikawashimokawakayabeokoppebiratoriabashirisaromaatsumanumatahidakabifukamukawamikasahorokanaitoyotomisarufutsuhigashikawaishikarikitamiyoichiesashiiwanaitomariminamifuranoakkeshifuranotoyakoyakumootoineppushikaoishiraoinemuronayorohaboroashorobihororishirifujiutashinaihokutotakasuebetsuurausuassabukikonaishimamakinaiedatetoyabieinikiesanuryuoumuteshikagarikubetsuashibetsukimobetsuaibetsutobetsusobetsuembetsushimizuchippubetsurishirihokuryuhoronobeshintokutsubetsushibetsuhonbetsumombetsutsukigatakuriyamakoshimizushiriuchikutchanmurorannoboribetsukamishihorowassamushinshinotsukembuchiwakkanaikamoenaikiyosatotakinoueshikabesunagawafukagawanakagawatakikawakamikawahigashikagurahamatonbetsumatsumaemoseushirankoshishakotanimakanemashikeotofuketomakomaisandatambaitamiawajikasaiasagoshisoonoakoyashirotoyookaminamiawajiinagawafukusakitakasagokamigorikasugaharimayokawaashiyahimejiakashitaishiaogakisannantakinosumototakarazukanishinomiyashingugoshikinishiwakiyokatakaaioimikisayoyabukawanishiamagasakisasayamashinonsenkakogawaichikawakamikawatatsunotsukubaiwamaogawaasahisakaitokaioaraiitakobandodaigosuifuinaamikasumigaurakashimaomitamayachiyoshimodatetomobetoridehitachinakainashikisakuragawakasamayawaramoriyahitachiomiyanamegatayamagatahitachikamisuushikutakahagiibarakitonekoganakasowayukimihojosomitoryugasakishimotsumafujishirotsuchiurachikuseihitachiotashirosatotamatsukuriuchiharashikahakuinanaotsubatawajimakahokukawakitatsurugikaganominotosuzuuchinadakomatsuanamizunakanotohakusannonoichikanazawaiwateshiwafudaikawaimoriokaofunatohanamakikuzumakikitakamininohekunoheyamadayahabasumitaichinosekitanohatahiraizumirikuzentakatajobojiotsuchihironomiyakoiwaizumikarumaiichinohenodakujitonooshushizukuishifujisawamizusawakamaishikanegasakimannoutazukotohiraayagawazentsujihigashikagawauchinomikanonjisanukimarugamemitoyotakamatsutadotsunaoshimatonoshoakuneamamiizumihiokiyusuikinkoisasookouyamanakatanekagoshimakanoyaisenkawanabeminamitanemakurazakitarumizunishinoomotematsumotosatsumasendaioimatsudaayaseebinamiurazushinakaiodawaraiseharasagamiharahakoneaikawakaiseiatsugitsukuihadanoyamatoyamakitazamaoisochigasakininomiyayokosukakamakuraminamiashigarafujisawasamukawakiyokawahiratsukayugawaraokawaumajikochitsunootoyoakiinonishitosayasudahidakamiharasakawaniyodogawahigashitsunokagamigeiseisusakiotsukinaharisukumomurototosakamiochitoyotosashimizumotoyamanankokunakamurakitagawayusuharaogunichoyoukiasoutoozugyokutoamakusamifunetakamoriyamagaminamataminamiogunikikuchisumotoyamatonagasumashikiaraokumamotokamiamakusanishiharayatsushiroayabeseikasakyoideineujinakagyokameokakyotangokyotanabekyotambaminamiyamashiroyamashinatanabeyawatawazukaminaminantanmiyazuhigashiyamafukuchiyamakitamukokamojoyokizumaizuruujitawaraoyamazakinagaokakyokumiyamakawagoeinabeshimameiwaasahitaikiudonoisetsukisosakikuwanamihamamiyamasuzukatamakimisuginabarikumanokomonominamiisewataraitobakiwatakikihotadomatsusakayokkaichikameyamaureshinoishinomakishichikashukuohirataiwaosakizaohigashimatsushimashikamaiwanumashibataogawaraonagawakawasakiseminemarumoriminamisanrikukakudamuratawakuyatomiyanatoriwataritagajomisatotomekamirifushiroishimatsushimayamamotoshiogamafurukawahyugaebinotsunosaitoayakushimanobeokakitauramiyazakitakazakigokaseshiibamimatashintomikunitomikitakatakobayashikawaminamitakaharukijotakanabemiyakonojonishimeranichinankitagawakadogawamorotsukakisofukushimaminamimakisakaeobuseikedaogawamiasaokayaasahiotakiotarichinoinaomichikumakomaganechikuhokukaruizawayasuokaooshikaikusakaminamiaikitogakushimatsukawakawakamitateshinatakamorikitaaikishiojirimiyadahakubaiizunaiijimaiiyamamiyotasuzakayasakatoguraookuwanagawaminowahirayayamagataminamiminowafujimiomachisakakitakaginaganonakanosakuhokomoronagisoshinanomachiwadauedaiidaharasuwatomiachiaokianankisosakunozawaonsenagematsutakayamashimosuwamatsumotoyamanouchinakagawamochizukiazuminotatsunoobamaomuraseihiunzenosetofutsuikichijiwanagasakiisahayahasamisaikaikawatanasasebohiradokuchinotsugototogitsutsushimashimabarashinkamigotomatsuurayamazoekashibaikomakawaitenrioyodosangokoryoudaojiikarugayamatokoriyamatenkawakatsuragikurotakikawakamimiyakemitsuetakatorikamikitayamayamatotakadahegurishinjokanmakisakuraitawaramotogoseoudanarasoniandokawanishishimoichihigashiyoshinokashiharashimokitayamanosegawayoshinomintsivorytopazsakuragehirnsumomoaseinetopalmail-boxmokurenyoitamuikaojiyagosensanjoaganomyokoseiroagaomishibataniigatanagaokamurakamiuonumayuzawakariwatagamitainaitsunanminamiuonumatochioyahikojoetsuseiroukamosadoizumozakitokamachiitoigawasekikawakashiwazakitsubamemitsukekokonoesaikiusukibeppuusahimeshimakunisakihasamataketatsukumihitaoitahijikusuyufukujukamitsuebungoonobungotakadaibaraniimibizentsuyamaokayamakasaokahayashimayakagemaniwaakaiwamisakishinjotamanotakahashikibichuowakesojanagishookumenannishiawakurakurashikiasakuchisetouchikagaminosatoshotomigusukunakagusukuyaeseizenaurumaiheyaaguniogiminanjokinminamidaitokitanakagusukuyonaguniokinawaishigakikunigamiurasoekadenataramahiraraginozataketomishimojizamamitonakiitomanhigashimotobuyonabarugushikamionnanahanagohaebarukumejimakitadaitonakijinnishiharayomitanginowantokashikiishikawaikedasuitaminohizuminishisakaikananabenodaitoosakasayamayaokishiwadatadaokakaizukatondabayashichihayaakasakakumatorikadomasayamahigashiosakashijonawatehirakatataishimisakitajirihannansennankatanotoyonominatosettsuhigashiyodogawaibarakinosekitachuohigashisumiyoshifujiiderakashiwaraizumiotsutoyonakamatsubaramoriguchiizumisanoshimamototakatsukineyagawahabikinotakaishikawachinaganoyoshinogarikamiminearitaouchiimarihizenogikashimaariakekiyamafukudomikitagatakitahataomachigenkaikanzakinishiaritakyuragisagataratosutakushiroishikaratsuhamatamakouhokukawagoeyoshidasatteogoseirumaasakaurawaogawaniizaomiyayoriiotakishikihonjooganohannohanyuinasaitamaokegawaarakawayoshikawayokozehasudasayamahidakafukayachichibuiwatsukiryokamiyoshimikamiizumifujimiwarabiranzanmiyoshiminanoyashiosakadosugitomisatohigashichichibutodasokakukiyonokazoshiraokakasukabekounosukawajimatsurugashimamiyashirokitamotohatoyamamoroyamahatogayakumagayakawaguchinagatorokamisatomatsubushinamegawatokigawakamikawafujiminohigashimatsuyamakoshigayatokorozawas3isk01isk02ryuohkoseikonanaishorittotakashimamaibarahikonetorahimenishiazaikokagamokotoyasuotsukusatsunagahamamoriyamatoyosatotakatsukinotogawaomihachimanhigashiomiakagiunnanizumogotsuamayatsukakakinokimatsuehamadamasudahikawahikimiokuizumoyasugiyakumomisatotamayuohdahigashiizumookinoshimanishinoshimatsuwanoshimaneshimadafujiedayoshidashimodagotembaiwataatamikosaiyaizuitoizumishimahaibaramakinoharaomaezakikawanehonkannamisusonohigashiizufukuroinumazukawazufujiaraishizuokahamamatsushimizuizunokunimatsuzakimorimachiminamiizunishiizukikugawakakegawafujikawafujinomiyaujiietsugaoyamayaitaohiranikkoashikagakuroisokanumasakurashioyakarasuyamamotegiichikaikaminokawatochigihagamokanogisanobatonasumibunasushiobaranishikatautsunomiyaiwafunemashikoshimotsukeohtawaratakanezawaitanokomatsushimatokushimaichibaminamiaizumiwajikikainanmiyoshinarutomimamugiananmatsushigesanagochishishikuinakagawamachidachiyodakomaefussainagitaitochofufuchuomeotahigashiyamatotoshimaokutamaaogashimakodairaedogawaarakawahachiojishinagawatachikawashibuyasuginamihinodekiyosesumidaoshimanerimamitakahamuraadachinakanomizuhobunkyomegurominatokoganeihigashikurumekokubunjihigashimurayamamusashimurayamatamakitahinochuokotokatsushikakouzushimaogasawaraakishimakunitachishinjukusetagayamusashinohachijoitabashiakirunohinoharachizunanbukotouramisasawakasayonagokogehinoyazutottorinichinansakaiminatokawaharaoyabetairainamiasahinantoimizufuchutakaokakurobeyamadajohanatoyamatonaminyuzenfunahashinakaniikawanamerikawaunazukitogahimiuozufukumitsutateyamakamiichiiwadearidayuasainamitaijikatsuragiaridagawatanabemihamahidakakainankiminomisatoshingushirahamakamitondayurakozakoyagobokitayamawakayamakudoyamahashimotokushimotokozagawahirogawakinokawanachikatsuurarsuseroeoishidasagaeoguniasahinagaitendonanyoobanazawanishikawasakataohkuratozawamikawamamurogawayamagatafunagatatakahatashonaishinjokahokuiideyuzakawanishitsuruokakaminoyamayamanobeshiratakamurayamanakayamakaneyamahigashineyonezawasakegawamitouubeyuuabushimonosekitabuseoshimatoyotaiwakunihikarishunannagatohagihofukudamatsutokuyamashowadoshitsurunanbukoshukaiminami-alpsnirasakikosugeotsukioshinohokutominobuyamanashifuefukichuokofuichikawamisatoyamanakakonakamichitabayamanishikatsuranarusawafujikawahayakawafujiyoshidafujikawaguchikouenohara\u9577\u91CE\u4EAC\u90FD\u5C90\u961C\u5927\u962A\u4E09\u91CD\u7FA4\u99AC\u5343\u8449\u6ECB\u8CC0\u4F50\u8CC0\u5948\u826Fadednelgaccogogror\u79CB\u7530\u611B\u77E5\u9AD8\u77E5\u57FC\u7389\u6C96\u7E04\u6803\u6728\u718A\u672C\u5CA9\u624B\u9752\u68EE\u5C71\u68A8\u65B0\u6F5F\u5CF6\u6839\u9CE5\u53D6\u9577\u5D0E\u9999\u5DDD\u5BAE\u57CE\u77F3\u5DDD\u5927\u5206\u5BAE\u5D0E\u8328\u57CE\u5C71\u53E3\u5175\u5EAB\u5C71\u5F62\u5FB3\u5CF6\u5E83\u5CF6\u798F\u5CF6\u798F\u5CA1\u5CA1\u5C71\u5BCC\u5C71\u9759\u5CA1\u611B\u5A9B\u798F\u4E95\u6771\u4EACxn--4it168dhatenadiaryxn--vgu402ckawaiishophatenablogcocottenamaste\u5317\u6D77\u9053penneehimeiwateversestabachibashigagonnagunmapermahaccaakitaosakauh-ohblushkochiaichifukuikuroncapooitigohyogotokyokyotopunyuthickcheap0t00g00j0mie2-ddaapyawjg0amfemsubxiiboomoobutchueekpgwrgrherskrboyrdyupperunderflierchipsmydnsheavyangryhippygirlyrulez\u795E\u5948\u5DDD\u9E7F\u5150\u5CF6\u548C\u6B4C\u5C71bambinaxn--nit225kokayamasaitamaxn--k7yn95exn--1lqs03nsapporoparasitelolipopmcxn--efvn9sniigatafukuokatokushimafukushimahiroshimakagoshimafakefurokinawaxn--8pvr4ucoolblogxn--0trq7p7nnkawasakinagasakimiyazakichilloutxn--8ltr62kxn--klty5xpeeweezombiecutegirlxn--rny31hxn--uuwu58axn--ntso0iqx3axn--djrs72d6uytoyamanikitanyantakagawamimozanagoyaboyfriendxn--2m4a15egreaterchowderegoismyamagatafashionstorexn--elqq16hxn--pssu33lsendaimiyagixn--rht27zpecoriaomorisaloonwatsonvivianxn--djty4knobushipigboatnaganopinokoxn--f6qx53asadistvelvetsecretxn--5js045dchicappayamanashiibarakidigickgirlfriendxn--1lqs71dmongolianxn--c3s14mxn--qqqt11mtochigixn--5rtq34kparallelo0o0mondkobesagabonadecaoitanarafoolkilldecimainhiholomosblokilociaoundopupugifutankcrapflopnooroopsmodsholyjeezstripperpepperbittershizuokaxn--rht3dkitakyushureadymadeicurusversusmatrixxn--rht61ehungryfloppygloomycrankyhandcraftedlittlestarxn--klt787dxn--kltx9awhitesnowsunnydaytottorilovepoptheshopbuyshopxn--5rtp49cxn--d5qv7z876cwebaccelxn--kbrq7oxn--4pvxsxn--1ctwolovesickkumamotocatfoodxn--tor131oyokohamawakayamatonkotsuxn--ehqz56nxn--uist22hxn--6btw5axn--kltp7dyamaguchifrenchkisspussycatxn--4it797kxn--uisz3gbabybluexn--zbx025dnetgamersxn--7t0a264ckanagawaxn--6orx2rishikawaxn--ntsq17ghalfmoonschoolbusjellybeanxn--mkru45iusercontentlolitapunkxn--32vp30hsakurastoragehokkaidoshimanecandypopbabymilksupersaleweblikeraindropbackdropwebsozaikikirarahateblodaynightmeneacsccogoormobiinfoaeusxxorgmilcomnetedugovorgcomnetedugovbizinfotmprdorgmilcomnomedugovassnotairespresseassocoopgouvveterinairemedecinpharmaciensorgnetedugovtraorgcomedurepgovmeneperekgacscaiiocogoitoresmshsseoulbusanulsandaeguc01milvkimmvchungnamjeonnamjeonbukeliv-dnsgyeonggijejueliv-cdnincheondaejeongangwongyeongbukgwangjuchungbukgyeongnameliv-apicoeduindorgcomembnetedugovorgmilcomnetedugovjcloudorgcomnetintedugovperbnrinfocooyorgcomnetedugovethipfscanvamypepethw3sstorachakeeneticjoinmcinbrowserdwebcyonnftstoragemyfritzaemewphlxachotelltdorgcomwebsocschngonetintedugrpgovassnomgacsccoorgnetedugovbizinfo123websiteidorgmilcomasnnetedugovconfidmedorgcomplcschnetedugovaccoorgnetgovpresstmassoirseproxaccosoundcasthoptocraftvp4c66orgnetedugovitsmcdirmyboxbarsyedgestacksynologylogintoopencloudnohostwebhopdiskstationi234tcp4hoocgroknoipprivmydsddnsdnsforlohmustransipdscloudfilegear-sgbrasiliafilegearframerbarsybarsyonlinecoprdorgmilcomnomedugovinforgcomnetedugovnameacprorgcomartnetedugovpresseinfoassoinstgouvorgnycedugovbarsydscloudjuorgcomnetedugovminisiteaccoororgcomnetgovorgmilcompronetintedugovbizmuseumnameinfoaerocoopaccoorgcomnetintedugovbizcooporgcomgobneteduorgmilcomnetedugovbiznameaccoorgmilneteduadvgovcoorgcomnetaltgovforgotherhiskeeneticispmanagernomassoprod5476132eastasiacentraluswesteuropewestus2eastus2pnortheurope-01newzealandnorth-01southindia-01southcentralus2-01norwaywest-01eastus2-01westus2-01australiaeast-01italynorth-01israelnorthwest-01swedencentral-01westeurope-01centraluseuap-01taiwannorthwest-01uaecentral-01northcentralusstage-01israelcentral-01mexicocentral-01canadacentral-01austriaeast-01germanywestcentral-01francecentral-01ukwest-01denmarkeast-01polandcentral-01eastus-01westus-01swedensouth-01eastus3-01westus3-01brazilsouth-01centralus-01francesouth-01australiacentral-01westindia-01uaenorth-01jioindiacentral-01canadaeast-01belgiumcentral-01spaincentral-01koreacentral-01chilecentral-01qatarcentral-01westcentralus-01eastus2euap-01norwayeast-01southafricanorth-01brazilsoutheast-01germanynorth-01switzerlandnorth-01switzerlandwest-01japanwest-01southafricawest-01japaneast-01eastasia-01indiasouthcentral-01taiwannorth-01centralindia-01uksouth-01southcentralus-01northcentralus-01eastasiastage-01indonesiacentral-01australiacentral2-01australiasoutheast-01malaysiawest-01koreasouth-01southeastasia-01southeastus5-01northeastus5-01jioindiawest-01rucdnwest1-usfra1-desandboxjls-sto1jls-sto3jls-sto2aglobalabglobalsslmapprodfreetlsmapvpslon-1lon-2ny-1fr-1sg-1ny-2paassnwebpaashostingjelasticnordeste-idcsocuserpagescwebfileblobservicebuscoreatlricnjsjelasticwebsitestoragesezagbinruhuukjptsmyspreadshopmynetnameakamaiorigin-stagingfrom-coipv64dynv6cdn77serveblogadobeaemcloudhicamsprytdnsupno-ipownipde5ovhicpfirewall-gatewaysytesmypsxbarsyusgovcloudapimyamazemyradwebakamaihdsaveincloudfastlylbfrom-lasubsc-paysquare7in-the-bandblackbaudcdnhomelinuxoninfernoctfcloudservebbsdns-dynamiccloudfrontakamai-stagingipifonyham-radio-opsenseeringclickrisingcommunity-profrom-nylocalcertgrafana-devedgesuite-stagingcloudflareanycasteating-organicatlassian-devmydattofeste-iplocaltotorprojectknx-serveredgekeycloudflareglobalcloudyclustercasacamserveftpakamaized-stagingakamaiorigindns-cloudmyeffectboomlabotdashbuyshousestwmailhetemlazure-mobilein-dslthruhereredirectmedynuddnsbouncemesupabaseluyanicloudappakamaicloudfunctionsdebiannhlfanpgafanstatic-accessin-vpnmysynologymafeloappudohomeftptrafficmanagersiteleafseidatmemsetcloudflarecloudaccesskeyword-onazure-apiis-a-chefdoes-itgets-itwebhopselfiphomeipkicks-assedgesuitewindowsserver-ontunnelmolemydissentscrapper-sitecloudflarecnuni5srcfggffiobbzabchrsndenodynuopikddnsvpndnsakadnselastxkinghostvps-hostfastlyhomeunixazureedgeshopselectdontexistmyfritzcloudjiffyalwaysdatasells-itsquaresbroke-itazurefddattolocalat-band-campmeinforumfamilydsazurestaticappsdefinimabplaceddnsaliasdynaliasnow-dnsblogdnsroutingthecloudendofinternetdsmynasakamaiedgemymediapcadobeio-staticakamaiedge-stagingakamaihd-stagingddns-ipprivatizehealthinsurancelive-onkrellianschokokeksmassivegridmysecuritycamerarackmazeserveminecraftfrom-azis-a-geekakamaizedmoonscaleoffice-on-theusgovtrafficmanageradobeioruntimeedgekey-stagingreserve-onlinechannelsdvrdnsdojousgovcloudappcdn77-sslapps-1and1podzoneazurewebsitesdynathomescaleforceyandexcloudvusercontentisa-geekcdn-edgescoaemalcesappwriteazimuthtlonarvobuiltwithrocketnoticeablestorecomwebrecnetperotherfirminfoartslgdloncogoiltdorgmilcolcomplcschgenngonetedugovbiznamefirmmobiacincoorgmilcomnomwebgobnetintedubizinfocomyspreadshopdemongovtransurl123websitehosting-clusterkhplaycistrongsnesosvalerv\xE5lerxn--vler-qoaossandeheroysandeher\xF8yb\xF8boheroyher\xF8yxn--hery-iraxn--b-5gavalerb\xF8boxn--b-5gasandesandexn--hery-iraxn--vler-qoav\xE5lerh\xE5re\xE5laahavaofsfvfhlolnlalrlhmfmtmahcostntbu\xE5strmreigersundmyspreadshopg\xE1ls\xE1eidsvolltingvollgildeskalflor\xF8vads\xF8vard\xF8vanylvenxn--bhccavuotna-k7astrandaxn--kvnangen-k0axn--sknland-fxaxn--mosjen-eyarakkestadhyllestadnannestadvevelstadvaapstenordre-landsondre-lands\xF8ndre-landtjieltexn--vrggt-xqads\xF8r-aurdalsor-aurdalheradstordmoldefordef\xF8rdeseljefedjeryggehemnexn--krehamn-dxasognegranes\xF8gnebrynetjomevallebykletokkegiskedovretj\xF8mehob\xF8lvoldasaudatolgas\xF8mnaviknad\xF8nnasomnadonnatranafrananesnaraumasmolatr\xE6nafr\xE6nalesjasm\xF8la\xF8rstaorstahitrafloraaukraloppafr\xF8yarissasnasahalsagalsaromsaraisar\xE1isafroyasn\xE5sagronghobolfjelltydal\xE5rdalardalaskimharamkraanghkekr\xE5anghkesorumbarumhurumb\xE6rums\xF8rummodums\xE1l\xE1tb\xE1l\xE1tfrognbjugnv\xE5ganvagangulenskienl\xF8tenlotenstrynvefsnxn--merker-kuaskaunsveiob\xF8mlobomloskj\xE5kvardoflorovadsosalatbalats\xE1latkl\xE6buklabuselbubarduulvikskjakkleppris\xF8rxn--nttery-byaefl\xE5eidflahofmilgolholsellomskifetvikdepvgsfhsaskerrisorhamarasnes\xE5snesr\xF8rosrorosxn--slat-5namasoynaroyvaroyluroydyroyaskoyradoyandoyrodoymeloyrad\xF8yand\xF8yr\xF8d\xF8ymel\xF8yask\xF8ylur\xF8ydyr\xF8ym\xE5s\xF8yv\xE6r\xF8yn\xE6r\xF8yhoylandeth\xF8ylandetdivtasvuodnal\xF8renskoglorenskognesoddtangenxn--tjme-hraxn--smla-hraxn--stjrdal-s1aunjargalillehammerunj\xE1rgaxn--hamary-fyadavvenjargaxn--bearalvhki-y4a123hjemmesidegjerdrumxn--brnnysund-m8acxn--tnsberg-q1axn--mlatvuopmi-s4axn--snsa-roaxn--skierv-utaxn--brum-voatysfjordkvafjordeidfjordkv\xE6fjordsongdalenmjondalenmj\xF8ndalenxn--gls-elackragerog\xE1\u014Bgaviikagangaviikas\xF8rreisasorreisas\xF8r-varangersor-varangerxn--risr-iraskiervaxn--frna-woaxn--trna-woakvinesdalleksvikleirvikr\xF8yrvikroyrviksvelvikvenneslaevje-og-hornnessandnessj\xF8enmarnardalvindafjordsandefjordenebakksnillfjordullensvangxn--trany-yuabr\xF8nn\xF8ysundnamsskoganaustevollxn--stjrdalshalsen-sqbnord-aurdalnord-frontr\xF8gstadtrogstadgrimstadflakstadgjerstadxn--sandy-yuaxn--leagaviika-52bnore-og-uvdalvegarsheixn--rlingen-mxaxn--ggaviika-8ya47hveg\xE5rsheikarlsoykvitsoymasfjordenhamaroyinderoyosteroydavvenj\xE1rgasauheradguovdageaidnuxn--vre-eiker-k8abronnoysiellakkr\xF8dsheradkrodsheradkvinnheradbr\xF8nn\xF8yxn--mtta-vrjjat-k7afxn--lrenskog-54akvits\xF8yv\xE1rgg\xE1tkarls\xF8yoster\xF8yinder\xF8yhamar\xF8ybronnoysundxn--aurskog-hland-jnbbahccavuotnab\xE1hccavuotnagiehtavuoatnastor-elvdalmidtre-gauldalxn--gildeskl-g0akarasjokevenassixn--bievt-0qaxn--yer-znalebesbynessebyxn--hbmer-xqamalselvm\xE5lselvxn--unjrga-rtam\xF8re-og-romsdalmore-og-romsdalhareidmeland\xF8rlandorlandstrand\xE5lg\xE5rdsolundalgardafjord\xE5fjorddielddanuorrikautokeinoxn--stre-toten-zcbskodjeaejriestangeliernebamblestokkefauskesn\xE5asesnaasekongsvingerlangevagberlevagxn--flor-jrahattfjelldalostre-toten\xF8stre-totenvestfoldxn--mely-ira\xE1laheadjualaheadjunordreisaxn--troms-zuaxn--lgrd-poacporsangerflatangerstavangerleikangerbremangersamnangergieldakarasjohkaxn--rdy-0nabfrostautsirasnoasatromsaxn--sr-aurdal-l8aflekkefjordj\xF8lsterjolsteraremarkhedmarkn\xE5\xE5mesjevuemienaamesjevuemiexn--vard-jrarollagmer\xE5kermerakerorskog\xF8rskogxn--bdddj-mrabd\xE1k\u014Boluoktaxn--osyro-wuaaknoluoktatrysilskjerv\xF8ymandaljondalbindalrindalmeldalsuldalorkdalsigdalalvdall\xE6rdalhurdalsirdalverdallerdallardaloppdal\xE5seralaseralhadselkrager\xF8divttasvuotnaoverhallasteinkjerxn--hnefoss-q1askedsmokorsettroms\xF8xn--dyry-iravestre-totenmuseumxn--sandnessjen-ogbrahkkeravjufylkesbiblb\xE1jddarbajddarxn--laheadju-7yarennes\xF8yxn--koluokta-7ya57hxn--hgebostad-g3aleirfjordstorfjordbalsfjordb\xE5tsfjordbatsfjordmuos\xE1tbiev\xE1tloab\xE1tk\xE1r\xE1\u0161johkan\xF8tter\xF8yxn--mjndalen-64anordkappl\xE1hppilahppialstahaugsiljanverranr\xF8ykenroykenhaldenlyngenbergenhortenh\xF8nefosshonefosstroandinbeiarnvarggatosoyroos\xF8yrotromsoidrettmuosatbievatruovatloabatvoagattynsetnessetxn--indery-fyask\xE1nitskanitraholtr\xE5holtxn--ystre-slidre-ujbandebusarpsborgbearduxn--karlsy-fyahordalandjorpelandj\xF8rpelanddeatnuringsakers\xF8r-odalsor-odalxn--slt-elabringerikeaudnedalnittedalnissedalhemsedalslattumsurnadalxn--blt-elabelverumstj\xF8rdalnaustdalhjartdalgj\xF8vikfyresdalhasviknarviklarvikgjovikmalvikgamviklenvikporsgrunnstjordalengerdaldrobakdr\xF8bakxn--msy-ula0hvestvagoyxn--vgan-qoaxn--ryken-vuaxn--lten-graxn--stfold-9xaxn--hpmir-xqaxn--lury-iram\xE1latvuopmimalatvuopmitysv\xE6rkirkenesbirkenesmoskenesb\xE1id\xE1rxn--fjord-lraxn--rdal-poabahcavuotnab\xE1hcavuotnaxn--frde-gralind\xE5sbearalvahkixn--hobl-irar\xE1hkker\xE1vjuxn--loabt-0qav\xE5g\xE5\xE1lt\xE1bod\xF8sundlundrader\xE5deetnetimeholeauregrueoddavagavegaranatanaarnasolasulaaltalekafusavangbergkvam\xE5mliamlibokntinnroangranosenoslobodor\xF8stroststat\xE5motamotivgupriv\xF8yeroyerliermossvossxn--nvuotna-hwalusterlunnermarkerh\xE1bmerhabmerhvalerfjalerxn--rholt-mratysvarbaidarfitjargaularh\xE1pmirhapmirmelhusfosnes\xF8ksnesoksnestysneshemnesevenesflesbergeidsbergtonsbergt\xF8nsberglindasxn--sndre-land-0cbnamsosxn--srum-gra\xF8ystre-slidreoystre-slidrevestre-slidretrondheimbalestrandxn--langevg-jxaaustrheimxn--skjk-soavagsoyaveroysandoykarmoyfinnoytranoyvestbytranbysykkylvenxn--hyanger-q1aspjelkavikandasuoloxn--fl-ziaxn--drbak-wuastathellexn--sr-varanger-ggbtelemarkxn--bhcavuotna-s4axn--porsgu-sta26f\u010D\xE1hcesuolocahcesuoloakrehamn\xE5krehamnsand\xF8ykarm\xF8yfinn\xF8ytran\xF8yv\xE5gs\xF8yaver\xF8ynamdalseidxn--lesund-huabadaddjaxn--vegrshei-c0axn--btsfjord-9zagildesk\xE5lporsanguxn--trgstad-r1an\xE1vuotnanavuotnahammerfestxn--sgne-graxn--brnny-wuacibestadharstadnarviikaeven\xE1\u0161\u0161ivestnesgjemnessandnesagdenesrennesoyxn--avery-yuaxn--tysvr-vrabearalv\xE1hkikongsbergspydebergrandabergxn--andy-iradavvesiidaxn--krdsherad-m8apors\xE1\u014Bgufredrikstadbjerkreimringeburennebuaurskog-holandnotteroyxn--vgsy-qoa0jxn--rmskog-byaskierv\xE1ivelandbyglandfrolandaurlandforsandxn--bjddar-ptamidsund\xE5lesundalesundfetsundfarsundovre-eiker\xF8vre-eikerakershusxn--moreke-juas\xF8rfold\xF8stfoldostfoldsorfoldh\xF8yangerhoyangerlevangerorkangertanangerxn--vestvgy-ixa6olillesandulsteinxn--rennesy-v1agranvinskjervoyxn--klbu-woalavagisxn--h-2faxn--ryrvik-byakafjordk\xE5fjordseljordfolkebiblxn--gjvik-wuajevnakerxn--kfjord-iuabudejjuxn--kranghke-b0axn--davvenjrga-y4axn--rland-uuaxn--ldingen-q1axn--mlselv-iuaxn--rady-iraxn--linds-prabrumunddalxn--ygarden-p1amo-i-ranaeidskogr\xF8mskogromskoghjelmelandxn--finny-yuaxn--sr-odal-q1axn--skjervy-v1aballangenkvanangenkv\xE6nangengratangenxn--hmmrfeasta-s4acvossevangensuohkanxn--rde-ulaxn--mli-tlaxn--ksnes-uuanordlandskanlandsk\xE5nlandsortlandfuoiskuxn--rros-graxn--hcesuolo-7ya35bxn--eveni-0qa01gagaivuotnag\xE1ivuotnaxn--seral-lradrammenmodalenmosjoenjan-mayentorskensteigengloppenxn--snes-poamatta-varjjatxn--sr-fron-q1aomasvuotnajessheimb\xE5d\xE5ddj\xE5xn--krager-gyaxn--kvfjord-nxaxn--asky-iraxn--snase-nraxn--bidr-5nacholt\xE5lenxn--vads-jraxn--jlster-byamosj\xF8enxn--rst-0nastavernxn--ostery-fyaxn--oppegrd-ixaxn--sknit-yqaxn--risa-5naoppeg\xE5rdskiptvetrendalenholtalenxn--mot-tlaxn--lhppi-xqaxn--holtlen-hxaxn--srreisa-q1akopervikxn--muost-0qaxn--bmlo-grahokksundkvalsundegersundxn--karmy-yuaullensakerxn--hylandet-54axn--kvitsy-fyaxn--bod-2nalangev\xE5gberlev\xE5gkristiansandxn--rsta-frahornindalstj\xF8rdalshalsenstjordalshalsensandnessjoenh\xE1mm\xE1rfeastaxn--lrdal-sras\xF8r-fronsor-fronnord-odalkristiansundm\xE1tta-v\xE1rjjatvestv\xE5g\xF8ynesoddennotoddenbuskerud\xF8ygardenoygardensalangenlavangenralingenr\xE6lingenlodingenl\xF8dingenlea\u014Bgaviikalaakesvuemieleangaviikauenorgexn--srfold-byaaskvollxn--rskog-uuaxn--nry-yla5gxn--vry-yla5ghammarfeastaxn--rhkkervju-01afxn--givuotna-8yakommunekrokstadelvanedre-eikerhagebostadh\xE6gebostadxn--berlevg-jxakviteseidxn--s-1faxn--l-1faxn--nmesjevuemie-tcbafuosskomo\xE5rekemoarekexn--lt-liacxn--jrpeland-54asvalbardoppegardholmestrandtvedestrandsogndalsokndalarendalsunndalfolldalxn--krjohka-hwab49jlyngdaletnedalnorddalsaltdalgausdalskedsmovaksdalgjesdalstordalxn--frya-hraaarbortedrangedalxn--smna-graaurskog-h\xF8landxn--vg-yiabtjeldsundhaugesundlindesnesxn--mre-og-romsdal-qqbxn--dnna-gradyntmpheremerseineshacknetenterprisecloudmineaccomaorim\u0101oriorgmilcriiwigennetschoolhealthkiwigovtgeekxn--mori-qsacloudnsparliamentcomedorgcompronetedugovmuseumwebsitekinservicebarsywebsitebuildereerobookheimdnsleapcelleero-stagetechcrscsslorigingohomecdbedeeeiemesecabgngilnlalplchfisiincnnoroptatitmtltruauhulumkdkukskjplvtrgrfrkrhrusesismycynzcznetinteduassoososcloudstgbetaaezaeuhkusjshatenadiarycdn77hoptozaptois-a-knightmyftpno-ipjpnddnssdpdnsspdnsbarsysweetpepperis-a-bruinsfanis-very-sweetservegameis-a-soxfanhomelinuxcdn77-secureservebbsmisconfusedwebredirectblogsitefreedesktopcouchpotatofriestoolforgeaccesscamis-lostreadmyblogsmall-webfedorapeopleserveftpis-a-celticsfanmywirepotagertwmailin-dslsellsyourhomeread-booksfreeddnscable-modemis-savednflfanufcfanmlbfanstuff-4-saleendoftheinternetin-vpnmy-firewallhomeftpis-localis-a-chefboldlygoingnowherewebhopselfipkicks-assroxatunkcamdvrfedoraprojectgotdnsdvrdnsdyndnspubtlspimientahomeunixdontexistfedorainfracloudwmflabsfspagesbmoattachmentsteckidsfamilydsdnsaliasdynaliasnow-dnscloudnsdoomdnsduckdnsblogdnshomednsroutingthecloudendofinternetdsmynasip-dynamicpoivronhttpbinmyfirewallis-very-evilmysecuritycamerais-a-linux-userwmcloudis-a-geektuxfamilyis-a-candidatedoesntexistis-very-badhobby-sitegame-hostaltervistais-foundis-a-patsfandnsdojohepforgepodzonedynservcollegefanis-very-goodfrom-meis-very-niceisa-geeknerdpolacmedsldingorgcomnomgobabonetedupleskaemhlxmyboxrockyprvcydeuxfleurspdnscodebergheyflowstatichostorgmilcomnomgobneteduorgcomeduiorgmilcomngonetedugovcloudns1337ngrokacorggogfamcomwebgobnetedugokgopgkpgovgosbizpasaugumicsopozpapuwmwsrprusiskwpspkppspkmpspokeoiawsawifoumsdnskokwpmuppuppsppiwwiwoowuzswkzoschrzpisdnwzmiuwwitdpssewsseumigugimoirmpinbwinbwiihupporzgwgriwupowwskrwioswuozstarostwokonsulattmpccopruszkowmyspreadshopostrodakartuzyopolegminamediaustkazgorajgoraolawailawalomzawloclradombytomjaworznotargilubinkoninzagantorunkutnokepnonakloczestsopotsanokturekplockslasksklepzarowlukowmedaidgdaorgmilrelcomnomatmgsmartneteduelkgovwawsossexbiztgorysejnytychypomorzeboleslawiechomesklepsdscloudunicloudzakopanelegnicarawa-mazbydgoszczswidnikkrasnikwloclawekbielawamragowograjeworealestatebeskidykaszubymalopolskaprzeworskswiebodzinlecznadfirmaszkolawarmiagdyniamiastakazimierz-dolnymalborkswidnicadlugolekaostrolekapodlasieelblagtravelsimplesitezachpomormielecszczecinnieruchomosciwalbrzychlezajsklublinbedzinpoznanwielunmielnooleckostarachowicedkontopowiatwroclawrybniksuwalkileborkslupskgdanskostrowwlkptarnobrzegtourismwegrowkrakowglogowyou2pilanysamailwrocinfoagroautobeepshopprivlapypiszlodzcfolksecommerce-shopmazurypulawyskoczowrzeszowpomorskiezgierzkaliszolkuszlowiczostrowiecsosnowiecmazowszewodzislawbialowiezazgorzeleckatowicepabianicejelenia-gorawolominkarpaczsieradznowarudaczeladzkonskowolaskierniewiceswinoujscieturystykabieszczadycieszynketrzynolsztynbialystokbabia-goraprochowicewarszawastalowa-wolapolkowicegorlicegliwiceponiatowalimanowalubartowaugustowkobierzyceopocznognieznoszczytnokolobrzegshoparenapodhalebielskoklodzkostargardatwithplayitownnamecoorgnetedugovacorgcomproestnetedugovbiznameislaprofinforechtngrokmedaaaacacpaenglawjurbarbarsykeeneticavocatacctcloudnsorgcomsecplonetedugov123paginaweborgcomnetintedugovnomepublidkinbarsygovx443cloudnsorgmilcomnetedugovcooporgmilcomschnetedugovnamecomcannetlibassoaemclantmcontstoreorgcomnomrecwwwbarsyfirminfoshopartsstackitmyddnswebspacelima-cityacincooxorgedugovbarsybrendlyhbvpsvpsspectrumlandinghostingacppmordoviamcprecbgorgmilcomspbnetintedumsknovgovbirrasmcdirmytismircloudvladimirnalchikadygeyamarinepyatigorskmyjinobashkiriaeurodirvladikavkazna4ugroznykustanaikalmykiacldmaildagestaniranbuildcloudcanvaliaravalwixdevelopmentappwritemigrationneedleverceldatabasestackitcodereplravendbonporterlovableaccoorgmilnetgovcoopmedorgcompubschnetedugovservicemecomygovorggovtvmedorgcomnetedugovinfoedgfacbmlonihkutwpsryxzbdtmacfhppmyspreadshopbrandpartiorgcomfhvpress123minsidaitcouldbeworlanbibkommunalforbundfhskiopsyskomvuxkomforbnaturbruksgymnloginlineorgcomnetedugovenscaledeuusentbotdaorgmilcomnetgovnowteleporthashbangplatformlovablebarsyshopwarebasehoplixbarsyonlinemsf5gitappgitpagewawamscofigma-govcaffeinefigmacanvasoltstscwputerbarsysupportchatgptsquareomniweopensocialcpanelplaycodenotionnovecorewpsquaredpreviewjelecyonbyensrhtfastvpspieboxconvexjouwwebheyflowplatformshloginlinemadethissourcecraftclouderaorgorgcomartedugouvunivmeorgcomnetedugovsurveysstatichfheiyuxs4allprojectmyfastubervibehostapp-ionosdeployagentmecoorgcomschnetedugovbizcncostoreorgmilcomneteduembaixadaconsuladokiraranohoprincipesaotomeheliohobarsystorebaseshopwaresellfyaiabkhaziavologdamordoviapenzalenugsochinavoiexnetspbmsknovnorth-kazakhstanashgabadkareliaarmeniageorgiavladimirnalchikivanovobukharaadygeyakhakassiakalugakrasnodarjambylaktyubinsktroitskbryanskobninskkurganazerbaijanpokrovskbashkiriatselinogradvladikavkazmurmansktulatuvamangyshlaktashkentchimkentgroznykaragandatermezarkhangelskkustanaikalmykiabalashoveast-kazakhstankaracoldagestantogliattibarsyredorgcomgobedumirenknightpointaccoorgjelasticdiscoursecleverappsschacmiincogoornetonlineshopcogoorgmilcomwebnicnetintedugovbiznametestcoorgmilcomnomnetedugovorangecloudpersoindorgcomfinnatnetgovensmincomtourismintlinfox0611oyaorgmilcomnetedugovquickconnectvpnplusnettprequalifymeaddrmyaddrntdllwadlnctvavdrk12orgmilpolbeltelcomwebgennetedutskkepgovbbsbiznameinfocoorgmilcompronetedugovbiznameinfobetter-thanworse-thansakurafromdyndnson-the-webmymailerorgmilurlcomneteduidvgovmydnsgameclubebizmeneacsccogotvorhotelmilmobiinfovodteiflgplkmsmsbcckhincndnvncoztltmkckppzpdprvcvkvlvcrkrkscxuzchernovtsyrivneyaltaodesavolynrovnolutskltdinforgcomnetedugovbizvinnicazhitomirternopilpoltavakropyvnytskyizaporizhzhiasevastopolsebastopoluzhgoroduzhhorodkharkovkharkivvinnytsiakhmelnytskyizaporizhzhecrimeaodessazhytomyrnikolaevcherkassydonetskluganskluhanskkirovogradivano-frankivskchernivtsikrymkievkyivlvivsumyzakarpattiamykolaivcherkasychernigovkhersonchernihivdnipropetrovskdnepropetrovskkhmelnitskiyneacsccogoorusorgmilcomedugovmyspreadshopadimono-ipbarsybarsyonlinelayershiftnh-servretrosnubapicampaignservicelugaffinitylotteryweeklylotteryraffleentrygluglugsmeaccoindependent-inquestnimsitecopropymntltdorgplcschnetgovnhsbarsyindependent-commissionindependent-reviewpolicepublic-inquiryindependent-panelconnhospindependent-inquiryroyal-commissionoraclegovcloudappscck12libccphxcclibpvtparochchtrcck12libcceatonk12coglibtecgendstmusann-arborwashtenawcck12glghcck12sealibforksolympiabainbridge-islkeyporthoquiamyarrow-pointcentraliaport-townsendsequimport-ludlowrentonsilverdalebremertonredmondsheltonbellevueport-orchardport-angeleskingstonchehalisaberdeengig-harborseattlepoulsboidmdndsddemenegacalamaiavawapailalflnmdcncscohnhmihiviwiriinmntnmocoutvtctmtgunjokakwvnvprarorasmskstxwynykyazisadninsnngosrvis-bymircloudservernamepointtoenscaledland-4-salefreeddnsstuff-4-saleazure-apinoipcloudnsgolffanheliohostazurewebsitesgvorgmilcomgubneteducoorgcomnetd0egvorgmilcomnetedugovmydnsiacostoree12orgmilcomnomwebgobbibrectecnetintedugovraremprendefirminfoartseducok12orgcomnethidnsidacaiiosonlahanamhanoicamauhueorgcompronetintedugovbizbacninhtayninhhoabinhnamdinhtravinhhaiphongvinhlonghaiduongquangnamquangtrithuathienhuequangninhbacgianghaugiangquangbinhsoctrangbentrethanhphohochiminhdanangkontumhatinhkhanhhoathanhhoahealthgialailaocaiyenbaibackanngheanlonganphuyenphuthocanthodaklakdongnainameinfovinhphucdongthapkiengiangtiengiangquangngailaichaulangsonlamdongdaknonghagiangangiangcaobangbinhduongninhthuanbinhthuanbaclieuthaibinhninhbinhbinhdinhtuyenquanghungyenbaria-vungtauthainguyendienbienbinhphuocschbizputerimagine-proxyorgcomnetedugovcloud66advisormypetsdyndnsxn--8dbq2axn--4dbgdty6cxn--5dbhl8dxn--hebda8bxn--80auxn--d1atxn--c1avgxn--o1acxn--o1achxn--90azhxn--55qx5dxn--uc0atvxn--od0algxn--wcvs22dxn--gmqw5axn--mxtq1mxn--12c1fe0brxn--h3cuzk1dixn--12co0c3b4evaxn--12cfi8ixb8lxn--o3cyx2axn--m3ch0j3axn--j1adpxn--90amcxn--90a1afxn--h1ahnxn--j1ael8bxn--h1alizxn--c1avgxn--j1aefxn--80aaa0cvacxn--41acaffeineexeopentunnelbotdashtelebitorgtmaccoagricorgmilnomwebnicngonetaltedugovlawnisschoolgrondaraccoorgmilcomschnetedugovbizinfoprg1-zeropstritonstackitlimazeropsaccoorgmilgov\u044F\u0441\u043F\u0431\u043E\u0440\u0433\u043A\u043E\u043C\u043C\u0441\u043A\u0431\u0438\u0437\u043C\u0438\u0440\u0441\u0430\u043C\u0430\u0440\u0430\u043A\u0440\u044B\u043C\u0441\u043E\u0447\u0438\u0430\u043A\u043E\u0434\u043F\u0440\u043E\u0440\u0433\u043E\u0431\u0440\u0443\u043F\u0440\u05E6\u05D4\u05DC\u05DE\u05DE\u05E9\u05DC\u05D9\u05E9\u05D5\u05D1\u05D0\u05E7\u05D3\u05DE\u05D9\u05D4\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23\u0E18\u0E38\u0E23\u0E01\u0E34\u0E08\u0E23\u0E31\u0E10\u0E1A\u0E32\u0E25\u0E28\u0E36\u0E01\u0E29\u0E32\u0E17\u0E2B\u0E32\u0E23\u0E40\u0E19\u0E47\u0E15\u6559\u80B2\u7DB2\u7D61\u7D44\u7E54\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\uB2F7\uB137\uD55C\uAD6D\u6FB3\u95E8\u65B0\u95FB\u6FB3\u9580\u8054\u901A\u5BB6\u96FB\u5609\u91CC\u62DB\u8058\u901A\u8CA9\uB2F7\uCEF4\uC0BC\uC131\u30B3\u30E0\u10D2\u10D4\u0431\u0433\u0440\u0444\u0435\u044Eadcdbdgdidmdsdtdaebedeeegeiejekemenepereseveyegabacalamanauavapaqasazacfbfafgfnfpfwftfbgcgagggegkgngmgsgpgvgtgugilmlnlalclglplsltlhmimjmkmmmomambmcmdmfmgmzmpmsmtmgbbblbsbecccacnclcmcvctcscmhkhghchbhthphshlinikifigiaibicivisikninhnmncnbngnsnpnvntnjoionomobocoaofodorosotoptstttytatbtetgtithtmtltrusuvuaucueuguhulumunufjdjbjtjsjlkmkhkfkdkcktkukskpkgpmpnpkpjpgqaqmqiqsvtvcvbvmvlvrwpwtwzwbwcwawgwkwmwtrsrprgrfrercrbrarnrmrlrkrirhrwsusrssspsgsesbsaslsmsissxmxaxcxuypysylymykygybycyuztzsznzmzkzdzczbzaz\u03B5\u03BB\u03B5\u03C5\u4E16\u754C\u53F0\u7063\u8D2D\u7269\u516C\u76CA\u70B9\u770B\u81FA\u7063\u7F51\u7EDC\u66F8\u7C4D\u5728\u7EBF\u7F51\u7AD9\u624B\u673A\u673A\u6784\u5927\u62FF\u6E38\u620F\u4FE1\u606F\u53F0\u6E7E\u8C37\u6B4C\u6148\u5584\u5546\u6807\u9999\u6E2F\u4E2D\u56FD\u9910\u5385\u7F51\u5740\u4E2D\u570B\u5546\u57CE\u98DF\u54C1\u5FAE\u535A\u653F\u52A1\u79FB\u52A8\u96C6\u56E2\u516C\u53F8\u516B\u5366\u5546\u5E97\u5065\u5EB7\u7F51\u5E97\u653F\u5E9C\u65F6\u5C1A\u4F5B\u5C71\u4E2D\u4FE1\u5A31\u4E50\u5E7F\u4E1C\u4F01\u4E1Ahomedepotengineering\u0627\u0645\u0627\u0631\u0627\u062Arepublicankuokgroupversicherungchannelcitadelxn--pgbs0dhxn--b4w605ferdstatebankwebsitexn--mgb9awbf\u4E9A\u9A6C\u900A\u6DE1\u9A6C\u9521alibabaxn--ngbc5azdxn--mgbbh1axn--45br5cyltoshibabuildworldcloudtradeguideplacespacedancemoviephoneprimesmilebiblestyleappleazurestoreskypegripexn--l1accdrivelottehorsehouseleasechasereisestadahondaomegaaetnaamicaninjanokiamediadeltavodkaedekaosakapizzaslingemailgmailtirolshelltmallfinallegaltotalhotelamfamforumrehabmusicciticricohcoachwatchboschearthfaithirishmiamiarchidubaiguccipraxi\u307F\u3093\u306A\u30B9\u30C8\u30A2\u30BB\u30FC\u30EBcanonsalononionnikonepsonkoelngreensevencrownikanoradioaudioweiboglobopromogalloyahoociscorodeovideomangobingotokyovolvolottokyotophotosmartsportquesttrusthyattjetztadultcymrubaidutushuxn--kprw13dubankclickblackmerckgroupsharpcheapnowtvxn--h2brj9c\u05E7\u05D5\u05DD\u0570\u0561\u0575\u043E\u0440\u0433\u0441\u0440\u0431\u043C\u043E\u043D\u043A\u043E\u043C\u0431\u0435\u043B\u043C\u043A\u0434\u049B\u0430\u0437\u0440\u0443\u0441\u0443\u043A\u0440\u0645\u0635\u0631\u0642\u0637\u0631\u0639\u0631\u0628\u0643\u0648\u0645dadcfdmedwedredphdthdbidpidkrdmsdltdiceonewmeglemoerwecfageacbanbambaaaammakianraspacpaaxawtfbcgaegongingaigvigorgdogdhlmilrilonlaolloluoljllcalgalnflafltelsrlfrllplkimibmcamcombommomifmabbjcbscbwebcabnabtabmlbpubabcbbcnecincpncllcstcwtcpwcnyckfhbzhovhmoiskiobisbitcifyituipinvinwinxincbnbcnmanfangdnmenrenkpnmtnyunrunfununobiojioriohbogmofooboooooacoecoceongoproartistottnttbbtcateatlatvetpetbetnethktmitfitintjothotgotdotbotprueduicujnjyouinknhktdkappsapgapmapdnptopgopllpjmpzipvipripesqtrvdtvitvdevmovgovhivnrwlawsewnewbmwwownowhowdvrftrmtrsfrbarcartvscrseusawsupsubssbsadsddsldssasbmsmlsxxxboxfoxgmxtjxsextaxbuyflydiysoyjoyskypaydaygayxyzanzbizwebersenerpokerlameractortatarsolar\u0EA5\u0EB2\u0EA7\u0E04\u0E2D\u0E21\u0E44\u0E17\u0E22tourslocusnexuslexusgiftsbeatsboatspartspressglassswiss\u0915\u0949\u092E\u0928\u0947\u091Ftiresgivescodeshomesgamestunesshoescardswalesloansvegastoolsdealsautosparis\u30D5\u30A1\u30C3\u30B7\u30E7\u30F3workssucksrocksxeroxforexfedexpartylillymoneystudyrugbytoraytoday\u4E2D\u6587\u7F51xn--unup4y\u5929\u4E3B\u6559\u98DE\u5229\u6D66\u65B0\u52A0\u5761enterprises\u6211\u7231\u4F60\u5609\u91CC\u5927\u9152\u5E97christmasxn--fct429kholdingsxn--8y0a063axn--mgbx4cd0ablifestyleabogadoallstatenetbank\u0643\u0627\u062B\u0648\u0644\u064A\u0643xn--s9brj9cxn--gk3at1ebestbuycharityxn--55qx5dmicrosoftpropertybasketballhomegoodscorsicajewelrygallerygrocerysurgerycountrybrusselsverisignferreroxn--czr694bhdfcbankcommbanksoftbank\u067E\u0627\u0643\u0633\u062A\u0627\u0646\u067E\u0627\u06A9\u0633\u062A\u0627\u0646nextdirect\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0647\u0627\u0644\u0639\u0644\u064A\u0627\u0646xn--h2brj9c8cxn--80adxhksshikshaxn--mgbai9azgqp6jcuisinellabarclayscatholicxn--kpry57dcompanyxn--xhq521bblackfridayxn--mgba3a3ejtsandvikxn--d1acj3bacademydownload\u0645\u0644\u064A\u0633\u064A\u0627xn--j1amhxn--w4r85el8fhu5dnraipirangaathletaxn--fhbeixn--mgbqly7cvafrzuerichxn--c2br7g\u0B87\u0BB2\u0B99\u0BCD\u0B95\u0BC8contractorsxn--io0a7igraphicsinsurancetemasekxn--xkc2al3hye2amotorcyclesphotographydirectoryplumbingxn--vhquvclothingtrainingcleaningwilliamhilllightingxn--mgba3a4f16ashoppingcateringeducationokinawapicturesventuresproductionsxn--9et52uwalmart\u0D2D\u0D3E\u0D30\u0D24\u0D02supportrealestatecapitalonexn--nqv7fs00emaauspostfloristdentistxn--qxamgodaddybradescobargainsmitsubishikerryhotelsxn--9dbq2axn--3pxu8kimmobilienxn--fjq720axn--mgbtx2bholidaymckinseymadridbusinessbuildershelsinkixn--4gbrim\u043C\u043E\u0441\u043A\u0432\u0430\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u0629coffeedegreelacaixapartnersalsaceofficeabbvievoyageorangegeorgeonlinechromemobilekindlegoogleoraclecircleschulesecureinsurexn--mgba7c0bbn0aestatexn--mgbc0a9azcgcruisehangoutxn--vuq861bxn--42c2d9arexrothfirestoneuniversityxn--nnx388alifeinsuranceextraspace\u043E\u043D\u043B\u0430\u0439\u043Dverm\xF6gensberatersoftwarexn--fiqs8sxn--mgbab2bdxn--w4rs40ltienda\u092D\u093E\u0930\u0924\u092E\u094Dafricatoyotaotsukasakuracameracreditcardnagoyaconsultingnetworkjunipertheatermonsterprogressivepioneerxn--55qw42gracingdatingvotingvikinglivinggivingxn--bck1b9a5dre4cbrotherweatherjoburg\u0641\u0644\u0633\u0637\u064A\u0646lplfinancialxn--clchc0ea0b2g2a9gcdfutbolschoolsocialglobaldentalwoodsidechanelairtelmatteltravelrealtorwebcamstream\u0C2D\u0C3E\u0C30\u0C24\u0C4Dunicomalstomxn--nodexn--6frz82gmuseumfurniturexn--rvc1e0am3exn--mix891faccenturexn--11b4c3dismailineustardiscountquebeccomsecclinicservicesxn--y9a3aqxn--c1avgswatchchurchsearch\u0627\u0644\u0627\u0631\u062F\u0646marketingcontacthealthmonashshoujisanofitaipeiamericanexpresssuzuki\u30A2\u30DE\u30BE\u30F3\u30AF\u30E9\u30A6\u30C9\u30DD\u30A4\u30F3\u30C8bharti\u30B0\u30FC\u30B0\u30EBxn--mgberp4a5d4armemorialxn--1qqw23alondonmormoninstitutevisionbostonnortoncouponmaisonamazonvirginberlindesigndurbanolayannissananquanxihuanhitachikaufengardenreisenbayerntechnologydatsunxn--90a3aclatinocasinostudiophysioxn--ngbe9e0apharmacytattootaobaoaramcoexpertreportabbottdirectselectimamatfairwindspictettargetmarketintuittravelersinsurancecreditdupontryukyusuppliesxn--tckwebnpparibasschmidtmerckmsdyodobashirestaurantbridgestonecricketxn--fpcrj9c3dbostikbroadwayattorneylefrakemerckxn--fiq228c5hscareersfarmerswinnersflowersxn--wgbh1cguitarsxn--54b7fta0ccxn--p1acfmakeupgalluplandroverxn--kcrx77d1x4agoldpointbauhausxn--mgbayh7gpahiphopplaystationxn--mgba3a4fraxn--eckvdtc9dhyundaixn--gckr3f0fistanbulticketsmarketsflightschintaireviewsxn--3e0b707ewindowsxn--fiqz9sfinancialxn--fzys8d69uvgm\u0627\u0628\u0648\u0638\u0628\u064Adiscoverreview\u09AC\u09BE\u0982\u09B2\u09BExn--5su34j936bgsgmoscowobserverapartments\u0434\u0435\u0442\u0438\u0627\u0631\u0627\u0645\u0643\u0648\u0441\u0430\u0439\u0442eurovisionxn--i1b6b1a6a2exn--xkc2dl3a5ee0h\u062A\u0648\u0646\u0633\u0645\u0648\u0642\u0639\u0628\u0627\u0631\u062A\u0680\u0627\u0631\u062A\u0634\u0628\u0643\u0629\u0639\u0645\u0627\u0646\u0628\u064A\u062A\u0643\u0639\u0631\u0627\u0642readkredbondlandbandfundfoodprodgoldfordtubecafesafelifeggeeieeefreefagepagegugezonewinememenamegamesaleablebikenikelikecarecbreherefiresaveloveliveblueartedatesitevotecaseluxebofamodaltdaasdatiaayogasinavanashiaasiajavabbvatevavivadatazaraarpacasavisasncfprofmaifsurfgolfdvagsongbingpingwangkpmggoogblogpohlfailcooldellcalldeallidlsarlfilmteamroomfarmimdbarabclubhdfcicbchsbcgmbhrichtechfishdishcashminiernikddiaudiwikimobitaxicitikiwidesiqponskinloanakdnwienopenporncerntownimmolimoolloinfonicofidolegosaxozeroaerovivoautovotomotofastbestresthostpostnextlgbtchatseatgiftmeetdietreitmintrentgentspotscotguruitausohumenucyoubanklinkpinkdclktalksilkbookseekworkrsvpaarpjeepshopcoophelpcamppccwshowbeerstarruhrflirweirhaircarsparsjprshausplusnewstipstoysjobskidsfanspicsdocsxboxamexsexynavycitysonyarmyallybabyplaydeliverybuzzgbizlamborghiniphilips\u0DBD\u0D82\u0D9A\u0DCF\u0CAD\u0CBE\u0CB0\u0CA4fitnessexpresslanxesspfizercenterwalterlawyersoccercareerkosherbrokerlockerdealerdoctorauthorxn--mgbqly7c0a67fbcverm\xF6gensberatungjaguarxn--pssy2uxn--hxt814eflickrrepairrogersairbusxn--mgbai9a5eva00beventsyachtsxn--t60b56a\u09AD\u09BE\u09F0\u09A4\u09AD\u09BE\u09B0\u09A4\u092D\u093E\u0930\u0924\u092D\u093E\u0930\u094B\u0924viajeshermeshughesxn--j1aef\u0938\u0902\u0917\u0920\u0928villas\u0B2D\u0B3E\u0B30\u0B24claimshotels\u0AAD\u0ABE\u0AB0\u0AA4zapposphotosjuegoscondostatamotorsgratistennis\u0A2D\u0A3E\u0A30\u0A24tkmaxxtjmaxxschaeffleryandexxn--80aswgrealtysafetybeautyluxuryxn--3ds443gsupplyfamilyxn--o3cw4hhockeysydneyxn--90aenissayalipayenergycomputeragencyxn--rovu88b\u96FB\u8A0A\u76C8\u79D1xn--gecrj9cstatefarmaccountantaquarelleolayangroup\u9999\u683C\u91CC\u62C9xn--p1ai\u7EC4\u7EC7\u673A\u6784xn--1ck2e1bxn--mgbt3dhdschwarz\u0645\u0648\u0631\u064A\u062A\u0627\u0646\u064A\u0627abudhabinowruzkomatsufujitsuhospitalxn--80asehdbxn--mgbtf8flxn--j6w193gxn--yfro4i67oprudentialxn--flw351ecruisescoursesrecipesxn--e1a4cferrarixn--ses554gxn--wgbl6awatchesstaplessinglesxn--mgbcpq6gpa1axn--otu796dpropertiescreditunionxn--mgbah1a3hjkrdstockholmhisamitsu\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629stcgroupdomainsoriginscouponsbloombergclubmedfroganslimitedxn--80aqecdr1aexposedinternationalequipmentbarclaycardxn--q7ce6axn--mgbi4ecexpprotectionassociatesconstructionxn--cck2b3bxn--45q11candroidfoundation\u05D9\u05E9\u05E8\u05D0\u05DCxn--mgbca7dzdocliniqueboutiqueengineerxn--qxa6asystemsfirmdalefashionauctionxn--nqv7finfinitirentalsreliancetradingweddingfishinghostinggentingbookingcookingxn--3hcrj9cgraingerxn--czrs0tdemocratsamsungyokohamaxn--h2breg3evexn--nyqy26alundbeckmelbournevacationssolutionsfrontierxn--vermgensberatung-pwbmanagementxn--cg4bkixn--mgb2ddeslincolnhamburgsandvikcoromantblockbusterairforcebarefootxn--4dbrk0ceinvestmentsfeedbackcommunityxn--ngbrx\u0627\u0644\u0628\u062D\u0631\u064A\u0646diamondsamsterdamhealthcareredumbrellaxn--mxtq1mxn--2scrj9cagakhanxn--mgbpl2fh\u043A\u0430\u0442\u043E\u043B\u0438\u043Acaravan\u0B9A\u0BBF\u0B99\u0BCD\u0B95\u0BAA\u0BCD\u0BAA\u0BC2\u0BB0\u0BCDrichardlimortgageamericanfamilyxn--fzc2c9e2cscholarshipssaarlandxn--imr513nvlaanderensamsclubgoodyearkitchen\u0B87\u0BA8\u0BCD\u0BA4\u0BBF\u0BAF\u0BBEweatherchannelallfinanzxn--kput3i\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u06C3xn--90aisxn--efvy88h\u0627\u0644\u062C\u0632\u0627\u0626\u0631xn--mgbaam7a8hexchangejpmorganxn--tiq49xqyjfidelitysecurityxn--mk1bu44cwanggouxn--fiq64bxn--6qq986b3xlxn--mgbbh1a71exn--80ao21amarshallsxn--5tzm5gtravelerspanasoniclatrobeyoutubeaccountantsxn--rhqv96gxn--cckwcxetdanalyticsxn--ygbi2ammx\u0628\u0627\u0632\u0627\u0631\u0628\u06BE\u0627\u0631\u062A\u0633\u0648\u0631\u064A\u0629organicfresenius\u0633\u0648\u0631\u064A\u0627xn--9krt00axn--qcka1pmcxn--jlq480n2rgdeloittesciencefinancexn--jvr189mxn--30rr7yhomesensehotmailbaseballfootballleclercboehringerxn--q9jyb4cxn--mix082f\u0627\u0644\u064A\u0645\u0646\u0647\u0645\u0631\u0627\u0647politie\u0633\u0648\u062F\u0627\u0646\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646netflixyamaxunxn--lgbbat1ad8jcollegestoragecapetowncolognekerrypropertiesxn--mgbgu82axn--ogbpf8flxn--czru2dwhoswhociprianilasallexn--g2xx48cforsalebanamexaudiblexn--vermgensberater-ctbxn--zfr164bericssonvanguardxn--45brj9cindustriestheatremarriottxn--3bst00mcomparexn--mgberp4a5d4a87gcapitaldigital\u0627\u0644\u0645\u063A\u0631\u0628barcelonashangrilaxn--d1alfcalvinkleinwwwcitysapporokawasakinagoyasendaikobekitakyushuyokohamackjp";
-    rulesRoot = 621;
-    exceptionsRoot = 625;
+  "node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/src/data/trie.js"() {
+    nodeFlags = /* @__PURE__ */ new Uint8Array([1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 0, 2, 2, 0, 2, 0, 0, 1, 0, 0, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 2, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 2, 2, 0, 0, 0, 2, 0, 1, 1, 0, 2, 0, 2, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 2, 2, 0, 2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
+    edgeStart = /* @__PURE__ */ new Uint16Array([0, 0, 0, 10, 11, 18, 106, 111, 117, 124, 130, 136, 145, 146, 147, 148, 149, 150, 151, 153, 154, 155, 157, 159, 227, 240, 242, 243, 244, 259, 266, 267, 270, 271, 272, 275, 277, 296, 297, 299, 308, 313, 330, 331, 334, 336, 337, 339, 373, 374, 376, 379, 380, 384, 386, 390, 393, 425, 428, 441, 442, 450, 451, 453, 463, 477, 478, 479, 480, 489, 490, 527, 532, 548, 568, 574, 616, 617, 644, 671, 672, 820, 826, 829, 830, 831, 836, 841, 850, 872, 873, 874, 875, 876, 877, 878, 896, 898, 899, 902, 904, 905, 907, 909, 924, 939, 944, 945, 947, 948, 949, 950, 951, 953, 956, 961, 962, 963, 965, 966, 969, 972, 973, 974, 987, 989, 1001, 1012, 1020, 1022, 1063, 1066, 1070, 1071, 1073, 1076, 1087, 1089, 1099, 1101, 1107, 1109, 1110, 1112, 1115, 1116, 1117, 1170, 1172, 1174, 1194, 1195, 1196, 1197, 1199, 1210, 1241, 1252, 1264, 1273, 1280, 1285, 1298, 1309, 1322, 1323, 1334, 1368, 1369, 1370, 1385, 1400, 1472, 1473, 1475, 1476, 1510, 1511, 1512, 1513, 1516, 1520, 1523, 1525, 1554, 1555, 1563, 1564, 1565, 1566, 1568, 1570, 1571, 1573, 1574, 1575, 1586, 1587, 1588, 1589, 1590, 1591, 1592, 1593, 1594, 1595, 1596, 1597, 1598, 1599, 1601, 1602, 1603, 2057, 2060, 2061, 2063, 2070, 2077, 2087, 2091, 2102, 2103, 2104, 2116, 2117, 2119, 2121, 2122, 2129, 2130, 2132, 2133, 2135, 2136, 2137, 2138, 2139, 2213, 2215, 2236, 2237, 2238, 2240, 2266, 2267, 2318, 2319, 2321, 2328, 2334, 2344, 2354, 2407, 2408, 2409, 2419, 2433, 2434, 2437, 2444, 2445, 2453, 2454, 2455, 2456, 2457, 2468, 2469, 2470, 2472, 2473, 2474, 2483, 2495, 2501, 2533, 2537, 2539, 2540, 2542, 2543, 2554, 2555, 2557, 2565, 2572, 2578, 2583, 2584, 2590, 2593, 2599, 2606, 2607, 2614, 2622, 2623, 2624, 2662, 2668, 2683, 2684, 2689, 2707, 2738, 2756, 2758, 2761, 2769, 2771, 2778, 2830, 2854, 2855, 2856, 2857, 2858, 2859, 2860, 2867, 2868, 2869, 2870, 2871, 2872, 2874, 2875, 2879, 2959, 2972, 2973, 3410, 3414, 3428, 3480, 3508, 3530, 3588, 3610, 3625, 3688, 3739, 3777, 3813, 3838, 3980, 4026, 4077, 4096, 4130, 4145, 4165, 4195, 4226, 4249, 4280, 4310, 4342, 4369, 4444, 4466, 4504, 4514, 4548, 4567, 4593, 4635, 4685, 4711, 4780, 4781, 4783, 4806, 4829, 4865, 4896, 4913, 4970, 4983, 5007, 5036, 5038, 5072, 5088, 5116, 5421, 5430, 5439, 5446, 5463, 5467, 5473, 5512, 5514, 5521, 5528, 5537, 5544, 5545, 5546, 5558, 5561, 5576, 5577, 5586, 5587, 5596, 5605, 5611, 5613, 5614, 5615, 5652, 5653, 5655, 5663, 5670, 5683, 5687, 5689, 5690, 5696, 5703, 5717, 5727, 5732, 5740, 5748, 5754, 5755, 5759, 5761, 5762, 5774, 5846, 5847, 5848, 5849, 5851, 5852, 5855, 5857, 5860, 5864, 5865, 5866, 5872, 5873, 5874, 5876, 5878, 5880, 5881, 5882, 5885, 5887, 5890, 5891, 5893, 6091, 6098, 6099, 6100, 6110, 6115, 6132, 6146, 6155, 6156, 6157, 6161, 6162, 6164, 6166, 6172, 6173, 6176, 6177, 6179, 6180, 6181, 7081, 7084, 7088, 7106, 7115, 7118, 7125, 7126, 7128, 7129, 7130, 7132, 7184, 7185, 7188, 7189, 7306, 7307, 7318, 7329, 7336, 7339, 7348, 7349, 7350, 7365, 7420, 7612, 7614, 7615, 7617, 7622, 7635, 7650, 7657, 7666, 7669, 7672, 7679, 7687, 7691, 7692, 7693, 7707, 7711, 7720, 7721, 7722, 7726, 7761, 7762, 7780, 7787, 7795, 7796, 7801, 7809, 7853, 7854, 7860, 7863, 7875, 7880, 7881, 7884, 7886, 7921, 7922, 7928, 7935, 7936, 7945, 7954, 7969, 7973, 7974, 8026, 8027, 8032, 8034, 8037, 8039, 8040, 8041, 8050, 8064, 8072, 8086, 8098, 8099, 8101, 8103, 8125, 8136, 8142, 8143, 8155, 8167, 8254, 8266, 8274, 8277, 8283, 8308, 8311, 8312, 8313, 8314, 8316, 8319, 8322, 8333, 8335, 8337, 8365, 8440, 8447, 8451, 8452, 8461, 8483, 8484, 8489, 8490, 8569, 8571, 8573, 8582, 8586, 8592, 8598, 8604, 8614, 8619, 8620, 8638, 8649, 8654, 8659, 8669, 8675, 8679, 8685, 8691, 10300, 10301, 10302, 10309, 10311]);
+    edgeLength = /* @__PURE__ */ new Uint8Array([3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 8, 2, 2, 3, 3, 3, 3, 3, 8, 5, 5, 5, 5, 5, 3, 3, 5, 5, 9, 12, 19, 8, 19, 8, 11, 9, 9, 8, 7, 7, 6, 8, 9, 16, 10, 7, 7, 11, 8, 6, 6, 9, 7, 11, 7, 14, 4, 4, 4, 4, 4, 4, 10, 7, 6, 6, 6, 6, 10, 10, 6, 10, 10, 22, 11, 9, 10, 10, 10, 9, 10, 8, 7, 7, 7, 8, 21, 13, 11, 11, 9, 10, 9, 13, 10, 8, 8, 9, 12, 9, 7, 10, 7, 7, 13, 7, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 7, 2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 7, 8, 5, 2, 2, 7, 2, 2, 1, 4, 1, 11, 9, 9, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 11, 9, 9, 13, 7, 14, 7, 6, 6, 6, 7, 6, 6, 6, 6, 6, 10, 7, 11, 9, 4, 4, 4, 4, 4, 6, 6, 6, 6, 13, 6, 8, 7, 10, 9, 9, 7, 9, 8, 9, 8, 7, 10, 6, 9, 8, 10, 10, 7, 8, 1, 9, 10, 12, 12, 12, 10, 9, 9, 10, 10, 9, 9, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 4, 3, 3, 3, 7, 4, 4, 4, 3, 3, 6, 7, 3, 4, 1, 2, 2, 2, 6, 1, 2, 2, 2, 2, 2, 12, 5, 3, 8, 9, 13, 4, 4, 13, 9, 9, 11, 7, 3, 12, 9, 2, 2, 2, 3, 3, 3, 3, 3, 8, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 7, 10, 15, 7, 15, 15, 20, 15, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 7, 8, 6, 8, 8, 6, 8, 13, 8, 8, 6, 13, 8, 11, 13, 8, 6, 13, 8, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 9, 9, 9, 10, 14, 14, 11, 13, 13, 9, 9, 9, 9, 9, 9, 2, 6, 9, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 3, 3, 3, 3, 3, 3, 7, 7, 2, 3, 2, 2, 5, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 5, 7, 4, 2, 2, 12, 8, 10, 8, 10, 7, 18, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 2, 2, 3, 3, 3, 5, 5, 3, 8, 8, 6, 8, 6, 6, 4, 6, 7, 7, 7, 10, 11, 2, 5, 5, 3, 3, 3, 3, 3, 3, 5, 5, 6, 11, 10, 7, 7, 7, 4, 4, 4, 2, 3, 3, 3, 3, 3, 2, 2, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 11, 7, 6, 9, 6, 6, 8, 10, 8, 6, 8, 13, 4, 4, 4, 4, 4, 10, 8, 11, 8, 8, 8, 10, 10, 7, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 10, 13, 7, 8, 7, 11, 8, 8, 6, 9, 8, 8, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 9, 7, 6, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 9, 7, 8, 10, 8, 8, 2, 3, 3, 3, 3, 3, 2, 8, 9, 9, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 9, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 5, 5, 3, 5, 4, 2, 3, 2, 4, 3, 9, 2, 2, 2, 2, 2, 5, 5, 3, 8, 8, 13, 6, 10, 9, 4, 7, 9, 11, 2, 3, 7, 3, 3, 4, 1, 3, 4, 2, 9, 3, 3, 12, 5, 3, 7, 10, 10, 7, 4, 4, 6, 14, 7, 9, 7, 13, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 8, 15, 4, 4, 2, 3, 3, 3, 7, 4, 9, 9, 2, 3, 3, 3, 5, 3, 2, 2, 7, 2, 7, 6, 6, 7, 2, 4, 2, 2, 2, 2, 2, 2, 8, 8, 8, 9, 5, 2, 3, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 4, 2, 3, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 2, 3, 3, 3, 3, 10, 7, 4, 4, 4, 4, 3, 9, 6, 6, 6, 9, 13, 9, 2, 2, 2, 8, 7, 9, 5, 3, 3, 3, 5, 5, 13, 12, 9, 10, 7, 8, 7, 6, 8, 6, 11, 12, 7, 9, 10, 4, 4, 7, 8, 11, 6, 7, 9, 8, 7, 10, 8, 9, 15, 7, 8, 5, 4, 7, 2, 3, 3, 3, 2, 14, 10, 2, 14, 10, 2, 14, 3, 9, 13, 13, 10, 14, 16, 17, 11, 2, 14, 2, 14, 3, 9, 13, 10, 14, 16, 17, 11, 14, 10, 14, 2, 7, 3, 10, 7, 14, 10, 2, 14, 10, 9, 9, 17, 6, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 10, 10, 10, 12, 9, 4, 10, 10, 11, 8, 8, 8, 7, 9, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 4, 4, 4, 4, 4, 4, 6, 16, 3, 3, 14, 3, 14, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 9, 9, 9, 9, 9, 9, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 17, 13, 10, 10, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 14, 16, 17, 11, 2, 14, 9, 13, 10, 16, 11, 2, 14, 10, 19, 7, 2, 14, 9, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 10, 19, 7, 14, 16, 17, 11, 2, 14, 9, 13, 17, 13, 10, 10, 14, 16, 17, 11, 6, 3, 2, 14, 9, 13, 10, 10, 14, 16, 17, 11, 6, 9, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 14, 10, 10, 10, 14, 9, 9, 9, 9, 14, 14, 14, 13, 13, 14, 9, 9, 9, 9, 9, 9, 4, 11, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 14, 9, 13, 17, 13, 10, 19, 10, 7, 14, 16, 17, 11, 6, 2, 9, 10, 10, 7, 17, 3, 3, 12, 12, 16, 15, 15, 12, 14, 14, 14, 20, 20, 13, 12, 12, 12, 12, 12, 12, 20, 25, 14, 14, 12, 12, 10, 10, 10, 10, 9, 9, 9, 25, 4, 9, 17, 10, 7, 14, 16, 21, 13, 13, 14, 20, 14, 13, 17, 24, 9, 12, 13, 25, 13, 21, 20, 17, 9, 9, 9, 9, 9, 9, 12, 17, 4, 4, 9, 9, 9, 10, 10, 12, 14, 14, 14, 12, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 9, 1, 5, 8, 7, 11, 11, 1, 3, 3, 3, 5, 3, 3, 4, 8, 9, 10, 14, 14, 12, 12, 12, 12, 14, 14, 10, 10, 10, 10, 14, 9, 9, 9, 10, 14, 14, 14, 13, 13, 9, 9, 9, 9, 9, 7, 4, 4, 4, 4, 4, 4, 4, 4, 4, 7, 4, 9, 12, 6, 14, 4, 12, 7, 2, 2, 1, 2, 7, 6, 4, 4, 4, 6, 8, 8, 7, 4, 5, 6, 3, 3, 3, 3, 4, 16, 8, 5, 4, 3, 3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 12, 7, 7, 13, 9, 10, 17, 12, 8, 9, 7, 8, 5, 12, 10, 13, 14, 5, 5, 5, 13, 5, 5, 5, 3, 3, 3, 5, 16, 5, 5, 5, 5, 7, 12, 14, 8, 12, 8, 10, 12, 9, 11, 7, 9, 7, 10, 7, 13, 9, 7, 12, 8, 17, 7, 7, 16, 10, 13, 13, 8, 10, 10, 14, 17, 7, 16, 16, 15, 8, 10, 10, 12, 17, 17, 7, 17, 14, 7, 10, 17, 8, 7, 7, 7, 8, 15, 15, 7, 14, 10, 10, 10, 11, 11, 7, 7, 13, 8, 10, 7, 16, 7, 8, 7, 14, 17, 12, 10, 11, 21, 8, 9, 7, 13, 9, 8, 13, 6, 12, 7, 6, 13, 10, 10, 10, 8, 18, 9, 17, 13, 10, 12, 6, 13, 6, 11, 8, 13, 10, 13, 18, 13, 11, 13, 8, 16, 7, 10, 8, 16, 12, 10, 8, 8, 14, 11, 8, 15, 8, 8, 7, 7, 12, 7, 8, 9, 14, 15, 8, 9, 10, 9, 15, 7, 8, 8, 12, 13, 9, 10, 15, 13, 7, 10, 10, 20, 7, 6, 9, 6, 6, 14, 11, 14, 11, 12, 9, 10, 16, 16, 12, 7, 11, 28, 8, 11, 10, 7, 21, 8, 7, 9, 4, 4, 4, 17, 7, 8, 6, 9, 6, 6, 13, 6, 6, 6, 6, 18, 20, 14, 8, 11, 12, 9, 10, 13, 15, 15, 19, 8, 9, 12, 7, 10, 16, 12, 9, 9, 9, 14, 12, 11, 9, 12, 11, 18, 9, 9, 9, 10, 7, 7, 16, 8, 9, 7, 13, 12, 10, 14, 18, 7, 8, 11, 7, 7, 8, 8, 13, 7, 7, 7, 11, 15, 13, 11, 7, 8, 15, 11, 7, 8, 18, 14, 13, 18, 15, 10, 12, 12, 9, 7, 11, 11, 8, 7, 10, 8, 14, 12, 10, 18, 7, 10, 9, 7, 8, 13, 10, 14, 10, 8, 8, 23, 7, 7, 11, 12, 12, 17, 7, 7, 11, 11, 17, 16, 16, 7, 8, 11, 14, 14, 8, 10, 7, 7, 16, 16, 13, 9, 11, 9, 15, 15, 11, 11, 7, 7, 14, 7, 9, 7, 7, 16, 10, 13, 10, 11, 14, 7, 11, 10, 11, 7, 11, 10, 11, 15, 11, 15, 10, 12, 10, 14, 13, 11, 11, 12, 13, 10, 7, 13, 10, 16, 12, 21, 9, 10, 10, 7, 11, 14, 17, 7, 7, 8, 11, 12, 8, 15, 14, 14, 8, 17, 12, 10, 10, 7, 9, 11, 7, 10, 7, 11, 18, 7, 11, 7, 12, 11, 8, 8, 14, 12, 7, 8, 15, 3, 7, 7, 5, 2, 9, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 3, 5, 11, 6, 4, 7, 10, 7, 7, 11, 1, 10, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 3, 5, 6, 3, 3, 5, 2, 2, 5, 3, 4, 13, 11, 3, 3, 6, 3, 5, 14, 2, 2, 3, 8, 2, 2, 12, 5, 18, 5, 3, 3, 3, 16, 5, 5, 5, 10, 7, 13, 12, 13, 9, 12, 14, 19, 9, 9, 21, 9, 9, 10, 6, 9, 6, 15, 10, 6, 12, 8, 6, 10, 15, 4, 4, 6, 6, 9, 9, 12, 16, 14, 23, 7, 7, 7, 14, 9, 7, 7, 11, 14, 10, 7, 10, 10, 10, 12, 6, 11, 10, 13, 11, 15, 11, 7, 12, 10, 3, 7, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 3, 7, 2, 5, 5, 3, 3, 5, 5, 5, 5, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 7, 10, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 5, 5, 10, 9, 11, 8, 7, 12, 8, 9, 7, 6, 13, 11, 6, 13, 7, 9, 9, 4, 4, 4, 4, 4, 6, 10, 7, 8, 13, 8, 8, 9, 14, 7, 8, 10, 7, 7, 7, 9, 6, 9, 7, 2, 12, 5, 3, 3, 13, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 1, 7, 6, 4, 12, 3, 3, 3, 3, 3, 8, 7, 3, 3, 3, 3, 3, 3, 4, 4, 11, 14, 2, 8, 3, 5, 5, 8, 10, 8, 6, 4, 7, 17, 7, 4, 5, 2, 6, 3, 2, 2, 12, 5, 5, 3, 15, 13, 8, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 3, 3, 3, 3, 4, 18, 2, 12, 5, 3, 3, 3, 3, 3, 5, 16, 8, 8, 9, 6, 6, 4, 4, 4, 4, 31, 6, 6, 10, 11, 21, 10, 9, 7, 10, 7, 7, 2, 4, 4, 4, 4, 6, 5, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 2, 2, 2, 5, 3, 3, 3, 7, 7, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 8, 2, 3, 3, 3, 3, 3, 5, 9, 11, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 5, 10, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 11, 10, 10, 10, 10, 10, 11, 10, 11, 10, 11, 10, 9, 9, 11, 3, 3, 3, 3, 3, 3, 5, 3, 7, 8, 8, 7, 6, 6, 11, 4, 4, 4, 7, 8, 9, 9, 2, 3, 7, 4, 4, 2, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 2, 2, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 7, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 8, 8, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 6, 9, 12, 3, 7, 10, 7, 2, 2, 3, 3, 3, 3, 3, 4, 3, 3, 2, 2, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 6, 6, 8, 6, 7, 4, 4, 4, 4, 4, 4, 6, 7, 5, 5, 20, 19, 8, 10, 9, 7, 10, 6, 8, 11, 6, 6, 6, 6, 13, 12, 8, 6, 7, 14, 11, 9, 2, 5, 3, 6, 2, 3, 2, 2, 2, 2, 2, 2, 2, 5, 4, 3, 7, 6, 4, 7, 4, 3, 6, 4, 7, 2, 7, 7, 7, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 9, 10, 10, 11, 7, 8, 20, 7, 8, 9, 8, 12, 6, 6, 6, 8, 9, 8, 12, 6, 6, 8, 13, 10, 12, 6, 6, 7, 7, 9, 6, 4, 4, 4, 4, 4, 4, 10, 6, 6, 6, 7, 14, 11, 10, 7, 8, 10, 8, 11, 14, 11, 11, 9, 7, 9, 8, 11, 9, 17, 10, 9, 2, 2, 2, 9, 3, 3, 3, 3, 15, 14, 9, 5, 5, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 15, 12, 22, 19, 17, 18, 18, 19, 21, 7, 16, 16, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 7, 16, 11, 11, 7, 7, 7, 7, 17, 7, 8, 12, 15, 9, 19, 7, 19, 8, 21, 11, 12, 19, 14, 22, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 16, 16, 19, 24, 12, 7, 14, 7, 12, 7, 8, 10, 10, 13, 7, 12, 12, 7, 7, 10, 18, 15, 12, 16, 7, 14, 12, 17, 10, 16, 17, 12, 17, 25, 7, 7, 7, 13, 6, 9, 6, 9, 18, 6, 6, 11, 20, 10, 6, 6, 6, 6, 6, 6, 17, 6, 6, 6, 15, 6, 6, 6, 6, 6, 8, 14, 11, 12, 11, 15, 13, 19, 17, 21, 7, 18, 8, 13, 13, 8, 12, 8, 6, 6, 13, 6, 15, 15, 16, 6, 6, 16, 6, 6, 6, 14, 6, 18, 6, 6, 6, 17, 18, 9, 13, 15, 8, 19, 8, 15, 15, 18, 14, 16, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 11, 10, 11, 6, 21, 23, 12, 17, 12, 11, 14, 13, 22, 15, 15, 11, 12, 14, 12, 7, 12, 8, 12, 14, 12, 18, 10, 8, 16, 19, 17, 12, 14, 15, 8, 19, 17, 12, 13, 13, 15, 18, 13, 23, 24, 23, 21, 17, 24, 8, 21, 8, 14, 14, 16, 20, 14, 8, 8, 15, 20, 8, 19, 21, 9, 8, 13, 12, 13, 15, 11, 8, 11, 9, 9, 8, 11, 8, 21, 14, 21, 15, 15, 13, 7, 19, 7, 7, 7, 7, 7, 7, 16, 12, 17, 18, 7, 7, 11, 11, 7, 9, 9, 2, 2, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 10, 10, 7, 9, 7, 7, 7, 6, 8, 6, 6, 6, 6, 6, 6, 6, 7, 6, 8, 6, 6, 9, 7, 7, 7, 4, 4, 4, 4, 4, 4, 4, 4, 8, 9, 8, 7, 8, 7, 8, 10, 7, 5, 5, 5, 5, 5, 5, 3, 9, 7, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 9, 11, 13, 7, 8, 9, 9, 5, 5, 5, 7, 8, 6, 6, 6, 6, 6, 6, 6, 7, 8, 9, 7, 10, 9, 10, 7, 8, 5, 5, 5, 5, 5, 5, 7, 7, 9, 8, 7, 7, 6, 6, 6, 6, 6, 6, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 10, 4, 4, 4, 4, 8, 7, 7, 10, 10, 9, 8, 8, 15, 9, 8, 8, 8, 8, 8, 9, 10, 9, 10, 7, 8, 13, 5, 5, 5, 5, 5, 3, 3, 7, 7, 8, 6, 6, 6, 4, 4, 11, 9, 7, 8, 9, 10, 7, 5, 5, 5, 5, 5, 3, 3, 7, 6, 6, 13, 7, 9, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 7, 8, 7, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 6, 7, 6, 7, 6, 6, 9, 7, 4, 4, 4, 4, 4, 4, 4, 7, 8, 7, 8, 9, 8, 8, 8, 7, 10, 7, 8, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 7, 9, 7, 10, 9, 6, 6, 6, 6, 6, 8, 8, 6, 6, 6, 7, 6, 6, 6, 9, 9, 4, 4, 13, 7, 10, 9, 9, 12, 7, 8, 8, 10, 8, 8, 8, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 11, 7, 9, 8, 8, 6, 6, 10, 6, 8, 8, 8, 6, 7, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 8, 16, 8, 9, 8, 7, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 10, 15, 8, 9, 8, 9, 9, 6, 6, 6, 6, 6, 6, 7, 4, 8, 7, 8, 8, 7, 8, 11, 8, 5, 5, 5, 5, 5, 3, 7, 7, 6, 11, 16, 7, 6, 4, 4, 4, 4, 9, 9, 8, 8, 8, 13, 12, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 7, 8, 8, 9, 13, 7, 7, 7, 9, 8, 8, 9, 12, 7, 12, 7, 12, 8, 7, 10, 12, 9, 9, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 9, 11, 8, 6, 6, 6, 6, 6, 12, 7, 6, 6, 6, 9, 7, 7, 6, 6, 6, 6, 6, 11, 9, 6, 6, 6, 6, 6, 7, 9, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 7, 7, 7, 7, 7, 11, 7, 7, 8, 8, 8, 8, 8, 8, 9, 8, 9, 9, 7, 7, 11, 11, 7, 12, 8, 8, 8, 8, 8, 7, 8, 8, 8, 8, 8, 13, 12, 8, 8, 8, 8, 7, 7, 7, 9, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 11, 7, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 10, 11, 6, 7, 9, 4, 4, 4, 4, 4, 4, 9, 9, 8, 9, 8, 8, 8, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 11, 7, 7, 7, 9, 6, 6, 11, 8, 10, 6, 6, 6, 12, 8, 8, 7, 6, 6, 8, 7, 4, 4, 4, 4, 4, 4, 4, 4, 9, 10, 9, 9, 8, 10, 9, 11, 8, 5, 5, 5, 7, 6, 6, 8, 7, 4, 4, 4, 4, 8, 7, 7, 8, 7, 8, 8, 5, 5, 5, 5, 7, 7, 8, 8, 8, 6, 6, 6, 6, 6, 10, 8, 9, 13, 6, 7, 6, 6, 8, 7, 8, 4, 4, 4, 4, 11, 8, 8, 8, 10, 5, 5, 8, 7, 8, 13, 8, 7, 6, 8, 6, 9, 7, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 6, 4, 8, 10, 10, 8, 12, 9, 13, 2, 7, 5, 5, 5, 5, 5, 7, 7, 10, 6, 6, 6, 6, 6, 6, 6, 8, 4, 4, 9, 8, 8, 8, 14, 8, 8, 8, 9, 8, 5, 5, 5, 5, 5, 3, 3, 9, 6, 6, 6, 6, 10, 12, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 4, 11, 8, 7, 8, 8, 8, 5, 5, 3, 3, 3, 3, 7, 7, 6, 8, 6, 8, 11, 7, 6, 6, 6, 7, 4, 8, 11, 9, 10, 5, 5, 5, 3, 3, 3, 7, 7, 8, 9, 8, 15, 9, 6, 6, 6, 6, 6, 6, 11, 11, 4, 4, 4, 4, 4, 7, 9, 9, 10, 8, 7, 5, 5, 5, 5, 5, 5, 3, 3, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 7, 4, 4, 4, 4, 4, 9, 9, 8, 8, 10, 13, 5, 5, 5, 3, 17, 7, 7, 7, 7, 7, 8, 6, 8, 13, 6, 6, 6, 6, 6, 6, 6, 6, 4, 4, 4, 9, 10, 8, 8, 8, 5, 5, 5, 5, 3, 7, 7, 7, 8, 8, 6, 6, 6, 8, 8, 8, 9, 10, 8, 4, 8, 10, 9, 8, 8, 8, 9, 13, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 8, 9, 9, 7, 7, 7, 10, 9, 9, 8, 9, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 12, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 11, 8, 8, 9, 9, 10, 8, 9, 7, 7, 5, 5, 5, 5, 5, 5, 3, 7, 8, 7, 6, 6, 8, 6, 6, 10, 4, 7, 8, 9, 12, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 7, 14, 7, 9, 8, 8, 6, 6, 8, 12, 12, 6, 6, 7, 7, 10, 4, 4, 4, 4, 4, 9, 9, 14, 9, 13, 8, 7, 5, 5, 5, 6, 6, 6, 7, 4, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 7, 7, 7, 8, 6, 6, 6, 6, 6, 6, 12, 6, 6, 6, 6, 4, 4, 9, 9, 8, 8, 11, 7, 7, 7, 5, 5, 5, 3, 9, 8, 6, 6, 7, 4, 4, 4, 4, 4, 4, 8, 8, 11, 5, 5, 5, 7, 7, 7, 9, 6, 6, 6, 6, 6, 6, 9, 8, 4, 4, 4, 4, 7, 12, 9, 8, 8, 8, 7, 10, 10, 5, 5, 5, 5, 5, 5, 5, 3, 11, 14, 8, 7, 8, 8, 6, 6, 6, 6, 6, 8, 7, 6, 6, 6, 7, 6, 8, 9, 4, 4, 4, 7, 8, 9, 7, 9, 7, 7, 9, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 9, 7, 7, 12, 14, 8, 6, 6, 12, 11, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 15, 7, 4, 4, 4, 16, 9, 9, 9, 8, 9, 9, 9, 9, 9, 8, 8, 8, 13, 11, 8, 5, 5, 5, 5, 3, 7, 6, 6, 8, 8, 8, 6, 6, 7, 10, 7, 4, 4, 4, 4, 9, 7, 8, 7, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 7, 7, 7, 9, 6, 6, 6, 6, 6, 8, 8, 7, 7, 9, 6, 6, 6, 7, 6, 6, 6, 6, 6, 15, 4, 4, 4, 4, 4, 8, 8, 7, 8, 12, 9, 8, 8, 8, 8, 8, 9, 8, 8, 10, 8, 8, 8, 8, 16, 9, 10, 2, 5, 5, 5, 5, 5, 5, 5, 9, 7, 6, 8, 9, 4, 4, 4, 4, 4, 7, 8, 8, 8, 9, 8, 11, 10, 5, 5, 5, 5, 3, 7, 8, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 4, 12, 10, 12, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 3, 3, 7, 7, 10, 8, 9, 7, 6, 10, 7, 6, 6, 4, 4, 8, 9, 7, 9, 9, 9, 9, 8, 8, 8, 8, 10, 5, 5, 5, 5, 5, 5, 8, 7, 6, 6, 6, 10, 6, 7, 10, 7, 4, 4, 4, 4, 4, 4, 4, 12, 9, 10, 7, 7, 10, 8, 10, 5, 12, 9, 6, 6, 6, 6, 6, 7, 6, 4, 4, 4, 10, 9, 9, 8, 7, 7, 5, 5, 5, 5, 5, 5, 3, 3, 13, 7, 7, 9, 7, 7, 7, 8, 9, 9, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 15, 15, 4, 4, 4, 4, 4, 10, 10, 9, 8, 9, 8, 8, 9, 7, 8, 7, 8, 5, 5, 7, 6, 6, 6, 4, 4, 4, 7, 8, 11, 8, 5, 5, 5, 5, 5, 5, 5, 7, 6, 6, 6, 6, 6, 6, 9, 11, 10, 7, 4, 4, 4, 9, 8, 8, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 6, 6, 6, 9, 9, 4, 4, 4, 4, 8, 8, 8, 9, 9, 8, 8, 8, 13, 2, 4, 2, 7, 5, 5, 5, 5, 5, 5, 9, 9, 6, 6, 6, 6, 10, 8, 8, 8, 6, 6, 6, 4, 4, 9, 8, 10, 8, 9, 8, 8, 8, 9, 8, 8, 5, 3, 3, 3, 11, 6, 6, 6, 7, 6, 6, 6, 4, 4, 9, 8, 5, 5, 5, 5, 5, 3, 11, 8, 6, 6, 6, 6, 6, 9, 7, 4, 4, 14, 10, 9, 8, 12, 8, 8, 8, 11, 15, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 11, 11, 10, 10, 7, 7, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 7, 11, 7, 7, 11, 11, 7, 8, 9, 10, 7, 7, 9, 9, 9, 9, 7, 7, 10, 8, 13, 8, 8, 8, 8, 11, 10, 6, 6, 8, 10, 11, 14, 14, 6, 6, 6, 6, 6, 6, 9, 11, 7, 7, 6, 8, 12, 11, 11, 6, 6, 10, 6, 6, 6, 6, 6, 10, 7, 7, 6, 6, 11, 6, 6, 6, 11, 8, 9, 7, 6, 10, 11, 9, 10, 11, 7, 11, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 6, 6, 8, 9, 10, 9, 6, 6, 6, 10, 6, 6, 6, 6, 11, 10, 11, 10, 9, 8, 7, 7, 7, 7, 11, 14, 8, 10, 9, 9, 8, 8, 7, 11, 8, 8, 8, 11, 11, 10, 10, 9, 10, 8, 11, 10, 8, 11, 9, 12, 8, 10, 8, 11, 8, 9, 9, 11, 11, 10, 11, 13, 8, 7, 8, 8, 9, 7, 8, 8, 8, 8, 7, 8, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 8, 6, 4, 4, 4, 11, 7, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 8, 7, 7, 8, 8, 4, 8, 7, 7, 7, 9, 7, 8, 9, 8, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 4, 5, 5, 3, 3, 8, 8, 6, 9, 4, 4, 10, 7, 3, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 2, 2, 2, 3, 3, 3, 3, 3, 4, 10, 2, 3, 3, 3, 3, 3, 3, 3, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 5, 2, 4, 2, 6, 2, 2, 9, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 9, 8, 7, 9, 6, 6, 11, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 7, 7, 11, 8, 8, 6, 5, 11, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 3, 3, 3, 3, 5, 7, 2, 3, 3, 3, 3, 3, 8, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 4, 4, 4, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 6, 3, 3, 8, 10, 3, 4, 4, 1, 1, 1, 1, 1, 1, 1, 8, 9, 10, 7, 7, 1, 14, 18, 13, 18, 13, 10, 10, 16, 13, 18, 16, 13, 16, 18, 13, 22, 16, 16, 16, 14, 21, 16, 9, 14, 16, 9, 9, 14, 10, 10, 14, 12, 14, 19, 12, 11, 18, 13, 17, 15, 15, 15, 15, 16, 14, 13, 19, 18, 15, 19, 18, 12, 18, 12, 11, 20, 14, 15, 10, 17, 17, 16, 19, 20, 21, 15, 13, 16, 15, 15, 15, 1, 1, 3, 8, 7, 7, 8, 8, 8, 1, 6, 1, 1, 6, 3, 3, 4, 7, 3, 3, 5, 5, 4, 4, 4, 4, 4, 2, 7, 7, 8, 12, 3, 4, 5, 1, 3, 4, 4, 10, 4, 3, 3, 3, 8, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 9, 20, 7, 5, 5, 5, 9, 13, 5, 5, 5, 5, 5, 3, 3, 3, 16, 5, 5, 5, 13, 7, 8, 8, 11, 8, 7, 9, 7, 11, 12, 9, 9, 8, 8, 11, 10, 14, 7, 12, 10, 11, 13, 7, 9, 11, 17, 17, 14, 13, 7, 8, 7, 10, 10, 7, 16, 13, 7, 8, 17, 12, 9, 8, 6, 7, 10, 6, 6, 12, 6, 8, 10, 8, 8, 8, 6, 8, 6, 14, 6, 6, 6, 13, 6, 10, 6, 6, 7, 14, 8, 6, 6, 10, 11, 10, 9, 9, 7, 7, 6, 6, 6, 9, 9, 7, 9, 10, 9, 13, 12, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 8, 8, 6, 8, 9, 10, 9, 7, 10, 10, 8, 7, 8, 7, 10, 12, 9, 8, 15, 8, 7, 8, 8, 7, 7, 15, 13, 7, 10, 9, 14, 18, 16, 7, 24, 7, 8, 10, 11, 16, 8, 14, 7, 9, 9, 9, 13, 19, 14, 15, 14, 11, 7, 13, 9, 10, 7, 13, 9, 10, 11, 12, 8, 9, 2, 3, 5, 8, 7, 4, 4, 15, 10, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 2, 12, 5, 3, 8, 10, 15, 6, 7, 2, 3, 2, 5, 5, 12, 2, 5, 5, 5, 5, 2, 2, 5, 5, 12, 9, 5, 2, 2, 9, 5, 5, 12, 12, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 12, 5, 8, 8, 9, 5, 5, 5, 8, 19, 7, 16, 15, 14, 9, 9, 9, 9, 7, 11, 11, 11, 7, 14, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 15, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 12, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 9, 12, 9, 9, 12, 12, 12, 15, 7, 11, 7, 14, 11, 18, 13, 8, 18, 15, 18, 12, 14, 12, 8, 8, 8, 8, 9, 9, 9, 12, 7, 10, 10, 8, 8, 12, 12, 12, 7, 12, 12, 9, 7, 7, 7, 7, 7, 8, 15, 12, 9, 10, 10, 7, 10, 10, 13, 11, 10, 9, 22, 11, 9, 8, 8, 8, 8, 8, 13, 18, 13, 9, 15, 19, 9, 7, 7, 10, 7, 7, 7, 11, 8, 13, 17, 7, 7, 10, 10, 10, 7, 20, 16, 7, 7, 7, 7, 7, 7, 11, 21, 12, 12, 13, 11, 14, 16, 8, 8, 13, 11, 7, 7, 13, 7, 7, 14, 15, 15, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 13, 10, 18, 6, 6, 6, 6, 6, 6, 6, 6, 6, 11, 8, 8, 12, 12, 11, 11, 8, 12, 9, 9, 9, 13, 13, 9, 9, 9, 9, 9, 9, 6, 10, 12, 6, 6, 6, 6, 17, 11, 7, 7, 7, 7, 14, 14, 12, 6, 7, 7, 6, 6, 15, 10, 13, 10, 6, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 13, 9, 9, 15, 13, 6, 12, 12, 6, 19, 11, 10, 7, 7, 16, 8, 19, 17, 9, 9, 9, 9, 9, 6, 6, 6, 10, 8, 16, 8, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 6, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 14, 6, 6, 6, 6, 20, 6, 9, 6, 14, 9, 9, 9, 6, 9, 8, 8, 12, 9, 8, 8, 8, 8, 7, 8, 12, 7, 8, 8, 8, 6, 8, 6, 6, 6, 6, 6, 6, 6, 9, 8, 8, 6, 6, 13, 9, 12, 13, 12, 14, 13, 12, 11, 11, 6, 8, 8, 8, 6, 13, 12, 11, 11, 12, 6, 11, 12, 11, 13, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 15, 6, 6, 6, 6, 6, 6, 6, 13, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 6, 18, 6, 12, 13, 13, 13, 9, 10, 15, 9, 12, 6, 6, 6, 6, 6, 6, 6, 6, 9, 15, 10, 9, 10, 13, 9, 19, 8, 18, 17, 10, 10, 8, 8, 6, 6, 6, 6, 6, 6, 10, 14, 8, 16, 16, 9, 8, 15, 8, 8, 10, 12, 14, 7, 7, 8, 8, 7, 7, 7, 7, 8, 13, 13, 11, 9, 9, 9, 12, 10, 17, 8, 11, 9, 7, 7, 14, 8, 14, 14, 7, 7, 7, 7, 7, 7, 14, 7, 7, 7, 7, 7, 10, 10, 8, 14, 7, 7, 7, 7, 8, 8, 8, 8, 8, 17, 9, 7, 15, 7, 8, 12, 7, 9, 14, 7, 7, 7, 9, 13, 8, 14, 7, 16, 18, 13, 15, 14, 12, 13, 10, 15, 9, 7, 7, 7, 10, 13, 15, 15, 9, 9, 9, 9, 19, 11, 7, 11, 11, 13, 8, 8, 8, 8, 7, 12, 19, 17, 9, 9, 13, 7, 7, 7, 9, 7, 7, 7, 12, 13, 15, 10, 8, 8, 14, 15, 12, 13, 13, 8, 12, 14, 7, 11, 7, 14, 15, 13, 12, 8, 8, 8, 8, 11, 13, 15, 15, 8, 13, 12, 8, 8, 8, 13, 10, 16, 14, 11, 8, 8, 12, 12, 9, 15, 15, 12, 12, 13, 8, 8, 9, 12, 13, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 12, 11, 7, 14, 7, 13, 13, 13, 12, 18, 16, 7, 12, 11, 10, 10, 15, 9, 9, 9, 21, 7, 7, 7, 11, 16, 8, 8, 11, 11, 7, 7, 7, 7, 7, 19, 7, 7, 7, 7, 7, 7, 7, 7, 7, 12, 8, 9, 12, 14, 11, 9, 9, 9, 22, 12, 3, 3, 4, 8, 8, 15, 4, 2, 2, 5, 5, 3, 3, 3, 3, 3, 3, 6, 6, 4, 4, 4, 12, 7, 10, 2, 3, 3, 3, 3, 3, 3, 3, 6, 7, 3, 7, 5, 14, 4, 4, 7, 8, 10, 4, 1, 3, 3, 6, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 2, 2, 5, 3, 4, 2, 2, 2, 2, 2, 2, 11, 5, 5, 5, 11, 5, 5, 3, 5, 5, 5, 5, 11, 14, 13, 9, 11, 9, 12, 8, 11, 11, 8, 11, 16, 9, 9, 7, 10, 9, 12, 8, 15, 6, 7, 6, 6, 13, 10, 8, 11, 8, 6, 6, 6, 12, 16, 6, 11, 7, 8, 9, 18, 6, 6, 9, 4, 4, 6, 13, 6, 6, 6, 6, 8, 8, 9, 16, 7, 7, 14, 7, 8, 8, 8, 7, 7, 7, 7, 7, 7, 15, 13, 7, 10, 7, 7, 10, 12, 16, 15, 7, 9, 9, 14, 11, 11, 10, 9, 10, 8, 12, 7, 8, 7, 7, 10, 12, 7, 12, 8, 7, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 5, 5, 5, 10, 4, 8, 7, 10, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 7, 4, 5, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 8, 2, 2, 2, 8, 12, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 8, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 7, 11, 9, 8, 8, 8, 7, 8, 9, 7, 7, 9, 7, 7, 7, 10, 7, 7, 10, 9, 10, 6, 6, 6, 6, 6, 6, 15, 7, 8, 9, 9, 8, 6, 6, 10, 9, 6, 8, 13, 9, 7, 6, 6, 6, 6, 6, 6, 12, 6, 6, 7, 6, 7, 6, 6, 6, 10, 10, 7, 6, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 14, 6, 6, 7, 7, 9, 6, 6, 6, 6, 9, 9, 8, 9, 10, 9, 8, 9, 12, 7, 7, 7, 8, 7, 10, 12, 11, 9, 10, 7, 7, 7, 9, 10, 10, 8, 12, 9, 7, 7, 9, 8, 8, 8, 10, 7, 7, 8, 9, 9, 7, 7, 7, 8, 2, 4, 6, 3, 4, 2, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 5, 8, 6, 4, 7, 3, 3, 3, 3, 3, 3, 3, 12, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 5, 3, 4, 7, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 6, 4, 3, 4, 2, 2, 2, 5, 3, 3, 3, 3, 3, 5, 4, 4, 4, 4, 7, 6, 8, 9, 2, 2, 2, 2, 3, 3, 3, 5, 7, 2, 3, 3, 8, 7, 7, 2, 2, 8, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 8, 8, 7, 7, 6, 10, 6, 9, 7, 11, 4, 6, 8, 8, 7, 8, 4, 5, 5, 5, 5, 3, 3, 11, 8, 9, 6, 6, 8, 7, 4, 4, 7, 8, 7, 2, 2, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 7, 2, 2, 5, 3, 3, 2, 3, 3, 3, 3, 3, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 12, 5, 5, 3, 3, 3, 5, 10, 12, 6, 15, 4, 6, 6, 7, 14, 9, 3, 3, 3, 3, 3, 8, 2, 2, 3, 5, 5, 3, 3, 3, 3, 3, 3, 8, 8, 8, 7, 5, 8, 4, 6, 11, 2, 2, 6, 7, 3, 3, 2, 9, 8, 5, 5, 3, 3, 3, 5, 5, 7, 7, 6, 6, 10, 6, 8, 6, 8, 9, 7, 4, 4, 4, 4, 7, 6, 6, 7, 7, 10, 9, 8, 11, 8, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 7, 6, 2, 5, 6, 7, 6, 4, 8, 9, 11, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 5, 3, 3, 3, 3, 3, 9, 9, 6, 4, 8, 7, 7, 5, 9, 8, 6, 2, 8, 7, 8, 5, 5, 5, 5, 5, 3, 3, 3, 16, 8, 7, 7, 7, 8, 7, 7, 7, 7, 9, 6, 9, 6, 10, 7, 7, 7, 6, 10, 8, 9, 11, 11, 8, 4, 4, 10, 8, 8, 6, 9, 6, 11, 8, 8, 8, 15, 7, 8, 9, 5, 3, 3, 3, 3, 3, 5, 11, 2, 2, 3, 8, 9, 10, 3, 2, 2, 2, 2, 2, 2, 3, 6, 4, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 11, 5, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 12, 7, 4, 12, 4, 6, 5, 4, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 11, 10, 6, 4, 6, 10, 8, 3, 3, 3, 3, 3, 3, 3, 3, 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 4, 4, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 7, 8, 8, 7, 13, 12, 10, 10, 8, 8, 7, 7, 9, 12, 11, 6, 6, 8, 8, 9, 7, 7, 7, 10, 15, 10, 4, 4, 4, 4, 4, 11, 8, 8, 9, 7, 9, 14, 14, 12, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 12, 5, 5, 5, 11, 10, 7, 9, 3, 8, 7, 3, 15, 13, 11, 4, 4, 2, 2, 2, 19, 7, 5, 5, 3, 3, 3, 3, 3, 3, 3, 5, 22, 18, 6, 14, 17, 4, 4, 19, 16, 18, 2, 3, 3, 7, 2, 3, 2, 3, 3, 6, 4, 2, 3, 3, 2, 5, 3, 3, 3, 3, 3, 3, 3, 9, 9, 2, 3, 2, 2, 2, 3, 3, 3, 5, 7, 14, 7, 7, 12, 9, 13, 6, 11, 6, 10, 9, 7, 7, 8, 12, 12, 8, 8, 8, 10, 7, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 5, 8, 10, 7, 8, 11, 8, 12, 9, 4, 14, 7, 7, 9, 13, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 1, 2, 2, 3, 3, 3, 3, 3, 3, 5, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 8, 4, 4, 4, 3, 2, 3, 3, 3, 3, 5, 2, 2, 2, 2, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 12, 9, 8, 8, 9, 8, 6, 17, 6, 6, 6, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 4, 4, 8, 8, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 7, 8, 8, 8, 10, 7, 13, 10, 8, 9, 3, 3, 5, 13, 3, 3, 3, 3, 3, 7, 7, 6, 6, 10, 13, 11, 11, 8, 8, 9, 8, 9, 9, 10, 10, 10, 11, 10, 10, 13, 13, 16, 15, 11, 12, 9, 9, 10, 9, 11, 10, 9, 9, 14, 7, 8, 3, 10, 7, 7, 3, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 7, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 11, 6, 7, 4, 6, 2, 2, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 6, 4, 4, 2, 2, 2, 3, 3, 3, 3, 4, 4, 6, 6, 6, 6, 5, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 9, 11, 6, 10, 9, 12, 7, 7, 11, 14, 9, 7, 12, 3, 3, 7, 12, 11, 12, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11, 5, 5, 5, 5, 5, 5, 5, 5, 11, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 10, 3, 3, 3, 11, 3, 5, 9, 11, 8, 12, 14, 9, 7, 8, 7, 7, 11, 11, 7, 7, 10, 9, 8, 10, 9, 7, 7, 7, 7, 7, 7, 8, 8, 7, 11, 8, 8, 8, 7, 7, 10, 8, 7, 13, 12, 7, 17, 10, 8, 8, 11, 7, 11, 11, 14, 7, 11, 7, 8, 6, 9, 20, 8, 7, 9, 16, 7, 10, 6, 11, 10, 8, 9, 7, 16, 11, 11, 9, 8, 9, 8, 8, 8, 11, 8, 15, 8, 8, 9, 7, 8, 8, 11, 10, 7, 5, 7, 10, 10, 15, 7, 7, 7, 8, 7, 8, 8, 10, 11, 10, 10, 10, 11, 11, 7, 8, 6, 8, 8, 8, 10, 6, 8, 6, 6, 7, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 6, 15, 6, 7, 11, 11, 7, 9, 10, 11, 13, 10, 6, 16, 8, 10, 12, 11, 6, 6, 6, 6, 6, 6, 6, 10, 6, 10, 7, 7, 7, 7, 11, 7, 11, 6, 6, 6, 6, 6, 6, 17, 7, 7, 6, 6, 12, 22, 6, 6, 6, 6, 6, 8, 6, 6, 6, 6, 7, 6, 6, 5, 6, 6, 8, 11, 6, 9, 14, 11, 9, 11, 7, 7, 8, 6, 6, 6, 8, 10, 9, 6, 6, 6, 6, 9, 7, 6, 6, 6, 6, 6, 15, 6, 4, 4, 4, 6, 4, 17, 8, 11, 6, 6, 9, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 6, 6, 6, 6, 10, 6, 10, 6, 6, 6, 6, 12, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 6, 6, 6, 6, 18, 6, 6, 6, 8, 9, 10, 7, 8, 9, 10, 11, 7, 13, 6, 8, 8, 6, 6, 14, 7, 7, 7, 7, 10, 7, 14, 9, 6, 6, 9, 15, 9, 7, 14, 6, 11, 14, 13, 7, 12, 8, 7, 7, 7, 7, 7, 12, 7, 10, 9, 16, 6, 8, 6, 5, 17, 6, 8, 10, 4, 6, 4, 10, 15, 17, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 11, 7, 4, 4, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 19, 17, 6, 10, 11, 6, 6, 6, 6, 18, 6, 6, 11, 4, 4, 4, 5, 6, 6, 6, 9, 5, 6, 4, 6, 6, 4, 6, 6, 6, 6, 10, 6, 6, 4, 6, 6, 10, 6, 10, 6, 6, 6, 6, 11, 6, 6, 10, 6, 6, 8, 6, 6, 6, 8, 6, 11, 4, 11, 9, 10, 9, 11, 4, 8, 4, 11, 12, 7, 9, 8, 6, 7, 7, 8, 12, 12, 11, 13, 10, 11, 7, 7, 7, 9, 7, 11, 10, 7, 7, 7, 16, 11, 10, 11, 17, 9, 9, 8, 8, 7, 7, 7, 9, 7, 7, 7, 14, 7, 13, 9, 11, 10, 14, 10, 10, 12, 11, 10, 7, 10, 5, 14, 8, 8, 8, 9, 7, 8, 7, 7, 9, 8, 7, 8, 7, 7, 7, 7, 7, 7, 7, 11, 8, 10, 8, 7, 8, 14, 11, 8, 9, 9, 9, 8, 24, 10, 10, 12, 7, 7, 15, 11, 8, 8, 12, 11, 8, 9, 9, 7, 8, 9, 10, 11, 10, 11, 7, 12, 7, 7, 11, 9, 8, 14, 13, 12, 8, 11, 10, 8, 8, 7, 7, 14, 9, 10, 8, 9, 11, 7, 14, 8, 8, 13, 8, 8, 12, 7, 10, 14, 14, 11, 9, 10, 9, 9, 7, 7, 11, 11, 13, 9, 13, 5, 5, 5, 7, 9, 5, 11, 12, 14, 8, 7, 7, 11, 10, 9, 7, 8, 8, 7, 10, 11, 11, 5, 5, 7, 5, 5, 5, 7, 7, 15, 7, 7, 8, 7, 15, 12, 12, 10, 7, 8, 7, 11, 7, 7, 7, 23, 11, 8, 8, 11, 10, 7, 8, 11, 7, 19, 7, 7, 6, 9, 9, 9, 11, 3, 4, 7, 8, 6, 6, 4, 10, 8, 2, 2]);
+    edgeChild = /* @__PURE__ */ new Uint16Array([0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 17, 1, 1, 1, 12, 1, 12, 1, 12, 13, 1, 1, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 14, 21, 1, 1, 1, 1, 1, 1, 1, 19, 12, 1, 1, 1, 1, 1, 1, 1, 20, 1, 1, 1, 16, 18, 1, 1, 15, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 22, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 24, 25, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 12, 12, 12, 12, 1, 32, 0, 0, 0, 1, 1, 1, 1, 35, 34, 1, 1, 1, 1, 1, 33, 1, 1, 1, 1, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 39, 40, 0, 0, 0, 0, 12, 1, 1, 12, 1, 1, 1, 1, 43, 44, 44, 44, 43, 44, 43, 43, 45, 44, 43, 44, 43, 43, 43, 43, 43, 43, 45, 43, 43, 43, 43, 43, 43, 44, 46, 46, 44, 43, 43, 43, 43, 43, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 49, 51, 49, 49, 49, 51, 49, 50, 49, 52, 49, 50, 50, 49, 49, 49, 50, 52, 50, 52, 49, 50, 50, 12, 54, 54, 53, 55, 50, 52, 49, 49, 47, 48, 56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 59, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 66, 67, 12, 1, 1, 65, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 76, 79, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 12, 1, 1, 1, 1, 89, 1, 91, 1, 1, 1, 1, 1, 1, 1, 1, 94, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 97, 97, 1, 1, 12, 1, 100, 1, 1, 1, 1, 1, 1, 1, 98, 1, 99, 1, 101, 1, 1, 1, 1, 1, 102, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 110, 111, 1, 1, 1, 1, 1, 1, 113, 113, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 121, 122, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 122, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 122, 1, 1, 1, 1, 1, 1, 1, 1, 1, 126, 123, 125, 120, 1, 124, 1, 1, 114, 1, 1, 1, 1, 117, 1, 127, 1, 1, 1, 1, 1, 1, 119, 1, 108, 1, 109, 1, 12, 128, 106, 1, 112, 1, 1, 1, 1, 1, 107, 115, 1, 12, 12, 12, 118, 116, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 12, 12, 1, 1, 1, 1, 1, 12, 134, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 136, 1, 1, 1, 1, 1, 1, 1, 1, 137, 138, 12, 12, 135, 133, 44, 44, 140, 49, 49, 139, 142, 141, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 143, 0, 0, 0, 0, 1, 0, 144, 132, 1, 0, 1, 1, 12, 12, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 148, 147, 20, 1, 1, 12, 12, 1, 20, 12, 12, 1, 1, 1, 1, 1, 134, 1, 1, 152, 1, 1, 1, 1, 153, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 1, 136, 1, 1, 152, 1, 1, 1, 1, 153, 1, 1, 134, 1, 1, 1, 152, 1, 1, 1, 1, 153, 1, 1, 134, 1, 1, 1, 1, 1, 1, 1, 1, 134, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 160, 1, 1, 1, 152, 1, 1, 1, 1, 1, 153, 1, 1, 160, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 134, 1, 1, 1, 1, 152, 1, 1, 1, 1, 153, 1, 1, 1, 134, 1, 1, 152, 1, 1, 1, 1, 164, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 167, 1, 1, 160, 1, 1, 1, 1, 1, 152, 1, 1, 1, 1, 1, 153, 1, 1, 160, 1, 1, 1, 1, 1, 152, 1, 1, 1, 1, 1, 153, 1, 154, 158, 158, 12, 1, 12, 166, 1, 1, 1, 1, 1, 158, 158, 158, 154, 1, 1, 1, 157, 158, 161, 165, 1, 1, 1, 1, 157, 157, 1, 1, 156, 154, 154, 157, 170, 156, 170, 1, 1, 168, 1, 156, 155, 157, 1, 1, 1, 1, 157, 1, 159, 1, 1, 1, 12, 1, 162, 1, 162, 1, 1, 1, 162, 161, 163, 169, 156, 154, 1, 1, 1, 1, 1, 1, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 172, 173, 172, 173, 172, 172, 172, 172, 174, 174, 172, 173, 172, 173, 172, 172, 12, 1, 12, 12, 12, 12, 1, 12, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 196, 1, 1, 1, 1, 12, 202, 203, 204, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 151, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 199, 1, 1, 1, 186, 1, 1, 1, 1, 210, 1, 1, 207, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 177, 193, 1, 1, 1, 189, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 184, 1, 1, 1, 1, 1, 1, 1, 194, 1, 1, 1, 1, 198, 1, 1, 1, 1, 171, 1, 1, 192, 1, 1, 1, 195, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 182, 1, 12, 1, 1, 12, 1, 1, 1, 1, 185, 1, 1, 1, 191, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 211, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 197, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 176, 12, 1, 1, 1, 179, 12, 1, 1, 1, 1, 1, 1, 1, 201, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 178, 1, 1, 1, 1, 1, 1, 1, 206, 1, 1, 1, 183, 1, 1, 1, 190, 1, 12, 1, 187, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 194, 1, 1, 1, 1, 181, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 175, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 188, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 208, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 209, 1, 1, 12, 1, 1, 1, 1, 180, 1, 1, 1, 188, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 200, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 205, 1, 1, 12, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 221, 0, 0, 0, 0, 0, 222, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 226, 1, 1, 1, 0, 227, 224, 225, 1, 1, 1, 1, 1, 1, 232, 1, 234, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 230, 1, 1, 1, 1, 1, 236, 1, 1, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 235, 1, 1, 1, 12, 1, 1, 1, 1, 231, 1, 1, 1, 229, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 233, 1, 1, 1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 242, 13, 1, 1, 1, 12, 12, 239, 240, 1, 1, 1, 1, 241, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 243, 1, 1, 12, 16, 1, 1, 1, 1, 1, 1, 244, 1, 1, 1, 12, 12, 1, 1, 1, 1, 1, 1, 244, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 253, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 257, 257, 1, 0, 0, 0, 0, 0, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 172, 262, 263, 1, 12, 1, 1, 1, 1, 12, 265, 1, 1, 264, 1, 1, 267, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 271, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 12, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 282, 0, 0, 283, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 59, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 307, 0, 0, 0, 0, 0, 0, 0, 0, 0, 309, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 325, 325, 326, 325, 0, 188, 1, 1, 13, 321, 1, 319, 0, 0, 0, 0, 0, 0, 0, 322, 1, 1, 327, 1, 207, 1, 1, 1, 1, 320, 1, 317, 1, 323, 1, 315, 1, 324, 1, 316, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 318, 318, 1, 1, 1, 186, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 1, 1, 1, 314, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 330, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 267, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 370, 370, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 362, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 338, 349, 1, 1, 337, 372, 1, 343, 1, 1, 335, 367, 1, 1, 353, 334, 339, 1, 1, 1, 346, 377, 355, 1, 1, 1, 1, 1, 1, 356, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 365, 369, 0, 0, 79, 1, 1, 0, 363, 340, 376, 341, 344, 351, 1, 366, 0, 1, 0, 79, 360, 358, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 379, 1, 1, 350, 1, 79, 1, 0, 1, 1, 1, 382, 1, 0, 0, 79, 357, 0, 1, 336, 1, 1, 1, 0, 1, 1, 359, 1, 0, 1, 1, 1, 0, 1, 384, 347, 1, 1, 0, 1, 0, 0, 375, 0, 1, 1, 1, 79, 368, 1, 1, 364, 361, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 342, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 374, 0, 79, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 378, 1, 1, 1, 0, 0, 381, 0, 0, 0, 1, 354, 1, 0, 79, 380, 1, 0, 0, 0, 0, 383, 1, 1, 0, 0, 1, 0, 1, 0, 352, 0, 348, 0, 1, 1, 1, 0, 1, 1, 0, 371, 345, 373, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 12, 1, 1, 1, 12, 399, 399, 1, 1, 12, 12, 1, 399, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 411, 1, 1, 0, 1, 1, 1, 1, 207, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 429, 429, 1, 1, 0, 0, 315, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 442, 1, 441, 1, 1, 1, 1, 1, 1, 1, 1, 1, 446, 1, 12, 12, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 454, 1, 1, 1, 456, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 453, 1, 448, 1, 1, 1, 1, 435, 1, 1, 1, 1, 1, 1, 1, 1, 449, 12, 1, 1, 1, 1, 455, 1, 1, 1, 450, 444, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 315, 1, 432, 1, 1, 12, 452, 1, 1, 315, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 437, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 455, 1, 1, 1, 1, 315, 1, 451, 1, 1, 1, 445, 439, 1, 1, 1, 1, 1, 440, 1, 457, 443, 1, 1, 1, 1, 1, 438, 1, 1, 1, 1, 1, 1, 1, 1, 1, 433, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 447, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 436, 1, 1, 1, 1, 1, 434, 1, 221, 458, 1, 1, 1, 1, 1, 12, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 464, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 12, 1, 67, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 468, 468, 468, 468, 468, 468, 468, 0, 468, 468, 468, 468, 468, 1, 468, 468, 468, 0, 468, 468, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 473, 472, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 477, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 470, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 471, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 479, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 476, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 469, 0, 0, 480, 475, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 474, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 469, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 468, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 478, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 490, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 201, 201, 1, 494, 1, 1, 1, 493, 1, 1, 1, 1, 489, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 491, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 495, 1, 1, 492, 1, 1, 1, 1, 1, 1, 1, 1, 370, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 496, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 507, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 12, 1, 509, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 12, 12, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 59, 1, 1, 12, 12, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 528, 1, 1, 1, 1, 1, 1, 1, 529, 1, 1, 1, 1, 1, 1, 1, 527, 1, 1, 12, 1, 1, 531, 240, 1, 1, 12, 12, 1, 1, 12, 1, 12, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 535, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 541, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 132, 1, 12, 546, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 107, 1, 1, 12, 1, 1, 1, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 551, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 144, 1, 1, 1, 229, 1, 1, 12, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 576, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 221, 1, 326, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 581, 1, 1, 1, 1, 0, 583, 0, 79, 0, 582, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 12, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 590, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 585, 585, 0, 589, 587, 585, 585, 585, 585, 585, 591, 585, 585, 595, 585, 585, 585, 585, 585, 585, 585, 585, 585, 585, 592, 589, 585, 585, 589, 585, 585, 585, 585, 585, 585, 585, 585, 585, 585, 585, 585, 585, 587, 585, 585, 585, 585, 585, 593, 585, 585, 585, 585, 585, 585, 0, 0, 0, 1, 594, 1, 1, 1, 1, 588, 1, 1, 1, 1, 1, 586, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 599, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 12, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 12, 1, 1, 12, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 64, 279, 305, 410, 537, 0, 4, 68, 237, 255, 281, 306, 332, 386, 412, 0, 501, 521, 538, 601, 9, 0, 60, 88, 396, 408, 428, 579, 0, 499, 520, 534, 616, 0, 30, 6, 0, 463, 502, 606, 564, 70, 0, 7, 284, 256, 387, 465, 415, 540, 79, 602, 0, 580, 308, 417, 467, 9, 105, 287, 508, 6, 30, 0, 310, 79, 389, 79, 485, 10, 6, 131, 249, 274, 0, 617, 511, 0, 567, 0, 63, 6, 6, 252, 95, 2, 431, 397, 409, 600, 0, 6, 0, 6, 285, 103, 6, 565, 503, 542, 0, 466, 388, 272, 286, 8, 71, 104, 603, 545, 390, 311, 299, 418, 146, 74, 289, 549, 512, 605, 568, 333, 328, 481, 6, 75, 149, 11, 0, 250, 524, 550, 569, 516, 554, 574, 615, 36, 6, 261, 294, 331, 303, 219, 30, 530, 557, 219, 41, 217, 266, 295, 304, 405, 422, 483, 273, 0, 73, 566, 0, 402, 416, 298, 79, 248, 79, 0, 584, 548, 506, 291, 420, 79, 391, 385, 0, 0, 0, 9, 559, 575, 218, 0, 423, 406, 533, 518, 577, 619, 85, 219, 42, 296, 394, 424, 573, 0, 513, 292, 275, 79, 216, 80, 28, 388, 30, 6, 392, 329, 302, 608, 596, 526, 553, 515, 0, 259, 81, 30, 404, 421, 0, 30, 425, 0, 220, 597, 519, 9, 407, 426, 219, 249, 86, 223, 598, 578, 561, 484, 427, 395, 251, 228, 87, 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 624, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 413, 0, 0, 0, 0, 0, 0, 0, 0, 82, 0, 129, 0, 0, 84, 552, 0, 0, 0, 0, 0, 0, 0, 27, 0, 555, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 413, 0, 0, 0, 0, 505, 0, 258, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 293, 0, 0, 0, 0, 0, 0, 0, 621, 0, 0, 0, 0, 0, 620, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 393, 0, 0, 0, 486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 0, 497, 0, 0, 0, 0, 0, 0, 403, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 212, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 517, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 498, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 270, 280, 0, 0, 0, 0, 0, 532, 276, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 514, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 459, 0, 0, 0, 313, 0, 0, 0, 0, 0, 0, 254, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 572, 0, 0, 0, 0, 604, 523, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 0, 461, 0, 0, 482, 0, 0, 0, 0, 0, 61, 0, 0, 0, 268, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 247, 0, 0, 0, 0, 0, 278, 614, 0, 72, 0, 0, 0, 0, 0, 0, 0, 0, 0, 623, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 0, 277, 0, 0, 0, 0, 0, 0, 571, 0, 0, 0, 0, 0, 0, 525, 0, 0, 0, 0, 0, 0, 0, 0, 0, 570, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 214, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 84, 0, 504, 0, 0, 0, 0, 0, 558, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 84, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 488, 0, 487, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 260, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 460, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 288, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 539, 0, 0, 0, 0, 0, 0, 0, 0, 297, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 238, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 84, 0, 610, 0, 0, 556, 0, 0, 0, 0, 0, 0, 0, 0, 0, 246, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 613, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 522, 0, 0, 0, 84, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500, 0, 618, 0, 0, 430, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 401, 0, 0, 0, 547, 0, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 29, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 290, 0, 0, 0, 215, 0, 0, 0, 0, 0, 0, 562, 0, 0, 0, 0, 130, 0, 0, 0, 0, 0, 563, 0, 0, 0, 0, 0, 0, 0, 413, 419, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 398, 0, 312, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 300, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 536, 0, 0, 0, 414, 0, 0, 400, 0, 0, 0, 0, 0, 0, 607, 0, 0, 0, 543, 0, 0, 90, 0, 544, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 510, 462, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 269, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 413, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 612, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 611, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 622, 0, 0, 0, 0, 0, 560, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 301, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 609, 0, 0, 213, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 627, 627, 627, 627, 627, 627, 627, 626, 628]);
+    labelText = "orgmilcomschnetedugovdrrformsfeedbackofficialaccoorgmilschnetgovmagazinemediaunioncargopilotgroupcaarespressworksaerodromeworkinggroupair-traffic-controlaircraftaccident-preventioneducatormarketplaceambulanceinsurancecateringairportrepbodyenginesoftwaremodellingair-surveillanceconsultingchartertrainermaintenanceservicesdesignflightskydivingfreightassociationstudentgroundhandlingdgcafuelclubtaxicrewshowballooningexpresstraderbrokerauthoragentsairtrafficjournalistsafetyconsultantmicrolightaccident-investigationparachutingequipmentproductionfederationrecreationscientistnavigationengineertradingglidingleasingresearchpassenger-associationentertainmentparaglidinghangglidingaerobaticrotorcraftemergencycertificationgovernmentaeroclubexchangelogisticschampionshiphomebuiltcouncilconferencecontrolairlinecivilaviationjournalorgcomnetedugovcoorgcomnomnetobjofforgcomnetuwukiloappsframerorgmilcomnetedugovcoradioorgcomnetcommuneedogpbcoitgvorgedugov*spreviewfrontendrelayononstagingupid*mtls*privatelinktypedreamdeveloperbravemochawindsurfaivenmirenupsunwnextbegetngrokclerkwale2bwebcsbrunputerflutterflowspawnbaseshiptodaymagicpatternsnetlifyondigitaloceanrailwayhostedclaudehasurabotdashvercelgithubluyanigadgetreplitcloudflaretelebitedgecomputeevervaultexponyatnoopencrpplxzeaburwasmerframerzeropsrocketpreviewconvexmedusajsspritesonherculeseasypanelstreamlitglideossnowflakemesserliloginlinehackclubcodepennorthflankbase44corespeedleapcellngrok-freeclerkstagelovableon-fleek*us-west-3ap-south-2us-central-2us-central-1eu-central-1ap-south-1us-west-2us-east-2eu-north-1ap-north-1us-west-1us-east-1*rcloudintsegorgmilcomgobbetnetintedugovturmusicasenasamutualcoopip6uriurnin-addre164homeirisgovdixdaemoncloudnssthwien*inexexkunden4accogvormymyspreadshop4lima2ixortsinfofuturecmsfuturehosting12hpprivfuturemailinglima-cityfunkfeuer123webseitednshomemelmyspreadshopcloudletswasantqldvicactnswtascatholicwasaqldvictasidwasantozqldorgcomvicasnactnetedugovnswtasconfcomairflowlambda-urltransfer-webappairflowtransfer-webapptransfer-webapptransfer-webapp-fipstransfer-webappeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1privatenotebookstudiolabelingnotebookstudionotebooknotebook-fipslabelingnotebookstudionotebook-fipsnotebookstudio-fipsnotebook-fipsnotebookstudionotebook-fipsnotebookstudioeu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2experimentsus-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1onrepostsagemakercopporgmilcompronetintedugovbiznameinfoshoprsorgmilcomnetedugovbrendlyresolvenzauscotvstoreorgcomnetedugovbizinfoidacaicoittvorgmilcomschnetedugovinfocloudezproxysiteacmymyspreadshopkuleuvenwebhostingtransurl123websitecloudnsinterhostsolutionsddns5476103298edgfacbmlonihkjutwvqpsryxzbarsycoororgcomedumyftpno-iporxcloud-ipfor-somemmafanfor-morewebhopselfipjozidyndnscloudnsdscloudfor-thefor-betteractivetrailcoeconorestooteorgcomeconeteduassurmoneyafricaarchitectesrestaurantloisirstourismavocatsinfoagrounivcoorgcomnetedugoviatvdeportesaludtksatorgmilcomwebgobnetinteducienciaboliviarevistacooperativaempresanombreindustriamusicapatriamedicinademocraciapoliticapuebloindigenaplurinacionalarteblogwikiinfoagrotransportenoticiasprofesionalacademiaeconomiaecologiamovimientotecnologianaturalsimplesitecepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesmscepesebamapadfmgalampbacscpirngorotomtrjspaprrprrsesms*biaamfmtcmptvfeirasampajampanatalbelemananiradiog12medindfndbmdtrdthepoaggfjdfdefinfenflegsegongengcngorgzlgslglogppgmillelqslcimcomnomadmjabimbbibbsbabcrectecsjcetcpscpvhudieticriapipsiecnbiorioecogeoteoodoproatoartfstmatvetdetbetnetcntnotfotgrueduajuespappreptmpemparqsrvadvdevgovntrturagrjorfarjusmusdesvixxyzcozfozslzbhzmaringasantamariacampinagrandegoianiasorocabafloripasaobernardocuritibaboavistarecifeaparecidasaogoncasalvadorcuiabamorenamacapalondrinacontagemsocialfortalmaceioleilaoosascoriobranconiteroi9guacutcheblogflogvlogwikitaxicoopmanauspalmascaxiasjoinvillebaruericampinassantoandreribeiraoriopretoweorgcomnetedugovv0windsurfshiptodaycloudsitecoaccoorgnetgovofmilcomgovmediatechzacoorgcomnetedugsjgovmydnspenfnlabnbmbgcbcqconcontnuyksknsmyspreadshopno-ipawdevboxbarsyonidatemfuinabusavinstanceseceuguukussryzespawncsxcloud-ipmyphotosfantasyleaguetwmailcleverappsscrappingccwucloudnsftpaccessgame-serverccgovobjectsrmalpgcust*svcalp1aeappenginermalpgmyspreadshop4lima2ixsquare7cloudscale123websitefirenet12hpflowgotdnslinkyard-cloudcloudnslima-citydnskingobjectstorageedaccogoorusorgcomnetintedua\xE9roportxn--aroport-byaassogouvcomilgobgovcloudnses-1eu-west-1us-east-1euvipit1eurarubait1s3lbwebsites3websiteru-spbru-mskelasticcsrunstnukukcaukusnl-ams-1fr-par-1fr-par-2functionsnodess3ddlwhmrdbfnck8sifrs3-websitecockpitscblmgdbdtwhkafkpubprivs3ddlwhmrdbk8sifrs3-websitecockpitscblmgdbdtwhkafks3ddlrdbk8sifrs3-websitecockpitscblmgdbdtwhkafkk8sscalebookpl-wawfr-parnl-amsbaremetalsmartlabelinginstancesdechk2kuleuvenlaravelvoorloperurownoxazapscwhstgrvaporonline-serverobservablehqelementorantagonistreclaimjoteluluencowaydiademjelasticmatlabmagentositetrendhostingaxarnetperspectajenv-arubajelejoteravendbemergenttrafficplexconvexkeliwebserveboltbegetcdnstaticson-rancherprimetelonstackitunison-servicesdnshomelinkyardbarsyjelecloudnscocomnetgovmycn-northwest-1cn-north-1s3s3-accesspoints3-websites3s3-accesspointrdsdualstacks3-deprecatedemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspoints3s3-accesspointrdsdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicn-northwest-1cn-north-1cn-northwest-1ebcomputeelbcn-north-1airflowcn-northwest-1cn-north-1oncn-northwest-1cn-north-1amazonawssagemakeramazonwebservicesdirectasgdsdhehahljlnmhbacscahqhshhihnlnynsnmofjbjzjxjtjhkcqtwgsjssxnxjxgxxzgz\u7DB2\u7D61\u7F51\u7EDC\u516C\u53F8orgmilcomnetedugovxn--55qx5dcanva-appsxn--io0a7iquickconnectcanvasitekhsjxn--od0algcanva-codemyqnapcloudsrvrlessclustersrealtimestorageleadpagescarrdcrdorgmilcomnomnetedugovhidnssupabaserdpareplmypiumsoxmitotaplpagesfirewalledreplitowodevwebview-assetsvfswebview-assetss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websiteemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecateds3-websites3-object-lambdaexecute-apis3s3-accesspoints3-websites3-accesspoint-fipss3-fipss3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstackemrappui-prods3-websites3-accesspoint-fipss3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apis3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9vfss3s3-accesspointdualstackemrappui-prods3-websiteaws-cloud9emrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9eu-west-3ap-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1us-northeast-1ap-southeast-1me-south-1af-south-1ap-south-1ap-southeast-7us-west-2eu-west-2ap-east-2us-east-2ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ap-southeast-6ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1mrapaccesspoints3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3s3-accesspointdualstacks3-deprecatedanalytics-gatewayemrappui-prods3-websites3-accesspoint-fipsaws-cloud9s3-fipsemrstudio-prods3-object-lambdaemrnotebooks-prodexecute-apicloud9s3eu-west-3ap-south-2eu-south-2computes3-ap-northeast-2elbrdss3-ap-east-1s3-sa-east-1s3-us-gov-west-1s3-eu-central-1s3-ca-central-1eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3s3-website-us-west-2s3-website-eu-west-1s3-external-1eu-central-1me-central-1ca-central-1il-central-1s3-us-west-1s3-eu-west-1s3-website-sa-east-1s3-website-ap-southeast-2ap-northeast-1ap-southeast-1s3-us-west-2s3-eu-west-2me-south-1af-south-1eu-south-1ap-south-1us-west-2eu-west-2us-east-2s3-website-ap-southeast-1s3-1s3-globals3-ap-northeast-3eu-north-1airflowap-southeast-2s3-us-gov-east-1s3-fips-us-gov-east-1s3-me-south-1s3-ap-south-1ap-northeast-2s3-website-us-west-1ap-southeast-5s3-eu-north-1s3-ap-southeast-1s3-website-us-gov-west-1compute-1s3-eu-west-3us-gov-west-1s3-website-ap-northeast-1us-gov-east-1s3-fips-us-gov-west-1s3-website-us-east-1s3-ap-southeast-2ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1s3-us-east-2s3-ap-northeast-1authauthauth-fipsauth-fipseu-west-3ap-south-2eu-south-2eu-central-2ap-southeast-3ap-southeast-4ap-northeast-3eu-central-1mx-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1ca-west-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1rframeservicesbuilderstg-builderdev-builder*ociocpocsazuregcpawsdemoinstanceeu-west-3eu-south-2ap-southeast-3ap-northeast-3eu-central-1me-central-1ca-central-1il-central-1ap-northeast-1ap-southeast-1me-south-1af-south-1eu-south-1ap-south-1ap-southeast-7us-west-2eu-west-2us-east-2eu-north-1ap-southeast-2ap-northeast-2ap-southeast-5us-gov-west-1us-gov-east-1us-west-1eu-west-1us-east-1ap-east-1sa-east-1previeweu-4us-4us-1eu-1us-2eu-2us-3eu-3appscomputepaasrag-cloudrag-cloud-chjcloudjcloud-ver-jpcdemonodebalancermembersipeuxvsoncillaocelotonzayalilynxsphinxfentigercustomercaracalo365cloudstaticxendevapp001testcode-builder-stgplatformmediasiteprojedrydpagesjsx0desazacncoitrueu4uhkukgrbrushatenadiarymyspreadshopfrom-flfrom-wvwebspace-hosttheworkpchatenablogcursorusercontentservesarcasmapplinzisakuratanwixsiteappchizigiizeis-into-carsdnsiskinkyadobeaemcloudis-a-therapistpgfogmyvncdojinis-an-actress1kappfldrvkozowqa2jpnmexprgmrfirewall-gatewaydynnscafjsfbsbxooguyfrom-gawoltlab-demois-a-anarchistwiardwebteaches-yogadattowebtb-hostinglive-websiteservegamegotpantheonfrom-nhsubsc-payfrom-ohvipsinaappfrom-cadyndns-officehomelinuxfrom-mahercules-appservebbsstreakusercontentfrom-okfrom-wyfastly-terrariumis-a-llamaqualyhqportalserveexchangeon-vaporvivenushopciscofreakgrayjayleaguesmetaaiusercontentfrom-iais-a-libertariansaves-the-whalestaveusercontentyolasiteoperaunitepoint2thisis-a-catererclaudeusercontentlinodeusercontentfrom-vagithubusercontentsells-for-lesshosteurcanva-appsplaystation-cloudddnsfreefrom-pafrom-prfrom-waddnskingoutsystemscloudhotelwithflightmydattois-a-nascarfanmydbserverminiserverdamnserverservehumouris-a-playerfrom-nvfrom-nmemergentagentgentappsamplifyappfrom-kyis-an-accountantnfshostserveircfrom-akpythonanywherestackhero-networkpostman-echolikescandydyndns-mailobservableusercontentserveftpfreeboxosfrom-utcdn77-storageamazonawsneat-urldyndns-serverlinodeis-a-teacherfrom-vtgleezemythic-beastsus1-pleniteu1-plenitla1-plenitpaywhirlservecounterstrikejdevcloudhealth-carereformis-into-animegoogleapisis-a-painterafricaisa-hockeynutatmetais-an-actora2hostedis-a-democratdatadetectest-le-patrondigitaloceanspacesis-a-designeris-a-hunterlinodeobjectstemp-dnsissmarterthanyoufrom-arsimplesiteevennodetownnews-stagingis-a-liberalgooglecodejelasticservemp3qualyhqpartnerdyndns-free1cooldnsest-a-la-masiondrayddnsdynuddnsfrom-orfrom-miis-a-bloggerfrom-himydobisscanvacodeis-an-engineerest-a-la-maisonupsunappdevinappswafflecellmyasustorwpenginepoweredfrom-ctservep2psame-appmyshopblocksthingdustdatalikes-piediscordsezis-with-thebandlpusercontentis-leetshopitsite3utilitiesis-a-personaltrainersinaappladeskis-a-cheflogoipselfipbase44-sandboxnospamproxyalibabacloudcsmesswithdnsauthgearappsiamallamawithgooglelutrausercontentmochausercontentframercanvasmytabitdyndns-homew-credentialless-staticblitzcpserverdiscordsaysis-a-nurseappspotatlassian-isolated-3premotewdfrom-mtwixstudiocode0emm180rmyactivedirectoryawsappsmytuleapdnsabrpolyspaceqbuserrenderbuiltwithdarkboutirgotdnsabrdnsdopaascanva-hosted-embedawsglobalacceleratorhomesecuritypcmyiphostditchyouripclever-clouddyndns-ipon-aptibleis-a-musicianhosted-by-filessecuritytacticsappspaceusercontenthomeunixstrapiappsame-previewcf-ipfsmycloudnaselasticbeanstalkis-certifieddontexistkasserverik-serverdrive-platformatlassian-3pfirebaseappherokuappawsapprunnerbarsycenteris-a-cubicle-slaveservehttpmyshopifyis-a-guruquicksytessiiitesorsitesmagicpatternsappis-a-cpameteorappfrom-wiis-a-rockstarbumbleshrimpdattolocaldatabricksappsreadthedocs-hostedfrom-rifamilydsdyndns-picsplesknsbplaceddnsaliasdynaliasdyndns-remotedoomdnsip-ddnsblogdnsis-a-doctorroutingthecloudamazoncognitobarsyonlinedsmynasddnsgurucloudflare-ipfsdeus-canvasfrom-idsmushcdnpagespeedmobilizerdyndns-at-homeunusualpersonhosted-by-previderis-a-republicandyn-o-saurstreamlitappworkisboringonthewificprapidqualifioappis-uberleetis-slickgetmyipwpdevcloudtypeformdyndns-at-workgentlentapismynascloudw-corp-staticblitzfrom-ingeekgalaxyservebeerfrom-mdonrenderspace-to-rentaivencloudappspacehostedwafaicloudcodespotblogspotatlassian-3p-us-gov-modfrom-ndfrom-msis-a-techieis-a-studentcustomer-ociis-a-photographerdurumisfrom-ksmassivegriddyndns-wikiis-an-entertaineris-a-hard-workermysecuritycamerafrom-mnrackmazedyndns-blogis-a-bulls-fanwritesthisblogfreemyipsimple-urlfrom-sdreservdauthgear-stagingest-mon-blogueuris-into-gamesrice-labsxtooldevicesakurawebis-an-anarchistoraclecloudappsdyndns-worksells-for-urhcloudfrom-dcfastvps-serverwpmucdnis-a-geekscrysecfrom-txis-into-cartoonsmodelscapetrycloudflarelocaltonetstreak-linkbalena-devicesfrom-njforgeblocksfreebox-oswebadorsitefrom-ncdoesntexisthobby-sitestreaklinkshomesecuritymacownprovidertuleap-partnersdattorelaywphostedmailservequakeis-a-socialistservehalflifepivohostingdynuhostingquipelementsw-staticblitzdyndns-webfrom-deproject-studyaliases121is-not-certifiedhercules-devis-a-financialadvisorservepicsis-a-greenloseyouripfrom-ilwithyoutubemwcloudnonprodwiredbladehostingdnsdojofrom-tnpixolinomyqnapcloudis-an-artisthostedpiis-a-landscaperauiusercontentoaiusercontenton-forgeis-a-conservativedreamhostersnet-freaksapps-1and1is-goneencoreapifastly-edgefrom-nesalesforcefrom-scdeployagentoraclegovcloudappsfrom-alis-a-lawyercechirevultrobjectsstufftoreadisa-geekddnsgeeklovableprojecttry-snowplowfrom-moblogsyteis-a-bookkeepernogmyforumravendbmyboxdeelementoredsaacficogoorinforgcomgobnatneteduidstoreorgcomnetintedudevnomepublorgcomneteduathgovtestscalculatorspaynowinfoquizzesresearchedcloudnsfunnelsassessmentsjscaleforcetmacltdorgmilcompronetgovbizpresseklogesrsccloudcustomfltusrcloude4corealmgovmunicontentproxy9metacentrumdyndyndyndnsdynpagespages-researchitionoccustomercomymyspreadshopipv64diskussionsbereich4limacomrub2ixfirewall-gatewayddnssspdnsbarsykeymachinesquare7myhome-serverspeedpartnercommunity-proschuldockxenonconnectg\xFCnstigliefernbwcloud-os-instancedyndnssecmy-routerxn--gnstigliefern-wobin-butterl-o-g-i-nisteingeekin-dslin-berlinin-brbfuettertdasnetzleitungsenin-vpnlcube-serverdyn-ip24logoipdyn-berlinruhr-uni-bochum12hpgoipsrvdnsfruskygit-repossvn-reposinternet-dnsg\xFCnstigbestellenhome-webserverxn--gnstigbestellen-zvbbplacedheimdnscosidnswebspaceconfiglima-citydyndns1istmeinvirtualuserschulplattformmy-gatewayddnsseclebtimnetztest-iservmein-iservvirtual-userhome64iservschuletaifun-dnstraeumtgeradeschulserverdynamisches-dns123webseitednshomehs-heilbronndnsupdaterbssgraphicdwadpdwdaepeweaawapaafpfwfabwbpbacwcpcciwebuserapiobjectsidsiskospockkimodorikerbonesteamsparisjanewaypicardglobaltarpitreedpikekiraworfsulukirkarchertuckerhackercanarywesleystagingprereleaset3r2lpbravepanelngrokiservstglclcrmerpflypagesbarsyvivenushoplocalcertlocalplayerbearbloggatewaydeno-stagingis-not-ais-a-goodbotdashvercelmocha-sandboxplatter-appreplitgithubpreviewworkersinbrowserevervaultis-ahrsndenoxmitmodxmyaddrstorageapipayloadgrebedocruncontainersstgstagelclstageloginlineis-a-fullstackcodepenleapcellngrok-freeis-coolstoragewebharemediatechlibp2pdiscourseimaginecomyspreadshopstoreregbiz123hjemmesidefirmcoorgcomnetedugovsldorgmilcomwebgobartnetedugovtmorgpolcomsocartnetedugovassoagrondiscoodontk12medcuegyecpaabgengorgmilgalsaltulcomadmesmgobpubdocmonfindgnriouioproartlatvetnetfotedulojgovntrturibrbarxxxofficialbasechefprofmktgpsictechinfoarqtcontdentrrpppsiqgit-pagesritmedfieorgcomlibprieduaipgovriikmeactvsportorgmilcomscieunnetedugovnameinfopintouchtawktotawkmyspreadshoporgcomnomgobedu123miwebcomputeorgcomnetedugovbiznameinfocognito-idpeusc-de-east-1onjelasticnxaspdnsbarsydirectwpdeuxfleurstransurldogadoprvwcloudnsamazonwebservicesdnshomeuserpartycokoobinmkmfidymyspreadshopalandkapsiikixn--hkkinen-5wacloudplatformh\xE4kkinen123kotisivuidacorgmilcompronetedugovbiznameinforadioorgcomneteduuserexperts-comptablestmmyspreadshopgretaprdcomnomynhccifbxoshuissier-justicenotairesaeroportfreeboxoson-webavocatassoportgouvkdnschirurgiens-dentistes-en-franceavouesfbx-os123sitewebveterinairechirurgiens-dentistespharmacienchambagrimedecinfreebox-osdediboxgoupilemszicpyicpvicppleysheezypagesedugovcnpyorgcomcybllcpvtnetedugovtnxonlineschooldaemond6atcopanelorgnetplybotdashstackitkaasorgmilcomnetedugovbizmodltdorgcomedugovcoorgcomneteduappwriteacorgcomnetedugovcloudtranslateusercontentorgcomnetedumobiassoorgcomnetedugovbarsysimplesitediscourseindorgmilcomgobneteduorgcomwebnetedugovguaminfonxhra\u6559\u80B2\u654E\u80B2\u7DB2\u7D61\u7F51\u7D61\u7EC4\u7E54\u7D44\u7E54\u7F51\u7EDC\u7DB2\u7EDC\u7EC4\u7EC7\u7D44\u7EC7\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\u4E2A\u4EBA\u7B87\u4EBAltdorgcomincneteduidvgovxn--uc0ay4axn--55qx5dxn--mk0axixn--io0a7ixn--uc0atvxn--zf0avxxn--lcvr32dxn--od0algxn--wcvs22dxn--gmqw5axn--od0aq3bxn--mxtq1mxn--ciqpnxn--tn0agxn--gmq050iorgmilcomgobneteduiservwp2tempurlmircloudfreesitewpmudevmyfastgadgetcloudaccessjelehalfboltfastvpsemergenteasypanelopencraftizcombrendlynamefromrtpersoadultmedorgpolrelcomproartnetedufirminfoassoshopcoopgouvtmcomediahotelforumvideosportorgsexagrargameslakaseroticaerotikatozsdereklamcasino2000filmsuliinfoboltshopprivnewsszexcityutazasjogaszkonyveloingatlaneacaicogoormy\u1B29\u1B2E\u1B36milwebschnetkopbizzonedesaponpesxn--9tfkymyspreadshopgovmytabittabitorderravpageaccok12idforgnetgovmuniltdplcaccotttvorgcomnetmeca6g5gpgamubacaicniocoukuptverdruscsdelhiindorgmilcomwebnicfingenpronetintedugovresbizbiharbarsyinternetbusinessschooltravelsupabasealumnigujaratfirminfoaeropostbankcoopindevscloudnsno-ipbarsybarrell-of-knowledgebarrel-of-knowledgensupdategroks-thisdnsupdatefor-ourknowsitalldvrcammittwalddynamic-dnsv-infowebhopselfipdyndnshere-for-moreilovecollegemayfirstforumzcloudnsmittwaldservertypo3servergroks-theeusekd1cdndyndnsidrawsainaueuapjpusstagemocksysdevicesclientcustreservdcustdevdisrecprodtestingcobeebyteutwenteboxfusebravepstmndedynngrokorgmilcomnomnetedugovqcxqzzbarsythingdustmo-siemensrb-hostingfh-muenstergitbookbluebitecloudbeesusercontentnodeartkiloappsforgerockdarklangresinstagingapigeebubbleb-datascryptedhypernodedappnodepantheonsitegitlabgithubkeeneticvirtualservercleverappshostyhostingon-rioedugitticketstelebitwixstudioon-k3sicp0icp12038jeleqotolairbubbleappsmyaddrstolosmyrdbxwebflowdrive-platformbeagleboardhasura-applolipopdefinimavaporcloudmusicianwebflowtestazurecontainerresindevicereadthedocsloginlineeditorxmoonscalesandcatsbasicserverwebthingsbrowsersafetymarkbeebyteappbitbucketidaccovistablogorgschnetgovxn--mgba3a4f16axn--mgba3a4fraarvanedge\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646jclaspeziapdudcefegelemeperetevebacanatavaparasabgagfgogrgpgalclblimfmrmcbmbvbfclcmcvcrcpcchlimifibicivipirisimncnbnanenrnpntnnolomobocoaogorosopotoptvtatctbtmtltotpusulunutpspapaqsvpvvvtvavvrtrsrprgrfrcrbrarorkrvstsssbscsmsispzczbzbozen-suedtirolmyspreadshopxn--bulsan-sdtirol-nsbxn--valledaoste-ebbtrentinoaltoadigetrentin-sued-tirolxn--forlcesena-c8axn--forl-cesena-fcbxn--bozen-sdtirol-2obtriestetrentinsuedtiroltrentino-s-tirollecceudineaostesienaparmaluccapaviagenoapaduaaostamonzaabruzzoternirietiturinmilanbozenlaziofermoleccocuneonuoropratola-speziavdataaligfvgpugmolcalcamlomumbsicpmnvenvaoedugovabrsarmaremrbastoslazibxosfirenzetrentinos\xFCdtirolval-d-aostavalle-aostamessinacremonaravennatoscanatrentin-suedtirolbolognacalabriaurbinopesarofriuli-v-giuliaogliastraxn--valle-aoste-ebblaquilaandriatranibarlettasyncloudxn--valle-d-aoste-ehbaostavalleyvalled-aostatrentino-alto-adigevallee-d-aostexn--balsan-sdtirol-nsbpistoiasicilialucaniacataniaiserniaperugiabresciaveneziagorizialiguriaimperiabulsan-suedtirolbalsan-suedtirolbarlettatraniandriaxn--trentino-sdtirol-szbforl\xEC-cesenatuscanyvall\xE9e-d-aostemantovavall\xE9e-aostecasertapiemontevalleaostaval-daostafriulivgiuliatrevisoforli-cesenavall\xE9edaosteferrarapescaravald-aostatrentino-altoadigefriuli-vegiuliavallee-aostecarboniaiglesiastarantomediocampidanovalleedaostetrentinosud-tirolcampobassotrentins\xFCd-tiroltrentinos\xFCd-tirolmonzabrianzatrentino-s\xFCdtirolxn--trentino-sd-tirol-c3bpotenzacosenzavicenzaemiliaromagnavenicefrosinonemarchepordenonetrentinosued-tirolvaresemolisevall\xE9eaostefriuli-veneziagiuliabasilicatalatinaanconasavonaveronamodenabiellabolzano-altoadigepugliafoggiaumbriatrentino-stirolgenovapadovamateranovararagusapiacenzatrentinostirolvalleeaostetempio-olbiasudsardegnatrentinsudtirolmassa-carrarafriuliveneziagiuliatrentinosuedtirolandria-barletta-tranitrapanixn--cesenaforl-i8amaceratacaltanissettaascoli-picenobrindisicarraramassacagliaririmininapolivibo-valentiachietibulsan-sudtirolbalsan-sudtiroltrentino-a-adigebulsanbalsaniglesiascarboniamilanotorinoteramodell-ogliastraarezzotrentinoalto-adigerovigotrentovenetoiglesias-carboniatrentino-sud-tirolaltoadigereggio-emiliareggio-calabriasardegnatranibarlettaandriapiedmontxn--sdtirol-n2amedio-campidanotrentino-s\xFCd-tirolfriuli-vgiuliafriuli-ve-giuliaromeennaromapisa32-b16-b64-blodiastibarineencomonaplesforlicesenailiadboxosalessandriasicilytrani-barletta-andriaxn--trentin-sdtirol-7vbpesarourbinotrentinsued-tirolcesena-forliforl\xECcesenaemilia-romagnamonzaebrianzaxn--trentinsdtirol-nsbtrentinos-tiroltrentins\xFCdtirolvalledaostaolbia-tempiocampidanomediovibovalentiasassarivalle-daostalombardysud-sardegnafriulivegiuliareggioemiliamonzaedellabrianzaalto-adigevercellitrentin-sudtiroltraniandriabarlettatrentino-sudtirolascolipicenobozen-s\xFCdtirolfriulive-giuliaflorencexn--cesena-forl-mcbcarbonia-iglesiasaosta-valleycarrara-massadellogliastratrentinoa-adigexn--valleaoste-e7apesaro-urbinoxn--trentinosdtirol-7vbxn--trentin-sd-tirol-rzbxn--trentinsd-tirol-6vbtrani-andria-barlettatrentin-s\xFCd-tirolxn--trentinosd-tirol-rzbgrossetomonza-e-della-brianzas\xFCdtirolreggiocalabriatrentinoaadigetrentin-s\xFCdtirolverbano-cusio-ossolafriuliv-giuliaverbaniacampaniatrentino-aadigefriulivenezia-giuliasardiniaandriabarlettatranibarletta-trani-andriacatanzarooristanourbino-pesarocesena-forl\xECvalle-d-aostacampidano-medio123homepagesiracusatempioolbiasuedtirollombardiaavellinocesenaforl\xECtrentinofriuli-venezia-giuliabozen-sudtirolandria-trani-barlettabulsan-s\xFCdtirolbalsan-s\xFCdtirolmonza-brianzabolzanotrentino-sued-tirolbellunosalernolivornocrotonesondriodnshometrentinsud-tirolmassacarraratrentin-sud-tiroltrentino-suedtirolviterbobergamocesenaforliolbiatempiopalermobeneventoagrigentoofcoorgnetfmaitvphdengorgmilcomschnetedugovperagrikanieasukehandachitatokaiaisaikonanoharuamaobuhigashiuraowariasahiinuyamatobishimaiwakurashitarainazawatoyonegamagorimihamatoyotataharakariyayatomioguchikomakimiyoshinishiotokonamekiyosuchiryutoyohashiokazakiisshikikasugaikotakiratoeianjotogofusosetohazutsushimashinshirotakahamanisshinshikatsuhekinantoyokawaichinomiyatoyoakeodateogataakitaikawakyowahonjoogayurihonjonoshirokamiokakatagamimitanegojomeyokotekosakadaisenkazunonikahohonjyomoriyoshimisatohappoukamikoanihachirogatahigashinarusesembokufujisatokitaakitaitayanagiowanitakkomutsutsurutahirosakigonoheoirasetowadamisawanohejiaomorishingohiranairokunohehashikamitsugarushichinohehachinohenakadomarisannohekuroishisakaeisumiasahiotakiinzaiabikomatsudoyachiyomutsuzawakujukuriomigawakashiwatoganemihamanaritasakuranagaramobarahanamigawachoshishiroichoseikozakishisuikatorimidorichonankyonanfuttsuonjukufunabashinagareyamanodasosatakochuotohnoshourayasukimitsuyokaichibayotsukaidosodegauratateyamakamagayayokoshibahikariyachimatakatsuuratomisatokisarazukamogawaichikawanarashinoichinomiyashimofusaminamibososhirakoichiharaoamishirasatoikatahonaiainansaijoseiyoiyoozuuwajimaniihamanamikatamasakiuchikokihokutobetoonshikokuchuomatsuyamaimabarikamijimakumakogenyawatahamamatsunosabaeikedaobamasakaifukuiohionotsurugamihamawakasaminamiechizeneiheijikatsuyamatakahamaechizensoedaukihaomutaokawanishiogoribuzenonojosueumiokiotochikugosasagurisaigawamizumakishinyoshitomikurumekurateyamadakasuganakamamiyamanogatatakatahakataiizukakawaratagawakasuyaashiyainatsukimunakataminamitsuikishonaikurogifukuchikeisenhigashimiyakoshinguyukuhashiokagakiyamekogaongausuikahotohochuotoyotsumiyawakadazaifuhisayamatachiaraiyanagawanakagawahirokawachikujochikushinochikuhochikuzennamieotamaokumashowateneiiwakikoorinangoononishigoshimogoomotegomishimafukushimaasakawakagamiishishirakawaiitatefutabahiratayugawahanawakitakatakawamatakunimiyabukibandaihigashihironoyamatomiharuyamatsuriaizubangedatesomaaizuwakamatsuyanaizuaizumisatonishiaizuizumizakikitashiobarataishinkaneyamakoriyamainawashirotanagurafurudonosamegawasukagawaishikawatamakawaikedaogakitaruiginanenahashimahichisonakatsugawaibigawashirakawamizunamiminokamomitakekawauesekigaharatomikasakahogikitagatayamagatatajimianpachimotosuyaotsukakamigaharahidakanisekitokigujominogodoyorogifukasamatsutakayamawanouchihigashishirakawakasaharashimonitatsumagoichiyodakannakanrashowameiwakiryuotaoratomiokafujiokaitakuranaganoharahigashiagatsumatakasakishibukawaminakamikatashinatsukiyonokawabanumataannakaoizumimidorishintoisesakiuenoyoshiokakusatsutakayamanakanojonanmokutamamuratatebayashimaebashiotakekaitadaiwahongofuchukuietajimashobaramiharahatsukaichihigashihiroshimamiyoshikumanokurenakasakaseraseranishiasaminamifukuyamashinichionomichiosakikamijimajinsekikogentakeharaotobenanaeikedatohmaozoraobiraabirakyowaeniwataikibibaisharirebunerimohiroooketootarupippunishiokoppechitosefurubirahakodateshiranukakitahiroshimakushiroobihironanporoiwamizawaniikappukunneppufukushimanakasatsunaitoyourakuromatsunaiakabirakamisunagawashibechaurakawakamifuranonakatombetsuasahikawashimokawakayabeokoppebiratoriabashirisaromaatsumanumatahidakabifukamukawamikasahorokanaitoyotomisarufutsuhigashikawaishikarikitamiyoichiesashiiwanaitomariminamifuranoakkeshifuranotoyakoyakumootoineppushikaoishiraoinemuronayorohaboroashorobihororishirifujiutashinaihokutotakasuebetsuurausuassabukikonaishimamakinaiedatetoyabieinikiesanuryuoumuteshikagarikubetsuashibetsukimobetsuaibetsutobetsusobetsuembetsushimizuchippubetsurishirihokuryuhoronobeshintokutsubetsushibetsuhonbetsumombetsutsukigatakuriyamakoshimizushiriuchikutchanmurorannoboribetsukamishihorowassamushinshinotsukembuchiwakkanaikamoenaikiyosatotakinoueshikabesunagawafukagawanakagawatakikawakamikawahigashikagurahamatonbetsumatsumaemoseushirankoshishakotanimakanemashikeotofuketomakomaisandatambaitamiawajikasaiasagoshisoonoakoyashirotoyookaminamiawajiinagawafukusakitakasagokamigorikasugaharimayokawaashiyahimejiakashitaishiaogakisannantakinosumototakarazukanishinomiyashingugoshikinishiwakiyokatakaaioimikisayoyabukawanishiamagasakisasayamashinonsenkakogawaichikawakamikawatatsunotsukubaiwamaogawaasahisakaitokaioaraiitakobandodaigosuifuinaamikasumigaurakashimaomitamayachiyoshimodatetomobetoridehitachinakainashikisakuragawakasamayawaramoriyahitachiomiyanamegatayamagatahitachikamisuushikutakahagiibarakitonekoganakasowayukimihojosomitoryugasakishimotsumafujishirotsuchiurachikuseihitachiotashirosatotamatsukuriuchiharashikahakuinanaotsubatawajimakahokukawakitatsurugikaganominotosuzuuchinadakomatsuanamizunakanotohakusannonoichikanazawaiwateshiwafudaikawaimoriokaofunatohanamakikuzumakikitakamininohekunoheyamadayahabasumitaichinosekitanohatahiraizumirikuzentakatajobojiotsuchihironomiyakoiwaizumikarumaiichinohenodakujitonooshushizukuishifujisawamizusawakamaishikanegasakimannoutazukotohiraayagawazentsujihigashikagawauchinomikanonjisanukimarugamemitoyotakamatsutadotsunaoshimatonoshoakuneamamiizumihiokiyusuikinkoisasookouyamanakatanekagoshimakanoyaisenkawanabeminamitanemakurazakitarumizunishinoomotematsumotosatsumasendaioimatsudaayaseebinamiurazushinakaiodawaraiseharasagamiharahakoneaikawakaiseiatsugitsukuihadanoyamatoyamakitazamaoisochigasakininomiyayokosukakamakuraminamiashigarafujisawasamukawakiyokawahiratsukayugawaraokawaumajikochitsunootoyoakiinonishitosayasudahidakamiharasakawaniyodogawahigashitsunokagamigeiseisusakiotsukinaharisukumomurototosakamiochitoyotosashimizumotoyamanankokunakamurakitagawayusuharaogunichoyoukiasoutoozugyokutoamakusamifunetakamoriyamagaminamataminamiogunikikuchisumotoyamatonagasumashikiaraokumamotokamiamakusanishiharayatsushiroayabeseikasakyoideineujinakagyokameokakyotangokyotanabekyotambaminamiyamashiroyamashinatanabeyawatawazukaminaminantanmiyazuhigashiyamafukuchiyamakitamukokamojoyokizumaizuruujitawaraoyamazakinagaokakyokumiyamakawagoeinabeshimameiwaasahitaikiudonoisetsukisosakikuwanamihamamiyamasuzukatamakimisuginabarikumanokomonominamiisewataraitobakiwatakikihotadomatsusakayokkaichikameyamaureshinoishinomakishichikashukuohirataiwaosakizaohigashimatsushimashikamaiwanumashibataogawaraonagawakawasakiseminemarumoriminamisanrikukakudamuratawakuyatomiyanatoriwataritagajomisatotomekamirifushiroishimatsushimayamamotoshiogamafurukawahyugaebinotsunosaitoayakushimanobeokakitauramiyazakitakazakigokaseshiibamimatashintomikunitomikitakatakobayashikawaminamitakaharukijotakanabemiyakonojonishimeranichinankitagawakadogawamorotsukakisofukushimaminamimakisakaeobuseikedaogawamiasaokayaasahiotakiotarichinoinaomichikumakomaganechikuhokukaruizawayasuokaooshikaikusakaminamiaikitogakushimatsukawakawakamitateshinatakamorikitaaikishiojirimiyadahakubaiizunaiijimaiiyamamiyotasuzakayasakatoguraookuwanagawaminowahirayayamagataminamiminowafujimiomachisakakitakaginaganonakanosakuhokomoronagisoshinanomachiwadauedaiidaharasuwatomiachiaokianankisosakunozawaonsenagematsutakayamashimosuwamatsumotoyamanouchinakagawamochizukiazuminotatsunoobamaomuraseihiunzenosetofutsuikichijiwanagasakiisahayahasamisaikaikawatanasasebohiradokuchinotsugototogitsutsushimashimabarashinkamigotomatsuurayamazoekashibaikomakawaitenrioyodosangokoryoudaojiikarugayamatokoriyamatenkawakatsuragikurotakikawakamimiyakemitsuetakatorikamikitayamayamatotakadahegurishinjokanmakisakuraitawaramotogoseoudanarasoniandokawanishishimoichihigashiyoshinokashiharashimokitayamanosegawayoshinomintsivorytopazsakuragehirnsumomoaseinetopalmail-boxmokurenyoitamuikaojiyagosensanjoaganomyokoseiroagaomishibataniigatanagaokamurakamiuonumayuzawakariwatagamitainaitsunanminamiuonumatochioyahikojoetsuseiroukamosadoizumozakitokamachiitoigawasekikawakashiwazakitsubamemitsukekokonoesaikiusukibeppuusahimeshimakunisakihasamataketatsukumihitaoitahijikusuyufukujukamitsuebungoonobungotakadaibaraniimibizentsuyamaokayamakasaokahayashimayakagemaniwaakaiwamisakishinjotamanotakahashikibichuowakesojanagishookumenannishiawakurakurashikiasakuchisetouchikagaminosatoshotomigusukunakagusukuyaeseizenaurumaiheyaaguniogiminanjokinminamidaitokitanakagusukuyonaguniokinawaishigakikunigamiurasoekadenataramahiraraginozataketomishimojizamamitonakiitomanhigashimotobuyonabarugushikamionnanahanagohaebarukumejimakitadaitonakijinnishiharayomitanginowantokashikiishikawaikedasuitaminohizuminishisakaikananabenodaitoosakasayamayaokishiwadatadaokakaizukatondabayashichihayaakasakakumatorikadomasayamahigashiosakashijonawatehirakatataishimisakitajirihannansennankatanotoyonominatosettsuhigashiyodogawaibarakinosekitachuohigashisumiyoshifujiiderakashiwaraizumiotsutoyonakamatsubaramoriguchiizumisanoshimamototakatsukineyagawahabikinotakaishikawachinaganoyoshinogarikamiminearitaouchiimarihizenogikashimaariakekiyamafukudomikitagatakitahataomachigenkaikanzakinishiaritakyuragisagataratosutakushiroishikaratsuhamatamakouhokukawagoeyoshidasatteogoseirumaasakaurawaogawaniizaomiyayoriiotakishikihonjooganohannohanyuinasaitamaokegawaarakawayoshikawayokozehasudasayamahidakafukayachichibuiwatsukiryokamiyoshimikamiizumifujimiwarabiranzanmiyoshiminanoyashiosakadosugitomisatohigashichichibutodasokakukiyonokazoshiraokakasukabekounosukawajimatsurugashimamiyashirokitamotohatoyamamoroyamahatogayakumagayakawaguchinagatorokamisatomatsubushinamegawatokigawakamikawafujiminohigashimatsuyamakoshigayatokorozawas3isk01isk02ryuohkoseikonanaishorittotakashimamaibarahikonetorahimenishiazaikokagamokotoyasuotsukusatsunagahamamoriyamatoyosatotakatsukinotogawaomihachimanhigashiomiakagiunnanizumogotsuamayatsukakakinokimatsuehamadamasudahikawahikimiokuizumoyasugiyakumomisatotamayuohdahigashiizumookinoshimanishinoshimatsuwanoshimaneshimadafujiedayoshidashimodagotembaiwataatamikosaiyaizuitoizumishimahaibaramakinoharaomaezakikawanehonkannamisusonohigashiizufukuroinumazukawazufujiaraishizuokahamamatsushimizuizunokunimatsuzakimorimachiminamiizunishiizukikugawakakegawafujikawafujinomiyaujiietsugaoyamayaitaohiranikkoashikagakuroisokanumasakurashioyakarasuyamamotegiichikaikaminokawatochigihagamokanogisanobatonasumibunasushiobaranishikatautsunomiyaiwafunemashikoshimotsukeohtawaratakanezawaitanokomatsushimatokushimaichibaminamiaizumiwajikikainanmiyoshinarutomimamugiananmatsushigesanagochishishikuinakagawamachidachiyodakomaefussainagitaitochofufuchuomeotahigashiyamatotoshimaokutamaaogashimakodairaedogawaarakawahachiojishinagawatachikawashibuyasuginamihinodekiyosesumidaoshimanerimamitakahamuraadachinakanomizuhobunkyomegurominatokoganeihigashikurumekokubunjihigashimurayamamusashimurayamatamakitahinochuokotokatsushikakouzushimaogasawaraakishimakunitachishinjukusetagayamusashinohachijoitabashiakirunohinoharachizunanbukotouramisasawakasayonagokogehinoyazutottorinichinansakaiminatokawaharaoyabetairainamiasahinantoimizufuchutakaokakurobeyamadajohanatoyamatonaminyuzenfunahashinakaniikawanamerikawaunazukitogahimiuozufukumitsutateyamakamiichiiwadearidayuasainamitaijikatsuragiaridagawatanabemihamahidakakainankiminomisatoshingushirahamakamitondayurakozakoyagobokitayamawakayamakudoyamahashimotokushimotokozagawahirogawakinokawanachikatsuurarsuseroeoishidasagaeoguniasahinagaitendonanyoobanazawanishikawasakataohkuratozawamikawamamurogawayamagatafunagatatakahatashonaishinjokahokuiideyuzakawanishitsuruokakaminoyamayamanobeshiratakamurayamanakayamakaneyamahigashineyonezawasakegawamitouubeyuuabushimonosekitabuseoshimatoyotaiwakunihikarishunannagatohagihofukudamatsutokuyamashowadoshitsurunanbukoshukaiminami-alpsnirasakikosugeotsukioshinohokutominobuyamanashifuefukichuokofuichikawamisatoyamanakakonakamichitabayamanishikatsuranarusawafujikawahayakawafujiyoshidafujikawaguchikouenohara\u9577\u91CE\u4EAC\u90FD\u5C90\u961C\u5927\u962A\u4E09\u91CD\u7FA4\u99AC\u5343\u8449\u6ECB\u8CC0\u4F50\u8CC0\u5948\u826Fadednelgaccogogror\u79CB\u7530\u611B\u77E5\u9AD8\u77E5\u57FC\u7389\u6C96\u7E04\u6803\u6728\u718A\u672C\u5CA9\u624B\u9752\u68EE\u5C71\u68A8\u65B0\u6F5F\u5CF6\u6839\u9CE5\u53D6\u9577\u5D0E\u9999\u5DDD\u5BAE\u57CE\u77F3\u5DDD\u5927\u5206\u5BAE\u5D0E\u8328\u57CE\u5C71\u53E3\u5175\u5EAB\u5C71\u5F62\u5FB3\u5CF6\u5E83\u5CF6\u798F\u5CF6\u798F\u5CA1\u5CA1\u5C71\u5BCC\u5C71\u9759\u5CA1\u611B\u5A9B\u798F\u4E95\u6771\u4EACxn--4it168dhatenadiaryxn--vgu402ckawaiishophatenablogcocottenamaste\u5317\u6D77\u9053penneehimeiwateversestabachibashigagonnagunmapermahaccaakitaosakauh-ohblushkochiaichifukuikuroncapooitigohyogotokyokyotopunyuthickcheap0t00g00j0mie2-ddaapyawjg0amfemsubxiiboomoobutchueekpgwrgrherskrboyrdyupperunderflierchipsmydnsheavyangryhippygirlyrulez\u795E\u5948\u5DDD\u9E7F\u5150\u5CF6\u548C\u6B4C\u5C71bambinaxn--nit225kokayamasaitamaxn--k7yn95exn--1lqs03nsapporoparasitelolipopmcxn--efvn9sniigatafukuokatokushimafukushimahiroshimakagoshimafakefurokinawaxn--8pvr4ucoolblogxn--0trq7p7nnkawasakinagasakimiyazakichilloutxn--8ltr62kxn--klty5xpeeweezombiecutegirlxn--rny31hxn--uuwu58axn--ntso0iqx3axn--djrs72d6uytoyamanikitanyantakagawamimozanagoyaboyfriendxn--2m4a15egreaterchowderegoismyamagatafashionstorexn--elqq16hxn--pssu33lsendaimiyagixn--rht27zpecoriaomorisaloonwatsonvivianxn--djty4knobushipigboatnaganopinokoxn--f6qx53asadistvelvetsecretxn--5js045dchicappayamanashiibarakidigickgirlfriendxn--1lqs71dmongolianxn--c3s14mxn--qqqt11mtochigixn--5rtq34kparallelo0o0mondkobesagabonadecaoitanarafoolkilldecimainhiholomosblokilociaoundopupugifutankcrapflopnooroopsmodsholyjeezstripperpepperbittershizuokaxn--rht3dkitakyushureadymadeicurusversusmatrixxn--rht61ehungryfloppygloomycrankyhandcraftedlittlestarxn--klt787dxn--kltx9awhitesnowsunnydaytottorilovepoptheshopbuyshopxn--5rtp49cxn--d5qv7z876cwebaccelxn--kbrq7oxn--4pvxsxn--1ctwolovesickkumamotocatfoodxn--tor131oyokohamawakayamatonkotsuxn--ehqz56nxn--uist22hxn--6btw5axn--kltp7dyamaguchifrenchkisspussycatxn--4it797kxn--uisz3gbabybluexn--zbx025dnetgamersxn--7t0a264ckanagawaxn--6orx2rishikawaxn--ntsq17ghalfmoonschoolbusjellybeanxn--mkru45iusercontentlolitapunkxn--32vp30hsakurastoragehokkaidoshimanecandypopbabymilksupersaleweblikeraindropbackdropwebsozaikikirarahateblodaynightmeneacsccogoormobiinfoaeusxxorgmilcomnetedugovorgcomnetedugovbizinfotmprdorgmilcomnomedugovassnotairespresseassocoopgouvveterinairemedecinpharmaciensorgnetedugovtraorgcomedurepgovmeneperekgacscaiiocogoitoresmshsseoulbusanulsandaeguc01milvkimmvchungnamjeonnamjeonbukeliv-dnsgyeonggijejueliv-cdnincheondaejeongangwongyeongbukgwangjuchungbukgyeongnameliv-apicoeduindorgcomembnetedugovorgmilcomnetedugovjcloudorgcomnetintedugovperbnrinfocooyorgcomnetedugovethipfscanvamypepethw3sstorachakeeneticjoinmcinbrowserdwebcyonnftstoragemyfritzaemewphlxachotelltdorgcomwebsocschngonetintedugrpgovassnomgacsccoorgnetedugovbizinfo123websiteidorgmilcomasnnetedugovconfidmedorgcomplcschnetedugovaccoorgnetgovpresstmassoirseproxaccosoundcasthoptocraftvp4c66orgnetedugovitsmcdirmyboxbarsyedgestacksynologylogintoopencloudnohostwebhopdiskstationi234tcp4hoocgroknoipprivmydsddnsdnsforlohmustransipdscloudfilegear-sgbrasiliafilegearframerbarsybarsyonlinecoprdorgmilcomnomedugovinforgcomnetedugovnameacprorgcomartnetedugovpresseinfoassoinstgouvorgnycedugovbarsydscloudjuorgcomnetedugovminisiteaccoororgcomnetgovorgmilcompronetintedugovbizmuseumnameinfoaerocoopaccoorgcomnetintedugovbizcooporgcomgobneteduorgmilcomnetedugovbiznameaccoorgmilneteduadvgovcoorgcomnetaltgovforgotherhiskeeneticispmanagernomassoprod5476132eastasiacentraluswesteuropewestus2eastus2pnortheurope-01newzealandnorth-01southindia-01southcentralus2-01norwaywest-01eastus2-01westus2-01australiaeast-01italynorth-01israelnorthwest-01swedencentral-01westeurope-01centraluseuap-01taiwannorthwest-01uaecentral-01northcentralusstage-01israelcentral-01mexicocentral-01canadacentral-01austriaeast-01germanywestcentral-01francecentral-01ukwest-01denmarkeast-01polandcentral-01eastus-01westus-01swedensouth-01eastus3-01westus3-01brazilsouth-01centralus-01francesouth-01australiacentral-01westindia-01uaenorth-01jioindiacentral-01canadaeast-01belgiumcentral-01spaincentral-01koreacentral-01chilecentral-01qatarcentral-01westcentralus-01eastus2euap-01norwayeast-01southafricanorth-01brazilsoutheast-01germanynorth-01switzerlandnorth-01switzerlandwest-01japanwest-01southafricawest-01japaneast-01eastasia-01indiasouthcentral-01taiwannorth-01centralindia-01uksouth-01southcentralus-01northcentralus-01eastasiastage-01indonesiacentral-01australiacentral2-01australiasoutheast-01malaysiawest-01koreasouth-01southeastasia-01southeastus5-01northeastus5-01jioindiawest-01rucdnwest1-usfra1-desandboxjls-sto1jls-sto3jls-sto2aglobalabglobalsslmapprodfreetlsmapvpslon-1lon-2ny-1fr-1sg-1ny-2paassnwebpaashostingjelasticnordeste-idcsocuserpagescwebfileblobservicebuscoreatlricnjsjelasticwebsitestoragesezagbinruhuukjptsmyspreadshopmynetnameakamaiorigin-stagingfrom-coipv64dynv6cdn77serveblogadobeaemcloudhicamsprytdnsupno-ipownipde5ovhicpfirewall-gatewaysytesmypsxbarsyusgovcloudapimyamazemyradwebakamaihdsaveincloudfastlylbfrom-lasubsc-paysquare7in-the-bandblackbaudcdnhomelinuxoninfernoctfcloudservebbsdns-dynamiccloudfrontakamai-stagingipifonyham-radio-opsenseeringclickrisingcommunity-profrom-nylocalcertgrafana-devedgesuite-stagingcloudflareanycasteating-organicatlassian-devmydattofeste-iplocaltotorprojectknx-serveredgekeycloudflareglobalcloudyclustercasacamserveftpakamaized-stagingakamaiorigindns-cloudmyeffectboomlabotdashbuyshousestwmailhetemlazure-mobilein-dslthruhereredirectmedynuddnsbouncemesupabaseluyanicloudappakamaicloudfunctionsdebiannhlfanpgafanstatic-accessin-vpnmysynologymafeloappudohomeftptrafficmanagersiteleafseidatmemsetcloudflarecloudaccesskeyword-onazure-apiis-a-chefdoes-itgets-itwebhopselfiphomeipkicks-assedgesuitewindowsserver-ontunnelmolemydissentscrapper-sitecloudflarecnuni5srcfggffiobbzabchrsndenodynuopikddnsvpndnsakadnselastxkinghostvps-hostfastlyhomeunixazureedgeshopselectdontexistmyfritzcloudjiffyalwaysdatasells-itsquaresbroke-itazurefddattolocalat-band-campmeinforumfamilydsazurestaticappsdefinimabplaceddnsaliasdynaliasnow-dnsblogdnsroutingthecloudendofinternetdsmynasakamaiedgemymediapcadobeio-staticakamaiedge-stagingakamaihd-stagingddns-ipprivatizehealthinsurancelive-onkrellianschokokeksmassivegridmysecuritycamerarackmazeserveminecraftfrom-azis-a-geekakamaizedmoonscaleoffice-on-theusgovtrafficmanageradobeioruntimeedgekey-stagingreserve-onlinechannelsdvrdnsdojousgovcloudappcdn77-sslapps-1and1podzoneazurewebsitesdynathomescaleforceyandexcloudvusercontentisa-geekcdn-edgescoaemalcesappwriteazimuthtlonarvobuiltwithrocketnoticeablestorecomwebrecnetperotherfirminfoartslgdloncogoiltdorgmilcolcomplcschgenngonetedugovbiznamefirmmobiacincoorgmilcomnomwebgobnetintedubizinfocomyspreadshopdemongovtransurl123websitehosting-clusterkhplaycistrongsnesosvalerv\xE5lerxn--vler-qoaossandeheroysandeher\xF8yb\xF8boheroyher\xF8yxn--hery-iraxn--b-5gavalerb\xF8boxn--b-5gasandesandexn--hery-iraxn--vler-qoav\xE5lerh\xE5re\xE5laahavaofsfvfhlolnlalrlhmfmtmahcostntbu\xE5strmreigersundmyspreadshopg\xE1ls\xE1eidsvolltingvollgildeskalflor\xF8vads\xF8vard\xF8vanylvenxn--bhccavuotna-k7astrandaxn--kvnangen-k0axn--sknland-fxaxn--mosjen-eyarakkestadhyllestadnannestadvevelstadvaapstenordre-landsondre-lands\xF8ndre-landtjieltexn--vrggt-xqads\xF8r-aurdalsor-aurdalheradstordmoldefordef\xF8rdeseljefedjeryggehemnexn--krehamn-dxasognegranes\xF8gnebrynetjomevallebykletokkegiskedovretj\xF8mehob\xF8lvoldasaudatolgas\xF8mnaviknad\xF8nnasomnadonnatranafrananesnaraumasmolatr\xE6nafr\xE6nalesjasm\xF8la\xF8rstaorstahitrafloraaukraloppafr\xF8yarissasnasahalsagalsaromsaraisar\xE1isafroyasn\xE5sagronghobolfjelltydal\xE5rdalardalaskimharamkraanghkekr\xE5anghkesorumbarumhurumb\xE6rums\xF8rummodums\xE1l\xE1tb\xE1l\xE1tfrognbjugnv\xE5ganvagangulenskienl\xF8tenlotenstrynvefsnxn--merker-kuaskaunsveiob\xF8mlobomloskj\xE5kvardoflorovadsosalatbalats\xE1latkl\xE6buklabuselbubarduulvikskjakkleppris\xF8rxn--nttery-byaefl\xE5eidflahofmilgolholsellomskifetvikdepvgsfhsaskerrisorhamarasnes\xE5snesr\xF8rosrorosxn--slat-5namasoynaroyvaroyluroydyroyaskoyradoyandoyrodoymeloyrad\xF8yand\xF8yr\xF8d\xF8ymel\xF8yask\xF8ylur\xF8ydyr\xF8ym\xE5s\xF8yv\xE6r\xF8yn\xE6r\xF8yhoylandeth\xF8ylandetdivtasvuodnal\xF8renskoglorenskognesoddtangenxn--tjme-hraxn--smla-hraxn--stjrdal-s1aunjargalillehammerunj\xE1rgaxn--hamary-fyadavvenjargaxn--bearalvhki-y4a123hjemmesidegjerdrumxn--brnnysund-m8acxn--tnsberg-q1axn--mlatvuopmi-s4axn--snsa-roaxn--skierv-utaxn--brum-voatysfjordkvafjordeidfjordkv\xE6fjordsongdalenmjondalenmj\xF8ndalenxn--gls-elackragerog\xE1\u014Bgaviikagangaviikas\xF8rreisasorreisas\xF8r-varangersor-varangerxn--risr-iraskiervaxn--frna-woaxn--trna-woakvinesdalleksvikleirvikr\xF8yrvikroyrviksvelvikvenneslaevje-og-hornnessandnessj\xF8enmarnardalvindafjordsandefjordenebakksnillfjordullensvangxn--trany-yuabr\xF8nn\xF8ysundnamsskoganaustevollxn--stjrdalshalsen-sqbnord-aurdalnord-frontr\xF8gstadtrogstadgrimstadflakstadgjerstadxn--sandy-yuaxn--leagaviika-52bnore-og-uvdalvegarsheixn--rlingen-mxaxn--ggaviika-8ya47hveg\xE5rsheikarlsoykvitsoymasfjordenhamaroyinderoyosteroydavvenj\xE1rgasauheradguovdageaidnuxn--vre-eiker-k8abronnoysiellakkr\xF8dsheradkrodsheradkvinnheradbr\xF8nn\xF8yxn--mtta-vrjjat-k7afxn--lrenskog-54akvits\xF8yv\xE1rgg\xE1tkarls\xF8yoster\xF8yinder\xF8yhamar\xF8ybronnoysundxn--aurskog-hland-jnbbahccavuotnab\xE1hccavuotnagiehtavuoatnastor-elvdalmidtre-gauldalxn--gildeskl-g0akarasjokevenassixn--bievt-0qaxn--yer-znalebesbynessebyxn--hbmer-xqamalselvm\xE5lselvxn--unjrga-rtam\xF8re-og-romsdalmore-og-romsdalhareidmeland\xF8rlandorlandstrand\xE5lg\xE5rdsolundalgardafjord\xE5fjorddielddanuorrikautokeinoxn--stre-toten-zcbskodjeaejriestangeliernebamblestokkefauskesn\xE5asesnaasekongsvingerlangevagberlevagxn--flor-jrahattfjelldalostre-toten\xF8stre-totenvestfoldxn--mely-ira\xE1laheadjualaheadjunordreisaxn--troms-zuaxn--lgrd-poacporsangerflatangerstavangerleikangerbremangersamnangergieldakarasjohkaxn--rdy-0nabfrostautsirasnoasatromsaxn--sr-aurdal-l8aflekkefjordj\xF8lsterjolsteraremarkhedmarkn\xE5\xE5mesjevuemienaamesjevuemiexn--vard-jrarollagmer\xE5kermerakerorskog\xF8rskogxn--bdddj-mrabd\xE1k\u014Boluoktaxn--osyro-wuaaknoluoktatrysilskjerv\xF8ymandaljondalbindalrindalmeldalsuldalorkdalsigdalalvdall\xE6rdalhurdalsirdalverdallerdallardaloppdal\xE5seralaseralhadselkrager\xF8divttasvuotnaoverhallasteinkjerxn--hnefoss-q1askedsmokorsettroms\xF8xn--dyry-iravestre-totenmuseumxn--sandnessjen-ogbrahkkeravjufylkesbiblb\xE1jddarbajddarxn--laheadju-7yarennes\xF8yxn--koluokta-7ya57hxn--hgebostad-g3aleirfjordstorfjordbalsfjordb\xE5tsfjordbatsfjordmuos\xE1tbiev\xE1tloab\xE1tk\xE1r\xE1\u0161johkan\xF8tter\xF8yxn--mjndalen-64anordkappl\xE1hppilahppialstahaugsiljanverranr\xF8ykenroykenhaldenlyngenbergenhortenh\xF8nefosshonefosstroandinbeiarnvarggatosoyroos\xF8yrotromsoidrettmuosatbievatruovatloabatvoagattynsetnessetxn--indery-fyask\xE1nitskanitraholtr\xE5holtxn--ystre-slidre-ujbandebusarpsborgbearduxn--karlsy-fyahordalandjorpelandj\xF8rpelanddeatnuringsakers\xF8r-odalsor-odalxn--slt-elabringerikeaudnedalnittedalnissedalhemsedalslattumsurnadalxn--blt-elabelverumstj\xF8rdalnaustdalhjartdalgj\xF8vikfyresdalhasviknarviklarvikgjovikmalvikgamviklenvikporsgrunnstjordalengerdaldrobakdr\xF8bakxn--msy-ula0hvestvagoyxn--vgan-qoaxn--ryken-vuaxn--lten-graxn--stfold-9xaxn--hpmir-xqaxn--lury-iram\xE1latvuopmimalatvuopmitysv\xE6rkirkenesbirkenesmoskenesb\xE1id\xE1rxn--fjord-lraxn--rdal-poabahcavuotnab\xE1hcavuotnaxn--frde-gralind\xE5sbearalvahkixn--hobl-irar\xE1hkker\xE1vjuxn--loabt-0qav\xE5g\xE5\xE1lt\xE1bod\xF8sundlundrader\xE5deetnetimeholeauregrueoddavagavegaranatanaarnasolasulaaltalekafusavangbergkvam\xE5mliamlibokntinnroangranosenoslobodor\xF8stroststat\xE5motamotivgupriv\xF8yeroyerliermossvossxn--nvuotna-hwalusterlunnermarkerh\xE1bmerhabmerhvalerfjalerxn--rholt-mratysvarbaidarfitjargaularh\xE1pmirhapmirmelhusfosnes\xF8ksnesoksnestysneshemnesevenesflesbergeidsbergtonsbergt\xF8nsberglindasxn--sndre-land-0cbnamsosxn--srum-gra\xF8ystre-slidreoystre-slidrevestre-slidretrondheimbalestrandxn--langevg-jxaaustrheimxn--skjk-soavagsoyaveroysandoykarmoyfinnoytranoyvestbytranbysykkylvenxn--hyanger-q1aspjelkavikandasuoloxn--fl-ziaxn--drbak-wuastathellexn--sr-varanger-ggbtelemarkxn--bhcavuotna-s4axn--porsgu-sta26f\u010D\xE1hcesuolocahcesuoloakrehamn\xE5krehamnsand\xF8ykarm\xF8yfinn\xF8ytran\xF8yv\xE5gs\xF8yaver\xF8ynamdalseidxn--lesund-huabadaddjaxn--vegrshei-c0axn--btsfjord-9zagildesk\xE5lporsanguxn--trgstad-r1an\xE1vuotnanavuotnahammerfestxn--sgne-graxn--brnny-wuacibestadharstadnarviikaeven\xE1\u0161\u0161ivestnesgjemnessandnesagdenesrennesoyxn--avery-yuaxn--tysvr-vrabearalv\xE1hkikongsbergspydebergrandabergxn--andy-iradavvesiidaxn--krdsherad-m8apors\xE1\u014Bgufredrikstadbjerkreimringeburennebuaurskog-holandnotteroyxn--vgsy-qoa0jxn--rmskog-byaskierv\xE1ivelandbyglandfrolandaurlandforsandxn--bjddar-ptamidsund\xE5lesundalesundfetsundfarsundovre-eiker\xF8vre-eikerakershusxn--moreke-juas\xF8rfold\xF8stfoldostfoldsorfoldh\xF8yangerhoyangerlevangerorkangertanangerxn--vestvgy-ixa6olillesandulsteinxn--rennesy-v1agranvinskjervoyxn--klbu-woalavagisxn--h-2faxn--ryrvik-byakafjordk\xE5fjordseljordfolkebiblxn--gjvik-wuajevnakerxn--kfjord-iuabudejjuxn--kranghke-b0axn--davvenjrga-y4axn--rland-uuaxn--ldingen-q1axn--mlselv-iuaxn--rady-iraxn--linds-prabrumunddalxn--ygarden-p1amo-i-ranaeidskogr\xF8mskogromskoghjelmelandxn--finny-yuaxn--sr-odal-q1axn--skjervy-v1aballangenkvanangenkv\xE6nangengratangenxn--hmmrfeasta-s4acvossevangensuohkanxn--rde-ulaxn--mli-tlaxn--ksnes-uuanordlandskanlandsk\xE5nlandsortlandfuoiskuxn--rros-graxn--hcesuolo-7ya35bxn--eveni-0qa01gagaivuotnag\xE1ivuotnaxn--seral-lradrammenmodalenmosjoenjan-mayentorskensteigengloppenxn--snes-poamatta-varjjatxn--sr-fron-q1aomasvuotnajessheimb\xE5d\xE5ddj\xE5xn--krager-gyaxn--kvfjord-nxaxn--asky-iraxn--snase-nraxn--bidr-5nacholt\xE5lenxn--vads-jraxn--jlster-byamosj\xF8enxn--rst-0nastavernxn--ostery-fyaxn--oppegrd-ixaxn--sknit-yqaxn--risa-5naoppeg\xE5rdskiptvetrendalenholtalenxn--mot-tlaxn--lhppi-xqaxn--holtlen-hxaxn--srreisa-q1akopervikxn--muost-0qaxn--bmlo-grahokksundkvalsundegersundxn--karmy-yuaullensakerxn--hylandet-54axn--kvitsy-fyaxn--bod-2nalangev\xE5gberlev\xE5gkristiansandxn--rsta-frahornindalstj\xF8rdalshalsenstjordalshalsensandnessjoenh\xE1mm\xE1rfeastaxn--lrdal-sras\xF8r-fronsor-fronnord-odalkristiansundm\xE1tta-v\xE1rjjatvestv\xE5g\xF8ynesoddennotoddenbuskerud\xF8ygardenoygardensalangenlavangenralingenr\xE6lingenlodingenl\xF8dingenlea\u014Bgaviikalaakesvuemieleangaviikauenorgexn--srfold-byaaskvollxn--rskog-uuaxn--nry-yla5gxn--vry-yla5ghammarfeastaxn--rhkkervju-01afxn--givuotna-8yakommunekrokstadelvanedre-eikerhagebostadh\xE6gebostadxn--berlevg-jxakviteseidxn--s-1faxn--l-1faxn--nmesjevuemie-tcbafuosskomo\xE5rekemoarekexn--lt-liacxn--jrpeland-54asvalbardoppegardholmestrandtvedestrandsogndalsokndalarendalsunndalfolldalxn--krjohka-hwab49jlyngdaletnedalnorddalsaltdalgausdalskedsmovaksdalgjesdalstordalxn--frya-hraaarbortedrangedalxn--smna-graaurskog-h\xF8landxn--vg-yiabtjeldsundhaugesundlindesnesxn--mre-og-romsdal-qqbxn--dnna-gradyntmpheremerseineshacknetenterprisecloudmineaccomaorim\u0101oriorgmilcriiwigennetschoolhealthkiwigovtgeekxn--mori-qsacloudnsparliamentcomedorgcompronetedugovmuseumwebsitekinservicebarsywebsitebuildereerobookheimdnsleapcelleero-stagetechcrscsslorigingohomecdbedeeeiemesecabgngilnlalplchfisiincnnoroptatitmtltruauhulumkdkukskjplvtrgrfrkrhrusesismycynzcznetinteduassoososcloudstgbetaaezaeuhkusjshatenadiarycdn77hoptozaptois-a-knightmyftpno-ipjpnddnssdpdnsspdnsbarsysweetpepperis-a-bruinsfanis-very-sweetservegameis-a-soxfanhomelinuxcdn77-secureservebbsmisconfusedwebredirectblogsitefreedesktopcouchpotatofriestoolforgeaccesscamis-lostreadmyblogsmall-webfedorapeopleserveftpis-a-celticsfanmywirepotagertwmailin-dslsellsyourhomeread-booksfreeddnscable-modemis-savednflfanufcfanmlbfanstuff-4-saleendoftheinternetin-vpnmy-firewallhomeftpis-localis-a-chefboldlygoingnowherewebhopselfipkicks-assroxatunkcamdvrfedoraprojectgotdnsdvrdnsdyndnspubtlspimientahomeunixdontexistfedorainfracloudwmflabsfspagesbmoattachmentsteckidsfamilydsdnsaliasdynaliasnow-dnscloudnsdoomdnsduckdnsblogdnshomednsroutingthecloudendofinternetdsmynasip-dynamicpoivronhttpbinmyfirewallis-very-evilmysecuritycamerais-a-linux-userwmcloudis-a-geektuxfamilyis-a-candidatedoesntexistis-very-badhobby-sitegame-hostaltervistais-foundis-a-patsfandnsdojohepforgepodzonedynservcollegefanis-very-goodfrom-meis-very-niceisa-geeknerdpolacmedsldingorgcomnomgobabonetedupleskaemhlxmyboxrockyprvcydeuxfleurspdnscodebergheyflowstatichostorgmilcomnomgobneteduorgcomeduiorgmilcomngonetedugovcloudns1337ngrokacorggogfamcomwebgobnetedugokgopgkpgovgosbizpasaugumicsopozpapuwmwsrprusiskwpspkppspkmpspokeoiawsawifoumsdnskokwpmuppuppsppiwwiwoowuzswkzoschrzpisdnwzmiuwwitdpssewsseumigugimoirmpinbwinbwiihupporzgwgriwupowwskrwioswuozstarostwokonsulattmpccopruszkowmyspreadshopostrodakartuzyopolegminamediaustkazgorajgoraolawailawalomzawloclradombytomjaworznotargilubinkoninzagantorunkutnokepnonakloczestsopotsanokturekplockslasksklepzarowlukowmedaidgdaorgmilrelcomnomatmgsmartneteduelkgovwawsossexbiztgorysejnytychypomorzeboleslawiechomesklepsdscloudunicloudzakopanelegnicarawa-mazbydgoszczswidnikkrasnikwloclawekbielawamragowograjeworealestatebeskidykaszubymalopolskaprzeworskswiebodzinlecznadfirmaszkolawarmiagdyniamiastakazimierz-dolnymalborkswidnicadlugolekaostrolekapodlasieelblagtravelsimplesitezachpomormielecszczecinnieruchomosciwalbrzychlezajsklublinbedzinpoznanwielunmielnooleckostarachowicedkontopowiatwroclawrybniksuwalkileborkslupskgdanskostrowwlkptarnobrzegtourismwegrowkrakowglogowyou2pilanysamailwrocinfoagroautobeepshoppriviqhslapypiszlodzcfolksecommerce-shopmazurypulawyskoczowrzeszowpomorskiezgierzkaliszolkuszlowiczostrowiecsosnowiecmazowszewodzislawbialowiezazgorzeleckatowicepabianicejelenia-gorawolominkarpaczsieradznowarudaczeladzkonskowolaskierniewiceswinoujscieturystykabieszczadycieszynketrzynolsztynbialystokbabia-goraprochowicewarszawastalowa-wolapolkowicegorlicegliwiceponiatowalimanowalubartowaugustowkobierzyceopocznognieznoszczytnokolobrzegshoparenapodhalebielskoklodzkostargardatwithplayitownnamecoorgnetedugovacorgcomproestnetedugovbiznameislaprofinforechtngrokmedaaaacacpaenglawjurbarbarsykeeneticavocatacctcloudnsorgcomsecplonetedugov123paginaweborgcomnetintedugovnomepublidkinbarsygovx443cloudnsorgmilcomnetedugovcooporgmilcomschnetedugovnamecomcannetlibassoaemclantmcontstoreorgcomnomrecwwwbarsyfirminfoshopartsstackitmyddnswebspacelima-cityacincooxorgedugovbarsybrendlyhbvpsvpsspectrumlandinghostingacppmordoviamcprecbgorgmilcomspbnetintedumsknovgovbirrasmcdirmytismircloudvladimirnalchikadygeyamarinepyatigorskmyjinobashkiriaeurodirvladikavkazna4ugroznykustanaikalmykiacldmaildagestaniranbuildcloudcanvaliaravalwixdevelopmentappwritemigrationneedleverceldatabasestackitcodereplravendbonporterlovableaccoorgmilnetgovcoopmedorgcompubschnetedugovservicemecomygovorggovtvmedorgcomnetedugovinfoedgfacbmlonihkutwpsryxzbdtmacfhppmyspreadshopbrandpartiorgcomfhvpress123minsidaitcouldbeworlanbibkommunalforbundfhskiopsyskomvuxkomforbnaturbruksgymnloginlineorgcomnetedugovenscaledeuusentsurgebotdaorgmilcomnetgovnowteleporthashbangplatformlovablebarsyshopwarebasehoplixbarsyonlinemsf5gitappgitpagewawamscofigma-govcaffeinefigmacanvasoltstscwputerbarsysupportchatgptsquareomniweopensocialcpanelplaycodenotionnovecorewpsquaredpreviewjelecyonbyensrhtfastvpspieboxconvexjouwwebheyflowplatformshloginlinemadethissourcecraftclouderaorgorgcomartedugouvunivmeorgcomnetedugovsurveysstatichfheiyuxs4allprojectmyfastubervibehostapp-ionosdeployagentmecoorgcomschnetedugovbizcncostoreorgmilcomneteduembaixadaconsuladokiraranohoprincipesaotomeheliohobarsystorebaseshopwaresellfyaiabkhaziavologdamordoviapenzalenugsochinavoiexnetspbmsknovnorth-kazakhstanashgabadkareliaarmeniageorgiavladimirnalchikivanovobukharaadygeyakhakassiakalugakrasnodarjambylaktyubinsktroitskbryanskobninskkurganazerbaijanpokrovskbashkiriatselinogradvladikavkazmurmansktulatuvamangyshlaktashkentchimkentgroznykaragandatermezarkhangelskkustanaikalmykiabalashoveast-kazakhstankaracoldagestantogliattibarsyredorgcomgobedumirenknightpointaccoorgjelasticdiscoursecleverappsschacmiincogoornetonlineshopcogoorgmilcomwebnicnetintedugovbiznametestcoorgmilcomnomnetedugovorangecloudpersoindorgcomfinnatnetgovensmincomtourismintlinfox0611oyaorgmilcomnetedugovquickconnectvpnplusnettprequalifymeaddrmyaddrntdllwadlnctvavdrk12orgmilpolbeltelcomwebgennetedutskkepgovbbsbiznameinfocoorgmilcompronetedugovbiznameinfobetter-thanworse-thansakurafromdyndnson-the-webmymailerorgmilurlcomneteduidvgovmydnsgameclubebizmeneacsccogotvorhotelmilmobiinfovodteiflgplkmsmsbcckhincndnvncoztltmkckppzpdprvcvkvlvcrkrkscxuzchernovtsyrivneyaltaodesavolynrovnolutskltdinforgcomnetedugovbizvinnicazhitomirternopilpoltavakropyvnytskyizaporizhzhiasevastopolsebastopoluzhgoroduzhhorodkharkovkharkivvinnytsiakhmelnytskyizaporizhzhecrimeaodessazhytomyrnikolaevcherkassydonetskluganskluhanskkirovogradivano-frankivskchernivtsikrymkievkyivlvivsumyzakarpattiamykolaivcherkasychernigovkhersonchernihivdnipropetrovskdnepropetrovskkhmelnitskiyneacsccogoorusorgmilcomedugovmyspreadshopadimono-ipbarsybarsyonlinelayershiftnh-servretrosnubapicampaignservicelugaffinitylotteryweeklylotteryraffleentrygluglugsmeaccoindependent-inquestnimsitecopropymntltdorgplcschnetgovnhsbarsyindependent-commissionindependent-reviewpolicepublic-inquiryindependent-panelconnhospindependent-inquiryroyal-commissionoraclegovcloudappscck12libaws-govccphxcclibpvtparochchtrcck12libcceatonk12coglibtecgendstmusann-arborwashtenawcck12glghcck12sealibforksolympiabainbridge-islkeyporthoquiamyarrow-pointcentraliaport-townsendsequimport-ludlowrentonsilverdalebremertonredmondsheltonbellevueport-orchardport-angeleskingstonchehalisaberdeengig-harborseattlepoulsboidmdndsddemenegacalamaiavawapailalflnmdcncscohnhmihiviwiriinmntnmocoutvtctmtgunjokakwvnvprarorasmskstxwynykyazisadninsnngosrvis-bymircloudservernamepointtoenscaledland-4-salefreeddnsstuff-4-saleazure-apinoipdatabricksappscloudnsgolffanheliohostazurewebsitesgvorgmilcomgubneteducoorgcomnetd0egvorgmilcomnetedugovmydnsiacostoree12orgmilcomnomwebgobbibrectecnetintedugovraremprendefirminfoartseducok12orgcomnethidnsidacaiiosonlahanamhanoicamauhueorgcompronetintedugovbizbacninhtayninhhoabinhnamdinhtravinhhaiphongvinhlonghaiduongquangnamquangtrithuathienhuequangninhbacgianghaugiangquangbinhsoctrangbentrethanhphohochiminhdanangkontumhatinhkhanhhoathanhhoahealthgialailaocaiyenbaibackanngheanlonganphuyenphuthocanthodaklakdongnainameinfovinhphucdongthapkiengiangtiengiangquangngailaichaulangsonlamdongdaknonghagiangangiangcaobangbinhduongninhthuanbinhthuanbaclieuthaibinhninhbinhbinhdinhtuyenquanghungyenbaria-vungtauthainguyendienbienbinhphuocschbizputerimagine-proxyorgcomnetedugovcloud66advisormypetsdyndnsxn--8dbq2axn--4dbgdty6cxn--5dbhl8dxn--hebda8bxn--80auxn--d1atxn--c1avgxn--o1acxn--o1achxn--90azhxn--55qx5dxn--uc0atvxn--od0algxn--wcvs22dxn--gmqw5axn--mxtq1mxn--12c1fe0brxn--h3cuzk1dixn--12co0c3b4evaxn--12cfi8ixb8lxn--o3cyx2axn--m3ch0j3axn--j1adpxn--90amcxn--90a1afxn--h1ahnxn--j1ael8bxn--h1alizxn--c1avgxn--j1aefxn--80aaa0cvacxn--41acaffeineexeopentunnelbotdashtelebitorgtmaccoagricorgmilnomwebnicngonetaltedugovlawnisschoolgrondaraccoorgmilcomschnetedugovbizinfoprg1-zeropstritonstackitlimazeropsaccoorgmilgov\u044F\u0441\u043F\u0431\u043E\u0440\u0433\u043A\u043E\u043C\u043C\u0441\u043A\u0431\u0438\u0437\u043C\u0438\u0440\u0441\u0430\u043C\u0430\u0440\u0430\u043A\u0440\u044B\u043C\u0441\u043E\u0447\u0438\u0430\u043A\u043E\u0434\u043F\u0440\u043E\u0440\u0433\u043E\u0431\u0440\u0443\u043F\u0440\u05E6\u05D4\u05DC\u05DE\u05DE\u05E9\u05DC\u05D9\u05E9\u05D5\u05D1\u05D0\u05E7\u05D3\u05DE\u05D9\u05D4\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23\u0E18\u0E38\u0E23\u0E01\u0E34\u0E08\u0E23\u0E31\u0E10\u0E1A\u0E32\u0E25\u0E28\u0E36\u0E01\u0E29\u0E32\u0E17\u0E2B\u0E32\u0E23\u0E40\u0E19\u0E47\u0E15\u6559\u80B2\u7DB2\u7D61\u7D44\u7E54\u516C\u53F8\u653F\u5E9C\u500B\u4EBA\uB2F7\uB137\uD55C\uAD6D\u6FB3\u95E8\u65B0\u95FB\u6FB3\u9580\u8054\u901A\u5BB6\u96FB\u5609\u91CC\u62DB\u8058\u901A\u8CA9\uB2F7\uCEF4\uC0BC\uC131\u30B3\u30E0\u10D2\u10D4\u0431\u0433\u0440\u0444\u0435\u044Eadcdbdgdidmdsdtdaebedeeegeiejekemenepereseveyegabacalamanauavapaqasazacfbfafgfnfpfwftfbgcgagggegkgngmgsgpgvgtgugilmlnlalclglplsltlhmimjmkmmmomambmcmdmfmgmzmpmsmtmgbbblbsbecccacnclcmcvctcscmhkhghchbhthphshlinikifigiaibicivisikninhnmncnbngnsnpnvntnjoionomobocoaofodorosotoptstttytatbtetgtithtmtltrusuvuaucueuguhulumunufjdjbjtjsjlkmkhkfkdkcktkukskpkgpmpnpkpjpgqaqmqiqsvtvcvbvmvlvrwpwtwzwbwcwawgwkwmwtrsrprgrfrercrbrarnrmrlrkrirhrwsusrssspsgsesbsaslsmsissxmxaxcxuypysylymykygybycyuztzsznzmzkzdzczbzaz\u03B5\u03BB\u03B5\u03C5\u4E16\u754C\u53F0\u7063\u8D2D\u7269\u516C\u76CA\u70B9\u770B\u81FA\u7063\u7F51\u7EDC\u66F8\u7C4D\u5728\u7EBF\u7F51\u7AD9\u624B\u673A\u673A\u6784\u5927\u62FF\u6E38\u620F\u4FE1\u606F\u53F0\u6E7E\u8C37\u6B4C\u6148\u5584\u5546\u6807\u9999\u6E2F\u4E2D\u56FD\u9910\u5385\u7F51\u5740\u4E2D\u570B\u5546\u57CE\u98DF\u54C1\u5FAE\u535A\u653F\u52A1\u79FB\u52A8\u96C6\u56E2\u516C\u53F8\u516B\u5366\u5546\u5E97\u5065\u5EB7\u7F51\u5E97\u653F\u5E9C\u65F6\u5C1A\u4F5B\u5C71\u4E2D\u4FE1\u5A31\u4E50\u5E7F\u4E1C\u4F01\u4E1Ahomedepotengineering\u0627\u0645\u0627\u0631\u0627\u062Arepublicankuokgroupversicherungchannelcitadelxn--pgbs0dhxn--b4w605ferdstatebankwebsitexn--mgb9awbf\u4E9A\u9A6C\u900A\u6DE1\u9A6C\u9521alibabaxn--ngbc5azdxn--mgbbh1axn--45br5cyltoshibabuildworldcloudtradeguideplacespacedancemoviephoneprimesmilebiblestyleappleazurestoreskypegripexn--l1accdrivelottehorsehouseleasechasereisestadahondaomegaaetnaamicaninjanokiamediadeltavodkaedekaosakapizzaslingemailgmailtirolshelltmallfinallegaltotalhotelamfamforumrehabmusicciticricohcoachwatchboschearthfaithirishmiamiarchidubaiguccipraxi\u307F\u3093\u306A\u30B9\u30C8\u30A2\u30BB\u30FC\u30EBcanonsalononionnikonepsonkoelngreensevencrownikanoradioaudioweiboglobopromogalloyahoociscorodeovideomangobingotokyovolvolottokyotophotosmartsportquesttrusthyattjetztadultcymrubaidutushuxn--kprw13dubankclickblackmerckgroupsharpcheapnowtvxn--h2brj9c\u05E7\u05D5\u05DD\u0570\u0561\u0575\u043E\u0440\u0433\u0441\u0440\u0431\u043C\u043E\u043D\u043A\u043E\u043C\u0431\u0435\u043B\u043C\u043A\u0434\u049B\u0430\u0437\u0440\u0443\u0441\u0443\u043A\u0440\u0645\u0635\u0631\u0642\u0637\u0631\u0639\u0631\u0628\u0643\u0648\u0645dadcfdmedwedredphdthdbidpidkrdmsdltdiceonewmeglemoerwecfageacbanbambaaaammakianraspacpaaxawtfbcgaegongingaigvigorgdogdhlmilrilonlaolloluoljllcalgalnflafltelsrlfrllplkimibmcamcombommomifmabbjcbscbwebcabnabtabmlbpubabcbbcnecincpncllcstcwtcpwcnyckfhbzhovhmoiskiobisbitcifyituipinvinwinxincbnbcnmanfangdnmenrenkpnmtnyunrunfununobiojioriohbogmofooboooooacoecoceongoproartistottnttbbtcateatlatvetpetbetnethktmitfitintjothotgotdotbotprueduicujnjyouinknhktdkappsapgapmapdnptopgopllpjmpzipvipripesqtrvdtvitvdevmovgovhivnrwlawsewnewbmwwownowhowdvrftrmtrsfrbarcartvscrseusawsupsubssbsadsddsldssasbmsmlsxxxboxfoxgmxtjxsextaxbuyflydiysoyjoyskypaydaygayxyzanzbizwebersenerpokerlameractortatarsolar\u0EA5\u0EB2\u0EA7\u0E04\u0E2D\u0E21\u0E44\u0E17\u0E22tourslocusnexuslexusgiftsbeatsboatspartspressglassswiss\u0915\u0949\u092E\u0928\u0947\u091Ftiresgivescodeshomesgamestunesshoescardswalesloansvegastoolsdealsautosparis\u30D5\u30A1\u30C3\u30B7\u30E7\u30F3workssucksrocksxeroxforexfedexpartylillymoneystudyrugbytoraytoday\u4E2D\u6587\u7F51xn--unup4y\u5929\u4E3B\u6559\u98DE\u5229\u6D66\u65B0\u52A0\u5761enterprises\u6211\u7231\u4F60\u5609\u91CC\u5927\u9152\u5E97christmasxn--fct429kholdingsxn--8y0a063axn--mgbx4cd0ablifestyleabogadoallstatenetbank\u0643\u0627\u062B\u0648\u0644\u064A\u0643xn--s9brj9cxn--gk3at1ebestbuycharityxn--55qx5dmicrosoftpropertybasketballhomegoodscorsicajewelrygallerygrocerysurgerycountrybrusselsverisignferreroxn--czr694bhdfcbankcommbanksoftbank\u067E\u0627\u0643\u0633\u062A\u0627\u0646\u067E\u0627\u06A9\u0633\u062A\u0627\u0646nextdirect\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0647\u0627\u0644\u0639\u0644\u064A\u0627\u0646xn--h2brj9c8cxn--80adxhksshikshaxn--mgbai9azgqp6jcuisinellabarclayscatholicxn--kpry57dcompanyxn--xhq521bblackfridayxn--mgba3a3ejtsandvikxn--d1acj3bacademydownload\u0645\u0644\u064A\u0633\u064A\u0627xn--j1amhxn--w4r85el8fhu5dnraipirangaathletaxn--fhbeixn--mgbqly7cvafrzuerichxn--c2br7g\u0B87\u0BB2\u0B99\u0BCD\u0B95\u0BC8contractorsxn--io0a7igraphicsinsurancetemasekxn--xkc2al3hye2amotorcyclesphotographydirectoryplumbingxn--vhquvclothingtrainingcleaningwilliamhilllightingxn--mgba3a4f16ashoppingcateringeducationokinawapicturesventuresproductionsxn--9et52uwalmart\u0D2D\u0D3E\u0D30\u0D24\u0D02supportrealestatecapitalonexn--nqv7fs00emaauspostfloristdentistxn--qxamgodaddybradescobargainsmitsubishikerryhotelsxn--9dbq2axn--3pxu8kimmobilienxn--fjq720axn--mgbtx2bholidaymckinseymadridbusinessbuildershelsinkixn--4gbrim\u043C\u043E\u0441\u043A\u0432\u0430\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u0629coffeedegreelacaixapartnersalsaceofficeabbvievoyageorangegeorgeonlinechromemobilekindlegoogleoraclecircleschulesecureinsurexn--mgba7c0bbn0aestatexn--mgbc0a9azcgcruisehangoutxn--vuq861bxn--42c2d9arexrothfirestoneuniversityxn--nnx388alifeinsuranceextraspace\u043E\u043D\u043B\u0430\u0439\u043Dverm\xF6gensberatersoftwarexn--fiqs8sxn--mgbab2bdxn--w4rs40ltienda\u092D\u093E\u0930\u0924\u092E\u094Dafricatoyotaotsukasakuracameracreditcardnagoyaconsultingnetworkjunipertheatermonsterprogressivepioneerxn--55qw42gracingdatingvotingvikinglivinggivingxn--bck1b9a5dre4cbrotherweatherjoburg\u0641\u0644\u0633\u0637\u064A\u0646lplfinancialxn--clchc0ea0b2g2a9gcdfutbolschoolsocialglobaldentalwoodsidechanelairtelmatteltravelrealtorwebcamstream\u0C2D\u0C3E\u0C30\u0C24\u0C4Dunicomalstomxn--nodexn--6frz82gmuseumfurniturexn--rvc1e0am3exn--mix891faccenturexn--11b4c3dismailineustardiscountquebeccomsecclinicservicesxn--y9a3aqxn--c1avgswatchchurchsearch\u0627\u0644\u0627\u0631\u062F\u0646marketingcontacthealthmonashshoujisanofitaipeiamericanexpresssuzuki\u30A2\u30DE\u30BE\u30F3\u30AF\u30E9\u30A6\u30C9\u30DD\u30A4\u30F3\u30C8bharti\u30B0\u30FC\u30B0\u30EBxn--mgberp4a5d4armemorialxn--1qqw23alondonmormoninstitutevisionbostonnortoncouponmaisonamazonvirginberlindesigndurbanolayannissananquanxihuanhitachikaufengardenreisenbayerntechnologydatsunxn--90a3aclatinocasinostudiophysioxn--ngbe9e0apharmacytattootaobaoaramcoexpertreportabbottdirectselectimamatfairwindspictettargetmarketintuittravelersinsurancecreditdupontryukyusuppliesxn--tckwebnpparibasschmidtmerckmsdyodobashirestaurantbridgestonecricketxn--fpcrj9c3dbostikbroadwayattorneylefrakemerckxn--fiq228c5hscareersfarmerswinnersflowersxn--wgbh1cguitarsxn--54b7fta0ccxn--p1acfmakeupgalluplandroverxn--kcrx77d1x4agoldpointbauhausxn--mgbayh7gpahiphopplaystationxn--mgba3a4fraxn--eckvdtc9dhyundaixn--gckr3f0fistanbulticketsmarketsflightschintaireviewsxn--3e0b707ewindowsxn--fiqz9sfinancialxn--fzys8d69uvgm\u0627\u0628\u0648\u0638\u0628\u064Adiscoverreview\u09AC\u09BE\u0982\u09B2\u09BExn--5su34j936bgsgmoscowobserverapartments\u0434\u0435\u0442\u0438\u0627\u0631\u0627\u0645\u0643\u0648\u0441\u0430\u0439\u0442eurovisionxn--i1b6b1a6a2exn--xkc2dl3a5ee0h\u062A\u0648\u0646\u0633\u0645\u0648\u0642\u0639\u0628\u0627\u0631\u062A\u0680\u0627\u0631\u062A\u0634\u0628\u0643\u0629\u0639\u0645\u0627\u0646\u0628\u064A\u062A\u0643\u0639\u0631\u0627\u0642readkredbondlandbandfundfoodprodgoldfordtubecafesafelifeggeeieeefreefagepagegugezonewinememenamegamesaleablebikenikelikecarecbreherefiresaveloveliveblueartedatesitevotecaseluxebofamodaltdaasdatiaayogasinavanashiaasiajavabbvatevavivadatazaraarpacasavisasncfprofmaifsurfgolfdvagsongbingpingwangkpmggoogblogpohlfailcooldellcalldeallidlsarlfilmteamroomfarmimdbarabclubhdfcicbchsbcgmbhrichtechfishdishcashminiernikddiaudiwikimobitaxicitikiwidesiqponskinloanakdnwienopenporncerntownimmolimoolloinfonicofidolegosaxozeroaerovivoautovotomotofastbestresthostpostnextlgbtchatseatgiftmeetdietreitmintrentgentspotscotguruitausohumenucyoubanklinkpinkdclktalksilkbookseekworkrsvpaarpjeepshopcoophelpcamppccwshowbeerstarruhrflirweirhaircarsparsjprshausplusnewstipstoysjobskidsfanspicsdocsxboxamexsexynavycitysonyarmyallybabyplaydeliverybuzzgbizlamborghiniphilips\u0DBD\u0D82\u0D9A\u0DCF\u0CAD\u0CBE\u0CB0\u0CA4fitnessexpresslanxesspfizercenterwalterlawyersoccercareerkosherbrokerlockerdealerdoctorauthorxn--mgbqly7c0a67fbcverm\xF6gensberatungjaguarxn--pssy2uxn--hxt814eflickrrepairrogersairbusxn--mgbai9a5eva00beventsyachtsxn--t60b56a\u09AD\u09BE\u09F0\u09A4\u09AD\u09BE\u09B0\u09A4\u092D\u093E\u0930\u0924\u092D\u093E\u0930\u094B\u0924viajeshermeshughesxn--j1aef\u0938\u0902\u0917\u0920\u0928villas\u0B2D\u0B3E\u0B30\u0B24claimshotels\u0AAD\u0ABE\u0AB0\u0AA4zapposphotosjuegoscondostatamotorsgratistennis\u0A2D\u0A3E\u0A30\u0A24tkmaxxtjmaxxschaeffleryandexxn--80aswgrealtysafetybeautyluxuryxn--3ds443gsupplyfamilyxn--o3cw4hhockeysydneyxn--90aenissayalipayenergycomputeragencyxn--rovu88b\u96FB\u8A0A\u76C8\u79D1xn--gecrj9cstatefarmaccountantaquarelleolayangroup\u9999\u683C\u91CC\u62C9xn--p1ai\u7EC4\u7EC7\u673A\u6784xn--1ck2e1bxn--mgbt3dhdschwarz\u0645\u0648\u0631\u064A\u062A\u0627\u0646\u064A\u0627abudhabinowruzkomatsufujitsuhospitalxn--80asehdbxn--mgbtf8flxn--j6w193gxn--yfro4i67oprudentialxn--flw351ecruisescoursesrecipesxn--e1a4cferrarixn--ses554gxn--wgbl6awatchesstaplessinglesxn--mgbcpq6gpa1axn--otu796dpropertiescreditunionxn--mgbah1a3hjkrdstockholmhisamitsu\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629stcgroupdomainsoriginscouponsbloombergclubmedfroganslimitedxn--80aqecdr1aexposedinternationalequipmentbarclaycardxn--q7ce6axn--mgbi4ecexpprotectionassociatesconstructionxn--cck2b3bxn--45q11candroidfoundation\u05D9\u05E9\u05E8\u05D0\u05DCxn--mgbca7dzdocliniqueboutiqueengineerxn--qxa6asystemsfirmdalefashionauctionxn--nqv7finfinitirentalsreliancetradingweddingfishinghostinggentingbookingcookingxn--3hcrj9cgraingerxn--czrs0tdemocratsamsungyokohamaxn--h2breg3evexn--nyqy26alundbeckmelbournevacationssolutionsfrontierxn--vermgensberatung-pwbmanagementxn--cg4bkixn--mgb2ddeslincolnhamburgsandvikcoromantblockbusterairforcebarefootxn--4dbrk0ceinvestmentsfeedbackcommunityxn--ngbrx\u0627\u0644\u0628\u062D\u0631\u064A\u0646diamondsamsterdamhealthcareredumbrellaxn--mxtq1mxn--2scrj9cagakhanxn--mgbpl2fh\u043A\u0430\u0442\u043E\u043B\u0438\u043Acaravan\u0B9A\u0BBF\u0B99\u0BCD\u0B95\u0BAA\u0BCD\u0BAA\u0BC2\u0BB0\u0BCDrichardlimortgageamericanfamilyxn--fzc2c9e2cscholarshipssaarlandxn--imr513nvlaanderensamsclubgoodyearkitchen\u0B87\u0BA8\u0BCD\u0BA4\u0BBF\u0BAF\u0BBEweatherchannelallfinanzxn--kput3i\u0627\u0644\u0633\u0639\u0648\u062F\u06CC\u06C3xn--90aisxn--efvy88h\u0627\u0644\u062C\u0632\u0627\u0626\u0631xn--mgbaam7a8hexchangejpmorganxn--tiq49xqyjfidelitysecurityxn--mk1bu44cwanggouxn--fiq64bxn--6qq986b3xlxn--mgbbh1a71exn--80ao21amarshallsxn--5tzm5gtravelerspanasoniclatrobeyoutubeaccountantsxn--rhqv96gxn--cckwcxetdanalyticsxn--ygbi2ammx\u0628\u0627\u0632\u0627\u0631\u0628\u06BE\u0627\u0631\u062A\u0633\u0648\u0631\u064A\u0629organicfresenius\u0633\u0648\u0631\u064A\u0627xn--9krt00axn--qcka1pmcxn--jlq480n2rgdeloittesciencefinancexn--jvr189mxn--30rr7yhomesensehotmailbaseballfootballleclercboehringerxn--q9jyb4cxn--mix082f\u0627\u0644\u064A\u0645\u0646\u0647\u0645\u0631\u0627\u0647politie\u0633\u0648\u062F\u0627\u0646\u0627\u064A\u0631\u0627\u0646\u0627\u06CC\u0631\u0627\u0646netflixyamaxunxn--lgbbat1ad8jcollegestoragecapetowncolognekerrypropertiesxn--mgbgu82axn--ogbpf8flxn--czru2dwhoswhociprianilasallexn--g2xx48cforsalebanamexaudiblexn--vermgensberater-ctbxn--zfr164bericssonvanguardxn--45brj9cindustriestheatremarriottxn--3bst00mcomparexn--mgberp4a5d4a87gcapitaldigital\u0627\u0644\u0645\u063A\u0631\u0628barcelonashangrilaxn--d1alfcalvinkleinwwwcitysapporokawasakinagoyasendaikobekitakyushuyokohamackjp";
+    rulesRoot = 625;
+    exceptionsRoot = 629;
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/suffix-trie.js
+// node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/src/suffix-trie.js
 function labelEquals(edge, hostname3, start, length) {
   if (edgeLength[edge] !== length) {
     return false;
@@ -75367,7 +79867,7 @@ function suffixLookup(hostname3, options, out) {
 }
 var numberOfNodes, numberOfEdges, edgeOffset, edgeHash, wildcardEdge, matchNode, matchStart, matchEnd2;
 var init_suffix_trie = __esm({
-  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/src/suffix-trie.js"() {
+  "node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/src/suffix-trie.js"() {
     init_es6();
     init_trie();
     numberOfNodes = nodeFlags.length;
@@ -75396,13 +79896,13 @@ var init_suffix_trie = __esm({
   }
 });
 
-// node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/index.js
+// node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/index.js
 function parse3(url2, options) {
   return parseImpl(url2, 5, suffixLookup, options, getEmptyResult());
 }
 var RESULT;
 var init_es62 = __esm({
-  "node_modules/.pnpm/tldts@7.4.13/node_modules/tldts/dist/es6/index.js"() {
+  "node_modules/.pnpm/tldts@7.4.16/node_modules/tldts/dist/es6/index.js"() {
     init_es6();
     init_suffix_trie();
     RESULT = getEmptyResult();
@@ -75505,1505 +80005,120 @@ var init_browser_session = __esm({
   }
 });
 
-// src/renderer/drawing/drauu/emitter.ts
-var Emitter;
-var init_emitter = __esm({
-  "src/renderer/drawing/drauu/emitter.ts"() {
-    Emitter = class {
-      listeners = /* @__PURE__ */ new Map();
-      on(type, fn2) {
-        let set2 = this.listeners.get(type);
-        if (!set2) {
-          set2 = /* @__PURE__ */ new Set();
-          this.listeners.set(type, set2);
-        }
-        set2.add(fn2);
-        return () => {
-          set2.delete(fn2);
-        };
-      }
-      emit(type, ...args) {
-        const set2 = this.listeners.get(type);
-        if (!set2) return;
-        for (const fn2 of [...set2]) {
-          Reflect.apply(fn2, void 0, args);
-        }
-      }
-    };
+// src/renderer/drawing/scroll-tracker.ts
+function trackGuestScroll(options) {
+  const timer = options.timer ?? window;
+  let lastX = null;
+  let lastY = null;
+  let strokeDepth = 0;
+  let disposed = false;
+  let enabled = false;
+  let polling = false;
+  let guestFocused = false;
+  let inFlight4 = false;
+  let idleTimer = null;
+  let interval = null;
+  const emit = (position2) => {
+    if (position2.x === lastX && position2.y === lastY) return;
+    lastX = position2.x;
+    lastY = position2.y;
+    options.onScroll(position2);
+  };
+  const stopPolling = () => {
+    if (interval !== null) timer.clearInterval(interval);
+    interval = null;
+  };
+  const startPolling = () => {
+    interval ??= timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS);
+  };
+  const scheduleIdleStop = () => {
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = timer.setTimeout(() => {
+      idleTimer = null;
+      polling = false;
+      if (strokeDepth === 0 && !guestFocused) stopPolling();
+    }, IDLE_STOP_MS);
+  };
+  function poll() {
+    if (disposed || !enabled || inFlight4 || !polling && strokeDepth === 0 && !guestFocused) return;
+    inFlight4 = true;
+    void options.fetchPosition().then((position2) => {
+      if (!disposed && position2) emit(position2);
+    }).catch(() => {
+    }).finally(() => {
+      inFlight4 = false;
+    });
   }
-});
-
-// src/renderer/drawing/drauu/utils.ts
-function numSort(a3, b4) {
-  return a3 - b4;
-}
-function splitNum(a3) {
-  return [Math.abs(a3), a3 < 0 ? -1 : 1];
-}
-function guid3() {
-  const s42 = () => ((1 + Math.random()) * 65536 | 0).toString(16).substring(1);
-  return `${s42()}${s42()}-${s42()}-${s42()}-${s42()}-${s42()}${s42()}${s42()}`;
-}
-function createArrowHead(id, fill) {
-  const defs = document.createElementNS(SVG_NS5, "defs");
-  const marker = document.createElementNS(SVG_NS5, "marker");
-  const head = document.createElementNS(SVG_NS5, "path");
-  head.setAttribute("fill", fill);
-  marker.setAttribute("id", id);
-  marker.setAttribute("viewBox", "0 -5 10 10");
-  marker.setAttribute("refX", "5");
-  marker.setAttribute("refY", "0");
-  marker.setAttribute("markerWidth", "4");
-  marker.setAttribute("markerHeight", "4");
-  marker.setAttribute("orient", "auto");
-  head.setAttribute("d", "M0,-5L10,0L0,5");
-  marker.appendChild(head);
-  defs.appendChild(marker);
-  return defs;
-}
-function totalLength(el3) {
-  const candidate = Reflect.get(el3, "getTotalLength");
-  if (typeof candidate !== "function") return null;
-  try {
-    const length = Reflect.apply(candidate, el3, []);
-    return typeof length === "number" ? length : null;
-  } catch {
-    return null;
-  }
-}
-var SVG_NS5, D;
-var init_utils = __esm({
-  "src/renderer/drawing/drauu/utils.ts"() {
-    SVG_NS5 = "http://www.w3.org/2000/svg";
-    D = 2;
-  }
-});
-
-// src/renderer/drawing/drauu/simplify.ts
-function getSqDist(p1, p2) {
-  const dx = p1.x - p2.x;
-  const dy = p1.y - p2.y;
-  return dx * dx + dy * dy;
-}
-function getSqSegDist(p2, p1, p22) {
-  let x2 = p1.x;
-  let y2 = p1.y;
-  let dx = p22.x - x2;
-  let dy = p22.y - y2;
-  if (dx !== 0 || dy !== 0) {
-    const t2 = ((p2.x - x2) * dx + (p2.y - y2) * dy) / (dx * dx + dy * dy);
-    if (t2 > 1) {
-      x2 = p22.x;
-      y2 = p22.y;
-    } else if (t2 > 0) {
-      x2 += dx * t2;
-      y2 += dy * t2;
+  const wake = (refreshLayout = false) => {
+    if (!enabled) return;
+    if (refreshLayout && lastX !== null && lastY !== null) {
+      options.onScroll({ x: lastX, y: lastY });
     }
-  }
-  dx = p2.x - x2;
-  dy = p2.y - y2;
-  return dx * dx + dy * dy;
-}
-function simplifyRadialDist(points, sqTolerance) {
-  const first = points[0];
-  if (!first) return [];
-  let prevPoint = first;
-  const newPoints = [prevPoint];
-  let point;
-  for (let i2 = 1, len = points.length; i2 < len; i2++) {
-    point = points[i2];
-    if (point && getSqDist(point, prevPoint) > sqTolerance) {
-      newPoints.push(point);
-      prevPoint = point;
-    }
-  }
-  if (point && prevPoint !== point) newPoints.push(point);
-  return newPoints;
-}
-function simplifyDPStep(points, first, last, sqTolerance, simplified) {
-  let maxSqDist = sqTolerance;
-  let index = 0;
-  const a3 = points[first];
-  const b4 = points[last];
-  if (!a3 || !b4) return;
-  for (let i2 = first + 1; i2 < last; i2++) {
-    const p2 = points[i2];
-    if (!p2) continue;
-    const sqDist = getSqSegDist(p2, a3, b4);
-    if (sqDist > maxSqDist) {
-      index = i2;
-      maxSqDist = sqDist;
-    }
-  }
-  if (maxSqDist > sqTolerance) {
-    if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
-    const mid = points[index];
-    if (mid) simplified.push(mid);
-    if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
-  }
-}
-function simplifyDouglasPeucker(points, sqTolerance) {
-  const last = points.length - 1;
-  const first = points[0];
-  const end = points[last];
-  if (!first || !end) return points;
-  const simplified = [first];
-  simplifyDPStep(points, 0, last, sqTolerance, simplified);
-  simplified.push(end);
-  return simplified;
-}
-function simplify(points, tolerance, highestQuality = false) {
-  if (points.length <= 2) return points;
-  const sqTolerance = tolerance * tolerance;
-  const reduced = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
-  return simplifyDouglasPeucker(reduced, sqTolerance);
-}
-var init_simplify = __esm({
-  "src/renderer/drawing/drauu/simplify.ts"() {
-  }
-});
-
-// src/renderer/drawing/drauu/models/base.ts
-var BaseModel;
-var init_base = __esm({
-  "src/renderer/drawing/drauu/models/base.ts"() {
-    init_utils();
-    BaseModel = class {
-      point = null;
-      start = null;
-      el = null;
-      drauu;
-      constructor(drauu) {
-        this.drauu = drauu;
-      }
-      onSelected(_el) {
-      }
-      onUnselected() {
-      }
-      onStart(_point) {
-        return void 0;
-      }
-      onMove(_point) {
-        return false;
-      }
-      onEnd(_point) {
-        return void 0;
-      }
-      get brush() {
-        return this.drauu.brush;
-      }
-      get shiftPressed() {
-        return this.drauu.shiftPressed;
-      }
-      get altPressed() {
-        return this.drauu.altPressed;
-      }
-      get svgElement() {
-        return this.drauu.el;
-      }
-      getMousePosition(event) {
-        const el3 = this.drauu.el;
-        if (!el3) return { x: event.clientX, y: event.clientY, pressure: event.pressure };
-        const svgPoint = this.drauu.svgPoint;
-        const ctm = this.drauu.options.coordinateTransform !== false && typeof el3.getScreenCTM === "function" ? el3.getScreenCTM() : null;
-        if (svgPoint && ctm && typeof svgPoint.matrixTransform === "function") {
-          svgPoint.x = event.clientX;
-          svgPoint.y = event.clientY;
-          const loc = svgPoint.matrixTransform(ctm.inverse());
-          return { x: loc.x, y: loc.y, pressure: event.pressure };
-        }
-        const rect = el3.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: event.pressure };
-      }
-      createElement(name, overrides) {
-        const el3 = document.createElementNS(SVG_NS5, name);
-        const brush = overrides ? { ...this.brush, ...overrides } : this.brush;
-        el3.setAttribute("fill", brush.fill ?? "transparent");
-        el3.setAttribute("stroke", brush.color);
-        el3.setAttribute("stroke-width", brush.size.toString());
-        el3.setAttribute("stroke-linecap", "round");
-        if (brush.dasharray) el3.setAttribute("stroke-dasharray", brush.dasharray);
-        return el3;
-      }
-      attr(name, value) {
-        this.el?.setAttribute(name, typeof value === "string" ? value : value.toFixed(D));
-      }
-      setEvent(event) {
-        this.point = this.getMousePosition(event);
-        return this.point;
-      }
-      /** @internal */
-      _eventDown(event) {
-        const point = this.setEvent(event);
-        this.start = point;
-        return this.onStart(point);
-      }
-      /** @internal */
-      _eventMove(event) {
-        return this.onMove(this.setEvent(event));
-      }
-      /** @internal */
-      _eventUp(event) {
-        return this.onEnd(this.setEvent(event));
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/draw.ts
-var DrawModel;
-var init_draw = __esm({
-  "src/renderer/drawing/drauu/models/draw.ts"() {
-    init_utils();
-    init_simplify();
-    init_base();
-    DrawModel = class _DrawModel extends BaseModel {
-      points = [];
-      count = 0;
-      onStart(point) {
-        this.el = this.createElement("path", { fill: "transparent" });
-        this.points = [point];
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          this.el.appendChild(createArrowHead(id, this.brush.color));
-          this.el.setAttribute("marker-end", `url(#${id})`);
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) {
-          this.points.push(point);
-          this.count += 1;
-        }
-        if (this.count > 5) {
-          this.points = simplify(this.points, 1, true);
-          this.count = 0;
-        }
-        this.attr("d", _DrawModel.toSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        if (!path) return false;
-        path.setAttribute("d", _DrawModel.toSvgData(simplify(this.points, 1, true)));
-        const first = this.points[0];
-        if (totalLength(path) === 0 && first) {
-          const r2 = (this.brush.size / 2).toFixed(D);
-          const d22 = this.brush.size.toFixed(D);
-          const x2 = (first.x - this.brush.size / 2).toFixed(D);
-          const y2 = first.y.toFixed(D);
-          path.setAttribute("d", `M ${x2} ${y2} a ${r2},${r2} 0 1,0 ${d22},0 a ${r2},${r2} 0 1,0 -${d22},0`);
-          path.setAttribute("fill", this.brush.color);
-          path.setAttribute("stroke-width", "0");
-        }
-        return true;
-      }
-      // https://francoisromain.medium.com/smooth-a-svg-path-with-cubic-bezier-curves-e37b49d46c74
-      static line(a3, b4) {
-        const lengthX = b4.x - a3.x;
-        const lengthY = b4.y - a3.y;
-        return { length: Math.sqrt(lengthX ** 2 + lengthY ** 2), angle: Math.atan2(lengthY, lengthX) };
-      }
-      static controlPoint(current, previous, next, reverse) {
-        const p2 = previous ?? current;
-        const n2 = next ?? current;
-        const smoothing = 0.2;
-        const o3 = _DrawModel.line(p2, n2);
-        const angle = o3.angle + (reverse ? Math.PI : 0);
-        const length = o3.length * smoothing;
-        return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
-      }
-      static bezierCommand(point, i2, points) {
-        const prev = points[i2 - 1] ?? point;
-        const cps = _DrawModel.controlPoint(prev, points[i2 - 2], point);
-        const cpe = _DrawModel.controlPoint(point, prev, points[i2 + 1], true);
-        return `C ${cps.x.toFixed(D)},${cps.y.toFixed(D)} ${cpe.x.toFixed(D)},${cpe.y.toFixed(D)} ${point.x.toFixed(D)},${point.y.toFixed(D)}`;
-      }
-      static toSvgData(points) {
-        return points.reduce(
-          (acc, point, i2, a3) => i2 === 0 ? `M ${point.x.toFixed(D)},${point.y.toFixed(D)}` : `${acc} ${_DrawModel.bezierCommand(point, i2, a3)}`,
-          ""
-        );
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/ellipse.ts
-var EllipseModel;
-var init_ellipse = __esm({
-  "src/renderer/drawing/drauu/models/ellipse.ts"() {
-    init_utils();
-    init_base();
-    EllipseModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("ellipse");
-        this.attr("cx", point.x);
-        this.attr("cy", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("cx", this.start.x);
-          this.attr("cy", this.start.y);
-          this.attr("rx", dx);
-          this.attr("ry", dy);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("cx", (x1 + x2) / 2);
-          this.attr("cy", (y1 + y2) / 2);
-          this.attr("rx", (x2 - x1) / 2);
-          this.attr("ry", (y2 - y1) / 2);
-        }
-        return true;
-      }
-      onEnd() {
-        const ellipse = this.el;
-        this.el = null;
-        if (!ellipse) return false;
-        const length = totalLength(ellipse);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/eraser.ts
-function measurable(el3) {
-  const getTotalLength = Reflect.get(el3, "getTotalLength");
-  const getPointAtLength = Reflect.get(el3, "getPointAtLength");
-  if (typeof getTotalLength !== "function" || typeof getPointAtLength !== "function") return null;
+    polling = true;
+    startPolling();
+    scheduleIdleStop();
+    poll();
+  };
+  const onWheel = () => {
+    wake();
+  };
+  const onPointerDown = () => {
+    strokeDepth += 1;
+    startPolling();
+    poll();
+  };
+  const onPointerUp = () => {
+    strokeDepth = Math.max(0, strokeDepth - 1);
+    if (strokeDepth === 0 && !polling && !guestFocused) stopPolling();
+  };
+  const start = (refreshLayout = false) => {
+    enabled = true;
+    options.wheelTarget.addEventListener("wheel", onWheel, { passive: true });
+    options.wheelTarget.addEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.addEventListener("pointerup", onPointerUp, CAPTURE);
+    window.addEventListener("pointercancel", onPointerUp, CAPTURE);
+    wake(refreshLayout);
+  };
+  const stop = () => {
+    enabled = false;
+    polling = false;
+    strokeDepth = 0;
+    stopPolling();
+    if (idleTimer !== null) timer.clearTimeout(idleTimer);
+    idleTimer = null;
+    options.wheelTarget.removeEventListener("wheel", onWheel);
+    options.wheelTarget.removeEventListener("pointerdown", onPointerDown, CAPTURE);
+    window.removeEventListener("pointerup", onPointerUp, CAPTURE);
+    window.removeEventListener("pointercancel", onPointerUp, CAPTURE);
+  };
+  start();
   return {
-    getTotalLength: () => {
-      const n2 = Reflect.apply(getTotalLength, el3, []);
-      return typeof n2 === "number" ? n2 : 0;
+    kick: () => {
+      wake(true);
     },
-    getPointAtLength: (d3) => {
-      const p2 = Reflect.apply(getPointAtLength, el3, [d3]);
-      if (p2 && typeof p2 === "object" && "x" in p2 && "y" in p2) {
-        const { x: x2, y: y2 } = p2;
-        if (typeof x2 === "number" && typeof y2 === "number") return { x: x2, y: y2 };
-      }
-      return { x: 0, y: 0 };
-    }
-  };
-}
-function intersects(a3, b4) {
-  const denom = (a3.x1 - a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 - b4.x2);
-  if (denom === 0) return false;
-  const xNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.x1 - b4.x2) - (a3.x1 - a3.x2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const yNum = (a3.x1 * a3.y2 - a3.y1 * a3.x2) * (b4.y1 - b4.y2) - (a3.y1 - a3.y2) * (b4.x1 * b4.y2 - b4.y1 * b4.x2);
-  const x2 = xNum / denom;
-  const y2 = yNum / denom;
-  const between = (v3, b1, b22) => v3 >= b1 && v3 <= b22 || v3 >= b22 && v3 <= b1;
-  return between(x2, a3.x1, a3.x2) && between(y2, a3.y1, a3.y2) && between(x2, b4.x1, b4.x2) && between(y2, b4.y1, b4.y2);
-}
-var EraserModel;
-var init_eraser = __esm({
-  "src/renderer/drawing/drauu/models/eraser.ts"() {
-    init_utils();
-    init_base();
-    EraserModel = class extends BaseModel {
-      pathSubFactor = 20;
-      fragments = [];
-      previous = null;
-      erased = [];
-      onSelected(el3) {
-        this.fragments = [];
-        if (el3) this.collect(el3.children, void 0);
-      }
-      collect(children, owner) {
-        for (const child of Array.from(children)) {
-          if (child.namespaceURI !== SVG_NS5) continue;
-          const m2 = measurable(child);
-          if (m2) {
-            const length = m2.getTotalLength();
-            for (let j3 = 0; j3 < this.pathSubFactor; j3++) {
-              const a3 = m2.getPointAtLength(length * j3 / this.pathSubFactor);
-              const b4 = m2.getPointAtLength(length * (j3 + 1) / this.pathSubFactor);
-              this.fragments.push({ x1: a3.x, y1: a3.y, x2: b4.x, y2: b4.y, element: owner ?? child });
-            }
-          } else {
-            this.collect(child.children, owner ?? child);
-          }
-        }
-      }
-      onUnselected() {
-        this.fragments = [];
-      }
-      onStart(point) {
-        this.previous = point;
-        return void 0;
-      }
-      onMove(point) {
-        const previous = this.previous;
-        this.previous = point;
-        if (!previous) return false;
-        const stroke = { x1: previous.x, y1: previous.y, x2: point.x, y2: point.y };
-        let hit = false;
-        for (const fragment of this.fragments) {
-          if (this.erased.includes(fragment.element)) continue;
-          if (intersects(fragment, stroke)) {
-            this.drauu._removeNode(fragment.element);
-            this.erased.push(fragment.element);
-            hit = true;
-          }
-        }
-        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
-        return hit;
-      }
-      onEnd() {
-        this.previous = null;
-        const erased = this.erased;
-        this.erased = [];
-        return {
-          undo: () => {
-            for (const node2 of erased) this.drauu._restoreNode(node2);
-          },
-          redo: () => {
-            for (const node2 of erased) this.drauu._removeNode(node2);
-          }
-        };
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/line.ts
-var LineModel;
-var init_line = __esm({
-  "src/renderer/drawing/drauu/models/line.ts"() {
-    init_utils();
-    init_base();
-    LineModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("line", { fill: "transparent" });
-        this.attr("x1", point.x);
-        this.attr("y1", point.y);
-        this.attr("x2", point.x);
-        this.attr("y2", point.y);
-        if (this.brush.arrowEnd) {
-          const id = guid3();
-          const g2 = document.createElementNS(SVG_NS5, "g");
-          g2.append(createArrowHead(id, this.brush.color));
-          g2.append(this.el);
-          this.attr("marker-end", `url(#${id})`);
-          return g2;
-        }
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        let { x: x2, y: y2 } = point;
-        if (this.shiftPressed) {
-          const dx = point.x - this.start.x;
-          const dy = point.y - this.start.y;
-          if (dy !== 0) {
-            const slope = Math.round(dx / dy);
-            if (Math.abs(slope) <= 1) {
-              x2 = this.start.x + dy * slope;
-              y2 = this.start.y + dy;
-            } else {
-              x2 = this.start.x + dx;
-              y2 = this.start.y;
-            }
-          }
-        }
-        if (this.altPressed) {
-          this.attr("x1", this.start.x * 2 - x2);
-          this.attr("y1", this.start.y * 2 - y2);
-        } else {
-          this.attr("x1", this.start.x);
-          this.attr("y1", this.start.y);
-        }
-        this.attr("x2", x2);
-        this.attr("y2", y2);
-        return true;
-      }
-      onEnd() {
-        const line = this.el;
-        this.el = null;
-        if (!line) return false;
-        const length = totalLength(line);
-        return length === null || length >= 5;
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/rect.ts
-var RectModel;
-var init_rect = __esm({
-  "src/renderer/drawing/drauu/models/rect.ts"() {
-    init_utils();
-    init_base();
-    RectModel = class extends BaseModel {
-      onStart(point) {
-        this.el = this.createElement("rect");
-        if (this.brush.cornerRadius) {
-          this.attr("rx", this.brush.cornerRadius);
-          this.attr("ry", this.brush.cornerRadius);
-        }
-        this.attr("x", point.x);
-        this.attr("y", point.y);
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el || !this.start) return false;
-        const [ax, sx] = splitNum(point.x - this.start.x);
-        const [ay, sy] = splitNum(point.y - this.start.y);
-        const dx = this.shiftPressed ? Math.min(ax, ay) : ax;
-        const dy = this.shiftPressed ? Math.min(ax, ay) : ay;
-        if (this.altPressed) {
-          this.attr("x", this.start.x - dx);
-          this.attr("y", this.start.y - dy);
-          this.attr("width", dx * 2);
-          this.attr("height", dy * 2);
-        } else {
-          const [x1 = 0, x2 = 0] = [this.start.x, this.start.x + dx * sx].sort(numSort);
-          const [y1 = 0, y2 = 0] = [this.start.y, this.start.y + dy * sy].sort(numSort);
-          this.attr("x", x1);
-          this.attr("y", y1);
-          this.attr("width", x2 - x1);
-          this.attr("height", y2 - y1);
-        }
-        return true;
-      }
-      onEnd() {
-        const rect = this.el;
-        this.el = null;
-        if (!rect) return false;
-        const length = totalLength(rect);
-        return length === null || length > 0;
-      }
-    };
-  }
-});
-
-// node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs
-function i(e3, t2, n2, r2 = (e4) => e4) {
-  return e3 * r2(0.5 - t2 * (0.5 - n2));
-}
-function o(e3, t2, n2) {
-  let r2 = a(1, t2 / n2);
-  return a(1, e3 + (a(1, 1 - r2) - e3) * (r2 * 0.275));
-}
-function s(e3) {
-  return [-e3[0], -e3[1]];
-}
-function c(e3, t2) {
-  return [e3[0] + t2[0], e3[1] + t2[1]];
-}
-function l(e3, t2, n2) {
-  return e3[0] = t2[0] + n2[0], e3[1] = t2[1] + n2[1], e3;
-}
-function u(e3, t2) {
-  return [e3[0] - t2[0], e3[1] - t2[1]];
-}
-function d(e3, t2, n2) {
-  return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
-}
-function f2(e3, t2) {
-  return [e3[0] * t2, e3[1] * t2];
-}
-function p(e3, t2, n2) {
-  return e3[0] = t2[0] * n2, e3[1] = t2[1] * n2, e3;
-}
-function m(e3, t2) {
-  return [e3[0] / t2, e3[1] / t2];
-}
-function h(e3) {
-  return [e3[1], -e3[0]];
-}
-function g(e3, t2) {
-  let n2 = t2[0];
-  return e3[0] = t2[1], e3[1] = -n2, e3;
-}
-function ee(e3, t2) {
-  return e3[0] * t2[0] + e3[1] * t2[1];
-}
-function _(e3, t2) {
-  return e3[0] === t2[0] && e3[1] === t2[1];
-}
-function v(e3) {
-  return Math.hypot(e3[0], e3[1]);
-}
-function y(e3, t2) {
-  let n2 = e3[0] - t2[0], r2 = e3[1] - t2[1];
-  return n2 * n2 + r2 * r2;
-}
-function b(e3) {
-  return m(e3, v(e3));
-}
-function x(e3, t2) {
-  return Math.hypot(e3[1] - t2[1], e3[0] - t2[0]);
-}
-function S(e3, t2, n2) {
-  let r2 = Math.sin(n2), i2 = Math.cos(n2), a3 = e3[0] - t2[0], o3 = e3[1] - t2[1], s16 = a3 * i2 - o3 * r2, c3 = a3 * r2 + o3 * i2;
-  return [s16 + t2[0], c3 + t2[1]];
-}
-function C(e3, t2, n2, r2) {
-  let i2 = Math.sin(r2), a3 = Math.cos(r2), o3 = t2[0] - n2[0], s16 = t2[1] - n2[1], c3 = o3 * a3 - s16 * i2, l2 = o3 * i2 + s16 * a3;
-  return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
-}
-function w(e3, t2, n2) {
-  return c(e3, f2(u(t2, e3), n2));
-}
-function te(e3, t2, n2, r2) {
-  let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
-  return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
-}
-function T(e3, t2, n2) {
-  return c(e3, f2(t2, n2));
-}
-function k(e3, n2) {
-  let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
-  for (let n3 = a3; n3 <= 1; n3 += a3) i2.push(S(r2, e3, t * 2 * n3));
-  return i2;
-}
-function A2(e3, n2, r2) {
-  let i2 = [], a3 = 1 / r2;
-  for (let r3 = a3; r3 <= 1; r3 += a3) i2.push(S(n2, e3, t * r3));
-  return i2;
-}
-function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i2 = f2(r2, 0.5), a3 = f2(r2, 0.51);
-  return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
-}
-function M(e3, n2, r2, i2) {
-  let a3 = [], o3 = T(e3, n2, r2), s16 = 1 / i2;
-  for (let n3 = s16; n3 < 1; n3 += s16) a3.push(S(o3, e3, t * 3 * n3));
-  return a3;
-}
-function ne(e3, t2, n2) {
-  return [c(e3, f2(t2, n2)), c(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2))];
-}
-function N(e3, t2, n2) {
-  return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
-}
-function re(e3, t2, n2) {
-  return e3.slice(0, 10).reduce((e4, r2) => {
-    let i2 = r2.pressure;
-    return t2 && (i2 = o(e4, r2.distance, n2)), (e4 + i2) / 2;
-  }, e3[0].pressure);
-}
-function P(e3, n2 = {}) {
-  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
-  if (e3.length === 0 || r2 <= 0) return [];
-  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
-  for (let n3 = 0; n3 < e3.length; n3++) {
-    let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
-    if (!x3 && F3 - b5 < 3) continue;
-    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
-    let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
-    H2 = Math.max(0.01, H2 * Math.min(S4, T3));
-    let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
-    if (j3 || M4) {
-      g(E, W), p(E, E, H2);
-      for (let e4 = 0; e4 <= 1; e4 += 0.07692307692307693) d(D2, s16, E), C(D2, D2, s16, t * e4), q2 = [D2[0], D2[1]], z4.push(q2), l(O, s16, E), C(O, O, s16, t * -e4), J2 = [O[0], O[1]], B3.push(J2);
-      G2 = q2, K2 = J2, M4 && (Y3 = true);
-      continue;
-    }
-    if (Y3 = false, x3) {
-      g(E, h3), p(E, E, H2), z4.push(u(s16, E)), B3.push(c(s16, E));
-      continue;
-    }
-    te(E, k2, h3, A3), g(E, E), p(E, E, H2), d(D2, s16, E), q2 = [D2[0], D2[1]], (n3 <= 1 || y(G2, q2) > R2) && (z4.push(q2), G2 = q2), l(O, s16, E), J2 = [O[0], O[1]], (n3 <= 1 || y(K2, J2) > R2) && (B3.push(J2), K2 = J2), V2 = a4, W = h3;
-  }
-  let X3 = [e3[0].point[0], e3[0].point[1]], Z = e3.length > 1 ? [e3[e3.length - 1].point[0], e3[e3.length - 1].point[1]] : c(e3[0].point, [1, 1]), Q3 = [], $2 = [];
-  if (e3.length === 1) {
-    if (!(I2 || L3) || x2) return k(X3, U2 || H2);
-  } else {
-    I2 || L3 && e3.length === 1 || (S3 ? Q3.push(...A2(X3, B3[0], 13)) : Q3.push(...j(X3, z4[0], B3[0])));
-    let t2 = h(s(e3[e3.length - 1].vector));
-    L3 || I2 && e3.length === 1 ? $2.push(Z) : T2 ? $2.push(...M(Z, t2, H2, 29)) : $2.push(...ne(Z, t2, H2));
-  }
-  return z4.concat($2, B3.reverse(), Q3);
-}
-function I(e3) {
-  return e3 != null && e3 >= 0;
-}
-function L(e3, t2 = {}) {
-  let { streamline: i2 = 0.5, size: a3 = 16, last: o3 = false } = t2;
-  if (e3.length === 0) return [];
-  let s16 = 0.15 + (1 - i2) * 0.85, l2 = Array.isArray(e3[0]) ? e3 : e3.map(({ x: e4, y: t3, pressure: r2 = n }) => [e4, t3, r2]);
-  if (l2.length === 2) {
-    let e4 = l2[1];
-    l2 = l2.slice(0, -1);
-    for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
-  }
-  l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
-  for (let e4 = 1; e4 < l2.length; e4++) {
-    let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
-    if (_(m2.point, t3)) continue;
-    let r2 = x(t3, m2.point);
-    if (p2 += r2, e4 < h3 && !f4) {
-      if (p2 < a3) continue;
-      f4 = true;
-    }
-    d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
-  }
-  return u2[0].vector = u2[1]?.vector || [0, 0], u2;
-}
-function R(e3, t2 = {}) {
-  return P(L(e3, t2), t2);
-}
-var e, t, n, r, a, E, D2, O, F;
-var init_esm = __esm({
-  "node_modules/.pnpm/perfect-freehand@1.2.3/node_modules/perfect-freehand/dist/esm/index.mjs"() {
-    ({ PI: e } = Math);
-    t = e + 1e-4;
-    n = 0.5;
-    r = [1, 1];
-    ({ min: a } = Math);
-    E = [0, 0];
-    D2 = [0, 0];
-    O = [0, 0];
-    F = [0, 0];
-  }
-});
-
-// src/renderer/drawing/drauu/models/stylus.ts
-var StylusModel;
-var init_stylus = __esm({
-  "src/renderer/drawing/drauu/models/stylus.ts"() {
-    init_esm();
-    init_utils();
-    init_base();
-    StylusModel = class _StylusModel extends BaseModel {
-      points = [];
-      onStart(point) {
-        this.el = document.createElementNS(SVG_NS5, "path");
-        this.points = [point];
-        this.attr("fill", this.brush.color);
-        this.attr("d", this.getSvgData(this.points));
-        return this.el;
-      }
-      onMove(point) {
-        if (!this.el) this.onStart(point);
-        if (this.points.at(-1) !== point) this.points.push(point);
-        this.attr("d", this.getSvgData(this.points));
-        return true;
-      }
-      onEnd() {
-        const path = this.el;
-        this.el = null;
-        return path !== null;
-      }
-      getSvgData(points) {
-        return _StylusModel.getSvgData(points, this.brush);
-      }
-      static getSvgData(points, brush) {
-        const stroke = R(points, {
-          size: brush.size,
-          thinning: 0.9,
-          simulatePressure: false,
-          start: { taper: 5 },
-          end: { taper: 5 },
-          ...brush.stylusOptions
-        });
-        const first = stroke[0];
-        if (!first) return "";
-        const parts = [`M ${first[0].toFixed(2)} ${first[1].toFixed(2)} Q`];
-        for (let i2 = 0; i2 < stroke.length; i2++) {
-          const a3 = stroke[i2];
-          const b4 = stroke[(i2 + 1) % stroke.length];
-          if (!a3 || !b4) continue;
-          const [x0, y0] = a3;
-          const [x1, y1] = b4;
-          parts.push(
-            x0.toFixed(2),
-            y0.toFixed(2),
-            ((x0 + x1) / 2).toFixed(2),
-            ((y0 + y1) / 2).toFixed(2)
-          );
-        }
-        parts.push("Z");
-        return parts.join(" ");
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/models/index.ts
-function createModels(drauu) {
-  return {
-    draw: new DrawModel(drauu),
-    stylus: new StylusModel(drauu),
-    line: new LineModel(drauu),
-    rectangle: new RectModel(drauu),
-    ellipse: new EllipseModel(drauu),
-    eraseLine: new EraserModel(drauu)
-  };
-}
-var init_models = __esm({
-  "src/renderer/drawing/drauu/models/index.ts"() {
-    init_draw();
-    init_ellipse();
-    init_eraser();
-    init_line();
-    init_rect();
-    init_stylus();
-  }
-});
-
-// src/renderer/drawing/drauu/drauu.ts
-function createDrauu(options) {
-  return new Drauu(options);
-}
-var DEFAULT_BRUSH, Drauu;
-var init_drauu = __esm({
-  "src/renderer/drawing/drauu/drauu.ts"() {
-    init_emitter();
-    init_models();
-    DEFAULT_BRUSH = { color: "black", size: 3, mode: "stylus" };
-    Drauu = class {
-      el = null;
-      svgPoint = null;
-      shiftPressed = false;
-      altPressed = false;
-      drawing = false;
-      options;
-      emitter = new Emitter();
-      originalPointerId = null;
-      models = createModels(this);
-      currentNode;
-      opStack = [];
-      opIndex = 0;
-      disposables = [];
-      elements = [];
-      constructor(options = {}) {
-        this.options = { ...options, brush: options.brush ?? { ...DEFAULT_BRUSH } };
-        if (options.el) this.mount(options.el, options.eventTarget, options.window);
-      }
-      get model() {
-        return this.models[this.mode];
-      }
-      get mounted() {
-        return this.el !== null;
-      }
-      get mode() {
-        return this.options.brush.mode ?? "stylus";
-      }
-      set mode(v3) {
-        this.models[this.mode].onUnselected();
-        this.options.brush.mode = v3;
-        this.model.onSelected(this.el);
-      }
-      get brush() {
-        return this.options.brush;
-      }
-      set brush(v3) {
-        this.options.brush = v3;
-      }
-      mount(el3, eventEl, listenWindow = window) {
-        if (this.el) throw new Error("[drauu] already mounted, unmount previous target first");
-        if (el3.tagName.toLowerCase() !== "svg")
-          throw new Error("[drauu] can only mount to an SVG element");
-        this.el = el3;
-        this.svgPoint = typeof el3.createSVGPoint === "function" ? el3.createSVGPoint() : null;
-        const target = eventEl ?? el3;
-        const start = (e3) => {
-          if (e3 instanceof PointerEvent) this.eventStart(e3);
-        };
-        const move = (e3) => {
-          this.eventMove(e3);
-        };
-        const end = (e3) => {
-          this.eventEnd(e3);
-        };
-        const keyboard = (e3) => {
-          this.eventKeyboard(e3);
-        };
-        const touchMove = (e3) => {
-          this.touchMove(e3);
-        };
-        target.addEventListener("pointerdown", start, { passive: false });
-        listenWindow.addEventListener("pointermove", move, { passive: false });
-        listenWindow.addEventListener("pointerup", end, { passive: false });
-        listenWindow.addEventListener("pointercancel", end, { passive: false });
-        listenWindow.addEventListener("keydown", keyboard, false);
-        listenWindow.addEventListener("keyup", keyboard, false);
-        listenWindow.addEventListener("touchmove", touchMove, { passive: false });
-        this.disposables.push(() => {
-          target.removeEventListener("pointerdown", start);
-          listenWindow.removeEventListener("pointermove", move);
-          listenWindow.removeEventListener("pointerup", end);
-          listenWindow.removeEventListener("pointercancel", end);
-          listenWindow.removeEventListener("keydown", keyboard, false);
-          listenWindow.removeEventListener("keyup", keyboard, false);
-          listenWindow.removeEventListener("touchmove", touchMove);
-        });
-        this.model.onSelected(this.el);
-        this.emitter.emit("mounted");
-      }
-      unmount() {
-        for (const dispose of this.disposables) dispose();
-        this.disposables.length = 0;
-        this.elements.length = 0;
-        this.el = null;
-        this.emitter.emit("unmounted");
-      }
-      on(type, fn2) {
-        return this.emitter.on(type, fn2);
-      }
-      undo() {
-        if (!this.canUndo() || this.drawing) return false;
-        this.opIndex -= 1;
-        this.opStack[this.opIndex]?.undo();
-        this.emitter.emit("changed");
-        return true;
-      }
-      redo() {
-        if (!this.canRedo() || this.drawing) return false;
-        this.opStack[this.opIndex]?.redo();
-        this.opIndex += 1;
-        this.emitter.emit("changed");
-        return true;
-      }
-      canRedo() {
-        return this.opIndex < this.opStack.length;
-      }
-      canUndo() {
-        return this.opIndex > 0;
-      }
-      eventMove(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        if (this.model._eventMove(event)) {
-          event.stopPropagation();
-          event.preventDefault();
-          this.emitter.emit("changed");
-        }
-      }
-      eventStart(event) {
-        if (!this.acceptsInput(event)) return;
-        event.stopPropagation();
-        event.preventDefault();
-        if (this.currentNode) this.cancel();
-        this.drawing = true;
-        this.originalPointerId = event.pointerId;
-        this.emitter.emit("start");
-        this.currentNode = this.model._eventDown(event);
-        if (this.currentNode && this.mode !== "eraseLine") this.el?.appendChild(this.currentNode);
-        this.emitter.emit("changed");
-      }
-      eventEnd(event) {
-        if (!this.acceptsInput(event) || !this.drawing) return;
-        const result = this.model._eventUp(event);
-        if (!result) {
-          this.cancel();
-        } else if (result === true) {
-          const node2 = this.currentNode;
-          if (node2) {
-            this._appendNode(node2);
-            this.commit({
-              undo: () => {
-                this._removeNode(node2);
-              },
-              redo: () => {
-                this._restoreNode(node2);
-              }
-            });
-          }
-        } else {
-          this.commit(result);
-        }
-        this.drawing = false;
-        this.emitter.emit("end");
-        this.emitter.emit("changed");
-        this.originalPointerId = null;
-      }
-      touchMove(event) {
-        for (const touch of Array.from(event.touches)) {
-          const touchType = Reflect.get(touch, "touchType");
-          if (touchType === "stylus" && touch.identifier === this.originalPointerId) {
-            event.preventDefault();
-            return;
-          }
-        }
-      }
-      acceptsInput(event) {
-        const accepted = this.options.acceptsInputTypes;
-        if (accepted && !accepted.some((type) => type === event.pointerType)) return false;
-        return this.originalPointerId === null || this.originalPointerId === event.pointerId;
-      }
-      eventKeyboard(event) {
-        if (this.shiftPressed === event.shiftKey && this.altPressed === event.altKey) return;
-        this.shiftPressed = event.shiftKey;
-        this.altPressed = event.altKey;
-        const point = this.model.point;
-        if (this.drawing && point && this.model.onMove(point)) this.emitter.emit("changed");
-      }
-      commit(op) {
-        this.opStack.length = this.opIndex;
-        this.opStack.push(op);
-        this.opIndex += 1;
-        const node2 = this.currentNode;
-        this.currentNode = void 0;
-        this.emitter.emit("committed", node2);
-      }
-      clear() {
-        this.opStack.length = 0;
-        this.opIndex = 0;
-        this.elements = [];
-        this.cancel();
-        if (this.el) this.el.innerHTML = "";
-        this.emitter.emit("changed");
-      }
-      cancel() {
-        if (this.currentNode) {
-          this.currentNode.remove();
-          this.currentNode = void 0;
-          this.emitter.emit("canceled");
-        }
-      }
-      dump() {
-        return this.el?.innerHTML ?? "";
-      }
-      load(svg2) {
-        this.clear();
-        if (this.el) this.el.innerHTML = svg2;
-      }
-      /** @internal */
-      _appendNode(node2) {
-        const last = this.elements.at(-1);
-        if (last) last.after(node2);
-        else this.el?.append(node2);
-        const index = this.elements.push(node2) - 1;
-        node2.setAttribute("data-drauu-index", index.toString());
-      }
-      /** @internal */
-      _removeNode(node2) {
-        node2.remove();
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (Number.isInteger(index)) this.elements[index] = null;
-      }
-      /** @internal */
-      _restoreNode(node2) {
-        const index = Number(node2.getAttribute("data-drauu-index"));
-        if (!Number.isInteger(index)) return;
-        this.elements[index] = node2;
-        for (let i2 = index - 1; i2 >= 0; i2--) {
-          const previous = this.elements[i2];
-          if (previous) {
-            previous.after(node2);
-            return;
-          }
-        }
-        this.el?.prepend(node2);
-      }
-    };
-  }
-});
-
-// src/renderer/drawing/drauu/index.ts
-var init_drauu2 = __esm({
-  "src/renderer/drawing/drauu/index.ts"() {
-    init_drauu();
-    init_models();
-  }
-});
-
-// src/renderer/drawing/annotation-layer.ts
-function measureBox(node2) {
-  const getBBox = Reflect.get(node2, "getBBox");
-  if (typeof getBBox !== "function") return null;
-  try {
-    const box = Reflect.apply(getBBox, node2, []);
-    if (box && typeof box === "object" && "x" in box && "y" in box && "width" in box && "height" in box) {
-      const { x: x2, y: y2, width, height } = box;
-      if ([x2, y2, width, height].every((v3) => typeof v3 === "number" && Number.isFinite(v3))) {
-        return { x: Number(x2), y: Number(y2), width: Number(width), height: Number(height) };
-      }
-    }
-  } catch {
-  }
-  return null;
-}
-function toolOf(node2) {
-  const tagged = node2.getAttribute("data-tool");
-  return TOOLS.find((t2) => t2 === tagged) ?? "pen";
-}
-function composeAnnotationPng(svg2, width, height, base) {
-  return new Promise((resolve, reject) => {
-    const scale2 = window.devicePixelRatio || 1;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale2));
-    canvas.height = Math.max(1, Math.round(height * scale2));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject(new Error("2D canvas unavailable"));
-      return;
-    }
-    const loadImage = (src) => new Promise((res, rej) => {
-      const img = new Image();
-      img.onload = () => {
-        res(img);
-      };
-      img.onerror = () => {
-        rej(new Error("image failed to decode"));
-      };
-      img.src = src;
-    });
-    const marksUrl = URL.createObjectURL(new Blob([svg2], { type: "image/svg+xml;charset=utf-8" }));
-    void (async () => {
-      try {
-        if (base) {
-          const baseImage = await loadImage(base);
-          ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-        }
-        const marks = await loadImage(marksUrl);
-        ctx.drawImage(marks, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (error62) {
-        reject(error62 instanceof Error ? error62 : new Error(String(error62)));
-      } finally {
-        URL.revokeObjectURL(marksUrl);
-      }
-    })();
-  });
-}
-function mountAnnotationLayer(host, options) {
-  let root = null;
-  let svg2 = null;
-  let drauu = null;
-  let active2 = false;
-  let tool = "pen";
-  let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
-  const toolButtons = /* @__PURE__ */ new Map();
-  const swatches = /* @__PURE__ */ new Map();
-  let sendBtn = null;
-  let undoBtn = null;
-  let clearBtn = null;
-  let sending = false;
-  const applyBrush = () => {
-    if (!drauu) return;
-    const brush = drauu.brush;
-    brush.color = colour;
-    brush.arrowEnd = tool === "arrow";
-    brush.size = tool === "pen" ? PEN_SIZE : SHAPE_SIZE;
-    const mode = {
-      pen: "stylus",
-      line: "line",
-      arrow: "line",
-      rect: "rectangle",
-      ellipse: "ellipse",
-      eraser: "eraseLine"
-    }[tool];
-    if (drauu.mode !== mode) drauu.mode = mode;
-    else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
-    for (const [name, button] of toolButtons)
-      button.setAttribute("aria-pressed", String(name === tool));
-    for (const [value, button] of swatches)
-      button.setAttribute("aria-pressed", String(value === colour));
-  };
-  const isEmpty = () => !svg2 || svg2.childElementCount === 0;
-  const syncButtons = () => {
-    const empty = isEmpty();
-    if (sendBtn) sendBtn.disabled = empty || sending;
-    if (clearBtn) clearBtn.disabled = empty;
-    if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
-    if (root) root.hidden = !active2 && empty;
-  };
-  const toolButton = (name, label, icon) => {
-    const button = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "data-tool": name,
-        "aria-label": label,
-        "data-tooltip": label,
-        "aria-pressed": "false"
-      },
-      icon
-    );
-    button.addEventListener("click", () => {
-      tool = name;
-      applyBrush();
-    });
-    toolButtons.set(name, button);
-    return button;
-  };
-  const ensureMounted = () => {
-    if (root) return;
-    svg2 = document.createElementNS(SVG_NS5, "svg");
-    svg2.setAttribute("class", "annotation-layer-svg");
-    svg2.setAttribute("role", "img");
-    svg2.setAttribute("aria-label", `Annotations over ${options.label}`);
-    const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el("button", {
-        type: "button",
-        class: "annotation-swatch",
-        "aria-label": name,
-        "data-tooltip": name,
-        "aria-pressed": "false"
-      });
-      button.style.setProperty("--annotation-swatch", value);
-      button.addEventListener("click", () => {
-        colour = value;
-        applyBrush();
-      });
-      swatches.set(value, button);
-      return button;
-    });
-    undoBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
-      undoIcon("ui-icon ui-icon-sm")
-    );
-    undoBtn.addEventListener("click", () => {
-      drauu?.undo();
-    });
-    clearBtn = el(
-      "button",
-      { type: "button", class: "annotation-tool", "aria-label": "Clear", "data-tooltip": "Clear" },
-      trashIcon("ui-icon ui-icon-sm")
-    );
-    clearBtn.addEventListener("click", () => {
-      drauu?.clear();
-    });
-    sendBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      "Send to agent"
-    );
-    sendBtn.addEventListener("click", () => {
-      if (sending) return;
-      sending = true;
-      sendBtn?.setAttribute("aria-busy", "true");
-      syncButtons();
-      void layer.export().then(async (payload) => {
-        const accepted = await options.onSend(payload);
-        if (!accepted) return;
-        layer.clear();
-        layer.deactivate();
-      }).catch(() => {
-      }).finally(() => {
-        sending = false;
-        sendBtn?.removeAttribute("aria-busy");
-        syncButtons();
-      });
-    });
-    const doneBtn = el(
-      "button",
-      {
-        type: "button",
-        class: "annotation-tool",
-        "aria-label": "Done",
-        "data-tooltip": "Done (Esc)"
-      },
-      closeIcon("ui-icon ui-icon-sm")
-    );
-    doneBtn.addEventListener("click", () => {
-      layer.deactivate();
-    });
-    const strip = el(
-      "div",
-      { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
-      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
-      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
-      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
-      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
-      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
-      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
-      separator(),
-      ...swatchButtons,
-      separator(),
-      undoBtn,
-      clearBtn,
-      separator(),
-      sendBtn,
-      doneBtn
-    );
-    strip.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg2, strip);
-    root.hidden = true;
-    host.append(root);
-    drauu = createDrauu({
-      el: svg2,
-      brush: { mode: "stylus", color: colour, size: PEN_SIZE }
-    });
-    drauu.on("changed", syncButtons);
-    drauu.on("committed", (node2) => {
-      if (!node2) return;
-      node2.setAttribute("data-tool", tool);
-      node2.setAttribute("data-colour", colour);
-    });
-    applyBrush();
-    syncButtons();
-  };
-  const onKeyDown = (event) => {
-    if (!active2) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      layer.deactivate();
-      return;
-    }
-    const meta3 = event.metaKey || event.ctrlKey;
-    if (meta3 && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      if (event.shiftKey) drauu?.redo();
-      else drauu?.undo();
-    }
-  };
-  const layer = {
-    get active() {
-      return active2;
+    setEnabled(next) {
+      if (disposed || next === enabled) return;
+      if (next) start(true);
+      else stop();
     },
-    activate() {
-      ensureMounted();
-      if (active2) return;
-      active2 = true;
-      root?.setAttribute("data-active", "true");
-      window.addEventListener("keydown", onKeyDown);
-      syncButtons();
-      toolButtons.get(tool)?.focus({ preventScroll: true });
-    },
-    deactivate() {
-      if (!active2) return;
-      active2 = false;
-      drauu?.cancel();
-      root?.setAttribute("data-active", "false");
-      window.removeEventListener("keydown", onKeyDown);
-      syncButtons();
-      options.onDeactivate?.();
-    },
-    toggle() {
-      if (active2) layer.deactivate();
-      else layer.activate();
-      return active2;
-    },
-    isEmpty,
-    clear() {
-      drauu?.clear();
-      syncButtons();
-    },
-    setTool(next) {
-      ensureMounted();
-      tool = next;
-      applyBrush();
-    },
-    async export() {
-      ensureMounted();
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
-      const marks = Array.from(svg2?.children ?? []).map((node2) => {
-        return {
-          tool: toolOf(node2),
-          colour: node2.getAttribute("data-colour") ?? colour,
-          box: measureBox(node2)
-        };
-      });
-      const clone3 = svg2 ? svg2.cloneNode(true) : document.createElementNS(SVG_NS5, "svg");
-      if (!(clone3 instanceof Element)) throw new Error("annotation clone is not an element");
-      clone3.removeAttribute("class");
-      clone3.removeAttribute("role");
-      clone3.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-      clone3.setAttribute("width", String(width));
-      clone3.setAttribute("height", String(height));
-      clone3.setAttribute("viewBox", `0 0 ${String(width)} ${String(height)}`);
-      const serialised = clone3.outerHTML;
-      const base = await options.captureBase?.().catch(() => null);
-      let png = null;
-      let captured = false;
-      if (base) {
-        png = await composeAnnotationPng(serialised, width, height, base).catch(() => null);
-        captured = png !== null;
-      }
-      png ??= await composeAnnotationPng(serialised, width, height, null).catch(() => null);
-      return {
-        svg: serialised,
-        png,
-        captured,
-        width,
-        height,
-        marks
-      };
+    setGuestFocused(focused) {
+      if (disposed || focused === guestFocused) return;
+      guestFocused = focused;
+      if (focused) wake();
+      else if (!polling && strokeDepth === 0) stopPolling();
     },
     dispose() {
-      layer.deactivate();
-      drauu?.unmount();
-      drauu = null;
-      root?.remove();
-      root = null;
-      svg2 = null;
+      if (enabled) stop();
+      disposed = true;
     }
   };
-  return layer;
 }
-var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
-var init_annotation_layer = __esm({
-  "src/renderer/drawing/annotation-layer.ts"() {
-    init_helpers();
-    init_icons();
-    init_drauu2();
-    init_utils();
-    TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
-    ANNOTATION_COLOURS = [
-      { name: "Red", value: "#e5484d" },
-      { name: "Blue", value: "#3b82f6" },
-      { name: "Green", value: "#22c55e" },
-      { name: "Yellow", value: "#eab308" }
-    ];
-    SHAPE_SIZE = 3;
-    PEN_SIZE = 6;
-  }
-});
-
-// src/renderer/attachments/prompt-attachments.ts
-function registerPromptAttachments(h3) {
-  handlers = h3;
-  return () => {
-    if (handlers === h3) handlers = null;
-  };
-}
-function getPromptAttachmentHandlers() {
-  return handlers;
-}
-var handlers;
-var init_prompt_attachments = __esm({
-  "src/renderer/attachments/prompt-attachments.ts"() {
-    handlers = null;
-  }
-});
-
-// src/renderer/drawing/attach-annotation.ts
-function attachAnnotation(payload, subject) {
-  const handlers3 = getPromptAttachmentHandlers();
-  if (!handlers3) {
-    showToast("Open a thread before sending an annotation.", { variant: "error" });
-    return false;
-  }
-  if (!payload.png) {
-    showToast(`Could not render the annotation over ${subject}.`, { variant: "error" });
-    return false;
-  }
-  handlers3.attachImage(payload.png, "image/png");
-  handlers3.focusComposer?.();
-  showToast(
-    payload.captured ? `Added annotated screenshot of ${subject} to the thread.` : `Added annotation to the thread (${subject} could not be captured, marks only).`,
-    { durationMs: 2500 }
-  );
-  return true;
-}
-var init_attach_annotation = __esm({
-  "src/renderer/drawing/attach-annotation.ts"() {
-    init_prompt_attachments();
-    init_toast();
+var SCROLL_TRACK_INTERVAL_MS, IDLE_STOP_MS, CAPTURE;
+var init_scroll_tracker = __esm({
+  "src/renderer/drawing/scroll-tracker.ts"() {
+    SCROLL_TRACK_INTERVAL_MS = 80;
+    IDLE_STOP_MS = 1e3;
+    CAPTURE = true;
   }
 });
 
@@ -77157,33 +80272,74 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     "Annotate"
   );
   let annotation = null;
+  let annotationScroll = null;
   let inlineWebview = null;
   let disposed = false;
   let firstMountFrame = null;
   let stableMountFrame = null;
   let mountTimer = null;
-  const captureBase = async () => {
+  const inlineWebContentsId = () => {
     const getId = inlineWebview ? Reflect.get(inlineWebview, "getWebContentsId") : void 0;
-    if (typeof getId === "function" && card.dataset["canvasState"] === "interactive") {
-      const contentsId = Reflect.apply(getId, inlineWebview, []);
-      if (typeof contentsId === "number") {
-        return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
-      }
+    if (typeof getId !== "function" || card.dataset["canvasState"] !== "interactive") return null;
+    const contentsId = Reflect.apply(getId, inlineWebview, []);
+    return typeof contentsId === "number" ? contentsId : null;
+  };
+  const captureBase = async () => {
+    const contentsId = inlineWebContentsId();
+    if (contentsId !== null) {
+      return (await api2.browser.captureScreenshot(contentsId)).dataUrl;
     }
     return getArtefactPreview(threadId, title) ?? null;
   };
+  const syncAnnotationScroll = () => {
+    annotationScroll?.setEnabled(
+      annotation !== null && (annotation.active || !annotation.isEmpty())
+    );
+  };
   annotate.addEventListener("click", () => {
-    annotation ??= mountAnnotationLayer(stage, {
-      label: title,
-      captureBase,
-      onSend: (payload) => {
-        return attachAnnotation(payload, title);
-      },
-      onDeactivate: () => {
-        annotate.setAttribute("aria-pressed", "false");
-      }
-    });
+    if (!annotation) {
+      annotation = mountAnnotationLayer(stage, {
+        label: title,
+        captureBase,
+        onSend: (payload) => {
+          return attachAnnotation(payload, title);
+        },
+        onDeactivate: () => {
+          annotate.setAttribute("aria-pressed", "false");
+          syncAnnotationScroll();
+        }
+      });
+      const layer = annotation;
+      annotationScroll = trackGuestScroll({
+        wheelTarget: stage,
+        fetchPosition: async () => {
+          const contentsId = inlineWebContentsId();
+          if (contentsId === null) return null;
+          return await api2.browser.scrollPosition(contentsId);
+        },
+        onScroll: (position2) => {
+          layer.setScrollOffset(position2.x, position2.y);
+        }
+      });
+      const scroll = annotationScroll;
+      stage.addEventListener(
+        "focus",
+        () => {
+          scroll.setGuestFocused(true);
+        },
+        true
+      );
+      stage.addEventListener(
+        "blur",
+        () => {
+          scroll.setGuestFocused(false);
+        },
+        true
+      );
+    }
     annotate.setAttribute("aria-pressed", String(annotation.toggle()));
+    syncAnnotationScroll();
+    annotationScroll?.kick();
   });
   const card = el(
     "figure",
@@ -77208,6 +80364,8 @@ function createInlineArtefact(api2, projectId, threadId, title) {
     disposed = true;
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame);
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame);
+    annotationScroll?.dispose();
+    annotationScroll = null;
     if (mountTimer !== null) clearTimeout(mountTimer);
     annotation?.dispose();
     annotation = null;
@@ -77275,10 +80433,104 @@ var init_inline_artefact = __esm({
     init_icons();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_artefact_previews();
     WEBVIEW_PREFS = "contextIsolation=true";
     LOAD_TIMEOUT_MS = 3e4;
     inlineArtefactDisposers = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/shared/container-run-schema.ts
+var containerRunRequestSchema, containerRunSettingsSchema, threadContainerResultSchema, containerRuntimeAttestationSchema;
+var init_container_run_schema = __esm({
+  "src/shared/container-run-schema.ts"() {
+    init_zod();
+    containerRunRequestSchema = external_exports.object({
+      projectId: external_exports.string().min(1).max(256),
+      threadId: external_exports.string().min(1).max(256),
+      prompt: external_exports.string().min(1).max(2e5),
+      model: external_exports.string().min(1).max(256),
+      budgets: external_exports.object({
+        wallClockMs: external_exports.number().int().min(6e4).max(24 * 60 * 6e4),
+        tokenCeiling: external_exports.number().int().min(1e3).max(1e8)
+      }),
+      useAgentLogin: external_exports.boolean().optional(),
+      installDependencies: external_exports.boolean().optional(),
+      continueFrom: external_exports.string().regex(/^[a-z0-9-]{1,128}$/i).optional(),
+      continueContext: external_exports.object({
+        prompt: external_exports.string().max(2e5),
+        report: external_exports.string().max(2e5),
+        ref: external_exports.string().regex(/^refs\/copse\/runs\/[a-z0-9-]{1,128}$/i).nullable()
+      }).optional()
+    });
+    containerRunSettingsSchema = containerRunRequestSchema.pick({
+      budgets: true,
+      installDependencies: true
+    });
+    threadContainerResultSchema = external_exports.object({
+      threadId: external_exports.string(),
+      stopReason: external_exports.enum(["completed", "budget:wall-clock", "budget:tokens", "aborted", "error"]),
+      error: external_exports.string().optional(),
+      usage: external_exports.object({ inputTokens: external_exports.number(), outputTokens: external_exports.number() }),
+      harness: external_exports.union([external_exports.literal("copse"), external_exports.object({ acp: external_exports.string() })]),
+      promptsAttempted: external_exports.number(),
+      deferrals: external_exports.array(
+        external_exports.object({
+          id: external_exports.string(),
+          title: external_exports.string(),
+          subject: external_exports.string(),
+          reasons: external_exports.array(external_exports.string()).optional()
+        })
+      ),
+      denials: external_exports.array(external_exports.object({ subject: external_exports.string(), reasons: external_exports.array(external_exports.string()) })),
+      commits: external_exports.array(external_exports.string()),
+      containment: external_exports.object({
+        declared: external_exports.boolean(),
+        declineReason: external_exports.string().nullable(),
+        projectSandbox: external_exports.boolean()
+      }),
+      toolNames: external_exports.array(external_exports.string()),
+      finalText: external_exports.string()
+    });
+    containerRuntimeAttestationSchema = external_exports.object({
+      runtimeId: external_exports.string().min(1),
+      image: external_exports.string().min(1),
+      imageDigest: external_exports.string().min(1).optional(),
+      user: external_exports.number().int().positive(),
+      readOnlyRootfs: external_exports.boolean(),
+      capDropAll: external_exports.boolean(),
+      noNewPrivileges: external_exports.boolean(),
+      pidsLimit: external_exports.number().int().positive(),
+      memoryLimit: external_exports.string().min(1),
+      network: external_exports.enum(["none", "brokered"]),
+      egressAllowlist: external_exports.array(external_exports.string().min(1)),
+      hostMounts: external_exports.array(external_exports.string().min(1)),
+      /**
+       * `none` is an engine with no seccomp or AppArmor at all — Apple container,
+       * whose boundary is a VM of its own instead (`isolation: 'vm'`).
+       */
+      securityProfiles: external_exports.enum(["default", "unconfined", "none"]).optional(),
+      perCommandNetwork: external_exports.enum(["token-gated", "none"]).optional(),
+      /**
+       * The engine that started the guest. Absent on records written before a
+       * second engine existed, which were all Docker.
+       */
+      engine: external_exports.enum(["docker", "apple"]).optional(),
+      /**
+       * What separates the guest from the host: namespaces on the host's own
+       * kernel (Docker), or a lightweight VM with a kernel of its own per
+       * container (Apple container). Absent means Docker's, as for `engine`.
+       */
+      isolation: external_exports.enum(["shared-kernel", "vm"]).optional(),
+      /**
+       * How `pidsLimit` is enforced: a cgroup `pids.max` over the container
+       * (Docker's `--pids-limit`), or `RLIMIT_NPROC` on the worker uid inside a
+       * guest kernel that runs nothing else as that uid (Apple container's
+       * `--ulimit nproc`). Absent means Docker's.
+       */
+      processLimit: external_exports.enum(["cgroup-pids", "rlimit-nproc"]).optional()
+    });
   }
 });
 
@@ -77294,6 +80546,7 @@ function argsOf(toolCall) {
   const credential = record2["credential"];
   const continuedFrom = record2["continuedFrom"];
   const report = record2["report"];
+  const settings = containerRunSettingsSchema.safeParse(record2["settings"]);
   return {
     task,
     model,
@@ -77301,7 +80554,8 @@ function argsOf(toolCall) {
     ref: typeof ref === "string" ? ref : null,
     credential: credential === "key" || credential === "login" ? credential : "none",
     continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
-    report: typeof report === "string" ? report : null
+    report: typeof report === "string" ? report : null,
+    ...settings.success ? { settings: settings.data } : {}
   };
 }
 function latestContainerRun(thread) {
@@ -77320,6 +80574,7 @@ function latestContainerRun(thread) {
       report: args.report,
       model: args.model,
       credential: args.credential,
+      ...args.settings ? { settings: args.settings } : {},
       ref: args.ref,
       status: toolCall.status,
       isLastTurn: index === thread.messages.length - 1
@@ -77421,6 +80676,7 @@ function containerRunToolCall(progress) {
     runtimeId: progress.runtimeId,
     ref: progress.record?.carryOut.ref ?? null,
     credential: progress.credential,
+    ...progress.settings ? { settings: progress.settings } : {},
     continuedFrom: progress.continuedFrom,
     report: progress.record?.result?.finalText ?? null
   };
@@ -77479,6 +80735,7 @@ ${note}` : note
 var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
 var init_container_run_card = __esm({
   "src/shared/store/container-run-card.ts"() {
+    init_container_run_schema();
     init_unknown_value3();
     init_thread_helpers();
     CONTAINER_RUN_TOOL = "container_run";
@@ -78584,14 +81841,18 @@ var init_file_links = __esm({
 function cachedPrTitle(ref) {
   return titles.get(githubPrKey(ref));
 }
-function rememberPrTitle(ref, title, isDraft) {
+function rememberPrTitle(ref, title, isDraft, state, conflicts) {
   const trimmed2 = title.trim();
   if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
   const key = githubPrKey(ref);
   const previous = titles.get(key);
+  const lifecycle = state ?? previous?.state;
+  const mergeConflicts = conflicts ?? previous?.conflicts;
   titles.delete(key);
   titles.set(key, {
     title: trimmed2,
+    ...lifecycle !== void 0 ? { state: lifecycle } : {},
+    ...mergeConflicts !== void 0 ? { conflicts: mergeConflicts } : {},
     ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
   });
   if (titles.size > MAX_TITLES) {
@@ -78601,13 +81862,19 @@ function rememberPrTitle(ref, title, isDraft) {
 }
 function loadPrTitle(ref, gh) {
   const cached2 = cachedPrTitle(ref);
-  if (cached2) return Promise.resolve(cached2);
+  if (cached2?.conflicts !== void 0) return Promise.resolve(cached2);
   const key = githubPrKey(ref);
   const pending = inFlight3.get(key);
   if (pending) return pending;
   const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
     if (!details) return null;
-    rememberPrTitle(ref, details.title, details.isDraft);
+    rememberPrTitle(
+      ref,
+      details.title,
+      details.isDraft,
+      details.state,
+      prHasMergeConflicts(details)
+    );
     return cachedPrTitle(ref) ?? null;
   }).finally(() => {
     inFlight3.delete(key);
@@ -78619,6 +81886,7 @@ var MAX_TITLES, titles, inFlight3;
 var init_pr_title_cache = __esm({
   "src/renderer/markdown/pr-title-cache.ts"() {
     init_github_pr_url2();
+    init_pr_status();
     MAX_TITLES = 128;
     titles = /* @__PURE__ */ new Map();
     inFlight3 = /* @__PURE__ */ new Map();
@@ -80027,7 +83295,7 @@ function visibleText(node2) {
     const elNode = node2;
     if (elNode.classList.contains("inline-paste-chip") || elNode.classList.contains("inline-thread-chip"))
       return CHIP_CHAR;
-    if (elNode.tagName === "BR") return "\n";
+    if (elNode.tagName === "BR") return elNode.hasAttribute("data-composer-tail") ? "" : "\n";
   }
   let out = "";
   for (const child of Array.from(node2.childNodes)) out += visibleText(child);
@@ -80126,6 +83394,7 @@ function mountComposerEditor() {
     return chip2;
   }
   function insertChip(chip2) {
+    root.querySelector("br[data-composer-tail]")?.remove();
     const selection2 = editor.isFocused() ? selectionInRoot() : null;
     if (selection2) {
       const range = selection2.getRangeAt(0);
@@ -80287,6 +83556,7 @@ function mountComposerEditor() {
       insertChip(makeThreadChip(id, state));
     },
     insertText(text2) {
+      root.querySelector("br[data-composer-tail]")?.remove();
       const node2 = document.createTextNode(text2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
@@ -80299,6 +83569,11 @@ function mountComposerEditor() {
         sel.addRange(range);
       } else {
         root.append(node2);
+      }
+      if (visibleText(root).endsWith("\n")) {
+        const tail = document.createElement("br");
+        tail.setAttribute("data-composer-tail", "");
+        root.append(tail);
       }
       emitInput();
     },
@@ -83289,6 +86564,300 @@ var init_markdown_quote = __esm({
   }
 });
 
+// src/renderer/dom/selection-quote.ts
+function bindSelectionQuote(transcript, actions) {
+  const input2 = el("textarea", {
+    class: "transcript-selection-reply",
+    placeholder: "Reply\u2026",
+    "aria-label": "Reply to selected text",
+    rows: "2"
+  });
+  input2.setAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
+  const sendLabel = el("span", {}, "Send");
+  const sendButton = el(
+    "button",
+    {
+      class: "transcript-selection-send",
+      type: "button",
+      "aria-keyshortcuts": "Meta+Enter Control+Enter"
+    },
+    sendLabel
+  );
+  const status = el("div", { class: "transcript-selection-status", role: "status", hidden: true });
+  const popup = el(
+    "div",
+    {
+      class: "transcript-selection-quote",
+      hidden: true,
+      role: "group",
+      "aria-label": "Selection reply"
+    },
+    input2,
+    el("div", { class: "transcript-selection-actions" }, sendButton),
+    status
+  );
+  document.body.append(popup);
+  let selectedText = "";
+  let selectedRange = null;
+  const highlights = typeof CSS === "undefined" ? void 0 : CSS.highlights;
+  const highlight = typeof Highlight === "undefined" ? null : new Highlight();
+  let dragging = false;
+  let suppressed = false;
+  let sending = false;
+  let hadText = false;
+  let revision = 0;
+  let reservedSpace = false;
+  let scrollingTo = null;
+  const hasDraft = () => input2.value.length > 0 || sending;
+  const updateControls = () => {
+    input2.disabled = sending;
+    sendButton.disabled = sending || !input2.value.trim();
+    sendLabel.textContent = sending ? "Sending\u2026" : "Send";
+    hadText = input2.value.length > 0;
+  };
+  const dismiss = () => {
+    revision++;
+    popup.hidden = true;
+    selectedText = "";
+    selectedRange = null;
+    scrollingTo = null;
+    if (reservedSpace) {
+      transcript.style.removeProperty("--selection-reply-space");
+      reservedSpace = false;
+    }
+    if (highlight) {
+      if (highlights && highlights.get("transcript-reply-selection") === highlight) {
+        highlights.delete("transcript-reply-selection");
+      }
+      highlight.clear();
+    }
+    input2.value = "";
+    status.hidden = true;
+    status.textContent = "";
+    sending = false;
+    updateControls();
+  };
+  const selectionBounds = () => {
+    if (!selectedRange) return null;
+    const rects = [...selectedRange.getClientRects()].filter(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
+    if (rects.length === 0) return null;
+    return {
+      top: Math.min(...rects.map((rect) => rect.top)),
+      bottom: Math.max(...rects.map((rect) => rect.bottom)),
+      left: Math.min(...rects.map((rect) => rect.left)),
+      right: Math.max(...rects.map((rect) => rect.right))
+    };
+  };
+  const position2 = () => {
+    let selection2 = selectionBounds();
+    const bounds = transcript.getBoundingClientRect();
+    if (!selection2 || selection2.bottom <= bounds.top || selection2.top >= bounds.bottom || selection2.right <= bounds.left || selection2.left >= bounds.right) {
+      if (hasDraft()) {
+        const size2 = popup.getBoundingClientRect();
+        const top2 = Number.parseFloat(popup.style.top) || bounds.top;
+        const left2 = Number.parseFloat(popup.style.left) || bounds.left;
+        const bottom = Math.min(bounds.bottom, window.innerHeight - 8);
+        popup.style.top = `${String(Math.max(8, Math.min(top2, bottom - size2.height)))}px`;
+        popup.style.left = `${String(Math.max(8, Math.min(left2, window.innerWidth - size2.width - 8)))}px`;
+      } else {
+        dismiss();
+      }
+      return;
+    }
+    popup.hidden = false;
+    const size = popup.getBoundingClientRect();
+    const gap = 8;
+    const visibleTop = Math.max(bounds.top, gap);
+    const visibleBottom = Math.min(bounds.bottom, window.innerHeight - gap);
+    let top = selection2.top - size.height - gap;
+    if (top < visibleTop) {
+      top = selection2.bottom + gap;
+      if (top + size.height > visibleBottom) {
+        transcript.style.setProperty(
+          "--selection-reply-space",
+          `${String(size.height + 2 * gap)}px`
+        );
+        reservedSpace = true;
+        const before = transcript.scrollTop;
+        transcript.scrollTop += Math.max(0, selection2.bottom + gap + size.height - visibleBottom);
+        if (transcript.scrollTop !== before) scrollingTo = transcript.scrollTop;
+        selection2 = selectionBounds();
+        if (!selection2) {
+          dismiss();
+          return;
+        }
+        top = selection2.bottom + gap;
+      }
+    }
+    const left = Math.max(
+      bounds.left + gap,
+      Math.min(selection2.left, bounds.right - size.width - gap)
+    );
+    popup.style.left = `${String(Math.max(gap, Math.min(left, window.innerWidth - size.width - gap)))}px`;
+    popup.style.top = `${String(top)}px`;
+  };
+  const refresh = () => {
+    if (hasDraft() || dragging || suppressed || popup.contains(document.activeElement)) return;
+    const selection2 = document.getSelection();
+    if (!transcript.isConnected || !selection2 || selection2.isCollapsed || selection2.rangeCount === 0 || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode)) {
+      dismiss();
+      return;
+    }
+    const text2 = trimSelectionText(selection2.toString());
+    if (!text2) {
+      dismiss();
+      return;
+    }
+    if (text2 !== selectedText) {
+      input2.value = "";
+      status.hidden = true;
+      revision++;
+    }
+    const opening = popup.hidden;
+    selectedText = text2;
+    selectedRange = selection2.getRangeAt(0).cloneRange();
+    if (highlight && highlights) {
+      highlight.clear();
+      highlight.add(selectedRange);
+      highlights.set("transcript-reply-selection", highlight);
+    }
+    updateControls();
+    position2();
+    if (opening && !popup.hidden) input2.focus({ preventScroll: true });
+  };
+  const reposition = () => {
+    if (!popup.hidden) position2();
+  };
+  const addToPrompt = () => {
+    if (!selectedText || sending) return;
+    const text2 = selectedText;
+    const reply = input2.value.trim();
+    dismiss();
+    actions.quote(text2, reply);
+  };
+  const sendReply = async () => {
+    if (!selectedText || !input2.value.trim() || sending) return;
+    const ticket = revision;
+    sending = true;
+    status.hidden = true;
+    updateControls();
+    let handedOff = false;
+    try {
+      handedOff = await actions.send(selectedText, input2.value.trim());
+    } catch {
+    }
+    if (ticket !== revision) return;
+    sending = false;
+    if (handedOff) {
+      dismiss();
+    } else {
+      status.textContent = "Reply not sent. Try again or press Enter to add it to the prompt.";
+      status.hidden = false;
+      updateControls();
+      position2();
+    }
+  };
+  input2.addEventListener("input", () => {
+    if (hadText && input2.value.length === 0) {
+      suppressed = true;
+      dismiss();
+    } else {
+      updateControls();
+    }
+  });
+  input2.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.metaKey || event.ctrlKey) void sendReply();
+    else addToPrompt();
+  });
+  sendButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  sendButton.addEventListener("click", () => void sendReply());
+  const onPointerDown = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.button === 2 && event.target instanceof Node && transcript.contains(event.target)) {
+      suppressed = true;
+      return;
+    }
+    dragging = event.button === 0;
+    if (dragging) suppressed = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onPointerUp = (event) => {
+    if (event.button !== 0 || !dragging) return;
+    dragging = false;
+    refresh();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      suppressed = true;
+      dismiss();
+    } else if (event.shiftKey && event.key.startsWith("Arrow")) {
+      suppressed = false;
+    }
+  };
+  const onContextMenu = () => {
+    const selection2 = document.getSelection();
+    if (selection2 && selectedRange && transcript.contains(selectedRange.startContainer) && transcript.contains(selectedRange.endContainer) && (selection2.isCollapsed || !transcript.contains(selection2.anchorNode) || !transcript.contains(selection2.focusNode))) {
+      selection2.removeAllRanges();
+      selection2.addRange(selectedRange.cloneRange());
+    }
+    if (hasDraft()) return;
+    suppressed = true;
+    dismiss();
+  };
+  const onPointerCancel = () => {
+    dragging = false;
+    if (!hasDraft()) dismiss();
+  };
+  const onScroll = (event) => {
+    if (event.target instanceof Node && popup.contains(event.target)) return;
+    if (event.target === transcript && scrollingTo !== null && Math.abs(transcript.scrollTop - scrollingTo) < 1) {
+      scrollingTo = null;
+      return;
+    }
+    if (hasDraft()) position2();
+    else dismiss();
+  };
+  document.addEventListener("selectionchange", refresh);
+  document.addEventListener("pointerdown", onPointerDown);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerCancel);
+  document.addEventListener("keydown", onKeyDown);
+  transcript.addEventListener("contextmenu", onContextMenu);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", reposition);
+  window.addEventListener("blur", onPointerCancel);
+  updateControls();
+  return {
+    dismiss,
+    destroy: () => {
+      dismiss();
+      popup.remove();
+      document.removeEventListener("selectionchange", refresh);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+      document.removeEventListener("keydown", onKeyDown);
+      transcript.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("blur", onPointerCancel);
+    }
+  };
+}
+var init_selection_quote = __esm({
+  "src/renderer/dom/selection-quote.ts"() {
+    init_helpers();
+    init_markdown_quote();
+  }
+});
+
 // src/renderer/views/conversation.ts
 function interruptionCause(outcome, next) {
   if (next?.role !== "user" || next.origin !== void 0) return "user";
@@ -85029,6 +88598,10 @@ function mountConversation(root, store2, api2) {
     e3.stopPropagation();
     navigateToChange(store2, path);
   });
+  const selectionQuote = bindSelectionQuote(list, {
+    quote: quoteTranscriptSelection,
+    send: (text2, reply) => getPromptAttachmentHandlers()?.sendQuotedReply?.(text2, reply) ?? Promise.resolve(false)
+  });
   list.addEventListener("contextmenu", (e3) => {
     if (e3.defaultPrevented) return;
     const targetEl = e3.target instanceof Element ? e3.target : null;
@@ -85129,6 +88702,46 @@ function mountConversation(root, store2, api2) {
     const threadId = store2.getState().activeThreadId;
     if (threadId) releaseHeldMessage(store2, api2, threadId, messageId);
   }
+  function queuedModelValue(threadId, messageId) {
+    const thread = getThreadById(store2, threadId);
+    const raw = thread?.pendingMessages?.find((item) => item.messageId === messageId)?.model ?? thread?.model ?? store2.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+    return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+  }
+  function queuedRecentModels() {
+    const { threads, settings } = store2.getState();
+    return threads.slice().sort((a3, b4) => b4.updatedAt - a3.updatedAt).map((thread) => {
+      const raw = thread.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL;
+      return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw;
+    });
+  }
+  function queuedWorkspaceIsSsh() {
+    const { activeProjectId, projects } = store2.getState();
+    return Boolean(projects.find((project2) => project2.id === activeProjectId)?.sshHost);
+  }
+  function buildQueuedModelPicker(messageId) {
+    const threadId = store2.getState().activeThreadId;
+    const host = el("div", { class: "message-queued-model" });
+    const pickerHost = el("div", { class: "message-queued-model-picker" });
+    if (!threadId) return host;
+    mountModelPicker(
+      pickerHost,
+      () => queuedModelValue(threadId, messageId),
+      (model) => {
+        updateQueuedMessageModel(store2, threadId, messageId, model);
+      },
+      (current) => fetchModelOptions(api2, current, {
+        sshWorkspace: queuedWorkspaceIsSsh()
+      }),
+      {
+        variant: "compact",
+        enableShortcut: false,
+        ariaLabel: "Model for queued prompt",
+        getRecentValues: queuedRecentModels
+      }
+    );
+    host.append(el("span", { class: "message-queued-model-label" }, "Run with"), pickerHost);
+    return host;
+  }
   function buildHeldActions(messageId) {
     const releaseBtn = el(
       "button",
@@ -85153,7 +88766,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, releaseBtn, editBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        releaseBtn,
+        editBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedActions(messageId) {
@@ -85181,7 +88801,14 @@ function mountConversation(root, store2, api2) {
     return el(
       "div",
       { class: "message-queued-ui" },
-      el("div", { class: "message-queued-actions" }, editBtn, sendNowBtn, deleteBtn)
+      el(
+        "div",
+        { class: "message-queued-actions" },
+        buildQueuedModelPicker(messageId),
+        editBtn,
+        sendNowBtn,
+        deleteBtn
+      )
     );
   }
   function buildQueuedEditor(messageId) {
@@ -85294,6 +88921,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let stickyImagePrompt = null;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -85416,8 +89044,34 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
+  function syncStickyImagePreview() {
+    const prompt = stickyImagePrompt;
+    if (!prompt?.isConnected) return;
+    const promptStyle = window.getComputedStyle(prompt);
+    if (promptStyle.position !== "sticky") {
+      prompt.classList.remove("is-preview-compact");
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const listStyle = window.getComputedStyle(list);
+    const previous = prompt.previousElementSibling;
+    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+  }
+  function refreshStickyImagePrompt() {
+    const prompts = list.querySelectorAll(
+      ":scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)"
+    );
+    const latest = prompts[prompts.length - 1];
+    const next = latest?.querySelector(".message-images") ? latest : null;
+    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    stickyImagePrompt = next;
+    syncStickyImagePreview();
+  }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
+    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -85438,6 +89092,8 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  listResizeObserver?.observe(list);
   list.addEventListener(
     "wheel",
     (event) => {
@@ -85531,6 +89187,7 @@ function mountConversation(root, store2, api2) {
     const before = list.scrollTop;
     list.scrollTop = top;
     const landed = list.scrollTop;
+    syncStickyImagePreview();
     lastScrollTop = landed;
     if (landed !== before) {
       lastProgrammaticScrollTop = landed;
@@ -85885,6 +89542,7 @@ function mountConversation(root, store2, api2) {
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
     finalizeMessageEl(threadId, msgId);
     if (batched) return;
+    if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
@@ -85904,8 +89562,25 @@ function mountConversation(root, store2, api2) {
       "Fork from here"
     );
     fork.addEventListener("click", () => {
-      fork.disabled = true;
-      void runFork(threadId, msgId).finally(() => fork.disabled = false);
+      const rect = fork.getBoundingClientRect();
+      showContextMenu(rect.left, rect.bottom + 4, [
+        { heading: "Fork from here" },
+        {
+          label: "Fork a copy",
+          onSelect: () => {
+            fork.disabled = true;
+            void runFork(threadId, msgId).finally(() => fork.disabled = false);
+          }
+        },
+        {
+          label: "Edit thread history\u2026",
+          onSelect: () => {
+            const projectId = store2.getState().activeProjectId;
+            if (!projectId) return;
+            openThreadHistoryEditor(store2, api2, { projectId, threadId, focusMessageId: msgId });
+          }
+        }
+      ]);
     });
     const resend = el(
       "button",
@@ -86075,9 +89750,21 @@ function mountConversation(root, store2, api2) {
       })
     );
   }
+  let hookCardsVisible = store2.getState().developerMode;
+  function syncHookCardVisibility() {
+    const visible = store2.getState().developerMode;
+    if (visible === hookCardsVisible) return;
+    hookCardsVisible = visible;
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    for (const msg of thread.messages) {
+      if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
+    }
+  }
   function renderMessageHookCards(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
@@ -86238,9 +89925,11 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = 0;
     }
     disclosureElements.clear();
+    if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
     clear(list);
+    stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
     if (!thread) {
@@ -86264,6 +89953,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -86514,6 +90204,7 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
+      syncHookCardVisibility();
       const thread = getActiveThread(store2);
       if (!thread) return;
       for (const msg of thread.messages) {
@@ -86562,8 +90253,10 @@ function mountConversation(root, store2, api2) {
   reviewerInput.sync();
   return () => {
     disposed = true;
+    selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
+    listResizeObserver?.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
       clearTimeout(timer);
@@ -86588,10 +90281,10 @@ function mountConversation(root, store2, api2) {
 function messageContentById(store2, msgId) {
   return store2.getState().threads.flatMap((t2) => t2.messages).find((m2) => m2.id === msgId)?.content;
 }
-function quoteTranscriptSelection(text2) {
+function quoteTranscriptSelection(text2, reply) {
   const handlers3 = getPromptAttachmentHandlers();
   if (!handlers3) return;
-  handlers3.quoteText(text2);
+  handlers3.quoteText(text2, reply);
   handlers3.focusComposer?.();
 }
 async function addTranscriptSelectionToRoadmap(api2, text2) {
@@ -86648,6 +90341,9 @@ var init_conversation = __esm({
     init_inline_visualization();
     init_message_model();
     init_model_display();
+    init_lm_studio_defaults();
+    init_model_picker();
+    init_model_options();
     init_attachment_icons();
     init_image_expand();
     init_acp_resource_previews();
@@ -86690,7 +90386,9 @@ var init_conversation = __esm({
     init_context_menu();
     init_prompt_attachments();
     init_conversation_search();
+    init_thread_history_editor();
     init_markdown_quote();
+    init_selection_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     markedTranscripts = /* @__PURE__ */ new WeakSet();
@@ -98480,11 +102178,28 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       console.error("[acp] failed to save option selection:", err2);
     });
   }
+  const usage = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost footer-plan-usage",
+      "aria-label": "Manage ChatGPT usage",
+      title: "Manage your ChatGPT plan and Copse\u2019s allowance"
+    },
+    "Manage usage"
+  );
+  usage.addEventListener("click", () => {
+    void api2.shell.openExternal("https://chatgpt.com/settings/usage");
+  });
+  function updateUsage2() {
+    usage.hidden = !getCurrent().startsWith(CHATGPT_PLAN_MODEL_PREFIX);
+  }
   const picker = mountModelPicker(
     root,
     getCurrent,
     (model) => {
       onSelect(model);
+      updateUsage2();
       void picker.refresh();
     },
     (current) => fetchModelOptions(api2, pickerOpts.getCurrentRoute?.(current) ?? current, {
@@ -98518,22 +102233,33 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       ...pickerOpts.getCurrentRoute ? { getCurrentRoute: pickerOpts.getCurrentRoute } : {}
     }
   );
+  root.append(usage);
+  updateUsage2();
   picker.root.querySelector(".model-picker-trigger")?.addEventListener("click", () => {
     void picker.refresh();
   });
   return {
-    refresh: () => void picker.refresh(),
+    refresh: () => {
+      updateUsage2();
+      void picker.refresh();
+    },
+    sync: picker.sync,
     // Same pairing as an explicit trigger click: refresh live plugin/provider
     // state, then show the menu.
     openMenu: () => {
       void picker.refresh();
       picker.openMenu();
     },
-    destroy: picker.destroy
+    destroy: () => {
+      usage.remove();
+      picker.destroy();
+    }
   };
 }
 var init_footer_model_picker = __esm({
   "src/renderer/views/footer-model-picker.ts"() {
+    init_reserved_prefixes();
+    init_helpers();
     init_model_options();
     init_model_picker();
     init_acp_config_options();
@@ -98628,13 +102354,39 @@ function mountFooterBranchStatus(host, store2, api2) {
   let refreshToken = 0;
   let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
+  const footer = host.closest(".input-footer");
+  let popupFrame = 0;
+  function schedulePopupBoundary() {
+    if (!footer) return;
+    cancelAnimationFrame(popupFrame);
+    popupFrame = requestAnimationFrame(() => {
+      popupFrame = 0;
+      if (!open2) return;
+      const boundary = footer.getBoundingClientRect();
+      const anchor2 = trigger.getBoundingClientRect();
+      const width = menu.getBoundingClientRect().width;
+      menu.classList.toggle("is-footer-clamped", anchor2.left + width > boundary.right);
+    });
+  }
+  const popupObserver = footer ? new ResizeObserver(schedulePopupBoundary) : null;
+  if (footer) {
+    popupObserver?.observe(footer);
+    popupObserver?.observe(trigger);
+    popupObserver?.observe(menu);
+  }
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function startBranch(thread) {
+    if (!isBlankThread(thread)) return void 0;
+    const picked = baseBranchByThread.get(thread.id);
+    if (picked) return picked;
+    if (thread.id !== store2.getState().activeThreadId) return void 0;
+    return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
   function activeBaseBranch() {
     const thread = getActiveThread2();
-    if (!thread || !isBlankThread(thread)) return void 0;
-    return baseBranchByThread.get(thread.id);
+    return thread ? startBranch(thread) : void 0;
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -98657,6 +102409,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
     filterInput.setAttribute("aria-expanded", String(next));
+    schedulePopupBoundary();
     if (next) {
       menu.removeAttribute("hidden");
     } else {
@@ -98943,6 +102696,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const active2 = list.querySelector(".branch-picker-option.is-active");
     if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
     scrollActiveRowIntoView();
+    schedulePopupBoundary();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -99144,9 +102898,21 @@ function mountFooterBranchStatus(host, store2, api2) {
   void refresh();
   return {
     refresh: refreshNow,
-    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
+    resolveBaseBranch: async (projectId, threadId) => {
+      const thread = getThreadById(store2, threadId);
+      if (!thread || !isBlankThread(thread)) return void 0;
+      const picked = baseBranchByThread.get(threadId);
+      if (picked) return picked;
+      const [listed, defaultName] = await Promise.all([
+        api2.git.listBranches(projectId, threadId),
+        api2.git.getDefaultBranch(projectId, threadId)
+      ]);
+      return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
+    },
     destroy: () => {
       refreshToken += 1;
+      cancelAnimationFrame(popupFrame);
+      popupObserver?.disconnect();
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u2) => {
         u2();
@@ -99168,6 +102934,75 @@ var init_footer_branch_status = __esm({
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     nextPickerId = 0;
+  }
+});
+
+// src/renderer/views/footer-usage-popover.ts
+function row(entry, className) {
+  return el(
+    "div",
+    { class: className },
+    el("span", { class: "footer-usage-popover-name" }, entry.label),
+    el("span", { class: "footer-usage-popover-value" }, entry.value)
+  );
+}
+function runRow(run2) {
+  return el(
+    "div",
+    { class: "footer-usage-popover-row is-run" },
+    el("span", { class: `footer-usage-popover-dot is-${run2.status}` }),
+    el(
+      "span",
+      { class: "footer-usage-popover-run" },
+      el("span", { class: "footer-usage-popover-name" }, run2.label),
+      el("span", { class: "footer-usage-popover-meta" }, run2.detail)
+    ),
+    el("span", { class: "footer-usage-popover-value" }, run2.value)
+  );
+}
+function appendUsageSections(parent, model) {
+  parent.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+  if (model.conversationLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+  }
+  for (const entry of model.rows) parent.append(row(entry, "footer-usage-popover-row"));
+  if (model.threadLabel) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    parent.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+  } else {
+    for (const entry of model.threadRows) parent.append(row(entry, "footer-usage-popover-row"));
+    if (model.subagentRow || model.modelRows.length > 0) {
+      parent.append(el("div", { class: "footer-usage-popover-divider" }));
+    }
+  }
+  if (model.subagentRow) {
+    parent.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
+    for (const run2 of model.subagentRuns) parent.append(runRow(run2));
+    if (model.subagentRunsOverflow > 0) {
+      parent.append(
+        el(
+          "div",
+          { class: "footer-usage-popover-meta" },
+          `+${String(model.subagentRunsOverflow)} more`
+        )
+      );
+    }
+  }
+  if (model.subagentRuns.length > 0 && model.modelRows.length > 0) {
+    parent.append(el("div", { class: "footer-usage-popover-divider" }));
+  }
+  for (const entry of model.modelRows) {
+    parent.append(row(entry, "footer-usage-popover-row is-model"));
+  }
+  if (model.note) parent.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+  if (model.freeNote) {
+    parent.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+  }
+}
+var init_footer_usage_popover = __esm({
+  "src/renderer/views/footer-usage-popover.ts"() {
+    init_helpers();
   }
 });
 
@@ -99206,19 +103041,24 @@ function createContextWheel() {
   fill.setAttribute("stroke-width", "2");
   fill.setAttribute("transform", "rotate(-90 8 8)");
   fill.classList.add("context-wheel-fill");
-  const label = document.createElement("span");
-  label.className = "context-wheel-label";
   const popover = document.createElement("div");
   popover.className = "context-wheel-popover";
   popover.hidden = true;
   svg2.append(track, segGroup, fill);
-  root.append(svg2, label, popover);
+  root.append(svg2, popover);
   let popoverActive = false;
+  let currentUsage = null;
+  let engaged = false;
   function showPopover() {
+    engaged = true;
     if (popoverActive) popover.hidden = false;
   }
   function hidePopover() {
+    engaged = false;
     popover.hidden = true;
+  }
+  function restoreEngagedPopover() {
+    if (engaged && popoverActive && !root.hidden) popover.hidden = false;
   }
   root.addEventListener("mouseenter", showPopover);
   root.addEventListener("mouseleave", hidePopover);
@@ -99230,7 +103070,6 @@ function createContextWheel() {
   function renderPopover(breakdown) {
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(totalTokens)} / ${formatTokenCount2(
@@ -99255,6 +103094,17 @@ function createContextWheel() {
       popover.append(row2);
     }
   }
+  function composePopover(drawContext) {
+    clearPopover();
+    drawContext?.();
+    if (!currentUsage) return;
+    if (drawContext) {
+      const divider = document.createElement("div");
+      divider.className = "footer-usage-popover-divider";
+      popover.append(divider);
+    }
+    appendUsageSections(popover, currentUsage);
+  }
   function renderBreakdown(breakdown) {
     popoverActive = true;
     root.hidden = false;
@@ -99263,7 +103113,6 @@ function createContextWheel() {
     fill.style.display = "none";
     const { totalTokens, contextWindow, segments } = breakdown;
     const pct = pctOf(totalTokens, contextWindow);
-    label.textContent = `${String(pct)}%`;
     const denom = Math.max(contextWindow, totalTokens, 1);
     clearSegments();
     let offset = 0;
@@ -99282,7 +103131,9 @@ function createContextWheel() {
       segGroup.append(arc);
       offset += len;
     }
-    renderPopover(breakdown);
+    composePopover(() => {
+      renderPopover(breakdown);
+    });
     const lines = segments.map(
       (s16) => `${s16.label}: ${formatTokenCount2(s16.tokens)} (${String(pctOf(s16.tokens, contextWindow))}%)`
     );
@@ -99302,7 +103153,7 @@ function createContextWheel() {
   }
   function resetToSnapshotMode() {
     popoverActive = false;
-    hidePopover();
+    popover.hidden = true;
     root.classList.remove("has-breakdown");
     root.removeAttribute("tabindex");
     fill.style.display = "";
@@ -99310,7 +103161,6 @@ function createContextWheel() {
   }
   function renderSnapshotPopover(snapshot, source) {
     const pct = pctOf(snapshot.conversationTokens, snapshot.conversationBudget);
-    clearPopover();
     const header = document.createElement("div");
     header.className = "context-wheel-popover-header";
     header.textContent = `Context \xB7 ${formatTokenCount2(
@@ -99323,56 +103173,86 @@ function createContextWheel() {
     note.textContent = source;
     popover.append(note);
   }
+  function setFillState(ratio) {
+    fill.classList.toggle("is-danger", ratio >= CONTEXT_DANGER_RATIO);
+    fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
+  }
   function renderSnapshot(snapshot, running, options) {
     const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
-    const pct = Math.round(ratio * 100);
-    const visible = running || ratio > 0.01;
+    const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
     fill.setAttribute(
       "stroke-dasharray",
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`
     );
-    label.textContent = `${String(pct)}%`;
-    const contextLine = `Context: ${formatTokenCount2(snapshot.conversationTokens)} / ${formatTokenCount2(snapshot.conversationBudget)} (${String(pct)}%)`;
+    setFillState(ratio);
+    const shownBreakdown = options?.breakdown;
+    const labelled = shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0 ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow } : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget };
+    const pct = pctOf(labelled.tokens, labelled.budget);
+    const contextLine = `Context: ${formatTokenCount2(labelled.tokens)} / ${formatTokenCount2(labelled.budget)} (${String(pct)}%)`;
     const usageLine = options?.usageLine?.trim();
     root.title = usageLine ? `${contextLine}
 ${usageLine}` : contextLine;
     const ariaUsage = usageLine ? `; ${usageLine}` : "";
     root.setAttribute(
       "aria-label",
-      `Context ${String(pct)}% used, ${formatTokenCount2(snapshot.conversationTokens)} of ${formatTokenCount2(snapshot.conversationBudget)} tokens${ariaUsage}`
+      `Context ${String(pct)}% used, ${formatTokenCount2(labelled.tokens)} of ${formatTokenCount2(labelled.budget)} tokens${ariaUsage}`
     );
     popoverActive = true;
     root.tabIndex = 0;
     const breakdown = options?.breakdown;
     if (breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
-      renderPopover(breakdown);
+      composePopover(() => {
+        renderPopover(breakdown);
+      });
       return;
     }
-    renderSnapshotPopover(snapshot, options?.snapshotSource);
+    composePopover(() => {
+      renderSnapshotPopover(snapshot, options?.snapshotSource);
+    });
+  }
+  function renderUsageOnly(usage, options) {
+    root.hidden = false;
+    fill.setAttribute("stroke-dasharray", `0 ${String(CIRCUMFERENCE)}`);
+    setFillState(0);
+    popoverActive = true;
+    root.tabIndex = 0;
+    const usageLine = options?.usageLine?.trim() ?? usage.header;
+    root.title = usageLine;
+    root.setAttribute("aria-label", usageLine);
+    composePopover(null);
   }
   function update(snapshot, running, options) {
+    currentUsage = options?.usage ?? null;
     const breakdown = options?.breakdown;
     if (!running && options?.breakdownRing && breakdown && breakdown.totalTokens > 0 && breakdown.contextWindow > 0) {
       renderBreakdown(breakdown);
+      root.classList.add("is-interactive");
+      restoreEngagedPopover();
       return;
     }
     resetToSnapshotMode();
     if (!snapshot || snapshot.conversationBudget <= 0) {
-      root.hidden = true;
-      return;
+      if (currentUsage) renderUsageOnly(currentUsage, options);
+      else root.hidden = true;
+    } else {
+      renderSnapshot(snapshot, running, options);
     }
-    renderSnapshot(snapshot, running, options);
+    root.classList.toggle("is-interactive", popoverActive && !root.hidden);
+    restoreEngagedPopover();
   }
   return { root, update };
 }
-var RADIUS, CIRCUMFERENCE, SVG_NS6, SEGMENT_COLORS;
+var RADIUS, CIRCUMFERENCE, SVG_NS6, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
     SVG_NS6 = "http://www.w3.org/2000/svg";
+    CONTEXT_WARN_RATIO = 0.8;
+    CONTEXT_DANGER_RATIO = 0.95;
     SEGMENT_COLORS = {
       system: "#6aa3ff",
       tools: "#4fd1c5",
@@ -99388,24 +103268,13 @@ var init_context_wheel = __esm({
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
   const previousFlex = [...items].map((el3) => el3.style.flex);
-  const usage = footer.querySelector(".footer-usage");
-  const previousUsageDisplay = usage?.style.display;
-  const previousUsageDisplayPriority = usage?.style.getPropertyPriority("display");
   items.forEach((el3) => {
     el3.style.flex = "0 0 auto";
   });
-  if (usage) usage.style.setProperty("display", "inline", "important");
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
     el3.style.flex = previousFlex[index] ?? "";
   });
-  if (usage) {
-    if (previousUsageDisplay) {
-      usage.style.setProperty("display", previousUsageDisplay, previousUsageDisplayPriority);
-    } else {
-      usage.style.removeProperty("display");
-    }
-  }
   return width;
 }
 function footerNeedsCompact(footer) {
@@ -99813,14 +103682,37 @@ function buildFooterUsageTooltip(display, opts) {
   });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
-  const subagentRow = subagents.runs > 0 ? {
+  const allRuns = estimated ? [] : listSubagentRuns(opts.messages);
+  const runningRuns = allRuns.filter((run2) => run2.status === "running").length;
+  const unreportedRuns = allRuns.length - subagents.runs;
+  const subagentRunNotes = [];
+  if (subagents.runs > 0) {
+    subagentRunNotes.push(
+      `${formatTokenCount(subagents.inputTokens)} in / ${formatTokenCount(subagents.outputTokens)} out`
+    );
+  }
+  if (runningRuns > 0) subagentRunNotes.push(`${String(runningRuns)} running`);
+  else if (unreportedRuns > 0) {
+    subagentRunNotes.push(
+      subagents.runs > 0 ? `${String(unreportedRuns)} without usage` : "no usage reported"
+    );
+  }
+  const subagentRow = allRuns.length > 0 ? {
     label: "Subagents",
-    value: `${String(subagents.runs)} ${subagents.runs === 1 ? "run" : "runs"} \xB7 ${formatTokenCount(
-      subagents.inputTokens
-    )} in / ${formatTokenCount(subagents.outputTokens)} out`
+    value: `${String(allRuns.length)} ${allRuns.length === 1 ? "run" : "runs"} \xB7 ${subagentRunNotes.join(" \xB7 ")}`
   } : null;
-  const conversationLabel = subagentRow ? "Excluding subagents" : null;
-  const threadLabel2 = subagentRow ? "Whole thread" : null;
+  const subagentRuns = allRuns.slice(0, MAX_LISTED_SUBAGENT_RUNS).map((run2) => ({
+    label: run2.label,
+    detail: [
+      run2.model,
+      run2.status === "done" ? "done" : run2.status === "error" ? "failed" : "running"
+    ].filter((part) => part !== void 0).join(" \xB7 "),
+    value: run2.usage ? `${formatTokenCount(run2.usage.inputTokens)} in / ${formatTokenCount(run2.usage.outputTokens)} out` : "",
+    status: run2.status
+  }));
+  const hasReportedRuns = subagents.runs > 0;
+  const conversationLabel = hasReportedRuns ? "Excluding subagents" : null;
+  const threadLabel2 = hasReportedRuns ? "Whole thread" : null;
   const modelRows = [];
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
@@ -99838,78 +103730,21 @@ function buildFooterUsageTooltip(display, opts) {
     threadLabel: threadLabel2,
     threadRows,
     subagentRow,
+    subagentRuns,
+    subagentRunsOverflow: Math.max(0, allRuns.length - subagentRuns.length),
     modelRows,
     note,
     freeNote
   };
 }
+var MAX_LISTED_SUBAGENT_RUNS;
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
     init_footer_usage_summary();
     init_format_usage_summary();
     init_footer_usage_summary();
-  }
-});
-
-// src/renderer/views/footer-usage-popover.ts
-function row(entry, className) {
-  return el(
-    "div",
-    { class: className },
-    el("span", { class: "footer-usage-popover-name" }, entry.label),
-    el("span", { class: "footer-usage-popover-value" }, entry.value)
-  );
-}
-function createFooterUsagePopover() {
-  const root = el("div", { class: "footer-usage-popover", role: "tooltip", hidden: true });
-  let hasContent = false;
-  return {
-    root,
-    render(model) {
-      clear(root);
-      hasContent = model !== null;
-      if (!model) {
-        root.hidden = true;
-        return;
-      }
-      root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
-      if (model.conversationLabel) {
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
-      }
-      for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.threadLabel) {
-        root.append(el("div", { class: "footer-usage-popover-divider" }));
-        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-      } else {
-        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
-        if (model.subagentRow || model.modelRows.length > 0) {
-          root.append(el("div", { class: "footer-usage-popover-divider" }));
-        }
-      }
-      if (model.subagentRow) {
-        root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
-      }
-      for (const entry of model.modelRows) {
-        root.append(row(entry, "footer-usage-popover-row is-model"));
-      }
-      if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
-      if (model.freeNote) {
-        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
-      }
-    },
-    show() {
-      if (hasContent) root.hidden = false;
-    },
-    hide() {
-      root.hidden = true;
-    }
-  };
-}
-var init_footer_usage_popover = __esm({
-  "src/renderer/views/footer-usage-popover.ts"() {
-    init_helpers();
+    MAX_LISTED_SUBAGENT_RUNS = 5;
   }
 });
 
@@ -99977,10 +103812,10 @@ var init_changes_stat = __esm({
 
 // src/renderer/views/create-pr-dialog.ts
 function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openCreatePrDialog(opts) {
   const dialog2 = ensureDialog4();
@@ -100004,17 +103839,16 @@ function openCreatePrDialog(opts) {
   bodyInput.addEventListener("input", () => {
     bodyIsUsers = true;
   });
-  if (opts.bodyPromise) {
+  let bodyPending = !!opts.bodyPromise;
+  const bodyReady = opts.bodyPromise?.catch(() => null).then((suggested) => {
+    bodyPending = false;
+    bodyInput.classList.remove("is-pending");
+    bodyInput.placeholder = "Optional";
+    if (!bodyIsUsers && suggested) bodyInput.value = suggested;
+    return suggested;
+  });
+  if (bodyReady) {
     bodyInput.classList.add("is-pending");
-    void opts.bodyPromise.then((suggested) => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-      if (bodyIsUsers || !suggested) return;
-      bodyInput.value = suggested;
-    }).catch(() => {
-      bodyInput.classList.remove("is-pending");
-      bodyInput.placeholder = "Optional";
-    });
   }
   const draftInput = el("input", {
     type: "checkbox",
@@ -100044,8 +103878,9 @@ function openCreatePrDialog(opts) {
   };
   syncCreateLabel();
   draftInput.addEventListener("change", syncCreateLabel);
+  let submitting = false;
   const syncCreateEnabled = () => {
-    createBtn.disabled = titleInput.value.trim().length === 0;
+    createBtn.disabled = submitting || titleInput.value.trim().length === 0;
   };
   syncCreateEnabled();
   titleInput.addEventListener("input", syncCreateEnabled);
@@ -100109,8 +103944,21 @@ function openCreatePrDialog(opts) {
     });
     createBtn.addEventListener("click", () => {
       const title = titleInput.value.trim();
-      if (!title) return;
-      finish({ title, body: bodyInput.value.trim(), draft: draftInput.checked });
+      if (!title || submitting || settled) return;
+      const choice = { title, body: bodyInput.value.trim(), draft: draftInput.checked };
+      if (!bodyPending || bodyIsUsers) {
+        finish(choice);
+        return;
+      }
+      submitting = true;
+      syncCreateEnabled();
+      titleInput.disabled = true;
+      bodyInput.disabled = true;
+      draftInput.disabled = true;
+      createBtn.textContent = "Waiting for description\u2026";
+      void bodyReady?.then((suggested) => {
+        finish({ ...choice, body: suggested?.trim() ?? "" });
+      });
     });
     titleInput.addEventListener("keydown", (e3) => {
       if (e3.key !== "Enter") return;
@@ -100122,11 +103970,11 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
     init_helpers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -100808,6 +104656,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   let refreshSequence = 0;
   let overlay = null;
   let lastPrompt = "";
+  let pendingContinuation = null;
   let modelPicker = null;
   const text2 = el("span", { class: "container-run-text" });
   const details = el(
@@ -100871,7 +104720,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         id: "container-run-dialog",
         className: "container-run-dialog"
       });
-      overlay.dialog.addEventListener("close", stopElapsedClock);
+      overlay.dialog.addEventListener("close", () => {
+        stopElapsedClock();
+        pendingContinuation = null;
+      });
     }
     return overlay;
   }
@@ -100894,7 +104746,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
   }
   function renderDialog() {
     if (!overlay?.isOpen()) return;
-    const run2 = activeRun();
+    if (pendingContinuation && (pendingContinuation.threadId !== context.getActiveThreadId() || pendingContinuation.projectId !== context.getActiveProjectId())) {
+      pendingContinuation = null;
+      overlay.close();
+      return;
+    }
+    if (isLive2(activeRun())) pendingContinuation = null;
+    const run2 = pendingContinuation ? null : activeRun();
     modelPicker?.destroy();
     modelPicker = null;
     clear(overlay.dialog);
@@ -100903,7 +104761,9 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     else stopElapsedClock();
   }
   function armForm() {
-    const draft = context.getDraft().trim();
+    const continuation = pendingContinuation;
+    const previousSettings = continuation?.previous.settings;
+    const draft = continuation?.prompt ?? context.getDraft().trim();
     const quotesDraft = draft.length > 0;
     const task = el("textarea", {
       class: "container-run-prompt",
@@ -100919,7 +104779,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       class: "container-run-model",
       name: "containerRunModel"
     });
-    let chosenModel = context.getModel();
+    let chosenModel = continuation?.previous.model ?? context.getModel();
     modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
     modelSelect.value = chosenModel;
     modelSelect.addEventListener("change", () => {
@@ -100968,14 +104828,16 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       max: "1440",
       step: "1"
     });
-    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    minutes2.value = String(
+      previousSettings ? Math.max(1, Math.round(previousSettings.budgets.wallClockMs / 6e4)) : DEFAULT_WALL_CLOCK_MINUTES
+    );
     const tokens = el("input", {
       type: "number",
       class: "container-run-tokens",
       min: "1000",
       step: "1000"
     });
-    tokens.value = String(DEFAULT_TOKEN_CEILING);
+    tokens.value = String(previousSettings?.budgets.tokenCeiling ?? DEFAULT_TOKEN_CEILING);
     const egressHint = el("p", { class: "field-hint container-run-model-hint" });
     function renderEgressHint() {
       egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
@@ -101021,6 +104883,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       name: "containerRunInstall",
       checked: ""
     });
+    installOptIn.checked = previousSettings?.installDependencies ?? continuation === null;
     const installField = el(
       "div",
       { class: "container-run-install-field" },
@@ -101039,7 +104902,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const start = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
-      "Start unattended run"
+      continuation ? "Start follow-up run" : "Start unattended run"
     );
     const cancel = el(
       "button",
@@ -101064,6 +104927,10 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       const threadId = context.getActiveThreadId();
       const projectId = context.getActiveProjectId();
       if (!threadId || !projectId) return;
+      if (continuation && (continuation.threadId !== threadId || continuation.projectId !== projectId)) {
+        overlay?.close();
+        return;
+      }
       const prompt = task.value.trim();
       if (!prompt) return;
       lastPrompt = prompt;
@@ -101077,7 +104944,15 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         model: chosenModel,
         budgets: { wallClockMs, tokenCeiling },
         ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
-        installDependencies: installOptIn.checked
+        installDependencies: installOptIn.checked,
+        ...continuation ? {
+          continueFrom: continuation.runtimeId,
+          continueContext: {
+            prompt: continuation.previous.task,
+            report: continuation.previous.report ?? "",
+            ref: continuation.previous.ref
+          }
+        } : {}
       }).then((started) => {
         if (!started) start.disabled = false;
       });
@@ -101085,7 +104960,11 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     return el(
       "div",
       { class: "container-run-form" },
-      el("h2", { class: "container-run-title" }, "Run this thread unattended in a container"),
+      el(
+        "h2",
+        { class: "container-run-title" },
+        continuation ? "Review the container follow-up" : "Run this thread unattended in a container"
+      ),
       el(
         "p",
         { class: "container-run-intro" },
@@ -101373,10 +105252,6 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       return false;
     }
   }
-  const DEFAULT_BUDGETS = {
-    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
-    tokenCeiling: DEFAULT_TOKEN_CEILING
-  };
   function latestOnActiveThread() {
     const threadId = context.getActiveThreadId();
     const thread = threadId ? getThreadById(context.store, threadId) : void 0;
@@ -101395,32 +105270,32 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
     };
   }
-  async function followUp(prompt) {
+  function followUp(prompt) {
     const threadId = context.getActiveThreadId();
     const projectId = context.getActiveProjectId();
-    if (!threadId || !projectId) return false;
+    if (!threadId || !projectId) return Promise.resolve(false);
     if (isLive2(activeRun())) {
       showToast("The container is still busy with the previous run; wait for it or stop it.", {
         variant: "error"
       });
-      return false;
+      return Promise.resolve(false);
     }
     const latest = latestOnActiveThread();
     if (!latest || latest.runtimeId === null) {
       showToast("This thread has no container run to continue.", { variant: "error" });
-      return false;
+      return Promise.resolve(false);
     }
-    return startRun({
+    pendingContinuation = {
       projectId,
       threadId,
       prompt,
-      model: latest.model,
-      budgets: DEFAULT_BUDGETS,
-      ...latest.credential === "login" ? { useAgentLogin: true } : {},
-      installDependencies: true,
-      continueFrom: latest.runtimeId,
-      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
-    });
+      runtimeId: latest.runtimeId,
+      previous: latest
+    };
+    const dialog2 = ensureDialog5();
+    dialog2.open();
+    renderDialog();
+    return Promise.resolve(false);
   }
   const usageFolded = /* @__PURE__ */ new Set();
   function settle2(progress) {
@@ -101789,18 +105664,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn);
   checkoutHost.append(checkoutBtn, checkoutMenu);
   const branchHost = el("div", { class: "footer-branch-host" });
-  const usageBtn = el("span", {
-    class: "footer-usage",
-    tabindex: "0",
-    role: "note",
-    "aria-label": "Token usage"
-  });
-  const usagePopover = createFooterUsagePopover();
   const usageGroup = el("div", { class: "footer-usage-group" });
   const queueIndicator = el("span", { class: "footer-queue", hidden: "", "aria-live": "polite" });
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root);
+  usageGroup.append(contextWheel.root, queueIndicator);
   footer.append(modelHost, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -101975,10 +105843,6 @@ function mountInputBar(root, store2, api2, opts = {}) {
       showErrorToast("Debug trace failed", error62);
     });
   }
-  usageBtn.addEventListener("mouseenter", usagePopover.show);
-  usageBtn.addEventListener("mouseleave", usagePopover.hide);
-  usageBtn.addEventListener("focus", usagePopover.show);
-  usageBtn.addEventListener("blur", usagePopover.hide);
   const checkoutErrorText = el("span", {
     class: "composer-checkout-error-text composer-banner-text"
   });
@@ -102584,7 +106448,6 @@ ${description}
     const priced = { model, measuredUsage: thread.usage, pricing: modelPricing };
     const tooltip = buildFooterUsageTooltip(display, { ...priced, messages: thread.messages });
     return {
-      label: formatFooterUsageSummary(display),
       detail: formatFooterUsageDetail(display, priced),
       tooltip
     };
@@ -102608,30 +106471,18 @@ ${description}
     const running = thread?.status === "running";
     const acpContext = isAcpModel(footerChatModel());
     const usage = usageViews();
-    const compact = footerCompact.isCompact();
     const snapshot = thread?.contextSnapshot;
-    const snapshotVisible = !!snapshot && snapshot.conversationBudget > 0 && (running || snapshot.fillRatio > 0.01);
     const snapshotUsable = !!snapshot && snapshot.conversationBudget > 0 && snapshot.fillRatio > 0.01;
     const draftNonEmpty = composer.value.trim().length > 0 || attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0 || attachedThreads.length > 0 || attachedShells.length > 0;
     const showBreakdown = !acpContext && !running && !!lastBreakdown && lastBreakdown.totalTokens > 0 && (!snapshotUsable || draftNonEmpty);
-    const tuckUsageIntoWheel = compact && !showBreakdown && snapshotVisible;
     const hoverBreakdown = !running && !acpContext ? lastBreakdown : null;
     contextWheel.update(snapshot, running, {
-      usageLine: tuckUsageIntoWheel ? usage?.detail ?? null : null,
+      usageLine: usage?.detail ?? null,
+      usage: usage?.tooltip ?? null,
       breakdown: hoverBreakdown,
       breakdownRing: showBreakdown,
       snapshotSource: acpContext && snapshot?.source === "agent-reported" ? "Reported by ACP agent" : null
     });
-    contextWheel.root.classList.toggle("is-interactive", tuckUsageIntoWheel);
-    if (!usage) {
-      usageBtn.hidden = true;
-      usagePopover.render(null);
-    } else {
-      usageBtn.hidden = tuckUsageIntoWheel;
-      usageBtn.textContent = usage.label;
-      usageBtn.setAttribute("aria-label", usage.detail);
-      usagePopover.render(tuckUsageIntoWheel ? null : usage.tooltip);
-    }
     footerOverflow?.update();
     updateContextFitWarning();
     updateCheckoutControl();
@@ -102874,13 +106725,14 @@ ${description}
     if (!projectId || !thread) return;
     const choice = checkoutChoice(id);
     const model = thread.model ?? store2.getState().settings?.model;
-    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
+    const baseBranchResult = requiresCheckoutPreparation ? Promise.allSettled([branchControl.resolveBaseBranch(projectId, id)]) : null;
     const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
     if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
@@ -102889,7 +106741,6 @@ ${description}
         return;
       }
     }
-    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -102986,6 +106837,9 @@ ${description}
       checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
+        const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
+        if (branchDecision?.status === "rejected") throw branchDecision.reason;
+        const baseBranch = branchDecision?.status === "fulfilled" ? branchDecision.value : void 0;
         const prepared = await api2.agent.prepareCheckout(
           projectId,
           id,
@@ -103078,7 +106932,14 @@ ${description}
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
     recordThreadVideos(store2, id, attachedVideos2);
     recordThreadArchives(store2, id, attachedArchives2);
-    const queued = { messageId, payload, createdAt: Date.now() };
+    const queued = {
+      messageId,
+      payload,
+      createdAt: Date.now(),
+      // Snapshot the selection with the prompt. A later model change while this
+      // item waits in the pinned queue should affect the next prompt, not this one.
+      model: model ?? DEFAULT_APP_CHAT_MODEL
+    };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
     } else {
@@ -103305,14 +107166,24 @@ ${description}
     // Unlike attachTextBlock, a quote lands as literal editable text so the
     // user can trim or edit it inline before sending, matching how a reply
     // quote behaves everywhere else.
-    quoteText: (content) => {
+    quoteText: (content, reply = "") => {
       const quote = formatMarkdownQuote(content);
       const caret = composer.selectionStart;
       const prevChar = caret > 0 ? composer.value[caret - 1] : void 0;
       const needsLeadingBreak = prevChar !== void 0 && prevChar !== "\n";
       composer.insertText(`${needsLeadingBreak ? "\n\n" : ""}${quote}
 
-`);
+${reply}`);
+      const quoteEnd = composer.selectionStart;
+      composer.focus();
+      composer.setSelectionRange(quoteEnd, quoteEnd);
+      composer.el.scrollTop = composer.el.scrollHeight;
+    },
+    sendQuotedReply: async (content, reply) => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false;
+      attachmentHandlers.quoteText(content, reply);
+      await submit();
+      return true;
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
@@ -103484,6 +107355,9 @@ ${description}
     store2.on("message_queued", (tid) => {
       if (tid === getActiveThreadId()) updateQueueIndicator();
     }),
+    store2.on("thread_model_resolved", (tid) => {
+      if (tid === getActiveThreadId()) modelPicker.sync();
+    }),
     store2.on("message_added", (tid) => {
       if (tid === getActiveThreadId()) updateFooter();
     }),
@@ -103622,7 +107496,6 @@ var init_input_bar = __esm({
     init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
-    init_footer_usage_popover();
     init_lm_studio_defaults();
     init_dynamic_model();
     init_follow_up_suggestions();
@@ -116267,14 +120140,19 @@ function readableState(state) {
   return state.toLowerCase().replaceAll("_", " ");
 }
 function checkTone(state) {
-  if (["SUCCESS", "NEUTRAL"].includes(state)) return "success";
+  if (state === "SUCCESS") return "success";
   if (["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED"].includes(state)) return "failure";
   if (["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"].includes(state)) return "pending";
   return "unknown";
 }
 function externalButton(label, url2, open2) {
   if (!url2 || !/^https?:\/\//i.test(url2)) return el("span", {}, label);
-  const button = el("button", { type: "button", class: "pr-activity-link" }, label);
+  const button = el(
+    "button",
+    { type: "button", class: "pr-activity-link" },
+    el("span", {}, label),
+    externalLinkIcon("ui-icon ui-icon-sm")
+  );
   button.addEventListener("click", () => {
     open2(url2);
   });
@@ -116314,18 +120192,37 @@ function renderPrActivity(host, section, activity, open2) {
       const date5 = new Date(comment.createdAt);
       const time3 = el(
         "time",
-        { datetime: comment.createdAt },
-        Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        {
+          datetime: comment.createdAt,
+          title: Number.isNaN(date5.getTime()) ? comment.createdAt : date5.toLocaleString()
+        },
+        Number.isNaN(date5.getTime()) ? comment.createdAt : `${date5.toLocaleDateString(void 0, { month: "short", day: "numeric" })} \xB7 ${date5.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" })}`
       );
       const heading = el(
         "div",
         { class: "pr-comment-meta" },
-        el("strong", {}, `@${comment.author}`),
-        el("span", {}, comment.reviewState ? readableState(comment.reviewState) : "commented"),
+        el(
+          "span",
+          { class: "pr-comment-avatar", "aria-hidden": "true" },
+          comment.author.slice(0, 2).toUpperCase()
+        ),
+        el(
+          "div",
+          { class: "pr-comment-author" },
+          el("strong", {}, `@${comment.author}`),
+          el(
+            "span",
+            {
+              class: comment.reviewState ? `pr-review-state pr-review-state-${comment.reviewState.toLowerCase()}` : "pr-comment-kind"
+            },
+            comment.reviewState ? readableState(comment.reviewState) : "commented"
+          )
+        ),
         time3
       );
       const body = el("div", { class: "message-text streaming-markdown pr-comment-body" });
       body.innerHTML = renderMarkdown(comment.body);
+      attachCodeBlockCopyButtons(body);
       host.append(
         el("article", { class: "pr-comment", "data-comment-id": comment.id }, heading, body)
       );
@@ -116348,26 +120245,62 @@ function renderPrActivity(host, section, activity, open2) {
       )
     );
   if (!activity.checks.length) host.append(el("p", {}, "No checks reported for this commit."));
-  for (const check2 of activity.checks) {
-    host.append(
+  const groups = [
+    { tone: "failure", label: "Needs attention" },
+    { tone: "pending", label: "In progress" },
+    { tone: "success", label: "Passed" },
+    { tone: "unknown", label: "Other results" }
+  ];
+  const needsAttention = activity.checks.some(
+    (check2) => ["failure", "pending"].includes(checkTone(check2.state))
+  );
+  for (const group of groups) {
+    const checks = activity.checks.filter((check2) => checkTone(check2.state) === group.tone);
+    if (!checks.length) continue;
+    const collapsible = group.tone === "success" || group.tone === "unknown";
+    const section2 = collapsible ? el("details", {
+      class: "pr-check-group",
+      open: group.tone === "success" && !needsAttention
+    }) : el("section", { class: "pr-check-group" });
+    section2.append(
       el(
-        "div",
-        { class: "pr-check-row" },
-        el(
-          "span",
-          { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
-          readableState(check2.state)
-        ),
-        el("span", { class: "pr-check-name" }, check2.name),
-        externalButton("Details", check2.url, open2)
+        collapsible ? "summary" : "h4",
+        { class: "pr-check-group-heading" },
+        ...collapsible ? [chevronRightIcon("ui-icon ui-icon-sm pr-check-chevron")] : [],
+        el("span", {}, group.label),
+        el("span", { class: "pr-check-count" }, String(checks.length))
       )
     );
+    for (const check2 of checks) {
+      const icon = group.tone === "success" ? checkIcon() : group.tone === "failure" ? closeIcon() : group.tone === "pending" ? circleIcon() : minusIcon();
+      section2.append(
+        el(
+          "div",
+          { class: "pr-check-row" },
+          el("span", { class: `pr-check-icon pr-check-tone-${group.tone}` }, icon),
+          el(
+            "div",
+            { class: "pr-check-body" },
+            el("span", { class: "pr-check-name" }, check2.name),
+            el(
+              "span",
+              { class: `pr-check-state pr-check-state-${checkTone(check2.state)}` },
+              readableState(check2.state)
+            )
+          ),
+          externalButton("Details", check2.url, open2)
+        )
+      );
+    }
+    host.append(section2);
   }
 }
 var init_pr_pane_activity = __esm({
   "src/renderer/views/pr-pane-activity.ts"() {
     init_dist();
     init_helpers();
+    init_icons();
+    init_code_block_copy();
   }
 });
 
@@ -116488,7 +120421,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let selectedPr = null;
   let prDetails = null;
   let selectedFile = null;
-  let filesExpanded = false;
   let diffEditor = null;
   let selectRequestId = 0;
   let diffLoadQueue = Promise.resolve();
@@ -116527,9 +120459,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   function knownChecks(pr2) {
     return pr2.checks ?? checksCache.get(githubPrKey(pr2));
   }
-  function applyCiClass(node2, state) {
-    node2.className = `pr-list-ci pr-list-ci-${state}`;
-    setTooltip(node2, CI_LABEL[state]);
+  function applyPrStatus(node2, pr2, checks) {
+    const lifecycle = cachedPrTitle(pr2)?.state ?? (isPlaceholderPr(pr2) ? "UNKNOWN" : pr2.state);
+    const kind = lifecycle === "OPEN" ? "open" : lifecycle === "MERGED" ? "merged" : lifecycle === "CLOSED" ? "closed" : "unknown";
+    const failing = lifecycle === "OPEN" && checks === "failure";
+    const conflicts = lifecycle === "OPEN" && cachedPrTitle(pr2)?.conflicts === true;
+    node2.className = `chat-pr-status pr-list-status is-${kind}${conflicts ? " has-conflicts" : failing ? " has-ci-failure" : ""}`;
+    const label = `PR #${String(pr2.number)} ${kind}${conflicts ? "; merge conflicts" : ""}; ${CI_LABEL[checks]}`;
+    node2.setAttribute("role", "img");
+    node2.setAttribute("aria-label", label);
+    setTooltip(node2, label);
+    const checksLabel = node2.parentElement?.querySelector(".pr-list-checks-label");
+    if (checksLabel) {
+      checksLabel.textContent = CI_LABEL[checks];
+      checksLabel.setAttribute("data-state", checks);
+    }
+    node2.replaceChildren(
+      lifecycle === "MERGED" ? gitMergeIcon("ui-icon ui-icon-sm") : gitPullRequestIcon("ui-icon ui-icon-sm", conflicts)
+    );
   }
   function ensureCheck(pr2) {
     const key = githubPrKey(pr2);
@@ -116545,7 +120492,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       checksInFlight.delete(key);
       if (gen !== ciGen) return;
       const node2 = ciEls.get(key);
-      if (node2) applyCiClass(node2, checksCache.get(key) ?? "no_checks");
+      if (node2) applyPrStatus(node2, pr2, checksCache.get(key) ?? "no_checks");
     });
   }
   function ensureDiffEditor() {
@@ -116592,7 +120539,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const isSelected = selectedPr?.owner === pr2.owner && selectedPr.repo === pr2.repo && selectedPr.number === pr2.number;
     const ci2 = el("span", {});
     const state = knownChecks(pr2);
-    applyCiClass(ci2, state ?? "loading");
+    applyPrStatus(ci2, pr2, state ?? "loading");
     ciEls.set(githubPrKey(pr2), ci2);
     const agent = agentLinks.get(githubPrKey(pr2));
     const agentBadge = agent ? el(
@@ -116609,12 +120556,23 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       {
         type: "button",
         class: `git-change-row pr-list-row${isSelected ? " is-selected" : ""}`,
-        "data-pr-section": section
+        "data-pr-section": section,
+        "aria-pressed": String(isSelected)
       },
-      el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
       el("span", { class: "git-change-path pr-list-title", title: titleText }, titleText),
-      ...agentBadge ? [agentBadge] : [],
-      ci2
+      el(
+        "span",
+        { class: "pr-list-meta" },
+        el("span", { class: "pr-list-number" }, `#${String(pr2.number)}`),
+        el("span", { class: "pr-list-repo", title: `${pr2.owner}/${pr2.repo}` }, pr2.repo),
+        ...agentBadge ? [agentBadge] : [],
+        ci2,
+        el(
+          "span",
+          { class: "pr-list-checks-label", "data-state": state ?? "loading" },
+          CI_LABEL[state ?? "loading"]
+        )
+      )
     );
     row2.addEventListener("click", () => void selectPr(pr2));
     if (!state) ensureCheck(pr2);
@@ -116627,11 +120585,10 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       const cached2 = cachedPrTitle(pr2);
       if (cached2) {
         if (pr2.title !== cached2.title) pr2.title = cached2.title;
-        continue;
+        if (cached2.conflicts !== void 0) continue;
       }
-      if (!isPlaceholderPr(pr2)) {
-        rememberPrTitle(pr2, pr2.title);
-        continue;
+      if (!cached2 && !isPlaceholderPr(pr2)) {
+        rememberPrTitle(pr2, pr2.title, void 0, pr2.state);
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
@@ -116696,6 +120653,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       listBody.append(section);
     }
     if (repoPrs.length > 0 && ghStatus?.authenticated) {
+      ensureTitles(repoPrs);
       const firstRepoPr = at(repoPrs, 0);
       const slug2 = `${firstRepoPr.owner}/${firstRepoPr.repo}`;
       const section = el("div", { class: "git-changes-section" });
@@ -116732,6 +120690,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         if (otherLoading) {
           section.append(el("div", { class: "git-changes-empty" }, "Loading\u2026"));
         } else if (otherPrs.length > 0) {
+          ensureTitles(otherPrs);
           for (const pr2 of otherPrs) section.append(renderPrRow(pr2, "mine"));
         } else {
           section.append(
@@ -116785,7 +120744,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       fresh = null;
     }
     if (!isStillSelected(ref)) return;
-    if (fresh) prDetails = fresh;
+    if (fresh) {
+      prDetails = fresh;
+      rememberPrTitle(fresh, fresh.title, fresh.isDraft, fresh.state, prHasMergeConflicts(fresh));
+      const row2 = prList.find((pr2) => githubPrKey(pr2) === githubPrKey(fresh));
+      if (row2) {
+        row2.title = fresh.title;
+        row2.state = fresh.state;
+      }
+      renderList();
+    }
     renderMeta();
     renderSections();
   }
@@ -116798,6 +120766,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     btn.addEventListener("click", () => {
       const ref = selectedPr;
       if (!ref) return;
+      const menu = btn.closest("details");
+      if (menu) menu.open = false;
       void (async () => {
         if (!await showConfirmDialog({ message: confirmMessage, confirmLabel: label })) return;
         for (const other of metaHost.querySelectorAll(".pr-action-btn")) {
@@ -116827,7 +120797,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn",
         "data-tooltip": "Open this pull request on GitHub"
       },
-      el("span", {}, "Open on GitHub"),
+      el("span", {}, "GitHub"),
       externalLinkIcon("ui-icon ui-icon-sm")
     );
     const prUrl = prDetails.url;
@@ -116847,7 +120817,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "span",
         {},
-        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open chat"
       )
     ) : null;
     if (openThreadBtn && producingThreadId) {
@@ -116869,14 +120839,19 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       startPrDiscussThread(store2, discussPr);
       getPromptAttachmentHandlers()?.focusComposer?.();
     });
-    const stats = [];
-    if (typeof prDetails.changedFiles === "number")
-      stats.push(`${String(prDetails.changedFiles)} files`);
-    if (typeof prDetails.additions === "number" || typeof prDetails.deletions === "number") {
-      stats.push(`+${String(prDetails.additions ?? 0)} -${String(prDetails.deletions ?? 0)}`);
-    }
+    const branch = el("div", { class: "pr-viewer-subtitle" });
+    const lifecycleIcon = el("span", {});
+    applyPrStatus(lifecycleIcon, prDetails, knownChecks(prDetails) ?? "no_checks");
+    lifecycleIcon.classList.remove("pr-list-status");
+    lifecycleIcon.classList.add("pr-viewer-status");
+    const lifecycle = prDetails.state === "OPEN" ? "Open" : prDetails.state === "MERGED" ? "Merged" : prDetails.state === "CLOSED" ? "Closed" : "Unknown";
+    branch.append(el("span", { class: "pr-lifecycle" }, lifecycleIcon, el("span", {}, lifecycle)));
     if (prDetails.headRefName && prDetails.baseRefName) {
-      stats.push(`${prDetails.headRefName} \u2192 ${prDetails.baseRefName}`);
+      branch.append(
+        el("code", {}, prDetails.headRefName),
+        arrowRightIcon("ui-icon ui-icon-sm"),
+        el("code", {}, prDetails.baseRefName)
+      );
     }
     const badges = el("span", { class: "pr-viewer-badges" });
     if (prDetails.isDraft) {
@@ -116912,16 +120887,29 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         )
       );
     }
-    const actions = el(
-      "div",
-      { class: "pr-viewer-actions" },
-      openBtn,
-      ...openThreadBtn ? [openThreadBtn] : [],
-      newThreadBtn
+    const overflow = el("details", { class: "pr-more-actions" });
+    const summary = el(
+      "summary",
+      {
+        class: "ui-btn ui-btn-secondary ui-btn-compact pr-more-toggle",
+        "aria-label": "More pull request actions",
+        "data-tooltip": "More pull request actions"
+      },
+      moreHorizontalIcon("ui-icon ui-icon-sm")
     );
+    const menu = el("div", { class: "pr-actions-menu" });
+    overflow.append(summary, menu);
+    const actions = el("div", { class: "pr-viewer-actions" }, openThreadBtn ?? newThreadBtn);
+    if (openThreadBtn) menu.append(newThreadBtn);
     if (prDetails.state === "OPEN") {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number };
-      actions.append(
+      const approve = actionButton(
+        "Approve",
+        `Approve pull request #${String(ref.number)}?`,
+        (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
+      );
+      actions.append(approve);
+      menu.append(
         actionButton(
           "Rerun CI",
           `Re-run the failed CI runs for #${String(ref.number)}?`,
@@ -116929,32 +120917,36 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
             if (result.ok) return result;
             return { ...result, message: "", ok: true };
           })
-        ),
-        actionButton(
-          "Approve",
-          `Approve pull request #${String(ref.number)}?`,
-          (r2) => api2.gh.approvePr(r2.owner, r2.repo, r2.number)
         )
       );
-      if (prDetails.isDraft) {
-        actions.append(
+      if (prDetails.isDraft)
+        menu.append(
           actionButton(
             "Mark ready",
             `Mark #${String(ref.number)} ready for review?`,
             (r2) => api2.gh.markPrReady(r2.owner, r2.repo, r2.number)
           )
         );
-      }
-      if (!prDetails.autoMergeEnabled) {
-        actions.append(
+      if (!prDetails.autoMergeEnabled)
+        menu.append(
           actionButton(
             "Enable auto-merge",
             `Enable merge-when-ready for #${String(ref.number)}?`,
             (r2) => api2.gh.enableAutoMerge(r2.owner, r2.repo, r2.number)
           )
         );
-      }
     }
+    if (menu.childElementCount) actions.append(overflow);
+    newThreadBtn.addEventListener("click", () => {
+      overflow.open = false;
+    });
+    overflow.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !overflow.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      overflow.open = false;
+      summary.focus();
+    });
     const statusLine = el(
       "div",
       { class: "pr-action-status", "data-ok": String(lastActionMessage?.ok ?? true) },
@@ -116964,16 +120956,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     metaHost.append(
       el(
         "div",
-        { class: "pr-viewer-title-row" },
-        el("h4", { class: "pr-viewer-title" }, prDetails.title),
-        badges
+        { class: "pr-viewer-repo-line" },
+        el("span", {}, `${prDetails.owner}/${prDetails.repo}`),
+        openBtn
       ),
       el(
         "div",
-        { class: "pr-viewer-subtitle" },
-        `#${String(prDetails.number)} \xB7 ${prDetails.owner}/${prDetails.repo}`,
-        stats.length > 0 ? ` \xB7 ${stats.join(" \xB7 ")}` : ""
+        { class: "pr-viewer-title-row" },
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
+        el("span", { class: "pr-viewer-number" }, `#${String(prDetails.number)}`)
       ),
+      branch,
+      badges,
       actions,
       statusLine
     );
@@ -116984,8 +120978,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       descriptionHost.hidden = true;
       return;
     }
-    descriptionHost.hidden = false;
+    descriptionHost.hidden = activeSection !== "overview";
     descriptionHost.innerHTML = renderMarkdown(prDetails.body);
+    attachCodeBlockCopyButtons(descriptionHost);
+    const stats = el(
+      "div",
+      { class: "pr-description-meta" },
+      el("span", {}, `${String(prDetails.changedFiles ?? prDetails.files.length)} files`),
+      el("span", { class: "pr-additions" }, `+${String(prDetails.additions ?? 0)}`),
+      el("span", { class: "pr-deletions" }, `\u2212${String(prDetails.deletions ?? 0)}`)
+    );
+    descriptionHost.prepend(stats);
   }
   function renderSections() {
     clear(sectionsHost);
@@ -116994,7 +120997,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sections = [
       { key: "overview", label: "Overview" },
       { key: "comments", label: "Comments" },
-      { key: "checks", label: "Checks" }
+      { key: "checks", label: "Checks" },
+      { key: "files", label: "Files" }
     ];
     for (const section of sections) {
       const button = el(
@@ -117005,8 +121009,16 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           "data-section": section.key,
           "aria-pressed": String(activeSection === section.key)
         },
-        section.label
+        el("span", {}, section.label)
       );
+      const activity = prDetails.activity;
+      const count = section.key === "files" ? prDetails.files.length : activity && !activity.error ? section.key === "comments" ? activity.comments.length : section.key === "checks" ? activity.checks.length : void 0 : void 0;
+      if (count !== void 0) {
+        const truncated = section.key === "comments" ? activity?.commentsTruncated : section.key === "checks" ? activity?.checksTruncated : false;
+        button.append(
+          el("span", { class: "pr-section-count" }, `${String(count)}${truncated ? "+" : ""}`)
+        );
+      }
       button.addEventListener("click", () => {
         activeSection = section.key;
         clearDiff();
@@ -117016,7 +121028,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       });
       sectionsHost.append(button);
     }
-    if (activeSection !== "overview") {
+    descriptionHost.hidden = activeSection !== "overview" || !prDetails.body.trim();
+    filesHost.hidden = activeSection !== "files";
+    if (activeSection === "comments" || activeSection === "checks") {
       descriptionHost.hidden = true;
       filesHost.hidden = true;
       diffWrap.hidden = true;
@@ -117029,31 +121043,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   function renderFiles() {
     clear(filesHost);
-    if (!prDetails) {
+    filesHost.classList.toggle("pr-viewer-files-fill", selectedFile === null);
+    if (!prDetails || activeSection !== "files") {
       filesHost.hidden = true;
       return;
     }
     filesHost.hidden = false;
-    const header = el(
-      "button",
-      {
-        type: "button",
-        class: "pr-files-header",
-        "aria-expanded": String(filesExpanded)
-      },
-      el(
-        "span",
-        { class: `pr-other-chevron${filesExpanded ? " expanded" : ""}` },
-        chevronRightIcon("ui-icon ui-icon-sm")
-      ),
-      el("span", {}, `Changed files (${String(prDetails.files.length)})`)
+    filesHost.append(
+      el("div", { class: "pr-files-header" }, `Changed files (${String(prDetails.files.length)})`)
     );
-    header.addEventListener("click", () => {
-      filesExpanded = !filesExpanded;
-      renderFiles();
-    });
-    filesHost.append(header);
-    if (!filesExpanded) return;
     const list = el("div", { class: "pr-files-list" });
     for (const file2 of prDetails.files) {
       const isSelected = selectedFile === file2.path;
@@ -117068,7 +121066,13 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
           { class: `git-change-status git-change-status-${file2.status}` },
           STATUS_LABEL2[file2.status] ?? "M"
         ),
-        el("span", { class: "git-change-path" }, file2.path)
+        el("span", { class: "git-change-path", title: file2.path }, file2.path),
+        el(
+          "span",
+          { class: "pr-file-stats" },
+          el("span", { class: "pr-additions" }, `+${String(file2.additions)}`),
+          el("span", { class: "pr-deletions" }, `\u2212${String(file2.deletions)}`)
+        )
       );
       row2.addEventListener("click", () => void selectFile(file2.path));
       list.append(row2);
@@ -117081,13 +121085,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     clear(imageWrap);
-    const descriptionFills = Boolean(prDetails?.body.trim());
+    const descriptionFills = activeSection === "overview" && Boolean(prDetails?.body.trim());
     descriptionHost.classList.toggle("pr-viewer-description-fill", descriptionFills);
-    emptyState.hidden = descriptionFills;
+    emptyState.hidden = descriptionFills || Boolean(
+      prDetails && (activeSection === "comments" || activeSection === "checks" || activeSection === "files" && prDetails.files.length > 0)
+    );
     if (!ghStatus && !prDetails) {
       setInlineStatus(emptyState, "pending", "Loading pull requests\u2026");
     } else {
-      emptyState.textContent = prDetails ? "Select a changed file" : "Select a pull request";
+      emptyState.textContent = prDetails ? activeSection === "files" ? "No changed files" : "No description provided" : "Select a pull request";
     }
     if (diffEditor) disposeDiffModels(diffEditor);
   }
@@ -117141,7 +121147,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const sameAsCurrent = selectedPr?.owner === ref.owner && selectedPr.repo === ref.repo && selectedPr.number === ref.number;
     if (!sameAsCurrent) {
       lastActionMessage = null;
-      filesExpanded = false;
       activeSection = "overview";
     }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number };
@@ -117182,10 +121187,17 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        rememberPrTitle(details, details.title, details.isDraft);
+        rememberPrTitle(
+          details,
+          details.title,
+          details.isDraft,
+          details.state,
+          prHasMergeConflicts(details)
+        );
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
-        if (row2 && row2.title !== details.title) {
+        if (row2) {
           row2.title = details.title;
+          row2.state = details.state;
           scheduleTitleRepaint();
         }
       }
@@ -117325,6 +121337,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderList();
     filterInput.focus();
   });
+  const dismissActions = (event) => {
+    const menu = metaHost.querySelector(".pr-more-actions[open]");
+    if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+  };
+  document.addEventListener("pointerdown", dismissActions);
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(descriptionHost, store2, api2);
   const unbindBrowserLinks = bindBrowserLinkClicks(descriptionHost, store2, api2);
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
@@ -117404,6 +121421,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   return () => {
     disposed = true;
+    document.removeEventListener("pointerdown", dismissActions);
     titleGen++;
     if (titleRepaintTimer != null) {
       clearTimeout(titleRepaintTimer);
@@ -117432,6 +121450,7 @@ var init_pr_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_tooltip();
+    init_pr_status();
     init_inline_status();
     init_pane_loading();
     init_pane_popout_button();
@@ -117445,6 +121464,7 @@ var init_pr_pane = __esm({
     init_pr_pane_thread();
     init_prompt_attachments();
     init_dist();
+    init_code_block_copy();
     init_browser_links();
     init_pr_title_cache();
     init_workspace_links();
@@ -120811,6 +124831,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     updateNavButtons(tab);
     syncTabLabel(tab);
   }
+  function syncAnnotationScroll(tab) {
+    const layer = tab.annotation;
+    tab.annotationScroll?.setEnabled(
+      layer !== null && (layer.active || !layer.isEmpty()) && tab.id === activeTabId && browserModeActive(store2)
+    );
+  }
   function syncWebviewSize2(tab) {
     const webview = tab.webview;
     if (!webview || !tab.panel.classList.contains("is-active")) return;
@@ -120818,6 +124844,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (width <= 0 || height <= 0) return;
     webview.style.width = `${String(Math.round(width))}px`;
     webview.style.height = `${String(Math.round(height))}px`;
+    tab.annotationScroll?.kick();
   }
   function syncActiveWebviewSize() {
     const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -120884,6 +124911,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
+      syncAnnotationScroll(tab);
     });
     webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
@@ -120892,6 +124920,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      tab.annotationScroll?.kick();
       applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
@@ -120973,6 +125002,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const active2 = tab2.id === tabId;
       tab2.panel.classList.toggle("is-active", active2);
       tab2.tabBtn.classList.toggle("is-active", active2);
+      syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
     if (!tab) return;
@@ -121306,35 +125336,68 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
       }
     };
     const annotationLayer = () => {
-      tab.annotation ??= mountAnnotationLayer(webviewHost, {
-        label: webviewTitle(tab) ?? "browser page",
-        captureBase: async () => {
-          const contentsId = shareableWebContentsId(tab);
-          const capture = api2?.browser.captureScreenshot;
-          if (contentsId === null || !capture) return null;
-          return (await capture(contentsId)).dataUrl;
-        },
-        onSend: (payload) => {
-          return attachAnnotation(
-            payload,
-            firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
-          );
-        },
-        onDeactivate: () => {
-          annotateBtn.setAttribute("aria-pressed", "false");
-        }
-      });
+      if (!tab.annotation) {
+        tab.annotation = mountAnnotationLayer(webviewHost, {
+          label: webviewTitle(tab) ?? "browser page",
+          captureBase: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const capture = api2?.browser.captureScreenshot;
+            if (contentsId === null || !capture) return null;
+            return (await capture(contentsId)).dataUrl;
+          },
+          onSend: (payload) => {
+            return attachAnnotation(
+              payload,
+              firstNonEmptyString(tab.artefactTitle, webviewTitle(tab), webviewUrl(tab)) ?? "browser page"
+            );
+          },
+          onDeactivate: () => {
+            annotateBtn.setAttribute("aria-pressed", "false");
+            syncAnnotationScroll(tab);
+          }
+        });
+        const layer = tab.annotation;
+        tab.annotationScroll = trackGuestScroll({
+          wheelTarget: webviewHost,
+          fetchPosition: async () => {
+            const contentsId = shareableWebContentsId(tab);
+            const read = api2?.browser.scrollPosition;
+            if (contentsId === null || !read) return null;
+            return await read(contentsId);
+          },
+          onScroll: (position2) => {
+            layer.setScrollOffset(position2.x, position2.y);
+          }
+        });
+        const scroll = tab.annotationScroll;
+        webviewHost.addEventListener(
+          "focus",
+          () => {
+            scroll.setGuestFocused(true);
+          },
+          true
+        );
+        webviewHost.addEventListener(
+          "blur",
+          () => {
+            scroll.setGuestFocused(false);
+          },
+          true
+        );
+      }
       return tab.annotation;
     };
     annotateBtn.addEventListener("click", () => {
       setMenuOpen(false);
       const on3 = annotationLayer().toggle();
       annotateBtn.setAttribute("aria-pressed", String(on3));
+      syncAnnotationScroll(tab);
     });
     let menuOpen = false;
     function setMenuOpen(next) {
@@ -121454,6 +125517,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     tab.webview?.remove();
     tab.tabBtn.remove();
+    tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
     tab.panel.remove();
     tabs.delete(tabId);
@@ -121471,6 +125535,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function onBrowserModeChange() {
     const active2 = browserModeActive(store2);
     scheduleSessionSave();
+    for (const tab of tabs.values()) syncAnnotationScroll(tab);
     if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -121512,6 +125577,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -121758,6 +125824,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
       tab.tabBtn.remove();
+      tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
       tab.panel.remove();
     }
@@ -121783,6 +125850,7 @@ var init_browser_pane = __esm({
     init_prompt_attachments();
     init_annotation_layer();
     init_attach_annotation();
+    init_scroll_tracker();
     init_toast();
     init_tooltip();
     NET_ERROR_ABORTED = -3;
@@ -138265,55 +142333,6 @@ var init_vnc_pane = __esm({
   }
 });
 
-// src/renderer/views/setup/local-detection.ts
-function localServerTargets() {
-  const presets = BUILTIN_EXTRA_PROVIDERS.filter((p2) => p2.local).map((p2) => ({
-    id: p2.id,
-    label: p2.label,
-    baseUrl: p2.baseUrl
-  }));
-  return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
-}
-async function detectLocalServers(api2) {
-  return Promise.all(
-    localServerTargets().map(async (target) => {
-      try {
-        const res = await api2.lmStudio.test(target.baseUrl);
-        return {
-          ...target,
-          reachable: res.ok,
-          models: res.models ?? [],
-          ...res.error ? { error: res.error } : {}
-        };
-      } catch (err2) {
-        return {
-          ...target,
-          reachable: false,
-          models: [],
-          error: err2 instanceof Error ? err2.message : "probe failed"
-        };
-      }
-    })
-  );
-}
-async function importDetectedPreset(api2, result) {
-  if (result.id === "lmstudio" || !result.reachable || result.models.length === 0) return;
-  const existing = (await api2.settings.extraProviders()).find((p2) => p2.id === result.id);
-  const existingModels = existing?.models ?? [];
-  const seen = new Set(existingModels.map((m2) => m2.id));
-  const added = result.models.filter((id) => !seen.has(id)).map((id) => ({ id }));
-  await api2.settings.saveExtraProvider({
-    slug: result.id,
-    models: [...existingModels, ...added]
-  });
-}
-var init_local_detection = __esm({
-  "src/renderer/views/setup/local-detection.ts"() {
-    init_extra_providers();
-    init_lm_studio_defaults();
-  }
-});
-
 // src/renderer/views/setup/onboarding-scan.ts
 function message(err2) {
   return err2 instanceof Error ? err2.message : "probe failed";
@@ -138900,6 +142919,8 @@ function mountAskUserDialog(api2, store2) {
   let active2 = null;
   const changeListeners = /* @__PURE__ */ new Set();
   let arrivals = 0;
+  let escapeHeld = false;
+  let presentationTimer;
   let inputs = [];
   function isShowable(req) {
     return !req.threadId || req.threadId === store2.getState().activeThreadId;
@@ -138977,7 +142998,7 @@ function mountAskUserDialog(api2, store2) {
     active2 = null;
   }
   function showNext() {
-    if (active2) return;
+    if (active2 || escapeHeld || !dialog2.isConnected || isAnyDialogOpen()) return;
     const idx = queue.findIndex(isShowable);
     if (idx === -1) {
       syncAttention();
@@ -138988,13 +143009,64 @@ function mountAskUserDialog(api2, store2) {
     renderActive();
     syncAttention();
   }
-  function respond(answers) {
-    const current = active2;
-    if (!current) return;
-    dialog2.close();
-    active2 = null;
-    void api2.ask.respond(current.id, answers);
+  function scheduleNext() {
+    if (presentationTimer !== void 0 || active2 || queue.length === 0) return;
+    presentationTimer = window.setTimeout(() => {
+      presentationTimer = void 0;
+      showNext();
+    }, 0);
+  }
+  function onKeyDown(event) {
+    if (event.key === "Escape") escapeHeld = true;
+  }
+  function releaseEscape() {
+    escapeHeld = false;
+    scheduleNext();
+  }
+  function onKeyUp(event) {
+    if (event.key === "Escape") releaseEscape();
+  }
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("keyup", onKeyUp, true);
+  window.addEventListener("blur", releaseEscape);
+  const observer = new MutationObserver(() => {
+    if (!dialog2.isConnected) {
+      observer.disconnect();
+      if (presentationTimer !== void 0) window.clearTimeout(presentationTimer);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", releaseEscape);
+      return;
+    }
+    scheduleNext();
+  });
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ["open"],
+    childList: true,
+    subtree: true
+  });
+  function settle2(request, answers) {
+    if (active2 === request) {
+      dialog2.close();
+      active2 = null;
+    } else {
+      const idx = queue.indexOf(request);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+    }
+    void api2.ask.respond(request.id, answers);
     showNext();
+    syncAttention();
+  }
+  function respond(answers) {
+    if (active2) settle2(active2, answers);
+  }
+  function answerFrom(id, answers) {
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    if (request === void 0 || answers.length !== request.questions.length) return false;
+    settle2(request, [...answers]);
+    return true;
   }
   function submit() {
     respond(inputs.map((input2) => input2.value));
@@ -139055,8 +143127,10 @@ function mountAskUserDialog(api2, store2) {
       id: req.id,
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
+      options: req.questions.map((q2) => q2.options ?? []),
       receivedAt: req.receivedAt
     })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener);
       return () => {
@@ -139071,6 +143145,7 @@ var init_ask_user_dialog = __esm({
     init_dist();
     init_inline_markdown();
     init_attention();
+    init_dialog_shell();
   }
 });
 
@@ -139415,10 +143490,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog2 = document.createElement("dialog");
@@ -139438,7 +143513,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell3 = el("div", { class: "file-search-shell" }, input2, list, empty);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -139588,7 +143663,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -139599,125 +143674,8 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
-    openImpl2 = null;
-  }
-});
-
-// src/renderer/views/keyboard-shortcuts-dialog.ts
-function isMacPlatform() {
-  const platform = navigator.platform || navigator.userAgent || "";
-  return /mac/i.test(platform);
-}
-function keyLabel(token, isMac2) {
-  switch (token) {
-    case "Mod":
-      return isMac2 ? "\u2318" : "Ctrl";
-    case "Shift":
-      return isMac2 ? "\u21E7" : "Shift";
-    case "Alt":
-      return isMac2 ? "\u2325" : "Alt";
-    default:
-      return token;
-  }
-}
-function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
-}
-function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
-}
-function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
-}
-function mountKeyboardShortcutsDialog() {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = "keyboard-shortcuts-dialog";
-  dialog2.className = "keyboard-shortcuts-overlay";
-  const isMac2 = isMacPlatform();
-  const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section of SECTIONS) {
-    const group = el("div", { class: "keyboard-shortcuts-group" });
-    group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section.title));
-    for (const shortcut of section.shortcuts) {
-      const keys = el("span", { class: "keyboard-shortcuts-keys" });
-      shortcut.keys.forEach((token) => {
-        keys.append(el("kbd", { class: "keyboard-shortcuts-key" }, keyLabel(token, isMac2)));
-      });
-      group.append(
-        el(
-          "div",
-          { class: "keyboard-shortcuts-row" },
-          el("span", { class: "keyboard-shortcuts-label" }, shortcut.label),
-          keys
-        )
-      );
-    }
-    grid.append(group);
-  }
-  const shell3 = el(
-    "div",
-    { class: "keyboard-shortcuts-shell" },
-    el("h3", { class: "keyboard-shortcuts-title" }, "Keyboard Shortcuts"),
-    grid
-  );
-  clear(dialog2);
-  dialog2.append(shell3);
-  document.body.append(dialog2);
-  dialogEl5 = dialog2;
-  dialog2.addEventListener("mousedown", (e3) => {
-    if (e3.target === dialog2) closeKeyboardShortcutsDialog();
-  });
-}
-var SECTIONS, dialogEl5;
-var init_keyboard_shortcuts_dialog = __esm({
-  "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
-    init_helpers();
-    SECTIONS = [
-      {
-        title: "General",
-        shortcuts: [
-          { label: "New thread", keys: ["Mod", "N"] },
-          { label: "Open folder\u2026", keys: ["Mod", "O"] },
-          { label: "Settings", keys: ["Mod", ","] },
-          { label: "Model picker", keys: ["Mod", "Shift", "M"] },
-          { label: "Keyboard shortcuts", keys: ["Mod", "/"] },
-          { label: "Zoom interface in", keys: ["Mod", "="] },
-          { label: "Zoom interface out", keys: ["Mod", "-"] },
-          { label: "Reset interface zoom", keys: ["Mod", "0"] },
-          { label: "Stop agent / close overlay", keys: ["Esc"] }
-        ]
-      },
-      {
-        title: "Navigation",
-        shortcuts: [
-          { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
-          { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
-          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
-          { label: "Find in conversation", keys: ["Mod", "F"] },
-          { label: "Next thread", keys: ["Ctrl", "Tab"] },
-          { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
-          { label: "Close thread", keys: ["Mod", "W"] }
-        ]
-      },
-      {
-        title: "Panels",
-        shortcuts: [
-          { label: "Toggle side panel", keys: ["Mod", "B"] },
-          { label: "Explorer", keys: ["Mod", "Shift", "E"] },
-          { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
-          { label: "Browser", keys: ["Mod", "Shift", "B"] },
-          { label: "Focus browser address bar", keys: ["Mod", "L"] },
-          // Same physical key as above: while the browser page itself has focus,
-          // Mod+L shares its selection (or a screenshot) instead of focusing the
-          // address bar — see attachBrowserGuestShareShortcut.
-          { label: "Share browser selection or screenshot", keys: ["Mod", "L"] }
-        ]
-      }
-    ];
     dialogEl5 = null;
+    openImpl2 = null;
   }
 });
 
@@ -140499,6 +144457,66 @@ var init_process_manager_dialog = __esm({
   }
 });
 
+// src/renderer/views/activity-home.ts
+function mountActivityHome(pane, api2, store2, sources3, deps = {}) {
+  let shown = false;
+  const root = el("section", {
+    id: "activity-home",
+    class: "activity-home",
+    "aria-labelledby": "activity-home-title",
+    hidden: ""
+  });
+  const view = createActivityView(api2, store2, sources3, deps, {
+    idPrefix: "activity-home",
+    // Nothing to dismiss: opening a row switches thread, which hides this screen.
+    close: () => {
+    },
+    isShown: () => shown,
+    // Focus belongs to the composer on this screen.
+    fallbackFocus: () => {
+      pane.querySelector("#input-bar .prompt-input")?.focus({ preventScroll: true });
+    },
+    onNeedsYou: (count) => {
+      root.dataset["needsYou"] = String(count);
+    },
+    // With nothing to list the strip and card would only say so: the screen steps
+    // aside and the composer takes the middle of the pane, as a first run always had.
+    onIdle: (idle) => {
+      root.dataset["idle"] = String(idle);
+      pane.classList.toggle("is-activity-idle", idle);
+    },
+    collapsibleGroups: true,
+    projectStrip: true,
+    followUrgent: true,
+    openThreadArrow: true
+  });
+  view.status.classList.add("activity-home-sr");
+  root.append(
+    el("h2", { id: "activity-home-title", class: "activity-home-sr" }, "Activity"),
+    view.strip,
+    view.body,
+    view.status,
+    el("p", { class: "activity-home-caption" }, "Start a new thread")
+  );
+  pane.insertBefore(root, pane.querySelector("#input-bar"));
+  return {
+    setShown: (next) => {
+      if (next === shown) return;
+      shown = next;
+      root.hidden = !next;
+      if (!next) pane.classList.remove("is-activity-idle");
+      if (next) view.show({ focusFirstRow: false });
+      else view.hide();
+    }
+  };
+}
+var init_activity_home = __esm({
+  "src/renderer/views/activity-home.ts"() {
+    init_helpers();
+    init_activity_view();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -141136,6 +145154,12 @@ function startAgentController(store2, api2) {
           model: chunk.model,
           ...chunk.requestedModel !== void 0 ? { requestedModel: chunk.requestedModel } : {}
         });
+        if (patchThreadAnywhere(store2, threadId, (thread) => ({
+          ...thread,
+          resolvedModel: chunk.model
+        }))) {
+          store2.emit("thread_model_resolved", threadId);
+        }
         break;
       }
       case "usage": {
@@ -141461,7 +145485,7 @@ function startFailureDetail(error62) {
   return ipcErrorMessage(error62, "the checkout could not be prepared");
 }
 function isPendingAutomation(thread) {
-  return thread.automation !== void 0 && thread.status === "idle" && Boolean(thread.draftPrompt?.trim());
+  return thread.automation !== void 0 && thread.status === "idle" && thread.automation.startFailedAt === void 0 && Boolean(thread.draftPrompt?.trim());
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
@@ -141568,13 +145592,14 @@ function attachAutomationController(store2, api2) {
     } catch (error62) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
+        markAutomationStartFailed(store2, threadId);
         addMessage(
           store2,
           threadId,
           "error",
           `This scheduled run could not start: ${startFailureDetail(error62)}
 
-Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved, or leave it for the next run.`
+Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause is resolved. The schedule is not held up: its next run starts normally.`
         );
       }
     } finally {
@@ -142265,6 +146290,9 @@ async function loadStartupSettings(settings) {
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -142281,6 +146309,9 @@ async function loadStartupSettings(settings) {
     settings.get("layout"),
     settings.get("autoPortraitRightPanel"),
     settings.get("rightPanelPosition"),
+    settings.get("sidebarThreadSort"),
+    settings.get("sidebarThreadSortReverse"),
+    settings.get("sidebarThreadGroup"),
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
@@ -142298,6 +146329,9 @@ async function loadStartupSettings(settings) {
     layout,
     autoPortraitRightPanel,
     rightPanelPosition,
+    sidebarThreadSort,
+    sidebarThreadSortReverse,
+    sidebarThreadGroup,
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
@@ -142791,24 +146825,30 @@ function isActiveThreadEmpty(store2) {
   const { activeThreadId, threads } = store2.getState();
   if (!activeThreadId) return false;
   const thread = threads.find((t2) => t2.id === activeThreadId);
-  return thread ? thread.messages.length === 0 : false;
+  return thread ? thread.messages.length === 0 && !needsHydration(thread) : false;
 }
-function bindChatComposerLayout(store2) {
+function bindChatComposerLayout(store2, onActivityHome) {
   const pane = document.getElementById("pane-chat");
   const input2 = document.getElementById("input-bar");
   const conversation = document.getElementById("conversation");
   if (!pane || !input2 || !conversation) return () => {
   };
+  let focusedFor = null;
   const sync = () => {
-    const centered = isActiveThreadEmpty(store2);
-    pane.classList.toggle("composer-centered", centered);
-    if (centered) {
-      pane.style.setProperty("--chat-composer-height", "0px");
-      if (document.documentElement.dataset["demoEmbedded"] !== "on") {
-        const composer = input2.querySelector(".prompt-input");
-        composer?.focus({ preventScroll: true });
+    const home = isActiveThreadEmpty(store2);
+    pane.classList.toggle("is-activity-home", home);
+    onActivityHome?.(home);
+    if (home) {
+      const threadId = store2.getState().activeThreadId;
+      if (threadId !== focusedFor) {
+        focusedFor = threadId;
+        if (document.documentElement.dataset["demoEmbedded"] !== "on") {
+          const composer = input2.querySelector(".prompt-input");
+          composer?.focus({ preventScroll: true });
+        }
       }
-      return;
+    } else {
+      focusedFor = null;
     }
     const height = Math.max(Math.ceil(input2.getBoundingClientRect().height), 72);
     pane.style.setProperty("--chat-composer-height", `${String(height)}px`);
@@ -142829,6 +146869,7 @@ function bindChatComposerLayout(store2) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+    init_thread_hydration();
   }
 });
 
@@ -142872,7 +146913,7 @@ function matchActivityPanelShortcut(e3) {
 function matchPanelShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
   if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "togglePanel";
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "toggleSidebar";
   if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
   if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
   if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
@@ -142881,6 +146922,10 @@ function matchPanelShortcut(e3) {
   return null;
 }
 function handlePanelShortcut(store2, api2, action) {
+  if (action === "toggleSidebar") {
+    toggleProjectsPane(store2);
+    return;
+  }
   if (action === "togglePanel") {
     toggleFilesPaneWithWorkspace(store2, api2);
     return;
@@ -151914,7 +155959,8 @@ async function boot() {
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
   openProcessManager = mountProcessManagerDialog(api, store);
-  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests });
+  activitySources = { approvals: approvalRequests, questions: askUserRequests };
+  mountActivityPanel(api, store, activitySources);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -151924,6 +155970,8 @@ async function boot() {
   const savedLayout = startupSettings.layout;
   const savedAutoPortraitRightPanel = startupSettings.autoPortraitRightPanel;
   const savedRightPanelPosition = startupSettings.rightPanelPosition;
+  const savedSidebarThreadSort = startupSettings.sidebarThreadSort;
+  const savedSidebarThreadGroup = startupSettings.sidebarThreadGroup;
   const savedOpenLinksInBuiltInBrowser = startupSettings.openLinksInBuiltInBrowser;
   const savedDeveloperMode = startupSettings.developerMode;
   const savedTheme = startupSettings.theme;
@@ -151960,6 +156008,9 @@ async function boot() {
     conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
+    sidebarThreadSort: isThreadSortMode(savedSidebarThreadSort) ? savedSidebarThreadSort : "activity",
+    sidebarThreadSortReverse: startupSettings.sidebarThreadSortReverse === true,
+    sidebarThreadGroup: isThreadGroupMode(savedSidebarThreadGroup) ? savedSidebarThreadGroup : "project",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
     developerMode: typeof savedDeveloperMode === "boolean" ? savedDeveloperMode : false
   });
@@ -151999,6 +156050,10 @@ async function boot() {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
     openNewThread(store);
+  });
+  api.menu.onToggleSidebar(() => {
+    ensureLayout();
+    toggleProjectsPane(store);
   });
   api.menu.onTogglePanel(() => {
     ensureLayout();
@@ -152144,7 +156199,8 @@ function mountFullLayout() {
   if (!inputRoot.querySelector(".prompt-input")) {
     throw new Error("Chat composer failed to mount (#input-bar missing .prompt-input)");
   }
-  bindChatComposerLayout(store);
+  const activityHome = activitySources ? mountActivityHome(requireElement("pane-chat"), api, store, activitySources) : null;
+  bindChatComposerLayout(store, activityHome?.setShown);
   mountFileTree(requireElement("file-tree-host"), store, api);
   mountRightPanelLayout(store);
   mountTerminalsPane(
@@ -152322,7 +156378,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, rendererReady;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager, activitySources, rendererReady;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_mobile_chat();
@@ -152375,6 +156431,7 @@ var init_main = __esm({
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
     init_process_manager_dialog();
+    init_activity_home();
     init_activity_panel();
     init_agent();
     init_diff_state();
@@ -152442,6 +156499,7 @@ var init_main = __esm({
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
     openProcessManager = null;
+    activitySources = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
