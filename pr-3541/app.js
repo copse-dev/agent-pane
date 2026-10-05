@@ -67385,6 +67385,61 @@ var init_demo_scenarios = __esm({
         }))
       },
       {
+        id: "sidebar-other-projects",
+        label: "Sidebar listing threads of projects not opened yet",
+        project: project("demo-other-projects-active", "copse-demo", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          sidebarThreadGroup: "status"
+        },
+        // The open project has one thread; two more projects hold threads that are only
+        // read in the background after startup, so their titles must still be listed.
+        threads: [
+          {
+            id: "demo-other-projects-active-chat",
+            title: "Open project thread",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-other-projects-docs", "docs-site", "/demo/docs-site"),
+            threads: ["Rewrite the install guide", "Fix broken anchors"].map((title, index) => ({
+              id: `demo-other-projects-docs-${String(index)}`,
+              title,
+              status: "idle",
+              messages: [],
+              messagesLoaded: false,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: FIXED_TIME - 10 - index,
+              updatedAt: FIXED_TIME - 10 - index
+            }))
+          },
+          {
+            project: project("demo-other-projects-api", "api-server", "/demo/api-server"),
+            threads: [
+              {
+                id: "demo-other-projects-api-0",
+                title: "Add pagination to the list endpoint",
+                status: "idle",
+                messages: [],
+                messagesLoaded: false,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                createdAt: FIXED_TIME - 20,
+                updatedAt: FIXED_TIME - 20
+              }
+            ]
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -67884,7 +67939,7 @@ function createDemoApi(scenario, options = {}) {
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
   const mcpStatuses = scenario.mcpServers ?? DEMO_MCP_STATUSES;
   const storage = /* @__PURE__ */ new Map([
-    ["projects", [scenario.project]],
+    ["projects", [scenario.project, ...(scenario.otherProjects ?? []).map((o3) => o3.project)]],
     ["activeProjectId", scenario.project.id]
   ]);
   let workspaceRoot = scenario.project.path;
@@ -68321,7 +68376,11 @@ function createDemoApi(scenario, options = {}) {
         if (thread) thread.archivedAt = archivedAt;
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
-      loadProject: (projectId) => resolved2(projectId === scenario.project.id ? structuredClone(threads) : []),
+      loadProject: (projectId) => resolved2(
+        projectId === scenario.project.id ? structuredClone(threads) : structuredClone(
+          scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
+        )
+      ),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
       // exceptions are scenarios built around the hydration window itself,

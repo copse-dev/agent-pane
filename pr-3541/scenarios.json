@@ -116,6 +116,10 @@
     "label": "Sidebar automation fold"
   },
   {
+    "id": "sidebar-other-projects",
+    "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },
