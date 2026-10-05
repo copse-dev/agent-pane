@@ -252,7 +252,8 @@ describe('ask_user dialog (component)', () => {
 
   it('labels a recommended option while returning only its answer text', () => {
     const { api, harness } = stubApi()
-    mount(api)
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
     harness.emit({
       id: 'recommendation',
       questions: [
@@ -264,6 +265,10 @@ describe('ask_user dialog (component)', () => {
         },
       ],
     })
+    assert.deepEqual(requests.pending()[0]?.recommendedOptions, ['SQLite'])
+    assert.deepEqual(requests.pending()[0]?.recommendationReasons, [
+      'The project already uses SQLite.',
+    ])
     const button = document.querySelector<HTMLButtonElement>('.ask-user-option-recommended')
     assert.ok(button)
     assert.match(button.textContent, /Recommended/)

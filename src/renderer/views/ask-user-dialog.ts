@@ -26,6 +26,8 @@ export interface PendingQuestionSummary {
   questions: string[]
   /** The quick answers the agent offered for each question, in question order ([] for none). */
   options: readonly (readonly string[])[]
+  recommendedOptions?: readonly (string | undefined)[]
+  recommendationReasons?: readonly (string | undefined)[]
   receivedAt: number
 }
 
@@ -366,6 +368,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
           options: req.questions.map((q) => q.options ?? []),
+          recommendedOptions: req.questions.map((q) => q.recommendedOption),
+          recommendationReasons: req.questions.map((q) => q.recommendationReason),
           receivedAt: req.receivedAt,
         })),
     answer: answerFrom,

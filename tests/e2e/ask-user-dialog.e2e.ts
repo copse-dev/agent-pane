@@ -100,6 +100,7 @@ describe('ask_user dialog', () => {
           user: 'Help me sign in to Claude.',
           responses: [
             {
+              waitFor: 'before-recommended-question',
               toolCalls: [
                 {
                   name: 'ask_user',
@@ -127,6 +128,20 @@ describe('ask_user dialog', () => {
     })
     await setComposerValue('Help me sign in to Claude.')
     await submitComposer()
+    await scenario.waitForHold('before-recommended-question')
+    await $('.projects-activity-btn').click()
+    await $('#activity-panel').waitForDisplayed({ timeout: 10_000 })
+    await scenario.release('before-recommended-question')
+    const activity = $('#activity-panel')
+    await activity.$('.activity-option').waitForExist({ timeout: 30_000 })
+    await expect(activity.$('.ask-user-recommended-label')).toHaveText('Recommended')
+    await expect(activity.$('.ask-user-recommendation-reason')).toHaveText(
+      'Sign-in is required before this task can continue.',
+    )
+    await activity.$('.ask-user-option-recommended').click()
+    await expect(activity.$('.activity-answer-input')).toHaveValue('Run claude /login')
+    await saveAppScreenshot('activity-recommended-question.png')
+    await activity.$('.activity-panel-close').click()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
