@@ -4109,10 +4109,86 @@ label {
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: var(--spacing-lg) var(--spacing-xl);
+  padding-bottom: calc(var(--spacing-lg) + var(--selection-reply-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
   min-height: 0;
+}
+::highlight(transcript-reply-selection) {
+  background: var(--selection-bg);
+  color: var(--selection-text);
+}
+.transcript-selection-quote {
+  position: fixed;
+  z-index: 999;
+  width: min(360px, calc(100vw - 24px));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.transcript-selection-quote[hidden] {
+  display: none;
+}
+.transcript-selection-reply {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  max-height: 200px;
+  padding: 14px 16px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  resize: none;
+}
+.transcript-selection-reply::placeholder {
+  color: var(--text-muted);
+}
+.transcript-selection-reply:focus {
+  outline: none;
+}
+.transcript-selection-quote:focus-within {
+  border-color: var(--accent);
+}
+.transcript-selection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 10px 10px;
+}
+.transcript-selection-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.transcript-selection-actions button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.transcript-selection-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.transcript-selection-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.transcript-selection-status {
+  padding: 0 16px 12px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 .messages-list > .turn-recovery-card {
   width: min(100%, var(--chat-content-max));
