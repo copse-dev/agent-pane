@@ -89,9 +89,15 @@ its own workspace and scratch, but has no host checkout or Docker socket access.
 - Host escape attempts are denied. Network access has no ordinary route out;
   a host broker allows only named destinations for the run. Command access to
   that broker is separately gated.
-- The guest receives the model credential needed for the run, not your ambient
-  host credentials. Commits return under a run-specific Git ref for explicit
-  adoption; the run does not move your checkout's HEAD or push its results.
+- The guest receives the selected model's API key. For supported ACP agents,
+  you can explicitly opt in to copying your desktop sign-in files into the
+  guest instead of supplying an API key. That sign-in grants access to the
+  account, not just this task; the option is off by default. Copse stages only
+  the agent's named login files, copies them into the guest's temporary home,
+  and removes the host staging copy when the run ends. Guest token refreshes
+  are discarded with the guest. Other ambient host credentials are not copied.
+- Commits return under a run-specific Git ref for explicit adoption; the run
+  does not move your checkout's HEAD or push its results.
 
 Guarded YOLO and unattended container mode cannot be active together. The
 container is not a hostile-workload or multi-tenant security guarantee, and a
