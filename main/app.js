@@ -67444,6 +67444,51 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-question",
+        label: "Activity home with a question waiting",
+        project: project("demo-activity-home-question-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // The first thread is the active, empty one; the second is blocked on a question.
+        threads: [
+          {
+            id: "demo-activity-home-question-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          {
+            id: "demo-activity-home-question-schema",
+            title: "Schema bump",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME - 1,
+            updatedAt: FIXED_TIME - 1
+          }
+        ],
+        askUserRequests: [
+          {
+            id: "demo-activity-home-question",
+            threadId: "demo-activity-home-question-schema",
+            questions: [
+              {
+                question: "Which migration order should the schema bump use?",
+                options: ["Columns first", "Backfill first"]
+              },
+              { question: "Keep the old column until the next release?" }
+            ]
+          }
+        ]
+      },
+      {
         id: "activity-home-empty",
         label: "Activity home with nothing to list",
         project: project("demo-activity-home-empty-project"),
@@ -67939,7 +67984,22 @@ function createDemoApi(scenario, options = {}) {
         return () => void 0;
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...question.options === void 0 ? {} : { options: [...question.options] }
+            }))
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -72485,6 +72545,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
   let needsYouSignature = null;
   let cancelSettle = null;
   let settling = false;
+  const drafts = /* @__PURE__ */ new Map();
   let selectedKey = null;
   let selectedIndex = 0;
   let shownKey = null;
@@ -72525,6 +72586,79 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const sent = sources3.approvals.answerOnce(row2.requestId, approved);
     status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
     scheduleRender();
+  }
+  function hasAnswer(requestId) {
+    return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
+  }
+  function sendAnswer(row2) {
+    const requestId = row2.requestId;
+    if (!requestId || settling || !hasAnswer(requestId)) return;
+    const asked = sources3.questions.pending().find((request) => request.id === requestId);
+    if (!asked) return;
+    const typed = drafts.get(requestId) ?? [];
+    for (const control of detail.querySelectorAll(
+      ".activity-answer, .activity-option, .activity-answer-input"
+    )) {
+      control.disabled = true;
+      control.dataset["answered"] = "true";
+    }
+    const sent = sources3.questions.answer(
+      requestId,
+      asked.questions.map((_3, index) => typed[index] ?? "")
+    );
+    if (sent) drafts.delete(requestId);
+    status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
+    scheduleRender();
+  }
+  function answerField(requestId, row2, question, index, options) {
+    const questionId = `${host.idPrefix}-question-${String(index)}`;
+    const input2 = el("textarea", {
+      class: "activity-answer-input",
+      rows: "2",
+      "data-control": `answer-${String(index)}`,
+      "aria-labelledby": questionId
+    });
+    input2.value = drafts.get(requestId)?.[index] ?? "";
+    const sync = () => {
+      const next = [...drafts.get(requestId) ?? []];
+      next[index] = input2.value;
+      drafts.set(requestId, next);
+      const send = detail.querySelector(".activity-answer");
+      if (send) send.disabled = !hasAnswer(requestId);
+    };
+    input2.addEventListener("input", sync);
+    input2.addEventListener("keydown", (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+      event.stopPropagation();
+      if (event.isComposing || event.repeat) return;
+      event.preventDefault();
+      sendAnswer(row2);
+    });
+    const asked = el("div", {
+      id: questionId,
+      class: "activity-question streaming-markdown"
+    });
+    asked.innerHTML = renderMarkdown(question);
+    const field = el("div", { class: "activity-answer-field" }, asked);
+    if (options.length > 0) {
+      const choices = el("div", { class: "activity-options" });
+      for (const option of options) {
+        const choice = el("button", {
+          type: "button",
+          class: "ui-btn ui-btn-secondary activity-option"
+        });
+        setInlineMarkdown(choice, option);
+        choice.addEventListener("click", () => {
+          input2.value = choice.textContent;
+          sync();
+          input2.focus();
+        });
+        choices.append(choice);
+      }
+      field.append(choices);
+    }
+    field.append(input2);
+    return field;
   }
   function button(className, control, label, onClick, ariaLabel) {
     const node2 = el(
@@ -72569,17 +72703,24 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     if (row2.state === "needs-answer") {
       const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
-      const questions = asked?.questions ?? [row2.want];
+      if (!asked || !row2.requestId) {
+        return [
+          el("p", { class: "activity-detail-text" }, row2.want),
+          el(
+            "p",
+            { class: "activity-detail-note" },
+            "Answer in the thread, where the question is waiting for you."
+          )
+        ];
+      }
+      const requestId = row2.requestId;
       return [
         el(
-          "ol",
-          { class: "activity-questions" },
-          ...questions.map((question) => el("li", {}, question))
-        ),
-        el(
-          "p",
-          { class: "activity-detail-note" },
-          "Answer in the thread, where the question is waiting for you."
+          "div",
+          { class: "activity-answer-form" },
+          ...asked.questions.map(
+            (question, index) => answerField(requestId, row2, question, index, asked.options[index] ?? [])
+          )
         )
       ];
     }
@@ -72617,12 +72758,19 @@ function createActivityView(api2, store2, sources3, deps, host) {
       );
       approve.disabled = settling;
       actions.push(approve);
-    } else if (row2.state === "needs-answer") {
-      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
-        if (row2.threadId === null) host.close();
-        else openThread(row2);
-      });
-      answer.disabled = row2.threadId !== null && !canOpen(row2);
+    } else if (row2.state === "needs-answer" && row2.requestId) {
+      const requestId = row2.requestId;
+      const answer = button(
+        "ui-btn-primary activity-answer",
+        "answer",
+        "Send answer",
+        () => {
+          sendAnswer(row2);
+        },
+        `Send answer: ${row2.want} (${row2.threadTitle})`
+      );
+      answer.dataset["requestId"] = requestId;
+      answer.disabled = settling || !hasAnswer(requestId);
       actions.push(answer);
     }
     return el("div", { class: "activity-detail-actions" }, ...actions);
@@ -72631,6 +72779,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (!row2) {
       detail.replaceChildren();
       detail.hidden = true;
+      return;
+    }
+    if (row2.state === "needs-answer" && detail.dataset["rowKey"] === row2.key && detail.dataset["state"] === row2.state && document.activeElement instanceof HTMLTextAreaElement && detail.contains(document.activeElement)) {
       return;
     }
     detail.hidden = false;
@@ -72939,7 +73090,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       return;
     }
     if (spot.area === "detail" && spot.key === selectedKey) {
-      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      const control = detail.querySelector(
+        `[data-control="${spot.control}"]`
+      );
       if (control && !control.disabled) {
         control.focus();
         return;
@@ -72952,14 +73105,20 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function armSettle() {
     cancelSettle?.();
     settling = true;
-    for (const approve of detail.querySelectorAll(".activity-approve")) {
-      approve.disabled = true;
+    for (const control of detail.querySelectorAll(
+      ".activity-approve, .activity-answer"
+    )) {
+      control.disabled = true;
     }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const approve of detail.querySelectorAll(".activity-approve")) {
-        if (!approve.dataset["answered"]) approve.disabled = false;
+      for (const control of detail.querySelectorAll(
+        ".activity-approve, .activity-answer"
+      )) {
+        if (control.dataset["answered"]) continue;
+        const requestId = control.dataset["requestId"];
+        control.disabled = requestId !== void 0 && !hasAnswer(requestId);
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -72974,6 +73133,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
     const allThreads = collectActivityThreads(store2);
     const approvals = sources3.approvals.pending();
     const questions = sources3.questions.pending();
+    const waiting = new Set(questions.map((request) => request.id));
+    for (const requestId of drafts.keys()) {
+      if (!waiting.has(requestId)) drafts.delete(requestId);
+    }
     const everything = deriveActivity({
       threads: allThreads,
       approvals,
@@ -73016,7 +73179,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
       selectedKey = selected?.key ?? null;
     }
     selectedIndex = selected ? rows.indexOf(selected) : 0;
-    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+    const releases = selected?.state === "needs-approval" || selected?.state === "needs-answer";
+    if (listChanged || selectedKey !== shownKey && releases) {
       armSettle();
     }
     shownKey = selectedKey;
@@ -73160,6 +73324,8 @@ var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LON
 var init_activity_view = __esm({
   "src/renderer/views/activity-view.ts"() {
     init_helpers();
+    init_dist();
+    init_inline_markdown();
     init_patch_children();
     init_icons();
     init_projects();
@@ -141573,13 +141739,27 @@ function mountAskUserDialog(api2, store2) {
     childList: true,
     subtree: true
   });
-  function respond(answers) {
-    const current = active2;
-    if (!current) return;
-    dialog2.close();
-    active2 = null;
-    void api2.ask.respond(current.id, answers);
+  function settle2(request, answers) {
+    if (active2 === request) {
+      dialog2.close();
+      active2 = null;
+    } else {
+      const idx = queue.indexOf(request);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+    }
+    void api2.ask.respond(request.id, answers);
     showNext();
+    syncAttention();
+  }
+  function respond(answers) {
+    if (active2) settle2(active2, answers);
+  }
+  function answerFrom(id, answers) {
+    const request = active2?.id === id ? active2 : queue.find((req) => req.id === id);
+    if (request === void 0 || answers.length !== request.questions.length) return false;
+    settle2(request, [...answers]);
+    return true;
   }
   function submit() {
     respond(inputs.map((input2) => input2.value));
@@ -141640,8 +141820,10 @@ function mountAskUserDialog(api2, store2) {
       id: req.id,
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
+      options: req.questions.map((q2) => q2.options ?? []),
       receivedAt: req.receivedAt
     })),
+    answer: answerFrom,
     onChange: (listener) => {
       changeListeners.add(listener);
       return () => {
