@@ -227,6 +227,7 @@ describe('appearance live preview', () => {
         },
       },
       appIcon: {
+        ...base.appIcon,
         apply: async () => {
           iconApplies += 1
         },

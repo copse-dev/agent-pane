@@ -45,6 +45,13 @@ export const GUEST_EGRESS_PROXY = { host: '127.0.0.1', port: 3128 } as const
  */
 export const GUEST_NO_PROXY = '127.0.0.1,localhost,::1'
 
+/**
+ * Set (to `1`) on a container whose run token arrives as the first line of its
+ * stdin rather than in its environment. A flag, not a secret: the entrypoint
+ * reads the token, builds the proxy URL from it and starts the worker.
+ */
+export const EGRESS_TOKEN_STDIN_FLAG = 'COPSE_EGRESS_TOKEN_STDIN'
+
 /** The username on the proxy URL; the password is the run's token. */
 export const GUEST_EGRESS_USER = 'run'
 
