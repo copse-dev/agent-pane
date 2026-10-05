@@ -26,6 +26,25 @@ async function choose(label: string): Promise<void> {
   throw new Error(`The sort menu has no "${label}"`)
 }
 
+// The project label must stay readable at the default sidebar width: the title
+// ellipsizes before the label does.
+async function expectOwnerLabelsFit(): Promise<void> {
+  const fits = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('.chats-list .chat-thread-owner')).map(
+      (owner) => ({
+        text: owner.textContent,
+        scrollWidth: owner.scrollWidth,
+        clientWidth: owner.clientWidth,
+      }),
+    ),
+  )
+  expect(fits.length).toBeGreaterThan(0)
+  for (const fit of fits) {
+    expect(fit.text).toBe('· copse-demo')
+    expect(fit.scrollWidth).toBeLessThanOrEqual(fit.clientWidth)
+  }
+}
+
 describe('sidebar thread sort', () => {
   before(async () => {
     await browser.url('about:blank')
@@ -106,12 +125,15 @@ describe('sidebar thread sort', () => {
     expect(headings).toEqual(['Working', 'Recent'])
     await expect($('.project-row')).not.toExist()
     await expect($('.chat-thread-owner')).toExist()
+    await expectOwnerLabelsFit()
     await saveAppScreenshot('sidebar-thread-group-status.png')
 
     await openMenu()
     await choose('None')
     await browser.waitUntil(async () => (await $$('.thread-section-heading')).length === 0)
     expect((await titles()).length).toBe(5)
+    await expectOwnerLabelsFit()
+    await saveAppScreenshot('sidebar-thread-group-none.png')
 
     await openMenu()
     await choose('Project')

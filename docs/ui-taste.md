@@ -1365,7 +1365,7 @@ open. An untitled thread sorts as "New Thread", the name its row shows. Spec:
 The same menu opens with **Group by**: Project (the tree, and the default), Status, or None. Status
 drops the tree for Needs you / Working / Recent sections over every project visited this session,
 and None for one flat list; both name each thread's project as the muted `· project` suffix the
-Automations section uses, since the tree no longer does, and an empty section is left out. A thread
+Automations section uses, since the tree no longer does (the title ellipsizes before the label does; only a project name wider than 45% of the row is clipped), and an empty section is left out. A thread
 that is running and waiting on the user is under Needs you. The sort applies inside each section,
 and Activity order across projects means last prompted. The choice is saved per profile
 (`sidebarThreadGroup`). A thread search keeps the tree, because it is scoped to the open project.
