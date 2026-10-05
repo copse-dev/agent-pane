@@ -345,8 +345,7 @@ describe('pr pane filter (issue #2482)', () => {
       let projectChanged = false
       const { listRoot, viewerRoot, store, dispose } = mount([], {
         gh: {
-          prThreadRelationships: async (pr) =>
-            pr.number === 42 && !projectChanged ? pending : [],
+          prThreadRelationships: async (pr) => (pr.number === 42 && !projectChanged ? pending : []),
         },
         prDetails: async (_owner, _repo, number) => {
           details.push(number)
