@@ -74,9 +74,9 @@ const streamFramesSchema = z.array(
 async function recordedFrames(): Promise<StreamFrame[]> {
   const captured: unknown = await browser.execute(() => {
     const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
-    return recording !== null && typeof recording === 'object'
-      ? Reflect.get(recording, 'frames')
-      : []
+    const frames: unknown =
+      recording !== null && typeof recording === 'object' ? Reflect.get(recording, 'frames') : []
+    return frames
   })
   return streamFramesSchema.parse(captured)
 }

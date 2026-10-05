@@ -60,6 +60,7 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
       const dark = Math.min(first, second)
       return (light + 0.05) / (dark + 0.05)
     }
+    const selectionText = window.getSelection()?.toString() ?? ''
     return {
       rule,
       replyRule,
@@ -72,11 +73,11 @@ async function highlightSnapshot(): Promise<HighlightSnapshot | null> {
       ),
       // Autofocus moves the native selection into the reply textarea. The
       // passage is now painted by the captured CSS Highlight instead.
-      selectedText: (
-        window.getSelection()?.toString() ||
-        [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
-          .map((range) => (range instanceof Range ? range.toString() : ''))
-          .join('')
+      selectedText: (selectionText.length > 0
+        ? selectionText
+        : [...(CSS.highlights.get('transcript-reply-selection') ?? [])]
+            .map((range) => (range instanceof Range ? range.toString() : ''))
+            .join('')
       ).trim(),
     }
   })
@@ -94,7 +95,7 @@ async function selectAssistantText(): Promise<string> {
     range.selectNodeContents(paragraph)
     selection.removeAllRanges()
     selection.addRange(range)
-    return paragraph.textContent?.trim() ?? ''
+    return paragraph.textContent.trim()
   })
   await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
   return text

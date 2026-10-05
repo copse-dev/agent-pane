@@ -1,3 +1,4 @@
+import type { WebviewTag } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -379,13 +380,10 @@ describe('ACP inline visualization reference', () => {
     expect(beforeParts[2]).toBeGreaterThan(0)
     expect(beforeParts[3]).toBeGreaterThan(0)
     await browser.execute(async () => {
-      const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-        executeJavaScript?: (source: string) => Promise<unknown>
-        focus?: () => void
-      } | null
+      const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       // Guest-only scrolling (PageDown, scrollbar) is preceded by guest focus.
-      webview?.focus?.()
-      await webview?.executeJavaScript?.(
+      webview?.focus()
+      await webview?.executeJavaScript(
         'document.documentElement.style.height = "2000px"; window.scrollTo(0, 240)',
       )
     })

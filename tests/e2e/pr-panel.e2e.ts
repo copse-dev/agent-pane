@@ -20,7 +20,7 @@ describe('PR panel (mock gh)', () => {
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 60_000 }).getElement()
+    await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
 
   after(() => {
@@ -28,12 +28,12 @@ describe('PR panel (mock gh)', () => {
   })
 
   async function openPrTab(): Promise<void> {
-    const pane = await $('#pane-files').getElement().getElement()
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
-      await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click().getElement()
+      await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click().getElement()
+    await $('[aria-label="Open pull requests"]').click()
     await browser.pause(800)
   }
 
@@ -44,7 +44,7 @@ describe('PR panel (mock gh)', () => {
 
     // Default view = chat-linked + workspace rows only; the cross-repo "your
     // PRs" section stays collapsed (and unqueried) until expanded.
-    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements().getElements()).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements()).length >= 2, {
       timeout: 15_000,
       timeoutMsg: 'expected linked and workspace PR rows',
     })
@@ -53,27 +53,27 @@ describe('PR panel (mock gh)', () => {
       expect.stringMatching(/related PRs · this thread \(1\)/i),
     )
     // Repo-scoped header drops the "In " prefix to save horizontal space.
-    await expect(await $('.git-changes-section-title*=copse-panel').getElement().getElement()).toHaveText(
+    await expect(await $('.git-changes-section-title*=copse-panel').getElement()).toHaveText(
       expect.stringMatching(/^copse-dev\/copse-panel \(1\)$/i),
     )
     await expect(
-      await $('.pr-list-row[data-pr-section="linked"] .pr-list-title').getElement().getElement(),
+      await $('.pr-list-row[data-pr-section="linked"] .pr-list-title').getElement(),
     ).toHaveText('Add GitHub PR panel tab')
     // Match the repo-scoped row by its title rather than a data-pr-section
     // selector so the oracle doesn't extract a generic "workspace" token that
     // would falsely couple backend files to this spec.
     await expect(
-      await $('.pr-list-title*=Tidy up workspace status polling').getElement().getElement(),
+      await $('.pr-list-title*=Tidy up workspace status polling').getElement(),
     ).toBeDisplayed()
 
     // Issue #2482: a free-text filter narrows the visible groups. The workspace
     // PR's branch name hides the now-empty "From chat" group entirely, leaving
     // only the matching row.
-    const filterInput = await $('.pr-pane-filter').getElement().getElement()
+    const filterInput = await $('.pr-pane-filter').getElement()
     await expect(filterInput).toHaveAttribute('placeholder', 'Filter pull requests')
     await filterInput.click()
     await filterInput.setValue('chore/workspace-status')
-    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements().getElements()).length === 1, {
+    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements()).length === 1, {
       timeout: 10_000,
       timeoutMsg: 'expected the filter to narrow to a single matching row',
     })
@@ -85,17 +85,17 @@ describe('PR panel (mock gh)', () => {
     await filterInput.setValue('zzz-nonexistent-pr-999')
     await browser.waitUntil(
       async () =>
-        /no pull requests match/i.test(await (await $('.pr-list-body').getElement().getElement()).getText()),
+        /no pull requests match/i.test(await (await $('.pr-list-body').getElement()).getText()),
       { timeout: 10_000, timeoutMsg: 'expected the no-matches empty state' },
     )
-    await expect(await $$('.pr-list-row').getElements().getElements()).toBeElementsArrayOfSize(0)
+    await expect(await $$('.pr-list-row').getElements()).toBeElementsArrayOfSize(0)
     await saveElementScreenshot('#pane-files', 'pr-panel-filter-empty.png')
 
     // Escape clears the filter and restores every group, keeping focus on the
     // input, so the rest of this test continues against the unfiltered list.
     await browser.keys('Escape')
     await expect(filterInput).toHaveValue('')
-    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements().getElements()).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.pr-list-row').getElements()).length >= 2, {
       timeout: 10_000,
       timeoutMsg: 'expected rows to return after clearing the filter',
     })
@@ -103,25 +103,30 @@ describe('PR panel (mock gh)', () => {
 
     // Use the thread panel's glyph and failure marker in PR rows too.
     await expect(await $('.pr-list-status.is-open.has-ci-failure').getElement()).toBeDisplayed()
-    await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-status').getElement()).toHaveAttribute(
-      'aria-label',
-      expect.stringMatching(/#42 open; CI passing/i),
-    )
-    await expect(await $('.pr-list-status svg[data-icon="git-pull-request"]').getElement()).toBeDisplayed()
+    await expect(
+      await $('.pr-list-row[data-pr-section="linked"] .pr-list-status').getElement(),
+    ).toHaveAttribute('aria-label', expect.stringMatching(/#42 open; CI passing/i))
+    await expect(
+      await $('.pr-list-status svg[data-icon="git-pull-request"]').getElement(),
+    ).toBeDisplayed()
 
     // The cross-repo section is a collapsed, countless toggle by default; its
     // PR (#17) hasn't been loaded.
-    const otherToggle = await $('.pr-other-toggle').getElement().getElement()
+    const otherToggle = await $('.pr-other-toggle').getElement()
     await expect(otherToggle).toHaveText(expect.stringMatching(/your other open prs/i))
     await expect(otherToggle).not.toHaveText(expect.stringMatching(/\(\d+\)/))
     await expect(
-      await $('.pr-list-title*=Polish footer branch status').getElement().getElement(),
+      await $('.pr-list-title*=Polish footer branch status').getElement(),
     ).not.toBeExisting()
 
     // Expanding loads the cross-repo list and its lazily-fetched CI state.
     await otherToggle.click()
-    await expect(await $('.pr-list-title*=Polish footer branch status').getElement()).toBeDisplayed()
-    await expect(await $('.pr-list-status[aria-label="PR #17 open; CI running"]').getElement()).toBeDisplayed()
+    await expect(
+      await $('.pr-list-title*=Polish footer branch status').getElement(),
+    ).toBeDisplayed()
+    await expect(
+      await $('.pr-list-status[aria-label="PR #17 open; CI running"]').getElement(),
+    ).toBeDisplayed()
 
     // The expanded group uses the same single, readable filter-aware empty
     // state even when every loaded cross-repo PR is filtered out. The component
@@ -129,22 +134,22 @@ describe('PR panel (mock gh)', () => {
     await filterInput.setValue('zzz-nonexistent-pr-999')
     await browser.waitUntil(
       async () =>
-        /no pull requests match/i.test(await (await $('.pr-list-body').getElement().getElement()).getText()),
+        /no pull requests match/i.test(await (await $('.pr-list-body').getElement()).getText()),
       { timeout: 10_000, timeoutMsg: 'expected the expanded no-matches empty state' },
     )
-    await expect(await $$('.pr-list-row').getElements().getElements()).toBeElementsArrayOfSize(0)
+    await expect(await $$('.pr-list-row').getElements()).toBeElementsArrayOfSize(0)
     await expect(
-      await $$('.git-changes-empty*=No pull requests match').getElements().getElements(),
+      await $$('.git-changes-empty*=No pull requests match').getElements(),
     ).toBeElementsArrayOfSize(1)
     await saveElementScreenshot('#pane-files', 'pr-panel-filter-empty-expanded.png')
     await browser.keys('Escape')
     await expect(
-      await $('.pr-list-title*=Polish footer branch status').getElement().getElement(),
+      await $('.pr-list-title*=Polish footer branch status').getElement(),
     ).toBeDisplayed()
 
     await browser.waitUntil(
       async () => {
-        const title = await $('.pr-viewer-title').getElement().getElement()
+        const title = await $('.pr-viewer-title').getElement()
         return (
           (await title.isDisplayed()) && (await title.getText()).includes('Add GitHub PR panel tab')
         )
@@ -162,10 +167,10 @@ describe('PR panel (mock gh)', () => {
     expect(viewerTitle.weight).toBe('600')
 
     await saveElementScreenshot('#pane-files', 'pr-panel-linked-list.png')
-    await expect(await $('.pr-viewer-description').getElement().getElement()).toHaveText(
+    await expect(await $('.pr-viewer-description').getElement()).toHaveText(
       expect.stringContaining('PRs'),
     )
-    await expect(await $('.pr-viewer-description').getElement().getElement()).not.toHaveText(
+    await expect(await $('.pr-viewer-description').getElement()).not.toHaveText(
       expect.stringMatching(/template hint|<!--|Copse PR template/i),
     )
 
@@ -174,7 +179,7 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-viewer-description-fill').getElement()).toBeDisplayed()
     await expect(await $('#pr-viewer-host .panel-empty').getElement()).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
-    await $('.pr-detail-section[data-section="files"]').click().getElement()
+    await $('.pr-detail-section[data-section="files"]').click()
     await expect(await $('.pr-viewer-description').getElement()).not.toBeDisplayed()
     await expect(await $('.pr-files-header').getElement()).toHaveText(
       expect.stringMatching(/changed files \(4\)/i),
@@ -186,18 +191,18 @@ describe('PR panel (mock gh)', () => {
       )
       row?.click()
     })
-    await (await $('.pr-file-row.is-selected').getElement().getElement()).waitForDisplayed({ timeout: 10_000 })
+    await (await $('.pr-file-row.is-selected').getElement()).waitForDisplayed({ timeout: 10_000 })
     await (
-      await $('#pr-viewer-host .git-diff-editor-wrap').getElement().getElement()
+      await $('#pr-viewer-host .git-diff-editor-wrap').getElement()
     ).waitForDisplayed({ timeout: 15_000 })
-    await expect(await $('.pr-viewer-description-fill').getElement().getElement()).not.toBeExisting()
+    await expect(await $('.pr-viewer-description-fill').getElement()).not.toBeExisting()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer-file-diff.png')
 
     // Binary images bypass Monaco and render the PR's base/head blobs side by
     // side. This is the path that previously decoded PNG bytes as UTF-8 text.
-    await $('.pr-list-title*=Polish footer branch status').click().getElement()
+    await $('.pr-list-title*=Polish footer branch status').click()
     await expect(await $('.pr-viewer-title').getElement()).toHaveText('Polish footer branch status')
-    await $('.pr-detail-section[data-section="files"]').click().getElement()
+    await $('.pr-detail-section[data-section="files"]').click()
     await expect(await $('.pr-files-header').getElement()).toHaveText(
       expect.stringMatching(/changed files \(2\)/i),
     )
@@ -208,20 +213,20 @@ describe('PR panel (mock gh)', () => {
       )
       row?.click()
     })
-    const imageDiff = await $('#pr-viewer-host .git-image-diff').getElement().getElement()
+    const imageDiff = await $('#pr-viewer-host .git-image-diff').getElement()
     await imageDiff.waitForDisplayed({ timeout: 15_000 })
     await expect(
-      await $$('#pr-viewer-host .git-image-diff-img').getElements().getElements(),
+      await $$('#pr-viewer-host .git-image-diff-img').getElements(),
     ).toBeElementsArrayOfSize(2)
-    const labels = await $$('#pr-viewer-host .git-image-diff-label').map((label).getElements() => label.getText())
+    const labels = await $$('#pr-viewer-host .git-image-diff-label').map((label) => label.getText())
     expect(labels).toEqual(['BEFORE', 'AFTER'])
-    await expect(await $('#pr-viewer-host .monaco-diff-editor').getElement().getElement()).not.toBeDisplayed()
+    await expect(await $('#pr-viewer-host .monaco-diff-editor').getElement()).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer-image-diff.png')
 
-    await $('[aria-label="Toggle right panel"]').click().getElement()
+    await $('[aria-label="Toggle right panel"]').click()
     await browser.pause(200)
     await (
-      await $('[data-message-id="msg-assistant-pr-link"] .message-text a').getElement().getElement()
+      await $('[data-message-id="msg-assistant-pr-link"] .message-text a').getElement()
     ).click()
     await browser.waitUntil(
       async () =>
@@ -233,12 +238,12 @@ describe('PR panel (mock gh)', () => {
       { timeout: 10_000, timeoutMsg: 'expected chat PR link to open mock PR viewer' },
     )
 
-    await $('[aria-label="Settings"]').click().getElement()
-    await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 }).getElement()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     // #1448 moved the GitHub CLI fieldset out of General into Agent. Only the
     // active section is shown, so without this the fieldset below is in a
     // hidden section and `.gh-cli-status` reads as empty.
-    await $('.settings-nav-btn[data-section="agent"]').click().getElement()
+    await $('.settings-nav-btn[data-section="agent"]').click()
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
@@ -248,14 +253,14 @@ describe('PR panel (mock gh)', () => {
       content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })
     await browser.pause(200)
-    await expect(await $('.gh-cli-status').getElement().getElement()).toHaveText(
+    await expect(await $('.gh-cli-status').getElement()).toHaveText(
       expect.stringMatching(/signed in as @mock-user/i),
     )
     // The GitHub backend selector (gh CLI vs API) lives in the same fieldset.
-    const backendSelect = await $('.gh-backend-field select[name="githubBackend"]').getElement().getElement()
+    const backendSelect = await $('.gh-backend-field select[name="githubBackend"]').getElement()
     await expect(backendSelect).toBeDisplayed()
-    await expect(await backendSelect.$$('option').getElements().getElements()).toBeElementsArrayOfSize(3)
+    await expect(await backendSelect.$$('option').getElements()).toBeElementsArrayOfSize(3)
     await saveElementScreenshot('#settings-dialog', 'pr-panel-settings-gh-cli.png')
-    await $('.settings-close-btn').click().getElement()
+    await $('.settings-close-btn').click()
   })
 })

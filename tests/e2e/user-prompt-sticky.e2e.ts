@@ -190,7 +190,9 @@ describe('latest user prompt anchor', () => {
     await browser.waitUntil(
       async () => !(await latest.getAttribute('class'))?.includes('is-preview-compact'),
     )
-    await browser.waitUntil(async () => (await images[0]?.getSize('width')) > 100)
+    const firstImage = images[0]
+    if (!firstImage) throw new Error('Missing first prompt image')
+    await browser.waitUntil(async () => (await firstImage.getSize('width')) > 100)
   })
 
   it('returns the latest prompt to the transcript when the chat pane is narrow', async () => {

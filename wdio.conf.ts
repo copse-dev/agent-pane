@@ -341,12 +341,12 @@ export const config: WebdriverIO.Config = {
     // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
     // the flat capabilities object; reloadSession re-sends whichever it holds.
     const cap = { 'goog:chromeOptions': {} }
-    updateChromeOptions(requested.alwaysMatch ?? requested, (options) => {
+    updateChromeOptions(requested, (options) => {
       cap['goog:chromeOptions'] = options
       return options
     })
     await assignDebugPort(cap)
-    updateChromeOptions(requested.alwaysMatch ?? requested, () => cap['goog:chromeOptions'])
+    updateChromeOptions(requested, () => cap['goog:chromeOptions'])
   },
   afterSession() {
     cleanupE2eUserDataDir?.()

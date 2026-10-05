@@ -23,21 +23,21 @@ describe('titlebar workspace name', () => {
   })
 
   it('shows the active project folder name after restoring on launch', async () => {
-    const workspaceName = await $('.workspace-name').getElement().getElement()
+    const workspaceName = await $('.workspace-name').getElement()
     await workspaceName.waitForExist({ timeout: 30_000 })
     await expect(workspaceName).toHaveText(basename(workspaceRoot))
     await expect(workspaceName).not.toHaveText('No folder')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'titlebar-workspace-name.png'))
 
-    const newThreadBtn = await $('.project-new-thread-btn').getElement().getElement()
+    const newThreadBtn = await $('.project-new-thread-btn').getElement()
     await expect(newThreadBtn).toBeDisplayed()
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     // An empty thread with nothing running or waiting anywhere is the bare
     // composer, centred; the Activity home steps aside until there is something
     // to list.
-    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 }).getElement()
+    await $('.pane-chat.is-activity-idle').waitForExist({ timeout: 10_000 })
     await expect($('#activity-home')).not.toBeDisplayed()
     const idle = await browser.execute(() => {
       const input = document.getElementById('input-bar')
@@ -69,7 +69,7 @@ describe('titlebar workspace name', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()
-    const blankRows = await $$('.chats-list .chat-row .chat-title').getElements().getElements()
+    const blankRows = await $$('.chats-list .chat-row .chat-title').getElements()
     const titles = await blankRows.map((el) => el.getText())
     expect(titles.filter((t) => t === 'New Thread').length).toBe(1)
   })

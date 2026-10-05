@@ -154,7 +154,7 @@ describe('browser preview tool', () => {
   })
 
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
-    const panelsBefore = await $$('.browser-tab-panel')
+    const panelsBefore = await $$('.browser-tab-panel').getElements()
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
     // Return to the composer through the visible Browser control before sending another turn.
     await $('[data-panel-control="browser"]').click()

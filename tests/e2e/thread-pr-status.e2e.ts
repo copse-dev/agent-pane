@@ -124,13 +124,15 @@ describe('thread GitHub PR status icon', () => {
   it('uses the same lifecycle glyph and colours in the PR panel', async function () {
     this.timeout(90_000)
     await $('.chat-row[data-thread-id="e2e-pr-merged-thread"]').click()
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
     await $('[aria-label="Open pull requests"]').click()
-    const merged = await $('.pr-list-row[data-pr-section="linked"] .pr-list-status.is-merged')
+    const merged = await $(
+      '.pr-list-row[data-pr-section="linked"] .pr-list-status.is-merged',
+    ).getElement()
     await merged.waitForDisplayed({ timeout: 15_000 })
     await expect(merged.$('svg[data-icon="git-merge"]')).toExist()
     await expect(merged).toHaveAttribute('aria-label', expect.stringMatching(/#99 merged/i))
@@ -173,12 +175,14 @@ describe('thread GitHub PR status icon', () => {
   it('shows a red conflict X in both panels when details establish conflicts', async function () {
     this.timeout(90_000)
     await $('.chat-row[data-thread-id="e2e-pr-conflict-thread"]').click()
-    const linked = await $('.pr-list-row[data-pr-section="linked"]')
+    const linked = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await expect(linked.$('.pr-list-number')).toHaveText('#100')
     await linked.click()
     await expect($('.pr-viewer-title')).toHaveText('Resolve conflicting changes')
-    const sidebar = await $('.chat-row.selected .chat-pr-status.has-conflicts')
-    const row = await $('.pr-list-row[data-pr-section="linked"] .pr-list-status.has-conflicts')
+    const sidebar = await $('.chat-row.selected .chat-pr-status.has-conflicts').getElement()
+    const row = await $(
+      '.pr-list-row[data-pr-section="linked"] .pr-list-status.has-conflicts',
+    ).getElement()
     await sidebar.waitForDisplayed({ timeout: 15_000 })
     await row.waitForDisplayed({ timeout: 15_000 })
     await expect(sidebar).toHaveAttribute('aria-label', expect.stringMatching(/merge conflicts/i))

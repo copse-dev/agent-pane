@@ -39,7 +39,7 @@ describe('ACP GPT model picker labels', () => {
 
   it('uses one display style for raw ids and friendly agent labels', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    const trigger = await $('.model-picker-trigger')
+    const trigger = await $('.model-picker-trigger').getElement()
     const triggerLabel = await trigger.getText()
     assert.match(triggerLabel, /GPT-5\.6 Sol/)
     assert.doesNotMatch(triggerLabel, /acp/i)
