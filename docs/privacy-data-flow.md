@@ -158,6 +158,10 @@ stored key. Provider keys are scrubbed from ordinary shell, terminal, MCP
 project-config, hook, and ACP base environments; explicit tool/server/agent
 configuration may pass selected values by design.
 
+OAuth sign-ins to remote MCP servers (client registration and tokens) are
+stored the same way, one record per server URL, and are sent only to that URL
+and its authorization server. See [mcp-oauth.md](mcp-oauth.md).
+
 Coding plan usage is the one flow that reads credentials Copse did not store.
 It does so only for providers set up in Settings → General (see the table
 above), reading their sign-ins from the macOS Keychain (via

@@ -4,6 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import * as fs from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -35,6 +36,8 @@ import {
   sanitizeMcpInputSchema,
   type FlattenOptions,
 } from './mcp-schema.ts'
+import { isMcpSignInRequiredError, storedMcpOAuthProvider } from './mcp-oauth.ts'
+import { asProtocolTransport } from './streamable-http-transport.ts'
 import { createBundledMcpServers, CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { getActiveRunThread } from '../thread-models.ts'
@@ -120,6 +123,10 @@ interface CreatedTransport {
 }
 
 const activeServers: ActiveServer[] = []
+// Remote servers this load was allowed to connect, by name, as connected
+// (interpolated). Sign-in only ever targets one of these: never an untrusted
+// project server or one the user turned off.
+const signInTargets = new Map<string, McpServerConfig>()
 const toolMeta = new Map<string, McpToolMeta>()
 let serverStatuses: McpServerStatus[] = []
 // Bumped on every (re)load/teardown/shutdown. An in-flight connect that finishes
@@ -145,6 +152,15 @@ function serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
     () => undefined,
   )
   return result
+}
+
+/**
+ * The remote server a Settings sign-in may target: one the current load was
+ * allowed to connect (trusted, enabled, http, no configured Authorization
+ * header). Undefined for anything else.
+ */
+export function getMcpSignInTarget(name: string): McpServerConfig | undefined {
+  return signInTargets.get(name)
 }
 
 export function getMcpServerStatuses(): McpServerStatus[] {
@@ -381,13 +397,70 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-function createTransport(cfg: McpServerConfig): CreatedTransport {
+/** A configured `Authorization` header is the user's own auth; OAuth stays out of it. */
+function hasAuthorizationHeader(cfg: McpServerConfig): boolean {
+  return Object.keys(cfg.headers ?? {}).some((key) => key.toLowerCase() === 'authorization')
+}
+
+/** The stored OAuth sign-in a remote server's connect presents, if any. */
+function oauthProviderFor(cfg: McpServerConfig): OAuthClientProvider | undefined {
+  if (cfg.transport !== 'http' || cfg.url === undefined || hasAuthorizationHeader(cfg)) {
+    return undefined
+  }
+  return storedMcpOAuthProvider(cfg.url)
+}
+
+/** The server needs (another) OAuth sign-in before it will answer. */
+function isSignInRequired(cfg: McpServerConfig, error: unknown): boolean {
+  if (cfg.transport !== 'http' || hasAuthorizationHeader(cfg)) return false
+  return isMcpSignInRequiredError(error)
+}
+
+const statusListeners = new Set<(statuses: McpServerStatus[]) => void>()
+
+/**
+ * Hear about status changes the registry makes on its own, outside a load —
+ * today a connected server whose sign-in is refused mid-session. The IPC layer
+ * forwards these to the renderer as `mcp:status-changed`.
+ */
+export function onMcpStatusesChanged(listener: (statuses: McpServerStatus[]) => void): () => void {
+  statusListeners.add(listener)
+  return () => {
+    statusListeners.delete(listener)
+  }
+}
+
+/**
+ * A connected server's sign-in stopped working during a request (its refresh
+ * was refused). Report it as needing sign-in so Settings offers Sign in.
+ */
+function markSignInRequired(serverName: string): void {
+  const index = serverStatuses.findIndex(
+    (status) => status.name === serverName && status.auth !== 'required',
+  )
+  const current = serverStatuses[index]
+  if (current === undefined) return
+  serverStatuses = serverStatuses.with(index, {
+    ...current,
+    state: 'error',
+    error: 'Sign-in required',
+    auth: 'required',
+  })
+  const snapshot = getMcpServerStatuses()
+  for (const listener of statusListeners) listener(snapshot)
+}
+
+function createTransport(
+  cfg: McpServerConfig,
+  authProvider: OAuthClientProvider | undefined,
+): CreatedTransport {
   if (cfg.transport === 'http') {
     if (cfg.url === undefined) {
       throw new Error(`MCP server "${cfg.name}" uses http transport but has no url`)
     }
     const agentPluginSource = agentPluginIdForMcpSource(cfg.source) !== undefined
     const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+      ...(authProvider ? { authProvider } : {}),
       requestInit: {
         ...(cfg.headers ? { headers: cfg.headers } : {}),
         // Configured Agent Plugin headers are scoped to the declared origin.
@@ -396,38 +469,7 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
         ...(agentPluginSource ? { redirect: 'error' as const } : {}),
       },
     })
-    const compatible: Transport = {
-      start: () => transport.start(),
-      send: (message, options) => transport.send(message, options),
-      close: async () => {
-        await transport.close()
-      },
-      setProtocolVersion: (version) => {
-        transport.setProtocolVersion(version)
-      },
-    }
-    Object.defineProperties(compatible, {
-      onclose: {
-        get: () => transport.onclose,
-        set: (callback: () => void) => {
-          transport.onclose = callback
-        },
-      },
-      onerror: {
-        get: () => transport.onerror,
-        set: (callback: (error: Error) => void) => {
-          transport.onerror = callback
-        },
-      },
-      onmessage: {
-        get: () => transport.onmessage,
-        set: (callback: NonNullable<Transport['onmessage']>) => {
-          transport.onmessage = callback
-        },
-      },
-      sessionId: { get: () => transport.sessionId },
-    })
-    return { transport: compatible, stderrOutput: () => '' }
+    return { transport: asProtocolTransport(transport), stderrOutput: () => '' }
   }
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
@@ -527,14 +569,26 @@ function registerListedTools(
           server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
-        const result = await client.callTool(
-          {
-            name: tool.name,
-            arguments: isRecord(preparedArgs) ? preparedArgs : {},
-          },
-          undefined,
-          { signal },
-        )
+        let result: Awaited<ReturnType<Client['callTool']>>
+        try {
+          result = await client.callTool(
+            {
+              name: tool.name,
+              arguments: isRecord(preparedArgs) ? preparedArgs : {},
+            },
+            undefined,
+            { signal },
+          )
+        } catch (error) {
+          if (signInTargets.has(server.serverName) && isMcpSignInRequiredError(error)) {
+            markSignInRequired(server.serverName)
+            throw new Error(
+              `MCP server "${server.serverName}" needs you to sign in again (Settings → MCP servers).`,
+              { cause: error },
+            )
+          }
+          throw error
+        }
         // Experimental MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
         // body kept out of context) rather than inlined as tool output. Gated by
@@ -666,9 +720,16 @@ async function connectServer(
     return { ...base, state: 'disabled' }
   }
 
+  if (cfg.transport === 'http' && cfg.url !== undefined && !hasAuthorizationHeader(cfg)) {
+    signInTargets.set(cfg.name, cfg)
+  }
+  let authProvider: OAuthClientProvider | undefined
   let stderrOutput = (): string => ''
   try {
-    const created = createTransport(cfg)
+    // Inside the try: a config that names an unusable URL is this server's
+    // error, not a rejection that stops every other server's status.
+    authProvider = oauthProviderFor(cfg)
+    const created = createTransport(cfg, authProvider)
     stderrOutput = created.stderrOutput
     const client = new Client({ name: 'copse-panel', version: '0.1.0' }, { capabilities: {} })
     await withTimeout(
@@ -695,13 +756,19 @@ async function connectServer(
     console.log(
       `[MCP] Connected to "${cfg.name}" (${cfg.transport}) — ${String(toolNames.length)} tool(s)`,
     )
+    const signedIn: Pick<McpServerStatus, 'auth'> = authProvider ? { auth: 'signed-in' } : {}
     return {
       ...base,
       state: 'connected',
       toolCount: toolNames.length,
       tools: toolNames,
+      ...signedIn,
     }
   } catch (err) {
+    if (isSignInRequired(cfg, err)) {
+      console.log(`[MCP] "${cfg.name}" needs sign-in`)
+      return { ...base, state: 'error', error: 'Sign-in required', auth: 'required' }
+    }
     const stderr = stderrOutput()
     const message = errorMessage(err)
     const error = stderr ? `${message}\n${stderr}` : message
@@ -720,6 +787,7 @@ async function teardown(registry: ToolRegistry): Promise<void> {
     if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
   }
   toolMeta.clear()
+  signInTargets.clear()
   clearMcpToolPermissionTargets()
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
