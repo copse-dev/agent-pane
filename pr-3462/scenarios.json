@@ -112,6 +112,34 @@
     "label": "Apple Development test profile"
   },
   {
+    "id": "sidebar-automation-fold",
+    "label": "Sidebar automation fold"
+  },
+  {
+    "id": "sidebar-thread-sort",
+    "label": "Sidebar thread sort"
+  },
+  {
+    "id": "activity-home",
+    "label": "Activity home on a new thread"
+  },
+  {
+    "id": "activity-home-project-filter",
+    "label": "Activity home after a project finishes waiting"
+  },
+  {
+    "id": "activity-home-automation-fold",
+    "label": "Activity home with automation runs folded"
+  },
+  {
+    "id": "activity-home-question",
+    "label": "Activity home with a question waiting"
+  },
+  {
+    "id": "activity-home-empty",
+    "label": "Activity home with nothing to list"
+  },
+  {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
   },
@@ -142,6 +170,10 @@
   {
     "id": "roadmap-chat-min-width",
     "label": "Roadmap side panel minimum chat width"
+  },
+  {
+    "id": "chatgpt-plan-settings",
+    "label": "ChatGPT plan onboarding and account options"
   },
   {
     "id": "site-fork-resend",
