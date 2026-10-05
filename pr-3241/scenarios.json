@@ -112,6 +112,10 @@
     "label": "Apple Development test profile"
   },
   {
+    "id": "sidebar-automation-fold",
+    "label": "Sidebar automation fold"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },
@@ -122,6 +126,10 @@
   {
     "id": "activity-home-project-filter",
     "label": "Activity home after a project finishes waiting"
+  },
+  {
+    "id": "activity-home-automation-fold",
+    "label": "Activity home with automation runs folded"
   },
   {
     "id": "activity-home-question",
