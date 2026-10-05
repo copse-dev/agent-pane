@@ -1888,7 +1888,7 @@ async function runAgentWithInlineCanvas(
     }
     if (wasTrimmed) notifyTrimmed(sendTrimNotice)
 
-    sendChunk(contextPressureChunk(prepared, contextWindow))
+    sendChunk(contextPressureChunk(prepared, contextWindow, toolSchemaReserve))
 
     // A single turn that overflows the context even after trimming can never
     // succeed: the trimmer cannot drop the user's own message, so sending it

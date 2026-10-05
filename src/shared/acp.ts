@@ -6,6 +6,7 @@ import type {
 } from './types/acp.ts'
 import {
   canonicalAcpAgentId,
+  findAcpCatalogEntry,
   KNOWN_ACP_AGENTS,
   RETIRED_ACP_AGENTS,
   type KnownAcpAgent,
@@ -475,7 +476,8 @@ export function acpModelDisplayLabel(model: string, agents: readonly AcpAgentCon
   // A thread that ran a since-retired agent still names it; fall back to the
   // recorded title so old transcripts read as a product name, not a slug.
   const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId)
-  const title = agent?.title ?? retired?.title ?? selection.id
+  const known = findAcpCatalogEntry(selectedId)
+  const title = agent?.title ?? retired?.title ?? known?.title ?? selection.id
   if (!selection.model) return title
   const choice = agent?.availableModels?.find((m) => m.value === selection.model)
   return `${title} — ${choice ? acpModelChoiceLabel(choice) : canonicalModelLabel(selection.model)}`

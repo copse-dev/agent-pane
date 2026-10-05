@@ -667,6 +667,67 @@ describe('settings sources → worktrees list', () => {
     )
   })
 
+  it('cancels a running batch immediately and leaves subsequent worktrees selected and untouched', async () => {
+    const entries = [entry(), entry({ path: '/w/second' }), entry({ path: '/w/third' })]
+    const calls: CleanupCall[] = []
+    let finishFirst: (result: WorktreePackageCleanupResult) => void = () => {
+      throw new Error('cleanup not started')
+    }
+    const base = stubApi(entries)
+    const api: ApiClient = {
+      ...base,
+      worktrees: {
+        ...base.worktrees,
+        cleanupPackages: (projectId, path, remove) => {
+          calls.push({ projectId, path, remove })
+          return new Promise((resolve) => {
+            finishFirst = resolve
+          })
+        },
+      },
+    }
+    const list = await openWorktrees(api)
+    document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')?.click()
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    clickActiveConfirmDialogCancel()
+    assert.equal(document.querySelector<HTMLDialogElement>('#confirm-dialog')?.open, false)
+    assert.match(document.getElementById('sources-worktrees-status')?.textContent ?? '', /Stopping/)
+    assert.equal(
+      document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.disabled,
+      true,
+      'another mutation cannot overlap the current checkout',
+    )
+    finishFirst({
+      status: 'cleaned',
+      path: entries[0]?.path ?? '',
+      directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+      bytes: 1024,
+      truncated: false,
+    })
+    await flush()
+    assert.deepEqual(
+      calls.map((call) => call.path),
+      [entries[0]?.path],
+    )
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /Cleanup stopped\.\nCleaned up 1 directory/,
+    )
+    assert.deepEqual(
+      [...list.querySelectorAll<HTMLInputElement>('.sources-worktree-select')].map(
+        (checkbox) => checkbox.checked,
+      ),
+      [false, true, true],
+    )
+    assert.equal(
+      document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.disabled,
+      false,
+    )
+  })
+
   it('starts cleanup during an in-flight size walk, then ignores that stale measurement', async () => {
     const base = stubApi([entry()])
     let resolveOld: (result: WorktreeSizeResult) => void = () => {

@@ -58,6 +58,9 @@ describe('PR panel new thread (mock gh)', () => {
     )
 
     const newThreadBtn = await $('.pr-new-thread-btn')
+    await expect(newThreadBtn).not.toBeDisplayed()
+    await $('.pr-more-toggle').click()
+    await expect(await $('.pr-more-actions')).toHaveAttribute('open')
     await newThreadBtn.waitForDisplayed({ timeout: 10_000 })
     await expect(newThreadBtn).toHaveText('New thread')
     await saveElementScreenshot('#pane-files', 'pr-panel-new-thread-action.png')

@@ -69,6 +69,29 @@ describe('detectProjectCommands', () => {
     assert.equal(detected.ecosystem, 'typescript-pnpm')
   })
 
+  it('detects locked TypeScript npm projects without requiring Copse configuration', async () => {
+    const root = await project({
+      'package.json': JSON.stringify({
+        scripts: { build: 'tsc', typecheck: 'tsc --noEmit', test: 'node --test' },
+        devDependencies: { typescript: '^7' },
+      }),
+      'package-lock.json': '{"lockfileVersion":3}',
+    })
+    roots.push(root)
+    const detected = detectProjectCommands(root)
+    if (detected.ecosystem === 'unsupported') throw new Error(detected.reason)
+    assert.equal(detected.ecosystem, 'typescript-npm')
+    assert.deepEqual(
+      detected.commands.map((command) => command.argv),
+      [
+        ['npm', 'ci', '--offline', '--ignore-scripts'],
+        ['npm', 'run', 'build'],
+        ['npm', 'run', 'typecheck'],
+        ['npm', 'run', 'test'],
+      ],
+    )
+  })
+
   it('names the B5 reason when the project is not pnpm or not TypeScript', async () => {
     const npm = await project({
       'package.json': JSON.stringify({

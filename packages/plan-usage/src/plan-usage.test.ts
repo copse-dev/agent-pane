@@ -171,6 +171,17 @@ describe('fetchClaudePlanUsage', () => {
     assert.equal(weekly.label, 'Weekly')
   })
 
+  it('reads utilization 1 as 1%, not a 100% fraction', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: { utilization: 1, resets_at: '2026-07-15T12:00:00Z' },
+      }),
+      now: () => Date.parse('2026-07-15T08:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.windows[0]?.usedPercent, 1)
+  })
+
   it('prefers limits[] so Fable (and other scoped models) appear', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({

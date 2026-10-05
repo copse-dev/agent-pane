@@ -122,7 +122,9 @@ describe('ACP permission-mode settings', () => {
     const modelFilter = await modelPicker.$('.model-picker-filter')
     await modelFilter.setValue('opus')
     await expect(await modelPicker.$$('.model-picker-option')).toBeElementsArrayOfSize(1)
-    await expect(await modelPicker.$('.model-picker-option')).toHaveText('Fixture Opus')
+    await expect(await modelPicker.$('.model-picker-option .model-picker-option-label')).toHaveText(
+      'Fixture Opus',
+    )
     await saveElementScreenshot('.acp-agent-card', 'settings-acp-model-picker-search.png')
     await browser.keys('Escape')
 

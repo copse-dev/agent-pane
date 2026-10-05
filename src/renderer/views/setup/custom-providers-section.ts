@@ -13,6 +13,7 @@ import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { closeIcon, plusIcon } from '../../dom/icons.ts'
 import { setInlineStatus, setInlineStatusMarkdown } from '../../dom/inline-status.ts'
 import { PLAINTEXT_STORAGE_DISABLED_REASON } from './api-keys-section.ts'
+import { detectLocalServers } from './local-detection.ts'
 import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
@@ -325,6 +326,11 @@ export function createCustomProvidersSection(
     embedded?: boolean
     /** Fired after a refresh so an embedded host can rebuild its chip row. */
     onChanged?: () => void
+    /**
+     * Fired when only status indicators changed (a local server probe landing), so
+     * a host can repaint its chip dots without rebuilding forms and losing edits.
+     */
+    onStatusChanged?: () => void
   } = {},
 ): ProvidersSection {
   // The same panel renders two ways: the cloud variant (General settings) shows
@@ -370,6 +376,9 @@ export function createCustomProvidersSection(
   const pendingKeys = new Map<string, string>()
   // Saved-key status per slug, for the chip indicator dot.
   const configured = new Set<string>()
+  // Local servers whose default endpoint answered the last probe. Counts as set up
+  // (green dot) without a key, since local servers don't need one.
+  const reachable = new Set<string>()
 
   let providers: ExtraProvider[] = []
   let selected = embedded ? '' : defaultSelected
@@ -427,6 +436,8 @@ export function createCustomProvidersSection(
       chip.classList.toggle('active', key === selected)
       if (key !== 'other' && configured.has(key)) {
         chip.append(el('span', { class: 'provider-chip-dot', title: 'Key configured' }))
+      } else if (reachable.has(key)) {
+        chip.append(el('span', { class: 'provider-chip-dot', title: 'Server running' }))
       }
       chip.addEventListener('click', () => {
         selected = key
@@ -1064,6 +1075,18 @@ export function createCustomProvidersSection(
     renderChips()
     renderForm()
     opts.onChanged?.()
+    if (isLocal) void probeLocalServers()
+  }
+
+  // Probe the default local endpoints without blocking the refresh (a dead port can
+  // take a while to time out). Read-only: nothing is imported or saved. Repaints
+  // the chips once results land.
+  async function probeLocalServers(): Promise<void> {
+    const results = await detectLocalServers(api)
+    reachable.clear()
+    for (const r of results) if (r.reachable) reachable.add(r.id)
+    renderChips()
+    opts.onStatusChanged?.()
   }
 
   // Per-key plaintext storage consent, matching the fixed cloud-provider flow
@@ -1170,7 +1193,7 @@ export function createCustomProvidersSection(
   }
 
   function isConfigured(id: string): boolean {
-    if (configured.has(id)) return true
+    if (configured.has(id) || reachable.has(id)) return true
     // A user-added provider counts as set up even without a key: local servers
     // (and some gateways) accept unauthenticated requests.
     const provider = providers.find((p) => p.id === id)

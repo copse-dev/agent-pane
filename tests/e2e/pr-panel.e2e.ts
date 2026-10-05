@@ -98,10 +98,13 @@ describe('PR panel (mock gh)', () => {
     })
     await expect(filterInput).toBeFocused()
 
-    // CI rollup dots ride along with the workspace listing: #88 fails, the
-    // chat-linked #42 passes — both shown without a per-row query.
-    await expect(await $('.pr-list-ci-failure')).toBeDisplayed()
-    await expect(await $('.pr-list-ci-success')).toBeDisplayed()
+    // Use the thread panel's glyph and failure marker in PR rows too.
+    await expect(await $('.pr-list-status.is-open.has-ci-failure')).toBeDisplayed()
+    await expect(await $('.pr-list-row[data-pr-section="linked"] .pr-list-status')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/#42 open; CI passing/i),
+    )
+    await expect(await $('.pr-list-status svg[data-icon="git-pull-request"]')).toBeDisplayed()
 
     // The cross-repo section is a collapsed, countless toggle by default; its
     // PR (#17) hasn't been loaded.
@@ -113,7 +116,7 @@ describe('PR panel (mock gh)', () => {
     // Expanding loads the cross-repo list and its lazily-fetched CI state.
     await otherToggle.click()
     await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
-    await expect(await $('.pr-list-ci-pending')).toBeDisplayed()
+    await expect(await $('.pr-list-status[aria-label="PR #17 open; CI running"]')).toBeDisplayed()
 
     // The expanded group uses the same single, readable filter-aware empty
     // state even when every loaded cross-repo PR is filtered out. The component
@@ -153,23 +156,16 @@ describe('PR panel (mock gh)', () => {
       expect.stringMatching(/template hint|<!--|Copse PR template/i),
     )
 
-    // Changed files start collapsed (a count-only toggle) and, with no file
-    // selected, the description takes the whole column — no dead
-    // "Select a changed file" area.
-    const filesToggle = await $('.pr-files-header')
-    await expect(filesToggle).toHaveText(expect.stringMatching(/changed files \(4\)/i))
-    await expect(filesToggle).toHaveAttribute('aria-expanded', 'false')
-    await expect(await $('.pr-file-row')).not.toBeExisting()
+    // Overview uses the full body; Files is a separate destination.
+    await expect(await $('.pr-viewer-files')).not.toBeDisplayed()
     await expect(await $('.pr-viewer-description-fill')).toBeDisplayed()
     await expect(await $('#pr-viewer-host .panel-empty')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer.png')
-
-    // Expanding the toggle reveals the file list; opening a file swaps the
-    // filled description for the diff editor.
-    await filesToggle.click()
-    // Expanding re-renders the viewer, so re-query the toggle instead of
-    // retaining the now-detached WebdriverIO element handle.
-    await expect(await $('.pr-files-header')).toHaveAttribute('aria-expanded', 'true')
+    await $('.pr-detail-section[data-section="files"]').click()
+    await expect(await $('.pr-viewer-description')).not.toBeDisplayed()
+    await expect(await $('.pr-files-header')).toHaveText(
+      expect.stringMatching(/changed files \(4\)/i),
+    )
     await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(4)
     await browser.execute(() => {
       const row = [...document.querySelectorAll<HTMLButtonElement>('.pr-file-row')].find(
@@ -186,10 +182,10 @@ describe('PR panel (mock gh)', () => {
     // side. This is the path that previously decoded PNG bytes as UTF-8 text.
     await $('.pr-list-title*=Polish footer branch status').click()
     await expect(await $('.pr-viewer-title')).toHaveText('Polish footer branch status')
+    await $('.pr-detail-section[data-section="files"]').click()
     await expect(await $('.pr-files-header')).toHaveText(
       expect.stringMatching(/changed files \(2\)/i),
     )
-    await $('.pr-files-header').click()
     await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(2)
     await browser.execute(() => {
       const row = [...document.querySelectorAll<HTMLButtonElement>('.pr-file-row')].find(

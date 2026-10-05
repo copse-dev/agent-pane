@@ -1,3 +1,4 @@
+import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -64,6 +65,8 @@ export interface TerminalSession {
   label: string
   threadId: string | null
   projectId: string | null
+  /** Immutable checkout owner; editable UI scope cannot hide a live PTY. */
+  executionThreadId: string | null
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -305,6 +308,7 @@ async function spawnShell(
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
     projectId: meta?.projectId ?? null,
+    executionThreadId: meta?.threadId ?? null,
   }
   sessions.set(session.id, session)
   attachPtyHandlers(owner, session.id, ptyProcess, session)
@@ -369,18 +373,25 @@ export function destroyAllTerminalSessions(): void {
 }
 
 /** Update label / thread scope published by the Shells UI. */
-export function setTerminalSessionMeta(
+export async function setTerminalSessionMeta(
   sessionId: string,
   ownerId: number,
   meta: TerminalSessionMeta,
-): void {
-  const session = ownedSession(sessionId, ownerId)
-  if (!session) return
-  if (meta.label !== undefined) {
-    const next = meta.label.trim()
-    if (next) session.label = next
+): Promise<void> {
+  const initial = ownedSession(sessionId, ownerId)
+  const update = (): Promise<void> => {
+    const session = ownedSession(sessionId, ownerId)
+    if (!session) return Promise.resolve()
+    if (meta.label !== undefined) {
+      const next = meta.label.trim()
+      if (next) session.label = next
+    }
+    if (meta.threadId !== undefined) session.threadId = meta.threadId
+    return Promise.resolve()
   }
-  if (meta.threadId !== undefined) session.threadId = meta.threadId
+  if (meta.threadId && meta.threadId !== initial?.threadId && initial?.projectId) {
+    await createThreadResource({ projectId: initial.projectId, threadId: meta.threadId }, update)
+  } else await update()
 }
 
 /** Mark which Shells tab is focused for this renderer (default `read_terminal` target). */
@@ -412,7 +423,12 @@ export function listTerminalSessions(threadId?: string | null): TerminalSessionI
 }
 
 export function hasTerminalSessions(threadId?: string | null): boolean {
-  return listTerminalSessions(threadId).length > 0
+  return [...sessions.values()].some(
+    (session) =>
+      threadId === undefined ||
+      session.threadId === threadId ||
+      session.executionThreadId === threadId,
+  )
 }
 
 /**
@@ -444,7 +460,9 @@ export function listTerminalProcesses(): TerminalProcessInfo[] {
  * remain alive.
  */
 export function destroyTerminalSessionsForThread(threadId: string): Promise<string[]> {
-  const owned = [...sessions.values()].filter((session) => session.threadId === threadId)
+  const owned = [...sessions.values()].filter(
+    (session) => session.threadId === threadId || session.executionThreadId === threadId,
+  )
   for (const session of owned) disposeSession(session, session.id)
   return Promise.resolve(owned.map((session) => session.id))
 }
@@ -482,6 +500,7 @@ export function __testInjectTerminalSession(opts: {
     label: opts.label,
     threadId: opts.threadId,
     projectId: null,
+    executionThreadId: opts.threadId,
   }
   sessions.set(id, session)
   return id

@@ -1,3 +1,4 @@
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -907,8 +908,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 }
 
 if (
-  process.argv[1]?.endsWith('background-question-eval-lib.mts') ||
-  process.argv[1]?.endsWith('background-question-eval-lib.cjs')
+  isDirectExecution(
+    import.meta.url,
+    'background-question-eval-lib',
+    typeof __filename === 'string' ? __filename : undefined,
+  )
 ) {
   main().catch((error: unknown) => {
     console.error(`eval:background-questions: ${errorText(error)}`)

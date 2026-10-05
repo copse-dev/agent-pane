@@ -699,3 +699,29 @@ widest and highest-risk portions.
 The feature should not be split by building allocation first. The safest first PR is
 Phase 0: it fixes existing concurrency hazards and creates the ownership contract every
 later phase needs.
+
+### Archival confirmation and live-resource boundaries
+
+Archiving a chat keeps its conversation and validated live Git branch while removing
+its dedicated checkout. Terminal and background-process creation share the thread's
+checkout fence through resolution, spawn and registration. Queued creation refuses
+archived chats; editable terminal UI scope cannot hide its immutable checkout owner.
+Headless hosts bind resource creation to their explicit ephemeral dispatcher owner
+instead of reading or creating desktop-profile metadata. That scoped lifecycle lookup
+does not relax the desktop store's missing-owner or archived-owner checks.
+
+Discard consent binds the owner, worktree, live branch/HEAD, index/status and dirty
+file contents. New paths or same-path edits require a fresh preview and confirmation.
+Inspection repeats after awaited session disposal and retirement bookkeeping; a
+blocked or failed inspection restores live metadata. Actual Git removal failures
+retain retirement metadata for recovery. Unregistered retired targets count as
+removed only when the managed path is absent; leftover paths are never recursively
+deleted by retry.
+
+Content inspection is bounded to 10,000 entries and 64 MiB per snapshot; each Git
+metadata read is bounded to 8 MiB and truncated results are refused. Large ignored
+build trees may require manual cleanup before archival. Symlink targets are recorded
+without reading their destination; observed replacements and unreadable/special files
+fail closed. The app fence protects Copse resource creation, not arbitrary external
+editors: repeated verification narrows the mutation window but is not an atomic
+filesystem snapshot or a guarantee against hostile concurrent directory swaps.

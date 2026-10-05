@@ -41,6 +41,7 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
+import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
 import { readDecisionLog } from './decision-log-store.ts'
@@ -2596,13 +2597,46 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(permitted, false)
       assert.ok(prompt)
-      assert.equal(prompt.title, 'Allow read access outside of the project?')
+      assert.equal(prompt.title, 'Read outside the project?')
       assert.equal(prompt.body, 'ls -la ~/.copse/workspace')
-      assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
+      assert.equal(prompt.bodyAdvice, 'The agent wants to read ~/.copse/workspace.')
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
     })
   })
+
+  it(
+    'reads a log in the per-user temp directory without asking',
+    {
+      skip: darwinUserTempDir() === null,
+    },
+    async () => {
+      await withRoot(async (root) => {
+        const temp = (darwinUserTempDir() ?? '').replace(/^\/private(?=\/)/, '')
+        const log = `${temp}/rbe.log`
+        const slice = String.raw`tr -d '\000' < "$L" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '1770,1850p' | cut -c1-300`
+        const { permitted, prompt } = await runWithActiveRunIdentity('thread-temp-read', () =>
+          runGate(`L=${log}; ${slice}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(permitted, true)
+        assert.equal(prompt, null)
+        await drainWriteQueue()
+        const [event] = await recordedDecisions()
+        assert.ok(event)
+        assert.equal(event.source, 'user-temp-read')
+        assert.deepEqual(event.reasons, [`reads outside the project: ${log}`])
+
+        // The exemption is the temp directory, not "anything under /var".
+        const other = await runGate(
+          `cat /var/log/system.log`,
+          { approved: false, remember: false },
+          root,
+        )
+        assert.equal(other.permitted, false)
+        assert.equal(other.prompt?.title, 'Read outside the project?')
+      })
+    },
+  )
 
   it('grants the thread read access when the primary button is used', async () => {
     await withRoot(async (root) => {
@@ -2629,7 +2663,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
-      assert.equal(other.prompt.title, 'Allow read access outside of the project?')
+      assert.equal(other.prompt.title, 'Read outside the project?')
     })
   })
 
@@ -2645,7 +2679,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(later.permitted, false)
       assert.ok(later.prompt)
-      assert.equal(later.prompt.title, 'Allow read access outside of the project?')
+      assert.equal(later.prompt.title, 'Read outside the project?')
     })
   })
 
@@ -2659,7 +2693,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(secret.permitted, false)
       assert.ok(secret.prompt, 'a credential read must still be asked about')
-      assert.notEqual(secret.prompt.title, 'Allow read access outside of the project?')
+      assert.notEqual(secret.prompt.title, 'Read outside the project?')
     })
   })
 
@@ -2822,7 +2856,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         root,
       )
       assert.ok(prompt)
-      assert.notEqual(prompt.title, 'Allow read access outside of the project?')
+      assert.notEqual(prompt.title, 'Read outside the project?')
       assert.equal(prompt.approveOnceLabel, '')
     })
   })

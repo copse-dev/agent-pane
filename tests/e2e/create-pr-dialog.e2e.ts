@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -55,7 +56,12 @@ describe('create PR dialog', function () {
   before(async () => {
     resetUserData()
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
-    seedEmptyProject(process.cwd(), 'e2e-create-pr-dialog-project', {
+    const root = seedStableWorkspace()
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/copse-mock/demo.git'], {
+      cwd: root,
+      stdio: 'pipe',
+    })
+    seedEmptyProject(root, 'e2e-create-pr-dialog-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       mockFollowUps: true,

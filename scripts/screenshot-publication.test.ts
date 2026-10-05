@@ -857,12 +857,12 @@ describe('parent screenshot evidence comment', () => {
       const body =
         (
           await publish(
-            { CANDIDATE_NAMES: candidateNames(entries), CANDIDATE_COUNT: '2048' },
+            { CANDIDATE_NAMES: candidateNames(entries), CANDIDATE_COUNT: '4096' },
             parent({ labels }),
           )
         ).bodies[0] ?? ''
       assert.equal(body.split('\n').filter((line) => line.startsWith('| `')).length, 20)
-      assert.ok(body.includes('…and 2028 more'))
+      assert.ok(body.includes('…and 4076 more'))
       assert.ok(body.length < 32_768, String(body.length))
     }
   })

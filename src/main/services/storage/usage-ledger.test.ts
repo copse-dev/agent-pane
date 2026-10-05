@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
-import { storageSet } from './storage.ts'
+import { storageGet, storageSet } from './storage.ts'
 import { setSetting } from './settings.ts'
 import { OPENROUTER_PRICING_KEY } from '../providers/model-pricing-store.ts'
-import { getUsageSummary, recordUsageEvent } from './usage-ledger.ts'
+import { getUsageSummary, recordAgentUsageChunk, recordUsageEvent } from './usage-ledger.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
+import { parseUsageEvents } from '@shared/usage/aggregate-usage.ts'
 import { saveProjectThread } from '../thread-store.ts'
 
 describe('usage ledger', () => {
@@ -60,6 +61,34 @@ describe('usage ledger', () => {
       `expected a real cost, got ${String(row.estimatedCostUsd)}`,
     )
     assert.equal(summary.day.totalCostUsd, row.estimatedCostUsd)
+  })
+
+  it('keeps the router-reported hosting provider on each call, across later appends', () => {
+    // Prompt caches live per upstream, so the provider that served each call is
+    // what tells a routing switch apart from a request-bytes cache miss.
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    recordAgentUsageChunk('thread-or', {
+      type: 'usage',
+      model: 'openrouter:moonshotai/kimi-k3',
+      inputTokens: 90_000,
+      outputTokens: 400,
+      cacheReadTokens: 0,
+      hostingProvider: 'Moonshot AI',
+    })
+    // Every append re-parses the stored ledger, so the field must survive it.
+    recordAgentUsageChunk('thread-or', {
+      type: 'usage',
+      model: 'openrouter:moonshotai/kimi-k3',
+      inputTokens: 91_000,
+      outputTokens: 300,
+      cacheReadTokens: 89_000,
+    })
+
+    const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
+    assert.deepEqual(
+      events.map((e) => e.hostingProvider),
+      ['Moonshot AI', undefined],
+    )
   })
 
   it('records local lmstudio models in day summaries', async () => {

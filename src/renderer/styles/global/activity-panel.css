@@ -141,7 +141,7 @@ dialog.activity-panel-overlay {
 }
 .activity-row[data-state='needs-approval'] .activity-glyph,
 .activity-row[data-state='needs-answer'] .activity-glyph {
-  color: var(--warning);
+  color: var(--text-primary);
 }
 .activity-row[data-state='working'] .activity-glyph {
   color: var(--text-secondary);
@@ -268,6 +268,44 @@ dialog.activity-panel-overlay {
   padding-left: var(--spacing-lg);
   line-height: var(--line-height-base);
 }
+/* A question answered in place: the question, the agent's quick answers, then a
+   field. The quick answers fill the field; Send answer is in the action bar. */
+.activity-answer-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.activity-answer-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.activity-question {
+  margin: 0;
+  line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
+}
+.activity-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.activity-answer-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  resize: vertical;
+}
+.activity-answer-input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -1px;
+}
 .activity-detail-label {
   margin: 0 0 var(--spacing-xs);
   color: var(--text-muted);
@@ -317,4 +355,314 @@ dialog.activity-panel-overlay {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
+}
+
+/* ── The new-thread screen (views/activity-home.ts) ───────────────────────
+   Laid out after the prototype (prototypes/new-thread-activity.html): a strip of
+   project tiles, the list-and-detail card, then a caption over the docked
+   composer. The composer is positioned over the pane's bottom edge, so the home
+   reserves its height the way .conversation does. */
+.activity-home {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  /* A column of up to 1050px whose side margins grow with the pane; the pane is
+     the chat-pane container, so cqw is the pane's own width. */
+  width: min(1050px, calc(100cqw - 2 * clamp(22px, 5.4cqw, 76px)));
+  margin-inline: auto;
+  padding: 26px 0 calc(var(--chat-composer-height) + var(--spacing-md));
+  /* A pane too short for the card scrolls above the composer's reserved space
+     rather than running under it. */
+  overflow-y: auto;
+}
+/* display above would otherwise beat the UA's [hidden] rule. */
+.activity-home[data-idle='true'],
+.activity-home[hidden] {
+  display: none;
+}
+/* Kept for screen readers (the landmark name, the answer confirmation); the
+   prototype shows neither. */
+.activity-home-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.activity-home-caption {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--chat-composer-width);
+  margin: 14px auto 7px;
+  padding-left: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* The project strip: All projects, then the ones that need you. */
+.activity-strip {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.activity-strip-card {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  width: 190px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.activity-strip-card:first-child {
+  width: 170px;
+}
+.activity-strip-card:hover {
+  background: var(--bg-hover);
+}
+.activity-strip-card[aria-pressed='true'] {
+  background: var(--bg-selected);
+}
+.activity-strip-card:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.activity-strip-name {
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-strip-stats {
+  display: flex;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.activity-strip-need {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The card: list and detail. */
+.activity-home .activity-panel-body {
+  grid-template-columns: minmax(285px, 0.43fr) minmax(0, 0.57fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.activity-home .activity-list {
+  padding-block: 11px;
+}
+
+/* Group headers fold their rows. */
+.activity-home .activity-group + .activity-group {
+  margin-top: 9px;
+}
+.activity-home .activity-group-title {
+  display: block;
+  padding: 11px 18px 7px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.activity-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.activity-group-toggle:hover {
+  color: var(--text-primary);
+}
+.activity-group-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.activity-group-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.activity-group-toggle[aria-expanded='false'] .activity-group-chevron {
+  transform: rotate(-90deg);
+}
+/* The glyph says what a row is; the word is kept where nothing else follows it
+   (Done, Failed) and in the row's accessible name. */
+.activity-home .activity-row[data-state='needs-approval'] .activity-state,
+.activity-home .activity-row[data-state='needs-answer'] .activity-state,
+.activity-home .activity-row[data-state='working'] .activity-state {
+  display: none;
+}
+
+/* The detail pane. */
+.activity-home .activity-detail-header {
+  padding: 26px 30px 0;
+}
+.activity-home .activity-detail-meta {
+  gap: 9px;
+}
+.activity-home .activity-detail-state {
+  padding: 1px 6px;
+  font-weight: 500;
+}
+/* One neutral chip for every state, as in the prototype. The attribute selector
+   matches the specificity of the overlay's tinted chips, which it must beat. */
+.activity-home .activity-detail[data-state] .activity-detail-state {
+  background: var(--bg-hover);
+}
+.activity-home .activity-detail-title {
+  margin: 18px 0 26px;
+  font-size: calc(24px * var(--ui-scale));
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.activity-home .activity-detail-body {
+  padding: 0 30px 26px;
+}
+.activity-home .activity-detail-label {
+  margin-bottom: 11px;
+  letter-spacing: 0.07em;
+}
+.activity-home .activity-detail-text {
+  font-size: var(--font-size-md);
+}
+.activity-home .activity-detail-actions {
+  /* The side padding follows the pane (cqw is the chat pane's own width) and the
+     bar wraps, so Open thread, Reject and Approve never clip in a squeezed card. */
+  padding: 14px clamp(14px, 4cqw, 30px);
+  flex-wrap: wrap;
+  row-gap: 8px;
+  background: none;
+}
+.activity-home .activity-detail-actions .ui-btn {
+  /* Block size from min-height, as the kit's compact size does: a text-only
+     button is cap-trimmed, so padding alone gave a 22px pill, not the
+     prototype's 29px. */
+  min-height: calc(29px * var(--ui-scale));
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: calc(13px * var(--ui-scale));
+  font-weight: 600;
+}
+.activity-home .activity-detail-actions .activity-open-thread {
+  padding-inline: 0;
+  border: 0;
+  background: none;
+}
+.activity-home .activity-open-arrow {
+  margin-left: var(--spacing-xs);
+}
+
+/* Narrow pane: one column that scrolls as a whole. The list keeps its own short
+   scroll above the detail, and the action bar sticks to the card's bottom edge so
+   Reject and Approve stay reachable however long the request is. */
+/* A short pane (a small window, or the right panel docked below): the project
+   tiles shrink to one-line pills and the card gives up some of its floor. */
+@media (max-height: 640px) {
+  .activity-home {
+    padding-top: 16px;
+  }
+  .activity-home .activity-strip {
+    margin-bottom: 10px;
+  }
+  .activity-home .activity-strip-card,
+  .activity-home .activity-strip-card:first-child {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .activity-home .activity-panel-body {
+    min-height: 200px;
+  }
+}
+@container chat-pane (max-width: 640px) {
+  /* Squeezed for room: the project tiles shrink to one-line pills so the card
+     below keeps the height. */
+  .activity-home {
+    padding-top: 16px;
+  }
+  .activity-home .activity-strip {
+    margin-bottom: 10px;
+  }
+  .activity-home .activity-strip-card,
+  .activity-home .activity-strip-card:first-child {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .activity-home .activity-panel-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .activity-home .activity-list {
+    /* The list scrolls itself, so its minimum track size is 0 and the detail's
+       content would take the whole card; the floor keeps a few rows visible. */
+    min-height: 150px;
+    max-height: 200px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .activity-home .activity-detail,
+  .activity-home .activity-detail-body {
+    min-height: auto;
+    overflow: visible;
+  }
+  .activity-home .activity-detail-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elevated);
+  }
+  /* Narrow and short: a sticky action bar over a card a couple of hundred pixels
+     tall would show Approve with the request scrolled out of sight. Let the card
+     grow to its content and the home scroll instead, so the actions sit after the
+     whole request. */
+  @media (max-height: 640px) {
+    .activity-home .activity-panel-body {
+      flex: none;
+      min-height: 0;
+      overflow: visible;
+    }
+    .activity-home .activity-detail-actions {
+      position: static;
+    }
+  }
 }

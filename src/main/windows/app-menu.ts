@@ -5,6 +5,7 @@ import { checkForUpdatesManually } from '../services/auto-update.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { buildAppFileMenuItems } from './app-menu-file-items.ts'
 import { buildAppHelpMenuItems, reportIssueUrl } from './app-menu-help-items.ts'
+import { getElectronAppVersion, getElectronBuildCommit } from '../services/electron-app-runtime.ts'
 
 export interface AppMenuWindowProvider {
   getFocusedWindow(): BrowserWindow | null
@@ -110,8 +111,18 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
       label: 'View',
       submenu: [
         {
-          label: 'Toggle Panel',
+          label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
+          click: (): void => {
+            sendToFocused('menu:toggle-sidebar')
+          },
+        },
+        {
+          label: 'Toggle Panel',
+          accelerator: 'CmdOrCtrl+J',
+          // Shown, not registered: the renderer handles Cmd/Ctrl+J so it stays
+          // inert while typing in the composer, unlike a native accelerator.
+          registerAccelerator: false,
           click: (): void => {
             sendToFocused('menu:toggle-panel')
           },
@@ -233,7 +244,8 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
         reportIssue: () => {
           void shell.openExternal(
             reportIssueUrl({
-              version: app.getVersion(),
+              version: getElectronAppVersion(),
+              buildCommit: getElectronBuildCommit(),
               packaged: app.isPackaged,
               platform: process.platform,
               arch: process.arch,

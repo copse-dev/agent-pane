@@ -2,7 +2,7 @@ import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenar
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveThreePaneScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -22,6 +22,8 @@ describe('browser preview tool', () => {
     seedEmptyProject(projectRoot, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // Hook chips are a developer-mode surface; the chip-sizing check below needs them.
+      developerMode: true,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -113,5 +115,32 @@ describe('browser preview tool', () => {
       expect(chip.nameCut).toBe(false)
       expect(chip.statusRight).toBeLessThanOrEqual(chip.iconLeft)
     }
+  })
+
+  it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
+    const panelsBefore = await $$('.browser-tab-panel')
+    const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
+    const scenario = await prepareMockToolTurn(
+      'Preview the build output before it has been written.',
+      { name: 'browser_preview', args: { path: 'dist/other/index.html' } },
+      'Finish the build before previewing its output.',
+    )
+    await $('.submit-btn').click()
+    const failedTool = $('.tool-card[data-tool-id][data-status="error"]')
+    await failedTool.waitForDisplayed({ timeout: 30_000 })
+    if (!(await failedTool.getProperty('open'))) {
+      await failedTool.$('summary.tool-card-header').click()
+    }
+    await expect(failedTool).toHaveText('Nothing to preview at "dist/other/index.html"', {
+      containing: true,
+    })
+    await expect(failedTool).toHaveText('finish the build before previewing', { containing: true })
+    await expect($$('.browser-tab-panel')).toBeElementsArrayOfSize(panelsBefore.length)
+    await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(addressBefore)
+    await expect($('.approval-dialog')).not.toExist()
+    await expectAssistantReply('Finish the build before previewing its output.')
+    await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
+    await saveThreePaneScreenshot('browser-preview-missing-entry.png', { filesPaneWidth: 480 })
   })
 })

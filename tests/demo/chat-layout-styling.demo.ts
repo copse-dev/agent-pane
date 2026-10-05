@@ -110,9 +110,9 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-divider-hover.png')
   })
 
-  it('shows the gradient in an empty composer-centered chat', async () => {
+  it('shows the gradient in an empty Activity-home chat', async () => {
     await $('.project-new-thread-btn').click()
-    await $('.pane-chat.composer-centered').waitForExist()
+    await $('.pane-chat.is-activity-home').waitForExist()
     const gradient = await browser.execute(() => {
       const pane = document.getElementById('pane-chat')
       return pane ? getComputedStyle(pane).backgroundImage : ''
@@ -121,32 +121,43 @@ describe('browser-hosted chat layout styling', () => {
     await saveAppScreenshot('chat-layout-gradient-empty.png')
   })
 
-  it('keeps a single hairline on the centered new-thread composer', async () => {
+  it('centres the composer, ringed by its shadow, when the Activity home has nothing to list', async () => {
     // Prior test already opened a blank thread; ensure we stay on that surface
-    // without a full remount (another navigation was the flake surface).
-    if (!(await $('.pane-chat.composer-centered').isExisting())) {
+    // without a full remount (another navigation was the flake surface). This
+    // scenario has nothing running or waiting, so the home steps aside.
+    if (!(await $('.pane-chat.is-activity-idle').isExisting())) {
       await $('.project-new-thread-btn').click()
-      await $('.pane-chat.composer-centered').waitForExist()
+      await $('.pane-chat.is-activity-idle').waitForExist()
     }
-    const border = await browser.execute(() => {
+    const layout = await browser.execute(() => {
+      const home = document.getElementById('activity-home')
       const input = document.getElementById('input-bar')
-      if (!input) return null
+      const pane = document.getElementById('pane-chat')
+      if (!home || !input || !pane) return null
       const style = getComputedStyle(input)
+      const bar = input.getBoundingClientRect()
+      const frame = pane.getBoundingClientRect()
       return {
-        top: style.borderTopWidth,
-        right: style.borderRightWidth,
-        bottom: style.borderBottomWidth,
-        left: style.borderLeftWidth,
+        homeDisplay: getComputedStyle(home).display,
+        borderTop: style.borderTopWidth,
+        borderRight: style.borderRightWidth,
+        borderBottom: style.borderBottomWidth,
+        borderLeft: style.borderLeftWidth,
         boxShadow: style.boxShadow,
+        barMid: (bar.top + bar.bottom) / 2,
+        paneMid: (frame.top + frame.bottom) / 2,
       }
     })
-    expect(border).not.toBeNull()
-    if (!border) throw new Error('Missing #input-bar')
-    expect(border.top).toBe('0px')
-    expect(border.right).toBe('0px')
-    expect(border.bottom).toBe('0px')
-    expect(border.left).toBe('0px')
-    expect(border.boxShadow).toMatch(/0px 0px 0px 1px/)
-    await saveAppScreenshot('chat-layout-composer-centered-border.png')
+    expect(layout).not.toBeNull()
+    if (!layout) throw new Error('Missing Activity home or #input-bar')
+    expect(layout.homeDisplay).toBe('none')
+    // Centred, its ring is the shadow, so the docked border is cleared.
+    expect(layout.borderTop).toBe('0px')
+    expect(layout.borderRight).toBe('0px')
+    expect(layout.borderBottom).toBe('0px')
+    expect(layout.borderLeft).toBe('0px')
+    expect(layout.boxShadow).toMatch(/0px 0px 0px 1px/)
+    expect(Math.abs(layout.barMid - layout.paneMid)).toBeLessThanOrEqual(2)
+    await saveAppScreenshot('chat-layout-activity-home.png')
   })
 })

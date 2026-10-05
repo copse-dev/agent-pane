@@ -34,6 +34,11 @@ release each time it starts, and **Copse → Check for Updates…** checks on
 demand. It shows what changed and asks before downloading; a downloaded update
 installs when you choose **Restart now**, or the next time you quit.
 
+Choose which releases you get in **Settings → About → Update channel**. Beta
+gets new features first. If you switch to Stable, Copse keeps installing betas
+until the next stable release, then installs only stable releases; it never
+moves you back to an older version.
+
 ### If it does not open
 
 - **"You can't use this version of the application with this version of

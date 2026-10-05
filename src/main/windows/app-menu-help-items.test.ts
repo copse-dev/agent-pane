@@ -53,6 +53,11 @@ describe('reportIssueUrl', () => {
     )
   })
 
+  it('adds the short commit to a source build version', () => {
+    const source = params({ ...RELEASE_MAC, packaged: false, buildCommit: 'b7fcb18fa0123456' })
+    assert.equal(source.get('version'), '0.1.0-beta.12 (source build, b7fcb18)')
+  })
+
   it('leaves the platform for the user to choose when it is unknown', () => {
     assert.equal(params({ ...RELEASE_MAC, platform: 'freebsd' }).has('platform'), false)
     // An unreadable macOS version must not label the reporter "unsupported".

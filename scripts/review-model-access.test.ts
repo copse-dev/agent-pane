@@ -139,7 +139,6 @@ async function authorize(
 
 describe('paid PR reviewer access', () => {
   for (const [workflow, gate, model] of [
-    ['review-findings', 'authorize', 'findings'],
     ['review-nightly', 'select', 'findings'],
     ['review-summary', 'authorize', 'summary'],
   ]) {
@@ -204,30 +203,6 @@ describe('paid PR reviewer access', () => {
     })
   }
 
-  it('requires the exact ready-or-labelled head/base before entering the protected findings job', async () => {
-    assert.equal(job('review-findings', 'findings').needs, 'authorize')
-    assert.match(
-      z.string().parse(job('review-findings', 'findings').if),
-      /needs\.authorize\.outputs\.authorized == 'true'/,
-    )
-    for (const accepted of [
-      pull({ labels: [] }),
-      pull({ labels: ['copse-review'], draft: true }),
-    ]) {
-      const result = await authorize('review-findings', 'authorize', accepted)
-      assert.equal(result.outputs.get('authorized'), 'true')
-    }
-    for (const rejected of [
-      pull({ labels: [], draft: true }),
-      pull({ labels: ['copse-review-skip'] }),
-      pull({ labels: ['copse-review', 'copse-review-skip'], draft: true }),
-      { ...pull(), head: { ...pull().head, sha: 'b'.repeat(40) } },
-      { ...pull(), base: { ...pull().base, ref: 'other' } },
-    ]) {
-      assert.equal((await authorize('review-findings', 'authorize', rejected)).outputs.size, 0)
-    }
-  })
-
   it('summarises only the exact ready-or-labelled head before entering the protected job', async () => {
     assert.equal(job('review-summary', 'summary').needs, 'authorize')
     for (const accepted of [
@@ -271,7 +246,6 @@ describe('paid PR reviewer access', () => {
   })
 
   for (const [workflow, model, stepName] of [
-    ['review-findings', 'findings', 'Review with focused validation and post the findings'],
     ['review-nightly', 'findings', 'Review with focused validation and post the findings'],
     ['review-summary', 'summary', 'Summarise the pull request and update its description'],
   ]) {

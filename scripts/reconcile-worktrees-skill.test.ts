@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -275,8 +275,12 @@ describe('built-in reconcile-worktrees audit', () => {
   })
 
   it('ships as an executable resource copied with the built-in skill', async () => {
-    await chmod(SCRIPT, 0o755)
-    const result = spawnSync(SCRIPT, ['--help'], { encoding: 'utf8' })
+    const root = await mkdtemp(join(tmpdir(), 'reconcile-worktrees-resource-'))
+    roots.push(root)
+    const copiedScript = join(root, 'audit-worktrees.mjs')
+    await copyFile(SCRIPT, copiedScript)
+    await chmod(copiedScript, 0o755)
+    const result = spawnSync(copiedScript, ['--help'], { encoding: 'utf8' })
     assert.equal(result.status, 0)
     assert.match(result.stdout, /Read-only JSON audit/)
   })

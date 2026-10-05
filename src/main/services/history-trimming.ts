@@ -92,16 +92,28 @@ export function contextTrimmedChunk(
   }
 }
 
+/**
+ * The reading the loop reports before any provider usage exists. Later
+ * readings are the provider's measured prompt size, which includes the system
+ * prompt and tool schemas, so this one counts them too: reporting the
+ * conversation alone made the footer ring drop to ~0% when a run started and
+ * jump back up after the first model call.
+ */
 export function contextPressureChunk(
   prepared: PreparedAgentHistory,
   contextWindow: number,
-): StreamChunk {
+  toolSchemaReserve = 0,
+): Extract<StreamChunk, { type: 'context_pressure' }> {
+  const promptTokens = Math.max(
+    prepared.initialConversationTokens,
+    Math.round(prepared.estimatedPromptTokens + toolSchemaReserve),
+  )
   return {
     type: 'context_pressure',
     contextWindow,
     conversationBudget: prepared.conversationBudget,
-    conversationTokens: prepared.initialConversationTokens,
-    fillRatio: prepared.initialConversationTokens / prepared.conversationBudget,
+    conversationTokens: promptTokens,
+    fillRatio: promptTokens / prepared.conversationBudget,
   }
 }
 

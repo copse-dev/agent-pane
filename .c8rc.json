@@ -1,7 +1,12 @@
 {
   "all": true,
   "src": ["src", "packages"],
-  "include": ["src/**/*.ts", "packages/*/src/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/main/services/classifiers/local-server.mts",
+    "packages/*/src/**/*.ts"
+  ],
+  "extension": [".js", ".cjs", ".mjs", ".ts", ".tsx", ".jsx", ".mts"],
   "exclude": ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
   "exclude-after-remap": true,
   "reporter": ["text-summary", "json-summary", "lcov"],

@@ -85,6 +85,7 @@
  *
  * Run: node scripts/filter-screenshots.mts [--dir tests/e2e/screenshots] [--dry-run]
  */
+import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -611,13 +612,4 @@ export function main(): void {
 
 // Run only when invoked directly (`node scripts/filter-screenshots.mts`), not when
 // imported by the unit test.
-function invokedDirectly(): boolean {
-  try {
-    return (
-      process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-    )
-  } catch {
-    return false
-  }
-}
-if (invokedDirectly()) main()
+if (isDirectExecution(import.meta.url, 'filter-screenshots')) main()

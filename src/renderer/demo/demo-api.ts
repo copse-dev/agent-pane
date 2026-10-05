@@ -1,3 +1,4 @@
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
@@ -19,7 +20,7 @@ import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
-import { isRecord } from '@shared/unknown-value.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
 import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
@@ -577,6 +578,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       sharePageText: unsupported,
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
+      scrollPosition: unsupported,
       exportPdf: unsupported,
       exportPage: unsupported,
       exportArtefact: unsupported,
@@ -750,7 +752,22 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return (): void => undefined
       },
       onApprovalCancelled: subscribe,
-      onAskUserRequest: subscribe,
+      onAskUserRequest: (handler) => {
+        for (const askUserRequest of scenario.askUserRequests ?? []) {
+          const request = {
+            id: askUserRequest.id,
+            ...(askUserRequest.threadId === undefined ? {} : { threadId: askUserRequest.threadId }),
+            questions: askUserRequest.questions.map((question) => ({
+              question: question.question,
+              ...(question.options === undefined ? {} : { options: [...question.options] }),
+            })),
+          }
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -859,6 +876,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      maintenance: () =>
+        resolved({
+          retention: { enabled: true, days: 30 },
+          areas: [
+            { area: 'runs', bytes: 0, entries: 0, busy: false },
+            { area: 'builds', bytes: 0, entries: 0, busy: false },
+          ],
+        }),
+      cleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
+      retention: () => resolvedVoid(),
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
         storage.set(key, value)
@@ -877,6 +904,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     threads: {
+      archive: (_projectId, threadId) => {
+        const archivedAt = Date.now()
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) thread.archivedAt = archivedAt
+        return resolved({ status: 'archived', archivedAt, worktree: thread?.worktree })
+      },
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
@@ -1032,6 +1065,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
+      onToggleSidebar: subscribe,
       onTogglePanel: subscribe,
       onShowExplorer: subscribe,
       onShowTerminal: subscribe,
@@ -1076,6 +1110,24 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     settings: {
+      getSnapshot: () => {
+        const values: Record<string, unknown> = Object.fromEntries(settings)
+        const snapshot: SettingsSnapshot = values
+        return resolved(snapshot)
+      },
+      update: (changes) => {
+        const { roleAssignments, ...ordinary } = changes
+        const next = new Map(settings)
+        for (const [key, value] of Object.entries(ordinary)) next.set(key, value)
+        if (roleAssignments)
+          next.set('roleModels', {
+            ...stringRecordOrEmpty(settings.get('roleModels')),
+            ...roleAssignments,
+          })
+        settings.clear()
+        for (const [key, value] of next) settings.set(key, value)
+        return resolvedVoid()
+      },
       get: (key: string) => resolved(settings.get(key)),
       set: (key: string, value: unknown) => {
         settings.set(key, value)

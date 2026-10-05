@@ -433,3 +433,34 @@ describe('createDemoApi trace replay', () => {
     )
   })
 })
+
+describe('demo Settings transaction', () => {
+  it('merges edited roles with the latest role map and keeps the patch out of the snapshot', async () => {
+    const api = createDemoApi(editScenario)
+    await api.settings.set('roleModels', { coder: 'old-coder', research: 'old-research' })
+    // Recovery while Settings is open changes a role the user did not edit.
+    await api.settings.set('roleModels', {
+      coder: 'old-coder',
+      research: 'recovered-research',
+      planner: 'planner',
+    })
+    await api.settings.update({
+      roleAssignments: { coder: 'new-coder' },
+      customInstructions: 'Be concise',
+    })
+    assert.deepEqual(await api.settings.get('roleModels'), {
+      coder: 'new-coder',
+      research: 'recovered-research',
+      planner: 'planner',
+    })
+    assert.equal(await api.settings.get('roleAssignments'), undefined)
+    const snapshot = await api.settings.getSnapshot()
+    assert.equal(snapshot.customInstructions, 'Be concise')
+    assert.deepEqual(snapshot.roleModels, {
+      coder: 'new-coder',
+      research: 'recovered-research',
+      planner: 'planner',
+    })
+    assert.equal(Object.hasOwn(snapshot, 'roleAssignments'), false)
+  })
+})

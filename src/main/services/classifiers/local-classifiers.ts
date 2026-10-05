@@ -10,7 +10,7 @@ import {
   portListening,
   prepareClassifierCache,
   programAvailable,
-} from './local-server.ts'
+} from './local-server.mts'
 
 let manager: LocalClassifierManager | undefined
 

@@ -127,6 +127,11 @@ installs the profile and tracing environment first.
   anchoring. New Copse Reviewer reports live on their owning message spine line.
   When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
+  Archiving also removes the thread's dedicated worktree after checking for
+  modified, untracked, and ignored content. Such content requires an explicit
+  discard confirmation; cancellation keeps the chat and checkout. The branch
+  is retained, and `worktree.retiredAt` records that the checkout can be rebuilt.
+  Shared project checkouts are never removed by archiving.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
   Shape: `{ "v": 1, "messages": [ … ] }`. It is **not** append-only — context

@@ -24,7 +24,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   /* Cast the docked composer's shadow up onto the chat gradient so it reads
-     as floating above the conversation, matching the centered variant. */
+     as floating above the conversation. */
   box-shadow: var(--shadow-composer);
   /* #2489: the card is anchored to the pane's bottom edge and grows upward
      with its content (advisory strips, chips, the draft, the footer). Without
@@ -82,6 +82,19 @@
   gap: var(--spacing-sm);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+.titlebar-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--titlebar-sidebar-btn-width);
+  padding: 3px 0;
+  color: var(--text-secondary);
+}
+.titlebar-sidebar-btn[aria-pressed='true'] {
+  color: var(--text-primary);
 }
 .titlebar-settings-btn {
   font-size: var(--font-size-sm);
