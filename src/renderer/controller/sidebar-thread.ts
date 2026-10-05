@@ -21,6 +21,8 @@ export interface SidebarThread {
   title: string
   /** For the sidebar's Created sort. A compacted entry keeps it. */
   createdAt?: number
+  /** Last write to the thread, for the Activity panel's recency fallback. A compacted entry keeps it. */
+  updatedAt?: number
   /** When the user last prompted it, for ordering across projects. A compacted entry keeps it. */
   lastPromptAt?: number
   status: Thread['status']
@@ -95,6 +97,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     id: thread.id,
     title: thread.title,
     ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
+    ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
     ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
