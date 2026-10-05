@@ -1,0 +1,173 @@
+import { Buffer } from 'node:buffer'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { z } from 'zod'
+import {
+  canonicalPluginPath,
+  canonicalPluginRepository,
+  ingestPluginMarketplace,
+  mergePluginCatalog,
+  pluginMarketplaceEnvelopeSchema,
+  type PluginCatalogFeed,
+  type PluginCatalogResult,
+  type PluginCatalogSnapshot,
+} from '../src/shared/plugin-catalog.mts'
+import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
+import { writeGeneratedFile } from './lib/generated-file.mts'
+
+export const PLUGIN_CATALOG_FEEDS: readonly PluginCatalogFeed[] = [
+  {
+    id: 'claude-plugins-official',
+    repository: 'https://github.com/anthropics/claude-plugins-official',
+    revision: ['ab024cdcfa7ca80be20', '4acd4907656ba5a968589'].join(''),
+    format: 'claude',
+    manifestPath: '.claude-plugin/marketplace.json',
+  },
+  {
+    id: 'cursor-plugins',
+    repository: 'https://github.com/cursor/plugins',
+    revision: ['e46364b8be46000b7df0', 'f260550cd712afbb8d36'].join(''),
+    format: 'cursor',
+    manifestPath: '.cursor-plugin/marketplace.json',
+  },
+]
+
+export const GENERATED_PLUGIN_CATALOG_PATH = resolve('src/shared/plugin-catalog.generated.ts')
+
+const feedSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/),
+  repository: z.string(),
+  revision: z.string().regex(/^[a-f0-9]{40}$/),
+  format: z.enum(['claude', 'cursor']),
+  manifestPath: z.string(),
+})
+
+const MAX_FEED_BYTES = 4 * 1024 * 1024
+
+type MarketplaceAdapter = (input: unknown, source: PluginCatalogFeed) => PluginCatalogResult
+
+/** Keep source formats explicit even while their marketplace envelopes coincide. */
+const MARKETPLACE_ADAPTERS: Readonly<Record<PluginCatalogFeed['format'], MarketplaceAdapter>> = {
+  claude: ingestPluginMarketplace,
+  cursor: ingestPluginMarketplace,
+}
+
+/** Metadata only: fetching an index never fetches or executes a package. */
+export async function aggregatePluginCatalog(
+  feeds: readonly PluginCatalogFeed[],
+  fetcher: typeof fetch = fetch,
+): Promise<PluginCatalogSnapshot> {
+  const sources = feeds
+    .map((feed) => {
+      const parsed = feedSchema.parse(feed)
+      return {
+        ...parsed,
+        repository: canonicalPluginRepository(parsed.repository),
+        manifestPath: canonicalPluginPath(parsed.manifestPath),
+      }
+    })
+    .sort((a, b) => a.id.localeCompare(b.id, 'en'))
+  if (
+    sources.length === 0 ||
+    sources.length > 100 ||
+    new Set(sources.map((source) => source.id)).size !== sources.length
+  ) {
+    throw new Error('Expected 1–100 catalogue sources with unique ids')
+  }
+  const results = await Promise.all(
+    sources.map(async (source): Promise<PluginCatalogResult> => {
+      try {
+        const repository = source.repository.slice('https://github.com/'.length)
+        const response = await fetcher(
+          `https://raw.githubusercontent.com/${repository}/${source.revision}/${source.manifestPath}`,
+          {
+            redirect: 'error',
+            signal: AbortSignal.timeout(30_000),
+          },
+        )
+        if (!response.ok) throw new Error(`Index request failed (${String(response.status)})`)
+        if (Number(response.headers.get('content-length')) > MAX_FEED_BYTES)
+          throw new Error('Index exceeds 4 MiB')
+        if (!response.body) throw new Error('Index response has no body')
+        const reader = response.body.getReader()
+        const chunks: Uint8Array[] = []
+        let bytes = 0
+        try {
+          for (;;) {
+            const chunk = await reader.read()
+            if (chunk.done) break
+            bytes += chunk.value.byteLength
+            if (bytes > MAX_FEED_BYTES) throw new Error('Index exceeds 4 MiB')
+            chunks.push(chunk.value)
+          }
+        } finally {
+          await reader.cancel()
+        }
+        const input = safeJsonParse(
+          Buffer.concat(chunks).toString('utf8'),
+          decodeWithSchema(pluginMarketplaceEnvelopeSchema),
+        )
+        if (input === null) throw new Error('Index response is not a valid marketplace document')
+        return MARKETPLACE_ADAPTERS[source.format](input, source)
+      } catch (error) {
+        return {
+          entries: [],
+          diagnostics: [
+            {
+              sourceId: source.id,
+              entry: null,
+              message: error instanceof Error ? error.message : 'Index fetch failed',
+            },
+          ],
+        }
+      }
+    }),
+  )
+  return {
+    schemaVersion: 1,
+    sources,
+    entries: mergePluginCatalog(results.flatMap((result) => result.entries)),
+    diagnostics: results.flatMap((result) => result.diagnostics),
+  }
+}
+
+export function renderPluginCatalogModule(snapshot: PluginCatalogSnapshot): string {
+  const serialized = JSON.stringify(snapshot, null, 2).replace(
+    /"([a-f0-9]{40})"/g,
+    (_match, revision: string) => `"${revision.slice(0, 20)}" + "${revision.slice(20)}"`,
+  )
+  return `// Generated by pnpm sync:plugin-catalog. Do not edit by hand.\nimport type { PluginCatalogSnapshot } from './plugin-catalog.mts'\n\nexport const BUNDLED_PLUGIN_CATALOG: PluginCatalogSnapshot = ${serialized}\n`
+}
+
+async function main(): Promise<void> {
+  const snapshot = await aggregatePluginCatalog(PLUGIN_CATALOG_FEEDS)
+  const failedSources = snapshot.sources.filter((source) =>
+    snapshot.diagnostics.some(
+      (diagnostic) => diagnostic.sourceId === source.id && diagnostic.entry === null,
+    ),
+  )
+  if (failedSources.length > 0) {
+    throw new Error(
+      `Refusing to publish a partial catalogue; failed sources: ${failedSources.map((source) => source.id).join(', ')}`,
+    )
+  }
+  const changed = await writeGeneratedFile(
+    GENERATED_PLUGIN_CATALOG_PATH,
+    renderPluginCatalogModule(snapshot),
+  )
+  console.log(
+    `[plugin-catalog] ${changed ? 'wrote' : 'kept'} ${String(snapshot.entries.length)} entries from ${String(snapshot.sources.length)} pinned sources`,
+  )
+  if (snapshot.diagnostics.length > 0) {
+    console.warn(
+      `[plugin-catalog] skipped ${String(snapshot.diagnostics.length)} malformed entries`,
+    )
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}

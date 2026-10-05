@@ -24,6 +24,16 @@ describe('settings-writable', () => {
     )
   })
 
+  it('validates the deferred worktree opt-in as a boolean', () => {
+    assert.equal(isRendererWritableSettingKey('deferredWorktreesEnabled'), true)
+    for (const value of [false, true]) {
+      assert.equal(parseRendererWritableSetting('deferredWorktreesEnabled', value), value)
+    }
+    for (const value of ['true', 1, null]) {
+      assert.throws(() => parseRendererWritableSetting('deferredWorktreesEnabled', value))
+    }
+  })
+
   it('rejects security keys on the renderer allowlist', () => {
     assert.equal(isRendererWritableSettingKey('autoRunSandboxCommands'), false)
     assert.equal(isRendererWritableSettingKey('localServerUrl'), false)
