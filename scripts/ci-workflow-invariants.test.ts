@@ -795,7 +795,7 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\\\.png\$/)
     assert.match(workflow, /89504e470d0a1a0a/)
     assert.match(workflow, /"\$size" -gt 16777216/)
-    assert.match(workflow, /"\$count" -gt 2048/)
+    assert.match(workflow, /"\$count" -gt 4096/)
     assert.match(workflow, /"\$total" -gt 536870912/)
     assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
   })
