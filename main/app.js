@@ -21122,13 +21122,6 @@ function arrowRightIcon(className = DEFAULT) {
 function arrowDownIcon(className = DEFAULT) {
   return outlineIcon("arrow-down", ["M12 5v14", "m19 12-7 7-7-7"], className);
 }
-function arrowUpDownIcon(className = DEFAULT) {
-  return outlineIcon(
-    "arrow-up-down",
-    ["m21 16-4 4-4-4", "M17 20V4", "m3 8 4-4 4 4", "M7 4v16"],
-    className
-  );
-}
 function refreshIcon(className = DEFAULT) {
   return outlineIcon(
     "refresh",
@@ -43813,10 +43806,16 @@ var init_model_options = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
+function contextMenuClosedByPressOn(anchor2) {
+  const press = outsidePress;
+  outsidePress = null;
+  return press !== null && press.target !== null && anchor2.contains(press.target) && Date.now() - press.at < 1e3;
+}
 function showContextMenu(clientX, clientY, items, withinDialog) {
   dismissOpenContextMenu?.();
-  if (items.every(isHeading)) return;
+  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return;
   const buttons = items.map((entry) => {
+    if (isSeparator(entry)) return el("div", { class: "context-menu-separator", role: "separator" });
     if (isHeading(entry)) {
       return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
     }
@@ -43826,11 +43825,21 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
       {
         type: "button",
         class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
+        role: item.checked === void 0 ? "menuitem" : item.toggle === true ? "menuitemcheckbox" : "menuitemradio",
         ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
       },
       el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+      ...item.detail === void 0 ? [] : [el("span", { class: "context-menu-item-detail" }, item.detail)],
+      ...item.toggle === true && item.checked !== void 0 ? [
+        el(
+          "span",
+          {
+            class: item.checked ? "context-menu-switch is-on" : "context-menu-switch",
+            "aria-hidden": "true"
+          },
+          el("i")
+        )
+      ] : item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
     );
     if (item.checked === true) btn.classList.add("is-checked");
     if (item.disabled) btn.disabled = true;
@@ -43864,7 +43873,9 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
   };
   const onPointerDown = (e3) => {
-    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
+    const target = e3.target instanceof Node ? e3.target : null;
+    if (menu.contains(target)) return;
+    outsidePress = { target, at: Date.now() };
     dismiss();
   };
   const onKeyDown = (e3) => {
@@ -43893,13 +43904,15 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
 function dismissContextMenu() {
   dismissOpenContextMenu?.();
 }
-var isHeading, dismissOpenContextMenu;
+var isHeading, isSeparator, dismissOpenContextMenu, outsidePress;
 var init_context_menu = __esm({
   "src/renderer/dom/context-menu.ts"() {
     init_helpers();
     init_icons();
     isHeading = (entry) => "heading" in entry;
+    isSeparator = (entry) => "separator" in entry;
     dismissOpenContextMenu = null;
+    outsidePress = null;
   }
 });
 
@@ -67292,6 +67305,64 @@ var init_demo_scenarios = __esm({
         }
       },
       {
+        id: "sidebar-automation-fold",
+        label: "Sidebar automation fold",
+        project: project("demo-automation-fold-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // One schedule with every kind of run: four waiting on the user (collapsed into one
+        // row), one working, two failed (collated), and three that finished cleanly.
+        // The regular thread comes first so it is the open one: a selected run would unfold its schedule.
+        threads: [
+          {
+            id: "demo-automation-fold-chat",
+            title: "A regular conversation",
+            status: "idle",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME + 1,
+            updatedAt: FIXED_TIME + 1
+          },
+          ...[
+            ["wait-1", "idle"],
+            ["wait-2", "idle"],
+            ["wait-3", "idle"],
+            ["wait-4", "idle"],
+            ["working", "running"],
+            ["fail-1", "error"],
+            ["fail-2", "error"],
+            ["done-1", "idle"],
+            ["done-2", "idle"],
+            ["done-3", "idle"]
+          ].map(([suffix, status], index) => ({
+            id: `demo-automation-fold-${suffix}`,
+            title: "Docs freshness",
+            status,
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            automation: {
+              scheduleId: "demo-automation-fold-schedule",
+              scheduleName: "Docs freshness",
+              triggeredAt: FIXED_TIME - index * 36e5
+            },
+            createdAt: FIXED_TIME - index,
+            updatedAt: FIXED_TIME - index
+          }))
+        ],
+        approvalRequests: ["wait-1", "wait-2", "wait-3", "wait-4"].map((suffix) => ({
+          id: `demo-automation-fold-approval-${suffix}`,
+          threadId: `demo-automation-fold-${suffix}`,
+          title: "Run outside sandbox?",
+          body: "node scripts/check-docs.mjs",
+          type: "shell"
+        }))
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -73779,6 +73850,26 @@ var init_thread_history_editor = __esm({
   }
 });
 
+// src/renderer/controller/automation-fold.ts
+function foldAutomationRuns(runs, needsYou) {
+  const pending = runs.filter((run2) => needsYou(run2.id));
+  const rest = runs.filter((run2) => !needsYou(run2.id));
+  const working = rest.filter((run2) => run2.status === "running");
+  const failed = rest.filter((run2) => run2.status === "error");
+  return [
+    ...pending.length > PENDING_COLLAPSE_ABOVE ? [{ kind: "pending", runs: pending }] : pending.map((run2) => ({ kind: "run", run: run2 })),
+    ...working.map((run2) => ({ kind: "run", run: run2 })),
+    ...failed.length >= FAILED_COLLATE_AT ? [{ kind: "failed", runs: failed }] : failed.map((run2) => ({ kind: "run", run: run2 }))
+  ];
+}
+var PENDING_COLLAPSE_ABOVE, FAILED_COLLATE_AT;
+var init_automation_fold = __esm({
+  "src/renderer/controller/automation-fold.ts"() {
+    PENDING_COLLAPSE_ABOVE = 3;
+    FAILED_COLLATE_AT = 2;
+  }
+});
+
 // packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
@@ -74400,32 +74491,12 @@ function automationMenuEntries(api2, target, openSetup) {
   ];
 }
 function mountProjectsPane(root, store2, api2) {
-  const title = el("span", {}, "Projects");
-  const searchToggle = el(
-    "button",
-    {
-      class: "projects-search-btn",
-      "aria-label": "Search threads",
-      "data-tooltip": "Search threads"
-    },
-    searchIcon("ui-icon ui-icon-sm")
-  );
-  const sortBtn = el(
-    "button",
-    {
-      class: "projects-sort-btn",
-      "aria-label": "Sort threads",
-      "aria-haspopup": "menu",
-      "data-tooltip": "Sort threads"
-    },
-    arrowUpDownIcon("ui-icon ui-icon-sm")
-  );
   const addBtn = el(
     "button",
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New project or open a folder"
+      "data-tooltip": "New thread, new project or open a folder"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -74454,15 +74525,6 @@ function mountProjectsPane(root, store2, api2) {
     );
   };
   syncActivityButton();
-  const header = el(
-    "div",
-    { class: "pane-projects-header" },
-    title,
-    searchToggle,
-    sortBtn,
-    activityBtn,
-    addBtn
-  );
   let threadFilter = "";
   let filteredProjectId = store2.getState().activeProjectId;
   let renderFrameQueued = false;
@@ -74477,29 +74539,47 @@ function mountProjectsPane(root, store2, api2) {
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter titles and requests\u2026",
+    placeholder: "Search\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
-  const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
+  const searchBox = el(
+    "label",
+    { class: "projects-search" },
+    searchIcon("ui-icon ui-icon-sm projects-search-icon"),
+    searchInput
+  );
+  const header = el("div", { class: "pane-projects-header" }, searchBox, activityBtn, addBtn);
   const closeThreadFilter = () => {
     contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
-    searchRow.hidden = true;
-    searchToggle.classList.remove("active");
   };
-  searchToggle.addEventListener("click", () => {
-    if (searchRow.hidden) {
-      searchRow.hidden = false;
-      searchToggle.classList.add("active");
-      searchInput.focus();
-    } else {
-      closeThreadFilter();
-      render();
-    }
-  });
+  let compactRows = false;
+  let projectFilterId = null;
+  const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
+  const projectFilterBtn = el(
+    "button",
+    { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
+    filterLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
+  const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
+  const sortBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "projects-filter-btn projects-sort-btn",
+      "aria-haspopup": "menu",
+      "aria-label": "Group and sort threads"
+    },
+    sortDir,
+    sortLabel,
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
@@ -74524,7 +74604,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   root.append(
     header,
-    searchRow,
+    filtersRow,
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
@@ -74544,12 +74624,54 @@ function mountProjectsPane(root, store2, api2) {
       showErrorToast("Could not save the thread order", err2);
     });
   };
+  function syncFilterControls() {
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === projectFilterId);
+    if (!chosen) projectFilterId = null;
+    const projectName = chosen ? projectDisplayName(chosen) : "All projects";
+    filterLabel.textContent = projectName;
+    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0);
+    projectFilterBtn.setAttribute("aria-label", `Show: ${projectName}`);
+    sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
+    sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
+  }
+  projectFilterBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(projectFilterBtn)) return;
+    const rect = projectFilterBtn.getBoundingClientRect();
+    const { projects } = store2.getState();
+    const counts = new Map(
+      projects.map((project2) => [project2.id, getSidebarThreads(store2, project2.id).length])
+    );
+    const total2 = [...counts.values()].reduce((sum, n2) => sum + n2, 0);
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { heading: "Show" },
+      {
+        label: "All projects",
+        detail: String(total2),
+        checked: projectFilterId === null,
+        onSelect: () => {
+          projectFilterId = null;
+          render();
+        }
+      },
+      ...projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        detail: String(counts.get(project2.id) ?? 0),
+        checked: project2.id === projectFilterId,
+        onSelect: () => {
+          projectFilterId = project2.id;
+          render();
+        }
+      }))
+    ]);
+  });
   sortBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(sortBtn)) return;
     const rect = sortBtn.getBoundingClientRect();
     const { sidebarThreadSort, sidebarThreadSortReverse, sidebarThreadGroup } = store2.getState();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
       { heading: "Group by" },
-      ...THREAD_GROUP_MODES.map((mode) => ({
+      ...GROUP_MENU_ORDER.map((mode) => ({
         label: GROUP_LABELS2[mode],
         checked: mode === sidebarThreadGroup,
         onSelect: () => {
@@ -74568,20 +74690,43 @@ function mountProjectsPane(root, store2, api2) {
           render();
         }
       })),
+      { separator: true },
       {
         label: "Reverse order",
+        toggle: true,
         checked: sidebarThreadSortReverse,
         onSelect: () => {
           store2.setState({ sidebarThreadSortReverse: !sidebarThreadSortReverse });
           saveSort("sidebarThreadSortReverse", !sidebarThreadSortReverse);
           render();
         }
+      },
+      {
+        label: "Compact rows",
+        toggle: true,
+        checked: compactRows,
+        onSelect: () => {
+          compactRows = !compactRows;
+          list.classList.toggle("is-compact", compactRows);
+        }
       }
     ]);
   });
   addBtn.addEventListener("click", () => {
+    if (contextMenuClosedByPressOn(addBtn)) return;
     const rect = addBtn.getBoundingClientRect();
     showContextMenu(rect.right - 4, rect.bottom + 4, [
+      {
+        label: "New thread",
+        onSelect: () => {
+          if (!store2.getState().workspaceRoot) {
+            void addProject(store2, api2);
+            return;
+          }
+          openNewThread(store2);
+        }
+      },
+      { separator: true },
       {
         label: "New project",
         onSelect: () => {
@@ -74633,6 +74778,7 @@ function mountProjectsPane(root, store2, api2) {
   let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
+  const expandedFailedSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
   let orphanScanGeneration = 0;
@@ -74683,11 +74829,11 @@ function mountProjectsPane(root, store2, api2) {
       let result = await api2.threads.archive(projectId, threadId, null);
       let refreshed = false;
       while (result.status === "blocked-dirty") {
-        const title2 = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
+        const title = store2.getState().threads.find((t2) => t2.id === threadId)?.title ?? "this chat";
         const shown = result.paths.slice(0, 10);
         const remaining = result.paths.length - shown.length;
         const confirmed = await showConfirmDialog({
-          message: `Discard uncommitted files and archive \u201C${title2}\u201D?`,
+          message: `Discard uncommitted files and archive \u201C${title}\u201D?`,
           detail: [
             ...refreshed ? ["Files changed while confirmation was open. Review the current files again."] : [],
             "The worktree will be removed. These changes and local files will be permanently discarded:",
@@ -74822,7 +74968,7 @@ function mountProjectsPane(root, store2, api2) {
   function orphanSubtitle(orphan) {
     const count = orphan.threadCount;
     const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
-    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0);
     if (extra.length === 0) return countLabel;
     const shown = extra.slice(0, 2).join(" \xB7 ");
     const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
@@ -74835,8 +74981,8 @@ function mountProjectsPane(root, store2, api2) {
     if (orphan.sampleTitles.length > 0) {
       lines.push("");
       lines.push("Threads in this store:");
-      for (const title2 of orphan.sampleTitles) {
-        lines.push(`\u2022 ${title2}`);
+      for (const title of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title}`);
       }
       if (orphan.threadCount > orphan.sampleTitles.length) {
         lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
@@ -75174,7 +75320,9 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillObserver = null;
     clear(list);
     const prBackfillRows = [];
+    syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
+    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
@@ -75188,7 +75336,7 @@ function mountProjectsPane(root, store2, api2) {
       const allowRename = (options.allowRename ?? true) && canMutate;
       const scheduleId = thread.automation?.scheduleId;
       const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
-      let title2;
+      let title;
       if (renameState) {
         const input2 = el("input", {
           type: "text",
@@ -75218,11 +75366,11 @@ function mountProjectsPane(root, store2, api2) {
             e3.stopPropagation();
           });
         }
-        title2 = input2;
+        title = input2;
       } else {
-        title2 = el("span", { class: "chat-title" }, displayTitle);
+        title = el("span", { class: "chat-title" }, displayTitle);
         if (allowRename) {
-          title2.addEventListener("dblclick", (e3) => {
+          title.addEventListener("dblclick", (e3) => {
             e3.stopPropagation();
             beginThreadRename(thread.id, displayTitle);
           });
@@ -75234,7 +75382,7 @@ function mountProjectsPane(root, store2, api2) {
           class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
           "data-thread-id": thread.id
         },
-        title2
+        title
       );
       chatRow.addEventListener("click", () => {
         if (renaming?.threadId === thread.id) return;
@@ -75327,7 +75475,7 @@ function mountProjectsPane(root, store2, api2) {
       });
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
-        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+        chatRow.insertBefore(runningStatus("Agent is working"), title);
       } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
@@ -75336,7 +75484,7 @@ function mountProjectsPane(root, store2, api2) {
             role: "img",
             "aria-label": "Unread agent completion"
           }),
-          title2
+          title
         );
       }
       if (isThreadAwaitingAttention(thread.id)) {
@@ -75476,11 +75624,9 @@ function mountProjectsPane(root, store2, api2) {
           }
           const scheduleKey = `${project2.id}\0${scheduleId}`;
           const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
-          const attentionScheduleRuns = runs.filter(
-            (thread) => isThreadAwaitingAttention(thread.id)
-          );
           const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention);
+          const scheduleRevealed = showingAllRuns || foldEntries.length > 0;
           const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
           const scheduleGroup = el("div", {
             class: "automation-schedule-group",
@@ -75548,20 +75694,63 @@ function mountProjectsPane(root, store2, api2) {
           });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
-            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
-            for (const thread of visibleRuns) {
+            const runRow2 = (thread) => {
               const index = runs.indexOf(thread);
               const timestamp = thread.automation?.triggeredAt;
               const when = timestamp ? new Date(timestamp).toLocaleString([], {
                 dateStyle: "medium",
                 timeStyle: "short"
               }) : "Unknown time";
-              runRows.append(
-                renderThreadRow(project2, thread, {
-                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                  allowRename: false
-                })
-              );
+              return renderThreadRow(project2, thread, {
+                displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                allowRename: false
+              });
+            };
+            if (showingAllRuns) {
+              for (const thread of runs) runRows.append(runRow2(thread));
+            } else {
+              for (const entry of foldEntries) {
+                if (entry.kind === "run") {
+                  runRows.append(runRow2(entry.run));
+                } else if (entry.kind === "pending") {
+                  const row2 = el(
+                    "button",
+                    { type: "button", class: "automation-fold-row needs-attention" },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} need you`
+                    ),
+                    el("span", { class: "chat-thread-owner" }, "Open in Activity")
+                  );
+                  row2.addEventListener("click", () => {
+                    openActivityPanel();
+                  });
+                  runRows.append(row2);
+                } else {
+                  const open2 = expandedFailedSchedules.has(scheduleKey);
+                  const row2 = el(
+                    "button",
+                    {
+                      type: "button",
+                      class: "automation-fold-row is-failed",
+                      "aria-expanded": open2 ? "true" : "false"
+                    },
+                    el(
+                      "span",
+                      { class: "automation-fold-label" },
+                      `${String(entry.runs.length)} failed`
+                    )
+                  );
+                  row2.addEventListener("click", () => {
+                    if (open2) expandedFailedSchedules.delete(scheduleKey);
+                    else expandedFailedSchedules.add(scheduleKey);
+                    render();
+                  });
+                  runRows.append(row2);
+                  if (open2) for (const thread of entry.runs) runRows.append(runRow2(thread));
+                }
+              }
             }
             scheduleGroup.append(runRows);
           }
@@ -75819,7 +76008,7 @@ function mountProjectsPane(root, store2, api2) {
     function renderThreadSections(mode) {
       const owners = /* @__PURE__ */ new Map();
       const rows = [];
-      for (const project2 of projects) {
+      for (const project2 of visibleProjects) {
         if (project2.missing) continue;
         owners.set(project2.id, project2);
         for (const thread of getSidebarThreads(store2, project2.id)) {
@@ -75877,7 +76066,9 @@ function mountProjectsPane(root, store2, api2) {
     if (groupMode !== "project" && threadFilter.length === 0) {
       list.append(...renderThreadSections(groupMode));
     } else {
-      for (const node2 of buildProjectTree(projects, projectGroups)) {
+      for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
+        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+          continue;
         if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
         else list.append(renderProjectEntry(node2.project));
       }
@@ -75989,7 +76180,7 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
 }
-var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3;
+var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS3, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
@@ -76016,6 +76207,7 @@ var init_projects_pane = __esm({
     init_attention();
     init_activity_panel();
     init_thread_history_editor();
+    init_automation_fold();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
@@ -76025,6 +76217,7 @@ var init_projects_pane = __esm({
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
     SVG_NS3 = "http://www.w3.org/2000/svg";
+    GROUP_MENU_ORDER = ["status", "project", "none"];
   }
 });
 
